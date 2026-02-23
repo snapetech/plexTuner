@@ -1,14 +1,13 @@
-# Plex Tuner: IPTV to Plex bridge. Usage: docker compose up -d
+# Example Docker Compose. Replace with your service(s) for your stack.
+# Usage: docker compose up -d
 
 services:
-  plex-tuner:
+  app:
     build: .
-    image: plex-tuner:latest
-    ports:
-      - "8080:8080"
-    command: ["plex-tuner", "-addr", ":8080"]
+    image: app:latest
+    # command: ["your-app"]
+    # ports:
+    #   - "8080:8080"
+    # environment:
+    #   - APP_ENV=production
     restart: unless-stopped
-    # Optional: mount catalog and index on start
-    # command: ["plex-tuner", "-addr", ":8080", "-m3u", "https://example.com/playlist.m3u", "-catalog", "/data/catalog.json"]
-    # volumes:
-    #   - ./data:/data
