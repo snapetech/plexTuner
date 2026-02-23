@@ -1,4 +1,4 @@
-# CODEOWNERS: review routing. GitLab: http://gitlab.home/keith
+# CODEOWNERS: review routing. Replace placeholders with your identity.
 # https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 
-* keith@snape.tech
+* YOUR_EMAIL@example.com

@@ -7,8 +7,7 @@
 .env.*
 !.env.example
 
-# Catalog and cache (local data)
-catalog.json
+# Local data (add your app's data paths)
 /var/
 
 # Go
@@ -25,4 +24,5 @@ go.work
 # OS
 .DS_Store
 Thumbs.db
-plex-tuner
+hello
+app

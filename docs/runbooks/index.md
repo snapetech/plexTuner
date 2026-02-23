@@ -16,5 +16,5 @@ Deploy, rollback, troubleshoot. Goal → preconditions → steps → verify → 
 
 See also
 --------
-- [How-to: run with systemd](../how-to/run-with-systemd.md).
-- [Reference](../reference/index.md) for config and CLI.
+- [How-to](../how-to/index.md).
+- [Reference](../reference/index.md).

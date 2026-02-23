@@ -7,13 +7,13 @@ tags: [explanations, index]
 
 # Explanations (why, architecture, concepts)
 
-Background and rationale.
+Background and rationale. Add project-specific explanation docs here.
 
 | Doc | Description |
 |-----|-------------|
-| [architecture](architecture.md) | Full design: components A–F, VODFS contract, Plex naming, phased plan. |
+| *(none yet)* | Add architecture, design tradeoffs, concepts as needed. |
 
 See also
 --------
-- [Reference: implementation stories](../reference/implementation-stories.md) for the checklist.
-- [ADR index](../adr/index.md) for recorded decisions.
+- [ADR index](../adr/index.md).
+- [Reference](../reference/index.md).

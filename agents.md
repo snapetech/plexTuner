@@ -11,6 +11,6 @@ Quick reference — verification commands (do not guess; see `memory-bank/comman
 | Format | `go fmt ./...` |
 | Lint   | `go vet ./...` |
 | Test   | `go test ./...` |
-| Build  | `go build -o /dev/null ./cmd/plex-tuner` |
+| Build  | `go build -o /dev/null ./cmd/...` |
 
 Navigation: **`memory-bank/repo_map.md`** — entrypoints, modules, no-go zones.

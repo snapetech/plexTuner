@@ -5,16 +5,16 @@ status: stable
 tags: [reference, index]
 ---
 
-# Reference (facts, API, flags, config)
+# Reference (facts, API, config)
 
-Dense and factual. No narratives.
+Dense and factual. Add CLI reference, env vars, API docs as needed.
 
 | Doc | Description |
 |-----|-------------|
-| [implementation-stories](implementation-stories.md) | Phased implementation checklist (Phase 1–5) from design. |
-| [cli-and-config](cli-and-config.md) | CLI subcommands, flags, env vars (summary; see README for full list). |
+| *(none yet)* | Add command reference, config, env vars. |
+| [memory-bank/commands.yml](../../memory-bank/commands.yml) | Verification commands. |
 
 See also
 --------
-- [Explanations: architecture](../explanations/architecture.md) for why and design.
-- [memory-bank/commands.yml](../memory-bank/commands.yml) for verification commands.
+- [Docs index](../index.md).
+- [Explanations](../explanations/index.md).

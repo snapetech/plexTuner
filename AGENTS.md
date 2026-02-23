@@ -1,6 +1,6 @@
-# Agent instructions — Plex IPTV Tuner
+# Agent instructions — Agentic Go Template
 
-Instructions for AI agents and maintainers working on this repo.
+Instructions for AI agents and maintainers working on this repo. After "Use this template," run `scripts/init-template` and replace placeholders (see [TEMPLATE.md](TEMPLATE.md)).
 
 **Tool-compat:** Tools that look for `agents.md` can use [agents.md](agents.md), which points here. Commands are authoritative in **`memory-bank/commands.yml`**; CI runs **`scripts/verify`** (no drift).
 
@@ -15,9 +15,9 @@ Do not guess commands. Use **`memory-bank/commands.yml`** (machine-readable). CI
 | Format | `go fmt ./...` |
 | Lint   | `go vet ./...` |
 | Test   | `go test ./...` |
-| Build  | `go build -o /dev/null ./cmd/plex-tuner` |
+| Build  | `go build -o /dev/null ./cmd/...` |
 
-Integration tests (optional; need `.env`): `go test -v -run Integration ./cmd/plex-tuner`.
+Default app: `cmd/hello`. Other commands under `cmd/*` are built by verify. Update `memory-bank/commands.yml` if you add integration tests or a different default run target.
 
 ---
 
@@ -106,7 +106,7 @@ Examples of what to record there:
 
 - **Agentic loops:** e.g. “Agent repeatedly changes X to fix Y, which breaks Z; the real fix is W.”
 - **Bugfix loops:** e.g. “Bug in component A keeps reappearing because B assumes C; document that B must never assume C.”
-- **Hard-to-solve / easy-to-regress:** e.g. “Plex expects stable file size and mtime; presenting HLS as a file before materialization causes scan/seek failures—only expose files after size is known (see VODFS contract).”
+- **Hard-to-solve / easy-to-regress:** e.g. “Component A assumes B is immutable; changing B at runtime causes subtle bugs—document the invariant and add tests.”
 
 When you add an entry, include:
 
@@ -121,9 +121,6 @@ The goal is to give future agents **early warnings** and **concrete guidance** s
 
 ## Project overview (for context)
 
-This repo is an **IPTV Tuner for Plex**:
+This repo is an **agentic Go service template**: memory-bank workflow, single verify loop, Diátaxis docs. Default app: **`cmd/hello`**. Replace it with your own `cmd/` entrypoint.
 
-- **Live TV:** HDHomeRun-style emulator (discover/lineup/lineup_status) + XMLTV guide + stream gateway.
-- **VOD:** Virtual filesystem (VODFS, FUSE) so Plex sees real-looking Movies/TV paths; a **materializer** turns provider streams (including HLS) into local cached files (remux-only, no transcode) so Plex gets stable size/mtime and byte-range seeks.
-
-**Full design and phased plan:** see **`docs/explanations/architecture.md`** (and [docs/index.md](docs/index.md) for the Diátaxis doc map). The memory bank holds **current state**, **known issues**, and **recurring loops** so work stays consistent across sessions and agents. When behavior/config changes, update or add one doc and file gaps in `opportunities.md`; see [memory-bank/code_quality.md](memory-bank/code_quality.md).
+**After cloning from template:** Run `scripts/init-template`; replace placeholders in README, CODEOWNERS, and docs; set your Go module path. See [TEMPLATE.md](TEMPLATE.md). The memory bank holds **current state**, **known issues**, and **recurring loops**. When behavior/config changes, update or add one doc and file gaps in `opportunities.md`; see [memory-bank/code_quality.md](memory-bank/code_quality.md).
