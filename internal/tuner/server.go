@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/plextuner/plex-tuner/internal/catalog"
@@ -32,6 +33,16 @@ func (s *Server) Run(ctx context.Context) error {
 		TunerCount: s.TunerCount,
 		Channels:   s.Channels,
 	}
+	defaultProfile := defaultProfileFromEnv()
+	overridePath := os.Getenv("PLEX_TUNER_PROFILE_OVERRIDES_FILE")
+	overrides, err := loadProfileOverridesFile(overridePath)
+	if err != nil {
+		log.Printf("Profile overrides disabled: load %q failed: %v", overridePath, err)
+	} else if len(overrides) > 0 {
+		log.Printf("Profile overrides loaded: %d entries from %s (default=%s)", len(overrides), overridePath, defaultProfile)
+	} else {
+		log.Printf("Profile overrides: none (default=%s)", defaultProfile)
+	}
 	gateway := &Gateway{
 		Channels:            s.Channels,
 		ProviderUser:        s.ProviderUser,
@@ -39,6 +50,8 @@ func (s *Server) Run(ctx context.Context) error {
 		TunerCount:          s.TunerCount,
 		StreamBufferBytes:   s.StreamBufferBytes,
 		StreamTranscodeMode: s.StreamTranscodeMode,
+		DefaultProfile:      defaultProfile,
+		ProfileOverrides:    overrides,
 	}
 	xmltv := &XMLTV{
 		Channels:         s.Channels,

@@ -5,11 +5,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -21,28 +23,42 @@ import (
 	"github.com/plextuner/plex-tuner/internal/safeurl"
 )
 
+// Gateway proxies live stream requests to provider URLs with optional auth.
+// Limit concurrent streams to TunerCount (tuner semantics).
+type Gateway struct {
+	Channels            []catalog.LiveChannel
+	ProviderUser        string
+	ProviderPass        string
+	TunerCount          int
+	StreamBufferBytes   int    // 0 = no buffer, -1 = auto
+	StreamTranscodeMode string // "off" | "on" | "auto"
+	DefaultProfile      string
+	ProfileOverrides    map[string]string
+	Client              *http.Client
+	mu                  sync.Mutex
+	inUse               int
+}
+
 // Adaptive buffer tuning: grow when client is slow (backpressure), shrink when client keeps up.
 const (
-	adaptiveBufferMin    = 64 << 10   // 64 KiB
-	adaptiveBufferMax    = 2 << 20   // 2 MiB
-	adaptiveBufferInitial = 1 << 20   // 1 MiB
-	adaptiveSlowFlushMs   = 100       // flush took longer than this -> grow
-	adaptiveFastFlushMs   = 20        // flush faster than this -> count toward shrink
-	adaptiveFastCountShrink = 3       // this many fast flushes in a row -> shrink
+	adaptiveBufferMin       = 64 << 10 // 64 KiB
+	adaptiveBufferMax       = 2 << 20  // 2 MiB
+	adaptiveBufferInitial   = 1 << 20  // 1 MiB
+	adaptiveSlowFlushMs     = 100
+	adaptiveFastFlushMs     = 20
+	adaptiveFastCountShrink = 3
 )
 
-// adaptiveWriter buffers writes and flushes to w when buffer reaches target size.
-// Target size grows when flushes are slow (backpressure) and shrinks when flushes are fast.
 type adaptiveWriter struct {
-	w             io.Writer
-	buf           bytes.Buffer
-	targetSize    int
-	minSize       int
-	maxSize       int
-	slowThresh    time.Duration
-	fastThresh    time.Duration
-	fastCount     int
-	fastCountMax  int
+	w            io.Writer
+	buf          bytes.Buffer
+	targetSize   int
+	minSize      int
+	maxSize      int
+	slowThresh   time.Duration
+	fastThresh   time.Duration
+	fastCount    int
+	fastCountMax int
 }
 
 func newAdaptiveWriter(w io.Writer) *adaptiveWriter {
@@ -57,8 +73,8 @@ func newAdaptiveWriter(w io.Writer) *adaptiveWriter {
 	}
 }
 
-func (a *adaptiveWriter) Write(p []byte) (n int, err error) {
-	n, err = a.buf.Write(p)
+func (a *adaptiveWriter) Write(p []byte) (int, error) {
+	n, err := a.buf.Write(p)
 	if err != nil {
 		return n, err
 	}
@@ -81,7 +97,6 @@ func (a *adaptiveWriter) flushToClient() error {
 	}
 	d := time.Since(start)
 	a.buf.Reset()
-
 	if d >= a.slowThresh {
 		if a.targetSize < a.maxSize {
 			a.targetSize *= 2
@@ -107,13 +122,11 @@ func (a *adaptiveWriter) flushToClient() error {
 	return nil
 }
 
-func (a *adaptiveWriter) Flush() error {
-	return a.flushToClient()
-}
+func (a *adaptiveWriter) Flush() error { return a.flushToClient() }
 
 // streamWriter wraps w with an optional buffer. Call flush before returning.
-// bufferBytes: >0 = fixed size (bufio); 0 = passthrough; -1 = adaptive (grow/shrink from backpressure).
-func streamWriter(w http.ResponseWriter, bufferBytes int) (out io.Writer, flush func()) {
+// bufferBytes: >0 = fixed size (bufio); 0 = passthrough; -1 = adaptive.
+func streamWriter(w http.ResponseWriter, bufferBytes int) (io.Writer, func()) {
 	if bufferBytes == 0 {
 		return w, func() {}
 	}
@@ -125,28 +138,86 @@ func streamWriter(w http.ResponseWriter, bufferBytes int) (out io.Writer, flush 
 	return bw, func() { _ = bw.Flush() }
 }
 
-// Gateway proxies live stream requests to provider URLs with optional auth.
-// Limit concurrent streams to TunerCount (tuner semantics).
-// StreamBufferBytes: >0 = buffer size in bytes; -1 = auto (default when transcoding, else 0).
-// StreamTranscodeMode: "off" = remux only; "on" = always transcode; "auto" = probe and transcode when codec not Plex-friendly.
-type Gateway struct {
-	Channels            []catalog.LiveChannel
-	ProviderUser        string
-	ProviderPass        string
-	TunerCount          int
-	StreamBufferBytes   int    // 0 = no buffer, -1 = auto
-	StreamTranscodeMode string // "off" | "on" | "auto"
-	Client              *http.Client
-	mu                  sync.Mutex
-	inUse               int
+const (
+	profileDefault    = "default"
+	profilePlexSafe   = "plexsafe"
+	profileAACCFR     = "aaccfr"
+	profileVideoOnly  = "videoonlyfast"
+	profileLowBitrate = "lowbitrate"
+)
+
+func normalizeProfileName(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", "default":
+		return profileDefault
+	case "plexsafe", "plex-safe", "safe":
+		return profilePlexSafe
+	case "aaccfr", "aac-cfr", "aac":
+		return profileAACCFR
+	case "videoonlyfast", "video-only-fast", "videoonly", "video":
+		return profileVideoOnly
+	case "lowbitrate", "low-bitrate", "low":
+		return profileLowBitrate
+	default:
+		return profileDefault
+	}
 }
 
-// effectiveTranscode returns whether to transcode this stream. For "auto" mode, probes with ffprobe; on probe error defaults to true (transcode) for compatibility.
+func defaultProfileFromEnv() string {
+	p := strings.TrimSpace(os.Getenv("PLEX_TUNER_PROFILE"))
+	if p != "" {
+		return normalizeProfileName(p)
+	}
+	// Back-compat for the old boolean.
+	if strings.EqualFold(os.Getenv("PLEX_TUNER_PLEX_SAFE"), "1") ||
+		strings.EqualFold(os.Getenv("PLEX_TUNER_PLEX_SAFE"), "true") ||
+		strings.EqualFold(os.Getenv("PLEX_TUNER_PLEX_SAFE"), "yes") {
+		return profilePlexSafe
+	}
+	return profileDefault
+}
+
+func loadProfileOverridesFile(path string) (map[string]string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	raw := map[string]string{}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(raw))
+	for k, v := range raw {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			continue
+		}
+		out[k] = normalizeProfileName(v)
+	}
+	return out, nil
+}
+
+func (g *Gateway) profileForChannel(channelID string) string {
+	if g != nil && g.ProfileOverrides != nil {
+		if p, ok := g.ProfileOverrides[channelID]; ok && strings.TrimSpace(p) != "" {
+			return normalizeProfileName(p)
+		}
+	}
+	if g != nil && strings.TrimSpace(g.DefaultProfile) != "" {
+		return normalizeProfileName(g.DefaultProfile)
+	}
+	return defaultProfileFromEnv()
+}
+
 func (g *Gateway) effectiveTranscode(ctx context.Context, streamURL string) bool {
-	switch g.StreamTranscodeMode {
+	switch strings.ToLower(strings.TrimSpace(g.StreamTranscodeMode)) {
 	case "on":
 		return true
-	case "off":
+	case "off", "":
 		return false
 	case "auto":
 		need, err := g.needTranscode(ctx, streamURL)
@@ -160,7 +231,6 @@ func (g *Gateway) effectiveTranscode(ctx context.Context, streamURL string) bool
 	}
 }
 
-// needTranscode runs ffprobe on the stream URL and returns true if codecs are not Plex-friendly (e.g. HEVC, VP9 -> transcode; H.264+AAC -> remux).
 func (g *Gateway) needTranscode(ctx context.Context, streamURL string) (bool, error) {
 	ffprobePath, err := exec.LookPath("ffprobe")
 	if err != nil {
@@ -168,39 +238,23 @@ func (g *Gateway) needTranscode(ctx context.Context, streamURL string) (bool, er
 	}
 	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
 	defer cancel()
-	args := []string{
-		"-v", "error", "-nostdin",
-		"-rw_timeout", "5000000",
-		"-user_agent", "PlexTuner/1.0",
+	probe := func(sel string) (string, error) {
+		args := []string{"-v", "error", "-nostdin", "-rw_timeout", "5000000", "-user_agent", "PlexTuner/1.0"}
+		if g.ProviderUser != "" || g.ProviderPass != "" {
+			auth := base64.StdEncoding.EncodeToString([]byte(g.ProviderUser + ":" + g.ProviderPass))
+			args = append(args, "-headers", "Authorization: Basic "+auth+"\r\n")
+		}
+		args = append(args, "-select_streams", sel, "-show_entries", "stream=codec_name", "-of", "default=noprint_wrappers=1:nokey=1", streamURL)
+		out, err := exec.CommandContext(ctx, ffprobePath, args...).Output()
+		return strings.TrimSpace(string(out)), err
 	}
-	if g.ProviderUser != "" || g.ProviderPass != "" {
-		auth := base64.StdEncoding.EncodeToString([]byte(g.ProviderUser + ":" + g.ProviderPass))
-		args = append(args, "-headers", "Authorization: Basic "+auth+"\r\n")
-	}
-	args = append(args, "-select_streams", "v:0", "-show_entries", "stream=codec_name", "-of", "default=noprint_wrappers=1:nokey=1", streamURL)
-	cmd := exec.CommandContext(ctx, ffprobePath, args...)
-	out, err := cmd.Output()
-	if err != nil {
+	v, err := probe("v:0")
+	if err != nil || !isPlexFriendlyVideoCodec(v) {
 		return true, err
 	}
-	videoCodec := strings.TrimSpace(string(out))
-	if !isPlexFriendlyVideoCodec(videoCodec) {
-		return true, nil
-	}
-	args = []string{"-v", "error", "-nostdin", "-rw_timeout", "5000000", "-user_agent", "PlexTuner/1.0"}
-	if g.ProviderUser != "" || g.ProviderPass != "" {
-		auth := base64.StdEncoding.EncodeToString([]byte(g.ProviderUser + ":" + g.ProviderPass))
-		args = append(args, "-headers", "Authorization: Basic "+auth+"\r\n")
-	}
-	args = append(args, "-select_streams", "a:0", "-show_entries", "stream=codec_name", "-of", "default=noprint_wrappers=1:nokey=1", streamURL)
-	cmd = exec.CommandContext(ctx, ffprobePath, args...)
-	out, err = cmd.Output()
-	if err != nil {
+	a, err := probe("a:0")
+	if err != nil || !isPlexFriendlyAudioCodec(a) {
 		return true, err
-	}
-	audioCodec := strings.TrimSpace(string(out))
-	if !isPlexFriendlyAudioCodec(audioCodec) {
-		return true, nil
 	}
 	return false, nil
 }
@@ -223,15 +277,12 @@ func isPlexFriendlyAudioCodec(name string) bool {
 	}
 }
 
-// effectiveBufferSize returns the buffer size to use.
-// When StreamBufferBytes is -1 (auto): transcoding -> -1 (adaptive buffer); else 0.
-// When >= 0: fixed size (bytes).
 func (g *Gateway) effectiveBufferSize(transcode bool) int {
 	if g.StreamBufferBytes >= 0 {
 		return g.StreamBufferBytes
 	}
 	if transcode {
-		return -1 // adaptive: grow/shrink from observed backpressure
+		return -1
 	}
 	return 0
 }
@@ -405,11 +456,15 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	transcode bool,
 	bufferBytes int,
 ) error {
+	profile := g.profileForChannel(channelID)
+
 	args := []string{
 		"-nostdin",
 		"-hide_banner",
 		"-loglevel", "error",
 		"-fflags", "+discardcorrupt+genpts+nobuffer",
+		"-analyzeduration", "1000000",
+		"-probesize", "1000000",
 		"-rw_timeout", "15000000",
 		"-user_agent", "PlexTuner/1.0",
 	}
@@ -417,37 +472,106 @@ func (g *Gateway) relayHLSWithFFmpeg(
 		auth := base64.StdEncoding.EncodeToString([]byte(g.ProviderUser + ":" + g.ProviderPass))
 		args = append(args, "-headers", "Authorization: Basic "+auth+"\r\n")
 	}
-	if transcode {
-		args = append(args,
-			"-i", playlistURL,
-			"-map", "0:v:0",
-			"-map", "0:a:0?",
-			"-sn", "-dn",
-			"-c:v", "libx264",
-			"-preset", "veryfast",
-			"-tune", "zerolatency",
-			"-pix_fmt", "yuv420p",
-			"-g", "50", "-keyint_min", "50", "-sc_threshold", "0",
-			"-b:v", "3500k", "-maxrate", "4000k", "-bufsize", "8000k",
-			"-c:a", "aac", "-profile:a", "aac_low", "-ac", "2", "-ar", "48000", "-b:a", "128k",
-			"-af", "aresample=async=1:first_pts=0",
-			"-muxdelay", "0", "-muxpreload", "0",
-			"-mpegts_flags", "+resend_headers",
-			"-f", "mpegts",
-			"pipe:1",
-		)
-	} else {
-		args = append(args,
+	var codecArgs []string
+	if !transcode {
+		codecArgs = []string{
 			"-i", playlistURL,
 			"-map", "0:v:0",
 			"-map", "0:a?",
 			"-c", "copy",
-			"-muxdelay", "0", "-muxpreload", "0",
-			"-mpegts_flags", "+resend_headers",
-			"-f", "mpegts",
-			"pipe:1",
-		)
+		}
+	} else {
+		codecArgs = []string{
+			"-i", playlistURL,
+			"-map", "0:v:0",
+			"-map", "0:a:0?",
+			"-sn",
+			"-dn",
+			"-c:v", "libx264",
+			"-a53cc", "0",
+			"-preset", "veryfast",
+			"-tune", "zerolatency",
+			"-x264-params", "repeat-headers=1:keyint=30:min-keyint=30:scenecut=0:force-cfr=1",
+			"-pix_fmt", "yuv420p",
+			"-g", "30",
+			"-keyint_min", "30",
+			"-sc_threshold", "0",
+			"-force_key_frames", "expr:gte(t,n_forced*1)",
+		}
 	}
+	if transcode {
+		switch profile {
+		case profilePlexSafe:
+			// More conservative output tends to make Plex Web's DASH startup happier.
+			codecArgs = append(codecArgs,
+				"-vf", "fps=30000/1001,format=yuv420p",
+				"-b:v", "2200k",
+				"-maxrate", "2500k",
+				"-bufsize", "5000k",
+				"-c:a", "libmp3lame",
+				"-ac", "2",
+				"-ar", "48000",
+				"-b:a", "128k",
+				"-af", "aresample=async=1:first_pts=0",
+			)
+		case profileAACCFR:
+			codecArgs = append(codecArgs,
+				"-vf", "fps=30000/1001,format=yuv420p",
+				"-b:v", "2600k",
+				"-maxrate", "3000k",
+				"-bufsize", "6000k",
+				"-c:a", "aac",
+				"-profile:a", "aac_low",
+				"-ac", "2",
+				"-ar", "48000",
+				"-b:a", "128k",
+				"-af", "aresample=async=1:first_pts=0",
+			)
+		case profileVideoOnly:
+			codecArgs = append(codecArgs,
+				"-vf", "fps=30000/1001,format=yuv420p",
+				"-b:v", "2200k",
+				"-maxrate", "2500k",
+				"-bufsize", "5000k",
+				"-an",
+			)
+		case profileLowBitrate:
+			codecArgs = append(codecArgs,
+				"-vf", "fps=30000/1001,scale='trunc(iw/2)*2:trunc(ih/2)*2',format=yuv420p",
+				"-b:v", "1400k",
+				"-maxrate", "1700k",
+				"-bufsize", "3400k",
+				"-c:a", "aac",
+				"-profile:a", "aac_low",
+				"-ac", "2",
+				"-ar", "48000",
+				"-b:a", "96k",
+				"-af", "aresample=async=1:first_pts=0",
+			)
+		default:
+			codecArgs = append(codecArgs,
+				"-b:v", "3500k",
+				"-maxrate", "4000k",
+				"-bufsize", "8000k",
+				"-c:a", "aac",
+				"-profile:a", "aac_low",
+				"-ac", "2",
+				"-ar", "48000",
+				"-b:a", "128k",
+				"-af", "aresample=async=1:first_pts=0",
+			)
+		}
+	}
+	codecArgs = append(codecArgs,
+		"-flush_packets", "1",
+		"-max_interleave_delta", "0",
+		"-muxdelay", "0",
+		"-muxpreload", "0",
+		"-mpegts_flags", "+resend_headers+pat_pmt_at_frames",
+		"-f", "mpegts",
+		"pipe:1",
+	)
+	args = append(args, codecArgs...)
 
 	cmd := exec.CommandContext(r.Context(), ffmpegPath, args...)
 	stdout, err := cmd.StdoutPipe()
@@ -459,17 +583,38 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	modeLabel := "ffmpeg-remux"
+	if transcode {
+		modeLabel = "ffmpeg-transcode"
+	}
+	log.Printf("gateway: channel=%q id=%s %s profile=%s", channelName, channelID, modeLabel, profile)
 	w.Header().Set("Content-Type", "video/mp2t")
 	w.Header().Del("Content-Length")
 	w.WriteHeader(http.StatusOK)
-	sw, flush := streamWriter(w, bufferBytes)
-	n, copyErr := io.Copy(sw, stdout)
-	flush()
+	bodyOut, flushBody := streamWriter(w, bufferBytes)
+	defer flushBody()
+	dst := io.Writer(bodyOut)
+	if fw, ok := w.(http.Flusher); ok {
+		dst = &firstWriteLogger{
+			w:           flushWriter{w: w, f: fw},
+			channelName: channelName,
+			channelID:   channelID,
+			start:       start,
+		}
+	} else {
+		dst = &firstWriteLogger{
+			w:           w,
+			channelName: channelName,
+			channelID:   channelID,
+			start:       start,
+		}
+	}
+	n, copyErr := io.Copy(dst, stdout)
 	waitErr := cmd.Wait()
 
 	if r.Context().Err() != nil {
-		log.Printf("gateway: channel=%q id=%s ffmpeg client-done bytes=%d dur=%s",
-			channelName, channelID, n, time.Since(start).Round(time.Millisecond))
+		log.Printf("gateway: channel=%q id=%s %s client-done bytes=%d dur=%s",
+			channelName, channelID, modeLabel, n, time.Since(start).Round(time.Millisecond))
 		return nil
 	}
 	if copyErr != nil && r.Context().Err() == nil {
@@ -482,9 +627,38 @@ func (g *Gateway) relayHLSWithFFmpeg(
 		}
 		return errors.New(msg)
 	}
-	log.Printf("gateway: channel=%q id=%s ffmpeg bytes=%d dur=%s",
-		channelName, channelID, n, time.Since(start).Round(time.Millisecond))
+	log.Printf("gateway: channel=%q id=%s %s bytes=%d dur=%s",
+		channelName, channelID, modeLabel, n, time.Since(start).Round(time.Millisecond))
 	return nil
+}
+
+type firstWriteLogger struct {
+	w           io.Writer
+	once        sync.Once
+	channelName string
+	channelID   string
+	start       time.Time
+}
+
+func (f *firstWriteLogger) Write(p []byte) (int, error) {
+	f.once.Do(func() {
+		log.Printf("gateway: channel=%q id=%s ffmpeg-remux first-bytes=%d startup=%s",
+			f.channelName, f.channelID, len(p), time.Since(f.start).Round(time.Millisecond))
+	})
+	return f.w.Write(p)
+}
+
+type flushWriter struct {
+	w io.Writer
+	f http.Flusher
+}
+
+func (fw flushWriter) Write(p []byte) (int, error) {
+	n, err := fw.w.Write(p)
+	if n > 0 {
+		fw.f.Flush()
+	}
+	return n, err
 }
 
 func (g *Gateway) relayHLSAsTS(
