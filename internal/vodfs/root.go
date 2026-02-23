@@ -14,9 +14,9 @@ import (
 // Root holds catalog snapshot and materializer; implements root of VODFS.
 type Root struct {
 	fs.Inode
-	Movies  []catalog.Movie
-	Series  []catalog.Series
-	Mat materializer.Interface
+	Movies []catalog.Movie
+	Series []catalog.Series
+	Mat    materializer.Interface
 }
 
 var _ fs.NodeLookuper = (*Root)(nil)

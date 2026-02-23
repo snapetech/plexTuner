@@ -1,0 +1,4 @@
+# CODEOWNERS: review routing. GitLab: http://gitlab.home/keith
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+* keith@snape.tech

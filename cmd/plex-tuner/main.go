@@ -1,10 +1,10 @@
 // Command plex-tuner: one-run Live TV/DVR (run), or index / mount / serve separately.
 //
-//   run    One-run: refresh catalog, health check, then serve tuner. For systemd. Zero interaction after .env.
-//   index  Fetch M3U, parse, save catalog (movies + series + live channels)
-//   mount  Load catalog and mount VODFS (optional -cache for on-demand download)
-//   serve  Run HDHR emulator + XMLTV + stream gateway only (no index/health)
-//   probe  Cycle through provider URLs, probe each, report OK / Cloudflare / fail and which URL to use
+//	run    One-run: refresh catalog, health check, then serve tuner. For systemd. Zero interaction after .env.
+//	index  Fetch M3U, parse, save catalog (movies + series + live channels)
+//	mount  Load catalog and mount VODFS (optional -cache for on-demand download)
+//	serve  Run HDHR emulator + XMLTV + stream gateway only (no index/health)
+//	probe  Cycle through provider URLs, probe each, report OK / Cloudflare / fail and which URL to use
 package main
 
 import (
@@ -148,11 +148,11 @@ func main() {
 		}
 		c := catalog.New()
 		c.ReplaceWithLive(movies, series, live)
-			if err := c.Save(path); err != nil {
-				log.Printf("Save catalog failed: %v", err)
-				os.Exit(1)
-			}
-			log.Printf("Saved catalog to %s: %d movies, %d series, %d live channels (%d EPG-linked, %d with backup feeds)", path, len(movies), len(series), len(live), epgLinked, withBackups)
+		if err := c.Save(path); err != nil {
+			log.Printf("Save catalog failed: %v", err)
+			os.Exit(1)
+		}
+		log.Printf("Saved catalog to %s: %d movies, %d series, %d live channels (%d EPG-linked, %d with backup feeds)", path, len(movies), len(series), len(live), epgLinked, withBackups)
 
 	case "mount":
 		_ = mountCmd.Parse(os.Args[2:])

@@ -2,6 +2,23 @@
 
 Instructions for AI agents and maintainers working on this repo.
 
+**Tool-compat:** Tools that look for `agents.md` can use [agents.md](agents.md), which points here. Commands are authoritative in **`memory-bank/commands.yml`**; CI runs **`scripts/verify`** (no drift).
+
+---
+
+## Commands (authoritative)
+
+Do not guess commands. Use **`memory-bank/commands.yml`** (machine-readable). CI runs `scripts/verify`, which runs format → lint → test → build from that file.
+
+| Step   | Command |
+|--------|---------|
+| Format | `go fmt ./...` |
+| Lint   | `go vet ./...` |
+| Test   | `go test ./...` |
+| Build  | `go build -o /dev/null ./cmd/plex-tuner` |
+
+Integration tests (optional; need `.env`): `go test -v -run Integration ./cmd/plex-tuner`.
+
 ---
 
 ## Memory bank (required)
@@ -17,15 +34,28 @@ Instructions for AI agents and maintainers working on this repo.
 | **`memory-bank/recurring_loops.md`** | **Critical:** Recurring agentic loops, bugfix loops, and hard-to-solve problems that keep coming back. Document them here with: what keeps happening, why it's tricky, and what actually works. Future agents should read this first to avoid repeating the same mistakes and to get early warnings about fragile areas. |
 | **`memory-bank/opportunities.md`** | Lightweight backlog for security/perf/reliability/maintainability/operability discoveries. File out-of-scope improvements here; raise to user in summary. |
 | **`memory-bank/task_history.md`** | Append-only log of completed tasks (summary, verification, opportunities filed). |
+| **`memory-bank/repo_map.md`** | Navigation: main entrypoints, key modules, hot paths, no-go zones. Check before wandering. |
+| **`memory-bank/commands.yml`** | Machine-readable verification commands; `scripts/verify` runs them. |
+| **`memory-bank/code_quality.md`** | Code and doc quality: "done" includes doc updates when behavior changes; docs as code. |
+| **`memory-bank/work_breakdown.md`** | Multi-PR epics only: WBS + story list + PR plan. Use when >1 PR or scope warrants it; see guardrail below. |
+
+Doc layout (Diátaxis): **`docs/index.md`** (tutorials, how-to, reference, explanations, adr, runbooks). New docs: frontmatter + See also; see `docs/_meta/linking.md`.
 
 ### How to use the memory bank
 
-- **At session start:** Read `current_task.md`, `known_issues.md`, and `recurring_loops.md` before making changes.
+- **At session start:** Read `current_task.md`, `known_issues.md`, `recurring_loops.md`, and `repo_map.md` (navigation) before making changes.
 - **When taking on work:** Set or update `current_task.md` (goal, scope, next step).
 - **When hitting a recurring or painful issue:** Add or update `recurring_loops.md` with the pattern and the resolution (or “still open”).
 - **When discovering a limitation or bug:** Add to `known_issues.md` with enough context to reproduce or work around.
 
 Phrase entries so that **another agent** can act on them: concise, actionable, and with “why” where it helps.
+
+### Work breakdown (multi-PR only) — guardrail
+
+- **One PR:** Use **only** `current_task.md` (objective, success criteria, In/Out, plan, verification). No work breakdown.
+- **More than one PR:** You **must** create or update the work breakdown ([memory-bank/work_breakdown.md](memory-bank/work_breakdown.md) or [docs/epics/EPIC-*.md](docs/epics/EPIC-template.md)) and **only work on items listed there**. Every task/PR must reference a story ID. Park improvements in `opportunities.md`; don't hijack the epic.
+
+**When to create a work breakdown:** Any of: will take >1 PR, touches >~5 modules/areas, multiple stakeholders/UX choices, non-trivial migration/rollout, meaningful security/perf implications. **When to use which:** PR-sized → `current_task.md` only; product scope → `docs/product/PRD-template.md`; multi-PR epic → `work_breakdown.md` or `docs/epics/EPIC-*.md`; story = row in that breakdown (or `docs/stories/STORY-template.md` for format).
 
 ---
 
@@ -44,7 +74,7 @@ If uncertain but not blocked:
 - document it in `memory-bank/current_task.md` under "Assumptions"
 - proceed and keep the diff small
 
-For how to ask well: `memory-bank/skills/asking.md`
+For how to ask well: `memory-bank/skills/asking.md`. Security checklist before landing: `memory-bank/skills/security.md`.
 
 ---
 
@@ -92,4 +122,4 @@ This repo is an **IPTV Tuner for Plex**:
 - **Live TV:** HDHomeRun-style emulator (discover/lineup/lineup_status) + XMLTV guide + stream gateway.
 - **VOD:** Virtual filesystem (VODFS, FUSE) so Plex sees real-looking Movies/TV paths; a **materializer** turns provider streams (including HLS) into local cached files (remux-only, no transcode) so Plex gets stable size/mtime and byte-range seeks.
 
-**Full design and phased plan:** see **`docs/DESIGN.md`** (Strong8k assumptions, all components A–F, Plex naming rules, VODFS contract, stream auto-detect, deployment, Phases 1–5). The memory bank holds **current state**, **known issues**, and **recurring loops** so work stays consistent across sessions and agents.
+**Full design and phased plan:** see **`docs/explanations/architecture.md`** (and [docs/index.md](docs/index.md) for the Diátaxis doc map). The memory bank holds **current state**, **known issues**, and **recurring loops** so work stays consistent across sessions and agents. When behavior/config changes, update or add one doc and file gaps in `opportunities.md`; see [memory-bank/code_quality.md](memory-bank/code_quality.md).

@@ -1,0 +1,24 @@
+# CI: single source of truth is scripts/verify (reads memory-bank/commands.yml conceptually).
+# No separate format/lint/test steps — prevents doc/CI drift.
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Verify (format, lint, test, build)
+        run: ./scripts/verify

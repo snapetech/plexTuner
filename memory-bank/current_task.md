@@ -25,3 +25,15 @@ Questions (ONLY if blocked or high-risk ambiguity):
 
 ## Opportunity radar (don't derail)
 - If you notice out-of-scope improvements, record them in `memory-bank/opportunities.md` and raise to the user in your summary.
+
+## Self-check (quality bar — fill before claiming done)
+- **Correctness:** ✅ / ⚠️ (why)
+- **Tests:** ✅ / ⚠️ (what's missing)
+- **Risk:** low / med / high (why)
+- **Performance impact:** none / likely / unknown
+- **Security impact:** none / likely / unknown
+(Feeds opportunities if any ⚠️ or impact; no need to ask permission for every item.)
+
+## Docs (done = doc update when behavior changes)
+- If you changed **behavior, interfaces, or config:** update or create **one** doc in `docs/` (how-to, reference, or explanation); add cross-links (See also, Related ADRs). Use [Diátaxis](../docs/index.md): `tutorials/`, `how-to/`, `reference/`, `explanations/`, `adr/`, `runbooks/`. Conventions: [docs/_meta/linking.md](../docs/_meta/linking.md).
+- If you **noticed doc gaps** but it's out of scope: file in `memory-bank/opportunities.md` (category: operability or maintainability).

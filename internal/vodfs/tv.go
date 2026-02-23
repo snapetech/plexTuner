@@ -44,7 +44,7 @@ func (n *TVDirNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 			})
 			out.Mode = fuse.S_IFDIR | 0755
 			out.SetEntryTimeout(1 * time.Second)
-		out.SetAttrTimeout(1 * time.Second)
+			out.SetAttrTimeout(1 * time.Second)
 			return ch, 0
 		}
 	}
@@ -85,7 +85,7 @@ func (n *ShowDirNode) Lookup(ctx context.Context, name string, out *fuse.EntryOu
 			})
 			out.Mode = fuse.S_IFDIR | 0755
 			out.SetEntryTimeout(1 * time.Second)
-		out.SetAttrTimeout(1 * time.Second)
+			out.SetAttrTimeout(1 * time.Second)
 			return ch, 0
 		}
 	}
@@ -129,12 +129,12 @@ func (n *SeasonDirNode) Lookup(ctx context.Context, name string, out *fuse.Entry
 			}
 			ch := n.NewInode(ctx, vf, fs.StableAttr{
 				Mode: fuse.S_IFREG,
-				Ino:  n.Root.ino("file:ep:"+ep.ID),
+				Ino:  n.Root.ino("file:ep:" + ep.ID),
 			})
 			out.Mode = fuse.S_IFREG | 0444
 			out.Size = 0
 			out.SetEntryTimeout(1 * time.Second)
-		out.SetAttrTimeout(1 * time.Second)
+			out.SetAttrTimeout(1 * time.Second)
 			return ch, 0
 		}
 	}

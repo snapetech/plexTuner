@@ -121,4 +121,3 @@ func ContentLength(streamURL string, client *http.Client) (int64, error) {
 	}
 	return -1, nil
 }
-

@@ -3,7 +3,7 @@
 IPTV tuner for Plex: **Live TV** via an HDHomeRun-style emulator + XMLTV + stream gateway, and **VOD** as a FUSE virtual filesystem (VODFS) so Plex sees real Movies/TV libraries.
 
 - **Agents:** Read [AGENTS.md](AGENTS.md) and use the [memory-bank/](memory-bank/) (including `recurring_loops.md`) before making changes.
-- **Design:** [docs/DESIGN.md](docs/DESIGN.md) — architecture, VODFS contract, phased plan. [docs/STORIES.md](docs/STORIES.md) — implementation checklist.
+- **Design:** [docs/explanations/architecture.md](docs/explanations/architecture.md) — architecture, VODFS contract, phased plan. [docs/reference/implementation-stories.md](docs/reference/implementation-stories.md) — implementation checklist. Full doc map: [docs/index.md](docs/index.md).
 
 ## Setup (credentials)
 

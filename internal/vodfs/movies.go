@@ -44,7 +44,7 @@ func (n *MoviesDirNode) Lookup(ctx context.Context, name string, out *fuse.Entry
 			})
 			out.Mode = fuse.S_IFDIR | 0755
 			out.SetEntryTimeout(1 * time.Second)
-		out.SetAttrTimeout(1 * time.Second)
+			out.SetAttrTimeout(1 * time.Second)
 			return ch, 0
 		}
 	}
@@ -65,7 +65,7 @@ func (n *MovieDirNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno
 	fileName := MovieFileName(n.Movie.Title, n.Movie.Year)
 	entries := []fuse.DirEntry{{
 		Name: fileName,
-		Ino:  n.Root.ino("file:movie:"+n.Movie.ID),
+		Ino:  n.Root.ino("file:movie:" + n.Movie.ID),
 		Mode: fuse.S_IFREG | 0444,
 	}}
 	return fs.NewListDirStream(entries), 0

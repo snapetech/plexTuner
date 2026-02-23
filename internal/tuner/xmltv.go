@@ -11,8 +11,8 @@ import (
 // XMLTV generates a minimal XMLTV guide so Plex can import guide data.
 // Programmes can be extended later (e.g. from EPG URL or placeholder).
 type XMLTV struct {
-	Channels          []catalog.LiveChannel
-	EpgPruneUnlinked  bool // when true, only include channels with TVGID set
+	Channels         []catalog.LiveChannel
+	EpgPruneUnlinked bool // when true, only include channels with TVGID set
 }
 
 func (x *XMLTV) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -63,9 +63,9 @@ func (x *XMLTV) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type xmlTVRoot struct {
-	XMLName    xml.Name      `xml:"tv"`
-	Source     string        `xml:"source-info-name,attr,omitempty"`
-	Channels   []xmlChannel  `xml:"channel"`
+	XMLName    xml.Name       `xml:"tv"`
+	Source     string         `xml:"source-info-name,attr,omitempty"`
+	Channels   []xmlChannel   `xml:"channel"`
 	Programmes []xmlProgramme `xml:"programme"`
 }
 
@@ -75,9 +75,9 @@ type xmlChannel struct {
 }
 
 type xmlProgramme struct {
-	Start   string  `xml:"start,attr"`
-	Stop    string  `xml:"stop,attr"`
-	Channel string  `xml:"channel,attr"`
+	Start   string   `xml:"start,attr"`
+	Stop    string   `xml:"stop,attr"`
+	Channel string   `xml:"channel,attr"`
 	Title   xmlValue `xml:"title"`
 }
 

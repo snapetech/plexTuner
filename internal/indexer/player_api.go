@@ -16,10 +16,10 @@ import (
 )
 
 const (
-	indexerMaxRetries   = 3
+	indexerMaxRetries     = 3
 	indexerInitialBackoff = 2 * time.Second
-	indexerMaxBackoff   = 60 * time.Second
-	indexerBatchDelay   = 200 * time.Millisecond // rate limit between batched/paged requests
+	indexerMaxBackoff     = 60 * time.Second
+	indexerBatchDelay     = 200 * time.Millisecond // rate limit between batched/paged requests
 )
 
 // IndexFromPlayerAPI builds catalog from Xtream player_api.php (same aggregation as xtream-to-m3u.js).
@@ -232,9 +232,9 @@ func fetchLive(client *http.Client, base, baseURL, apiUser, apiPass, streamExt s
 	}
 	var streams []struct {
 		StreamID     interface{} `json:"stream_id"`
-		Name         string     `json:"name"`
+		Name         string      `json:"name"`
 		EpgChannelID interface{} `json:"epg_channel_id"`
-		StreamIcon   string     `json:"stream_icon"`
+		StreamIcon   string      `json:"stream_icon"`
 		CategoryID   interface{} `json:"category_id"`
 	}
 	if err := json.Unmarshal(body, &streams); err != nil {
@@ -291,11 +291,11 @@ func fetchVOD(client *http.Client, base, baseURL, apiUser, apiPass string) ([]ca
 	}
 	var list []struct {
 		StreamID           interface{} `json:"stream_id"`
-		Name               string     `json:"name"`
-		ContainerExtension string     `json:"container_extension"`
-		StreamIcon         string     `json:"stream_icon"`
-		Releasedate        string     `json:"releasedate"`
-		CategoryID        interface{} `json:"category_id"`
+		Name               string      `json:"name"`
+		ContainerExtension string      `json:"container_extension"`
+		StreamIcon         string      `json:"stream_icon"`
+		Releasedate        string      `json:"releasedate"`
+		CategoryID         interface{} `json:"category_id"`
 	}
 	if body != nil {
 		_ = json.Unmarshal(body, &list)
@@ -308,7 +308,7 @@ func fetchVOD(client *http.Client, base, baseURL, apiUser, apiPass string) ([]ca
 		}
 		var cats []struct {
 			CategoryID   interface{} `json:"category_id"`
-			CategoryName string     `json:"category_name"`
+			CategoryName string      `json:"category_name"`
 		}
 		if err := json.Unmarshal(catBody, &cats); err != nil {
 			return nil, fmt.Errorf("vod categories json: %w", err)
@@ -329,10 +329,10 @@ func fetchVOD(client *http.Client, base, baseURL, apiUser, apiPass string) ([]ca
 			}
 			var part []struct {
 				StreamID           interface{} `json:"stream_id"`
-				Name               string     `json:"name"`
-				ContainerExtension string     `json:"container_extension"`
-				StreamIcon         string     `json:"stream_icon"`
-				Releasedate        string     `json:"releasedate"`
+				Name               string      `json:"name"`
+				ContainerExtension string      `json:"container_extension"`
+				StreamIcon         string      `json:"stream_icon"`
+				Releasedate        string      `json:"releasedate"`
 			}
 			if json.Unmarshal(b, &part) != nil {
 				continue
@@ -345,11 +345,11 @@ func fetchVOD(client *http.Client, base, baseURL, apiUser, apiPass string) ([]ca
 				seen[sid] = true
 				list = append(list, struct {
 					StreamID           interface{} `json:"stream_id"`
-					Name               string     `json:"name"`
-					ContainerExtension string     `json:"container_extension"`
-					StreamIcon         string     `json:"stream_icon"`
-					Releasedate        string     `json:"releasedate"`
-					CategoryID        interface{} `json:"category_id"`
+					Name               string      `json:"name"`
+					ContainerExtension string      `json:"container_extension"`
+					StreamIcon         string      `json:"stream_icon"`
+					Releasedate        string      `json:"releasedate"`
+					CategoryID         interface{} `json:"category_id"`
 				}{m.StreamID, m.Name, m.ContainerExtension, m.StreamIcon, m.Releasedate, nil})
 			}
 		}
@@ -429,9 +429,9 @@ func fetchSeries(client *http.Client, base, baseURL, apiUser, apiPass string) ([
 				Episodes map[string][]struct {
 					ID                 interface{} `json:"id"`
 					EpisodeNum         interface{} `json:"episode_num"`
-					Title              string     `json:"title"`
+					Title              string      `json:"title"`
 					Season             interface{} `json:"season"`
-					ContainerExtension string     `json:"container_extension"`
+					ContainerExtension string      `json:"container_extension"`
 					Info               struct {
 						MovieImage string `json:"movie_image"`
 					} `json:"info"`
@@ -445,11 +445,11 @@ func fetchSeries(client *http.Client, base, baseURL, apiUser, apiPass string) ([
 				showName = "Series " + sid
 			}
 			series := catalog.Series{
-				ID:          "series_" + sid,
-				Title:       showName,
-				Year:        0,
-				Seasons:     nil,
-				ArtworkURL:  s.Cover,
+				ID:         "series_" + sid,
+				Title:      showName,
+				Year:       0,
+				Seasons:    nil,
+				ArtworkURL: s.Cover,
 			}
 			seasonMap := make(map[int]*catalog.Season)
 			for seasonNumStr, eps := range info.Episodes {

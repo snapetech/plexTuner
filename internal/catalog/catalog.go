@@ -9,12 +9,12 @@ import (
 // LiveChannel is a live TV channel with primary + backup stream URLs.
 // ChannelID is a stable identifier for streaming URLs (e.g. tvg-id or provider stream_id); used in /stream/{ChannelID}.
 type LiveChannel struct {
-	ChannelID   string   `json:"channel_id"`   // stable ID for /stream/{ChannelID}
+	ChannelID   string   `json:"channel_id"` // stable ID for /stream/{ChannelID}
 	GuideNumber string   `json:"guide_number"`
 	GuideName   string   `json:"guide_name"`
-	StreamURL   string   `json:"stream_url"`   // primary (first working)
+	StreamURL   string   `json:"stream_url"`  // primary (first working)
 	StreamURLs  []string `json:"stream_urls"` // primary + backups for failover
-	EPGLinked   bool     `json:"epg_linked"`   // has tvg-id / can be matched to guide
+	EPGLinked   bool     `json:"epg_linked"`  // has tvg-id / can be matched to guide
 	TVGID       string   `json:"tvg_id,omitempty"`
 }
 
@@ -28,20 +28,20 @@ type Catalog struct {
 
 // Movie is a single movie with Plex-friendly naming fields.
 type Movie struct {
-	ID        string `json:"id"`         // stable ID (e.g. from provider or hash)
-	Title     string `json:"title"`
-	Year      int    `json:"year"`
-	StreamURL string `json:"stream_url"`
+	ID         string `json:"id"` // stable ID (e.g. from provider or hash)
+	Title      string `json:"title"`
+	Year       int    `json:"year"`
+	StreamURL  string `json:"stream_url"`
 	ArtworkURL string `json:"artwork_url,omitempty"`
 }
 
 // Series is a show with seasons and episodes.
 type Series struct {
-	ID        string   `json:"id"`
-	Title     string   `json:"title"`
-	Year      int      `json:"year"`
-	Seasons   []Season `json:"seasons"`
-	ArtworkURL string  `json:"artwork_url,omitempty"`
+	ID         string   `json:"id"`
+	Title      string   `json:"title"`
+	Year       int      `json:"year"`
+	Seasons    []Season `json:"seasons"`
+	ArtworkURL string   `json:"artwork_url,omitempty"`
 }
 
 // Season holds episodes for one season.
@@ -52,12 +52,12 @@ type Season struct {
 
 // Episode is a single episode with SxxEyy and stream URL.
 type Episode struct {
-	ID        string `json:"id"`
-	SeasonNum int    `json:"season_num"`
-	EpisodeNum int   `json:"episode_num"`
-	Title     string `json:"title"`
-	Airdate   string `json:"airdate,omitempty"`
-	StreamURL string `json:"stream_url"`
+	ID         string `json:"id"`
+	SeasonNum  int    `json:"season_num"`
+	EpisodeNum int    `json:"episode_num"`
+	Title      string `json:"title"`
+	Airdate    string `json:"airdate,omitempty"`
+	StreamURL  string `json:"stream_url"`
 }
 
 // New returns an empty catalog.

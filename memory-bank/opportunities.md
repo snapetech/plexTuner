@@ -17,6 +17,7 @@ It exists to encourage quality gains without derailing the current task.
   Evidence: <link/snippet/metric>
   Suggested fix: <concrete next step>
   Risk/Scope: <low/med/high> | <fits current scope? yes/no>
-  User decision needed?: yes/no (if yes, write the question + recommended default)
+  User decision needed?: yes/no
+  If yes: 2–3 options + recommended default + what you will do if no answer
 
 ## Entries

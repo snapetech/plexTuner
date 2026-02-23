@@ -19,14 +19,14 @@ import (
 
 // M3U entry from #EXTINF line + following URL line.
 type m3uEntry struct {
-	Line     string
-	URL      string
-	Group    string
-	Name     string
-	TVGID    string
-	TVGChno  string // tvg-chno when present (stable guide number)
-	TVGName  string
-	TVGLogo  string
+	Line    string
+	URL     string
+	Group   string
+	Name    string
+	TVGID   string
+	TVGChno string // tvg-chno when present (stable guide number)
+	TVGName string
+	TVGLogo string
 }
 
 // ParseM3U fetches url and parses M3U into movies, series, and live channels.

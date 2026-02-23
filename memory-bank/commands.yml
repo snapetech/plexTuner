@@ -1,0 +1,21 @@
+# Authoritative verification commands (machine-readable).
+# CI and scripts/verify use this. Do not guess commands; update this file and AGENTS.md together.
+# See: https://github.blog/ai-and-ml/github-copilot/how-to-write-a-great-agents-md-lessons-from-over-2500-repositories/
+
+bootstrap: "go mod download"
+format: "go fmt ./..."
+lint: "go vet ./..."
+typecheck: "N/A"
+test: "go test ./..."
+integration_test: "go test -v -run Integration ./cmd/plex-tuner"
+build: "go build -o /dev/null ./cmd/plex-tuner"
+run: "go run ./cmd/plex-tuner --help"
+run_single_test: "go test -run <TestName> ./path/to/package"
+clean: "go clean -cache"
+
+# Verification order for scripts/verify (runs these in sequence)
+verify_steps:
+  - format
+  - lint
+  - test
+  - build

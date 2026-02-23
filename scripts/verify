@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Verification script: format → lint → test → build.
+# Authoritative command list: memory-bank/commands.yml (verify_steps).
+# CI should run only this script to avoid doc/CI drift.
+
+set -e
+cd "$(dirname "$0")/.."
+
+run() {
+  echo "==> $*"
+  "$@"
+}
+
+# Commands must match memory-bank/commands.yml verify_steps
+run go fmt ./...
+run go vet ./...
+run go test ./...
+run go build -o /dev/null ./cmd/plex-tuner
+
+echo "==> verify OK"

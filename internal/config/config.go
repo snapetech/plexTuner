@@ -26,15 +26,15 @@ type Config struct {
 	CatalogPath string // e.g. /var/lib/plextuner/catalog.json
 
 	// Live tuner
-	TunerCount   int
-	BaseURL      string // e.g. http://192.168.1.10:5004 for Plex to use
-	LiveEPGOnly  bool   // if true, only include channels with tvg-id (EPG-linked) in catalog
-	LiveOnly     bool   // if true, only fetch live channels from API (skip VOD and series; faster)
+	TunerCount  int
+	BaseURL     string // e.g. http://192.168.1.10:5004 for Plex to use
+	LiveEPGOnly bool   // if true, only include channels with tvg-id (EPG-linked) in catalog
+	LiveOnly    bool   // if true, only fetch live channels from API (skip VOD and series; faster)
 	// EPG prune: when true, guide.xml and M3U export only include channels with tvg-id set (reduces noise).
 	EpgPruneUnlinked bool
 	// Stream smoketest: when true, at index time probe each channel's primary URL and drop failures.
-	SmoketestEnabled    bool
-	SmoketestTimeout    time.Duration
+	SmoketestEnabled     bool
+	SmoketestTimeout     time.Duration
 	SmoketestConcurrency int
 }
 
@@ -42,20 +42,20 @@ type Config struct {
 // If ProviderUser or ProviderPass are empty, Load tries PLEX_TUNER_SUBSCRIPTION_FILE (or default path) with "Username:" / "Password:" lines.
 func Load() *Config {
 	c := &Config{
-		ProviderBaseURL:    os.Getenv("PLEX_TUNER_PROVIDER_URL"),
-		ProviderUser:       os.Getenv("PLEX_TUNER_PROVIDER_USER"),
-		ProviderPass:       os.Getenv("PLEX_TUNER_PROVIDER_PASS"),
-		M3UURL:             os.Getenv("PLEX_TUNER_M3U_URL"),
-		MountPoint:         getEnv("PLEX_TUNER_MOUNT", "/mnt/vodfs"),
-		CacheDir:           getEnv("PLEX_TUNER_CACHE", "/var/cache/plextuner"),
-		CatalogPath:        getEnv("PLEX_TUNER_CATALOG", "./catalog.json"),
-		TunerCount:         getEnvInt("PLEX_TUNER_TUNER_COUNT", 2),
-		BaseURL:            os.Getenv("PLEX_TUNER_BASE_URL"),
-		LiveEPGOnly:        getEnvBool("PLEX_TUNER_LIVE_EPG_ONLY", false),
-		LiveOnly:           getEnvBool("PLEX_TUNER_LIVE_ONLY", false),
-		EpgPruneUnlinked:   getEnvBool("PLEX_TUNER_EPG_PRUNE_UNLINKED", false),
-		SmoketestEnabled:   getEnvBool("PLEX_TUNER_SMOKETEST_ENABLED", false),
-		SmoketestTimeout:   getEnvDuration("PLEX_TUNER_SMOKETEST_TIMEOUT", 8*time.Second),
+		ProviderBaseURL:      os.Getenv("PLEX_TUNER_PROVIDER_URL"),
+		ProviderUser:         os.Getenv("PLEX_TUNER_PROVIDER_USER"),
+		ProviderPass:         os.Getenv("PLEX_TUNER_PROVIDER_PASS"),
+		M3UURL:               os.Getenv("PLEX_TUNER_M3U_URL"),
+		MountPoint:           getEnv("PLEX_TUNER_MOUNT", "/mnt/vodfs"),
+		CacheDir:             getEnv("PLEX_TUNER_CACHE", "/var/cache/plextuner"),
+		CatalogPath:          getEnv("PLEX_TUNER_CATALOG", "./catalog.json"),
+		TunerCount:           getEnvInt("PLEX_TUNER_TUNER_COUNT", 2),
+		BaseURL:              os.Getenv("PLEX_TUNER_BASE_URL"),
+		LiveEPGOnly:          getEnvBool("PLEX_TUNER_LIVE_EPG_ONLY", false),
+		LiveOnly:             getEnvBool("PLEX_TUNER_LIVE_ONLY", false),
+		EpgPruneUnlinked:     getEnvBool("PLEX_TUNER_EPG_PRUNE_UNLINKED", false),
+		SmoketestEnabled:     getEnvBool("PLEX_TUNER_SMOKETEST_ENABLED", false),
+		SmoketestTimeout:     getEnvDuration("PLEX_TUNER_SMOKETEST_TIMEOUT", 8*time.Second),
 		SmoketestConcurrency: getEnvInt("PLEX_TUNER_SMOKETEST_CONCURRENCY", 10),
 	}
 	if c.TunerCount <= 0 {
