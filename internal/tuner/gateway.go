@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"io"
 	"log"
@@ -36,8 +37,249 @@ type Gateway struct {
 	DefaultProfile      string
 	ProfileOverrides    map[string]string
 	Client              *http.Client
+	PlexPMSURL          string
+	PlexPMSToken        string
+	PlexClientAdapt     bool
 	mu                  sync.Mutex
 	inUse               int
+}
+
+type plexForwardedHints struct {
+	SessionIdentifier string
+	ClientIdentifier  string
+	Product           string
+	Platform          string
+	Device            string
+	Raw               map[string]string
+}
+
+type plexResolvedClient struct {
+	SessionIdentifier string
+	ClientIdentifier  string
+	Product           string
+	Platform          string
+	Title             string
+}
+
+func (h plexForwardedHints) empty() bool {
+	return h.SessionIdentifier == "" && h.ClientIdentifier == "" && h.Product == "" && h.Platform == "" && h.Device == ""
+}
+
+func (h plexForwardedHints) summary() string {
+	parts := []string{}
+	if h.SessionIdentifier != "" {
+		parts = append(parts, `sid="`+h.SessionIdentifier+`"`)
+	}
+	if h.ClientIdentifier != "" {
+		parts = append(parts, `cid="`+h.ClientIdentifier+`"`)
+	}
+	if h.Product != "" {
+		parts = append(parts, `product="`+h.Product+`"`)
+	}
+	if h.Platform != "" {
+		parts = append(parts, `platform="`+h.Platform+`"`)
+	}
+	if h.Device != "" {
+		parts = append(parts, `device="`+h.Device+`"`)
+	}
+	if len(h.Raw) > 0 {
+		parts = append(parts, `raw=`+strconv.Itoa(len(h.Raw)))
+	}
+	if len(parts) == 0 {
+		return "none"
+	}
+	return strings.Join(parts, " ")
+}
+
+func plexRequestHints(r *http.Request) plexForwardedHints {
+	get := func(keys ...string) string {
+		for _, k := range keys {
+			if v := strings.TrimSpace(r.Header.Get(k)); v != "" {
+				return v
+			}
+			if v := strings.TrimSpace(r.URL.Query().Get(k)); v != "" {
+				return v
+			}
+			// Also allow lowercase query/header names.
+			lk := strings.ToLower(k)
+			if v := strings.TrimSpace(r.Header.Get(lk)); v != "" {
+				return v
+			}
+			if v := strings.TrimSpace(r.URL.Query().Get(lk)); v != "" {
+				return v
+			}
+		}
+		return ""
+	}
+	raw := map[string]string{}
+	for k, vals := range r.Header {
+		kl := strings.ToLower(k)
+		if !strings.HasPrefix(kl, "x-plex-") {
+			continue
+		}
+		if len(vals) > 0 && strings.TrimSpace(vals[0]) != "" {
+			raw[k] = strings.TrimSpace(vals[0])
+		}
+	}
+	for k, vals := range r.URL.Query() {
+		kl := strings.ToLower(k)
+		if !strings.Contains(kl, "plex") && !strings.Contains(kl, "session") && !strings.Contains(kl, "client") {
+			continue
+		}
+		if len(vals) > 0 && strings.TrimSpace(vals[0]) != "" {
+			raw["q:"+k] = strings.TrimSpace(vals[0])
+		}
+	}
+	return plexForwardedHints{
+		SessionIdentifier: get("X-Plex-Session-Identifier", "session", "sessionId", "session_id"),
+		ClientIdentifier:  get("X-Plex-Client-Identifier", "X-Plex-Target-Client-Identifier", "clientIdentifier", "client_id"),
+		Product:           get("X-Plex-Product"),
+		Platform:          get("X-Plex-Platform", "X-Plex-Client-Platform"),
+		Device:            get("X-Plex-Device", "X-Plex-Device-Name"),
+		Raw:               raw,
+	}
+}
+
+func xmlStartAttr(start xml.StartElement, name string) string {
+	for _, a := range start.Attr {
+		if a.Name.Local == name {
+			return a.Value
+		}
+	}
+	return ""
+}
+
+func (g *Gateway) resolvePlexClient(ctx context.Context, hints plexForwardedHints) (*plexResolvedClient, error) {
+	if g == nil || !g.PlexClientAdapt {
+		return nil, nil
+	}
+	if strings.TrimSpace(g.PlexPMSURL) == "" || strings.TrimSpace(g.PlexPMSToken) == "" {
+		return nil, nil
+	}
+	if hints.SessionIdentifier == "" && hints.ClientIdentifier == "" {
+		return nil, nil
+	}
+	base := strings.TrimRight(strings.TrimSpace(g.PlexPMSURL), "/")
+	u := base + "/status/sessions?X-Plex-Token=" + url.QueryEscape(strings.TrimSpace(g.PlexPMSToken))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "PlexTuner/1.0")
+	client := g.Client
+	if client == nil {
+		client = httpclient.ForStreaming()
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New("pms /status/sessions status=" + strconv.Itoa(resp.StatusCode))
+	}
+	dec := xml.NewDecoder(resp.Body)
+	type candidate struct {
+		title    string
+		player   plexResolvedClient
+		session  string
+		clientID string
+	}
+	var stack []string
+	var cur *candidate
+	for {
+		tok, err := dec.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			stack = append(stack, t.Name.Local)
+			switch t.Name.Local {
+			case "Video", "Track", "Photo", "Metadata":
+				if cur == nil {
+					cur = &candidate{
+						title: xmlStartAttr(t, "title"),
+					}
+				}
+			case "Player":
+				if cur != nil {
+					cur.player.ClientIdentifier = xmlStartAttr(t, "machineIdentifier")
+					cur.player.Product = xmlStartAttr(t, "product")
+					cur.player.Platform = xmlStartAttr(t, "platform")
+					if cur.player.Platform == "" {
+						cur.player.Platform = xmlStartAttr(t, "platformTitle")
+					}
+				}
+			case "Session":
+				if cur != nil {
+					cur.session = xmlStartAttr(t, "id")
+				}
+			}
+		case xml.EndElement:
+			if len(stack) > 0 {
+				stack = stack[:len(stack)-1]
+			}
+			if cur != nil && (t.Name.Local == "Video" || t.Name.Local == "Track" || t.Name.Local == "Photo" || t.Name.Local == "Metadata") {
+				matchSID := hints.SessionIdentifier != "" && cur.session != "" && cur.session == hints.SessionIdentifier
+				matchCID := hints.ClientIdentifier != "" && cur.player.ClientIdentifier != "" && cur.player.ClientIdentifier == hints.ClientIdentifier
+				if matchSID || matchCID {
+					out := cur.player
+					out.SessionIdentifier = cur.session
+					out.Title = cur.title
+					if out.ClientIdentifier == "" {
+						out.ClientIdentifier = hints.ClientIdentifier
+					}
+					if out.SessionIdentifier == "" {
+						out.SessionIdentifier = hints.SessionIdentifier
+					}
+					return &out, nil
+				}
+				cur = nil
+			}
+		}
+	}
+	return nil, nil
+}
+
+func looksLikePlexWeb(s string) bool {
+	v := strings.ToLower(strings.TrimSpace(s))
+	return strings.Contains(v, "plex web") || strings.Contains(v, "web") || strings.Contains(v, "browser") || strings.Contains(v, "firefox") || strings.Contains(v, "chrome") || strings.Contains(v, "safari")
+}
+
+func (g *Gateway) requestAdaptation(ctx context.Context, r *http.Request, channel *catalog.LiveChannel, channelID string) (bool, string, string) {
+	hints := plexRequestHints(r)
+	log.Printf("gateway: channel=%q id=%s plex-hints %s", channel.GuideName, channelID, hints.summary())
+	// Explicit override always wins and is deterministic.
+	explicitProfile := normalizeProfileName(r.URL.Query().Get("profile"))
+	if strings.TrimSpace(r.URL.Query().Get("profile")) != "" {
+		switch explicitProfile {
+		case profilePlexSafe, profileAACCFR, profileVideoOnly, profileLowBitrate, profileDashFast:
+			return true, explicitProfile, "query-profile"
+		default:
+			return false, explicitProfile, "query-profile"
+		}
+	}
+	if !g.PlexClientAdapt {
+		return false, "", "adapt-disabled"
+	}
+	info, err := g.resolvePlexClient(ctx, hints)
+	if err != nil {
+		log.Printf("gateway: channel=%q id=%s plex-client-resolve err=%v", channel.GuideName, channelID, err)
+		return false, "", "resolve-error"
+	}
+	if info == nil {
+		return false, "", "no-forwarded-id"
+	}
+	log.Printf("gateway: channel=%q id=%s plex-client-resolved sid=%q cid=%q product=%q platform=%q title=%q",
+		channel.GuideName, channelID, info.SessionIdentifier, info.ClientIdentifier, info.Product, info.Platform, info.Title)
+	if looksLikePlexWeb(info.Product) || looksLikePlexWeb(info.Platform) {
+		return true, profilePlexSafe, "resolved-web-client"
+	}
+	return false, "", "resolved-nonweb-client"
 }
 
 // Adaptive buffer tuning: grow when client is slow (backpressure), shrink when client keeps up.
@@ -418,6 +660,10 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	forceTranscode, forcedProfile, adaptReason := g.requestAdaptation(r.Context(), r, channel, channelID)
+	if adaptReason != "" && adaptReason != "adapt-disabled" {
+		log.Printf("gateway: channel=%q id=%s adapt transcode=%t profile=%q reason=%s", channel.GuideName, channelID, forceTranscode, forcedProfile, adaptReason)
+	}
 	start := time.Now()
 	urls := channel.StreamURLs
 	if len(urls) == 0 && channel.StreamURL != "" {
@@ -516,6 +762,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			body = rewriteHLSPlaylist(body, streamURL)
 			firstSeg := firstHLSMediaLine(body)
 			transcode := g.effectiveTranscodeForChannelMeta(r.Context(), channelID, channel.GuideNumber, channel.TVGID, streamURL)
+			if forceTranscode {
+				transcode = true
+			}
 			bufferSize := g.effectiveBufferSize(transcode)
 			mode := "remux"
 			if transcode {
@@ -529,7 +778,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				channel.GuideName, channelID, len(body), firstSeg, time.Since(start).Round(time.Millisecond), mode, bufDesc)
 			log.Printf("gateway: channel=%q id=%s hls-mode transcode=%t mode=%q guide=%q tvg=%q", channel.GuideName, channelID, transcode, g.StreamTranscodeMode, channel.GuideNumber, channel.TVGID)
 			if ffmpegPath, ffmpegErr := exec.LookPath("ffmpeg"); ffmpegErr == nil {
-				if err := g.relayHLSWithFFmpeg(w, r, ffmpegPath, streamURL, channel.GuideName, channelID, channel.GuideNumber, channel.TVGID, start, transcode, bufferSize); err == nil {
+				if err := g.relayHLSWithFFmpeg(w, r, ffmpegPath, streamURL, channel.GuideName, channelID, channel.GuideNumber, channel.TVGID, start, transcode, bufferSize, forcedProfile); err == nil {
 					return
 				} else {
 					log.Printf("gateway: channel=%q id=%s ffmpeg-%s failed (falling back to go relay): %v",
@@ -567,8 +816,12 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	start time.Time,
 	transcode bool,
 	bufferBytes int,
+	forcedProfile string,
 ) error {
 	profile := g.profileForChannelMeta(channelID, guideNumber, tvgID)
+	if strings.TrimSpace(forcedProfile) != "" {
+		profile = normalizeProfileName(forcedProfile)
+	}
 
 	args := []string{
 		"-nostdin",

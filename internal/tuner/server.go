@@ -94,8 +94,14 @@ func (s *Server) Run(ctx context.Context) error {
 		TranscodeOverrides:  txOverrides,
 		DefaultProfile:      defaultProfile,
 		ProfileOverrides:    overrides,
+		PlexPMSURL:          strings.TrimSpace(os.Getenv("PLEX_TUNER_PMS_URL")),
+		PlexPMSToken:        strings.TrimSpace(os.Getenv("PLEX_TUNER_PMS_TOKEN")),
+		PlexClientAdapt:     strings.EqualFold(strings.TrimSpace(os.Getenv("PLEX_TUNER_CLIENT_ADAPT")), "1") || strings.EqualFold(strings.TrimSpace(os.Getenv("PLEX_TUNER_CLIENT_ADAPT")), "true") || strings.EqualFold(strings.TrimSpace(os.Getenv("PLEX_TUNER_CLIENT_ADAPT")), "yes"),
 	}
 	log.Printf("Gateway stream mode: transcode=%q buffer_bytes=%d", gateway.StreamTranscodeMode, gateway.StreamBufferBytes)
+	if gateway.PlexClientAdapt {
+		log.Printf("Gateway Plex client adapt enabled: pms_url=%q token_set=%t", gateway.PlexPMSURL, gateway.PlexPMSToken != "")
+	}
 	if gateway.Client == nil {
 		gateway.Client = httpclient.ForStreaming()
 	}
