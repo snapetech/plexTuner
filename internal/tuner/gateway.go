@@ -80,11 +80,13 @@ type startSignalState struct {
 	TSLikePackets int
 	HasIDR        bool
 	HasAAC        bool
+	AlignedOffset int
 }
 
 func looksLikeGoodTSStart(buf []byte) startSignalState {
 	const pkt = 188
 	st := startSignalState{}
+	st.AlignedOffset = -1
 	// Quick TS sanity and payload scan for H264 IDR + AAC/ADTS.
 	for off := 0; off+pkt <= len(buf); {
 		if buf[off] != 0x47 {
@@ -97,6 +99,19 @@ func looksLikeGoodTSStart(buf []byte) startSignalState {
 			continue
 		}
 		st.TSLikePackets++
+		if st.AlignedOffset < 0 {
+			// Prefer a packet boundary that looks stable for a few packets.
+			ok := 0
+			for k := off; k < len(buf) && ok < 4; k += pkt {
+				if k >= len(buf) || buf[k] != 0x47 {
+					break
+				}
+				ok++
+			}
+			if ok >= 3 {
+				st.AlignedOffset = off
+			}
+		}
 		p := buf[off : off+pkt]
 		afc := (p[3] >> 4) & 0x3
 		i := 4
@@ -1132,11 +1147,14 @@ func (g *Gateway) relayHLSWithFFmpeg(
 		select {
 		case pr := <-ch:
 			prefetch = pr.b
+			if pr.state.AlignedOffset > 0 && pr.state.AlignedOffset < len(prefetch) {
+				prefetch = prefetch[pr.state.AlignedOffset:]
+			}
 			if len(prefetch) > 0 {
 				log.Printf(
-					"gateway: channel=%q id=%s %s startup-gate buffered=%d min=%d max=%d timeout_ms=%d ts_pkts=%d idr=%t aac=%t",
+					"gateway: channel=%q id=%s %s startup-gate buffered=%d min=%d max=%d timeout_ms=%d ts_pkts=%d idr=%t aac=%t align=%d",
 					channelName, channelID, modeLabel, len(prefetch), startupMin, startupMax, startupTimeoutMs,
-					pr.state.TSLikePackets, pr.state.HasIDR, pr.state.HasAAC,
+					pr.state.TSLikePackets, pr.state.HasIDR, pr.state.HasAAC, pr.state.AlignedOffset,
 				)
 			}
 			if pr.err != nil && len(prefetch) == 0 {
