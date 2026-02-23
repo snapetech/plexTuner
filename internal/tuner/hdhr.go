@@ -14,6 +14,7 @@ import (
 type HDHR struct {
 	BaseURL    string // e.g. http://192.168.1.10:5004
 	TunerCount int
+	DeviceID   string // stable device id (PLEX_TUNER_DEVICE_ID); some Plex versions are picky
 	Channels   []catalog.LiveChannel
 }
 
@@ -44,6 +45,9 @@ func (h *HDHR) serveDiscover(w http.ResponseWriter) {
 		friendly = "Plex Tuner"
 	}
 	deviceID := strings.TrimSpace(os.Getenv("PLEX_TUNER_DEVICE_ID"))
+	if deviceID == "" {
+		deviceID = h.DeviceID
+	}
 	if deviceID == "" {
 		deviceID = "plextuner01"
 	}

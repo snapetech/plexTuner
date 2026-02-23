@@ -48,7 +48,14 @@ func (m *M3UServe) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("#EXTM3U url-tvg=\"" + guideURL + "\"\n"))
 	for _, e := range entries {
 		c := e.c
-		streamURL := base + "/stream/" + strconv.Itoa(e.idx)
+		channelID := strings.TrimSpace(c.ChannelID)
+		if channelID == "" {
+			channelID = c.GuideNumber
+		}
+		if channelID == "" {
+			channelID = strconv.Itoa(e.idx)
+		}
+		streamURL := base + "/stream/" + channelID
 		tvgID := strings.TrimSpace(c.TVGID)
 		if tvgID == "" {
 			tvgID = c.GuideNumber

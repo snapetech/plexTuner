@@ -209,8 +209,12 @@ func RankedPlayerAPI(ctx context.Context, baseURLs []string, user, pass string, 
 		return results[i].URL < results[j].URL
 	})
 
+	// Return only OK bases so index/run never use a host that failed probe.
 	out := make([]string, 0, len(results))
 	for _, r := range results {
+		if r.Status != StatusOK {
+			continue
+		}
 		base := providerBaseFromURL(r.URL)
 		if base != "" {
 			out = append(out, base)

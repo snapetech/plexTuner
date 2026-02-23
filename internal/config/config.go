@@ -28,6 +28,7 @@ type Config struct {
 	// Live tuner
 	TunerCount int
 	BaseURL    string // e.g. http://192.168.1.10:5004 for Plex to use
+	DeviceID   string // HDHomeRun discover.json DeviceID (stable; some Plex versions are picky about format)
 	// Stream: buffering absorbs brief upstream stalls; transcoding re-encodes (libx264/aac) for compatibility.
 	StreamBufferBytes   int    // -1 = auto (default; adaptive when transcoding). 0 = no buffer. >0 = fixed bytes.
 	StreamTranscodeMode string // "off" | "on" | "auto". auto = probe stream (ffprobe) and transcode only when codec not Plex-friendly.
@@ -41,6 +42,8 @@ type Config struct {
 	SmoketestEnabled     bool
 	SmoketestTimeout     time.Duration
 	SmoketestConcurrency int
+	SmoketestMaxChannels int           // 0 = all; else sample up to N random channels to cap runtime
+	SmoketestMaxDuration time.Duration // hard cap total smoketest runtime (e.g. 5m); 0 = 5m default
 }
 
 // Load reads config from environment. Call LoadEnvFile(".env") before Load() to use a .env file.
@@ -56,6 +59,7 @@ func Load() *Config {
 		CatalogPath:          getEnv("PLEX_TUNER_CATALOG", "./catalog.json"),
 		TunerCount:           getEnvInt("PLEX_TUNER_TUNER_COUNT", 2),
 		BaseURL:              os.Getenv("PLEX_TUNER_BASE_URL"),
+		DeviceID:             getEnv("PLEX_TUNER_DEVICE_ID", "plextuner01"),
 		StreamBufferBytes:    getEnvIntOrAuto("PLEX_TUNER_STREAM_BUFFER_BYTES", -1),
 		StreamTranscodeMode:  getEnvTranscodeMode("PLEX_TUNER_STREAM_TRANSCODE", "off"),
 		XMLTVURL:             os.Getenv("PLEX_TUNER_XMLTV_URL"),
@@ -66,12 +70,17 @@ func Load() *Config {
 		SmoketestEnabled:     getEnvBool("PLEX_TUNER_SMOKETEST_ENABLED", false),
 		SmoketestTimeout:     getEnvDuration("PLEX_TUNER_SMOKETEST_TIMEOUT", 8*time.Second),
 		SmoketestConcurrency: getEnvInt("PLEX_TUNER_SMOKETEST_CONCURRENCY", 10),
+		SmoketestMaxChannels: getEnvInt("PLEX_TUNER_SMOKETEST_MAX_CHANNELS", 0),
+		SmoketestMaxDuration: getEnvDuration("PLEX_TUNER_SMOKETEST_MAX_DURATION", 5*time.Minute),
 	}
 	if c.TunerCount <= 0 {
 		c.TunerCount = 2
 	}
 	if c.SmoketestConcurrency <= 0 {
 		c.SmoketestConcurrency = 10
+	}
+	if c.SmoketestMaxDuration <= 0 {
+		c.SmoketestMaxDuration = 5 * time.Minute
 	}
 	if c.XMLTVTimeout <= 0 {
 		c.XMLTVTimeout = 45 * time.Second
@@ -154,18 +163,8 @@ func (c *Config) M3UURLsOrBuild() []string {
 	return out
 }
 
-// DefaultProviderHosts is the same host list as xtream-to-m3u.js (Documents/code/k3s/plex/scripts):
-// try all in parallel, first success wins. get.php often returns 884/Cloudflare; player_api.php often works.
-var DefaultProviderHosts = []string{
-	"http://pod17546.cdngold.me",
-	"http://cf.supergaminghub.xyz",
-	"http://cf.business-cdn-8k.ru",
-	"http://cf.gaminghub8k.xyz",
-	"http://cf.like-cdn.com",
-	"http://pro.apps-cdn.net",
-}
-
-// ProviderURLs returns all base URLs to try (PLEX_TUNER_PROVIDER_URLS comma-separated, or single PLEX_TUNER_PROVIDER_URL, or DefaultProviderHosts when only creds are set).
+// ProviderURLs returns all base URLs to try (PLEX_TUNER_PROVIDER_URLS comma-separated, or single PLEX_TUNER_PROVIDER_URL).
+// Requires explicit URL(s); no default host list.
 func (c *Config) ProviderURLs() []string {
 	s := os.Getenv("PLEX_TUNER_PROVIDER_URLS")
 	if s != "" {
@@ -183,9 +182,6 @@ func (c *Config) ProviderURLs() []string {
 	}
 	if c.ProviderBaseURL != "" {
 		return []string{c.ProviderBaseURL}
-	}
-	if c.ProviderUser != "" && c.ProviderPass != "" {
-		return append([]string(nil), DefaultProviderHosts...)
 	}
 	return nil
 }

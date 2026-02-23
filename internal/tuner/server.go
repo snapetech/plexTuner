@@ -9,13 +9,16 @@ import (
 	"time"
 
 	"github.com/plextuner/plex-tuner/internal/catalog"
+	"github.com/plextuner/plex-tuner/internal/httpclient"
 )
 
 // Server runs the HDHR emulator + XMLTV + stream gateway.
+// Handlers are kept so UpdateChannels can refresh the channel list without restart.
 type Server struct {
 	Addr                string
 	BaseURL             string
 	TunerCount          int
+	DeviceID            string // HDHomeRun discover.json; set from PLEX_TUNER_DEVICE_ID
 	StreamBufferBytes   int    // 0 = no buffer; -1 = auto; e.g. 2097152 for 2 MiB
 	StreamTranscodeMode string // "off" | "on" | "auto"
 	Channels            []catalog.LiveChannel
@@ -24,6 +27,28 @@ type Server struct {
 	XMLTVSourceURL      string
 	XMLTVTimeout        time.Duration
 	EpgPruneUnlinked    bool // when true, guide.xml and /live.m3u only include channels with tvg-id
+
+	hdhr     *HDHR
+	gateway  *Gateway
+	xmltv    *XMLTV
+	m3uServe *M3UServe
+}
+
+// UpdateChannels updates the channel list for all handlers so -refresh can serve new lineup without restart.
+func (s *Server) UpdateChannels(live []catalog.LiveChannel) {
+	s.Channels = live
+	if s.hdhr != nil {
+		s.hdhr.Channels = live
+	}
+	if s.gateway != nil {
+		s.gateway.Channels = live
+	}
+	if s.xmltv != nil {
+		s.xmltv.Channels = live
+	}
+	if s.m3uServe != nil {
+		s.m3uServe.Channels = live
+	}
 }
 
 // Run blocks until ctx is cancelled or the server fails to start. On shutdown it stops
@@ -32,8 +57,10 @@ func (s *Server) Run(ctx context.Context) error {
 	hdhr := &HDHR{
 		BaseURL:    s.BaseURL,
 		TunerCount: s.TunerCount,
+		DeviceID:   s.DeviceID,
 		Channels:   s.Channels,
 	}
+	s.hdhr = hdhr
 	defaultProfile := defaultProfileFromEnv()
 	overridePath := os.Getenv("PLEX_TUNER_PROFILE_OVERRIDES_FILE")
 	overrides, err := loadProfileOverridesFile(overridePath)
@@ -69,13 +96,19 @@ func (s *Server) Run(ctx context.Context) error {
 		ProfileOverrides:    overrides,
 	}
 	log.Printf("Gateway stream mode: transcode=%q buffer_bytes=%d", gateway.StreamTranscodeMode, gateway.StreamBufferBytes)
+	if gateway.Client == nil {
+		gateway.Client = httpclient.ForStreaming()
+	}
+	s.gateway = gateway
 	xmltv := &XMLTV{
 		Channels:         s.Channels,
 		EpgPruneUnlinked: s.EpgPruneUnlinked,
 		SourceURL:        s.XMLTVSourceURL,
 		SourceTimeout:    s.XMLTVTimeout,
 	}
+	s.xmltv = xmltv
 	m3uServe := &M3UServe{BaseURL: s.BaseURL, Channels: s.Channels, EpgPruneUnlinked: s.EpgPruneUnlinked}
+	s.m3uServe = m3uServe
 
 	mux := http.NewServeMux()
 	mux.Handle("/discover.json", hdhr)
