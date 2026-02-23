@@ -993,16 +993,22 @@ func (g *Gateway) relayHLSWithFFmpeg(
 			)
 		case profileAACCFR:
 			codecArgs = append(codecArgs,
-				"-vf", "fps=30000/1001,format=yuv420p",
-				"-b:v", "2600k",
-				"-maxrate", "3000k",
-				"-bufsize", "6000k",
+				// Browser-oriented "boring" output to help Plex Web DASH startup.
+				"-vf", "fps=30000/1001,scale='min(854,iw)':-2,format=yuv420p",
+				"-profile:v", "baseline",
+				"-level:v", "3.1",
+				"-bf", "0",
+				"-refs", "1",
+				"-b:v", "1400k",
+				"-maxrate", "1400k",
+				"-bufsize", "1400k",
 				"-c:a", "aac",
 				"-profile:a", "aac_low",
 				"-ac", "2",
 				"-ar", "48000",
-				"-b:a", "128k",
+				"-b:a", "96k",
 				"-af", "aresample=async=1:first_pts=0",
+				"-x264-params", "repeat-headers=1:keyint=30:min-keyint=30:scenecut=0:force-cfr=1:nal-hrd=cbr:bframes=0:aud=1",
 			)
 		case profileVideoOnly:
 			codecArgs = append(codecArgs,
@@ -1057,7 +1063,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 		codecArgs = append(codecArgs,
 			"-muxrate", "3000000",
 			"-pcr_period", "20",
-			"-pat_period", "0.10",
+			"-pat_period", "0.05",
 		)
 	}
 	codecArgs = append(codecArgs,
@@ -1191,6 +1197,17 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	if enableBootstrap && bootstrapSec > 0 {
 		if err := writeBootstrapTS(r.Context(), ffmpegPath, bodyOut, channelName, channelID, bootstrapSec); err != nil {
 			log.Printf("gateway: channel=%q id=%s bootstrap failed: %v", channelName, channelID, err)
+		}
+		if joinDelayMs := getenvInt("PLEX_TUNER_WEBSAFE_JOIN_DELAY_MS", 0); joinDelayMs > 0 {
+			if joinDelayMs > 5000 {
+				joinDelayMs = 5000
+			}
+			log.Printf("gateway: channel=%q id=%s websafe-join-delay ms=%d", channelName, channelID, joinDelayMs)
+			select {
+			case <-time.After(time.Duration(joinDelayMs) * time.Millisecond):
+			case <-r.Context().Done():
+				return nil
+			}
 		}
 	}
 
