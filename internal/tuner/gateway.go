@@ -44,6 +44,103 @@ type Gateway struct {
 	inUse               int
 }
 
+func getenvInt(key string, def int) int {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return def
+	}
+	return n
+}
+
+func getenvFloat(key string, def float64) float64 {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return def
+	}
+	return f
+}
+
+func getenvBool(key string, def bool) bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	if v == "" {
+		return def
+	}
+	return v == "1" || v == "true" || v == "yes" || v == "on"
+}
+
+type startSignalState struct {
+	TSLikePackets int
+	HasIDR        bool
+	HasAAC        bool
+}
+
+func looksLikeGoodTSStart(buf []byte) startSignalState {
+	const pkt = 188
+	st := startSignalState{}
+	// Quick TS sanity and payload scan for H264 IDR + AAC/ADTS.
+	for off := 0; off+pkt <= len(buf); {
+		if buf[off] != 0x47 {
+			// Resync locally.
+			n := bytes.IndexByte(buf[off+1:], 0x47)
+			if n < 0 {
+				break
+			}
+			off += n + 1
+			continue
+		}
+		st.TSLikePackets++
+		p := buf[off : off+pkt]
+		afc := (p[3] >> 4) & 0x3
+		i := 4
+		if afc == 0 || afc == 2 { // reserved or adaptation-only
+			off += pkt
+			continue
+		}
+		if afc == 3 {
+			if i >= len(p) {
+				off += pkt
+				continue
+			}
+			alen := int(p[i])
+			i++
+			i += alen
+		}
+		if i >= len(p) {
+			off += pkt
+			continue
+		}
+		payload := p[i:]
+		// H264 Annex B IDR (NAL type 5)
+		if !st.HasIDR {
+			if bytes.Contains(payload, []byte{0x00, 0x00, 0x01, 0x65}) || bytes.Contains(payload, []byte{0x00, 0x00, 0x00, 0x01, 0x65}) {
+				st.HasIDR = true
+			}
+		}
+		// AAC ADTS syncword
+		if !st.HasAAC {
+			for j := 0; j+1 < len(payload); j++ {
+				if payload[j] == 0xFF && (payload[j+1]&0xF0) == 0xF0 {
+					st.HasAAC = true
+					break
+				}
+			}
+		}
+		if st.HasIDR && st.HasAAC && st.TSLikePackets >= 8 {
+			return st
+		}
+		off += pkt
+	}
+	return st
+}
+
 type plexForwardedHints struct {
 	SessionIdentifier string
 	ClientIdentifier  string
@@ -974,28 +1071,132 @@ func (g *Gateway) relayHLSWithFFmpeg(
 		modeLabel = "ffmpeg-transcode"
 	}
 	log.Printf("gateway: channel=%q id=%s %s profile=%s", channelName, channelID, modeLabel, profile)
+	// In web-safe transcode modes, hold back the first bytes (and optionally prepend a short
+	// deterministic H264/AAC TS bootstrap) so Plex's live DASH packager gets a clean start.
+	startupMin := getenvInt("PLEX_TUNER_WEBSAFE_STARTUP_MIN_BYTES", 65536)
+	startupMax := getenvInt("PLEX_TUNER_WEBSAFE_STARTUP_MAX_BYTES", 786432)
+	startupTimeoutMs := getenvInt("PLEX_TUNER_WEBSAFE_STARTUP_TIMEOUT_MS", 12000)
+	enableBootstrap := transcode && getenvBool("PLEX_TUNER_WEBSAFE_BOOTSTRAP", true)
+	bootstrapSec := getenvFloat("PLEX_TUNER_WEBSAFE_BOOTSTRAP_SECONDS", 1.5)
+	requireGoodStart := transcode && getenvBool("PLEX_TUNER_WEBSAFE_REQUIRE_GOOD_START", true)
+	var prefetch []byte
+	if transcode && startupMin > 0 {
+		type prefetchRes struct {
+			b     []byte
+			err   error
+			state startSignalState
+		}
+		ch := make(chan prefetchRes, 1)
+		go func() {
+			buf := make([]byte, 0, startupMin)
+			tmp := make([]byte, 32768)
+			if startupMax < startupMin {
+				startupMax = startupMin
+			}
+			for {
+				n, rerr := stdout.Read(tmp)
+				if n > 0 {
+					room := startupMax - len(buf)
+					if room > 0 {
+						if n > room {
+							n = room
+						}
+						buf = append(buf, tmp[:n]...)
+					}
+					st := looksLikeGoodTSStart(buf)
+					good := !requireGoodStart || (st.HasIDR && st.HasAAC && st.TSLikePackets >= 8)
+					if len(buf) >= startupMin && good {
+						ch <- prefetchRes{b: buf, state: st}
+						return
+					}
+					if len(buf) >= startupMax {
+						ch <- prefetchRes{b: buf, state: st}
+						return
+					}
+				}
+				if rerr != nil {
+					st := looksLikeGoodTSStart(buf)
+					if len(buf) > 0 {
+						ch <- prefetchRes{b: buf, err: rerr, state: st}
+					} else {
+						ch <- prefetchRes{err: rerr, state: st}
+					}
+					return
+				}
+			}
+		}()
+		timeout := time.Duration(startupTimeoutMs) * time.Millisecond
+		if timeout <= 0 {
+			timeout = 12 * time.Second
+		}
+		select {
+		case pr := <-ch:
+			prefetch = pr.b
+			if len(prefetch) > 0 {
+				log.Printf(
+					"gateway: channel=%q id=%s %s startup-gate buffered=%d min=%d max=%d timeout_ms=%d ts_pkts=%d idr=%t aac=%t",
+					channelName, channelID, modeLabel, len(prefetch), startupMin, startupMax, startupTimeoutMs,
+					pr.state.TSLikePackets, pr.state.HasIDR, pr.state.HasAAC,
+				)
+			}
+			if pr.err != nil && len(prefetch) == 0 {
+				_ = cmd.Process.Kill()
+				_ = cmd.Wait()
+				msg := strings.TrimSpace(stderr.String())
+				if msg == "" {
+					msg = pr.err.Error()
+				}
+				return errors.New(msg)
+			}
+		case <-time.After(timeout):
+			log.Printf("gateway: channel=%q id=%s %s startup-gate timeout after=%dms", channelName, channelID, modeLabel, startupTimeoutMs)
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			msg := strings.TrimSpace(stderr.String())
+			if msg == "" {
+				msg = "startup gate timeout"
+			}
+			return errors.New(msg)
+		case <-r.Context().Done():
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			return nil
+		}
+	}
+
 	w.Header().Set("Content-Type", "video/mp2t")
 	w.Header().Del("Content-Length")
 	w.WriteHeader(http.StatusOK)
 	bodyOut, flushBody := streamWriter(w, bufferBytes)
 	defer flushBody()
+
+	if enableBootstrap && bootstrapSec > 0 {
+		if err := writeBootstrapTS(r.Context(), ffmpegPath, bodyOut, channelName, channelID, bootstrapSec); err != nil {
+			log.Printf("gateway: channel=%q id=%s bootstrap failed: %v", channelName, channelID, err)
+		}
+	}
+
+	mainReader := io.Reader(stdout)
+	if len(prefetch) > 0 {
+		mainReader = io.MultiReader(bytes.NewReader(prefetch), stdout)
+	}
 	dst := io.Writer(bodyOut)
 	if fw, ok := w.(http.Flusher); ok {
 		dst = &firstWriteLogger{
-			w:           flushWriter{w: w, f: fw},
+			w:           flushWriter{w: bodyOut, f: fw},
 			channelName: channelName,
 			channelID:   channelID,
 			start:       start,
 		}
 	} else {
 		dst = &firstWriteLogger{
-			w:           w,
+			w:           bodyOut,
 			channelName: channelName,
 			channelID:   channelID,
 			start:       start,
 		}
 	}
-	n, copyErr := io.Copy(dst, stdout)
+	n, copyErr := io.Copy(dst, mainReader)
 	waitErr := cmd.Wait()
 
 	if r.Context().Err() != nil {
@@ -1045,6 +1246,73 @@ func (fw flushWriter) Write(p []byte) (int, error) {
 		fw.f.Flush()
 	}
 	return n, err
+}
+
+func writeBootstrapTS(ctx context.Context, ffmpegPath string, dst io.Writer, channelName, channelID string, seconds float64) error {
+	if seconds <= 0 {
+		return nil
+	}
+	if seconds > 5 {
+		seconds = 5
+	}
+	args := []string{
+		"-nostdin",
+		"-hide_banner",
+		"-loglevel", "error",
+		"-f", "lavfi", "-i", "color=c=black:s=1280x720:r=30000/1001",
+		"-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+		"-t", strconv.FormatFloat(seconds, 'f', 2, 64),
+		"-shortest",
+		"-map", "0:v:0",
+		"-map", "1:a:0",
+		"-c:v", "libx264",
+		"-preset", "ultrafast",
+		"-tune", "zerolatency",
+		"-pix_fmt", "yuv420p",
+		"-g", "30",
+		"-keyint_min", "30",
+		"-sc_threshold", "0",
+		"-x264-params", "repeat-headers=1:keyint=30:min-keyint=30:scenecut=0:force-cfr=1:nal-hrd=cbr",
+		"-b:v", "900k",
+		"-maxrate", "900k",
+		"-bufsize", "900k",
+		"-c:a", "aac",
+		"-profile:a", "aac_low",
+		"-ac", "2",
+		"-ar", "48000",
+		"-b:a", "96k",
+		"-af", "aresample=async=1:first_pts=0",
+		"-flush_packets", "1",
+		"-muxdelay", "0",
+		"-muxpreload", "0",
+		"-mpegts_flags", "+resend_headers+pat_pmt_at_frames+initial_discontinuity",
+		"-f", "mpegts",
+		"pipe:1",
+	}
+	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	n, copyErr := io.Copy(dst, stdout)
+	waitErr := cmd.Wait()
+	if copyErr != nil {
+		return copyErr
+	}
+	if waitErr != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = waitErr.Error()
+		}
+		return errors.New(msg)
+	}
+	log.Printf("gateway: channel=%q id=%s bootstrap-ts bytes=%d dur=%.2fs", channelName, channelID, n, seconds)
+	return nil
 }
 
 func (g *Gateway) relayHLSAsTS(
