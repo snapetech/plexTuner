@@ -2,7 +2,7 @@
 
 **IPTV-to-Plex bridge.** Index M3U or Xtream Codes (player_api) sources, build a catalog, and expose live (and optional VOD) as an HDHomeRun-style tuner so Plex DVR can use it.
 
-- **Mirrored:** [GitLab](https://gitlab.home/keith/plexTuner) · [GitHub](https://github.com/snapetech/repoTemplate) (same codebase).
+- **Mirrored:** [GitLab](https://gitlab.home/keith/plexTuner) · [GitHub](https://github.com/snapetech/plexTuner) (same codebase).
 
 ---
 
