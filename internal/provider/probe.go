@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -150,14 +151,72 @@ func ProbePlayerAPI(ctx context.Context, baseURL, user, pass string, client *htt
 
 // FirstWorkingPlayerAPI tries each base URL with player_api.php; returns the first base URL that returns OK.
 func FirstWorkingPlayerAPI(ctx context.Context, baseURLs []string, user, pass string, client *http.Client) string {
-	for _, base := range baseURLs {
-		if base == "" {
-			continue
-		}
-		r := ProbePlayerAPI(ctx, base, user, pass, client)
-		if r.Status == StatusOK {
-			return strings.TrimSuffix(r.URL, "/")
+	ranked := RankedPlayerAPI(ctx, baseURLs, user, pass, client)
+	if len(ranked) == 0 {
+		return ""
+	}
+	return ranked[0]
+}
+
+// maxConcurrentProbes limits parallel player_api probes to avoid hammering many hosts at once.
+const maxConcurrentProbes = 10
+
+// RankedPlayerAPI probes every base URL (one request per host), sorts by OK then latency, and returns
+// base URLs best-first. Non-abusive: one GET per host, same timeout as single probe; concurrency capped.
+// Use the first for indexing; store all in channel StreamURLs so the gateway can try 2nd/3rd on failure.
+func RankedPlayerAPI(ctx context.Context, baseURLs []string, user, pass string, client *http.Client) []string {
+	var clean []string
+	for _, b := range baseURLs {
+		b = strings.TrimSpace(strings.TrimSuffix(b, "/"))
+		if b != "" {
+			clean = append(clean, b)
 		}
 	}
-	return ""
+	if len(clean) == 0 {
+		return nil
+	}
+	results := make([]Result, len(clean))
+	sem := make(chan struct{}, maxConcurrentProbes)
+	var wg sync.WaitGroup
+	for i, base := range clean {
+		i, base := i, base
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			results[i] = ProbePlayerAPI(ctx, base, user, pass, client)
+		}()
+	}
+	wg.Wait()
+
+	sort.Slice(results, func(i, j int) bool {
+		okI := results[i].Status == StatusOK
+		okJ := results[j].Status == StatusOK
+		if okI != okJ {
+			return okI
+		}
+		if okI {
+			return results[i].LatencyMs < results[j].LatencyMs
+		}
+		return results[i].URL < results[j].URL
+	})
+
+	out := make([]string, 0, len(results))
+	for _, r := range results {
+		base := providerBaseFromURL(r.URL)
+		if base != "" {
+			out = append(out, base)
+		}
+	}
+	return out
+}
+
+// providerBaseFromURL returns the scheme+host from a URL (full or base). Used to normalize Result.URL to base.
+func providerBaseFromURL(s string) string {
+	u, err := url.Parse(s)
+	if err != nil {
+		return strings.TrimSuffix(s, "/")
+	}
+	return strings.TrimSuffix(u.Scheme+"://"+u.Host, "/")
 }

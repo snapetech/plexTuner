@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestProbeOne_ok(t *testing.T) {
@@ -157,5 +158,40 @@ func TestFirstWorkingPlayerAPI(t *testing.T) {
 	got := FirstWorkingPlayerAPI(ctx, urls, "u", "p", nil)
 	if got != ok.URL {
 		t.Errorf("FirstWorkingPlayerAPI = %q, want %q", got, ok.URL)
+	}
+}
+
+func TestRankedPlayerAPI_allRankedBestFirst(t *testing.T) {
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(20 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"user_info":{}}`))
+	}))
+	defer slow.Close()
+	fast := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"user_info":{}}`))
+	}))
+	defer fast.Close()
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(503)
+	}))
+	defer bad.Close()
+
+	ctx := context.Background()
+	urls := []string{bad.URL, slow.URL, fast.URL}
+	ranked := RankedPlayerAPI(ctx, urls, "u", "p", nil)
+	if len(ranked) != 3 {
+		t.Fatalf("RankedPlayerAPI: want 3 bases, got %d", len(ranked))
+	}
+	// Best first (fast), then slow, then bad (non-OK)
+	if ranked[0] != fast.URL {
+		t.Errorf("ranked[0] = %q, want fast %q", ranked[0], fast.URL)
+	}
+	if ranked[1] != slow.URL {
+		t.Errorf("ranked[1] = %q, want slow %q", ranked[1], slow.URL)
+	}
+	if ranked[2] != bad.URL {
+		t.Errorf("ranked[2] = %q, want bad %q", ranked[2], bad.URL)
 	}
 }

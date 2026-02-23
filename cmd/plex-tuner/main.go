@@ -30,6 +30,29 @@ import (
 	"github.com/plextuner/plex-tuner/internal/vodfs"
 )
 
+// streamURLsFromRankedBases returns a slice of full stream URLs by combining each ranked base with the path from streamURL.
+// So if streamURL is "http://best.com/live/user/pass/1.m3u8" and ranked is [best, 2nd, 3rd], returns [best+path, 2nd+path, 3rd+path].
+// Gateway will try them in order; when best fails it uses 2nd, then 3rd.
+func streamURLsFromRankedBases(streamURL string, rankedBases []string) []string {
+	if len(rankedBases) == 0 {
+		return nil
+	}
+	u, err := url.Parse(streamURL)
+	if err != nil {
+		return []string{streamURL}
+	}
+	path := u.Path
+	if u.RawQuery != "" {
+		path += "?" + u.RawQuery
+	}
+	out := make([]string, 0, len(rankedBases))
+	for _, base := range rankedBases {
+		base = strings.TrimSuffix(base, "/")
+		out = append(out, base+path)
+	}
+	return out
+}
+
 func main() {
 	_ = config.LoadEnvFile(".env")
 	log.SetFlags(log.LstdFlags)
@@ -97,11 +120,25 @@ func main() {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
-			apiBase := provider.FirstWorkingPlayerAPI(ctx, baseURLs, cfg.ProviderUser, cfg.ProviderPass, nil)
-			if apiBase != "" {
-				log.Printf("Using player_api.php on %s (same as xtream-to-m3u.js)", apiBase)
+			ranked := provider.RankedPlayerAPI(ctx, baseURLs, cfg.ProviderUser, cfg.ProviderPass, nil)
+			var apiBase string
+			if len(ranked) > 0 {
+				apiBase = ranked[0]
+				log.Printf("Ranked %d provider(s): using best %s (2nd/3rd used as stream backups)", len(ranked), apiBase)
 				movies, series, live, err = indexer.IndexFromPlayerAPI(apiBase, cfg.ProviderUser, cfg.ProviderPass, "m3u8", cfg.LiveOnly, baseURLs, nil)
-			} else {
+				if err == nil && len(live) > 0 {
+					for i := range live {
+						urls := streamURLsFromRankedBases(live[i].StreamURL, ranked)
+						if len(urls) > 0 {
+							live[i].StreamURLs = urls
+							if live[i].StreamURL == "" {
+								live[i].StreamURL = urls[0]
+							}
+						}
+					}
+				}
+			}
+			if apiBase == "" {
 				// Fallback: try get.php on each host
 				m3uURLs := cfg.M3UURLsOrBuild()
 				for _, u := range m3uURLs {
@@ -228,6 +265,7 @@ func main() {
 		if path == "" {
 			path = cfg.CatalogPath
 		}
+		var runApiBase string // best ranked provider from index; used for health check
 		// 1) Refresh catalog at startup unless skipped (same strategy as xtream-to-m3u.js: player_api first)
 		if !*runSkipIndex {
 			var movies []catalog.Movie
@@ -241,10 +279,23 @@ func main() {
 					log.Print("Refreshing catalog ...")
 					ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 					defer cancel()
-					apiBase = provider.FirstWorkingPlayerAPI(ctx, baseURLs, cfg.ProviderUser, cfg.ProviderPass, nil)
-					if apiBase != "" {
-						log.Printf("Using player_api.php on %s (same as xtream-to-m3u.js)", apiBase)
+					ranked := provider.RankedPlayerAPI(ctx, baseURLs, cfg.ProviderUser, cfg.ProviderPass, nil)
+					if len(ranked) > 0 {
+						apiBase = ranked[0]
+						runApiBase = apiBase
+						log.Printf("Ranked %d provider(s): using best %s (2nd/3rd used as stream backups)", len(ranked), apiBase)
 						movies, series, live, err = indexer.IndexFromPlayerAPI(apiBase, cfg.ProviderUser, cfg.ProviderPass, "m3u8", cfg.LiveOnly, baseURLs, nil)
+						if err == nil && len(live) > 0 {
+							for i := range live {
+								urls := streamURLsFromRankedBases(live[i].StreamURL, ranked)
+								if len(urls) > 0 {
+									live[i].StreamURLs = urls
+									if live[i].StreamURL == "" {
+										live[i].StreamURL = urls[0]
+									}
+								}
+							}
+						}
 					}
 				}
 			} else {
@@ -299,10 +350,18 @@ func main() {
 			log.Printf("Catalog saved: %d movies, %d series, %d live (%d EPG-linked, %d with backups)", len(movies), len(series), len(live), epgLinked, withBackups)
 		}
 
-		// 2) Health check provider unless skipped (player_api URL when we have creds)
+		// 2) Health check provider unless skipped (use best ranked base when we just indexed, else first configured)
 		var checkURL string
-		if baseURLs := cfg.ProviderURLs(); len(baseURLs) > 0 && cfg.ProviderUser != "" && cfg.ProviderPass != "" {
-			checkURL = strings.TrimSuffix(baseURLs[0], "/") + "/player_api.php?username=" + url.QueryEscape(cfg.ProviderUser) + "&password=" + url.QueryEscape(cfg.ProviderPass)
+		if cfg.ProviderUser != "" && cfg.ProviderPass != "" {
+			base := runApiBase
+			if base == "" {
+				if baseURLs := cfg.ProviderURLs(); len(baseURLs) > 0 {
+					base = strings.TrimSuffix(baseURLs[0], "/")
+				}
+			}
+			if base != "" {
+				checkURL = base + "/player_api.php?username=" + url.QueryEscape(cfg.ProviderUser) + "&password=" + url.QueryEscape(cfg.ProviderPass)
+			}
 		}
 		if !*runSkipHealth && checkURL != "" {
 			log.Print("Checking provider ...")
@@ -366,10 +425,22 @@ func main() {
 					apiBase := ""
 					if len(baseURLs) > 0 {
 						ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-						apiBase = provider.FirstWorkingPlayerAPI(ctx, baseURLs, cfg.ProviderUser, cfg.ProviderPass, nil)
+						ranked := provider.RankedPlayerAPI(ctx, baseURLs, cfg.ProviderUser, cfg.ProviderPass, nil)
 						cancel()
-						if apiBase != "" {
+						if len(ranked) > 0 {
+							apiBase = ranked[0]
 							movies, series, live, err = indexer.IndexFromPlayerAPI(apiBase, cfg.ProviderUser, cfg.ProviderPass, "m3u8", cfg.LiveOnly, baseURLs, nil)
+							if err == nil && len(live) > 0 {
+								for i := range live {
+									urls := streamURLsFromRankedBases(live[i].StreamURL, ranked)
+									if len(urls) > 0 {
+										live[i].StreamURLs = urls
+										if live[i].StreamURL == "" {
+											live[i].StreamURL = urls[0]
+										}
+									}
+								}
+							}
 						}
 					}
 					if err != nil || apiBase == "" {
@@ -488,6 +559,13 @@ func main() {
 			log.Printf("    player_api  %s  HTTP %d  %dms", apiR.Status, apiR.StatusCode, apiR.LatencyMs)
 		}
 		log.Printf("--- get.php: %d OK  |  player_api: %d OK ---", len(getOK), len(apiOK))
+		ranked := provider.RankedPlayerAPI(ctx, baseURLs, user, pass, nil)
+		if len(ranked) > 0 {
+			log.Printf("Ranked order (best first; index uses #1, stream failover tries #2, #3, …):")
+			for i, base := range ranked {
+				log.Printf("  %d. %s", i+1, base)
+			}
+		}
 		if len(getOK) > 0 {
 			log.Printf("Use get.php URL from: %s", getOK[0])
 		}

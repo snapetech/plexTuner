@@ -8,7 +8,7 @@ Short feature overview. Full reference: **[docs/features.md](docs/features.md)**
 
 - **M3U URL** — Single M3U via URL (e.g. provider `get.php`). Live channels and optional VOD/series.
 - **Xtream player_api** — First-class: live, VOD movies, series from `player_api.php`. Same approach as xtream-to-m3u.js; we prefer non-Cloudflare hosts for stream URLs and use `.m3u8` for playback.
-- **Multi-host** — `PLEX_TUNER_PROVIDER_URLS`: try each URL; first HTTP 200 wins. Fallback to get.php per host.
+- **Multi-host (ranked)** — `PLEX_TUNER_PROVIDER_URLS`: we **probe all** (one request per host), rank by OK then latency, use best for indexing and **fill each channel’s backup URLs** with 2nd, 3rd, … so the gateway tries them on failure instead of dying.
 - **Subscription file** — Creds from a file (`Username:` / `Password:`). Env or default `~/Documents/iptv.subscription.2026.txt`.
 - **Live-only / EPG-only / Smoketest** — Live-only skips VOD/series; EPG-only keeps channels with tvg-id; smoketest drops channels whose stream fails at index time.
 

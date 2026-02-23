@@ -17,7 +17,7 @@ Canonical list of features. See [README](../README.md) for quick start and [comp
 |---------|-------------|
 | **M3U URL** | Fetch a single M3U via URL (e.g. provider `get.php?username=...&password=...&type=m3u_plus&output=ts`). Parsed for live channels and optional VOD/series when present. |
 | **Xtream player_api** | First-class indexing from `player_api.php`: live, VOD movies, series. Same strategy as xtream-to-m3u.js: auth → server_info → prefer non-Cloudflare host for stream URLs, `.m3u8` for playback. |
-| **Multi-host (first OK wins)** | Multiple provider base URLs (e.g. `PLEX_TUNER_PROVIDER_URLS=http://h1,http://h2`). We try player_api on each; first HTTP 200 wins. Fallback: get.php on each host. |
+| **Multi-host (ranked, all probed)** | Multiple provider base URLs. We **probe every host** (one player_api request each, concurrency capped), rank OK-by-latency then non-OK, use best for indexing and **set each channel’s StreamURLs to [best, 2nd, 3rd, …]** so the gateway fails over to 2nd/3rd instead of dying. Non-abusive: one GET per host. |
 | **Subscription file** | Credentials can be read from a file (e.g. `iptv.subscription.2026.txt`) with `Username:` and `Password:` lines. Env `PLEX_TUNER_SUBSCRIPTION_FILE` or default `~/Documents/iptv.subscription.2026.txt`. |
 | **Live-only mode** | `PLEX_TUNER_LIVE_ONLY=true`: only fetch live channels from API (skip VOD and series); faster indexing. |
 | **EPG-linked only** | `PLEX_TUNER_LIVE_EPG_ONLY=true`: only include channels that have `tvg-id` (EPG link) in the catalog. |
