@@ -20,37 +20,64 @@ id_ed25519
 id_ed25519.*
 
 # =========================
-# Go build artifacts
+# Build / dist (any language)
 # =========================
-# If you build into these directories
 /bin/
 /dist/
 /out/
 /build/
 
-# Go outputs
+# =========================
+# Go
+# =========================
 *.exe
 *.dll
 *.so
 *.dylib
 *.test
 *.out
+go.work
 
-# Coverage
+# =========================
+# Node
+# =========================
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.npm
+.yarn-integrity
+.pnp.*
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+ENV/
+*.egg-info/
+.eggs/
+
+# =========================
+# Rust
+# =========================
+target/
+
+# =========================
+# Coverage / profiles (any language)
+# =========================
 coverage/
 cover.out
 coverage.out
 coverage.txt
-
-# Profiles / benchmarking
 *.prof
 *.pprof
 cpu.prof
 mem.prof
 trace.out
-
-# Workspace (multi-module)
-go.work
 
 # =========================
 # Logs / temp files
@@ -96,9 +123,3 @@ compose.override.yml
 *.sqlite3
 *.sqlite-shm
 *.sqlite-wal
-
-# =========================
-# Template default binaries (remove or adjust for your app)
-# =========================
-hello
-app

@@ -1,13 +1,14 @@
-# Example Docker Compose for the default app. Replace with your service.
-# Usage: docker compose up -d
+# Plex Tuner: IPTV to Plex bridge. Usage: docker compose up -d
 
 services:
-  app:
+  plex-tuner:
     build: .
-    image: app:latest
-    command: ["./hello"]
-    # ports:
-    #   - "8080:8080"
-    # environment:
-    #   - APP_ENV=production
+    image: plex-tuner:latest
+    ports:
+      - "8080:8080"
+    command: ["plex-tuner", "-addr", ":8080"]
     restart: unless-stopped
+    # Optional: mount catalog and index on start
+    # command: ["plex-tuner", "-addr", ":8080", "-m3u", "https://example.com/playlist.m3u", "-catalog", "/data/catalog.json"]
+    # volumes:
+    #   - ./data:/data

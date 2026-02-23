@@ -6,9 +6,9 @@ First place to look before editing. Keeps agents from thrashing.
 
 | Path | Purpose |
 |------|--------|
-| **`cmd/hello/`** | Default app. Replace with your own `cmd/` entrypoint. |
 | **`AGENTS.md`** | Agent instructions; **`memory-bank/`** = state + process. |
 | **`docs/index.md`** | Doc map (Diátaxis). |
+| **`scripts/verify-steps.sh`** | Project verification (format/lint/test/build); add your stack here. |
 
 ## No-go zones
 
@@ -18,5 +18,5 @@ First place to look before editing. Keeps agents from thrashing.
 
 ## Verification
 
-- **`scripts/verify`** — Runs format, lint, test, build (see `memory-bank/commands.yml`).
+- **`scripts/verify`** — Runs `scripts/verify-steps.sh` if present (any language).
 - CI runs only `scripts/verify`.

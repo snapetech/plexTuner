@@ -1,45 +1,46 @@
 #!/usr/bin/env bash
 # Init script for "Use this template." Replaces placeholders so the repo is yours.
-# Usage: ./scripts/init-template --module MODULE [--project NAME] [--binary BIN] [--owner-email EMAIL]
-# Example: ./scripts/init-template --module github.com/myorg/mysvc --project "My Service" --binary mysvc --owner-email me@example.com
+# Usage: ./scripts/init-template --repo REPO_URL [--project NAME] [--owner-email EMAIL]
+# Example: ./scripts/init-template --repo https://github.com/myorg/myrepo --project "My Project" --owner-email me@example.com
 
 set -e
 cd "$(dirname "$0")/.."
 
-MODULE=""
+REPO=""
 PROJECT=""
-BINARY="hello"
 OWNER_EMAIL=""
 
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --module)   MODULE="$2";   shift 2 ;;
-    --project)  PROJECT="$2";  shift 2 ;;
-    --binary)   BINARY="$2";   shift 2 ;;
+    --repo)        REPO="$2";   shift 2 ;;
+    --project)     PROJECT="$2"; shift 2 ;;
     --owner-email) OWNER_EMAIL="$2"; shift 2 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
 
-if [[ -z "$MODULE" ]]; then
-  echo "Usage: $0 --module MODULE [--project NAME] [--binary BIN] [--owner-email EMAIL]"
-  echo "  --module   Go module path (e.g. github.com/org/repo)"
-  echo "  --project  Human-readable project name"
-  echo "  --binary   Default binary name under cmd/ (default: hello)"
-  echo "  --owner-email  Email for CODEOWNERS"
+if [[ -z "$REPO" ]]; then
+  echo "Usage: $0 --repo REPO_URL [--project NAME] [--owner-email EMAIL]"
+  echo "  --repo        Repo URL (e.g. https://github.com/org/repo or git@github.com:org/repo.git)"
+  echo "  --project     Human-readable project name"
+  echo "  --owner-email Email for CODEOWNERS"
   exit 1
 fi
 
-echo "==> Setting Go module to $MODULE"
-go mod edit -module "$MODULE"
+echo "==> Setting repo to $REPO"
+
+# Update README repo link if we have a simple pattern (optional)
+if [[ -n "$REPO" ]] && [[ -f README.md ]]; then
+  # Placeholder replacement can be done here if README had a REPO_URL placeholder
+  true
+fi
 
 if [[ -n "$OWNER_EMAIL" ]]; then
   echo "==> Updating .github/CODEOWNERS"
-  # Ensure CODEOWNERS uses the given email
   if [[ -f .github/CODEOWNERS ]]; then
     sed -i.bak "s|* .*|* $OWNER_EMAIL|" .github/CODEOWNERS
     rm -f .github/CODEOWNERS.bak
   fi
 fi
 
-echo "==> Done. Next: replace YOUR_HOST/YOUR_ORG/your-repo in docs/how-to/first-push.md, run ./scripts/verify"
+echo "==> Done. Next: replace YOUR_HOST/YOUR_ORG/your-repo in docs/how-to/first-push.md, add scripts/verify-steps.sh, run ./scripts/verify"

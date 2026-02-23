@@ -3,9 +3,9 @@ WORKDIR /src
 COPY go.mod go.sum* ./
 RUN go mod download 2>/dev/null || true
 COPY . .
-RUN CGO_ENABLED=0 go build -o /app ./cmd/hello
+RUN CGO_ENABLED=0 go build -o /app ./cmd/plex-tuner
 
 FROM alpine:3.19
 RUN apk add --no-cache ca-certificates
-COPY --from=build /app /usr/local/bin/hello
-ENTRYPOINT ["hello"]
+COPY --from=build /app /usr/local/bin/plex-tuner
+ENTRYPOINT ["plex-tuner"]

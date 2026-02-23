@@ -1,20 +1,21 @@
 # Authoritative verification commands (machine-readable).
-# CI and scripts/verify use this. Do not guess commands; update this file and AGENTS.md together.
+# CI runs scripts/verify, which runs scripts/verify-steps.sh.
+# Define your own format/lint/test/build in verify-steps.sh and keep this file in sync for agent reference.
 # See: https://github.blog/ai-and-ml/github-copilot/how-to-write-a-great-agents-md-lessons-from-over-2500-repositories/
 
-# Template: no hardcoded app name. Builds all cmd/*. Replace __BINARY__ after init.
-bootstrap: "go mod download"
-format: "go fmt ./..."
-lint: "go vet ./..."
+# Example entries (replace with your stack). Use "N/A" to skip a step.
+bootstrap: "N/A"
+format: "N/A"
+lint: "N/A"
 typecheck: "N/A"
-test: "go test ./..."
+test: "N/A"
 integration_test: "N/A"
-build: "go build -o /dev/null ./cmd/..."
-run: "go run ./cmd/hello"
-run_single_test: "go test -run <TestName> ./path/to/package"
-clean: "go clean -cache"
+build: "N/A"
+run: "N/A"
+run_single_test: "N/A"
+clean: "N/A"
 
-# Verification order for scripts/verify (runs these in sequence)
+# Verification order for scripts/verify-steps.sh (suggested; implement in that script)
 verify_steps:
   - format
   - lint

@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Example verify steps (any language). Copy to scripts/verify-steps.sh and edit.
+# Each command must succeed (set -e). Keep memory-bank/commands.yml in sync.
+
+set -e
+cd "$(dirname "$0")/.."
+
+# ----- Go -----
+# run go fmt ./...
+# run go vet ./...
+# run go test ./...
+# run go build -o /dev/null ./cmd/...
+
+# ----- Node -----
+# npm ci
+# npm run lint
+# npm test
+# npm run build
+
+# ----- Python -----
+# pip install -e '.[dev]'  # or uv/poetry
+# ruff check .
+# pytest
+# pip install -e . && your-app --help
+
+# ----- Rust -----
+# cargo fmt -- --check
+# cargo clippy
+# cargo test
+# cargo build
+
+# ----- Generic: uncomment and replace with your commands -----
+echo "Add your format/lint/test/build above, then remove this line."

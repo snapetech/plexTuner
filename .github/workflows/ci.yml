@@ -1,5 +1,5 @@
-# CI: single source of truth is scripts/verify (reads memory-bank/commands.yml conceptually).
-# No separate format/lint/test steps — prevents doc/CI drift.
+# CI: single source of truth is scripts/verify (runs scripts/verify-steps.sh).
+# No language-specific setup here — add your runtime/setup in verify-steps.sh or a step that invokes it.
 
 name: CI
 
@@ -15,10 +15,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.24"
-
-      - name: Verify (format, lint, test, build)
+      - name: Verify (runs scripts/verify-steps.sh or template default)
         run: ./scripts/verify

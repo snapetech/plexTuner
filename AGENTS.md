@@ -1,4 +1,4 @@
-# Agent instructions — Agentic Go Template
+# Agent instructions — Agentic Repo Template
 
 Instructions for AI agents and maintainers working on this repo. After "Use this template," run `scripts/init-template` and replace placeholders (see [TEMPLATE.md](TEMPLATE.md)).
 
@@ -8,16 +8,9 @@ Instructions for AI agents and maintainers working on this repo. After "Use this
 
 ## Commands (authoritative)
 
-Do not guess commands. Use **`memory-bank/commands.yml`** (machine-readable). CI runs `scripts/verify`, which runs format → lint → test → build from that file.
+Do not guess commands. Use **`memory-bank/commands.yml`** (machine-readable). CI runs `scripts/verify`, which runs **`scripts/verify-steps.sh`** if present (format → lint → test → build or whatever the project defines).
 
-| Step   | Command |
-|--------|---------|
-| Format | `go fmt ./...` |
-| Lint   | `go vet ./...` |
-| Test   | `go test ./...` |
-| Build  | `go build -o /dev/null ./cmd/...` |
-
-Default app: `cmd/hello`. Other commands under `cmd/*` are built by verify. Update `memory-bank/commands.yml` if you add integration tests or a different default run target.
+If `scripts/verify-steps.sh` is missing, verify exits success so the template stays green until you add your own checks. Update **`memory-bank/commands.yml`** when you add or change verification steps.
 
 ---
 
@@ -30,12 +23,12 @@ Default app: `cmd/hello`. Other commands under `cmd/*` are built by verify. Upda
 | File | Purpose |
 |------|--------|
 | **`memory-bank/current_task.md`** | What is being worked on *right now*: goal, scope, and next steps. Update at session start and when focus changes so the next agent (or you later) knows where things left off. |
-| **`memory-bank/known_issues.md`** | Known bugs, limitations, and design tradeoffs. Add when you discover or fix something non-obvious so others don’t re-fight the same battles. |
+| **`memory-bank/known_issues.md`** | Known bugs, limitations, and design tradeoffs. Add when you discover or fix something non-obvious so others don't re-fight the same battles. |
 | **`memory-bank/recurring_loops.md`** | **Critical:** Recurring agentic loops, bugfix loops, and hard-to-solve problems that keep coming back. Document them here with: what keeps happening, why it's tricky, and what actually works. Future agents should read this first to avoid repeating the same mistakes and to get early warnings about fragile areas. |
 | **`memory-bank/opportunities.md`** | Lightweight backlog for security/perf/reliability/maintainability/operability discoveries. File out-of-scope improvements here; raise to user in summary. |
 | **`memory-bank/task_history.md`** | Append-only log of completed tasks (summary, verification, opportunities filed). |
 | **`memory-bank/repo_map.md`** | Navigation: main entrypoints, key modules, hot paths, no-go zones. Check before wandering. |
-| **`memory-bank/commands.yml`** | Machine-readable verification commands; `scripts/verify` runs them. |
+| **`memory-bank/commands.yml`** | Machine-readable verification commands; `scripts/verify` runs `scripts/verify-steps.sh` (which should align with this file). |
 | **`memory-bank/code_quality.md`** | Code and doc quality: "done" includes doc updates when behavior changes; docs as code. |
 | **`memory-bank/work_breakdown.md`** | Multi-PR epics only: WBS + story list + PR plan. Use when >1 PR or scope warrants it; see guardrail below. |
 
@@ -45,10 +38,10 @@ Doc layout (Diátaxis): **`docs/index.md`** (tutorials, how-to, reference, expla
 
 - **At session start:** Read `current_task.md`, `known_issues.md`, `recurring_loops.md`, and `repo_map.md` (navigation) before making changes.
 - **When taking on work:** Set or update `current_task.md` (goal, scope, next step).
-- **When hitting a recurring or painful issue:** Add or update `recurring_loops.md` with the pattern and the resolution (or “still open”).
+- **When hitting a recurring or painful issue:** Add or update `recurring_loops.md` with the pattern and the resolution (or "still open").
 - **When discovering a limitation or bug:** Add to `known_issues.md` with enough context to reproduce or work around.
 
-Phrase entries so that **another agent** can act on them: concise, actionable, and with “why” where it helps.
+Phrase entries so that **another agent** can act on them: concise, actionable, and with "why" where it helps.
 
 ### Work breakdown (multi-PR only) — guardrail
 
@@ -94,7 +87,7 @@ Policy:
 
 **Scope guard (no drive-by refactors):** If it isn't in In/Out, don't touch it — file it as an opportunity. Keeps improvement-hunting from becoming a refactor spree.
 
-**Definition of done:** Done = green verification commands + task_history entry + docs updated if behavior changed + opportunities filed if discovered.
+**Definition of done:** Done = green verification + task_history entry + docs updated if behavior changed + opportunities filed if discovered.
 
 ---
 
@@ -104,23 +97,23 @@ Some issues show up again and again: agents or humans fix something, then the sa
 
 Examples of what to record there:
 
-- **Agentic loops:** e.g. “Agent repeatedly changes X to fix Y, which breaks Z; the real fix is W.”
-- **Bugfix loops:** e.g. “Bug in component A keeps reappearing because B assumes C; document that B must never assume C.”
-- **Hard-to-solve / easy-to-regress:** e.g. “Component A assumes B is immutable; changing B at runtime causes subtle bugs—document the invariant and add tests.”
+- **Agentic loops:** e.g. "Agent repeatedly changes X to fix Y, which breaks Z; the real fix is W."
+- **Bugfix loops:** e.g. "Bug in component A keeps reappearing because B assumes C; document that B must never assume C."
+- **Hard-to-solve / easy-to-regress:** e.g. "Component A assumes B is immutable; changing B at runtime causes subtle bugs—document the invariant and add tests."
 
 When you add an entry, include:
 
 1. **What keeps happening** (the recurring symptom or mistake).
-2. **Why it’s tricky** (root cause or constraint).
+2. **Why it's tricky** (root cause or constraint).
 3. **What works** (concrete fix or rule to follow).
-4. **Where it’s documented** (doc link or code path) if applicable.
+4. **Where it's documented** (doc link or code path) if applicable.
 
-The goal is to give future agents **early warnings** and **concrete guidance** so they don’t re-enter the same loops.
+The goal is to give future agents **early warnings** and **concrete guidance** so they don't re-enter the same loops.
 
 ---
 
 ## Project overview (for context)
 
-This repo is an **agentic Go service template**: memory-bank workflow, single verify loop, Diátaxis docs. Default app: **`cmd/hello`**. Replace it with your own `cmd/` entrypoint.
+This repo is an **agentic repo template** for **any language or stack**: memory-bank workflow, single verify script, Diátaxis docs. Add your own code and define verification in `scripts/verify-steps.sh` and `memory-bank/commands.yml`.
 
-**After cloning from template:** Run `scripts/init-template`; replace placeholders in README, CODEOWNERS, and docs; set your Go module path. See [TEMPLATE.md](TEMPLATE.md). The memory bank holds **current state**, **known issues**, and **recurring loops**. When behavior/config changes, update or add one doc and file gaps in `opportunities.md`; see [memory-bank/code_quality.md](memory-bank/code_quality.md).
+**After cloning from template:** Run `scripts/init-template`; replace placeholders in README, CODEOWNERS, and docs. See [TEMPLATE.md](TEMPLATE.md). The memory bank holds **current state**, **known issues**, and **recurring loops**. When behavior/config changes, update or add one doc and file gaps in `opportunities.md`; see [memory-bank/code_quality.md](memory-bank/code_quality.md).

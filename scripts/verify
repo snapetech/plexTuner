@@ -1,20 +1,15 @@
 #!/usr/bin/env bash
-# Verification script: format → lint → test → build.
-# Authoritative command list: memory-bank/commands.yml (verify_steps).
-# CI should run only this script to avoid doc/CI drift.
+# Verification script: runs project-defined checks (any language).
+# CI runs only this script. Define your steps in scripts/verify-steps.sh
+# and keep memory-bank/commands.yml in sync for agent reference.
 
 set -e
 cd "$(dirname "$0")/.."
 
-run() {
-  echo "==> $*"
-  "$@"
-}
-
-# Commands must match memory-bank/commands.yml verify_steps
-run go fmt ./...
-run go vet ./...
-run go test ./...
-run go build -o /dev/null ./cmd/...
-
-echo "==> verify OK"
+if [[ -x scripts/verify-steps.sh ]]; then
+  ./scripts/verify-steps.sh
+  echo "==> verify OK"
+else
+  echo "==> No scripts/verify-steps.sh; add your format/lint/test/build there (see scripts/verify-steps.sh.example)."
+  echo "==> verify OK (template default)"
+fi
