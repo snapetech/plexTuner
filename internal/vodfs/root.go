@@ -1,60 +1,53 @@
 package vodfs
 
 import (
+	"context"
+	"syscall"
 	"time"
 
+	"github.com/hanwen/go-fuse/v2/fs"
+	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/plextuner/plex-tuner/internal/catalog"
+	"github.com/plextuner/plex-tuner/internal/materializer"
 )
 
-const entryAttrTimeout = 60 * time.Second
-
-// Root is the FUSE root node holding movies and series and lookup maps.
+// Root holds catalog snapshot and materializer; implements root of VODFS.
 type Root struct {
-	Movies  []*catalog.Movie
-	Series  []*catalog.Series
-	Live    []*catalog.LiveChannel
-	// Prebuilt for O(1) lookup by directory name
-	MovieByDirName  map[string]*catalog.Movie
-	SeriesByDirName map[string]*catalog.Series
+	fs.Inode
+	Movies  []catalog.Movie
+	Series  []catalog.Series
+	Mat materializer.Interface
 }
 
-// NewRoot builds a Root from catalog slices and populates MovieByDirName and SeriesByDirName for O(1) lookup.
-func NewRoot(movies []catalog.Movie, series []catalog.Series, live []catalog.LiveChannel) *Root {
-	r := &Root{
-		Movies:          make([]*catalog.Movie, len(movies)),
-		Series:          make([]*catalog.Series, len(series)),
-		Live:            make([]*catalog.LiveChannel, len(live)),
-		MovieByDirName:  make(map[string]*catalog.Movie),
-		SeriesByDirName: make(map[string]*catalog.Series),
+var _ fs.NodeLookuper = (*Root)(nil)
+
+func (r *Root) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	switch name {
+	case "Movies":
+		moviesNode := &MoviesDirNode{Root: r}
+		ch := r.NewInode(ctx, moviesNode, fs.StableAttr{
+			Mode: fuse.S_IFDIR,
+			Ino:  r.ino("dir:Movies"),
+		})
+		out.Mode = fuse.S_IFDIR | 0755
+		out.SetEntryTimeout(1 * time.Second)
+		out.SetAttrTimeout(1 * time.Second)
+		return ch, 0
+	case "TV":
+		tvNode := &TVDirNode{Root: r}
+		ch := r.NewInode(ctx, tvNode, fs.StableAttr{
+			Mode: fuse.S_IFDIR,
+			Ino:  r.ino("dir:TV"),
+		})
+		out.Mode = fuse.S_IFDIR | 0755
+		out.SetEntryTimeout(1 * time.Second)
+		out.SetAttrTimeout(1 * time.Second)
+		return ch, 0
+	default:
+		return nil, syscall.ENOENT
 	}
-	for i := range movies {
-		m := &movies[i]
-		r.Movies[i] = m
-		r.MovieByDirName[MovieDirName(m)] = m
-	}
-	for i := range series {
-		s := &series[i]
-		r.Series[i] = s
-		r.SeriesByDirName[ShowDirName(s)] = s
-	}
-	for i := range live {
-		r.Live[i] = &live[i]
-	}
-	return r
 }
 
-// MovieDirName returns a stable directory name for a movie (for FUSE lookup).
-func MovieDirName(m *catalog.Movie) string {
-	if m == nil {
-		return ""
-	}
-	return m.ID
-}
-
-// ShowDirName returns a stable directory name for a series (for FUSE lookup).
-func ShowDirName(s *catalog.Series) string {
-	if s == nil {
-		return ""
-	}
-	return s.ID
+func (r *Root) ino(key string) uint64 {
+	return inoFromString("plexvod:" + key)
 }

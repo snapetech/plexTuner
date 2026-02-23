@@ -5,6 +5,20 @@ import (
 	"strings"
 )
 
+// IsHTTPOrHTTPS reports whether s parses as an http(s) URL.
+func IsHTTPOrHTTPS(s string) bool {
+	u, err := url.Parse(s)
+	if err != nil || u == nil {
+		return false
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+		return true
+	default:
+		return false
+	}
+}
+
 // RedactURL returns a URL string safe for logging (redacts query and userinfo).
 func RedactURL(s string) string {
 	u, err := url.Parse(s)

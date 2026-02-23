@@ -40,3 +40,15 @@ func WithTimeout(timeout time.Duration) *http.Client {
 		Transport: t.Clone(),
 	}
 }
+
+// ForStreaming returns a client tuned for long-lived streaming requests.
+func ForStreaming() *http.Client {
+	t, ok := defaultClient.Transport.(*http.Transport)
+	if !ok {
+		return &http.Client{}
+	}
+	return &http.Client{
+		// No client-wide timeout for long-running stream relays.
+		Transport: t.Clone(),
+	}
+}

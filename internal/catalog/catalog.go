@@ -6,117 +6,130 @@ import (
 	"sync"
 )
 
-// Movie is a VOD movie entry.
+// LiveChannel is a live TV channel with primary + backup stream URLs.
+// ChannelID is a stable identifier for streaming URLs (e.g. tvg-id or provider stream_id); used in /stream/{ChannelID}.
+type LiveChannel struct {
+	ChannelID   string   `json:"channel_id"`   // stable ID for /stream/{ChannelID}
+	GuideNumber string   `json:"guide_number"`
+	GuideName   string   `json:"guide_name"`
+	StreamURL   string   `json:"stream_url"`   // primary (first working)
+	StreamURLs  []string `json:"stream_urls"` // primary + backups for failover
+	EPGLinked   bool     `json:"epg_linked"`   // has tvg-id / can be matched to guide
+	TVGID       string   `json:"tvg_id,omitempty"`
+}
+
+// Catalog is the normalized VOD catalog plus optional live channels.
+type Catalog struct {
+	mu           sync.RWMutex
+	Movies       []Movie       `json:"movies"`
+	Series       []Series      `json:"series"`
+	LiveChannels []LiveChannel `json:"live_channels,omitempty"`
+}
+
+// Movie is a single movie with Plex-friendly naming fields.
 type Movie struct {
-	ID         string `json:"id"`
-	Title      string `json:"title"`
-	Year       int    `json:"year"`
-	StreamURL  string `json:"stream_url"`
+	ID        string `json:"id"`         // stable ID (e.g. from provider or hash)
+	Title     string `json:"title"`
+	Year      int    `json:"year"`
+	StreamURL string `json:"stream_url"`
 	ArtworkURL string `json:"artwork_url,omitempty"`
 }
 
-// Episode is a single episode in a season.
-type Episode struct {
-	ID         string `json:"id"`
-	SeasonNum  int    `json:"season_num"`
-	EpisodeNum int    `json:"episode_num"`
-	Title      string `json:"title"`
-	StreamURL  string `json:"stream_url"`
+// Series is a show with seasons and episodes.
+type Series struct {
+	ID        string   `json:"id"`
+	Title     string   `json:"title"`
+	Year      int      `json:"year"`
+	Seasons   []Season `json:"seasons"`
+	ArtworkURL string  `json:"artwork_url,omitempty"`
 }
 
-// Season is a season with episodes.
+// Season holds episodes for one season.
 type Season struct {
 	Number   int       `json:"number"`
 	Episodes []Episode `json:"episodes"`
 }
 
-// Series is a TV series with seasons.
-type Series struct {
-	ID         string   `json:"id"`
-	Title      string   `json:"title"`
-	Year       int      `json:"year"`
-	Seasons   []Season `json:"seasons"`
-	ArtworkURL string   `json:"artwork_url,omitempty"`
-}
-
-// LiveChannel is a live TV channel for lineup.
-type LiveChannel struct {
-	ChannelID   string   `json:"channel_id"`
-	GuideNumber string   `json:"guide_number"`
-	GuideName   string   `json:"guide_name"`
-	StreamURL   string   `json:"stream_url"`
-	StreamURLs  []string `json:"stream_urls,omitempty"`
-	EPGLinked  bool     `json:"epg_linked,omitempty"`
-	TVGID       string   `json:"tvg_id,omitempty"`
-}
-
-// Catalog holds movies, series, and live channels. Safe for concurrent read; use Load/Replace for updates.
-type Catalog struct {
-	mu      sync.RWMutex
-	Movies  []Movie       `json:"movies"`
-	Series  []Series      `json:"series"`
-	Live   []LiveChannel `json:"live"`
+// Episode is a single episode with SxxEyy and stream URL.
+type Episode struct {
+	ID        string `json:"id"`
+	SeasonNum int    `json:"season_num"`
+	EpisodeNum int   `json:"episode_num"`
+	Title     string `json:"title"`
+	Airdate   string `json:"airdate,omitempty"`
+	StreamURL string `json:"stream_url"`
 }
 
 // New returns an empty catalog.
 func New() *Catalog {
-	return &Catalog{}
-}
-
-// Snapshot returns a copy of the current catalog (for Save). Caller must hold at least RLock if used externally.
-func (c *Catalog) snapshot() *Catalog {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	return &Catalog{
-		Movies: append([]Movie(nil), c.Movies...),
-		Series: append([]Series(nil), c.Series...),
-		Live:   append([]LiveChannel(nil), c.Live...),
+		Movies: nil,
+		Series: nil,
 	}
 }
 
-// Replace replaces the catalog content with the given slices. Call under write intent elsewhere or add a Set method.
-func (c *Catalog) Replace(movies []Movie, series []Series, live []LiveChannel) {
+// Replace replaces movies and series (keeps existing live channels).
+func (c *Catalog) Replace(movies []Movie, series []Series) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.Movies = movies
 	c.Series = series
-	c.Live = live
 }
 
-// Copy returns a snapshot of movies, series, and live channels.
-func (c *Catalog) Copy() (movies []Movie, series []Series, live []LiveChannel) {
+// ReplaceWithLive replaces catalog including live channels.
+func (c *Catalog) ReplaceWithLive(movies []Movie, series []Series, live []LiveChannel) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.Movies = movies
+	c.Series = series
+	c.LiveChannels = live
+}
+
+// Snapshot returns a copy of movies and series for read-only use.
+func (c *Catalog) Snapshot() (movies []Movie, series []Series) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	movies = append([]Movie(nil), c.Movies...)
-	series = append([]Series(nil), c.Series...)
-	live = append([]LiveChannel(nil), c.Live...)
-	return movies, series, live
+	movies = make([]Movie, len(c.Movies))
+	copy(movies, c.Movies)
+	series = make([]Series, len(c.Series))
+	copy(series, c.Series)
+	return movies, series
 }
 
-// Save writes the catalog to path. Snapshot is taken under RLock; encoding and write happen without holding the lock.
+// SnapshotLive returns a copy of live channels.
+func (c *Catalog) SnapshotLive() []LiveChannel {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make([]LiveChannel, len(c.LiveChannels))
+	copy(out, c.LiveChannels)
+	return out
+}
+
+// Save writes the catalog to path as JSON.
 func (c *Catalog) Save(path string) error {
-	snap := c.snapshot()
-	data, err := json.Marshal(snap)
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0600)
 }
 
-// Load reads a catalog from path and replaces the current content.
+// Load replaces the catalog with the contents of path (JSON).
 func (c *Catalog) Load(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
-	var snap Catalog
-	if err := json.Unmarshal(data, &snap); err != nil {
+	var out struct {
+		Movies       []Movie       `json:"movies"`
+		Series       []Series      `json:"series"`
+		LiveChannels []LiveChannel `json:"live_channels"`
+	}
+	if err := json.Unmarshal(data, &out); err != nil {
 		return err
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.Movies = snap.Movies
-	c.Series = snap.Series
-	c.Live = snap.Live
+	c.ReplaceWithLive(out.Movies, out.Series, out.LiveChannels)
 	return nil
 }
