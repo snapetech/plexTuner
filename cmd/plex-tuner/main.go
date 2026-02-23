@@ -138,8 +138,8 @@ func main() {
 					}
 				}
 			}
-			if apiBase == "" {
-				// Fallback: try get.php on each host
+			// Fallback to get.php when no OK player_api or when indexing from player_api failed.
+			if err != nil || apiBase == "" {
 				m3uURLs := cfg.M3UURLsOrBuild()
 				for _, u := range m3uURLs {
 					movies, series, live, err = indexer.ParseM3U(u, nil)
@@ -171,7 +171,7 @@ func main() {
 		}
 		if cfg.SmoketestEnabled {
 			before := len(live)
-			live = indexer.FilterLiveBySmoketest(live, nil, cfg.SmoketestTimeout, cfg.SmoketestConcurrency)
+			live = indexer.FilterLiveBySmoketest(live, nil, cfg.SmoketestTimeout, cfg.SmoketestConcurrency, cfg.SmoketestMaxChannels, cfg.SmoketestMaxDuration)
 			log.Printf("Smoketest: %d/%d channels passed", len(live), before)
 		}
 		epgLinked, withBackups := 0, 0
@@ -237,6 +237,7 @@ func main() {
 			Addr:                *serveAddr,
 			BaseURL:             *serveBaseURL,
 			TunerCount:          cfg.TunerCount,
+			DeviceID:            cfg.DeviceID,
 			StreamBufferBytes:   cfg.StreamBufferBytes,
 			StreamTranscodeMode: cfg.StreamTranscodeMode,
 			Channels:            live,
@@ -329,7 +330,7 @@ func main() {
 			}
 			if cfg.SmoketestEnabled {
 				before := len(live)
-				live = indexer.FilterLiveBySmoketest(live, nil, cfg.SmoketestTimeout, cfg.SmoketestConcurrency)
+				live = indexer.FilterLiveBySmoketest(live, nil, cfg.SmoketestTimeout, cfg.SmoketestConcurrency, cfg.SmoketestMaxChannels, cfg.SmoketestMaxDuration)
 				log.Printf("Smoketest: %d/%d channels passed", len(live), before)
 			}
 			epgLinked, withBackups := 0, 0
@@ -392,6 +393,7 @@ func main() {
 			Addr:                *runAddr,
 			BaseURL:             baseURL,
 			TunerCount:          cfg.TunerCount,
+			DeviceID:            cfg.DeviceID,
 			StreamBufferBytes:   cfg.StreamBufferBytes,
 			StreamTranscodeMode: cfg.StreamTranscodeMode,
 			Channels:            live,
@@ -461,7 +463,8 @@ func main() {
 						log.Printf("Save catalog failed (scheduled refresh): %v", err)
 						continue
 					}
-					log.Printf("Catalog refreshed: %d movies, %d series, %d live channels (restart service to serve new channel list)", len(movies), len(series), len(live))
+					srv.UpdateChannels(live)
+					log.Printf("Catalog refreshed: %d movies, %d series, %d live channels (lineup updated)", len(movies), len(series), len(live))
 				}
 			}()
 		}

@@ -24,8 +24,9 @@ func TestM3UServe_urlTvg(t *testing.T) {
 	if !strings.Contains(body, `#EXTM3U url-tvg="http://192.168.1.10:5004/guide.xml"`) {
 		t.Errorf("body should contain url-tvg to guide.xml; got:\n%s", body)
 	}
-	if !strings.Contains(body, "/stream/0") {
-		t.Errorf("body should contain stream URL /stream/0; got:\n%s", body)
+	// Stream path uses ChannelID then GuideNumber; channel has GuideNumber "1"
+	if !strings.Contains(body, "/stream/1") {
+		t.Errorf("body should contain stream URL /stream/1; got:\n%s", body)
 	}
 }
 
@@ -43,15 +44,15 @@ func TestM3UServe_epgPruneUnlinked(t *testing.T) {
 		t.Fatalf("code: %d", w.Code)
 	}
 	body := w.Body.String()
-	// Only bbc1 and sky1; stream indices must be original (0 and 2)
+	// Only bbc1 and sky1; stream path uses ChannelID/GuideNumber (1 and 3)
 	if strings.Contains(body, "No TVG") {
 		t.Errorf("EpgPruneUnlinked should exclude channel with empty TVGID; got:\n%s", body)
 	}
-	if !strings.Contains(body, "/stream/0") || !strings.Contains(body, "/stream/2") {
-		t.Errorf("stream URLs should use original indices 0 and 2; got:\n%s", body)
+	if !strings.Contains(body, "/stream/1") || !strings.Contains(body, "/stream/3") {
+		t.Errorf("stream URLs should use ChannelID/GuideNumber /stream/1 and /stream/3; got:\n%s", body)
 	}
-	if strings.Contains(body, "/stream/1") {
-		t.Errorf("should not include stream/1 (pruned channel); got:\n%s", body)
+	if strings.Contains(body, "/stream/2") {
+		t.Errorf("should not include stream/2 (pruned channel); got:\n%s", body)
 	}
 }
 
@@ -68,7 +69,8 @@ func TestM3UServe_epgPruneUnlinked_false(t *testing.T) {
 		t.Fatalf("code: %d", w.Code)
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "/stream/0") || !strings.Contains(body, "/stream/1") {
+	// Stream path uses ChannelID/GuideNumber (1 and 2)
+	if !strings.Contains(body, "/stream/1") || !strings.Contains(body, "/stream/2") {
 		t.Errorf("all channels when EpgPruneUnlinked false; got:\n%s", body)
 	}
 }

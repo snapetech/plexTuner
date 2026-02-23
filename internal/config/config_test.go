@@ -102,18 +102,15 @@ func TestProviderURLs(t *testing.T) {
 	}
 }
 
-// When only user/pass are set, ProviderURLs returns DefaultProviderHosts (inline with xtream-to-m3u.js).
-func TestProviderURLs_defaultHostsWhenUserPassOnly(t *testing.T) {
+// When only user/pass are set (no URL env), ProviderURLs returns nil; explicit URL(s) required.
+func TestProviderURLs_emptyWhenUserPassOnly(t *testing.T) {
 	os.Clearenv()
 	os.Setenv("PLEX_TUNER_PROVIDER_USER", "u")
 	os.Setenv("PLEX_TUNER_PROVIDER_PASS", "p")
 	c := Load()
 	got := c.ProviderURLs()
-	if len(got) != len(DefaultProviderHosts) {
-		t.Errorf("ProviderURLs() len = %d, want %d (DefaultProviderHosts)", len(got), len(DefaultProviderHosts))
-	}
-	if len(got) > 0 && got[0] != DefaultProviderHosts[0] {
-		t.Errorf("ProviderURLs()[0] = %q, want %q", got[0], DefaultProviderHosts[0])
+	if got != nil {
+		t.Errorf("ProviderURLs() = %v, want nil (explicit PLEX_TUNER_PROVIDER_URL or URLS required)", got)
 	}
 }
 

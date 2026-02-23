@@ -1,5 +1,5 @@
 # CI: single source of truth is scripts/verify (runs scripts/verify-steps.sh).
-# No language-specific setup here — add your runtime/setup in verify-steps.sh or a step that invokes it.
+# Go version from go.mod to avoid runner drift.
 
 name: CI
 
@@ -14,6 +14,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
 
       - name: Verify (runs scripts/verify-steps.sh or template default)
         run: ./scripts/verify

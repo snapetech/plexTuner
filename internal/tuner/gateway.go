@@ -91,12 +91,20 @@ func (a *adaptiveWriter) flushToClient() error {
 		return nil
 	}
 	start := time.Now()
-	_, err := a.w.Write(a.buf.Bytes())
-	if err != nil {
-		return err
+	for a.buf.Len() > 0 {
+		n, err := a.w.Write(a.buf.Bytes())
+		if err != nil {
+			return err
+		}
+		if n <= 0 {
+			break
+		}
+		// bytes.Buffer doesn't advance on Write; drop leading n bytes
+		remaining := a.buf.Bytes()[n:]
+		a.buf.Reset()
+		a.buf.Write(remaining)
 	}
 	d := time.Since(start)
-	a.buf.Reset()
 	if d >= a.slowThresh {
 		if a.targetSize < a.maxSize {
 			a.targetSize *= 2
@@ -719,6 +727,18 @@ func (g *Gateway) relayHLSAsTS(
 		}
 
 		mediaLines := hlsMediaLines(currentPlaylist)
+		// Prune seen to only segment URLs still in playlist so map doesn't grow unbounded.
+		segmentURLSet := make(map[string]struct{}, len(mediaLines))
+		for _, u := range mediaLines {
+			if !strings.HasSuffix(strings.ToLower(u), ".m3u8") {
+				segmentURLSet[u] = struct{}{}
+			}
+		}
+		for u := range seen {
+			if _, inPlaylist := segmentURLSet[u]; !inPlaylist {
+				delete(seen, u)
+			}
+		}
 		if len(mediaLines) == 0 {
 			if !headerSent {
 				return errors.New("hls playlist has no media lines")
@@ -726,7 +746,7 @@ func (g *Gateway) relayHLSAsTS(
 			if time.Since(lastProgress) > 12*time.Second {
 				return errors.New("hls relay stalled (no media lines)")
 			}
-			time.Sleep(300 * time.Millisecond)
+			time.Sleep(1 * time.Second)
 		} else {
 			progressThisPass := false
 			for _, segURL := range mediaLines {
@@ -787,7 +807,7 @@ func (g *Gateway) relayHLSAsTS(
 					channelName, channelID, sentSegments, sentBytes, time.Since(start).Round(time.Millisecond))
 				return nil
 			}
-			time.Sleep(350 * time.Millisecond)
+			sleepHLSRefresh(currentPlaylist)
 		}
 
 		next, err := g.fetchAndRewritePlaylist(r, client, currentPlaylistURL)
@@ -803,11 +823,27 @@ func (g *Gateway) relayHLSAsTS(
 			}
 			log.Printf("gateway: channel=%q id=%s playlist refresh failed url=%s err=%v",
 				channelName, channelID, safeurl.RedactURL(currentPlaylistURL), err)
-			time.Sleep(300 * time.Millisecond)
+			sleepHLSRefresh(currentPlaylist)
 			continue
 		}
 		currentPlaylist = next
 	}
+}
+
+// sleepHLSRefresh sleeps based on playlist EXT-X-TARGETDURATION to avoid hammering upstream (1–10s).
+func sleepHLSRefresh(playlistBody []byte) {
+	sec := hlsTargetDurationSeconds(playlistBody)
+	if sec <= 0 {
+		sec = 3
+	}
+	half := sec / 2
+	if half < 1 {
+		half = 1
+	}
+	if half > 10 {
+		half = 10
+	}
+	time.Sleep(time.Duration(half) * time.Second)
 }
 
 func (g *Gateway) fetchAndRewritePlaylist(r *http.Request, client *http.Client, playlistURL string) ([]byte, error) {
@@ -848,6 +884,9 @@ func (g *Gateway) fetchAndWriteSegment(
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, segURL, nil)
 	if err != nil {
 		return 0, err
+	}
+	if g.ProviderUser != "" || g.ProviderPass != "" {
+		req.SetBasicAuth(g.ProviderUser, g.ProviderPass)
 	}
 	req.Header.Set("User-Agent", "PlexTuner/1.0")
 	resp, err := client.Do(req)
@@ -935,4 +974,20 @@ func hlsMediaLines(body []byte) []string {
 		out = append(out, line)
 	}
 	return out
+}
+
+// hlsTargetDurationSeconds parses #EXT-X-TARGETDURATION from playlist body; returns 0 if missing/invalid.
+func hlsTargetDurationSeconds(body []byte) int {
+	sc := bufio.NewScanner(bytes.NewReader(body))
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if strings.HasPrefix(line, "#EXT-X-TARGETDURATION:") {
+			v := strings.TrimSpace(strings.TrimPrefix(line, "#EXT-X-TARGETDURATION:"))
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				return n
+			}
+			return 0
+		}
+	}
+	return 0
 }

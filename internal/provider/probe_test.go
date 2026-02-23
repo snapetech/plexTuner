@@ -181,17 +181,15 @@ func TestRankedPlayerAPI_allRankedBestFirst(t *testing.T) {
 	ctx := context.Background()
 	urls := []string{bad.URL, slow.URL, fast.URL}
 	ranked := RankedPlayerAPI(ctx, urls, "u", "p", nil)
-	if len(ranked) != 3 {
-		t.Fatalf("RankedPlayerAPI: want 3 bases, got %d", len(ranked))
+	// Only OK bases are returned (bad returns 503)
+	if len(ranked) != 2 {
+		t.Fatalf("RankedPlayerAPI: want 2 OK bases, got %d", len(ranked))
 	}
-	// Best first (fast), then slow, then bad (non-OK)
+	// Best first (fast), then slow
 	if ranked[0] != fast.URL {
 		t.Errorf("ranked[0] = %q, want fast %q", ranked[0], fast.URL)
 	}
 	if ranked[1] != slow.URL {
 		t.Errorf("ranked[1] = %q, want slow %q", ranked[1], slow.URL)
-	}
-	if ranked[2] != bad.URL {
-		t.Errorf("ranked[2] = %q, want bad %q", ranked[2], bad.URL)
 	}
 }

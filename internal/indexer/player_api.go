@@ -89,9 +89,27 @@ func resolveStreamBaseURL(ctx context.Context, apiBase, user, pass string, baseU
 		base = apiBase
 	}
 	base = strings.TrimSuffix(base, "/")
-	// Prefer non-Cloudflare: if we have multiple baseURLs we could probe; for now use server_info.
-	_ = baseURLs
+	// Validate: server_info may return internal hostname or URL that doesn't work from here.
+	if !validateStreamBase(ctx, base, client) {
+		return apiBase, nil
+	}
 	return base, nil
+}
+
+// validateStreamBase does a cheap HEAD to base; returns false if unreachable so caller can fall back to apiBase.
+func validateStreamBase(ctx context.Context, base string, client *http.Client) bool {
+	u := base + "/"
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, u, nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("User-Agent", "PlexTuner/1.0")
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode == http.StatusBadRequest
 }
 
 func fetchLiveStreams(ctx context.Context, apiBase, user, pass, streamBase, ext string, client *http.Client) ([]catalog.LiveChannel, error) {
