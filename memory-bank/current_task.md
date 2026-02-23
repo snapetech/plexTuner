@@ -2,11 +2,11 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Goal:** *(set when you take on work)*
+**Goal:** Redo README, add features.md, changelog.md, and documentation gaps.
 
-**Scope:** *(what's in / out)*
+**Scope:** In: README (full features + alternatives matrix), docs/features.md, docs/CHANGELOG.md, docs/docs-gaps.md, docs index link. Out: fixing missing internal/indexer (documented in docs-gaps).
 
-**Last updated:** *(date)*
+**Last updated:** 2025-02-23
 
 ---
 

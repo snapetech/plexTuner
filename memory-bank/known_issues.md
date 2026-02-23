@@ -6,4 +6,3 @@
 
 - **Credentials:** Secrets must live only in `.env` (or environment). `.env` is in `.gitignore`. Never commit `.env` or log secrets. Use `.env.example` as a template (no real values).
 
-*(Add project-specific known issues below.)*

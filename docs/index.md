@@ -19,6 +19,9 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[runbooks/](runbooks/index.md)** | Operational procedures. |
 | **[epics/](epics/EPIC-template.md)** | Multi-PR epic template. Use with [memory-bank/work_breakdown.md](../memory-bank/work_breakdown.md). |
 | **product/** · **stories/** | [PRD template](product/PRD-template.md), [STORY template](stories/STORY-template.md). |
+| **[features.md](features.md)** | Full feature list. |
+| **[CHANGELOG.md](CHANGELOG.md)** | Version and change history. |
+| **[docs-gaps.md](docs-gaps.md)** | Known documentation gaps and suggested fixes. |
 
 **Conventions:** [Linking and formatting](_meta/linking.md) · [Glossary](glossary.md).
 
