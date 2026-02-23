@@ -11,12 +11,13 @@ import (
 
 // Server runs the HDHR emulator + XMLTV + stream gateway.
 type Server struct {
-	Addr          string
-	BaseURL       string
-	TunerCount    int
-	Channels      []catalog.LiveChannel
-	ProviderUser  string
-	ProviderPass  string
+	Addr             string
+	BaseURL          string
+	TunerCount       int
+	Channels         []catalog.LiveChannel
+	ProviderUser     string
+	ProviderPass     string
+	EpgPruneUnlinked bool // when true, guide.xml and /live.m3u only include channels with tvg-id
 }
 
 // Run blocks until ctx is cancelled or the server fails to start. On shutdown it stops
@@ -33,13 +34,15 @@ func (s *Server) Run(ctx context.Context) error {
 		ProviderPass: s.ProviderPass,
 		TunerCount:   s.TunerCount,
 	}
-	xmltv := &XMLTV{Channels: s.Channels}
+	xmltv := &XMLTV{Channels: s.Channels, EpgPruneUnlinked: s.EpgPruneUnlinked}
+	m3uServe := &M3UServe{BaseURL: s.BaseURL, Channels: s.Channels, EpgPruneUnlinked: s.EpgPruneUnlinked}
 
 	mux := http.NewServeMux()
 	mux.Handle("/discover.json", hdhr)
 	mux.Handle("/lineup_status.json", hdhr)
 	mux.Handle("/lineup.json", hdhr)
 	mux.Handle("/guide.xml", xmltv)
+	mux.Handle("/live.m3u", m3uServe)
 	mux.Handle("/stream/", gateway)
 
 	addr := s.Addr

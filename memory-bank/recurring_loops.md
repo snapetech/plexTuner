@@ -9,7 +9,30 @@
   4. Where it's documented (if applicable)
 -->
 
-(No entries yet.)
+## Loop protocol
+- If you attempt the same approach twice and it still fails, STOP.
+- Collect evidence (errors, logs, repro steps).
+- Pick an alternate strategy (exit ramp) before trying again.
+
+## Common traps + exit ramps
+
+### Permission paralysis
+- **Symptom:** Agent asks for approval on every micro-step; progress stalls.
+- **Exit ramp:** Follow AGENTS.md uncertainty policy: proceed with safe assumptions, document them in `memory-bank/current_task.md`, ask only when ambiguity is blocking or high-risk. See `memory-bank/skills/asking.md`.
+
+### Tooling mismatch / guessed commands
+- **Symptom:** Invented flags/commands/config keys.
+- **Exit ramp:** Use repo README and existing scripts; run real commands; update docs if you add new ones.
+
+### "Fixing" by silencing failures
+- **Symptom:** Weakening assertions, skipping tests, broad try/catch.
+- **Exit ramp:** Revert; add minimal repro; fix root cause; keep tests strict.
+
+### Context thrash
+- **Symptom:** Touching unrelated files; refactor drift.
+- **Exit ramp:** Tighten scope in `memory-bank/current_task.md`; stop editing unrelated areas.
+
+(Add more traps above as they recur.)
 
 ---
 

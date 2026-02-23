@@ -69,10 +69,14 @@ func (h *HDHR) serveLineup(w http.ResponseWriter) {
 	out := make([]map[string]string, 0, len(channels))
 	for i := range channels {
 		c := &channels[i]
+		channelID := c.ChannelID
+		if channelID == "" {
+			channelID = strconv.Itoa(i)
+		}
 		out = append(out, map[string]string{
 			"GuideNumber": c.GuideNumber,
 			"GuideName":   c.GuideName,
-			"URL":        base + "/stream/" + strconv.Itoa(i),
+			"URL":         base + "/stream/" + channelID,
 		})
 	}
 	w.Header().Set("Content-Type", "application/json")

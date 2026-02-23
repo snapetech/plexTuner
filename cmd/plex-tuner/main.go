@@ -132,6 +132,11 @@ func main() {
 			live = filtered
 			log.Printf("Filtered to EPG-linked only: %d live channels", len(live))
 		}
+		if cfg.SmoketestEnabled {
+			before := len(live)
+			live = indexer.FilterLiveBySmoketest(live, nil, cfg.SmoketestTimeout, cfg.SmoketestConcurrency)
+			log.Printf("Smoketest: %d/%d channels passed", len(live), before)
+		}
 		epgLinked, withBackups := 0, 0
 		for _, ch := range live {
 			if ch.EPGLinked {
@@ -192,12 +197,13 @@ func main() {
 		live := c.SnapshotLive()
 		log.Printf("Loaded %d live channels from %s", len(live), path)
 		srv := &tuner.Server{
-			Addr:         *serveAddr,
-			BaseURL:      *serveBaseURL,
-			TunerCount:   cfg.TunerCount,
-			Channels:     live,
-			ProviderUser: cfg.ProviderUser,
-			ProviderPass: cfg.ProviderPass,
+			Addr:             *serveAddr,
+			BaseURL:          *serveBaseURL,
+			TunerCount:       cfg.TunerCount,
+			Channels:         live,
+			ProviderUser:     cfg.ProviderUser,
+			ProviderPass:     cfg.ProviderPass,
+			EpgPruneUnlinked: cfg.EpgPruneUnlinked,
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
@@ -263,6 +269,11 @@ func main() {
 				live = filtered
 				log.Printf("Filtered to EPG-linked only: %d live channels", len(live))
 			}
+			if cfg.SmoketestEnabled {
+				before := len(live)
+				live = indexer.FilterLiveBySmoketest(live, nil, cfg.SmoketestTimeout, cfg.SmoketestConcurrency)
+				log.Printf("Smoketest: %d/%d channels passed", len(live), before)
+			}
 			epgLinked, withBackups := 0, 0
 			for _, ch := range live {
 				if ch.EPGLinked {
@@ -312,12 +323,13 @@ func main() {
 			baseURL = cfg.BaseURL
 		}
 		srv := &tuner.Server{
-			Addr:         *runAddr,
-			BaseURL:      baseURL,
-			TunerCount:   cfg.TunerCount,
-			Channels:     live,
-			ProviderUser: cfg.ProviderUser,
-			ProviderPass: cfg.ProviderPass,
+			Addr:             *runAddr,
+			BaseURL:          baseURL,
+			TunerCount:       cfg.TunerCount,
+			Channels:         live,
+			ProviderUser:     cfg.ProviderUser,
+			ProviderPass:     cfg.ProviderPass,
+			EpgPruneUnlinked: cfg.EpgPruneUnlinked,
 		}
 
 		// Optional: background catalog refresh (same strategy: player_api first, then get.php). Stops when runCtx is cancelled.

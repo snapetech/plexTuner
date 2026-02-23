@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/plextuner/plex-tuner/internal/catalog"
+	"github.com/plextuner/plex-tuner/internal/httpclient"
+	"github.com/plextuner/plex-tuner/internal/safeurl"
 )
 
 // M3U entry from #EXTINF line + following URL line.
@@ -22,13 +24,14 @@ type m3uEntry struct {
 	Group    string
 	Name     string
 	TVGID    string
+	TVGChno  string // tvg-chno when present (stable guide number)
 	TVGName  string
 	TVGLogo  string
 }
 
 // ParseM3U fetches url and parses M3U into movies, series, and live channels.
-func ParseM3U(url string, client *http.Client) ([]catalog.Movie, []catalog.Series, []catalog.LiveChannel, error) {
-	body, err := fetchM3UBody(url, client)
+func ParseM3U(m3uURL string, client *http.Client) ([]catalog.Movie, []catalog.Series, []catalog.LiveChannel, error) {
+	body, err := fetchM3UBody(m3uURL, client)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -40,7 +43,7 @@ func fetchM3UBody(url string, client *http.Client) ([]byte, error) {
 		return nil, nil
 	}
 	if client == nil {
-		client = &http.Client{}
+		client = httpclient.Default()
 	}
 	const maxRetries = 3
 	backoff := 2 * time.Second
@@ -77,9 +80,9 @@ func fetchM3UBody(url string, client *http.Client) ([]byte, error) {
 		if resp.StatusCode == http.StatusOK {
 			return body, nil
 		}
-		lastErr = fmt.Errorf("m3u GET %s: %s", url, resp.Status)
+		lastErr = fmt.Errorf("m3u GET %s: %s", safeurl.RedactURL(url), resp.Status)
 		if !retryableStatus(resp.StatusCode) || attempt == maxRetries {
-			return nil, fmt.Errorf("m3u fetch %s: %w", url, lastErr)
+			return nil, fmt.Errorf("m3u fetch %s: %w", safeurl.RedactURL(url), lastErr)
 		}
 		wait := parseRetryAfter(resp)
 		if wait == 0 {
@@ -90,7 +93,7 @@ func fetchM3UBody(url string, client *http.Client) ([]byte, error) {
 		}
 		time.Sleep(wait)
 	}
-	return nil, fmt.Errorf("m3u fetch %s: %w", url, lastErr)
+	return nil, fmt.Errorf("m3u fetch %s: %w", safeurl.RedactURL(url), lastErr)
 }
 
 // ParseM3UBytes parses M3U content into movies, series, and live channels.
@@ -161,9 +164,12 @@ func ParseM3UBytes(data []byte) ([]catalog.Movie, []catalog.Series, []catalog.Li
 		// Live TV channel: group by tvg-id or normalized name so we get primary + backups
 		chKey := channelKey(e.TVGID, name)
 		if _, ok := liveByKey[chKey]; !ok {
-			liveByKey[chKey] = &liveChannelGroup{name: name, tvgID: e.TVGID, urls: nil}
+			liveByKey[chKey] = &liveChannelGroup{name: name, tvgID: e.TVGID, tvgChno: e.TVGChno, urls: nil}
 		}
 		grp := liveByKey[chKey]
+		if grp.tvgChno == "" && e.TVGChno != "" {
+			grp.tvgChno = e.TVGChno
+		}
 		grp.urls = append(grp.urls, e.URL)
 	}
 
@@ -179,8 +185,17 @@ func ParseM3UBytes(data []byte) ([]catalog.Movie, []catalog.Series, []catalog.Li
 		if len(grp.urls) > 0 {
 			primary = grp.urls[0]
 		}
+		guideNum := grp.tvgChno
+		if guideNum == "" {
+			guideNum = strconv.Itoa(i + 1)
+		}
+		channelID := grp.tvgID
+		if channelID == "" {
+			channelID = stableID("ch", k, "")
+		}
 		ch := catalog.LiveChannel{
-			GuideNumber: strconv.Itoa(i + 1),
+			ChannelID:   channelID,
+			GuideNumber: guideNum,
 			GuideName:   grp.name,
 			StreamURL:   primary,
 			StreamURLs:  grp.urls,
@@ -232,6 +247,8 @@ func parseEXTINF(line string) m3uEntry {
 		switch k {
 		case "tvg-id":
 			e.TVGID = v
+		case "tvg-chno":
+			e.TVGChno = v
 		case "tvg-name":
 			e.TVGName = v
 		case "tvg-logo":
@@ -282,9 +299,10 @@ func stableID(prefix, a, b string) string {
 
 // liveChannelGroup holds all stream URLs for one logical channel before we emit a LiveChannel.
 type liveChannelGroup struct {
-	name  string
-	tvgID string
-	urls  []string
+	name    string
+	tvgID   string
+	tvgChno string
+	urls    []string
 }
 
 // channelKey returns a stable key for grouping live entries (same channel, possibly multiple URLs).

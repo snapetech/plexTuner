@@ -12,3 +12,23 @@ func IsHTTPOrHTTPS(u string) bool {
 	s := parsed.Scheme
 	return s == "http" || s == "https"
 }
+
+// RedactURL returns a copy of u with userinfo (username/password) and sensitive query params
+// stripped so it is safe to log or include in error messages.
+func RedactURL(u string) string {
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return "[invalid url]"
+	}
+	if parsed.User != nil {
+		parsed.User = nil
+	}
+	q := parsed.Query()
+	for _, key := range []string{"username", "password", "token", "key", "api_key", "apikey"} {
+		if q.Has(key) {
+			q.Set(key, "[redacted]")
+		}
+	}
+	parsed.RawQuery = q.Encode()
+	return parsed.String()
+}

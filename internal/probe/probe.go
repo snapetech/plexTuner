@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/plextuner/plex-tuner/internal/httpclient"
 	"github.com/plextuner/plex-tuner/internal/safeurl"
 )
 
@@ -27,7 +28,7 @@ func Probe(streamURL string, client *http.Client) (StreamType, error) {
 		return StreamUnknown, fmt.Errorf("probe: invalid stream URL scheme (only http/https allowed)")
 	}
 	if client == nil {
-		client = http.DefaultClient
+		client = httpclient.Default()
 	}
 
 	// HEAD first to avoid downloading body
@@ -92,7 +93,7 @@ func sniff(b []byte) StreamType {
 // SupportsRange returns true if the URL supports Range requests (for resumable download).
 func SupportsRange(streamURL string, client *http.Client) (bool, error) {
 	if client == nil {
-		client = http.DefaultClient
+		client = httpclient.Default()
 	}
 	req, _ := http.NewRequest(http.MethodHead, streamURL, nil)
 	resp, err := client.Do(req)
@@ -107,7 +108,7 @@ func SupportsRange(streamURL string, client *http.Client) (bool, error) {
 // ContentLength returns the size from Content-Length (HEAD or GET), or -1 if unknown.
 func ContentLength(streamURL string, client *http.Client) (int64, error) {
 	if client == nil {
-		client = http.DefaultClient
+		client = httpclient.Default()
 	}
 	req, _ := http.NewRequest(http.MethodHead, streamURL, nil)
 	resp, err := client.Do(req)

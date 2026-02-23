@@ -2,7 +2,9 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestM3UURLOrBuild(t *testing.T) {
@@ -148,5 +150,92 @@ func TestLiveOnly(t *testing.T) {
 	c = Load()
 	if !c.LiveOnly {
 		t.Error("LiveOnly should be true for 1")
+	}
+}
+
+// Subscription file: Load fills ProviderUser/ProviderPass from file when env is empty.
+func TestLoad_subscriptionFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sub.txt")
+	if err := os.WriteFile(path, []byte("Username: myuser\nPassword: mypass\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	os.Clearenv()
+	os.Setenv("PLEX_TUNER_SUBSCRIPTION_FILE", path)
+	c := Load()
+	if c.ProviderUser != "myuser" || c.ProviderPass != "mypass" {
+		t.Errorf("Load from subscription file: user=%q pass=%q", c.ProviderUser, c.ProviderPass)
+	}
+}
+
+func TestLoad_subscriptionFile_missingPassword(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sub.txt")
+	if err := os.WriteFile(path, []byte("Username: u\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	os.Clearenv()
+	os.Setenv("PLEX_TUNER_SUBSCRIPTION_FILE", path)
+	c := Load()
+	if c.ProviderUser != "" || c.ProviderPass != "" {
+		t.Errorf("missing Password in file should leave creds empty; got user=%q pass=%q", c.ProviderUser, c.ProviderPass)
+	}
+}
+
+func TestLoad_subscriptionFile_envOverrides(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sub.txt")
+	if err := os.WriteFile(path, []byte("Username: fileuser\nPassword: filepass\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	os.Clearenv()
+	os.Setenv("PLEX_TUNER_SUBSCRIPTION_FILE", path)
+	os.Setenv("PLEX_TUNER_PROVIDER_USER", "envuser")
+	c := Load()
+	if c.ProviderUser != "envuser" {
+		t.Errorf("env user should override; got %q", c.ProviderUser)
+	}
+	if c.ProviderPass != "filepass" {
+		t.Errorf("pass should come from file when env pass empty; got %q", c.ProviderPass)
+	}
+}
+
+func TestEpgPruneUnlinked(t *testing.T) {
+	os.Clearenv()
+	c := Load()
+	if c.EpgPruneUnlinked {
+		t.Error("EpgPruneUnlinked should default false")
+	}
+	os.Setenv("PLEX_TUNER_EPG_PRUNE_UNLINKED", "1")
+	c = Load()
+	if !c.EpgPruneUnlinked {
+		t.Error("EpgPruneUnlinked should be true for 1")
+	}
+}
+
+func TestSmoketestEnv(t *testing.T) {
+	os.Clearenv()
+	c := Load()
+	if c.SmoketestEnabled {
+		t.Error("SmoketestEnabled should default false")
+	}
+	if c.SmoketestTimeout != 8*time.Second {
+		t.Errorf("SmoketestTimeout default: got %v", c.SmoketestTimeout)
+	}
+	if c.SmoketestConcurrency != 10 {
+		t.Errorf("SmoketestConcurrency default: got %d", c.SmoketestConcurrency)
+	}
+	os.Setenv("PLEX_TUNER_SMOKETEST_ENABLED", "true")
+	os.Setenv("PLEX_TUNER_SMOKETEST_TIMEOUT", "3s")
+	os.Setenv("PLEX_TUNER_SMOKETEST_CONCURRENCY", "4")
+	c = Load()
+	if !c.SmoketestEnabled {
+		t.Error("SmoketestEnabled should be true")
+	}
+	if c.SmoketestTimeout != 3*time.Second {
+		t.Errorf("SmoketestTimeout: got %v", c.SmoketestTimeout)
+	}
+	if c.SmoketestConcurrency != 4 {
+		t.Errorf("SmoketestConcurrency: got %d", c.SmoketestConcurrency)
 	}
 }

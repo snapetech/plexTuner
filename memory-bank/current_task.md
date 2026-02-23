@@ -11,3 +11,17 @@
 **One-run DVR:** `plex-tuner run` does index + health check + serve; errors surface to console with `[ERROR]`; Plex one-time setup URLs printed at startup. systemd example: `docs/systemd/plextuner.service.example`.
 
 **Last updated:** 2025-02-22
+
+---
+
+## Assumptions & questions (only if uncertainty matters)
+Assumptions (safe defaults you are proceeding with):
+- <assumption + why it's safe>
+
+Questions (ONLY if blocked or high-risk ambiguity):
+- Q: <question>
+  Why it matters: <risk/rework avoided>
+  Suggested default: <what you recommend if user doesn't care>
+
+## Opportunity radar (don't derail)
+- If you notice out-of-scope improvements, record them in `memory-bank/opportunities.md` and raise to the user in your summary.

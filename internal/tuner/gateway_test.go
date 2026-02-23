@@ -139,6 +139,32 @@ func TestGateway_notFound(t *testing.T) {
 	}
 }
 
+func TestGateway_stream_emptyBodyTriesNext(t *testing.T) {
+	// 200 with ContentLength 0 (e.g. dead CDN) should try next URL
+	empty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer empty.Close()
+	backup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("backup"))
+	}))
+	defer backup.Close()
+
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "1", GuideName: "Ch1", StreamURLs: []string{empty.URL, backup.URL}},
+		},
+		TunerCount: 2,
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || w.Body.String() != "backup" {
+		t.Errorf("code: %d body: %q (expected 200 backup)", w.Code, w.Body.String())
+	}
+}
+
 func TestGateway_stream_rejectsNonHTTP(t *testing.T) {
 	// SSRF: file:// and other schemes must be rejected; client gets 502
 	g := &Gateway{

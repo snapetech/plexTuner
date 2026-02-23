@@ -7,7 +7,9 @@ import (
 )
 
 // LiveChannel is a live TV channel with primary + backup stream URLs.
+// ChannelID is a stable identifier for streaming URLs (e.g. tvg-id or provider stream_id); used in /stream/{ChannelID}.
 type LiveChannel struct {
+	ChannelID   string   `json:"channel_id"`   // stable ID for /stream/{ChannelID}
 	GuideNumber string   `json:"guide_number"`
 	GuideName   string   `json:"guide_name"`
 	StreamURL   string   `json:"stream_url"`   // primary (first working)
@@ -111,7 +113,7 @@ func (c *Catalog) Save(path string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0600)
 }
 
 // Load replaces the catalog with the contents of path (JSON).

@@ -11,7 +11,8 @@ import (
 // XMLTV generates a minimal XMLTV guide so Plex can import guide data.
 // Programmes can be extended later (e.g. from EPG URL or placeholder).
 type XMLTV struct {
-	Channels []catalog.LiveChannel
+	Channels          []catalog.LiveChannel
+	EpgPruneUnlinked  bool // when true, only include channels with TVGID set
 }
 
 func (x *XMLTV) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -22,6 +23,15 @@ func (x *XMLTV) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	channels := x.Channels
 	if channels == nil {
 		channels = []catalog.LiveChannel{}
+	}
+	if x.EpgPruneUnlinked {
+		filtered := make([]catalog.LiveChannel, 0, len(channels))
+		for _, c := range channels {
+			if c.TVGID != "" {
+				filtered = append(filtered, c)
+			}
+		}
+		channels = filtered
 	}
 
 	now := time.Now()

@@ -6,11 +6,13 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/plextuner/plex-tuner/internal/catalog"
+	"github.com/plextuner/plex-tuner/internal/safeurl"
 )
 
 const (
@@ -207,9 +209,9 @@ func apiGet(client *http.Client, url string) ([]byte, error) {
 		if resp.StatusCode == http.StatusOK {
 			return body, nil
 		}
-		lastErr = fmt.Errorf("%s: %s", url, resp.Status)
+		lastErr = fmt.Errorf("%s: %s", safeurl.RedactURL(url), resp.Status)
 		if !retryableStatus(resp.StatusCode) || attempt == indexerMaxRetries {
-			return nil, fmt.Errorf("get %s: %w", url, lastErr)
+			return nil, fmt.Errorf("get %s: %w", safeurl.RedactURL(url), lastErr)
 		}
 		wait := parseRetryAfter(resp)
 		if wait == 0 {
@@ -220,7 +222,7 @@ func apiGet(client *http.Client, url string) ([]byte, error) {
 		}
 		time.Sleep(wait)
 	}
-	return nil, fmt.Errorf("get %s: %w", url, lastErr)
+	return nil, fmt.Errorf("get %s: %w", safeurl.RedactURL(url), lastErr)
 }
 
 func fetchLive(client *http.Client, base, baseURL, apiUser, apiPass, streamExt string) ([]catalog.LiveChannel, error) {
@@ -254,6 +256,7 @@ func fetchLive(client *http.Client, base, baseURL, apiUser, apiPass, streamExt s
 		}
 		streamURL := fmt.Sprintf("%s/live/%s/%s/%s.%s", baseURL, url.PathEscape(apiUser), url.PathEscape(apiPass), url.PathEscape(sid), streamExt)
 		live = append(live, catalog.LiveChannel{
+			ChannelID:   sid,
 			GuideNumber: strconv.Itoa(len(live) + 1),
 			GuideName:   name,
 			StreamURL:   streamURL,
@@ -301,13 +304,16 @@ func fetchVOD(client *http.Client, base, baseURL, apiUser, apiPass string) ([]ca
 		// Fallback: by category (paged by category; rate limit between requests)
 		catBody, err := apiGet(client, base+"&action=get_vod_categories")
 		if err != nil {
-			return nil, nil
+			return nil, fmt.Errorf("vod categories: %w", err)
 		}
 		var cats []struct {
 			CategoryID   interface{} `json:"category_id"`
 			CategoryName string     `json:"category_name"`
 		}
-		if err := json.Unmarshal(catBody, &cats); err != nil || len(cats) == 0 {
+		if err := json.Unmarshal(catBody, &cats); err != nil {
+			return nil, fmt.Errorf("vod categories json: %w", err)
+		}
+		if len(cats) == 0 {
 			return nil, nil
 		}
 		seen := make(map[string]bool)
@@ -377,19 +383,19 @@ func fetchVOD(client *http.Client, base, baseURL, apiUser, apiPass string) ([]ca
 func fetchSeries(client *http.Client, base, baseURL, apiUser, apiPass string) ([]catalog.Series, error) {
 	body, err := apiGet(client, base+"&action=get_series")
 	if err != nil {
-		return nil, nil
+		return nil, fmt.Errorf("get_series: %w", err)
 	}
 	type show struct {
 		SeriesID interface{} `json:"series_id"`
-		ID      interface{} `json:"id"`
-		Name    string     `json:"name"`
-		Cover   string     `json:"cover"`
+		ID       interface{} `json:"id"`
+		Name     string      `json:"name"`
+		Cover    string      `json:"cover"`
 	}
 	var list []show
 	if json.Unmarshal(body, &list) != nil {
 		var m map[string]show
 		if json.Unmarshal(body, &m) != nil {
-			return nil, nil
+			return nil, fmt.Errorf("get_series: invalid json")
 		}
 		for _, s := range m {
 			list = append(list, s)
@@ -478,10 +484,22 @@ func fetchSeries(client *http.Client, base, baseURL, apiUser, apiPass string) ([
 					})
 				}
 			}
-			for n := 1; n <= len(seasonMap); n++ {
-				if s, ok := seasonMap[n]; ok {
-					series.Seasons = append(series.Seasons, *s)
-				}
+			// Emit seasons in order by season number (keys may be non-contiguous, e.g. 1, 2, 5).
+			seasonNums := make([]int, 0, len(seasonMap))
+			for n := range seasonMap {
+				seasonNums = append(seasonNums, n)
+			}
+			sort.Ints(seasonNums)
+			for _, n := range seasonNums {
+				season := seasonMap[n]
+				// Stable episode order: by episode number, then title.
+				sort.Slice(season.Episodes, func(i, j int) bool {
+					if season.Episodes[i].EpisodeNum != season.Episodes[j].EpisodeNum {
+						return season.Episodes[i].EpisodeNum < season.Episodes[j].EpisodeNum
+					}
+					return season.Episodes[i].Title < season.Episodes[j].Title
+				})
+				series.Seasons = append(series.Seasons, *season)
 			}
 			if len(series.Seasons) > 0 {
 				out = append(out, series)

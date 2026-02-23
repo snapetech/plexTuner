@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/plextuner/plex-tuner/internal/catalog"
+	"github.com/plextuner/plex-tuner/internal/httpclient"
 	"github.com/plextuner/plex-tuner/internal/safeurl"
 )
 
@@ -19,6 +20,7 @@ type Gateway struct {
 	ProviderUser string
 	ProviderPass string
 	TunerCount   int
+	Client       *http.Client
 	mu           sync.Mutex
 	inUse        int
 }
@@ -28,13 +30,28 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	idxStr := strings.TrimPrefix(r.URL.Path, "/stream/")
-	idx, err := strconv.Atoi(idxStr)
-	if err != nil || idx < 0 || idx >= len(g.Channels) {
+	channelID := strings.TrimPrefix(r.URL.Path, "/stream/")
+	if channelID == "" {
 		http.NotFound(w, r)
 		return
 	}
-	channel := &g.Channels[idx]
+	var channel *catalog.LiveChannel
+	for i := range g.Channels {
+		if g.Channels[i].ChannelID == channelID {
+			channel = &g.Channels[i]
+			break
+		}
+	}
+	if channel == nil {
+		// Fallback: numeric index for backwards compatibility when ChannelID is not set
+		if idx, err := strconv.Atoi(channelID); err == nil && idx >= 0 && idx < len(g.Channels) {
+			channel = &g.Channels[idx]
+		}
+	}
+	if channel == nil {
+		http.NotFound(w, r)
+		return
+	}
 	urls := channel.StreamURLs
 	if len(urls) == 0 && channel.StreamURL != "" {
 		urls = []string{channel.StreamURL}
@@ -82,7 +99,11 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		req.Header.Set("User-Agent", "PlexTuner/1.0")
 
-		resp, err := http.DefaultClient.Do(req)
+		client := g.Client
+		if client == nil {
+			client = httpclient.ForStreaming()
+		}
+		resp, err := client.Do(req)
 		if err != nil {
 			log.Printf("gateway: channel %s upstream error (trying next): %v", channel.GuideName, err)
 			continue
@@ -91,6 +112,14 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			resp.Body.Close()
 			if i == 0 {
 				log.Printf("gateway: channel %s primary HTTP %d (trying next)", channel.GuideName, resp.StatusCode)
+			}
+			continue
+		}
+		// Reject 200 with empty body (e.g. Cloudflare/redirect returning 0 bytes) — try next URL (learned from k3s IPTV hardening).
+		if resp.ContentLength == 0 {
+			resp.Body.Close()
+			if i == 0 {
+				log.Printf("gateway: channel %s primary returned empty body (trying next)", channel.GuideName)
 			}
 			continue
 		}

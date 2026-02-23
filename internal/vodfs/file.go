@@ -38,20 +38,12 @@ func (n *VirtualFileNode) getPath(ctx context.Context) (path string, size int64)
 	return path, fi.Size()
 }
 
+// Getattr returns metadata without materializing. Size may be 0 until the file is opened/read.
+// Do not call Materialize here or Plex scans will trigger mass downloads.
 func (n *VirtualFileNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
-	path, size := n.getPath(ctx)
-	if path != "" {
-		out.Size = uint64(size)
-		fi, _ := os.Stat(path)
-		if fi != nil {
-			mt := fi.ModTime()
-			out.SetTimes(nil, &mt, nil)
-		}
-	} else {
-		out.Size = n.Size
-		out.SetTimes(nil, &time.Time{}, nil)
-	}
+	out.Size = n.Size
 	out.Mode = fuse.S_IFREG | 0444
+	out.SetTimes(nil, &time.Time{}, nil)
 	return 0
 }
 

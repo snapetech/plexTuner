@@ -14,7 +14,9 @@ Instructions for AI agents and maintainers working on this repo.
 |------|--------|
 | **`memory-bank/current_task.md`** | What is being worked on *right now*: goal, scope, and next steps. Update at session start and when focus changes so the next agent (or you later) knows where things left off. |
 | **`memory-bank/known_issues.md`** | Known bugs, limitations, and design tradeoffs. Add when you discover or fix something non-obvious so others don’t re-fight the same battles. |
-| **`memory-bank/recurring_loops.md`** | **Critical:** Recurring agentic loops, bugfix loops, and hard-to-solve problems that keep coming back. Document them here with: what keeps happening, why it’s tricky, and what actually works. Future agents should read this first to avoid repeating the same mistakes and to get early warnings about fragile areas. |
+| **`memory-bank/recurring_loops.md`** | **Critical:** Recurring agentic loops, bugfix loops, and hard-to-solve problems that keep coming back. Document them here with: what keeps happening, why it's tricky, and what actually works. Future agents should read this first to avoid repeating the same mistakes and to get early warnings about fragile areas. |
+| **`memory-bank/opportunities.md`** | Lightweight backlog for security/perf/reliability/maintainability/operability discoveries. File out-of-scope improvements here; raise to user in summary. |
+| **`memory-bank/task_history.md`** | Append-only log of completed tasks (summary, verification, opportunities filed). |
 
 ### How to use the memory bank
 
@@ -24,6 +26,41 @@ Instructions for AI agents and maintainers working on this repo.
 - **When discovering a limitation or bug:** Add to `known_issues.md` with enough context to reproduce or work around.
 
 Phrase entries so that **another agent** can act on them: concise, actionable, and with “why” where it helps.
+
+---
+
+## Uncertainty policy (ask only when it matters)
+
+Agents should not get bogged down asking permission. Ask questions only when:
+
+- requirements are ambiguous in a way that risks rework or wrong behavior
+- a change could break compatibility, security posture, or data integrity
+- the task would expand scope materially (new features, new deps, major refactor)
+- there are multiple plausible interpretations with different outcomes
+
+If uncertain but not blocked:
+
+- make the safest reasonable assumption
+- document it in `memory-bank/current_task.md` under "Assumptions"
+- proceed and keep the diff small
+
+For how to ask well: `memory-bank/skills/asking.md`
+
+---
+
+## Continuous improvement (without scope creep)
+
+While working, keep an eye out for:
+
+- security hazards (input validation, auth, secrets handling, injection paths)
+- performance wins (allocations, IO, hot paths, caching)
+- maintainability (clarity, duplication, brittle coupling)
+- operability (logs, metrics, error messages, debuggability)
+
+Policy:
+
+- If it is a small, low-risk improvement that is clearly within scope, you may do it.
+- If it expands scope or carries meaningful risk, log it to `memory-bank/opportunities.md` and raise it to the user in your summary.
 
 ---
 
