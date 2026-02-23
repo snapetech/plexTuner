@@ -123,3 +123,7 @@ compose.override.yml
 *.sqlite3
 *.sqlite-shm
 *.sqlite-wal
+
+# Plex Tuner: catalog data and built binary at repo root
+catalog.json
+/plex-tuner
