@@ -2,6 +2,19 @@
 
 First place to look before editing. Keeps agents from thrashing.
 
+**This folder is the Plex Tuner project.** There are two projects × two hosts = 4 repos. Push only to **origin** and **plex** from here.
+
+## Remotes (do not cross-push)
+
+| Remote    | Repo         | Host   | Use from this folder      |
+|-----------|--------------|--------|----------------------------|
+| **origin** | plexTuner    | GitLab | ✓ Push Plex Tuner here    |
+| **plex**   | plexTuner    | GitHub | ✓ Push Plex Tuner here    |
+| **github** | repoTemplate | GitHub | ✗ Do not push from here   |
+| **template** | repoTemplate | GitLab | ✗ Do not push from here   |
+
+To push Plex Tuner to both: `git push origin main && git push plex main`. Never `git push github` or `git push template` from this folder.
+
 ## Main entrypoints
 
 | Path | Purpose |
