@@ -1,6 +1,6 @@
-# Agent instructions — Agentic Repo Template
+# Agent instructions — Plex Tuner
 
-Instructions for AI agents and maintainers working on this repo. After "Use this template," run `scripts/init-template` and replace placeholders (see [TEMPLATE.md](TEMPLATE.md)).
+Instructions for AI agents and maintainers. **This repo is Plex Tuner** (IPTV→Plex bridge); it also uses the agentic template workflow (memory-bank, verify, docs). Main app: [cmd/plex-tuner](cmd/plex-tuner/main.go). Navigation: [memory-bank/repo_map.md](memory-bank/repo_map.md).
 
 **Tool-compat:** Tools that look for `agents.md` can use [agents.md](agents.md), which points here. Commands are authoritative in **`memory-bank/commands.yml`**; CI runs **`scripts/verify`** (no drift).
 
