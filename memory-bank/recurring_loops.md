@@ -32,6 +32,64 @@
 - **Symptom:** Touching unrelated files; refactor drift.
 - **Exit ramp:** Tighten scope in `memory-bank/current_task.md`; stop editing unrelated areas.
 
+### Loop: Curly quotes / special characters break piping, sed, JSON, shells
+
+**Symptom**
+- Agent keeps failing at `sed`, `jq`, `python -c`, `node -e`, bash heredocs, etc.
+- Errors like: `unexpected EOF`, `invalid character`, `unterminated string`, `invalid JSON`, `bad substitution`
+- Root cause: "smart quotes" (curly quotes) or other Unicode punctuation got introduced (often from docs/ChatGPT), and the shell/toolchain treats them differently than ASCII quotes.
+
+**Policy (preferred)**
+- In repo docs and code examples, use **ASCII quotes only**:
+  - Use `"` and `'` not `"` or `'` (curly).
+- Avoid requiring fancy punctuation in commands/config where copy/paste matters.
+- If the *product requirement* needs typographic quotes, store them in source as Unicode but handle them safely (see below).
+
+**Exit ramps (choose one that fits)**
+
+1) **Normalize to ASCII (fastest fix)**
+- Replace smart quotes with ASCII:
+  - Curly double `"` `"` → `"`
+  - Curly single `'` `'` → `'`
+- Also watch for: en dash `–` vs hyphen `-`, ellipsis `…` vs `...`, non-breaking space U+00A0.
+
+2) **Use a file, not inline strings (most robust)**
+- Put the exact content into a file, then reference the file.
+  - Example: JSON/YAML/template content → `cat file | tool ...`
+- This avoids shell quoting entirely.
+
+3) **Use Unicode escapes in JSON and programmatic edits**
+- In JSON, use escapes like:
+  - `\u201C` (left double quote), `\u201D` (right double quote)
+  - `\u2018` (left single quote), `\u2019` (right single quote)
+  - `\u00A0` (NBSP), `\u2013` (en dash), `\u2026` (ellipsis)
+- If generating JSON from code, prefer a real serializer (no hand-built JSON strings).
+
+4) **Prefer "read from stdin" over shell-quoted arguments**
+- Many tools accept stdin; use it:
+  - `python - <<'PY' ... PY` (single-quoted heredoc delimiter prevents expansion)
+  - `node <<'JS' ... JS`
+- For `jq`, prefer: `jq -f script.jq input.json` instead of complex one-liners.
+
+5) **Detect & strip smart punctuation when needed**
+- Quick sanity check in a file:
+  - Look for common offenders (2018/2019/201C/201D/00A0/2013/2026).
+- If found and not desired, normalize the file contents before continuing.
+
+**What to do when you hit this loop**
+- STOP trying to "escape harder" in the shell after 2 attempts.
+- Switch to: "file-based edit" or "unicode escape + serializer" approach.
+- Add a note in `memory-bank/current_task.md` under Evidence showing which character was present and where it came from (doc copy/paste, editor autocorrect, etc.).
+
+**Reference: common code points**
+- U+201C left double quotation mark  → `\u201C`
+- U+201D right double quotation mark → `\u201D`
+- U+2018 left single quotation mark  → `\u2018`
+- U+2019 right single quotation mark → `\u2019`
+- U+00A0 non-breaking space         → `\u00A0`
+- U+2013 en dash                    → `\u2013`
+- U+2026 ellipsis                   → `\u2026`
+
 (Add more traps above as they recur.)
 
 ---
