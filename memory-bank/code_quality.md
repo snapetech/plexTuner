@@ -18,6 +18,10 @@ Short rules so "done" is consistent and docs don't rot.
 
 - Atomic commits, patch staging (`git add -p`), and history search protocol: [memory-bank/skills/git.md](skills/git.md).
 
+## Performance and resources
+
+- Default posture, performance protocol, resource guardrails, and PR checklist: [memory-bank/skills/performance.md](skills/performance.md).
+
 ## Security
 
 - Before landing: quick pass with [memory-bank/skills/security.md](skills/security.md). Concerns → opportunities.md (security category).
