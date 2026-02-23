@@ -23,11 +23,12 @@ type Result struct {
 type Status string
 
 const (
-	StatusOK         Status = "ok"
-	StatusCloudflare Status = "cloudflare"
-	StatusBadStatus  Status = "bad_status"
-	StatusTimeout    Status = "timeout"
-	StatusError      Status = "error"
+	StatusOK          Status = "ok"
+	StatusCloudflare  Status = "cloudflare"
+	StatusBadStatus   Status = "bad_status"
+	StatusRateLimited Status = "rate_limited" // 429 Too Many Requests
+	StatusTimeout     Status = "timeout"
+	StatusError       Status = "error"
 )
 
 // ProbeOne fetches the M3U URL with a short timeout and classifies the result.
@@ -71,6 +72,9 @@ func ProbeOne(ctx context.Context, m3uURL string, client *http.Client) Result {
 	}
 	if isCFServer && code != http.StatusOK {
 		return Result{URL: m3uURL, Status: StatusCloudflare, StatusCode: code, LatencyMs: latency}
+	}
+	if code == http.StatusTooManyRequests {
+		return Result{URL: m3uURL, Status: StatusRateLimited, StatusCode: code, LatencyMs: latency}
 	}
 	if code != http.StatusOK {
 		return Result{URL: m3uURL, Status: StatusBadStatus, StatusCode: code, LatencyMs: latency}
@@ -136,6 +140,9 @@ func ProbePlayerAPI(ctx context.Context, baseURL, user, pass string, client *htt
 		return Result{URL: url, Status: StatusError, LatencyMs: latency}
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return Result{URL: baseURL, Status: StatusRateLimited, StatusCode: resp.StatusCode, LatencyMs: latency}
+	}
 	if resp.StatusCode != http.StatusOK {
 		return Result{URL: url, Status: StatusBadStatus, StatusCode: resp.StatusCode, LatencyMs: latency}
 	}

@@ -375,8 +375,13 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if resp.StatusCode != http.StatusOK {
-			log.Printf("gateway: channel=%q id=%s upstream[%d/%d] status=%d url=%s",
-				channel.GuideName, channelID, i+1, len(urls), resp.StatusCode, safeurl.RedactURL(streamURL))
+			if resp.StatusCode == http.StatusTooManyRequests {
+				log.Printf("gateway: channel=%q id=%s upstream[%d/%d] 429 rate limited url=%s",
+					channel.GuideName, channelID, i+1, len(urls), safeurl.RedactURL(streamURL))
+			} else {
+				log.Printf("gateway: channel=%q id=%s upstream[%d/%d] status=%d url=%s",
+					channel.GuideName, channelID, i+1, len(urls), resp.StatusCode, safeurl.RedactURL(streamURL))
+			}
 			resp.Body.Close()
 			continue
 		}

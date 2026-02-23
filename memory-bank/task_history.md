@@ -40,3 +40,19 @@ Append-only. One entry per completed task.
     - memory-bank/opportunities.md: Add or document internal/indexer dependency.
   Links:
     - README.md, docs/features.md, docs/CHANGELOG.md, docs/docs-gaps.md, docs/index.md
+
+- Date: 2025-02-23
+  Title: 429/5xx retry, indexer parallel series, provider 429, gateway log
+  Summary:
+    - internal/httpclient: DoWithRetry with RetryPolicy (429 Retry-After cap 60s, 5xx single retry 1s); parseRetryAfter(seconds or RFC1123 date); tests.
+    - internal/indexer/player_api: doGetWithRetry for all API GETs; fetchSeries parallelized fetchSeriesInfo with semaphore (maxConcurrentSeriesInfo=10).
+    - internal/provider: StatusRateLimited for 429 in ProbeOne and ProbePlayerAPI.
+    - internal/tuner/gateway: log "429 rate limited" when upstream returns 429 before trying next URL.
+  Verification:
+    - gofmt -s -w, go vet ./..., go test ./..., go build ./cmd/plex-tuner (scripts/verify).
+  Notes:
+    - 4xx (except 429) never retried; retry is one attempt after wait. No pagination (Xtream player_api returns full lists).
+  Opportunities filed:
+    - none
+  Links:
+    - internal/httpclient/retry.go, internal/httpclient/retry_test.go, internal/indexer/player_api.go, internal/provider/probe.go, internal/tuner/gateway.go

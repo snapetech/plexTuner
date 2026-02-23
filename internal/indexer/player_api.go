@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/plextuner/plex-tuner/internal/catalog"
@@ -51,14 +52,19 @@ func IndexFromPlayerAPI(apiBase, user, pass, ext string, liveOnly bool, baseURLs
 	return movies, series, live, nil
 }
 
-func resolveStreamBaseURL(ctx context.Context, apiBase, user, pass string, baseURLs []string, client *http.Client) (string, error) {
-	u := apiBase + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass)
+// doGetWithRetry performs a GET with 429/5xx retry. Caller must close resp.Body.
+func doGetWithRetry(ctx context.Context, client *http.Client, u string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req.Header.Set("User-Agent", "PlexTuner/1.0")
-	resp, err := client.Do(req)
+	return httpclient.DoWithRetry(ctx, client, req, httpclient.DefaultRetryPolicy)
+}
+
+func resolveStreamBaseURL(ctx context.Context, apiBase, user, pass string, baseURLs []string, client *http.Client) (string, error) {
+	u := apiBase + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass)
+	resp, err := doGetWithRetry(ctx, client, u)
 	if err != nil {
 		return "", err
 	}
@@ -90,12 +96,7 @@ func resolveStreamBaseURL(ctx context.Context, apiBase, user, pass string, baseU
 
 func fetchLiveStreams(ctx context.Context, apiBase, user, pass, streamBase, ext string, client *http.Client) ([]catalog.LiveChannel, error) {
 	u := apiBase + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&action=get_live_streams"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "PlexTuner/1.0")
-	resp, err := client.Do(req)
+	resp, err := doGetWithRetry(ctx, client, u)
 	if err != nil {
 		return nil, err
 	}
@@ -178,12 +179,7 @@ func intNum(v interface{}) int {
 
 func fetchVODStreams(ctx context.Context, apiBase, user, pass, streamBase string, client *http.Client) ([]catalog.Movie, error) {
 	u := apiBase + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&action=get_vod_streams"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "PlexTuner/1.0")
-	resp, err := client.Do(req)
+	resp, err := doGetWithRetry(ctx, client, u)
 	if err != nil {
 		return nil, err
 	}
@@ -231,14 +227,11 @@ func fetchVODStreams(ctx context.Context, apiBase, user, pass, streamBase string
 	return out, nil
 }
 
+const maxConcurrentSeriesInfo = 10
+
 func fetchSeries(ctx context.Context, apiBase, user, pass, streamBase string, client *http.Client) ([]catalog.Series, error) {
 	u := apiBase + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&action=get_series"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "PlexTuner/1.0")
-	resp, err := client.Do(req)
+	resp, err := doGetWithRetry(ctx, client, u)
 	if err != nil {
 		return nil, err
 	}
@@ -255,12 +248,29 @@ func fetchSeries(ctx context.Context, apiBase, user, pass, streamBase string, cl
 	if err := json.NewDecoder(resp.Body).Decode(&rawList); err != nil {
 		return nil, err
 	}
+	type result struct {
+		info []catalog.Season
+		err  error
+	}
+	results := make([]result, len(rawList))
+	sem := make(chan struct{}, maxConcurrentSeriesInfo)
+	var wg sync.WaitGroup
+	for i, s := range rawList {
+		wg.Add(1)
+		go func(i int, seriesID int) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			results[i].info, results[i].err = fetchSeriesInfo(ctx, apiBase, user, pass, streamBase, seriesID, client)
+		}(i, s.SeriesID)
+	}
+	wg.Wait()
 	var out []catalog.Series
-	for _, s := range rawList {
-		info, err := fetchSeriesInfo(ctx, apiBase, user, pass, streamBase, s.SeriesID, client)
-		if err != nil {
+	for i, r := range results {
+		if r.err != nil {
 			continue
 		}
+		s := rawList[i]
 		year := 0
 		if len(s.ReleaseYear) >= 4 {
 			if y, e := strconv.Atoi(s.ReleaseYear[:4]); e == nil {
@@ -275,7 +285,7 @@ func fetchSeries(ctx context.Context, apiBase, user, pass, streamBase string, cl
 			ID:         strconv.Itoa(s.SeriesID),
 			Title:      s.Name,
 			Year:       year,
-			Seasons:    info,
+			Seasons:    r.info,
 			ArtworkURL: artwork,
 		})
 	}
@@ -284,12 +294,7 @@ func fetchSeries(ctx context.Context, apiBase, user, pass, streamBase string, cl
 
 func fetchSeriesInfo(ctx context.Context, apiBase, user, pass, streamBase string, seriesID int, client *http.Client) ([]catalog.Season, error) {
 	u := apiBase + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&action=get_series_info&series_id=" + strconv.Itoa(seriesID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "PlexTuner/1.0")
-	resp, err := client.Do(req)
+	resp, err := doGetWithRetry(ctx, client, u)
 	if err != nil {
 		return nil, err
 	}

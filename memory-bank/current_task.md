@@ -2,9 +2,9 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Goal:** Stream buffering and transcoding implemented.
+**Goal:** (None active.) Last completed: 429/5xx retry, indexer parallel series, provider 429 status, gateway 429 log.
 
-**Scope:** In: config (PLEX_TUNER_STREAM_BUFFER_BYTES, PLEX_TUNER_STREAM_TRANSCODE), gateway buffering and remux/transcode choice, Server/main wiring, docs and .env.example. Out: (previous task) README/features/changelog.
+**Scope:** In: (previous) httpclient DoWithRetry (429 Retry-After + 5xx single retry), indexer doGetWithRetry + parallel fetchSeriesInfo (cap 10), provider StatusRateLimited, gateway log 429. Out: pagination (player_api has none), configurable rate-limit delay.
 
 **Last updated:** 2025-02-23
 

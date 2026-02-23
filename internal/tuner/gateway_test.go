@@ -277,7 +277,7 @@ func TestStreamWriter_adaptive(t *testing.T) {
 // slowWriter delays before each Write.
 type slowWriter struct {
 	delay time.Duration
-	w    bytes.Buffer
+	w     bytes.Buffer
 }
 
 func (s *slowWriter) Write(p []byte) (n int, err error) {
@@ -290,6 +290,6 @@ type mockResponseWriter struct {
 	w io.Writer
 }
 
-func (m *mockResponseWriter) Header() http.Header       { return nil }
-func (m *mockResponseWriter) WriteHeader(int)           {}
+func (m *mockResponseWriter) Header() http.Header         { return nil }
+func (m *mockResponseWriter) WriteHeader(int)             {}
 func (m *mockResponseWriter) Write(p []byte) (int, error) { return m.w.Write(p) }
