@@ -35,6 +35,11 @@ func LoadEnvFile(path string) error {
 		if key == "" {
 			continue
 		}
+		// Explicit process env should win over .env defaults (important for
+		// runtime overrides in k8s / systemd).
+		if _, exists := os.LookupEnv(key); exists {
+			continue
+		}
 		value = unquoteEnv(value)
 		os.Setenv(key, value)
 	}

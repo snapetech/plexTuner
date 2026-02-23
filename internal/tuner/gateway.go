@@ -32,6 +32,7 @@ type Gateway struct {
 	TunerCount          int
 	StreamBufferBytes   int    // 0 = no buffer, -1 = auto
 	StreamTranscodeMode string // "off" | "on" | "auto"
+	TranscodeOverrides  map[string]bool
 	DefaultProfile      string
 	ProfileOverrides    map[string]string
 	Client              *http.Client
@@ -204,11 +205,59 @@ func loadProfileOverridesFile(path string) (map[string]string, error) {
 	return out, nil
 }
 
-func (g *Gateway) profileForChannel(channelID string) string {
-	if g != nil && g.ProfileOverrides != nil {
-		if p, ok := g.ProfileOverrides[channelID]; ok && strings.TrimSpace(p) != "" {
-			return normalizeProfileName(p)
+func loadTranscodeOverridesFile(path string) (map[string]bool, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	// Accept either {"id": true} or {"id":"on"/"off"} for convenience.
+	boolMap := map[string]bool{}
+	if err := json.Unmarshal(b, &boolMap); err == nil {
+		return boolMap, nil
+	}
+	strMap := map[string]string{}
+	if err := json.Unmarshal(b, &strMap); err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(strMap))
+	for k, v := range strMap {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			continue
 		}
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "1", "true", "yes", "on", "transcode":
+			out[k] = true
+		case "0", "false", "no", "off", "remux", "copy":
+			out[k] = false
+		}
+	}
+	return out, nil
+}
+
+func (g *Gateway) firstProfileOverride(keys ...string) (string, bool) {
+	if g == nil || g.ProfileOverrides == nil {
+		return "", false
+	}
+	for _, k := range keys {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			continue
+		}
+		if p, ok := g.ProfileOverrides[k]; ok && strings.TrimSpace(p) != "" {
+			return normalizeProfileName(p), true
+		}
+	}
+	return "", false
+}
+
+func (g *Gateway) profileForChannel(channelID string) string {
+	if p, ok := g.firstProfileOverride(channelID); ok {
+		return p
 	}
 	if g != nil && strings.TrimSpace(g.DefaultProfile) != "" {
 		return normalizeProfileName(g.DefaultProfile)
@@ -216,11 +265,21 @@ func (g *Gateway) profileForChannel(channelID string) string {
 	return defaultProfileFromEnv()
 }
 
+func (g *Gateway) profileForChannelMeta(channelID, guideNumber, tvgID string) string {
+	if p, ok := g.firstProfileOverride(channelID, guideNumber, tvgID); ok {
+		return p
+	}
+	return g.profileForChannel("")
+}
+
 func (g *Gateway) effectiveTranscode(ctx context.Context, streamURL string) bool {
 	switch strings.ToLower(strings.TrimSpace(g.StreamTranscodeMode)) {
 	case "on":
 		return true
 	case "off", "":
+		return false
+	case "auto_cached", "cached_auto":
+		// Caller should pass a channel-aware decision via effectiveTranscodeForChannel.
 		return false
 	case "auto":
 		need, err := g.needTranscode(ctx, streamURL)
@@ -232,6 +291,40 @@ func (g *Gateway) effectiveTranscode(ctx context.Context, streamURL string) bool
 	default:
 		return false
 	}
+}
+
+func (g *Gateway) firstTranscodeOverride(keys ...string) (bool, bool) {
+	if g == nil || g.TranscodeOverrides == nil {
+		return false, false
+	}
+	for _, k := range keys {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			continue
+		}
+		if v, ok := g.TranscodeOverrides[k]; ok {
+			return v, true
+		}
+	}
+	return false, false
+}
+
+func (g *Gateway) effectiveTranscodeForChannel(ctx context.Context, channelID, streamURL string) bool {
+	return g.effectiveTranscodeForChannelMeta(ctx, channelID, "", "", streamURL)
+}
+
+func (g *Gateway) effectiveTranscodeForChannelMeta(ctx context.Context, channelID, guideNumber, tvgID, streamURL string) bool {
+	mode := strings.ToLower(strings.TrimSpace(g.StreamTranscodeMode))
+	if mode == "auto_cached" || mode == "cached_auto" {
+		if v, ok := g.firstTranscodeOverride(channelID, guideNumber, tvgID); ok {
+			log.Printf("gateway: transcode auto_cached match id=%q guide=%q tvg=%q -> %t", channelID, guideNumber, tvgID, v)
+			return v
+		}
+		log.Printf("gateway: transcode auto_cached miss id=%q guide=%q tvg=%q (default remux)", channelID, guideNumber, tvgID)
+		// Fast-path fallback for uncached channels: keep startup latency low.
+		return false
+	}
+	return g.effectiveTranscode(ctx, streamURL)
 }
 
 func (g *Gateway) needTranscode(ctx context.Context, streamURL string) (bool, error) {
@@ -414,7 +507,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			body = rewriteHLSPlaylist(body, streamURL)
 			firstSeg := firstHLSMediaLine(body)
-			transcode := g.effectiveTranscode(r.Context(), streamURL)
+			transcode := g.effectiveTranscodeForChannelMeta(r.Context(), channelID, channel.GuideNumber, channel.TVGID, streamURL)
 			bufferSize := g.effectiveBufferSize(transcode)
 			mode := "remux"
 			if transcode {
@@ -426,8 +519,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			log.Printf("gateway: channel=%q id=%s hls-playlist bytes=%d first-seg=%q dur=%s (relaying as ts, %s buffer=%s)",
 				channel.GuideName, channelID, len(body), firstSeg, time.Since(start).Round(time.Millisecond), mode, bufDesc)
+			log.Printf("gateway: channel=%q id=%s hls-mode transcode=%t mode=%q guide=%q tvg=%q", channel.GuideName, channelID, transcode, g.StreamTranscodeMode, channel.GuideNumber, channel.TVGID)
 			if ffmpegPath, ffmpegErr := exec.LookPath("ffmpeg"); ffmpegErr == nil {
-				if err := g.relayHLSWithFFmpeg(w, r, ffmpegPath, streamURL, channel.GuideName, channelID, start, transcode, bufferSize); err == nil {
+				if err := g.relayHLSWithFFmpeg(w, r, ffmpegPath, streamURL, channel.GuideName, channelID, channel.GuideNumber, channel.TVGID, start, transcode, bufferSize); err == nil {
 					return
 				} else {
 					log.Printf("gateway: channel=%q id=%s ffmpeg-%s failed (falling back to go relay): %v",
@@ -460,11 +554,13 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	playlistURL string,
 	channelName string,
 	channelID string,
+	guideNumber string,
+	tvgID string,
 	start time.Time,
 	transcode bool,
 	bufferBytes int,
 ) error {
-	profile := g.profileForChannel(channelID)
+	profile := g.profileForChannelMeta(channelID, guideNumber, tvgID)
 
 	args := []string{
 		"-nostdin",
@@ -584,13 +680,19 @@ func (g *Gateway) relayHLSWithFFmpeg(
 				"-af", "aresample=async=1:first_pts=0",
 			)
 		}
+		// Help Plex's live parser lock onto a clean TS timeline/header faster.
+		codecArgs = append(codecArgs,
+			"-muxrate", "3000000",
+			"-pcr_period", "20",
+			"-pat_period", "0.10",
+		)
 	}
 	codecArgs = append(codecArgs,
 		"-flush_packets", "1",
 		"-max_interleave_delta", "0",
 		"-muxdelay", "0",
 		"-muxpreload", "0",
-		"-mpegts_flags", "+resend_headers+pat_pmt_at_frames",
+		"-mpegts_flags", "+resend_headers+pat_pmt_at_frames+initial_discontinuity",
 		"-f", "mpegts",
 		"pipe:1",
 	)

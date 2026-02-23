@@ -3,7 +3,9 @@ package tuner
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 
 	"github.com/plextuner/plex-tuner/internal/catalog"
 )
@@ -37,12 +39,20 @@ func (h *HDHR) serveDiscover(w http.ResponseWriter) {
 	if base == "" {
 		base = "http://localhost:5004"
 	}
+	friendly := strings.TrimSpace(os.Getenv("PLEX_TUNER_FRIENDLY_NAME"))
+	if friendly == "" {
+		friendly = "Plex Tuner"
+	}
+	deviceID := strings.TrimSpace(os.Getenv("PLEX_TUNER_DEVICE_ID"))
+	if deviceID == "" {
+		deviceID = "plextuner01"
+	}
 	out := map[string]interface{}{
-		"FriendlyName": "Plex Tuner",
+		"FriendlyName": friendly,
 		"BaseURL":      base,
 		"LineupURL":    base + "/lineup.json",
 		"TunerCount":   tunerCount,
-		"DeviceID":     "plextuner01",
+		"DeviceID":     deviceID,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out)

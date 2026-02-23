@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/plextuner/plex-tuner/internal/catalog"
@@ -43,16 +44,31 @@ func (s *Server) Run(ctx context.Context) error {
 	} else {
 		log.Printf("Profile overrides: none (default=%s)", defaultProfile)
 	}
+	txOverridePath := os.Getenv("PLEX_TUNER_TRANSCODE_OVERRIDES_FILE")
+	txOverrides, txErr := loadTranscodeOverridesFile(txOverridePath)
+	if txErr != nil {
+		log.Printf("Transcode overrides disabled: load %q failed: %v", txOverridePath, txErr)
+	} else if len(txOverrides) > 0 {
+		log.Printf("Transcode overrides loaded: %d entries from %s", len(txOverrides), txOverridePath)
+	}
+	streamMode := strings.TrimSpace(s.StreamTranscodeMode)
+	if streamMode == "" {
+		// Fallback to process env so runtime overrides still work even if a caller
+		// didn't thread config through correctly.
+		streamMode = strings.TrimSpace(os.Getenv("PLEX_TUNER_STREAM_TRANSCODE"))
+	}
 	gateway := &Gateway{
 		Channels:            s.Channels,
 		ProviderUser:        s.ProviderUser,
 		ProviderPass:        s.ProviderPass,
 		TunerCount:          s.TunerCount,
 		StreamBufferBytes:   s.StreamBufferBytes,
-		StreamTranscodeMode: s.StreamTranscodeMode,
+		StreamTranscodeMode: streamMode,
+		TranscodeOverrides:  txOverrides,
 		DefaultProfile:      defaultProfile,
 		ProfileOverrides:    overrides,
 	}
+	log.Printf("Gateway stream mode: transcode=%q buffer_bytes=%d", gateway.StreamTranscodeMode, gateway.StreamBufferBytes)
 	xmltv := &XMLTV{
 		Channels:         s.Channels,
 		EpgPruneUnlinked: s.EpgPruneUnlinked,

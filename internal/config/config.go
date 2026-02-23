@@ -218,11 +218,14 @@ func getEnvIntOrAuto(key string, defaultVal int) int {
 	return defaultVal
 }
 
-// getEnvTranscodeMode returns "off", "on", or "auto" from PLEX_TUNER_STREAM_TRANSCODE.
+// getEnvTranscodeMode returns "off", "on", "auto", or "auto_cached" from PLEX_TUNER_STREAM_TRANSCODE.
 func getEnvTranscodeMode(key string, defaultVal string) string {
 	v := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
 	if v == "auto" {
 		return "auto"
+	}
+	if v == "auto_cached" || v == "cached_auto" {
+		return "auto_cached"
 	}
 	if v == "true" || v == "1" || v == "yes" {
 		return "on"
