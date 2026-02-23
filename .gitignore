@@ -1,28 +1,104 @@
-# Binaries
-/bin/
-*.exe
-
-# Secrets — never commit
+# =========================
+# Secrets / local config
+# =========================
 .env
 .env.*
 !.env.example
 
-# Local data (add your app's data paths)
-/var/
+# TLS / certs / keys (local dev PKI)
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
 
-# Go
+# SSH keys (just in case someone drops one in the repo)
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+
+# =========================
+# Go build artifacts
+# =========================
+# If you build into these directories
+/bin/
+/dist/
+/out/
+/build/
+
+# Go outputs
+*.exe
+*.dll
+*.so
+*.dylib
 *.test
 *.out
+
+# Coverage
+coverage/
+cover.out
+coverage.out
+coverage.txt
+
+# Profiles / benchmarking
+*.prof
+*.pprof
+cpu.prof
+mem.prof
+trace.out
+
+# Workspace (multi-module)
 go.work
 
-# IDE
-.idea/
-.vscode/
+# =========================
+# Logs / temp files
+# =========================
+*.log
+*.tmp
 *.swp
+*.swo
 *~
-
-# OS
 .DS_Store
 Thumbs.db
+
+# =========================
+# Editor / IDE
+# =========================
+.idea/
+*.iml
+
+# VS Code: keep recommended settings if you want them committed
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+
+# =========================
+# OS / tooling
+# =========================
+.direnv/
+.envrc
+
+# =========================
+# Docker / Compose local overrides
+# =========================
+docker-compose.override.yml
+compose.override.yml
+
+# =========================
+# Databases (local dev)
+# =========================
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+
+# =========================
+# Template default binaries (remove or adjust for your app)
+# =========================
 hello
 app
