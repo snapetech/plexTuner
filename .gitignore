@@ -1,0 +1,28 @@
+# Binaries
+/bin/
+*.exe
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Catalog and cache (local data)
+catalog.json
+/var/
+
+# Go
+*.test
+*.out
+go.work
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+plex-tuner

@@ -1,0 +1,48 @@
+package vodfs
+
+import (
+	"context"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/hanwen/go-fuse/v2/fs"
+	"github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/plextuner/plex-tuner/internal/catalog"
+	"github.com/plextuner/plex-tuner/internal/materializer"
+)
+
+// Mount mounts VODFS at mountPoint using the given catalog snapshot and materializer.
+// It blocks until the process receives SIGINT or the server exits.
+func Mount(mountPoint string, movies []catalog.Movie, series []catalog.Series, mat materializer.Interface) error {
+	root := &Root{
+		Movies: movies,
+		Series: series,
+		Mat:    mat,
+	}
+	if root.Mat == nil {
+		root.Mat = &materializer.Stub{}
+	}
+
+	opts := &fs.Options{
+		MountOptions: fuse.MountOptions{
+			Debug: false,
+		},
+	}
+	server, err := fs.Mount(mountPoint, root, opts)
+	if err != nil {
+		return err
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-ctx.Done()
+		log.Println("Unmounting VODFS...")
+		_ = server.Unmount()
+	}()
+
+	server.Wait()
+	stop()
+	return nil
+}

@@ -1,0 +1,23 @@
+# Plex Tuner — optional Docker Compose for tuner + (future) VODFS sidecar.
+# VODFS requires FUSE; typically run on host or with privileged mount.
+# Usage:
+#   1. Set env or .env: PLEX_TUNER_PROVIDER_URL, PLEX_TUNER_PROVIDER_USER, PLEX_TUNER_PROVIDER_PASS
+#   2. Run: docker compose run --rm plex-tuner index   (fetch catalog once)
+#   3. Run: docker compose up tuner   (serve HDHR + XMLTV + gateway)
+#   4. In Plex: Add Live TV device (Base URL), add XMLTV URL (http://host:5004/guide.xml)
+
+services:
+  tuner:
+    build: .
+    image: plextuner:latest
+    command: serve -addr :5004 -base-url http://tuner:5004
+    ports:
+      - "5004:5004"
+    volumes:
+      - ./catalog.json:/app/catalog.json
+    environment:
+      - PLEX_TUNER_CATALOG=/app/catalog.json
+      - PLEX_TUNER_PROVIDER_URL=${PLEX_TUNER_PROVIDER_URL}
+      - PLEX_TUNER_PROVIDER_USER=${PLEX_TUNER_PROVIDER_USER}
+      - PLEX_TUNER_PROVIDER_PASS=${PLEX_TUNER_PROVIDER_PASS}
+    restart: unless-stopped

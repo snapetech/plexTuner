@@ -1,0 +1,34 @@
+{
+  "movies": [
+    {
+      "id": "movie_sample1",
+      "title": "Sample Movie",
+      "year": 2023,
+      "stream_url": "http://example.com/movie1.mp4",
+      "artwork_url": ""
+    }
+  ],
+  "series": [
+    {
+      "id": "series_sample1",
+      "title": "Sample Show",
+      "year": 2022,
+      "seasons": [
+        {
+          "number": 1,
+          "episodes": [
+            {
+              "id": "ep_sample1",
+              "season_num": 1,
+              "episode_num": 1,
+              "title": "Pilot",
+              "airdate": "",
+              "stream_url": "http://example.com/s1e1.mp4"
+            }
+          ]
+        }
+      ],
+      "artwork_url": ""
+    }
+  ]
+}
