@@ -9,6 +9,7 @@ Short rules so "done" is consistent and docs don't rot.
 - **"Done" includes doc updates** when behavior, interfaces, or config change: update or add one doc (how-to, reference, or explanation); add See also / Related ADRs. See [current_task.md](current_task.md) § Docs.
 - Doc gaps out of scope → file in [opportunities.md](opportunities.md) (operability/maintainability).
 - Conventions: [docs/_meta/linking.md](../docs/_meta/linking.md) (relative links, frontmatter, See also on every doc).
+- **If docs added:** run link check when available (or N/A). Sets the norm even if not wired in CI yet.
 
 ## Verification
 
@@ -21,6 +22,11 @@ Short rules so "done" is consistent and docs don't rot.
 ## Performance and resources
 
 - Default posture, performance protocol, resource guardrails, and PR checklist: [memory-bank/skills/performance.md](skills/performance.md).
+
+## Safety and orientation
+
+- **Dangerous ops:** No destructive commands without backup/rollback note in current_task. [memory-bank/skills/dangerous_ops.md](skills/dangerous_ops.md).
+- **Repo orientation:** Before editing, run the quick-scan checklist. [memory-bank/skills/repo_orientation.md](skills/repo_orientation.md).
 
 ## Security
 

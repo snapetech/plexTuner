@@ -32,6 +32,10 @@
 - **Symptom:** Touching unrelated files; refactor drift.
 - **Exit ramp:** Tighten scope in `memory-bank/current_task.md`; stop editing unrelated areas.
 
+### Repro-first for bugs
+- **Symptom:** Hours of blind edits; "fix" doesn't stick or breaks something else.
+- **Rule:** If it's a bug: add **repro steps or a failing test before** attempting fixes. Prevents random poking.
+
 ### Loop: Curly quotes / special characters break piping, sed, JSON, shells
 
 **Symptom**

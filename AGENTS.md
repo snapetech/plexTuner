@@ -74,7 +74,7 @@ If uncertain but not blocked:
 - document it in `memory-bank/current_task.md` under "Assumptions"
 - proceed and keep the diff small
 
-For how to ask well: `memory-bank/skills/asking.md`. Security checklist before landing: `memory-bank/skills/security.md`.
+For how to ask well: `memory-bank/skills/asking.md`. Security checklist before landing: `memory-bank/skills/security.md`. Dangerous ops (backup/rollback note required): `memory-bank/skills/dangerous_ops.md`. Quick repo orientation: `memory-bank/skills/repo_orientation.md`.
 
 ---
 
@@ -91,6 +91,10 @@ Policy:
 
 - If it is a small, low-risk improvement that is clearly within scope, you may do it.
 - If it expands scope or carries meaningful risk, log it to `memory-bank/opportunities.md` and raise it to the user in your summary.
+
+**Scope guard (no drive-by refactors):** If it isn't in In/Out, don't touch it — file it as an opportunity. Keeps improvement-hunting from becoming a refactor spree.
+
+**Definition of done:** Done = green verification commands + task_history entry + docs updated if behavior changed + opportunities filed if discovered.
 
 ---
 

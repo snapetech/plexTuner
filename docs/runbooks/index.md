@@ -11,7 +11,8 @@ Deploy, rollback, troubleshoot. Goal → preconditions → steps → verify → 
 
 | Doc | Description |
 |-----|-------------|
-| *(none yet)* | Add runbooks for deploy, Plex DVR registration, cache recovery, etc. |
+| [service-template](service-template.md) | Skeleton: start/stop, config knobs, logs/metrics, common failures. Fill in when the repo runs as a service. |
+| *(add more)* | Deploy, cache recovery, incident response, etc. |
 
 See also
 --------
