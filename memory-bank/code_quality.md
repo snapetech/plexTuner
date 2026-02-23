@@ -14,6 +14,10 @@ Short rules so "done" is consistent and docs don't rot.
 
 - **`scripts/verify`** runs format, lint, test, build. CI runs only this. Commands: [memory-bank/commands.yml](commands.yml).
 
+## Git workflow
+
+- Atomic commits, patch staging (`git add -p`), and history search protocol: [memory-bank/skills/git.md](skills/git.md).
+
 ## Security
 
 - Before landing: quick pass with [memory-bank/skills/security.md](skills/security.md). Concerns → opportunities.md (security category).
