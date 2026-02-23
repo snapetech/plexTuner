@@ -144,6 +144,7 @@ const (
 	profileAACCFR     = "aaccfr"
 	profileVideoOnly  = "videoonlyfast"
 	profileLowBitrate = "lowbitrate"
+	profileDashFast   = "dashfast"
 )
 
 func normalizeProfileName(v string) string {
@@ -158,6 +159,8 @@ func normalizeProfileName(v string) string {
 		return profileVideoOnly
 	case "lowbitrate", "low-bitrate", "low":
 		return profileLowBitrate
+	case "dashfast", "dash-fast":
+		return profileDashFast
 	default:
 		return profileDefault
 	}
@@ -552,6 +555,21 @@ func (g *Gateway) relayHLSWithFFmpeg(
 				"-ar", "48000",
 				"-b:a", "96k",
 				"-af", "aresample=async=1:first_pts=0",
+			)
+		case profileDashFast:
+			// Aggressively optimize for Plex Web DASH startup readiness.
+			codecArgs = append(codecArgs,
+				"-vf", "fps=30000/1001,scale='min(1280,iw)':-2,format=yuv420p",
+				"-b:v", "1800k",
+				"-maxrate", "1800k",
+				"-bufsize", "1800k",
+				"-c:a", "aac",
+				"-profile:a", "aac_low",
+				"-ac", "2",
+				"-ar", "48000",
+				"-b:a", "96k",
+				"-af", "aresample=async=1:first_pts=0",
+				"-x264-params", "repeat-headers=1:keyint=30:min-keyint=30:scenecut=0:force-cfr=1:nal-hrd=cbr",
 			)
 		default:
 			codecArgs = append(codecArgs,
