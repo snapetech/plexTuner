@@ -1,10 +1,13 @@
 package tuner
 
 import (
+	"bytes"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/plextuner/plex-tuner/internal/catalog"
 )
@@ -221,3 +224,72 @@ func TestGateway_stream_rewritesHLSRelativeURLs(t *testing.T) {
 		t.Fatalf("segments not relayed: %q", body)
 	}
 }
+
+func TestAdaptiveWriter_passthrough(t *testing.T) {
+	var out bytes.Buffer
+	aw := newAdaptiveWriter(&out)
+	data := []byte("hello")
+	if _, err := aw.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := aw.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(out.Bytes(), data) {
+		t.Errorf("got %q", out.Bytes())
+	}
+}
+
+func TestAdaptiveWriter_growsOnSlowFlush(t *testing.T) {
+	// Slow writer: each Write blocks for longer than adaptiveSlowFlushMs.
+	slow := &slowWriter{delay: 150 * time.Millisecond}
+	aw := newAdaptiveWriter(slow)
+	chunk := make([]byte, adaptiveBufferMin)
+	for i := range chunk {
+		chunk[i] = byte(i & 0xff)
+	}
+	// Fill past initial target so we trigger a flush; the flush will be "slow" so target grows.
+	for i := 0; i < 3; i++ {
+		if _, err := aw.Write(chunk); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := aw.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if aw.targetSize <= adaptiveBufferInitial {
+		t.Errorf("expected target to grow after slow flush; got targetSize=%d", aw.targetSize)
+	}
+}
+
+func TestStreamWriter_adaptive(t *testing.T) {
+	var out bytes.Buffer
+	sw, flush := streamWriter(&mockResponseWriter{w: &out}, -1)
+	if _, err := sw.Write([]byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	flush()
+	if out.String() != "x" {
+		t.Errorf("adaptive flush: got %q", out.String())
+	}
+}
+
+// slowWriter delays before each Write.
+type slowWriter struct {
+	delay time.Duration
+	w    bytes.Buffer
+}
+
+func (s *slowWriter) Write(p []byte) (n int, err error) {
+	time.Sleep(s.delay)
+	return s.w.Write(p)
+}
+
+// mockResponseWriter implements http.ResponseWriter for streamWriter (only Write matters).
+type mockResponseWriter struct {
+	w io.Writer
+}
+
+func (m *mockResponseWriter) Header() http.Header       { return nil }
+func (m *mockResponseWriter) WriteHeader(int)           {}
+func (m *mockResponseWriter) Write(p []byte) (int, error) { return m.w.Write(p) }

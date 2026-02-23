@@ -116,6 +116,12 @@ docker-compose.override.yml
 compose.override.yml
 
 # =========================
+# Plex Tuner runtime / build
+# =========================
+catalog.json
+/plex-tuner
+
+# =========================
 # Databases (local dev)
 # =========================
 *.db

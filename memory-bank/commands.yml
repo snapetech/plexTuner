@@ -1,23 +1,26 @@
 # Authoritative verification commands (machine-readable).
 # CI runs scripts/verify, which runs scripts/verify-steps.sh.
-# Define your own format/lint/test/build in verify-steps.sh and keep this file in sync for agent reference.
-# See: https://github.blog/ai-and-ml/github-copilot/how-to-write-a-great-agents-md-lessons-from-over-2500-repositories/
+# Keep this file in sync with scripts/verify-steps.sh for agent reference.
 
-# Example entries (replace with your stack). Use "N/A" to skip a step.
 bootstrap: "N/A"
-format: "N/A"
-lint: "N/A"
-typecheck: "N/A"
-test: "N/A"
-integration_test: "N/A"
-build: "N/A"
-run: "N/A"
-run_single_test: "N/A"
-clean: "N/A"
+format: "gofmt -s -l .  # fail if any file needs formatting; fix with: gofmt -s -w ."
+lint: "go vet ./..."
+typecheck: "N/A  # Go is compiled"
+test: "go test -count=1 ./..."
+integration_test: "N/A  # unit tests only; probe/index need .env"
+build: "go build -o /dev/null ./cmd/plex-tuner"
+run: "go run ./cmd/plex-tuner run  # needs .env; or: serve / index / mount / probe"
+run_single_test: "go test -v -run <TestName> ./internal/<pkg>"
+clean: "go clean -cache  # optional; rm -f plex-tuner if built to repo root"
 
-# Verification order for scripts/verify-steps.sh (suggested; implement in that script)
+# Verification order (scripts/verify-steps.sh)
 verify_steps:
   - format
-  - lint
+  - vet
   - test
   - build
+
+# Short / QA helpers
+quick_verify: "scripts/verify  # same as CI; ~10–30s"
+probe_provider: "go run ./cmd/plex-tuner probe  # -urls=... optional; needs .env creds"
+check_endpoints: "curl -s -o /dev/null -w '%{http_code}' <BASE_URL>/discover.json  # 200 = OK"

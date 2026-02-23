@@ -45,7 +45,9 @@ Canonical list of features. See [README](../README.md) for quick start and [comp
 | **lineup_status.json** | Status endpoint. |
 | **guide.xml** | XMLTV guide. Default: placeholder. Optional: fetch external XMLTV URL, filter to catalog channels, remap programme channel IDs to local guide numbers. |
 | **live.m3u** | M3U export of live channels (for external use or debugging). |
-| **/stream/<id>** | Stream gateway: proxy to provider URL with optional basic auth; tuner count limit; fallback to backup URLs. |
+| **/stream/<id>** | Stream gateway: proxy to provider URL with optional basic auth; tuner count limit; fallback to backup URLs. HLS is remuxed or transcoded to MPEG-TS via ffmpeg when available. |
+| **Stream buffering** | `PLEX_TUNER_STREAM_BUFFER_BYTES`: 0 = off; `auto` or -1 = **adaptive** when transcoding (starts 1 MiB, grows up to 2 MiB when client is slow, shrinks to 64 KiB when client keeps up); or fixed bytes (e.g. 2097152 = 2 MiB). |
+| **Stream transcoding** | `PLEX_TUNER_STREAM_TRANSCODE`: `off` = remux only; `on` = always transcode (libx264/aac); `auto` = probe with ffprobe and transcode only when codec is not Plex-friendly (e.g. HEVC, VP9). |
 | **Tuner count** | Configurable concurrent stream limit (`PLEX_TUNER_TUNER_COUNT`, default 2). Returns HDHomeRun error 805 when all tuners in use. |
 | **Base URL** | Configurable base URL for discover/lineup/guide so Plex can reach this host (`PLEX_TUNER_BASE_URL` or `-base-url`). |
 
@@ -87,7 +89,6 @@ Canonical list of features. See [README](../README.md) for quick start and [comp
 ## 7. Not supported (by design)
 
 - **Web UI** — configuration is CLI and env only.
-- **Stream buffering / transcoding** — we proxy; no ffmpeg buffer or transcode.
 - **Channel mapping UI** — filtering is via env (EPG-only, smoketest, live-only).
 - **Plex API DVR creation** — we do not create DVRs via Plex HTTP API or perform channelmap activation; we only have DB-based `RegisterTuner` to point existing provider rows at our URLs.
 

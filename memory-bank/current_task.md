@@ -2,9 +2,9 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Goal:** Redo README, add features.md, changelog.md, and documentation gaps.
+**Goal:** Stream buffering and transcoding implemented.
 
-**Scope:** In: README (full features + alternatives matrix), docs/features.md, docs/CHANGELOG.md, docs/docs-gaps.md, docs index link. Out: fixing missing internal/indexer (documented in docs-gaps).
+**Scope:** In: config (PLEX_TUNER_STREAM_BUFFER_BYTES, PLEX_TUNER_STREAM_TRANSCODE), gateway buffering and remux/transcode choice, Server/main wiring, docs and .env.example. Out: (previous task) README/features/changelog.
 
 **Last updated:** 2025-02-23
 

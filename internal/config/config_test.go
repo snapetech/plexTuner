@@ -259,3 +259,53 @@ func TestXMLTVEnv(t *testing.T) {
 		t.Errorf("XMLTVTimeout: got %v", c.XMLTVTimeout)
 	}
 }
+
+func TestStreamTranscodeMode(t *testing.T) {
+	os.Clearenv()
+	c := Load()
+	if c.StreamTranscodeMode != "off" {
+		t.Errorf("StreamTranscodeMode default: got %q", c.StreamTranscodeMode)
+	}
+	for _, env := range []string{"true", "1", "yes"} {
+		os.Clearenv()
+		os.Setenv("PLEX_TUNER_STREAM_TRANSCODE", env)
+		c = Load()
+		if c.StreamTranscodeMode != "on" {
+			t.Errorf("StreamTranscodeMode %q: got %q", env, c.StreamTranscodeMode)
+		}
+	}
+	os.Clearenv()
+	os.Setenv("PLEX_TUNER_STREAM_TRANSCODE", "auto")
+	c = Load()
+	if c.StreamTranscodeMode != "auto" {
+		t.Errorf("StreamTranscodeMode auto: got %q", c.StreamTranscodeMode)
+	}
+	os.Setenv("PLEX_TUNER_STREAM_TRANSCODE", "false")
+	c = Load()
+	if c.StreamTranscodeMode != "off" {
+		t.Errorf("StreamTranscodeMode false: got %q", c.StreamTranscodeMode)
+	}
+}
+
+func TestStreamBufferBytes_auto(t *testing.T) {
+	os.Clearenv()
+	c := Load()
+	if c.StreamBufferBytes != -1 {
+		t.Errorf("StreamBufferBytes default (auto): got %d", c.StreamBufferBytes)
+	}
+	os.Setenv("PLEX_TUNER_STREAM_BUFFER_BYTES", "0")
+	c = Load()
+	if c.StreamBufferBytes != 0 {
+		t.Errorf("StreamBufferBytes 0: got %d", c.StreamBufferBytes)
+	}
+	os.Setenv("PLEX_TUNER_STREAM_BUFFER_BYTES", "auto")
+	c = Load()
+	if c.StreamBufferBytes != -1 {
+		t.Errorf("StreamBufferBytes auto: got %d", c.StreamBufferBytes)
+	}
+	os.Setenv("PLEX_TUNER_STREAM_BUFFER_BYTES", "2097152")
+	c = Load()
+	if c.StreamBufferBytes != 2097152 {
+		t.Errorf("StreamBufferBytes 2097152: got %d", c.StreamBufferBytes)
+	}
+}

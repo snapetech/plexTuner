@@ -26,17 +26,20 @@ type Config struct {
 	CatalogPath string // e.g. /var/lib/plextuner/catalog.json
 
 	// Live tuner
-	TunerCount   int
-	BaseURL      string // e.g. http://192.168.1.10:5004 for Plex to use
-	XMLTVURL     string // optional external XMLTV source to proxy/remap into /guide.xml
-	XMLTVTimeout time.Duration
-	LiveEPGOnly  bool   // if true, only include channels with tvg-id (EPG-linked) in catalog
-	LiveOnly     bool   // if true, only fetch live channels from API (skip VOD and series; faster)
+	TunerCount int
+	BaseURL    string // e.g. http://192.168.1.10:5004 for Plex to use
+	// Stream: buffering absorbs brief upstream stalls; transcoding re-encodes (libx264/aac) for compatibility.
+	StreamBufferBytes   int    // -1 = auto (default; adaptive when transcoding). 0 = no buffer. >0 = fixed bytes.
+	StreamTranscodeMode string // "off" | "on" | "auto". auto = probe stream (ffprobe) and transcode only when codec not Plex-friendly.
+	XMLTVURL            string // optional external XMLTV source to proxy/remap into /guide.xml
+	XMLTVTimeout        time.Duration
+	LiveEPGOnly         bool // if true, only include channels with tvg-id (EPG-linked) in catalog
+	LiveOnly            bool // if true, only fetch live channels from API (skip VOD and series; faster)
 	// EPG prune: when true, guide.xml and M3U export only include channels with tvg-id set (reduces noise).
 	EpgPruneUnlinked bool
 	// Stream smoketest: when true, at index time probe each channel's primary URL and drop failures.
-	SmoketestEnabled    bool
-	SmoketestTimeout    time.Duration
+	SmoketestEnabled     bool
+	SmoketestTimeout     time.Duration
 	SmoketestConcurrency int
 }
 
@@ -44,22 +47,24 @@ type Config struct {
 // If ProviderUser or ProviderPass are empty, Load tries PLEX_TUNER_SUBSCRIPTION_FILE (or default path) with "Username:" / "Password:" lines.
 func Load() *Config {
 	c := &Config{
-		ProviderBaseURL:    os.Getenv("PLEX_TUNER_PROVIDER_URL"),
-		ProviderUser:       os.Getenv("PLEX_TUNER_PROVIDER_USER"),
-		ProviderPass:       os.Getenv("PLEX_TUNER_PROVIDER_PASS"),
-		M3UURL:             os.Getenv("PLEX_TUNER_M3U_URL"),
-		MountPoint:         getEnv("PLEX_TUNER_MOUNT", "/mnt/vodfs"),
-		CacheDir:           getEnv("PLEX_TUNER_CACHE", "/var/cache/plextuner"),
-		CatalogPath:        getEnv("PLEX_TUNER_CATALOG", "./catalog.json"),
-		TunerCount:         getEnvInt("PLEX_TUNER_TUNER_COUNT", 2),
-		BaseURL:            os.Getenv("PLEX_TUNER_BASE_URL"),
-		XMLTVURL:           os.Getenv("PLEX_TUNER_XMLTV_URL"),
-		XMLTVTimeout:       getEnvDuration("PLEX_TUNER_XMLTV_TIMEOUT", 45*time.Second),
-		LiveEPGOnly:        getEnvBool("PLEX_TUNER_LIVE_EPG_ONLY", false),
-		LiveOnly:           getEnvBool("PLEX_TUNER_LIVE_ONLY", false),
-		EpgPruneUnlinked:   getEnvBool("PLEX_TUNER_EPG_PRUNE_UNLINKED", false),
-		SmoketestEnabled:   getEnvBool("PLEX_TUNER_SMOKETEST_ENABLED", false),
-		SmoketestTimeout:   getEnvDuration("PLEX_TUNER_SMOKETEST_TIMEOUT", 8*time.Second),
+		ProviderBaseURL:      os.Getenv("PLEX_TUNER_PROVIDER_URL"),
+		ProviderUser:         os.Getenv("PLEX_TUNER_PROVIDER_USER"),
+		ProviderPass:         os.Getenv("PLEX_TUNER_PROVIDER_PASS"),
+		M3UURL:               os.Getenv("PLEX_TUNER_M3U_URL"),
+		MountPoint:           getEnv("PLEX_TUNER_MOUNT", "/mnt/vodfs"),
+		CacheDir:             getEnv("PLEX_TUNER_CACHE", "/var/cache/plextuner"),
+		CatalogPath:          getEnv("PLEX_TUNER_CATALOG", "./catalog.json"),
+		TunerCount:           getEnvInt("PLEX_TUNER_TUNER_COUNT", 2),
+		BaseURL:              os.Getenv("PLEX_TUNER_BASE_URL"),
+		StreamBufferBytes:    getEnvIntOrAuto("PLEX_TUNER_STREAM_BUFFER_BYTES", -1),
+		StreamTranscodeMode:  getEnvTranscodeMode("PLEX_TUNER_STREAM_TRANSCODE", "off"),
+		XMLTVURL:             os.Getenv("PLEX_TUNER_XMLTV_URL"),
+		XMLTVTimeout:         getEnvDuration("PLEX_TUNER_XMLTV_TIMEOUT", 45*time.Second),
+		LiveEPGOnly:          getEnvBool("PLEX_TUNER_LIVE_EPG_ONLY", false),
+		LiveOnly:             getEnvBool("PLEX_TUNER_LIVE_ONLY", false),
+		EpgPruneUnlinked:     getEnvBool("PLEX_TUNER_EPG_PRUNE_UNLINKED", false),
+		SmoketestEnabled:     getEnvBool("PLEX_TUNER_SMOKETEST_ENABLED", false),
+		SmoketestTimeout:     getEnvDuration("PLEX_TUNER_SMOKETEST_TIMEOUT", 8*time.Second),
 		SmoketestConcurrency: getEnvInt("PLEX_TUNER_SMOKETEST_CONCURRENCY", 10),
 	}
 	if c.TunerCount <= 0 {
@@ -196,6 +201,34 @@ func getEnvInt(key string, defaultVal int) int {
 	if v := os.Getenv(key); v != "" {
 		n, _ := strconv.Atoi(v)
 		return n
+	}
+	return defaultVal
+}
+
+// getEnvIntOrAuto returns -1 if env is "auto" or "-1", otherwise like getEnvInt.
+func getEnvIntOrAuto(key string, defaultVal int) int {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	if v == "auto" || v == "-1" {
+		return -1
+	}
+	if v != "" {
+		n, _ := strconv.Atoi(v)
+		return n
+	}
+	return defaultVal
+}
+
+// getEnvTranscodeMode returns "off", "on", or "auto" from PLEX_TUNER_STREAM_TRANSCODE.
+func getEnvTranscodeMode(key string, defaultVal string) string {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	if v == "auto" {
+		return "auto"
+	}
+	if v == "true" || v == "1" || v == "yes" {
+		return "on"
+	}
+	if v == "false" || v == "0" || v == "no" || v == "" {
+		return "off"
 	}
 	return defaultVal
 }

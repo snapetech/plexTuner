@@ -104,7 +104,7 @@ func fetchLiveStreams(ctx context.Context, apiBase, user, pass, streamBase, ext 
 		return nil, &apiError{url: u, status: resp.StatusCode}
 	}
 	var raw []struct {
-		Num          interface{} `json:"num"`           // can be int or string
+		Num          interface{} `json:"num"` // can be int or string
 		Name         string      `json:"name"`
 		StreamID     int         `json:"stream_id"`
 		EpgChannelID string      `json:"epg_channel_id"`
@@ -192,11 +192,11 @@ func fetchVODStreams(ctx context.Context, apiBase, user, pass, streamBase string
 		return nil, &apiError{url: u, status: resp.StatusCode}
 	}
 	var raw []struct {
-		StreamID    int    `json:"stream_id"`
-		Name        string `json:"name"`
-		Added       string `json:"added"`
-		Container   string `json:"container_extension"`
-		StreamIcon  string `json:"stream_icon"`
+		StreamID   int    `json:"stream_id"`
+		Name       string `json:"name"`
+		Added      string `json:"added"`
+		Container  string `json:"container_extension"`
+		StreamIcon string `json:"stream_icon"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, err
@@ -247,9 +247,9 @@ func fetchSeries(ctx context.Context, apiBase, user, pass, streamBase string, cl
 		return nil, &apiError{url: u, status: resp.StatusCode}
 	}
 	var rawList []struct {
-		SeriesID   int    `json:"series_id"`
-		Name       string `json:"name"`
-		Cover      string `json:"cover"`
+		SeriesID    int    `json:"series_id"`
+		Name        string `json:"name"`
+		Cover       string `json:"cover"`
 		ReleaseYear string `json:"releaseDate"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&rawList); err != nil {
@@ -272,11 +272,11 @@ func fetchSeries(ctx context.Context, apiBase, user, pass, streamBase string, cl
 			artwork = strings.TrimSuffix(apiBase, "/") + "/" + strings.TrimPrefix(artwork, "/")
 		}
 		out = append(out, catalog.Series{
-			ID:          strconv.Itoa(s.SeriesID),
-			Title:       s.Name,
-			Year:        year,
-			Seasons:     info,
-			ArtworkURL:  artwork,
+			ID:         strconv.Itoa(s.SeriesID),
+			Title:      s.Name,
+			Year:       year,
+			Seasons:    info,
+			ArtworkURL: artwork,
 		})
 	}
 	return out, nil

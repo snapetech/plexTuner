@@ -126,6 +126,14 @@ See `Dockerfile` and `docker-compose.yml`.
 
 ---
 
+## Development and QA
+
+- **Before push:** run `./scripts/verify` (format → vet → test → build). Same as CI; fail fast.
+- **Quick feedback:** `./scripts/quick-check.sh` runs tests only (~10–30s).
+- **Troubleshooting:** [docs/runbooks/plextuner-troubleshooting.md](docs/runbooks/plextuner-troubleshooting.md) — fail-fast checklist, probe, log patterns, common failures.
+
+---
+
 ## For agents / template
 
-This repo uses the **agentic template** workflow: [AGENTS.md](AGENTS.md) and [memory-bank/](memory-bank/) (including `repo_map.md`, `recurring_loops.md`) are the source of truth for commands and process. Run `./scripts/verify` for format/lint/test/build; see `memory-bank/commands.yml`. Documentation gaps are tracked in [docs/docs-gaps.md](docs/docs-gaps.md).
+This repo uses the **agentic template** workflow: [AGENTS.md](AGENTS.md) and [memory-bank/](memory-bank/) (including `repo_map.md`, `recurring_loops.md`) are the source of truth for commands and process. Run `./scripts/verify` for format/vet/test/build; see `memory-bank/commands.yml`. Documentation gaps are tracked in [docs/docs-gaps.md](docs/docs-gaps.md).

@@ -15,11 +15,11 @@ import (
 // Cache materializes both direct-MP4 and HLS URLs to the cache (DirectFile + HLS via ffmpeg).
 // Use this when mounting with a cache dir so VOD is downloaded on demand.
 type Cache struct {
-	CacheDir   string
-	Client     *http.Client
-	mu         sync.Mutex
-	inFlight   map[string]chan struct{}
-	lastErr    map[string]error // last failure per assetID so waiters get a real error
+	CacheDir string
+	Client   *http.Client
+	mu       sync.Mutex
+	inFlight map[string]chan struct{}
+	lastErr  map[string]error // last failure per assetID so waiters get a real error
 }
 
 func (c *Cache) Materialize(ctx context.Context, assetID string, streamURL string) (string, error) {

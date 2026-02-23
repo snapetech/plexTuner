@@ -11,15 +11,17 @@ import (
 
 // Server runs the HDHR emulator + XMLTV + stream gateway.
 type Server struct {
-	Addr             string
-	BaseURL          string
-	TunerCount       int
-	Channels         []catalog.LiveChannel
-	ProviderUser     string
-	ProviderPass     string
-	XMLTVSourceURL   string
-	XMLTVTimeout     time.Duration
-	EpgPruneUnlinked bool // when true, guide.xml and /live.m3u only include channels with tvg-id
+	Addr                string
+	BaseURL             string
+	TunerCount          int
+	StreamBufferBytes   int    // 0 = no buffer; -1 = auto; e.g. 2097152 for 2 MiB
+	StreamTranscodeMode string // "off" | "on" | "auto"
+	Channels            []catalog.LiveChannel
+	ProviderUser        string
+	ProviderPass        string
+	XMLTVSourceURL      string
+	XMLTVTimeout        time.Duration
+	EpgPruneUnlinked    bool // when true, guide.xml and /live.m3u only include channels with tvg-id
 }
 
 // Run blocks until ctx is cancelled or the server fails to start. On shutdown it stops
@@ -31,10 +33,12 @@ func (s *Server) Run(ctx context.Context) error {
 		Channels:   s.Channels,
 	}
 	gateway := &Gateway{
-		Channels:     s.Channels,
-		ProviderUser: s.ProviderUser,
-		ProviderPass: s.ProviderPass,
-		TunerCount:   s.TunerCount,
+		Channels:            s.Channels,
+		ProviderUser:        s.ProviderUser,
+		ProviderPass:        s.ProviderPass,
+		TunerCount:          s.TunerCount,
+		StreamBufferBytes:   s.StreamBufferBytes,
+		StreamTranscodeMode: s.StreamTranscodeMode,
 	}
 	xmltv := &XMLTV{
 		Channels:         s.Channels,

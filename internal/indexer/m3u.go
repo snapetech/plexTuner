@@ -41,7 +41,7 @@ func ParseM3U(m3uURL string, client *http.Client) (movies []catalog.Movie, serie
 
 type m3uError struct {
 	status int
-	msg   string
+	msg    string
 }
 
 func (e *m3uError) Error() string {

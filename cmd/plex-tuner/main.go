@@ -1,10 +1,10 @@
 // Command plex-tuner: one-run Live TV/DVR (run), or index / mount / serve separately.
 //
-//   run    One-run: refresh catalog, health check, then serve tuner. For systemd. Zero interaction after .env.
-//   index  Fetch M3U, parse, save catalog (movies + series + live channels)
-//   mount  Load catalog and mount VODFS (optional -cache for on-demand download)
-//   serve  Run HDHR emulator + XMLTV + stream gateway only (no index/health)
-//   probe  Cycle through provider URLs, probe each, report OK / Cloudflare / fail and which URL to use
+//	run    One-run: refresh catalog, health check, then serve tuner. For systemd. Zero interaction after .env.
+//	index  Fetch M3U, parse, save catalog (movies + series + live channels)
+//	mount  Load catalog and mount VODFS (optional -cache for on-demand download)
+//	serve  Run HDHR emulator + XMLTV + stream gateway only (no index/health)
+//	probe  Cycle through provider URLs, probe each, report OK / Cloudflare / fail and which URL to use
 package main
 
 import (
@@ -148,11 +148,11 @@ func main() {
 		}
 		c := catalog.New()
 		c.ReplaceWithLive(movies, series, live)
-			if err := c.Save(path); err != nil {
-				log.Printf("Save catalog failed: %v", err)
-				os.Exit(1)
-			}
-			log.Printf("Saved catalog to %s: %d movies, %d series, %d live channels (%d EPG-linked, %d with backup feeds)", path, len(movies), len(series), len(live), epgLinked, withBackups)
+		if err := c.Save(path); err != nil {
+			log.Printf("Save catalog failed: %v", err)
+			os.Exit(1)
+		}
+		log.Printf("Saved catalog to %s: %d movies, %d series, %d live channels (%d EPG-linked, %d with backup feeds)", path, len(movies), len(series), len(live), epgLinked, withBackups)
 
 	case "mount":
 		_ = mountCmd.Parse(os.Args[2:])
@@ -197,15 +197,17 @@ func main() {
 		live := c.SnapshotLive()
 		log.Printf("Loaded %d live channels from %s", len(live), path)
 		srv := &tuner.Server{
-			Addr:             *serveAddr,
-			BaseURL:          *serveBaseURL,
-			TunerCount:       cfg.TunerCount,
-			Channels:         live,
-			ProviderUser:     cfg.ProviderUser,
-			ProviderPass:     cfg.ProviderPass,
-			XMLTVSourceURL:   cfg.XMLTVURL,
-			XMLTVTimeout:     cfg.XMLTVTimeout,
-			EpgPruneUnlinked: cfg.EpgPruneUnlinked,
+			Addr:                *serveAddr,
+			BaseURL:             *serveBaseURL,
+			TunerCount:          cfg.TunerCount,
+			StreamBufferBytes:   cfg.StreamBufferBytes,
+			StreamTranscodeMode: cfg.StreamTranscodeMode,
+			Channels:            live,
+			ProviderUser:        cfg.ProviderUser,
+			ProviderPass:        cfg.ProviderPass,
+			XMLTVSourceURL:      cfg.XMLTVURL,
+			XMLTVTimeout:        cfg.XMLTVTimeout,
+			EpgPruneUnlinked:    cfg.EpgPruneUnlinked,
 		}
 		if cfg.XMLTVURL != "" {
 			log.Printf("External XMLTV enabled: %s (timeout %v)", cfg.XMLTVURL, cfg.XMLTVTimeout)
@@ -328,15 +330,17 @@ func main() {
 			baseURL = cfg.BaseURL
 		}
 		srv := &tuner.Server{
-			Addr:             *runAddr,
-			BaseURL:          baseURL,
-			TunerCount:       cfg.TunerCount,
-			Channels:         live,
-			ProviderUser:     cfg.ProviderUser,
-			ProviderPass:     cfg.ProviderPass,
-			XMLTVSourceURL:   cfg.XMLTVURL,
-			XMLTVTimeout:     cfg.XMLTVTimeout,
-			EpgPruneUnlinked: cfg.EpgPruneUnlinked,
+			Addr:                *runAddr,
+			BaseURL:             baseURL,
+			TunerCount:          cfg.TunerCount,
+			StreamBufferBytes:   cfg.StreamBufferBytes,
+			StreamTranscodeMode: cfg.StreamTranscodeMode,
+			Channels:            live,
+			ProviderUser:        cfg.ProviderUser,
+			ProviderPass:        cfg.ProviderPass,
+			XMLTVSourceURL:      cfg.XMLTVURL,
+			XMLTVTimeout:        cfg.XMLTVTimeout,
+			EpgPruneUnlinked:    cfg.EpgPruneUnlinked,
 		}
 		if cfg.XMLTVURL != "" {
 			log.Printf("External XMLTV enabled: %s (timeout %v)", cfg.XMLTVURL, cfg.XMLTVTimeout)

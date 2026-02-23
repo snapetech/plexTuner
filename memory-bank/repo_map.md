@@ -39,8 +39,9 @@ To push Plex Tuner to both: `git push origin main && git push plex main`. Never 
 - **Generated/vendor** — Don't edit unless the task explicitly requires it.
 - **Weakening tests** — Don't "fix" by loosening assertions; fix root cause.
 
-## Verification
+## Verification and QA
 
-- **`scripts/verify`** — Runs `scripts/verify-steps.sh` if present (format → lint → test → build).
-- **Go:** `go test ./...` and `go build ./cmd/plex-tuner`.
+- **`scripts/verify`** — Full check: format (gofmt) → vet → test → build. Fail fast, same as CI.
+- **`scripts/quick-check.sh`** — Tests only; use for short feedback when iterating.
+- **Troubleshooting:** [docs/runbooks/plextuner-troubleshooting.md](docs/runbooks/plextuner-troubleshooting.md) — fail-fast checklist, probe, logs, common failures.
 - CI runs only `scripts/verify`.
