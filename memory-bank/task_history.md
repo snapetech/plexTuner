@@ -339,3 +339,25 @@ Append-only. One entry per completed task.
     - `memory-bank/opportunities.md` (TS timing/continuity debug capture for first-seconds WebSafe output)
   Links:
     - memory-bank/current_task.md, memory-bank/known_issues.md, memory-bank/recurring_loops.md, memory-bank/opportunities.md, /home/keith/Documents/code/k3s/plex/scripts/plex-web-livetv-probe.py
+
+- Date: 2026-02-24
+  Title: Instrument first-seconds WebSafe TS output and confirm clean startup TS on a fresh failing Plex Web probe
+  Summary:
+    - Added a TS inspector (`internal/tuner/ts_inspector.go`) and hooked it into the ffmpeg relay output path in `internal/tuner/gateway.go` so PlexTuner can log first-packet TS timing/continuity (PAT/PMT/PCR/PTS/DTS/CC/discontinuity) for targeted probe requests.
+    - Built an instrumented binary locally (`/tmp/plex-tuner-tsinspect`), copied it into the existing `plextuner-build` pod, and restarted only the WebSafe process (`:5005`) with the same runtime env plus `PLEX_TUNER_TS_INSPECT=true` and `PLEX_TUNER_TS_INSPECT_CHANNEL=111`.
+    - Ran a fresh Plex Web probe (`plex-web-livetv-probe.py --dvr 138 --channel 111`) and reproduced the browser failure (`detail=startmpd1_0`, ~39s elapsed) without restarting Plex.
+    - Captured the new TS inspector summary for the failing probe (`req=r000001`, channel `111` / `skysportnews.de`): first 12,000 TS packets had `sync_losses=0`, PAT/PMT repeated (`175` each), `pcr_pid=0x100`, monotonic PCR/PTS on H264 video PID `0x100`, monotonic PTS on audio PID `0x101`, `idr=true` at startup gate, and no continuity errors on media PIDs (only null PID `0x1FFF` duplicate CCs).
+    - Correlated PMS logs for the same live session (`c5a1eca7-f15b-4b84-b22a-fac76d1e5391` / client `157b3117a4354af68c19d075`): first-stage recorder session started in ~3.1s, Plex accepted `progress/stream` + `progress/streamDetail` (H264 + MP3), but `decision` and `start.mpd` still completed only after ~100s, when PMS finally launched the second-stage DASH transcode reading `http://127.0.0.1:32400/livetv/sessions/.../index.m3u8`.
+  Verification:
+    - `PATH=/tmp/go/bin:$PATH /tmp/go/bin/go test ./internal/tuner -run '^$' -count=1` (compile-only pass)
+    - `python3 /home/coder/code/k3s/plex/scripts/plex-web-livetv-probe.py --dvr 138 --channel 111 --hold 3 --json-out /tmp/probe-138-111.json` (expected fail: `startmpd1_0`)
+    - `kubectl -n plex exec deploy/plextuner-build -- tail/grep /tmp/plextuner-websafe-tsinspect.log`
+    - `kubectl -n plex exec -c plex deploy/plex -- grep ... \"Plex Media Server.log\"` (session `c5a1eca7-...`)
+  Notes:
+    - No Plex restart. Only the WebSafe `plex-tuner serve` process inside `plextuner-build` was restarted.
+    - The instrumented WebSafe process is left running and TS logging is scoped to guide number/channel match `111` only.
+    - Full `go test ./internal/tuner` currently fails due an unrelated pre-existing test (`TestLooksLikeGoodTSStartDetectsSplitIDRStartCodeAcrossPackets`); the new TS inspector code path compiles.
+  Opportunities filed:
+    - none
+  Links:
+    - internal/tuner/ts_inspector.go, internal/tuner/gateway.go, memory-bank/current_task.md, memory-bank/known_issues.md

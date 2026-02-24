@@ -2077,6 +2077,10 @@ func (g *Gateway) relayHLSWithFFmpeg(
 			start:       start,
 		}
 	}
+	dst = maybeWrapTSInspectorWriter(dst, gatewayReqIDFromContext(r.Context()), channelName, channelID, guideNumber, tvgID, modeLabel, start)
+	if c, ok := dst.(interface{ Close() }); ok {
+		defer c.Close()
+	}
 	n, copyErr := io.Copy(dst, mainReader)
 	waitErr := cmd.Wait()
 
