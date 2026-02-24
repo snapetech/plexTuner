@@ -22,6 +22,26 @@ Append-only. One entry per completed task.
 
 ## Entries
 
+- Date: 2026-02-24
+  Title: HDHomeRun emulation tests
+  Summary:
+    - Added 5 new tests for HDHomeRun emulation in internal/tuner/hdhr_test.go:
+      - TestHDHR_discover_defaults: verifies default BaseURL, DeviceID, TunerCount when empty
+      - TestHDHR_lineup_explicit_channel_id: verifies explicit ChannelID is used in stream URL
+      - TestHDHR_lineup_multiple_channels: verifies multiple channels with mix of explicit ChannelID and fallback to index
+      - TestHDHR_lineup_empty: verifies empty channels array returns empty JSON array
+      - TestHDHR_not_found: verifies unknown routes return 404
+  Verification:
+    - go vet ./internal/tuner/... ✅
+    - go test ./internal/tuner/... ✅
+  Notes:
+    - Focused on testing HDHomeRun endpoints without requiring Plex or external services
+    - All 8 HDHR tests now pass
+  Opportunities filed:
+    - none
+  Links:
+    - internal/tuner/hdhr_test.go
+
 - Date: 2025-02-23
   Title: README redo, features.md, changelog.md, docs-gaps
   Summary:
