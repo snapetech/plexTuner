@@ -1,12 +1,15 @@
 package hdhomerun
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"strings"
+	"sync"
+	"time"
 )
 
 const (
@@ -17,6 +20,11 @@ const (
 	MaxPacketSize = 1460
 )
 
+// StreamHandler is an interface for getting stream data
+type StreamHandler interface {
+	GetStream(ctx context.Context, channelID string) (io.ReadCloser, error)
+}
+
 // TunerState represents the state of a tuner
 type TunerState struct {
 	Index       int
@@ -24,33 +32,35 @@ type TunerState struct {
 	LockKey     int
 	StreamURL   string
 	InUse       bool
+	Conn        net.Conn
 }
 
 // ControlServer handles TCP control connections
 type ControlServer struct {
-	device    *Device
-	tuners    []TunerState
-	listener  net.Listener
-	streamBuf chan []byte // Stream data to send
+	device     *Device
+	tuners     []TunerState
+	listener   net.Listener
+	streamFunc func(ctx context.Context, channelID string) (io.ReadCloser, error)
+	mu         sync.Mutex
 }
 
 // NewControlServer creates a new control server
-func NewControlServer(device *Device, tunerCount int, baseURL string) *ControlServer {
+func NewControlServer(device *Device, tunerCount int, baseURL string, streamFunc func(ctx context.Context, channelID string) (io.ReadCloser, error)) *ControlServer {
 	tuners := make([]TunerState, tunerCount)
 	for i := 0; i < tunerCount; i++ {
 		tuners[i] = TunerState{
 			Index:     i,
 			Channel:   "",
 			LockKey:   0,
-			StreamURL: fmt.Sprintf("%s/stream/%%d", baseURL),
+			StreamURL: fmt.Sprintf("hdhr://%d", i),
 			InUse:    false,
 		}
 	}
 
 	return &ControlServer{
-		device:   device,
-		tuners:   tuners,
-		streamBuf: make(chan []byte, 10),
+		device:     device,
+		tuners:     tuners,
+		streamFunc: streamFunc,
 	}
 }
 
@@ -74,15 +84,6 @@ func (s *ControlServer) Serve(listener net.Listener) error {
 	}
 }
 
-// SetStreamData sets the stream data to send
-func (s *ControlServer) SetStreamData(data []byte) {
-	select {
-	case s.streamBuf <- data:
-	default:
-		// Buffer full, drop
-	}
-}
-
 func (s *ControlServer) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
@@ -92,7 +93,7 @@ func (s *ControlServer) handleConnection(conn net.Conn) {
 	readBuf := make([]byte, 4096)
 
 	for {
-		conn.SetReadDeadline(nil) // Blocking read
+		conn.SetReadDeadline(time.Now().Add(30 * time.Second)) // 30s timeout
 
 		// Read packet header (4 bytes: type + length)
 		header := make([]byte, 4)
@@ -140,7 +141,7 @@ func (s *ControlServer) handleConnection(conn net.Conn) {
 		}
 
 		// Process request
-		response := s.processRequest(packetType, payload)
+		response := s.processRequest(packetType, payload, conn)
 
 		// Send response
 		responseBytes := response.Marshal()
@@ -149,24 +150,21 @@ func (s *ControlServer) handleConnection(conn net.Conn) {
 			log.Printf("hdhomerun: write error: %v", err)
 			return
 		}
-
-		// After successful GET/SET, check if we need to start streaming
-		// This is where we'd start the MPEG-TS stream
 	}
 
 }
 
-func (s *ControlServer) processRequest(packetType uint16, payload []byte) *Packet {
+func (s *ControlServer) processRequest(packetType uint16, payload []byte, conn net.Conn) *Packet {
 	switch packetType {
 	case TypeGetSetReq:
-		return s.handleGetSet(payload)
+		return s.handleGetSet(payload, conn)
 	default:
 		log.Printf("hdhomerun: unknown packet type: 0x%04x", packetType)
 		return NewGetSetRpy("", "", "Unknown packet type")
 	}
 }
 
-func (s *ControlServer) handleGetSet(payload []byte) *Packet {
+func (s *ControlServer) handleGetSet(payload []byte, conn net.Conn) *Packet {
 	tlvs, err := UnmarshalTLVs(payload)
 	if err != nil {
 		return NewGetSetRpy("", "", err.Error())
@@ -187,31 +185,30 @@ func (s *ControlServer) handleGetSet(payload []byte) *Packet {
 	}
 
 	// Handle the property
-	return s.handleProperty(name, value)
+	return s.handleProperty(name, value, conn)
 }
 
-func (s *ControlServer) handleProperty(name, value string) *Packet {
+func (s *ControlServer) handleProperty(name, value string, conn net.Conn) *Packet {
 	log.Printf("hdhomerun: get/set: %s = %s", name, value)
 
 	// Handle tuner properties
 	switch {
 	case strings.HasPrefix(name, "/tuner"):
-		return s.handleTunerProperty(name, value)
+		return s.handleTunerProperty(name, value, conn)
 	case name == "/lineup.json":
-		// This is typically served via HTTP, but we can handle it here too
 		return NewGetSetRpy(name, "/lineup.json", "")
 	case name == "/lineup_status.json":
 		return NewGetSetRpy(name, "scanning=0", "")
-	case name == "/status":
-		return s.getStatus()
 	case name == "/discover":
 		return NewGetSetRpy(name, "1", "")
+	case name == "/status":
+		return s.getStatus()
 	default:
 		return NewGetSetRpy(name, "", "Unknown property")
 	}
 }
 
-func (s *ControlServer) handleTunerProperty(name, value string) *Packet {
+func (s *ControlServer) handleTunerProperty(name, value string, conn net.Conn) *Packet {
 	// Parse tuner index from name like /tuner0/channel
 	var tunerIdx int
 	var prop string
@@ -224,12 +221,14 @@ func (s *ControlServer) handleTunerProperty(name, value string) *Packet {
 		return NewGetSetRpy(name, "", "Invalid tuner index")
 	}
 
+	s.mu.Lock()
 	tuner := &s.tuners[tunerIdx]
+	s.mu.Unlock()
 
 	switch prop {
 	case "channel":
 		if value != "" {
-			// SET channel
+			// SET channel - e.g., "auto:program=123" or "http://provider/stream.m3u8"
 			tuner.Channel = value
 			tuner.InUse = true
 			return NewGetSetRpy(name, value, "")
@@ -252,19 +251,110 @@ func (s *ControlServer) handleTunerProperty(name, value string) *Packet {
 
 	case "stream":
 		if value != "" {
-			// SET stream - this should trigger stream start
-			tuner.StreamURL = fmt.Sprintf(tuner.StreamURL, tunerIdx)
-			return NewGetSetRpy(name, tuner.StreamURL, "")
+			// SET stream - start streaming!
+			// value is the stream URL or program number
+			log.Printf("hdhomerun: tuner %d starting stream: %s", tunerIdx, value)
+			
+			// Start streaming in background
+			go s.startStream(tunerIdx, value, conn)
+			
+			// Return success
+			return NewGetSetRpy(name, "ok", "")
 		}
 		// GET stream URL
 		return NewGetSetRpy(name, tuner.StreamURL, "")
+
+	case "target":
+		// Set target (where to stream to)
+		if value != "" {
+			log.Printf("hdhomerun: tuner %d target set to: %s", tunerIdx, value)
+		}
+		return NewGetSetRpy(name, value, "")
 
 	default:
 		return NewGetSetRpy(name, "", "Unknown property")
 	}
 }
 
+func (s *ControlServer) startStream(tunerIdx int, channelOrProgram string, conn net.Conn) {
+	s.mu.Lock()
+	tuner := &s.tuners[tunerIdx]
+	s.mu.Unlock()
+
+	// Extract channel ID from the channel setting
+	// Could be "auto:program=123" or just "123" or a URL
+	channelID := tuner.Channel
+	if channelID == "" {
+		channelID = channelOrProgram
+	}
+
+	// Get stream from handler
+	if s.streamFunc == nil {
+		log.Printf("hdhomerun: no stream function configured")
+		return
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	stream, err := s.streamFunc(ctx, channelID)
+	if err != nil {
+		log.Printf("hdhomerun: failed to get stream for channel %s: %v", channelID, err)
+		return
+	}
+	defer stream.Close()
+
+	log.Printf("hdhomerun: streaming channel %s to %s", channelID, conn.RemoteAddr())
+
+	// Stream data over TCP using HDHomeRun protocol
+	// The format is: length-prefixed MPEG-TS packets
+	buf := make([]byte, 64*1024) // 64KB buffer
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		// Set read deadline
+		stream.SetReadDeadline(time.Now().Add(10 * time.Second))
+
+		n, err := stream.Read(buf[6:]) // Leave 6 bytes for header
+		if err != nil {
+			if err == io.EOF || strings.Contains(err.Error(), "timeout") {
+				log.Printf("hdhomerun: stream ended for channel %s", channelID)
+			} else {
+				log.Printf("hdhomerun: stream read error: %v", err)
+			}
+			return
+		}
+
+		if n == 0 {
+			continue
+		}
+
+		// Wrap with HDHomeRun stream header
+		// Format: type (0x0001 = stream data), length (2 bytes), data
+		packetLen := n
+		buf[0] = 0x00
+		buf[1] = 0x01 // Stream data type
+		binary.BigEndian.PutUint16(buf[2:4], uint16(packetLen))
+
+		// Write header + data
+		_, err = conn.Write(buf[:4+n])
+		if err != nil {
+			log.Printf("hdhomerun: stream write error: %v", err)
+			return
+		}
+	}
+
+}
+
 func (s *ControlServer) getStatus() *Packet {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	// Format: key=value pairs
 	status := fmt.Sprintf("deviceid=0x%08x", s.device.DeviceID)
 	status += fmt.Sprintf(";tuner_count=%d", s.device.TunerCount)

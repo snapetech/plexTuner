@@ -22,6 +22,7 @@ import (
 	"github.com/plextuner/plex-tuner/internal/catalog"
 	"github.com/plextuner/plex-tuner/internal/config"
 	"github.com/plextuner/plex-tuner/internal/health"
+	"github.com/plextuner/plex-tuner/internal/hdhomerun"
 	"github.com/plextuner/plex-tuner/internal/indexer"
 	"github.com/plextuner/plex-tuner/internal/materializer"
 	"github.com/plextuner/plex-tuner/internal/plex"
@@ -420,6 +421,28 @@ func main() {
 			fmt.Fprintf(os.Stderr, "  XMLTV guide URL:   %s/guide.xml\n", baseURL)
 			fmt.Fprintf(os.Stderr, "Or run with -register-plex=/path/to/Plex/Media/Server to write URLs into Plex DB (stop Plex first).\n")
 			fmt.Fprintf(os.Stderr, "---\n\n")
+		}
+
+		// Start HDHomeRun network mode if enabled
+		hdhrConfig := hdhomerun.LoadConfig()
+		var hdhrServer *hdhomerun.Server
+		if hdhrConfig.Enabled {
+			hdhrConfig.BaseURL = baseURL
+			// Stream function - TODO: integrate with gateway for direct TCP streaming
+			// For now, the HDHomeRun discovery works but streams still go through HTTP
+			var streamFunc func(ctx context.Context, channelID string) (io.ReadCloser, error)
+			server, err := hdhomerun.NewServer(hdhrConfig, streamFunc)
+			if err != nil {
+				log.Printf("HDHomeRun network mode failed to start: %v", err)
+			} else {
+				hdhrServer = server
+				go func() {
+					if err := server.Run(runCtx); err != nil {
+						log.Printf("HDHomeRun network server error: %v", err)
+					}
+				}()
+				log.Printf("HDHomeRun network mode enabled (UDP 65001 + TCP 65001)")
+			}
 		}
 
 		log.Printf("Tuner listening on %s", *runAddr)

@@ -3,6 +3,7 @@ package hdhomerun
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -20,16 +21,20 @@ type Config struct {
 	BaseURL        string
 }
 
+// StreamFunc is a function that returns a stream for a channel
+type StreamFunc func(ctx context.Context, channelID string) (io.ReadCloser, error)
+
 // Server is the main HDHomeRun network server
 type Server struct {
-	config  *Config
-	device  *Device
-	control *ControlServer
-	discover *DiscoverServer
+	config     *Config
+	device     *Device
+	control    *ControlServer
+	discover   *DiscoverServer
+	streamFunc StreamFunc
 }
 
 // NewServer creates a new HDHomeRun network server
-func NewServer(config *Config) (*Server, error) {
+func NewServer(config *Config, streamFunc StreamFunc) (*Server, error) {
 	if config.TunerCount <= 0 {
 		config.TunerCount = 2
 	}
@@ -37,8 +42,9 @@ func NewServer(config *Config) (*Server, error) {
 	device := CreateDefaultDevice(config.DeviceID, config.TunerCount, config.BaseURL)
 
 	return &Server{
-		config: config,
-		device: device,
+		config:     config,
+		device:     device,
+		streamFunc: streamFunc,
 	}, nil
 }
 
@@ -59,8 +65,8 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	s.discover = discover
 
-	// Start TCP control server
-	control := NewControlServer(s.device, s.device.TunerCount, s.config.BaseURL)
+	// Start TCP control server with stream function
+	control := NewControlServer(s.device, s.device.TunerCount, s.config.BaseURL, s.streamFunc)
 
 	// Create TCP listener
 	controlAddr := &net.TCPAddr{
@@ -161,7 +167,12 @@ func Example() {
 	config := LoadConfig()
 	config.BaseURL = "http://192.168.1.100:5004"
 
-	server, err := NewServer(config)
+	// Example stream function - would connect to existing gateway
+	streamFunc := func(ctx context.Context, channelID string) (io.ReadCloser, error) {
+		return nil, fmt.Errorf("not implemented")
+	}
+
+	server, err := NewServer(config, streamFunc)
 	if err != nil {
 		log.Fatalf("create server: %v", err)
 	}
