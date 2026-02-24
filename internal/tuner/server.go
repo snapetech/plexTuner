@@ -19,6 +19,7 @@ type Server struct {
 	BaseURL             string
 	TunerCount          int
 	DeviceID            string // HDHomeRun discover.json; set from PLEX_TUNER_DEVICE_ID
+	FriendlyName        string // HDHomeRun discover.json; set from PLEX_TUNER_FRIENDLY_NAME
 	StreamBufferBytes   int    // 0 = no buffer; -1 = auto; e.g. 2097152 for 2 MiB
 	StreamTranscodeMode string // "off" | "on" | "auto"
 	Channels            []catalog.LiveChannel
@@ -55,10 +56,11 @@ func (s *Server) UpdateChannels(live []catalog.LiveChannel) {
 // accepting new connections and waits briefly for in-flight requests to finish.
 func (s *Server) Run(ctx context.Context) error {
 	hdhr := &HDHR{
-		BaseURL:    s.BaseURL,
-		TunerCount: s.TunerCount,
-		DeviceID:   s.DeviceID,
-		Channels:   s.Channels,
+		BaseURL:      s.BaseURL,
+		TunerCount:   s.TunerCount,
+		DeviceID:     s.DeviceID,
+		FriendlyName: s.FriendlyName,
+		Channels:     s.Channels,
 	}
 	s.hdhr = hdhr
 	defaultProfile := defaultProfileFromEnv()

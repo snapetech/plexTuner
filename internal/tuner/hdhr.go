@@ -13,10 +13,11 @@ import (
 
 // HDHR serves HDHomeRun-compatible discover, lineup_status, and lineup endpoints.
 type HDHR struct {
-	BaseURL    string // e.g. http://192.168.1.10:5004
-	TunerCount int
-	DeviceID   string // stable device id (PLEX_TUNER_DEVICE_ID); some Plex versions are picky
-	Channels   []catalog.LiveChannel
+	BaseURL      string // e.g. http://192.168.1.10:5004
+	TunerCount   int
+	DeviceID     string // stable device id (PLEX_TUNER_DEVICE_ID); some Plex versions are picky
+	FriendlyName string // friendly name shown in Plex (PLEX_TUNER_FRIENDLY_NAME)
+	Channels     []catalog.LiveChannel
 }
 
 func (h *HDHR) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -41,7 +42,11 @@ func (h *HDHR) serveDiscover(w http.ResponseWriter) {
 	if base == "" {
 		base = "http://localhost:5004"
 	}
-	friendly := strings.TrimSpace(os.Getenv("PLEX_TUNER_FRIENDLY_NAME"))
+	// FriendlyName: use struct field first, then env var for backward compat
+	friendly := h.FriendlyName
+	if friendly == "" {
+		friendly = os.Getenv("PLEX_TUNER_FRIENDLY_NAME")
+	}
 	if friendly == "" {
 		friendly = "Plex Tuner"
 	}
