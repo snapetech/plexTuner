@@ -285,6 +285,30 @@ func main() {
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
+
+		// Start HDHomeRun network mode if enabled
+		hdhrConfig := hdhomerun.LoadConfig()
+		log.Printf("HDHomeRun config: enabled=%v, deviceID=0x%x, tuners=%d",
+			hdhrConfig.Enabled, hdhrConfig.DeviceID, hdhrConfig.TunerCount)
+		if hdhrConfig.Enabled {
+			hdhrConfig.BaseURL = *serveBaseURL
+			// Create stream function that uses the gateway via localhost HTTP
+			streamFunc := func(ctx context.Context, channelID string) (io.ReadCloser, error) {
+				return srv.GetStream(ctx, channelID)
+			}
+			server, err := hdhomerun.NewServer(hdhrConfig, streamFunc)
+			if err != nil {
+				log.Printf("HDHomeRun network mode failed to start: %v", err)
+			} else {
+				go func() {
+					if err := server.Run(ctx); err != nil {
+						log.Printf("HDHomeRun network server error: %v", err)
+					}
+				}()
+				log.Printf("HDHomeRun network mode enabled (UDP 65001 + TCP 65001)")
+			}
+		}
+
 		if err := srv.Run(ctx); err != nil {
 			log.Printf("Serve failed: %v", err)
 			os.Exit(1)
@@ -422,33 +446,6 @@ func main() {
 			fmt.Fprintf(os.Stderr, "  XMLTV guide URL:   %s/guide.xml\n", baseURL)
 			fmt.Fprintf(os.Stderr, "Or run with -register-plex=/path/to/Plex/Media/Server to write URLs into Plex DB (stop Plex first).\n")
 			fmt.Fprintf(os.Stderr, "---\n\n")
-		}
-
-		// Start HDHomeRun network mode if enabled
-		hdhrConfig := hdhomerun.LoadConfig()
-		if hdhrConfig.Enabled {
-			hdhrConfig.BaseURL = baseURL
-			// Create stream function that uses the gateway via localhost HTTP
-			streamFunc := func(ctx context.Context, channelID string) (io.ReadCloser, error) {
-				return srv.GetStream(ctx, channelID)
-			}
-			server, err := hdhomerun.NewServer(hdhrConfig, streamFunc)
-			if err != nil {
-				log.Printf("HDHomeRun network mode failed to start: %v", err)
-			} else {
-				go func() {
-					if err := server.Run(runCtx); err != nil {
-						log.Printf("HDHomeRun network server error: %v", err)
-					}
-				}()
-				log.Printf("HDHomeRun network mode enabled (UDP 65001 + TCP 65001)")
-			}
-		}
-
-		log.Printf("Tuner listening on %s", *runAddr)
-		if err := srv.Run(runCtx); err != nil {
-			log.Printf("Serve failed: %v", err)
-			os.Exit(1)
 		}
 
 	case "probe":
