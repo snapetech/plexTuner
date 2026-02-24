@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/plextuner/plex-tuner/internal/catalog"
+	"github.com/plextuner/plex-tuner/internal/httpclient"
 )
 
 // Server runs the HDHR emulator + XMLTV + stream gateway.

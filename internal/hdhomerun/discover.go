@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"syscall"
 	"time"
 )
 
@@ -43,8 +44,15 @@ func NewDiscoverServer(device *Device, port int) (*DiscoverServer, error) {
 		return nil, fmt.Errorf("listen UDP: %w", err)
 	}
 
-	// Enable broadcast
-	if err := conn.SetBroadcast(true); err != nil {
+	// Enable broadcast using syscall
+	file, err := conn.File()
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("get file: %w", err)
+	}
+	defer file.Close()
+	err = syscall.SetsockoptInt(int(file.Fd()), syscall.SOL_SOCKET, syscall.SO_BROADCAST, 1)
+	if err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("enable broadcast: %w", err)
 	}
@@ -95,8 +103,8 @@ func (s *DiscoverServer) Run() error {
 		}
 
 		// Check device type filter
-		reqDeviceType := DeviceTypeWildcard
-		reqDeviceID := DeviceIDWildcard
+		var reqDeviceType uint32 = DeviceTypeWildcard
+		var reqDeviceID uint32 = DeviceIDWildcard
 
 		if dt := FindTLV(tlvs, TagDeviceType); dt != nil && len(dt.Value) >= 4 {
 			reqDeviceType = bytesToUint32(dt.Value)

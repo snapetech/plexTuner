@@ -89,9 +89,6 @@ func (s *ControlServer) handleConnection(conn net.Conn) {
 
 	log.Printf("hdhomerun: connection from %s", conn.RemoteAddr())
 
-	// Read loop
-	readBuf := make([]byte, 4096)
-
 	for {
 		conn.SetReadDeadline(time.Now().Add(30 * time.Second)) // 30s timeout
 
@@ -316,9 +313,6 @@ func (s *ControlServer) startStream(tunerIdx int, channelOrProgram string, conn 
 			return
 		default:
 		}
-
-		// Set read deadline
-		stream.SetReadDeadline(time.Now().Add(10 * time.Second))
 
 		n, err := stream.Read(buf[6:]) // Leave 6 bytes for header
 		if err != nil {
