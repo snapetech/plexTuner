@@ -361,3 +361,25 @@ Append-only. One entry per completed task.
     - none
   Links:
     - internal/tuner/ts_inspector.go, internal/tuner/gateway.go, memory-bank/current_task.md, memory-bank/known_issues.md
+
+- Date: 2026-02-24
+  Title: Confirm first-stage Plex `ssegment` cache fills while internal live `index.m3u8` stays empty on fresh channel `108`
+  Summary:
+    - Ran another fresh WebSafe browser probe (`DVR 138`, channel `108`) and reproduced the same browser failure (`startmpd1_0`, ~39s elapsed) without restarting Plex.
+    - Captured the live first-stage PMS session IDs from logs during the probe: client/live session `ff10b85acd744371a37b94ff` and transcode cache session `dfeb3d9f-85b7-4d4e-beb6-149addd22d6f`.
+    - While the probe was still failing, inspected the PMS transcode cache directory `.../plex-transcode-dfeb3d9f-...` and found dozens of generated `media-*.ts` segments with healthy non-zero sizes (through `media-00037.ts`) plus a current in-progress `media-00038.ts` at `0` bytes.
+    - At the same time, an in-container `curl -m 5` to Plex's internal `http://127.0.0.1:32400/livetv/sessions/dfeb3d9f-.../ff10b85.../index.m3u8?...` timed out with `0 bytes`.
+    - Checked PMS logs for the same first-stage session: the `Plex Transcoder` `ssegment` command includes the expected `-segment_list .../manifest?...` callback URL and PMS logs many `/progress` callbacks for that first-stage transcode session, but no visible `/video/:/transcode/session/.../manifest` request lines appear in `Plex Media Server.log`.
+  Verification:
+    - `python3 /home/coder/code/k3s/plex/scripts/plex-web-livetv-probe.py --dvr 138 --channel 108 --hold 3 --json-out /tmp/probe-138-108.json` (expected fail: `startmpd1_0`)
+    - `kubectl -n plex exec -c plex deploy/plex -- grep \"Grabber/108-\" \".../Plex Media Server.log\"`
+    - `kubectl -n plex exec -c plex deploy/plex -- ls -lah \".../plex-transcode-dfeb3d9f-...\"`
+    - `kubectl -n plex exec -c plex deploy/plex -- curl -m 5 http://127.0.0.1:32400/livetv/sessions/dfeb3d9f-.../ff10b85.../index.m3u8?...`
+    - `kubectl -n plex exec -c plex deploy/plex -- grep -E \".../manifest|.../progress\" \".../Plex Media Server.log\"`
+  Notes:
+    - This strengthens the hypothesis that the remaining Plex Web blocker is in Plex's internal segment-info/manifest path (between first-stage `ssegment` output files and `/livetv/sessions/.../index.m3u8` readiness), not in PlexTuner stream startup.
+    - The WebSafe process remains instrumented, but TS inspection is still scoped to channel match `111`; the `108` probe did not add TS-inspector log noise.
+  Opportunities filed:
+    - none
+  Links:
+    - memory-bank/current_task.md, memory-bank/known_issues.md, /tmp/probe-138-108.json
