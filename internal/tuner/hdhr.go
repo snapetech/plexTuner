@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/plextuner/plex-tuner/internal/catalog"
 )
@@ -80,6 +81,10 @@ func (h *HDHR) serveLineup(w http.ResponseWriter) {
 	if base == "" {
 		base = "http://localhost:5004"
 	}
+	var urlSuffix string
+	if getenvBool("PLEX_TUNER_LINEUP_URL_NONCE", false) {
+		urlSuffix = "?ptnonce=" + strconv.FormatInt(time.Now().UTC().UnixNano(), 36)
+	}
 	out := make([]map[string]string, 0, len(channels))
 	for i := range channels {
 		c := &channels[i]
@@ -90,7 +95,7 @@ func (h *HDHR) serveLineup(w http.ResponseWriter) {
 		out = append(out, map[string]string{
 			"GuideNumber": c.GuideNumber,
 			"GuideName":   c.GuideName,
-			"URL":         base + "/stream/" + channelID,
+			"URL":         base + "/stream/" + channelID + urlSuffix,
 		})
 	}
 	w.Header().Set("Content-Type", "application/json")

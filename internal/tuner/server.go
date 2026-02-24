@@ -123,6 +123,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/guide.xml", xmltv)
 	mux.Handle("/live.m3u", m3uServe)
 	mux.Handle("/stream/", gateway)
+	// PMS may probe/fallback to legacy HDHR-style auto tune paths (/auto/v<id>).
+	mux.Handle("/auto/", gateway)
 
 	addr := s.Addr
 	if addr == "" {
@@ -172,6 +174,16 @@ func (w *loggingResponseWriter) Write(p []byte) (int, error) {
 	n, err := w.ResponseWriter.Write(p)
 	w.bytes += n
 	return n, err
+}
+
+func (w *loggingResponseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (w *loggingResponseWriter) ResponseStarted() bool {
+	return w.status != 0 || w.bytes > 0
 }
 
 func logRequests(next http.Handler) http.Handler {

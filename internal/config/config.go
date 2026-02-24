@@ -223,10 +223,10 @@ func getEnvTranscodeMode(key string, defaultVal string) string {
 	if v == "auto_cached" || v == "cached_auto" {
 		return "auto_cached"
 	}
-	if v == "true" || v == "1" || v == "yes" {
+	if v == "true" || v == "1" || v == "yes" || v == "on" {
 		return "on"
 	}
-	if v == "false" || v == "0" || v == "no" || v == "" {
+	if v == "false" || v == "0" || v == "no" || v == "off" || v == "" {
 		return "off"
 	}
 	return defaultVal
