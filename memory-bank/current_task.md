@@ -2,9 +2,9 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Goal:** Verify and harden the pending Plex Tuner changes (atomic catalog save/tests, subscription glob, fetchCatalog refactor) so they are safe to run with Plex. Verification, local tuner smoke, live Plex integration checks, and full 13-category Threadfin DVR insertion/activation checks are complete; main remaining issues are WebSafe metadata slowness with very large lineups and upstream feed/EPG sparsity collapsing the 13-way split.
+**Goal:** Land and verify the direct PlexTuner playback hardening work for Plex clients: (1) `/auto/v<guide-number>` fallback when `channel_id` is non-numeric, and (2) capability-based Plex client adaptation with a safe default (`unknown => websafe`, resolved non-web => full). Preserve the no-placeholder direct WebSafe path (real XMLTV + EPG-linked + deduped lineup/guide) from the live k3s testing.
 
-**Scope:** In: run project verification (`scripts/verify`) on current uncommitted changes, fix any regressions found, and validate Plex integration in the k3s environment (`plex.home`, Plex API tune path, `plextuner-websafe`, Threadfin 13-category split/DVR pipeline). Out: new features, unrelated refactors, permanent infra redesign.
+**Scope:** In: commit the pending `internal/tuner/gateway*` changes and update memory-bank documentation with the latest direct PlexTuner findings (lineup/guide mismatch root cause, WebSafe fix, remaining Plex Web `start.mpd` failure). Out: Threadfin pipeline changes, infra/firewall persistence, large refactors, and Plex Web DASH deep debugging beyond documenting the current failure point.
 
 **Last updated:** 2026-02-24
 
@@ -16,18 +16,16 @@ Assumptions (safe defaults you are proceeding with):
 - k3s/Plex troubleshooting changes on remote hosts may be temporary runtime fixes unless later codified in infra manifests or host firewall config.
 
 Questions (ONLY if blocked or high-risk ambiguity):
-- Q: Do you want WebSafe to keep external XMLTV (slow but richer guide) or prioritize Plex responsiveness by using placeholder guide / cached XMLTV?
-  Why it matters: Current live `guide.xml` with external XMLTV was ~45s and stalled Plex DVR metadata flows; disabling it made `guide.xml` ~0.2s and restored fast Plex tuner polling/tune start.
-  Suggested default: Prioritize responsiveness for now (fast placeholder guide), then implement XMLTV caching as a follow-up.
+- Q: None currently blocking for this patch-sized change.
 
 ## Opportunity radar (don't derail)
 - If you notice out-of-scope improvements, record them in `memory-bank/opportunities.md` and raise to the user in your summary.
 
 ## Self-check (quality bar — fill before claiming done)
-- **Correctness:** ✅ `scripts/verify` passed; local tuner smoke passed; live Plex API `tune` (DVR 138 / channel 11141) returned `200` and triggered `/stream/11141` successfully in `plextuner-websafe`; 13 Threadfin DVRs were created in Plex and the 6 non-empty buckets were activated/mapped successfully (91 channels total).
-- **Tests:** ⚠️ Real Plex integration was exercised (WebSafe + Threadfin multi-DVR path), but Plex DVR channel metadata APIs remain slow with ~41k-channel WebSafe lineup; `plextunerTrial` service (`:5004`) is down in the k3s test pod; current Threadfin split output is only 91 channels due source/EPG coverage.
-- **Risk:** med (runtime fixes applied on infra hosts/pod; not yet codified/persisted)
-- **Performance impact:** observed bottlenecks on external XMLTV remap and oversized lineup metadata (operational, not code changes in this session); Threadfin split volume limited by source/EPG linkability rather than local CPU/network.
+- **Correctness:** ✅ Targeted gateway tests pass and `go build ./cmd/plex-tuner` succeeds with the temporary Go toolchain (`/tmp/go`). Live k3s testing already proved the direct PlexTuner WebSafe path can `tune` and relay bytes after real XMLTV + lineup dedupe fixes.
+- **Tests:** ⚠️ Full `./scripts/verify` is currently blocked by unrelated repo-wide `gofmt -s` drift in tracked files (`internal/config/config.go`, `internal/hdhomerun/*.go`) not touched in this task. Remaining runtime failure is Plex Web browser playback timing out on DASH `start.mpd` after a successful tune/stream start.
+- **Risk:** med (behavior change in client adaptation defaults for unknown Plex clients; guarded by `PLEX_TUNER_CLIENT_ADAPT`)
+- **Performance impact:** no material regression expected from this patch; direct WebSafe performance still depends on lineup size and XMLTV remap cost (documented in known issues/opportunities).
 - **Security impact:** none (token used in-container only; not printed)
 
 ## Decisions (single source of truth)
@@ -35,5 +33,5 @@ Questions (ONLY if blocked or high-risk ambiguity):
 - If you're **unsure whether it's durable**, don't promote yet — note it in Assumptions.
 
 ## Docs (done = doc update when behavior changes)
-- If you changed **behavior, interfaces, or config:** update or create **one** doc in `docs/`; add cross-links. Conventions: [docs/_meta/linking.md](../docs/_meta/linking.md).
+- If you changed **behavior, interfaces, or config:** update or create **one** doc in `docs/`; add cross-links. Conventions: [docs/_meta/linking.md](../docs/_meta/linking.md). (Memory-bank updates are in scope for this patch; broader docs can follow if this behavior is promoted.)
 - If you **noticed doc gaps** but it's out of scope: file in `memory-bank/opportunities.md`.

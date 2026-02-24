@@ -71,3 +71,13 @@ It exists to encourage quality gains without derailing the current task.
   Suggested fix: Catch the empty-mapping case in `plex/scripts/plex-activate-dvr-lineups.py`, log `SKIP_EMPTY`, and continue processing remaining DVRs.
   Risk/Scope: low | fits current scope: no (external k3s repo script)
   User decision needed?: no
+
+- Date: 2026-02-24
+  Category: reliability
+  Title: Add built-in direct-catalog dedupe/alignment for XMLTV-remapped Plex lineups
+  Context: Direct PlexTuner (no Threadfin) WebSafe testing with real XMLTV on `plextuner-websafe`.
+  Why it matters: Plex guide UX can show many "Unavailable Airings" even when streaming works if `lineup.json` contains duplicate `tvg-id` rows while XMLTV remap dedupes guide channels/programmes by `tvg-id`.
+  Evidence: Live direct WebSafe test observed `188` lineup channels vs `91` guide channels after XMLTV remap; deduping `catalog.live_channels` by `tvg_id` before `serve` fixed the mismatch (`91/91`) and removed the guide/linkage mismatch.
+  Suggested fix: Add a built-in catalog/live-channel dedupe option (e.g., by `tvg-id`) and emit counts/logs for dropped duplicates when XMLTV remap is enabled, so direct Plex mode stays lineup/guide-aligned without an external preprocessing step.
+  Risk/Scope: med | fits current scope: no (new config/behavior choice)
+  User decision needed?: yes (default behavior for duplicates: keep first, prefer highest-priority source, or make it opt-in; recommended default: opt-in first, then consider enabling automatically when XMLTV remap is active).

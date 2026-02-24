@@ -136,3 +136,22 @@ Append-only. One entry per completed task.
     - `memory-bank/opportunities.md` (split-pipeline stage count instrumentation; empty-DVR activation helper hardening)
   Links:
     - memory-bank/known_issues.md, memory-bank/opportunities.md, /home/keith/Documents/code/k3s/plex/scripts/plex-dvr-setup-multi.sh, /home/keith/Documents/code/k3s/plex/scripts/plex-activate-dvr-lineups.py
+
+- Date: 2026-02-24
+  Title: Direct PlexTuner WebSafe hardening for Plex routing (guide-number fallback + default-safe client adaptation)
+  Summary:
+    - `internal/tuner/gateway`: Added channel lookup fallback by `GuideNumber` so `/auto/v<guide-number>` works even when the catalog `channel_id` is a non-numeric slug (for example `eurosport1.de`).
+    - `internal/tuner/gateway`: Changed Plex client adaptation to a tri-state override model so behavior can explicitly force WebSafe (`transcode on`), explicitly force full path (`transcode off`), or inherit the existing default.
+    - New adaptation policy (when `PLEX_TUNER_CLIENT_ADAPT=true`): explicit query `profile=` still wins; unknown/unresolved Plex client resolution defaults to WebSafe; resolved Plex Web/browser clients use WebSafe; resolved non-web clients force full path.
+    - Recorded live direct PlexTuner findings in memory-bank: real XMLTV + EPG-linked + deduped catalog fixed lineup/guide mismatch (`188 -> 91` unique `tvg-id` rows) and removed the "Unavailable Airings" mismatch root cause; remaining browser issue is Plex Web DASH `start.mpd` timeout after successful tune/relay.
+  Verification:
+    - `PATH=/tmp/go/bin:$PATH /tmp/go/bin/go test ./internal/tuner -run 'TestGateway_(requestAdaptation|autoPath)' -count=1`
+    - `PATH=/tmp/go/bin:$PATH /tmp/go/bin/go build ./cmd/plex-tuner`
+    - `PATH=/tmp/go/bin:$PATH ./scripts/verify` (fails on unrelated repo-wide format drift in tracked files: `internal/config/config.go`, `internal/hdhomerun/control.go`, `internal/hdhomerun/packet.go`, `internal/hdhomerun/server.go`)
+  Notes:
+    - The client-adaptation behavior change is gated by `PLEX_TUNER_CLIENT_ADAPT`; deployments with the flag disabled retain prior behavior.
+    - Full verification is not green due unrelated formatting drift outside this patch scope; this change set itself is `gofmt`-clean and builds/tests cleanly.
+  Opportunities filed:
+    - `memory-bank/opportunities.md` (built-in direct-catalog dedupe/alignment for XMLTV-remapped Plex lineups)
+  Links:
+    - internal/tuner/gateway.go, internal/tuner/gateway_test.go, memory-bank/known_issues.md, memory-bank/opportunities.md

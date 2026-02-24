@@ -786,7 +786,7 @@ func looksLikePlexWeb(s string) bool {
 	return strings.Contains(v, "plex web") || strings.Contains(v, "web") || strings.Contains(v, "browser") || strings.Contains(v, "firefox") || strings.Contains(v, "chrome") || strings.Contains(v, "safari")
 }
 
-func (g *Gateway) requestAdaptation(ctx context.Context, r *http.Request, channel *catalog.LiveChannel, channelID string) (bool, string, string) {
+func (g *Gateway) requestAdaptation(ctx context.Context, r *http.Request, channel *catalog.LiveChannel, channelID string) (bool, bool, string, string) {
 	hints := plexRequestHints(r)
 	log.Printf("gateway: channel=%q id=%s plex-hints %s", channel.GuideName, channelID, hints.summary())
 	// Explicit override always wins and is deterministic.
@@ -794,28 +794,28 @@ func (g *Gateway) requestAdaptation(ctx context.Context, r *http.Request, channe
 	if strings.TrimSpace(r.URL.Query().Get("profile")) != "" {
 		switch explicitProfile {
 		case profilePlexSafe, profileAACCFR, profileVideoOnly, profileLowBitrate, profileDashFast:
-			return true, explicitProfile, "query-profile"
+			return true, true, explicitProfile, "query-profile"
 		default:
-			return false, explicitProfile, "query-profile"
+			return true, false, explicitProfile, "query-profile"
 		}
 	}
 	if !g.PlexClientAdapt {
-		return false, "", "adapt-disabled"
+		return false, false, "", "adapt-disabled"
 	}
 	info, err := g.resolvePlexClient(ctx, hints)
 	if err != nil {
 		log.Printf("gateway: channel=%q id=%s plex-client-resolve err=%v", channel.GuideName, channelID, err)
-		return false, "", "resolve-error"
+		return true, true, profilePlexSafe, "resolve-error-websafe"
 	}
 	if info == nil {
-		return false, "", "no-forwarded-id"
+		return true, true, profilePlexSafe, "unknown-client-websafe"
 	}
 	log.Printf("gateway: channel=%q id=%s plex-client-resolved sid=%q cid=%q product=%q platform=%q title=%q",
 		channel.GuideName, channelID, info.SessionIdentifier, info.ClientIdentifier, info.Product, info.Platform, info.Title)
 	if looksLikePlexWeb(info.Product) || looksLikePlexWeb(info.Platform) {
-		return true, profilePlexSafe, "resolved-web-client"
+		return true, true, profilePlexSafe, "resolved-web-client"
 	}
-	return false, "", "resolved-nonweb-client"
+	return true, false, "", "resolved-nonweb-client"
 }
 
 // Adaptive buffer tuning: grow when client is slow (backpressure), shrink when client keeps up.
@@ -1279,6 +1279,17 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if channel == nil {
+		// PMS may request /auto/v<GuideNumber> while our stream path uses a
+		// non-numeric ChannelID (for example a tvg-id slug). Accept GuideNumber as
+		// a fallback lookup for both /auto/ and /stream/ requests.
+		for i := range g.Channels {
+			if g.Channels[i].GuideNumber == channelID {
+				channel = &g.Channels[i]
+				break
+			}
+		}
+	}
+	if channel == nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -1289,9 +1300,13 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			log.Printf("gateway: req=%s channel=%q id=%s debug-http < %s", reqID, channel.GuideName, channelID, line)
 		}
 	}
-	forceTranscode, forcedProfile, adaptReason := g.requestAdaptation(r.Context(), r, channel, channelID)
+	hasTranscodeOverride, forceTranscode, forcedProfile, adaptReason := g.requestAdaptation(r.Context(), r, channel, channelID)
 	if adaptReason != "" && adaptReason != "adapt-disabled" {
-		log.Printf("gateway: channel=%q id=%s adapt transcode=%t profile=%q reason=%s", channel.GuideName, channelID, forceTranscode, forcedProfile, adaptReason)
+		if hasTranscodeOverride {
+			log.Printf("gateway: channel=%q id=%s adapt transcode=%t profile=%q reason=%s", channel.GuideName, channelID, forceTranscode, forcedProfile, adaptReason)
+		} else {
+			log.Printf("gateway: channel=%q id=%s adapt inherit profile=%q reason=%s", channel.GuideName, channelID, forcedProfile, adaptReason)
+		}
 	}
 	start := time.Now()
 	if debugOpts.enabled() {
@@ -1400,8 +1415,8 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			body = rewriteHLSPlaylist(body, streamURL)
 			firstSeg := firstHLSMediaLine(body)
 			transcode := g.effectiveTranscodeForChannelMeta(r.Context(), channelID, channel.GuideNumber, channel.TVGID, streamURL)
-			if forceTranscode {
-				transcode = true
+			if hasTranscodeOverride {
+				transcode = forceTranscode
 			}
 			bufferSize := g.effectiveBufferSize(transcode)
 			mode := "remux"
