@@ -291,7 +291,10 @@ func main() {
 		log.Printf("HDHomeRun config: enabled=%v, deviceID=0x%x, tuners=%d",
 			hdhrConfig.Enabled, hdhrConfig.DeviceID, hdhrConfig.TunerCount)
 		if hdhrConfig.Enabled {
-			hdhrConfig.BaseURL = *serveBaseURL
+			// Only override BaseURL if it wasn't set from environment
+			if hdhrConfig.BaseURL == "" {
+				hdhrConfig.BaseURL = *serveBaseURL
+			}
 			// Create stream function that uses the gateway via localhost HTTP
 			streamFunc := func(ctx context.Context, channelID string) (io.ReadCloser, error) {
 				return srv.GetStream(ctx, channelID)

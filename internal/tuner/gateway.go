@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -500,6 +501,44 @@ func resolveFFmpegPath() (string, error) {
 	return exec.LookPath("ffmpeg")
 }
 
+// canonicalizeFFmpegInputURL resolves the input host in Go and rewrites the URL
+// to a numeric host for ffmpeg. This avoids resolver differences where Go can
+// resolve a host (for example a k8s short service hostname) but the bundled
+// ffmpeg binary cannot.
+func canonicalizeFFmpegInputURL(ctx context.Context, raw string) (rewritten string, fromHost string, toHost string) {
+	u, err := url.Parse(raw)
+	if err != nil || u == nil || u.Host == "" {
+		return raw, "", ""
+	}
+	host := u.Hostname()
+	if host == "" {
+		return raw, "", ""
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return raw, "", ""
+	}
+	lookupCtx := ctx
+	if lookupCtx == nil {
+		lookupCtx = context.Background()
+	}
+	lookupCtx, cancel := context.WithTimeout(lookupCtx, 2*time.Second)
+	defer cancel()
+	ips, err := net.DefaultResolver.LookupHost(lookupCtx, host)
+	if err != nil || len(ips) == 0 {
+		return raw, "", ""
+	}
+	ip := strings.TrimSpace(ips[0])
+	if ip == "" || ip == host {
+		return raw, "", ""
+	}
+	if p := u.Port(); p != "" {
+		u.Host = net.JoinHostPort(ip, p)
+	} else {
+		u.Host = ip
+	}
+	return u.String(), host, ip
+}
+
 type startSignalState struct {
 	TSLikePackets int
 	HasIDR        bool
@@ -507,10 +546,33 @@ type startSignalState struct {
 	AlignedOffset int
 }
 
+func containsH264IDRAnnexB(buf []byte) bool {
+	if len(buf) < 4 {
+		return false
+	}
+	for i := 0; i < len(buf)-3; i++ {
+		// 3-byte Annex B start code: 00 00 01 <nal>
+		if i+4 <= len(buf) && buf[i] == 0x00 && buf[i+1] == 0x00 && buf[i+2] == 0x01 {
+			if (buf[i+3] & 0x1f) == 5 {
+				return true
+			}
+			continue
+		}
+		// 4-byte Annex B start code: 00 00 00 01 <nal>
+		if i+5 <= len(buf) && buf[i] == 0x00 && buf[i+1] == 0x00 && buf[i+2] == 0x00 && buf[i+3] == 0x01 {
+			if (buf[i+4] & 0x1f) == 5 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func looksLikeGoodTSStart(buf []byte) startSignalState {
 	const pkt = 188
 	st := startSignalState{}
 	st.AlignedOffset = -1
+	var idrCarry []byte
 	// Quick TS sanity and payload scan for H264 IDR + AAC/ADTS.
 	for off := 0; off+pkt <= len(buf); {
 		if buf[off] != 0x47 {
@@ -559,8 +621,15 @@ func looksLikeGoodTSStart(buf []byte) startSignalState {
 		payload := p[i:]
 		// H264 Annex B IDR (NAL type 5)
 		if !st.HasIDR {
-			if bytes.Contains(payload, []byte{0x00, 0x00, 0x01, 0x65}) || bytes.Contains(payload, []byte{0x00, 0x00, 0x00, 0x01, 0x65}) {
+			if containsH264IDRAnnexB(payload) {
 				st.HasIDR = true
+			} else if len(idrCarry) > 0 {
+				joined := make([]byte, 0, len(idrCarry)+len(payload))
+				joined = append(joined, idrCarry...)
+				joined = append(joined, payload...)
+				if containsH264IDRAnnexB(joined) {
+					st.HasIDR = true
+				}
 			}
 		}
 		// AAC ADTS syncword
@@ -569,6 +638,25 @@ func looksLikeGoodTSStart(buf []byte) startSignalState {
 				if payload[j] == 0xFF && (payload[j+1]&0xF0) == 0xF0 {
 					st.HasAAC = true
 					break
+				}
+			}
+		}
+		if len(payload) > 0 {
+			if len(payload) >= 4 {
+				idrCarry = append(idrCarry[:0], payload[len(payload)-4:]...)
+			} else {
+				keep := len(idrCarry) + len(payload)
+				if keep > 4 {
+					drop := keep - 4
+					if drop < len(idrCarry) {
+						idrCarry = idrCarry[drop:]
+					} else {
+						idrCarry = idrCarry[:0]
+					}
+				}
+				idrCarry = append(idrCarry, payload...)
+				if len(idrCarry) > 4 {
+					idrCarry = idrCarry[len(idrCarry)-4:]
 				}
 			}
 		}
@@ -1671,6 +1759,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	if strings.TrimSpace(forcedProfile) != "" {
 		profile = normalizeProfileName(forcedProfile)
 	}
+	ffmpegPlaylistURL, ffmpegInputHost, ffmpegInputIP := canonicalizeFFmpegInputURL(r.Context(), playlistURL)
 
 	// HLS inputs are more sensitive to over-aggressive probing/low-latency flags than raw TS.
 	// Default to safer probing and allow env overrides when chasing startup races.
@@ -1679,7 +1768,10 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	hlsRWTimeoutUs := getenvInt("PLEX_TUNER_FFMPEG_HLS_RW_TIMEOUT_US", 15000000)
 	hlsLiveStartIndex := getenvInt("PLEX_TUNER_FFMPEG_HLS_LIVE_START_INDEX", -3)
 	hlsUseNoBuffer := getenvBool("PLEX_TUNER_FFMPEG_HLS_NOBUFFER", false)
-	hlsReconnect := getenvBool("PLEX_TUNER_FFMPEG_HLS_RECONNECT", true)
+	// Let ffmpeg's HLS demuxer manage live playlist refreshes by default.
+	// Generic HTTP reconnect flags (especially reconnect-at-EOF) can cause
+	// live .m3u8 inputs to loop on playlist EOF and never start segment reads.
+	hlsReconnect := getenvBool("PLEX_TUNER_FFMPEG_HLS_RECONNECT", false)
 	hlsLogLevel := strings.TrimSpace(os.Getenv("PLEX_TUNER_FFMPEG_HLS_LOGLEVEL"))
 	if hlsLogLevel == "" {
 		hlsLogLevel = "error"
@@ -1714,7 +1806,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 		auth := base64.StdEncoding.EncodeToString([]byte(g.ProviderUser + ":" + g.ProviderPass))
 		args = append(args, "-headers", "Authorization: Basic "+auth+"\r\n")
 	}
-	args = append(args, "-i", playlistURL)
+	args = append(args, "-i", ffmpegPlaylistURL)
 	args = append(args, buildFFmpegMPEGTSCodecArgs(transcode, profile)...)
 
 	cmd := exec.CommandContext(r.Context(), ffmpegPath, args...)
@@ -1731,6 +1823,10 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	if transcode {
 		modeLabel = "ffmpeg-transcode"
 	}
+	if ffmpegInputHost != "" && ffmpegInputIP != "" {
+		log.Printf("gateway:%s channel=%q id=%s %s input-host-resolved %q=>%q",
+			reqField, channelName, channelID, modeLabel, ffmpegInputHost, ffmpegInputIP)
+	}
 	log.Printf("gateway:%s channel=%q id=%s %s profile=%s", reqField, channelName, channelID, modeLabel, profile)
 	log.Printf("gateway:%s channel=%q id=%s %s hls-input analyzeduration_us=%d probesize=%d rw_timeout_us=%d live_start_index=%d nobuffer=%t reconnect=%t loglevel=%s",
 		reqField, channelName, channelID, modeLabel, hlsAnalyzeDurationUs, hlsProbeSize, hlsRWTimeoutUs, hlsLiveStartIndex, hlsUseNoBuffer, hlsReconnect, hlsLogLevel)
@@ -1741,6 +1837,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	startupTimeoutMs := getenvInt("PLEX_TUNER_WEBSAFE_STARTUP_TIMEOUT_MS", 12000)
 	enableBootstrap := transcode && getenvBool("PLEX_TUNER_WEBSAFE_BOOTSTRAP", true)
 	enableTimeoutBootstrap := getenvBool("PLEX_TUNER_WEBSAFE_TIMEOUT_BOOTSTRAP", true)
+	continueOnStartupTimeout := transcode && getenvBool("PLEX_TUNER_WEBSAFE_TIMEOUT_CONTINUE_FFMPEG", false)
 	bootstrapSec := getenvFloat("PLEX_TUNER_WEBSAFE_BOOTSTRAP_SECONDS", 1.5)
 	requireGoodStart := transcode && getenvBool("PLEX_TUNER_WEBSAFE_REQUIRE_GOOD_START", true)
 	enableNullTSKeepalive := transcode && getenvBool("PLEX_TUNER_WEBSAFE_NULL_TS_KEEPALIVE", false)
@@ -1773,6 +1870,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	defer func() { flushBody() }()
 	stopNullTSKeepalive := func(string) {}
 	stopPATMPTKeepalive := func(string) {}
+	bootstrapAlreadySent := false
 	var prefetch []byte
 	if transcode && startupMin > 0 {
 		// Send HTTP 200 + Content-Type headers immediately, before any body bytes.
@@ -1905,6 +2003,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 				if err := writeBootstrapTS(r.Context(), ffmpegPath, bodyOut, channelName, channelID, bootstrapSec); err != nil {
 					log.Printf("gateway:%s channel=%q id=%s %s timeout-bootstrap failed: %v", reqField, channelName, channelID, modeLabel, err)
 				} else {
+					bootstrapAlreadySent = true
 					flushBody()
 					log.Printf("gateway:%s channel=%q id=%s %s timeout-bootstrap emitted before relay fallback", reqField, channelName, channelID, modeLabel)
 				}
@@ -1912,6 +2011,10 @@ func (g *Gateway) relayHLSWithFFmpeg(
 				log.Printf("gateway:%s channel=%q id=%s %s timeout-bootstrap disabled before relay fallback", reqField, channelName, channelID, modeLabel)
 			}
 			log.Printf("gateway:%s channel=%q id=%s %s startup-gate timeout after=%dms", reqField, channelName, channelID, modeLabel, startupTimeoutMs)
+			if continueOnStartupTimeout {
+				log.Printf("gateway:%s channel=%q id=%s %s startup-gate timeout continue-ffmpeg=true", reqField, channelName, channelID, modeLabel)
+				break
+			}
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()
 			msg := strings.TrimSpace(stderr.String())
@@ -1933,7 +2036,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 
 	startResponse()
 
-	if enableBootstrap && bootstrapSec > 0 {
+	if enableBootstrap && bootstrapSec > 0 && !bootstrapAlreadySent {
 		if err := writeBootstrapTS(r.Context(), ffmpegPath, bodyOut, channelName, channelID, bootstrapSec); err != nil {
 			log.Printf("gateway:%s channel=%q id=%s bootstrap failed: %v", reqField, channelName, channelID, err)
 		}

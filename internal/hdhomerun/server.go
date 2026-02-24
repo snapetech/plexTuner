@@ -19,6 +19,7 @@ type Config struct {
 	DiscoverPort   int
 	ControlPort    int
 	BaseURL        string
+	FriendlyName   string
 }
 
 // StreamFunc is a function that returns a stream for a channel
@@ -40,6 +41,10 @@ func NewServer(config *Config, streamFunc StreamFunc) (*Server, error) {
 	}
 
 	device := CreateDefaultDevice(config.DeviceID, config.TunerCount, config.BaseURL)
+	// Override friendly name if provided in config
+	if config.FriendlyName != "" {
+		device.FriendlyName = config.FriendlyName
+	}
 
 	return &Server{
 		config:     config,
@@ -111,12 +116,13 @@ func (s *Server) GetDevice() *Device {
 // LoadConfig loads HDHomeRun configuration from environment
 func LoadConfig() *Config {
 	return &Config{
-		Enabled:      getEnvBool("PLEX_TUNER_HDHR_NETWORK_MODE", false),
-		DeviceID:     getEnvUint32("PLEX_TUNER_HDHR_DEVICE_ID", 0x12345678),
-		TunerCount:   getEnvInt("PLEX_TUNER_HDHR_TUNER_COUNT", 2),
-		DiscoverPort: getEnvInt("PLEX_TUNER_HDHR_DISCOVER_PORT", 65001),
-		ControlPort:  getEnvInt("PLEX_TUNER_HDHR_CONTROL_PORT", 65001),
-		BaseURL:      os.Getenv("PLEX_TUNER_BASE_URL"),
+		Enabled:        getEnvBool("PLEX_TUNER_HDHR_NETWORK_MODE", false),
+		DeviceID:      getEnvUint32("PLEX_TUNER_HDHR_DEVICE_ID", 0x12345678),
+		TunerCount:    getEnvInt("PLEX_TUNER_HDHR_TUNER_COUNT", 2),
+		DiscoverPort:  getEnvInt("PLEX_TUNER_HDHR_DISCOVER_PORT", 65001),
+		ControlPort:   getEnvInt("PLEX_TUNER_HDHR_CONTROL_PORT", 65001),
+		BaseURL:       os.Getenv("PLEX_TUNER_BASE_URL"),
+		FriendlyName:  os.Getenv("PLEX_TUNER_HDHR_FRIENDLY_NAME"),
 	}
 }
 

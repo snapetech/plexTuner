@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"syscall"
 	"time"
 )
@@ -157,9 +158,13 @@ func CreateDefaultDevice(deviceID uint32, tunerCount int, baseURL string) *Devic
 		deviceID = 0x12345678 // Placeholder - could use random
 	}
 
-	friendlyName := "PlexTuner"
-	if baseURL != "" {
-		// Extract a friendly name from base URL if possible
+	// Try to get friendly name from environment, fallback to default
+	friendlyName := os.Getenv("PLEX_TUNER_HDHR_FRIENDLY_NAME")
+	if friendlyName == "" {
+		friendlyName = os.Getenv("PLEX_TUNER_FRIENDLY_NAME")
+	}
+	if friendlyName == "" {
+		friendlyName = "PlexTuner-HDHR"
 	}
 
 	return &Device{

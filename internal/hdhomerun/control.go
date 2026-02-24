@@ -84,11 +84,126 @@ func (s *ControlServer) Serve(listener net.Listener) error {
 	}
 }
 
+// handleHTTPRequest handles HTTP requests (Plex uses HTTP to communicate with HDHomeRun devices)
+func (s *ControlServer) handleHTTPRequest(conn net.Conn, initialBuf []byte) {
+	// Read the rest of the HTTP request
+	// First, put back the initial bytes we read
+	reqData := initialBuf
+	buf := make([]byte, 8192)
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	
+	for {
+		n, err := conn.Read(buf)
+		if err != nil {
+			break
+		}
+		reqData = append(reqData, buf[:n]...)
+		// Check if we have the full request (double CRLF indicates end of headers)
+		if strings.Contains(string(reqData), "\r\n\r\n") {
+			break
+		}
+	}
+	
+	req := string(reqData)
+	
+	// Parse the request line
+	lines := strings.Split(req, "\r\n")
+	if len(lines) == 0 {
+		conn.Close()
+		return
+	}
+	
+	parts := strings.Split(lines[0], " ")
+	if len(parts) < 2 {
+		conn.Close()
+		return
+	}
+	
+	method := parts[0]
+	path := parts[1]
+	
+	log.Printf("hdhomerun: HTTP %s %s", method, path)
+	
+	// Handle different endpoints
+	var response string
+	switch path {
+	case "/", "/discover.json":
+		response = s.getDiscoverJSON()
+	case "/lineup.json", "/lineup_status.json":
+		response = s.getLineupStatus()
+	case "/tuner.js":
+		response = "ok"
+	default:
+		response = "404 Not Found"
+	}
+	
+	// Send HTTP response
+	httpResponse := "HTTP/1.1 200 OK\r\n"
+	if path == "/discover.json" || path == "/lineup.json" || path == "/lineup_status.json" {
+		httpResponse += "Content-Type: application/json\r\n"
+	} else {
+		httpResponse += "Content-Type: text/plain\r\n"
+	}
+	httpResponse += "Connection: close\r\n"
+	httpResponse += fmt.Sprintf("Content-Length: %d\r\n", len(response))
+	httpResponse += "\r\n"
+	httpResponse += response
+	
+	conn.Write([]byte(httpResponse))
+	conn.Close()
+}
+
+// getDiscoverJSON returns the device discovery info as JSON
+func (s *ControlServer) getDiscoverJSON() string {
+	// Use the actual DeviceID value (displayed as hex string in discover.json)
+	deviceIDStr := fmt.Sprintf("%08x", s.device.DeviceID)
+	return fmt.Sprintf(`{
+	"DeviceID": "%s",
+	"DeviceAuth": "plextuner",
+	"FriendlyName": "%s",
+	"BaseURL": "%s",
+	"LineupURL": "%s/lineup.json",
+	"TunerCount": %d
+}`,
+		deviceIDStr,
+		s.device.FriendlyName,
+		s.device.BaseURL,
+		s.device.BaseURL,
+		s.device.TunerCount)
+}
+
+// getLineupStatus returns the channel lineup
+func (s *ControlServer) getLineupStatus() string {
+	// Return empty lineup (no channels configured)
+	return `{"ScanInProgress": 0, "ScanPossible": 0, "Source": "Antenna", "SourceList": ["Antenna"], "Channels": []}`
+}
+
 func (s *ControlServer) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
 	log.Printf("hdhomerun: connection from %s", conn.RemoteAddr())
 
+	// Peek at the first few bytes to determine if this is HTTP or binary HDHomeRun protocol
+	// HTTP requests start with "GET ", "POST ", etc.
+	// HDHomeRun binary packets start with a 4-byte header (type + length)
+	buf := make([]byte, 4)
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	n, err := io.ReadFull(conn, buf)
+	if err != nil || n < 4 {
+		log.Printf("hdhomerun: failed to read initial bytes: %v", err)
+		return
+	}
+
+	// Check if this looks like HTTP
+	if string(buf[0:4]) == "GET " || string(buf[0:4]) == "POST" || string(buf[0:4]) == "HEAD" {
+		// Handle as HTTP request - re-read the full request
+		s.handleHTTPRequest(conn, buf)
+		return
+	}
+
+	// It's binary HDHomeRun protocol - put the bytes back for the normal handler
+	// (we already read 4 bytes, need to process them)
+	// Continue with the binary protocol handling
 	for {
 		conn.SetReadDeadline(time.Now().Add(30 * time.Second)) // 30s timeout
 
