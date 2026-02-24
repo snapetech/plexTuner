@@ -41,14 +41,15 @@ func mpegTSCRC32(data []byte) uint32 {
 // at PMT PID patPMTKeepPMTPID. cc is the 4-bit continuity counter for PID 0.
 //
 // Packet layout:
-//   pkt[0]     sync byte 0x47
-//   pkt[1..2]  PUSI=1, PID=0x0000
-//   pkt[3]     adaptation_field_control=0b01 (payload only), continuity_counter=cc
-//   pkt[4]     pointer_field = 0x00
-//   pkt[5..16] PAT section (table_id=0x00, section_length=13, transport_stream_id=1,
-//              version=0, current_next=1, program_number=1, PMT_PID=patPMTKeepPMTPID)
-//   pkt[17..20] CRC-32 (big-endian)
-//   pkt[21..187] 0xFF padding
+//
+//	pkt[0]     sync byte 0x47
+//	pkt[1..2]  PUSI=1, PID=0x0000
+//	pkt[3]     adaptation_field_control=0b01 (payload only), continuity_counter=cc
+//	pkt[4]     pointer_field = 0x00
+//	pkt[5..16] PAT section (table_id=0x00, section_length=13, transport_stream_id=1,
+//	           version=0, current_next=1, program_number=1, PMT_PID=patPMTKeepPMTPID)
+//	pkt[17..20] CRC-32 (big-endian)
+//	pkt[21..187] 0xFF padding
 func buildPATPacket(cc uint8) [188]byte {
 	var pkt [188]byte
 	pkt[0] = 0x47
@@ -87,14 +88,15 @@ func buildPATPacket(cc uint8) [188]byte {
 // cc is the 4-bit continuity counter for PID patPMTKeepPMTPID.
 //
 // Packet layout:
-//   pkt[0]     sync byte 0x47
-//   pkt[1..2]  PUSI=1, PID=patPMTKeepPMTPID (0x1000)
-//   pkt[3]     adaptation_field_control=0b01, continuity_counter=cc
-//   pkt[4]     pointer_field = 0x00
-//   pkt[5..26] PMT section (table_id=0x02, section_length=23, program_number=1,
-//              PCR_PID=patPMTKeepVideoPID, video H264, audio AAC)
-//   pkt[27..30] CRC-32 (big-endian)
-//   pkt[31..187] 0xFF padding
+//
+//	pkt[0]     sync byte 0x47
+//	pkt[1..2]  PUSI=1, PID=patPMTKeepPMTPID (0x1000)
+//	pkt[3]     adaptation_field_control=0b01, continuity_counter=cc
+//	pkt[4]     pointer_field = 0x00
+//	pkt[5..26] PMT section (table_id=0x02, section_length=23, program_number=1,
+//	           PCR_PID=patPMTKeepVideoPID, video H264, audio AAC)
+//	pkt[27..30] CRC-32 (big-endian)
+//	pkt[31..187] 0xFF padding
 func buildPMTPacket(cc uint8) [188]byte {
 	var pkt [188]byte
 	pkt[0] = 0x47
@@ -153,8 +155,9 @@ func buildPMTPacket(cc uint8) [188]byte {
 // structurally continuous with both the bootstrap preamble and the real stream.
 //
 // Controlled by:
-//   PLEX_TUNER_WEBSAFE_PROGRAM_KEEPALIVE=true     enable (default: false)
-//   PLEX_TUNER_WEBSAFE_PROGRAM_KEEPALIVE_MS=500   interval in ms (default: 500)
+//
+//	PLEX_TUNER_WEBSAFE_PROGRAM_KEEPALIVE=true     enable (default: false)
+//	PLEX_TUNER_WEBSAFE_PROGRAM_KEEPALIVE_MS=500   interval in ms (default: 500)
 //
 // Returns a stop function (idempotent; blocks until the goroutine exits).
 func startPATMPTKeepalive(

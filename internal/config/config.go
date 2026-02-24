@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -29,6 +30,7 @@ type Config struct {
 	TunerCount int
 	BaseURL    string // e.g. http://192.168.1.10:5004 for Plex to use
 	DeviceID   string // HDHomeRun discover.json DeviceID (stable; some Plex versions are picky about format)
+	FriendlyName string // HDHomeRun discover.json FriendlyName (shown in Plex Live TV tuner list)
 	// Stream: buffering absorbs brief upstream stalls; transcoding re-encodes (libx264/aac) for compatibility.
 	StreamBufferBytes   int    // -1 = auto (default; adaptive when transcoding). 0 = no buffer. >0 = fixed bytes.
 	StreamTranscodeMode string // "off" | "on" | "auto". auto = probe stream (ffprobe) and transcode only when codec not Plex-friendly.
@@ -60,6 +62,7 @@ func Load() *Config {
 		TunerCount:           getEnvInt("PLEX_TUNER_TUNER_COUNT", 2),
 		BaseURL:              os.Getenv("PLEX_TUNER_BASE_URL"),
 		DeviceID:             getEnv("PLEX_TUNER_DEVICE_ID", "plextuner01"),
+		FriendlyName:        os.Getenv("PLEX_TUNER_FRIENDLY_NAME"),
 		StreamBufferBytes:    getEnvIntOrAuto("PLEX_TUNER_STREAM_BUFFER_BYTES", -1),
 		StreamTranscodeMode:  getEnvTranscodeMode("PLEX_TUNER_STREAM_TRANSCODE", "off"),
 		XMLTVURL:             os.Getenv("PLEX_TUNER_XMLTV_URL"),
@@ -100,13 +103,21 @@ func Load() *Config {
 }
 
 // readSubscriptionFile reads "Username: x" and "Password: x" from path. path may be empty to try default.
+// When path is empty, globs ~/Documents/iptv.subscription.*.txt and uses the alphabetically last match
+// (i.e. highest year), so the file keeps working across year-end renewals.
 func readSubscriptionFile(path string) (user, pass string, err error) {
 	if path == "" {
 		home := os.Getenv("HOME")
 		if home == "" {
 			return "", "", os.ErrNotExist
 		}
-		path = strings.TrimSuffix(home, "/") + "/Documents/iptv.subscription.2026.txt"
+		pattern := filepath.Join(home, "Documents", "iptv.subscription.*.txt")
+		matches, globErr := filepath.Glob(pattern)
+		if globErr != nil || len(matches) == 0 {
+			return "", "", os.ErrNotExist
+		}
+		sort.Strings(matches)
+		path = matches[len(matches)-1]
 	}
 	path = filepath.Clean(path)
 	f, err := os.Open(path)

@@ -2,7 +2,9 @@ package catalog
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -105,7 +107,8 @@ func (c *Catalog) SnapshotLive() []LiveChannel {
 	return out
 }
 
-// Save writes the catalog to path as JSON.
+// Save writes the catalog to path as JSON using a temp-file-then-rename strategy
+// so readers never see a partially-written file (atomic on most Unix filesystems).
 func (c *Catalog) Save(path string) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -113,7 +116,30 @@ func (c *Catalog) Save(path string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0600)
+	dir := filepath.Dir(filepath.Clean(path))
+	tmp, err := os.CreateTemp(dir, ".catalog-*.json.tmp")
+	if err != nil {
+		return fmt.Errorf("catalog save: create temp: %w", err)
+	}
+	tmpName := tmp.Name()
+	_, writeErr := tmp.Write(data)
+	closeErr := tmp.Close()
+	if writeErr != nil || closeErr != nil {
+		os.Remove(tmpName)
+		if writeErr != nil {
+			return fmt.Errorf("catalog save: write: %w", writeErr)
+		}
+		return fmt.Errorf("catalog save: close: %w", closeErr)
+	}
+	if err := os.Chmod(tmpName, 0600); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("catalog save: chmod: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("catalog save: rename: %w", err)
+	}
+	return nil
 }
 
 // Load replaces the catalog with the contents of path (JSON).
