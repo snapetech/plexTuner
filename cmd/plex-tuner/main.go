@@ -1,4 +1,4 @@
-// Command plex-tuner: one-run Live TV/DVR (run), or index / mount / serve separately.
+o// Command plex-tuner: one-run Live TV/DVR (run), or index / mount / serve separately.
 //
 //	run    One-run: refresh catalog, health check, then serve tuner. For systemd. Zero interaction after .env.
 //	index  Fetch M3U, parse, save catalog (movies + series + live channels)
@@ -428,9 +428,10 @@ func main() {
 		var hdhrServer *hdhomerun.Server
 		if hdhrConfig.Enabled {
 			hdhrConfig.BaseURL = baseURL
-			// Stream function - TODO: integrate with gateway for direct TCP streaming
-			// For now, the HDHomeRun discovery works but streams still go through HTTP
-			var streamFunc func(ctx context.Context, channelID string) (io.ReadCloser, error)
+			// Create stream function that uses the gateway via localhost HTTP
+			streamFunc := func(ctx context.Context, channelID string) (io.ReadCloser, error) {
+				return srv.GetStream(ctx, channelID)
+			}
 			server, err := hdhomerun.NewServer(hdhrConfig, streamFunc)
 			if err != nil {
 				log.Printf("HDHomeRun network mode failed to start: %v", err)

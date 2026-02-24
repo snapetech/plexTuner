@@ -2,6 +2,8 @@ package tuner
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -9,7 +11,6 @@ import (
 	"time"
 
 	"github.com/plextuner/plex-tuner/internal/catalog"
-	"github.com/plextuner/plex-tuner/internal/httpclient"
 )
 
 // Server runs the HDHR emulator + XMLTV + stream gateway.
@@ -50,6 +51,46 @@ func (s *Server) UpdateChannels(live []catalog.LiveChannel) {
 	if s.m3uServe != nil {
 		s.m3uServe.Channels = live
 	}
+}
+
+// GetStream returns a reader for the given channel.
+// This is used by HDHomeRun network mode to get streams for direct TCP delivery.
+func (s *Server) GetStream(ctx context.Context, channelID string) (io.ReadCloser, error) {
+	// Find the channel
+	var ch *catalog.LiveChannel
+	for i := range s.Channels {
+		if s.Channels[i].ChannelID == channelID {
+			ch = &s.Channels[i]
+			break
+		}
+	}
+	if ch == nil {
+		return nil, fmt.Errorf("channel not found: %s", channelID)
+	}
+
+	// Use the gateway to get the stream - make HTTP request to ourselves
+	// This reuses the existing gateway logic but via HTTP to localhost
+	streamURL := fmt.Sprintf("http://127.0.0.1%s/stream/%s", s.Addr, channelID)
+	req, err := http.NewRequestWithContext(ctx, "GET", streamURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	// Use the gateway's HTTP client if available, otherwise default client
+	client := http.DefaultClient
+	if s.gateway != nil && s.gateway.Client != nil {
+		client = s.gateway.Client
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch stream: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("stream HTTP %d", resp.StatusCode)
+	}
+	return resp.Body, nil
 }
 
 // Run blocks until ctx is cancelled or the server fails to start. On shutdown it stops
