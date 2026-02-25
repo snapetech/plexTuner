@@ -1,0 +1,159 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: plextuner-test-env
+  namespace: plex
+# deploy-hdhr-one-shot.sh injects these from .env. Set manually or use one-shot.
+data:
+  PLEX_TUNER_PROVIDER_USER: "REPLACE"
+  PLEX_TUNER_PROVIDER_PASS: "REPLACE"
+  PLEX_TUNER_PROVIDER_URL: "https://REPLACE"
+  PLEX_TUNER_M3U_URL: "http://REPLACE/get.php?username=REPLACE&password=REPLACE&type=m3u_plus&output=ts"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: plextuner-test-catalog
+  namespace: plex
+data:
+  catalog.json: |
+    {
+      "version": "1",
+      "movies": [],
+      "series": [],
+      "live_channels": [
+        {
+          "channel_id": "1",
+          "guide_number": "1",
+          "guide_name": "Channel 1",
+          "stream_url": "http://stream.example.com/live/1.m3u8"
+        },
+        {
+          "channel_id": "2",
+          "guide_number": "2",
+          "guide_name": "Channel 2",
+          "stream_url": "http://stream.example.com/live/2.m3u8"
+        },
+        {
+          "channel_id": "3",
+          "guide_number": "3",
+          "guide_name": "Channel 3",
+          "stream_url": "http://stream.example.com/live/3.m3u8"
+        }
+      ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plextuner-hdhr-test
+  namespace: plex
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: plextuner-hdhr-test
+  template:
+    metadata:
+      labels:
+        app: plextuner-hdhr-test
+    spec:
+      # Optional: pin to a node where Plex data lives (for -register-plex hostPath). Uncomment and set your node name.
+      # nodeSelector:
+      #   kubernetes.io/hostname: your-plex-node
+      initContainers:
+      - name: index
+        image: plex-tuner:hdhr-test
+        imagePullPolicy: Never
+        envFrom:
+        - configMapRef:
+            name: plextuner-test-env
+        - secretRef:
+            name: plextuner-iptv
+            optional: true
+        volumeMounts:
+        - name: catalog
+          mountPath: /data
+        command: ["/plex-tuner", "index", "-catalog=/data/catalog.json"]
+      containers:
+      - name: plextuner
+        image: plex-tuner:hdhr-test
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 5004
+          name: hdhr
+        envFrom:
+        - configMapRef:
+            name: plextuner-test-env
+        - secretRef:
+            name: plextuner-iptv
+            optional: true
+        volumeMounts:
+        - name: catalog
+          mountPath: /data
+        - name: plex-db
+          mountPath: /var/lib/plex
+        args:
+        - run
+        - -skip-index
+        - -catalog=/data/catalog.json
+        - -addr=:5004
+        - -base-url=http://plextuner-hdhr.plex.home
+        - -register-plex=/var/lib/plex
+        - -mode=easy
+        readinessProbe:
+          httpGet:
+            path: /discover.json
+            port: 5004
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          failureThreshold: 18
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+      volumes:
+      - name: catalog
+        emptyDir:
+          sizeLimit: 100Mi
+      - name: plex-db
+        hostPath:
+          path: /var/lib/plex
+          type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plextuner-hdhr-test
+  namespace: plex
+spec:
+  type: NodePort
+  selector:
+    app: plextuner-hdhr-test
+  ports:
+  - port: 5004
+    targetPort: 5004
+    nodePort: 30004
+    name: hdhr
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: plextuner-hdhr
+  namespace: plex
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: plextuner-hdhr.plex.home
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: plextuner-hdhr-test
+            port:
+              number: 5004

@@ -26,9 +26,10 @@ type Config struct {
 	CatalogPath string // e.g. /var/lib/plextuner/catalog.json
 
 	// Live tuner
-	TunerCount int
-	BaseURL    string // e.g. http://192.168.1.10:5004 for Plex to use
-	DeviceID   string // HDHomeRun discover.json DeviceID (stable; some Plex versions are picky about format)
+	TunerCount        int
+	LineupMaxChannels int    // max channels in lineup/guide (Plex DVR limit 480). 0 = use default 480.
+	BaseURL           string // e.g. http://192.168.1.10:5004 for Plex to use
+	DeviceID          string // HDHomeRun discover.json DeviceID (stable; some Plex versions are picky about format)
 	// Stream: buffering absorbs brief upstream stalls; transcoding re-encodes (libx264/aac) for compatibility.
 	StreamBufferBytes   int    // -1 = auto (default; adaptive when transcoding). 0 = no buffer. >0 = fixed bytes.
 	StreamTranscodeMode string // "off" | "on" | "auto". auto = probe stream (ffprobe) and transcode only when codec not Plex-friendly.
@@ -58,6 +59,7 @@ func Load() *Config {
 		CacheDir:             getEnv("PLEX_TUNER_CACHE", "/var/cache/plextuner"),
 		CatalogPath:          getEnv("PLEX_TUNER_CATALOG", "./catalog.json"),
 		TunerCount:           getEnvInt("PLEX_TUNER_TUNER_COUNT", 2),
+		LineupMaxChannels:    getEnvInt("PLEX_TUNER_LINEUP_MAX_CHANNELS", 480),
 		BaseURL:              os.Getenv("PLEX_TUNER_BASE_URL"),
 		DeviceID:             getEnv("PLEX_TUNER_DEVICE_ID", "plextuner01"),
 		StreamBufferBytes:    getEnvIntOrAuto("PLEX_TUNER_STREAM_BUFFER_BYTES", -1),

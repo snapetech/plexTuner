@@ -1,0 +1,6 @@
+# No RUN step — works when Docker has no outbound network (base image must be cached).
+# Build: go build -o plex-tuner ./cmd/plex-tuner && docker build -f Dockerfile.static.distroless -t plex-tuner:hdhr-test .
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY plex-tuner /plex-tuner
+EXPOSE 5004
+ENTRYPOINT ["/plex-tuner"]

@@ -2,7 +2,7 @@
 
 **Your IPTV subscription, inside Plex Live TV & DVR.** One binary: point it at your provider, get an HDHomeRun-compatible tuner and (optionally) a VOD filesystem. No web UI—just `.env`, CLI, and a single Go binary that does the job.
 
-**Mirrored:** [GitLab](https://gitlab.home/keith/plexTuner) · [GitHub](https://github.com/snapetech/plexTuner) (same codebase).
+**Source:** [GitHub](https://github.com/snapetech/plexTuner) (mirrored on GitLab).
 
 ---
 
@@ -51,6 +51,19 @@ Same goal—IPTV into Plex—different tradeoffs. We took cues from xTeVe, Threa
 | Single binary, minimal deps | — | — | **✓** (Go; optional FUSE/ffmpeg) |
 
 **In short:** No web UI and no built-in “mapping” UI—you configure with env and CLI. We double down on **player_api**, **ranked multi-host** (probe all, best + stream backups), **VODFS**, **headless Plex setup**, and **one-shot run** for systemd/Docker.
+
+---
+
+## Running without a cluster
+
+On a single host (no Kubernetes): use the **binary**, **Docker**, or **systemd**. Full steps and a **local QA/smoke script** are in **[docs/how-to/run-without-kubernetes.md](docs/how-to/run-without-kubernetes.md)**.
+
+| Method | Summary |
+|--------|---------|
+| **Binary** | `go build -o plex-tuner ./cmd/plex-tuner` then `./plex-tuner run -addr :5004`. |
+| **Docker** | `cp .env.example .env` (edit it), then `docker compose up -d`. Or `docker build -t plex-tuner:local .` and `docker run -p 5004:5004 --env-file .env plex-tuner:local`. |
+| **systemd** | Copy [docs/systemd/plextuner.service.example](docs/systemd/plextuner.service.example) to `/etc/systemd/system/plextuner.service`, set WorkingDirectory and EnvironmentFile, then `systemctl enable --now plextuner`. |
+| **Local test** | `./scripts/plextuner-local-test.sh` — QA (vet, test), serve/run, and smoke-check endpoints (options: `qa`, `serve`, `run`, `smoke`, `all`). |
 
 ---
 
@@ -137,11 +150,25 @@ Full list and comments: **`.env.example`**.
 ## Docker
 
 ```bash
-cp .env.example .env   # edit with your provider and base URL
+cp .env.example .env
+# Edit .env: set PLEX_TUNER_PROVIDER_USER, PLEX_TUNER_PROVIDER_PASS, PLEX_TUNER_PROVIDER_URL,
+#            and PLEX_TUNER_BASE_URL=http://YOUR_HOST_IP:5004 (so Plex can reach the tuner)
 docker compose up -d
+curl -s -o /dev/null -w "%{http_code}" http://localhost:5004/discover.json   # expect 200
 ```
 
-Serves on port 5004. Override the command for `run` / `index` / `mount` / `serve` as needed. See `Dockerfile` and `docker-compose.yml`.
+Serves on port 5004. The image defaults to `run -addr :5004`. To override (e.g. serve only): `docker compose run --rm plextuner serve -addr :5004`. See [docs/how-to/run-without-kubernetes.md](docs/how-to/run-without-kubernetes.md) for more.
+
+## Kubernetes (HDHR in cluster)
+
+Deploy Plex Tuner as an HDHomeRun-compatible tuner in Kubernetes: one script to build, apply, and verify endpoints. See **[k8s/README.md](k8s/README.md)** for prerequisites, provider credentials (manifest or one-shot script), and Plex setup. From a host with `kubectl`:
+
+```bash
+./k8s/standup-and-verify.sh
+# Or: sudo ./k8s/standup-and-verify.sh   # if kubectl requires root
+```
+
+Optional: `TUNER_BASE_URL=http://<node-ip>:30004` for NodePort-only; `--static` for offline Docker build.
 
 ---
 
@@ -158,6 +185,7 @@ Serves on port 5004. Override the command for `run` / `index` / `mount` / `serve
 | **internal/materializer** | VOD download (cache, direct, HLS). |
 | **internal/vodfs** | FUSE VOD (Movies/TV). |
 | **internal/health** | Provider health check. |
+| **k8s/** | Kubernetes manifest and deploy scripts (HDHR tuner in cluster). See [k8s/README.md](k8s/README.md). |
 
 ---
 
@@ -166,6 +194,7 @@ Serves on port 5004. Override the command for `run` / `index` / `mount` / `serve
 - **Before push:** `./scripts/verify` (format → vet → test → build). Same as CI.
 - **Quick tests:** `./scripts/quick-check.sh` (tests only).
 - **When something breaks:** [docs/runbooks/plextuner-troubleshooting.md](docs/runbooks/plextuner-troubleshooting.md)—fail-fast checklist, probe, log patterns, common failures.
+- **Push to both remotes:** `git push origin main && git push plex main` (see `memory-bank/repo_map.md` for remote names).
 
 ---
 

@@ -2,6 +2,7 @@ package tuner
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -11,12 +12,22 @@ import (
 	"github.com/plextuner/plex-tuner/internal/httpclient"
 )
 
+// PlexDVRMaxChannels is Plex's per-tuner channel limit when using the wizard; exceeding it causes "failed to save channel lineup".
+const PlexDVRMaxChannels = 480
+
+// PlexDVRWizardSafeMax is used in "easy" mode: strip from end so lineup fits when Plex suggests a guide (e.g. Rogers West Canada ~680 ch); keep first N.
+const PlexDVRWizardSafeMax = 479
+
+// NoLineupCap disables the lineup cap (use when syncing lineup into Plex DB programmatically so users get full channel count).
+const NoLineupCap = -1
+
 // Server runs the HDHR emulator + XMLTV + stream gateway.
 // Handlers are kept so UpdateChannels can refresh the channel list without restart.
 type Server struct {
 	Addr                string
 	BaseURL             string
 	TunerCount          int
+	LineupMaxChannels   int    // max channels in lineup/guide (default PlexDVRMaxChannels); 0 = use PlexDVRMaxChannels
 	DeviceID            string // HDHomeRun discover.json; set from PLEX_TUNER_DEVICE_ID
 	StreamBufferBytes   int    // 0 = no buffer; -1 = auto; e.g. 2097152 for 2 MiB
 	StreamTranscodeMode string // "off" | "on" | "auto"
@@ -34,7 +45,21 @@ type Server struct {
 }
 
 // UpdateChannels updates the channel list for all handlers so -refresh can serve new lineup without restart.
+// Caps at LineupMaxChannels (default PlexDVRMaxChannels) so Plex DVR can save the lineup when using the wizard (Plex fails above ~480).
+// When LineupMaxChannels is NoLineupCap, no cap is applied (for programmatic lineup sync; see -register-plex).
 func (s *Server) UpdateChannels(live []catalog.LiveChannel) {
+	if s.LineupMaxChannels == NoLineupCap {
+		// Full lineup for programmatic sync; do not cap.
+	} else {
+		max := s.LineupMaxChannels
+		if max <= 0 {
+			max = PlexDVRMaxChannels
+		}
+		if len(live) > max {
+			log.Printf("Lineup capped at %d channels (Plex DVR limit; catalog has %d; excess stripped from end)", max, len(live))
+			live = live[:max]
+		}
+	}
 	s.Channels = live
 	if s.hdhr != nil {
 		s.hdhr.Channels = live
@@ -94,18 +119,22 @@ func (s *Server) Run(ctx context.Context) error {
 	m3uServe := &M3UServe{BaseURL: s.BaseURL, Channels: s.Channels, EpgPruneUnlinked: s.EpgPruneUnlinked}
 	s.m3uServe = m3uServe
 
-	mux := http.NewServeMux()
-	mux.Handle("/discover.json", hdhr)
-	mux.Handle("/lineup_status.json", hdhr)
-	mux.Handle("/lineup.json", hdhr)
-	mux.Handle("/guide.xml", xmltv)
-	mux.Handle("/live.m3u", m3uServe)
-	mux.Handle("/stream/", gateway)
-
 	addr := s.Addr
 	if addr == "" {
 		addr = ":5004"
 	}
+
+	StartSSDP(ctx, addr, s.BaseURL, s.DeviceID)
+
+	mux := http.NewServeMux()
+	mux.Handle("/discover.json", hdhr)
+	mux.Handle("/lineup_status.json", hdhr)
+	mux.Handle("/lineup.json", hdhr)
+	mux.Handle("/device.xml", s.serveDeviceXML())
+	mux.Handle("/guide.xml", xmltv)
+	mux.Handle("/live.m3u", m3uServe)
+	mux.Handle("/stream/", gateway)
+
 	srv := &http.Server{Addr: addr, Handler: logRequests(mux)}
 
 	serverErr := make(chan error, 1)
@@ -165,5 +194,27 @@ func logRequests(next http.Handler) http.Handler {
 			"http: %s %s status=%d bytes=%d dur=%s ua=%q remote=%s",
 			r.Method, r.URL.Path, status, lw.bytes, time.Since(start).Round(time.Millisecond), r.UserAgent(), r.RemoteAddr,
 		)
+	})
+}
+
+func (s *Server) serveDeviceXML() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		deviceID := s.DeviceID
+		if deviceID == "" {
+			deviceID = "plextuner01"
+		}
+		friendlyName := "Plex Tuner"
+		deviceXML := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+  <device>
+    <deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>
+    <friendlyName>%s</friendlyName>
+    <manufacturer>Plex Tuner</manufacturer>
+    <modelName>Plex Tuner</modelName>
+    <UDN>uuid:%s</UDN>
+  </device>
+</root>`, friendlyName, deviceID)
+		w.Header().Set("Content-Type", "application/xml")
+		w.Write([]byte(deviceXML))
 	})
 }

@@ -2,7 +2,7 @@
 # qbit-datapool-guard: Start qbittorrent-nox in screen 'qbit' only when
 # /mnt/datapool_lvm_media is mounted from /dev/mapper/datapool_lvm-media;
 # kill qbittorrent when that mount disappears.
-# Install on kspls0: copy to /usr/local/bin, chmod +x, use with systemd.
+# Install: copy to /usr/local/bin, chmod +x, use with systemd.
 
 set -e
 

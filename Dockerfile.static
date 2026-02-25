@@ -1,0 +1,7 @@
+# Use when binary is pre-built (avoids go mod download in container).
+# Build: go build -o plex-tuner ./cmd/plex-tuner && docker build -f Dockerfile.static -t plex-tuner:hdhr-test .
+FROM debian:stable-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY plex-tuner /usr/local/bin/plex-tuner
+EXPOSE 5004
+ENTRYPOINT ["plex-tuner"]

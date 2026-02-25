@@ -73,22 +73,35 @@ Canonical list of features. See [README](../README.md) for quick start and [comp
 
 ---
 
-## 6. Operations and deployment
+## 6. Two flows: easy (HDHR + wizard) vs full (DVR builder)
+
+| Flow | Use case | Lineup | Plex setup |
+|------|----------|--------|------------|
+| **Easy** (`-mode=easy`) | HDHR with whatever guide Plex suggests (e.g. Rogers West Canada). Fast, minimal setup. | Capped at **479** channels (strip from end so wizard doesn’t fail). No smoketest at index. | Add tuner in Plex wizard; pick suggested guide. |
+| **Full** (`-mode=full` or default) | Maximum feeds: index, smoketest, sort, backup URLs. Zero-touch when used with `-register-plex`. | No cap when `-register-plex`; else `PLEX_TUNER_LINEUP_MAX_CHANNELS` (default 480). | Either wizard (capped) or **zero-touch**: `-register-plex=/path` syncs full lineup into Plex DB (no wizard, no 480 limit). |
+
+**Commands:** `run -mode=easy` or `serve -mode=easy` for easy flow; `run -mode=full -register-plex=/path` for full DVR builder + zero-touch.
+
+---
+
+## 7. Operations and deployment
 
 | Feature | Description |
 |---------|-------------|
 | **Subcommands** | `run`, `index`, `serve`, `mount`, `probe` so indexing, serving, and mounting can be run separately or together. |
-| **run (one-shot)** | For systemd/Docker: refresh catalog (unless `-skip-index`), provider health check (unless `-skip-health`), then serve. Optional scheduled refresh (`-refresh=6h`). |
+| **run (one-shot)** | For systemd/Docker: refresh catalog (unless `-skip-index`), provider health check (unless `-skip-health`), then serve. Optional scheduled refresh (`-refresh=6h`). Use `-mode=easy` or `-mode=full`. |
 | **probe** | Cycle through provider URLs; report get.php and player_api status (OK / Cloudflare / fail) and latency. Use to choose which host to use. |
 | **Health check** | Before serve in `run`, optional HTTP check of provider player_api URL; exit non-zero if down. |
 | **Plex DB registration** | Optional `-register-plex=/path/to/Plex/Media/Server`: update Plex’s SQLite DB so DVR and XMLTV point to this tuner (stop Plex first; backup DB). |
+| **Kubernetes (HDHR)** | Deploy in-cluster: [k8s/README.md](../k8s/README.md). Manifest + `deploy.sh` and `standup-and-verify.sh` (build, apply, verify discover/lineup). Optional Ingress and NodePort; one-shot script for provider credentials without editing manifests. |
+| **Local (no cluster)** | Binary, Docker, or systemd: [how-to/run-without-kubernetes.md](how-to/run-without-kubernetes.md). Local QA/smoke: `scripts/plextuner-local-test.sh` (qa, serve, run, smoke, all). |
 | **Config** | Env vars and `.env` file; no web UI. Subscription file fallback for credentials. |
 
 ---
 
-## 7. Not supported (by design)
+## 8. Not supported (by design)
 
 - **Web UI** — configuration is CLI and env only.
 - **Channel mapping UI** — filtering is via env (EPG-only, smoketest, live-only).
-- **Plex API DVR creation** — we do not create DVRs via Plex HTTP API or perform channelmap activation; we only have DB-based `RegisterTuner` to point existing provider rows at our URLs.
+- **Plex API DVR creation** — we do not create DVRs via Plex HTTP API. We use DB-based `RegisterTuner` (DVR + XMLTV URIs) and **programmatic lineup sync** (`SyncLineupToPlex`): we write the full channel list into Plex's DB when `-register-plex` is set so the wizard is never used and the 480-channel limit is bypassed (see [ADR 0001](adr/0001-zero-touch-plex-lineup.md)). Schema discovery is automatic where possible.
 

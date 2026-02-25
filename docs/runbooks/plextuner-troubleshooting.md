@@ -98,6 +98,7 @@ go run ./cmd/plex-tuner probe -urls=http://host1.com,http://host2.com -timeout=6
 | “All upstreams failed” (502) | All stream URLs failed (4xx/5xx, empty body, or SSRF rejected) | Check provider stream URLs; run probe; check gateway logs for `upstream[1/2] status=...` |
 | Stream stalls or buffering | Upstream slow / HLS segment issues | Enable buffer: PLEX_TUNER_STREAM_BUFFER_BYTES=2097152 or `auto`; check logs for segment/playlist fetch failures |
 | Plex doesn’t see tuner | Wrong base URL / discovery | Set PLEX_TUNER_BASE_URL to the URL Plex uses (e.g. http://192.168.1.10:5004); in Plex use that URL for device setup |
+| Plex "failed to save channel lineup" after adding tuner | Too many channels (Plex DVR limit ~480) | We cap at 480 by default. If you still see this, set PLEX_TUNER_LINEUP_MAX_CHANNELS=480 or lower. Logs show "Lineup capped at 480 channels (Plex DVR limit); catalog has N". |
 | FFmpeg/transcode errors in logs | Codec/format not supported or ffmpeg missing | Install ffmpeg; or set PLEX_TUNER_STREAM_TRANSCODE=on to force transcode; for auto, check ffprobe errors in log |
 
 ---

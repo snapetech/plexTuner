@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -70,6 +71,7 @@ func main() {
 	catalogPathServe := serveCmd.String("catalog", "", "Catalog JSON path for live channels (default: PLEX_TUNER_CATALOG)")
 	serveAddr := serveCmd.String("addr", ":5004", "Listen address")
 	serveBaseURL := serveCmd.String("base-url", "http://localhost:5004", "Base URL for discover/lineup (set to your host for Plex)")
+	serveMode := serveCmd.String("mode", "", "easy = lineup capped at 479 for Plex wizard; full = use PLEX_TUNER_LINEUP_MAX_CHANNELS or no cap")
 
 	runCmd := flag.NewFlagSet("run", flag.ExitOnError)
 	runCatalog := runCmd.String("catalog", "", "Catalog path (default: PLEX_TUNER_CATALOG)")
@@ -79,6 +81,8 @@ func main() {
 	runSkipIndex := runCmd.Bool("skip-index", false, "Skip catalog refresh at startup (use existing catalog)")
 	runSkipHealth := runCmd.Bool("skip-health", false, "Skip provider health check at startup")
 	runRegisterPlex := runCmd.String("register-plex", "", "If set, update Plex DB at this path (stop Plex first, backup DB) so DVR/XMLTV point to this tuner")
+	runRegisterOnly := runCmd.Bool("register-only", false, "If set with -register-plex and -mode=full: write Plex DB and exit without starting the tuner server (for one-shot jobs)")
+	runMode := runCmd.String("mode", "", "Flow: easy = HDHR + wizard, lineup capped at 479 (strip from end); full = DVR builder, max feeds, use -register-plex for zero-touch")
 
 	probeCmd := flag.NewFlagSet("probe", flag.ExitOnError)
 	probeURLs := probeCmd.String("urls", "", "Comma-separated base URLs to probe (default: from .env PLEX_TUNER_PROVIDER_URL or PLEX_TUNER_PROVIDER_URLS)")
@@ -104,54 +108,57 @@ func main() {
 			path = cfg.CatalogPath
 		}
 		url := *m3uURL
-		// Same strategy as xtream-to-m3u.js: use player_api on all hosts, first success wins. get.php often returns 884/Cloudflare.
+		// Same strategy as run: player_api first (one or two API calls, fast). Fall back to get.php M3U (big download, slow).
 		var movies []catalog.Movie
 		var series []catalog.Series
 		var live []catalog.LiveChannel
 		var err error
-		if url != "" {
-			// Explicit -m3u or PLEX_TUNER_M3U_URL: fetch get.php
-			movies, series, live, err = indexer.ParseM3U(url, nil)
-		} else if cfg.ProviderUser != "" && cfg.ProviderPass != "" {
+		if cfg.ProviderUser != "" && cfg.ProviderPass != "" {
 			baseURLs := cfg.ProviderURLs()
-			if len(baseURLs) == 0 {
-				log.Print("Need -m3u URL or set provider in .env: PLEX_TUNER_PROVIDER_URL(S), USER, PASS (or PLEX_TUNER_M3U_URL)")
-				os.Exit(1)
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-			defer cancel()
-			ranked := provider.RankedPlayerAPI(ctx, baseURLs, cfg.ProviderUser, cfg.ProviderPass, nil)
-			var apiBase string
-			if len(ranked) > 0 {
-				apiBase = ranked[0]
-				log.Printf("Ranked %d provider(s): using best %s (2nd/3rd used as stream backups)", len(ranked), apiBase)
-				movies, series, live, err = indexer.IndexFromPlayerAPI(apiBase, cfg.ProviderUser, cfg.ProviderPass, "m3u8", cfg.LiveOnly, baseURLs, nil)
-				if err == nil && len(live) > 0 {
-					for i := range live {
-						urls := streamURLsFromRankedBases(live[i].StreamURL, ranked)
-						if len(urls) > 0 {
-							live[i].StreamURLs = urls
-							if live[i].StreamURL == "" {
-								live[i].StreamURL = urls[0]
+			if len(baseURLs) > 0 {
+				ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+				defer cancel()
+				ranked := provider.RankedPlayerAPI(ctx, baseURLs, cfg.ProviderUser, cfg.ProviderPass, nil)
+				var apiBase string
+				if len(ranked) > 0 {
+					apiBase = ranked[0]
+					log.Printf("Ranked %d provider(s): using best %s (2nd/3rd used as stream backups)", len(ranked), apiBase)
+					movies, series, live, err = indexer.IndexFromPlayerAPI(apiBase, cfg.ProviderUser, cfg.ProviderPass, "m3u8", cfg.LiveOnly, baseURLs, nil)
+					if err == nil && len(live) > 0 {
+						for i := range live {
+							urls := streamURLsFromRankedBases(live[i].StreamURL, ranked)
+							if len(urls) > 0 {
+								live[i].StreamURLs = urls
+								if live[i].StreamURL == "" {
+									live[i].StreamURL = urls[0]
+								}
 							}
 						}
 					}
 				}
-			}
-			// Fallback to get.php when no OK player_api or when indexing from player_api failed.
-			if err != nil || apiBase == "" {
-				m3uURLs := cfg.M3UURLsOrBuild()
-				for _, u := range m3uURLs {
-					movies, series, live, err = indexer.ParseM3U(u, nil)
-					if err == nil {
-						log.Printf("Using get.php from %s", u)
-						break
+				// Fallback to M3U when player_api failed or returned no live.
+				if err != nil || apiBase == "" || len(live) == 0 {
+					if url != "" {
+						movies, series, live, err = indexer.ParseM3U(url, nil)
+						if err == nil {
+							log.Printf("Using get.php M3U (player_api had no live)")
+						}
+					} else {
+						for _, u := range cfg.M3UURLsOrBuild() {
+							movies, series, live, err = indexer.ParseM3U(u, nil)
+							if err == nil {
+								log.Printf("Using get.php from %s", u)
+								break
+							}
+						}
+					}
+					if err != nil {
+						err = fmt.Errorf("player_api failed and get.php failed: %w", err)
 					}
 				}
-				if err != nil {
-					err = fmt.Errorf("no player_api OK and no get.php OK on any host")
-				}
 			}
+		} else if url != "" {
+			movies, series, live, err = indexer.ParseM3U(url, nil)
 		} else {
 			err = fmt.Errorf("need -m3u URL or set PLEX_TUNER_PROVIDER_USER and PLEX_TUNER_PROVIDER_PASS in .env")
 		}
@@ -233,20 +240,26 @@ func main() {
 		}
 		live := c.SnapshotLive()
 		log.Printf("Loaded %d live channels from %s", len(live), path)
+		serveLineupCap := cfg.LineupMaxChannels
+		if *serveMode == "easy" {
+			serveLineupCap = tuner.PlexDVRWizardSafeMax
+		}
 		srv := &tuner.Server{
 			Addr:                *serveAddr,
 			BaseURL:             *serveBaseURL,
 			TunerCount:          cfg.TunerCount,
+			LineupMaxChannels:   serveLineupCap,
 			DeviceID:            cfg.DeviceID,
 			StreamBufferBytes:   cfg.StreamBufferBytes,
 			StreamTranscodeMode: cfg.StreamTranscodeMode,
-			Channels:            live,
+			Channels:            nil,
 			ProviderUser:        cfg.ProviderUser,
 			ProviderPass:        cfg.ProviderPass,
 			XMLTVSourceURL:      cfg.XMLTVURL,
 			XMLTVTimeout:        cfg.XMLTVTimeout,
 			EpgPruneUnlinked:    cfg.EpgPruneUnlinked,
 		}
+		srv.UpdateChannels(live)
 		if cfg.XMLTVURL != "" {
 			log.Printf("External XMLTV enabled: %s (timeout %v)", cfg.XMLTVURL, cfg.XMLTVTimeout)
 		}
@@ -328,7 +341,7 @@ func main() {
 				live = filtered
 				log.Printf("Filtered to EPG-linked only: %d live channels", len(live))
 			}
-			if cfg.SmoketestEnabled {
+			if cfg.SmoketestEnabled && *runMode != "easy" {
 				before := len(live)
 				live = indexer.FilterLiveBySmoketest(live, nil, cfg.SmoketestTimeout, cfg.SmoketestConcurrency, cfg.SmoketestMaxChannels, cfg.SmoketestMaxDuration)
 				log.Printf("Smoketest: %d/%d channels passed", len(live), before)
@@ -389,20 +402,33 @@ func main() {
 		if baseURL == "http://localhost:5004" && cfg.BaseURL != "" {
 			baseURL = cfg.BaseURL
 		}
+		lineupCap := cfg.LineupMaxChannels
+		switch *runMode {
+		case "easy":
+			lineupCap = tuner.PlexDVRWizardSafeMax // HDHR + Plex suggested guide; strip from end to fit 479
+		case "full", "":
+			if *runRegisterPlex != "" {
+				lineupCap = tuner.NoLineupCap // full DVR builder + zero-touch; no cap
+			}
+		default:
+			log.Printf("Unknown -mode=%q; use easy or full", *runMode)
+		}
 		srv := &tuner.Server{
 			Addr:                *runAddr,
 			BaseURL:             baseURL,
 			TunerCount:          cfg.TunerCount,
+			LineupMaxChannels:   lineupCap,
 			DeviceID:            cfg.DeviceID,
 			StreamBufferBytes:   cfg.StreamBufferBytes,
 			StreamTranscodeMode: cfg.StreamTranscodeMode,
-			Channels:            live,
+			Channels:            nil, // set by UpdateChannels
 			ProviderUser:        cfg.ProviderUser,
 			ProviderPass:        cfg.ProviderPass,
 			XMLTVSourceURL:      cfg.XMLTVURL,
 			XMLTVTimeout:        cfg.XMLTVTimeout,
 			EpgPruneUnlinked:    cfg.EpgPruneUnlinked,
 		}
+		srv.UpdateChannels(live)
 		if cfg.XMLTVURL != "" {
 			log.Printf("External XMLTV enabled: %s (timeout %v)", cfg.XMLTVURL, cfg.XMLTVTimeout)
 		}
@@ -469,19 +495,44 @@ func main() {
 			}()
 		}
 
-		// Optional: write tuner/XMLTV URLs into Plex DB (stop Plex first, backup DB)
-		if *runRegisterPlex != "" {
+		// Optional: write tuner/XMLTV URLs and full lineup into Plex DB (stop Plex first, backup DB). Zero wizard; no 480 cap. Only in full mode.
+		if *runRegisterPlex != "" && *runMode != "easy" {
 			if err := plex.RegisterTuner(*runRegisterPlex, baseURL); err != nil {
 				log.Printf("Register Plex failed: %v", err)
 			} else {
 				log.Printf("Plex DB updated at %s (DVR + XMLTV -> %s)", *runRegisterPlex, baseURL)
 			}
+			lineupChannels := make([]plex.LineupChannel, len(live))
+			for i := range live {
+				ch := &live[i]
+				channelID := ch.ChannelID
+				if channelID == "" {
+					channelID = strconv.Itoa(i)
+				}
+				lineupChannels[i] = plex.LineupChannel{
+					GuideNumber: ch.GuideNumber,
+					GuideName:   ch.GuideName,
+					URL:         baseURL + "/stream/" + channelID,
+				}
+			}
+			if err := plex.SyncLineupToPlex(*runRegisterPlex, lineupChannels); err != nil {
+				if err == plex.ErrLineupSchemaUnknown {
+					log.Printf("Lineup sync skipped: %v (full lineup still served over HTTP; see docs/adr/0001-zero-touch-plex-lineup.md)", err)
+				} else {
+					log.Printf("Lineup sync failed: %v", err)
+				}
+			} else {
+				log.Printf("Lineup synced to Plex: %d channels (no wizard needed)", len(lineupChannels))
+			}
+			if *runRegisterOnly {
+				log.Printf("Register-only mode: Plex DB updated, exiting without serving.")
+				return
+			}
 		} else {
 			fmt.Fprintf(os.Stderr, "\n--- Plex one-time setup ---\n")
-			fmt.Fprintf(os.Stderr, "In Plex: Settings > Live TV & DVR > Set up.\n")
-			fmt.Fprintf(os.Stderr, "  Device / Base URL: %s\n", baseURL)
-			fmt.Fprintf(os.Stderr, "  XMLTV guide URL:   %s/guide.xml\n", baseURL)
-			fmt.Fprintf(os.Stderr, "Or run with -register-plex=/path/to/Plex/Media/Server to write URLs into Plex DB (stop Plex first).\n")
+			fmt.Fprintf(os.Stderr, "Easy (wizard): -mode=easy → lineup capped at 479; add tuner in Plex, pick suggested guide (e.g. Rogers West).\n")
+			fmt.Fprintf(os.Stderr, "Full (zero-touch): -mode=full -register-plex=/path/to/Plex → max feeds, no wizard.\n")
+			fmt.Fprintf(os.Stderr, "  Device / Base URL: %s   Guide: %s/guide.xml\n", baseURL, baseURL)
 			fmt.Fprintf(os.Stderr, "---\n\n")
 		}
 

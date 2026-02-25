@@ -1,13 +1,14 @@
-# Example Docker Compose. Replace with your service(s) for your stack.
-# Usage: docker compose up -d
+# Plex Tuner — run without Kubernetes.
+# 1. Copy .env.example to .env and set provider credentials + PLEX_TUNER_BASE_URL (e.g. http://YOUR_HOST_IP:5004).
+# 2. docker compose up -d
+# 3. Verify: curl -s -o /dev/null -w "%{http_code}" http://localhost:5004/discover.json  # expect 200
 
 services:
-  app:
+  plextuner:
     build: .
-    image: app:latest
-    # command: ["your-app"]
-    # ports:
-    #   - "8080:8080"
-    # environment:
-    #   - APP_ENV=production
+    image: plex-tuner:local
+    ports:
+      - "5004:5004"
+    env_file: .env
+    command: ["run", "-addr", ":5004"]
     restart: unless-stopped

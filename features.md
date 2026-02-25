@@ -54,6 +54,8 @@ Short feature overview. Full reference: **[docs/features.md](docs/features.md)**
 - **run** — One-shot: refresh catalog → health check → serve. Optional `-refresh=6h`, `-register-plex=...`.
 - **probe** — Hit every provider URL; report get.php and player_api (OK / Cloudflare / fail) and latency.
 - **Plex DB registration** — `-register-plex=/path`: write tuner and XMLTV URLs into Plex’s DB (stop Plex first; backup DB).
+- **Kubernetes** — Deploy HDHR tuner in-cluster: [k8s/README.md](k8s/README.md); `standup-and-verify.sh` to deploy and verify endpoints.
+- **Local (no cluster)** — Binary, Docker, or systemd: [docs/how-to/run-without-kubernetes.md](docs/how-to/run-without-kubernetes.md); `scripts/plextuner-local-test.sh` for QA/smoke.
 - **Config** — Env and `.env`; no web UI.
 
 ---

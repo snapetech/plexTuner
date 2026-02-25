@@ -7,7 +7,7 @@ tags: [changelog, reference]
 
 # Changelog
 
-All notable changes to Plex Tuner are documented here. The repo is mirrored on [GitLab](https://gitlab.home/keith/plexTuner) and [GitHub](https://github.com/snapetech/plexTuner).
+All notable changes to Plex Tuner are documented here. The repo is available on [GitHub](https://github.com/snapetech/plexTuner) (mirrored on GitLab).
 
 ---
 

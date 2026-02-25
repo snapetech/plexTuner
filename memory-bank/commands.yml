@@ -24,3 +24,4 @@ verify_steps:
 quick_verify: "scripts/verify  # same as CI; ~10–30s"
 probe_provider: "go run ./cmd/plex-tuner probe  # -urls=... optional; needs .env creds"
 check_endpoints: "curl -s -o /dev/null -w '%{http_code}' <BASE_URL>/discover.json  # 200 = OK"
+local_test: "scripts/plextuner-local-test.sh  # [qa|serve|run|smoke|all] no cluster; see docs/how-to/run-without-kubernetes.md"

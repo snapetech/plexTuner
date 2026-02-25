@@ -17,6 +17,8 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[explanations/](explanations/index.md)** | Why and concepts. Add project docs here. |
 | **[adr/](adr/index.md)** | Decision log: architecture decision records. |
 | **[runbooks/](runbooks/index.md)** | Operational procedures. |
+| **[how-to/run-without-kubernetes.md](how-to/run-without-kubernetes.md)** | Run without Kubernetes (binary, Docker, systemd, local test script). |
+| **[k8s/README.md](../k8s/README.md)** | Kubernetes deployment (HDHR in cluster). |
 | **[epics/](epics/EPIC-template.md)** | Multi-PR epic template. Use with [memory-bank/work_breakdown.md](../memory-bank/work_breakdown.md). |
 | **product/** · **stories/** | [PRD template](product/PRD-template.md), [STORY template](stories/STORY-template.md). |
 | **[features.md](features.md)** | Full feature list. |

@@ -1,0 +1,25 @@
+{
+  "version": "1",
+  "movies": [],
+  "series": [],
+  "live_channels": [
+    {
+      "channel_id": "test1",
+      "guide_number": "1",
+      "guide_name": "Test Channel 1",
+      "stream_url": "http://example.com/stream1.m3u8"
+    },
+    {
+      "channel_id": "test2", 
+      "guide_number": "2",
+      "guide_name": "Test Channel 2",
+      "stream_url": "http://example.com/stream2.m3u8"
+    },
+    {
+      "channel_id": "test3",
+      "guide_number": "3",
+      "guide_name": "Test Channel 3",
+      "stream_url": "http://example.com/stream3.m3u8"
+    }
+  ]
+}
