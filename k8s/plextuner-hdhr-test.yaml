@@ -3,18 +3,14 @@ kind: ConfigMap
 metadata:
   name: plextuner-test-env
   namespace: plex
-# deploy-hdhr-one-shot.sh injects these from .env. Set manually or use one-shot.
+# Secrets (PLEX_TUNER_PROVIDER_USER/PASS/URL, PLEX_TUNER_M3U_URL, PLEX_TOKEN)
+# come from the 'plex-iptv-creds' Secret — created by deploy-hdhr-one-shot.sh.
 data:
-  PLEX_TUNER_PROVIDER_USER: "REPLACE"
-  PLEX_TUNER_PROVIDER_PASS: "REPLACE"
-  PLEX_TUNER_PROVIDER_URL: "https://REPLACE"
-  PLEX_TUNER_M3U_URL: "http://REPLACE/get.php?username=REPLACE&password=REPLACE&type=m3u_plus&output=ts"
   PLEX_TUNER_LIVE_ONLY: "true"
   PLEX_TUNER_LIVE_EPG_ONLY: "true"
   PLEX_TUNER_DEVICE_ID: "hdhrbcast"
   PLEX_TUNER_FRIENDLY_NAME: "plexTuner-bcastUS"
   PLEX_HOST: "127.0.0.1:32400"
-  PLEX_TOKEN: "REPLACE"
 ---
 apiVersion: v1
 kind: ConfigMap
