@@ -61,20 +61,6 @@ spec:
       # Optional: pin to a node where Plex data lives (for -register-plex hostPath). Uncomment and set your node name.
       # nodeSelector:
       #   kubernetes.io/hostname: your-plex-node
-      initContainers:
-      - name: index
-        image: plex-tuner:hdhr-test
-        imagePullPolicy: Never
-        envFrom:
-        - configMapRef:
-            name: plextuner-test-env
-        - secretRef:
-            name: plextuner-iptv
-            optional: true
-        volumeMounts:
-        - name: catalog
-          mountPath: /data
-        command: ["/plex-tuner", "index", "-catalog=/data/catalog.json"]
       containers:
       - name: plextuner
         image: plex-tuner:hdhr-test
@@ -117,8 +103,8 @@ spec:
             cpu: "1000m"
       volumes:
       - name: catalog
-        emptyDir:
-          sizeLimit: 100Mi
+        configMap:
+          name: plextuner-test-catalog
       - name: plex-db
         hostPath:
           path: /var/lib/plex

@@ -263,7 +263,7 @@ func TestStreamTranscodeMode(t *testing.T) {
 	if c.StreamTranscodeMode != "off" {
 		t.Errorf("StreamTranscodeMode default: got %q", c.StreamTranscodeMode)
 	}
-	for _, env := range []string{"true", "1", "yes"} {
+	for _, env := range []string{"true", "1", "yes", "on"} {
 		os.Clearenv()
 		os.Setenv("PLEX_TUNER_STREAM_TRANSCODE", env)
 		c = Load()
@@ -277,10 +277,12 @@ func TestStreamTranscodeMode(t *testing.T) {
 	if c.StreamTranscodeMode != "auto" {
 		t.Errorf("StreamTranscodeMode auto: got %q", c.StreamTranscodeMode)
 	}
-	os.Setenv("PLEX_TUNER_STREAM_TRANSCODE", "false")
-	c = Load()
-	if c.StreamTranscodeMode != "off" {
-		t.Errorf("StreamTranscodeMode false: got %q", c.StreamTranscodeMode)
+	for _, env := range []string{"false", "off"} {
+		os.Setenv("PLEX_TUNER_STREAM_TRANSCODE", env)
+		c = Load()
+		if c.StreamTranscodeMode != "off" {
+			t.Errorf("StreamTranscodeMode %s: got %q", env, c.StreamTranscodeMode)
+		}
 	}
 }
 

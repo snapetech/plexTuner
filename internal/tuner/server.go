@@ -3,9 +3,11 @@ package tuner
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/plextuner/plex-tuner/internal/catalog"
@@ -29,6 +31,7 @@ type Server struct {
 	TunerCount          int
 	LineupMaxChannels   int    // max channels in lineup/guide (default PlexDVRMaxChannels); 0 = use PlexDVRMaxChannels
 	DeviceID            string // HDHomeRun discover.json; set from PLEX_TUNER_DEVICE_ID
+	FriendlyName        string // HDHomeRun discover.json; set from PLEX_TUNER_FRIENDLY_NAME
 	StreamBufferBytes   int    // 0 = no buffer; -1 = auto; e.g. 2097152 for 2 MiB
 	StreamTranscodeMode string // "off" | "on" | "auto"
 	Channels            []catalog.LiveChannel
@@ -75,14 +78,55 @@ func (s *Server) UpdateChannels(live []catalog.LiveChannel) {
 	}
 }
 
+// GetStream returns a reader for the given channel.
+// This is used by HDHomeRun network mode to get streams for direct TCP delivery.
+func (s *Server) GetStream(ctx context.Context, channelID string) (io.ReadCloser, error) {
+	// Find the channel
+	var ch *catalog.LiveChannel
+	for i := range s.Channels {
+		if s.Channels[i].ChannelID == channelID {
+			ch = &s.Channels[i]
+			break
+		}
+	}
+	if ch == nil {
+		return nil, fmt.Errorf("channel not found: %s", channelID)
+	}
+
+	// Use the gateway to get the stream - make HTTP request to ourselves
+	// This reuses the existing gateway logic but via HTTP to localhost
+	streamURL := fmt.Sprintf("http://127.0.0.1%s/stream/%s", s.Addr, channelID)
+	req, err := http.NewRequestWithContext(ctx, "GET", streamURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	// Use the gateway's HTTP client if available, otherwise default client
+	client := http.DefaultClient
+	if s.gateway != nil && s.gateway.Client != nil {
+		client = s.gateway.Client
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch stream: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("stream HTTP %d", resp.StatusCode)
+	}
+	return resp.Body, nil
+}
+
 // Run blocks until ctx is cancelled or the server fails to start. On shutdown it stops
 // accepting new connections and waits briefly for in-flight requests to finish.
 func (s *Server) Run(ctx context.Context) error {
 	hdhr := &HDHR{
-		BaseURL:    s.BaseURL,
-		TunerCount: s.TunerCount,
-		DeviceID:   s.DeviceID,
-		Channels:   s.Channels,
+		BaseURL:      s.BaseURL,
+		TunerCount:   s.TunerCount,
+		DeviceID:     s.DeviceID,
+		FriendlyName: s.FriendlyName,
+		Channels:     s.Channels,
 	}
 	s.hdhr = hdhr
 	defaultProfile := defaultProfileFromEnv()
@@ -95,15 +139,36 @@ func (s *Server) Run(ctx context.Context) error {
 	} else {
 		log.Printf("Profile overrides: none (default=%s)", defaultProfile)
 	}
+	txOverridePath := os.Getenv("PLEX_TUNER_TRANSCODE_OVERRIDES_FILE")
+	txOverrides, txErr := loadTranscodeOverridesFile(txOverridePath)
+	if txErr != nil {
+		log.Printf("Transcode overrides disabled: load %q failed: %v", txOverridePath, txErr)
+	} else if len(txOverrides) > 0 {
+		log.Printf("Transcode overrides loaded: %d entries from %s", len(txOverrides), txOverridePath)
+	}
+	streamMode := strings.TrimSpace(s.StreamTranscodeMode)
+	if streamMode == "" {
+		// Fallback to process env so runtime overrides still work even if a caller
+		// didn't thread config through correctly.
+		streamMode = strings.TrimSpace(os.Getenv("PLEX_TUNER_STREAM_TRANSCODE"))
+	}
 	gateway := &Gateway{
 		Channels:            s.Channels,
 		ProviderUser:        s.ProviderUser,
 		ProviderPass:        s.ProviderPass,
 		TunerCount:          s.TunerCount,
 		StreamBufferBytes:   s.StreamBufferBytes,
-		StreamTranscodeMode: s.StreamTranscodeMode,
+		StreamTranscodeMode: streamMode,
+		TranscodeOverrides:  txOverrides,
 		DefaultProfile:      defaultProfile,
 		ProfileOverrides:    overrides,
+		PlexPMSURL:          strings.TrimSpace(os.Getenv("PLEX_TUNER_PMS_URL")),
+		PlexPMSToken:        strings.TrimSpace(os.Getenv("PLEX_TUNER_PMS_TOKEN")),
+		PlexClientAdapt:     strings.EqualFold(strings.TrimSpace(os.Getenv("PLEX_TUNER_CLIENT_ADAPT")), "1") || strings.EqualFold(strings.TrimSpace(os.Getenv("PLEX_TUNER_CLIENT_ADAPT")), "true") || strings.EqualFold(strings.TrimSpace(os.Getenv("PLEX_TUNER_CLIENT_ADAPT")), "yes"),
+	}
+	log.Printf("Gateway stream mode: transcode=%q buffer_bytes=%d", gateway.StreamTranscodeMode, gateway.StreamBufferBytes)
+	if gateway.PlexClientAdapt {
+		log.Printf("Gateway Plex client adapt enabled: pms_url=%q token_set=%t", gateway.PlexPMSURL, gateway.PlexPMSToken != "")
 	}
 	if gateway.Client == nil {
 		gateway.Client = httpclient.ForStreaming()
@@ -179,6 +244,16 @@ func (w *loggingResponseWriter) Write(p []byte) (int, error) {
 	n, err := w.ResponseWriter.Write(p)
 	w.bytes += n
 	return n, err
+}
+
+func (w *loggingResponseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (w *loggingResponseWriter) ResponseStarted() bool {
+	return w.status != 0 || w.bytes > 0
 }
 
 func logRequests(next http.Handler) http.Handler {

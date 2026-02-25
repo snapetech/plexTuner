@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -30,6 +31,7 @@ type Config struct {
 	LineupMaxChannels int    // max channels in lineup/guide (Plex DVR limit 480). 0 = use default 480.
 	BaseURL           string // e.g. http://192.168.1.10:5004 for Plex to use
 	DeviceID          string // HDHomeRun discover.json DeviceID (stable; some Plex versions are picky about format)
+	FriendlyName      string // HDHomeRun discover.json FriendlyName (shown in Plex Live TV tuner list)
 	// Stream: buffering absorbs brief upstream stalls; transcoding re-encodes (libx264/aac) for compatibility.
 	StreamBufferBytes   int    // -1 = auto (default; adaptive when transcoding). 0 = no buffer. >0 = fixed bytes.
 	StreamTranscodeMode string // "off" | "on" | "auto". auto = probe stream (ffprobe) and transcode only when codec not Plex-friendly.
@@ -62,6 +64,7 @@ func Load() *Config {
 		LineupMaxChannels:    getEnvInt("PLEX_TUNER_LINEUP_MAX_CHANNELS", 480),
 		BaseURL:              os.Getenv("PLEX_TUNER_BASE_URL"),
 		DeviceID:             getEnv("PLEX_TUNER_DEVICE_ID", "plextuner01"),
+		FriendlyName:        os.Getenv("PLEX_TUNER_FRIENDLY_NAME"),
 		StreamBufferBytes:    getEnvIntOrAuto("PLEX_TUNER_STREAM_BUFFER_BYTES", -1),
 		StreamTranscodeMode:  getEnvTranscodeMode("PLEX_TUNER_STREAM_TRANSCODE", "off"),
 		XMLTVURL:             os.Getenv("PLEX_TUNER_XMLTV_URL"),
@@ -102,13 +105,21 @@ func Load() *Config {
 }
 
 // readSubscriptionFile reads "Username: x" and "Password: x" from path. path may be empty to try default.
+// When path is empty, globs ~/Documents/iptv.subscription.*.txt and uses the alphabetically last match
+// (i.e. highest year), so the file keeps working across year-end renewals.
 func readSubscriptionFile(path string) (user, pass string, err error) {
 	if path == "" {
 		home := os.Getenv("HOME")
 		if home == "" {
 			return "", "", os.ErrNotExist
 		}
-		path = strings.TrimSuffix(home, "/") + "/Documents/iptv.subscription.2026.txt"
+		pattern := filepath.Join(home, "Documents", "iptv.subscription.*.txt")
+		matches, globErr := filepath.Glob(pattern)
+		if globErr != nil || len(matches) == 0 {
+			return "", "", os.ErrNotExist
+		}
+		sort.Strings(matches)
+		path = matches[len(matches)-1]
 	}
 	path = filepath.Clean(path)
 	f, err := os.Open(path)
@@ -216,16 +227,19 @@ func getEnvIntOrAuto(key string, defaultVal int) int {
 	return defaultVal
 }
 
-// getEnvTranscodeMode returns "off", "on", or "auto" from PLEX_TUNER_STREAM_TRANSCODE.
+// getEnvTranscodeMode returns "off", "on", "auto", or "auto_cached" from PLEX_TUNER_STREAM_TRANSCODE.
 func getEnvTranscodeMode(key string, defaultVal string) string {
 	v := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
 	if v == "auto" {
 		return "auto"
 	}
-	if v == "true" || v == "1" || v == "yes" {
+	if v == "auto_cached" || v == "cached_auto" {
+		return "auto_cached"
+	}
+	if v == "true" || v == "1" || v == "yes" || v == "on" {
 		return "on"
 	}
-	if v == "false" || v == "0" || v == "no" || v == "" {
+	if v == "false" || v == "0" || v == "no" || v == "off" || v == "" {
 		return "off"
 	}
 	return defaultVal

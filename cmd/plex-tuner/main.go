@@ -11,6 +11,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/url"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"github.com/plextuner/plex-tuner/internal/catalog"
 	"github.com/plextuner/plex-tuner/internal/config"
 	"github.com/plextuner/plex-tuner/internal/health"
+	"github.com/plextuner/plex-tuner/internal/hdhomerun"
 	"github.com/plextuner/plex-tuner/internal/indexer"
 	"github.com/plextuner/plex-tuner/internal/materializer"
 	"github.com/plextuner/plex-tuner/internal/plex"
@@ -52,6 +54,109 @@ func streamURLsFromRankedBases(streamURL string, rankedBases []string) []string 
 		out = append(out, base+path)
 	}
 	return out
+}
+
+// catalogResult holds the output of fetchCatalog.
+type catalogResult struct {
+	Movies  []catalog.Movie
+	Series  []catalog.Series
+	Live    []catalog.LiveChannel
+	APIBase string // best-ranked provider base URL; empty when M3U path was used
+}
+
+// fetchCatalog fetches catalog data from the provider and applies configured filters.
+// Strategy (same as xtream-to-m3u.js): try player_api ranked best-to-worst, then fall back to get.php.
+// If m3uOverride is non-empty it is used directly (bypasses player_api ranking).
+// LiveEPGOnly and smoketest filters are always applied so every caller is consistent.
+func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error) {
+	var res catalogResult
+
+	if m3uOverride != "" {
+		movies, series, live, err := indexer.ParseM3U(m3uOverride, nil)
+		if err != nil {
+			return res, fmt.Errorf("parse M3U: %w", err)
+		}
+		res.Movies, res.Series, res.Live = movies, series, live
+	} else if cfg.ProviderUser != "" && cfg.ProviderPass != "" {
+		baseURLs := cfg.ProviderURLs()
+		if len(baseURLs) == 0 {
+			return res, fmt.Errorf("need -m3u URL or set PLEX_TUNER_PROVIDER_URL(S) in .env")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		ranked := provider.RankedPlayerAPI(ctx, baseURLs, cfg.ProviderUser, cfg.ProviderPass, nil)
+		var fetchErr error
+		if len(ranked) > 0 {
+			res.APIBase = ranked[0]
+			log.Printf("Ranked %d provider(s): using best %s (2nd/3rd used as stream backups)", len(ranked), res.APIBase)
+			res.Movies, res.Series, res.Live, fetchErr = indexer.IndexFromPlayerAPI(
+				res.APIBase, cfg.ProviderUser, cfg.ProviderPass, "m3u8", cfg.LiveOnly, baseURLs, nil,
+			)
+			if fetchErr == nil {
+				for i := range res.Live {
+					urls := streamURLsFromRankedBases(res.Live[i].StreamURL, ranked)
+					if len(urls) > 0 {
+						res.Live[i].StreamURLs = urls
+						if res.Live[i].StreamURL == "" {
+							res.Live[i].StreamURL = urls[0]
+						}
+					}
+				}
+			}
+		}
+		// Fall back to get.php when no OK player_api host or when player_api indexing failed.
+		if fetchErr != nil || res.APIBase == "" {
+			res.APIBase = "" // clear in case we're falling back after a partial player_api attempt
+			var fallbackErr error
+			for _, u := range cfg.M3UURLsOrBuild() {
+				res.Movies, res.Series, res.Live, fallbackErr = indexer.ParseM3U(u, nil)
+				if fallbackErr == nil {
+					log.Printf("Using get.php from %s", u)
+					break
+				}
+			}
+			if fallbackErr != nil {
+				return res, fmt.Errorf("no player_api OK and no get.php OK on any host")
+			}
+		}
+	} else {
+		return res, fmt.Errorf("need -m3u URL or set PLEX_TUNER_PROVIDER_USER and PLEX_TUNER_PROVIDER_PASS in .env")
+	}
+
+	// Apply configured live-channel filters (applied consistently on every fetch path).
+	if cfg.LiveEPGOnly {
+		filtered := make([]catalog.LiveChannel, 0, len(res.Live))
+		for _, ch := range res.Live {
+			if ch.EPGLinked {
+				filtered = append(filtered, ch)
+			}
+		}
+		res.Live = filtered
+		log.Printf("Filtered to EPG-linked only: %d live channels", len(res.Live))
+	}
+	if cfg.SmoketestEnabled {
+		before := len(res.Live)
+		res.Live = indexer.FilterLiveBySmoketest(
+			res.Live, nil, cfg.SmoketestTimeout, cfg.SmoketestConcurrency,
+			cfg.SmoketestMaxChannels, cfg.SmoketestMaxDuration,
+		)
+		log.Printf("Smoketest: %d/%d channels passed", len(res.Live), before)
+	}
+
+	return res, nil
+}
+
+// catalogStats returns EPG-linked and multi-URL counts for summary logging.
+func catalogStats(live []catalog.LiveChannel) (epgLinked, withBackups int) {
+	for _, ch := range live {
+		if ch.EPGLinked {
+			epgLinked++
+		}
+		if len(ch.StreamURLs) > 1 {
+			withBackups++
+		}
+	}
+	return
 }
 
 func main() {
@@ -107,96 +212,20 @@ func main() {
 		if path == "" {
 			path = cfg.CatalogPath
 		}
-		url := *m3uURL
-		// Same strategy as run: player_api first (one or two API calls, fast). Fall back to get.php M3U (big download, slow).
-		var movies []catalog.Movie
-		var series []catalog.Series
-		var live []catalog.LiveChannel
-		var err error
-		if cfg.ProviderUser != "" && cfg.ProviderPass != "" {
-			baseURLs := cfg.ProviderURLs()
-			if len(baseURLs) > 0 {
-				ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-				defer cancel()
-				ranked := provider.RankedPlayerAPI(ctx, baseURLs, cfg.ProviderUser, cfg.ProviderPass, nil)
-				var apiBase string
-				if len(ranked) > 0 {
-					apiBase = ranked[0]
-					log.Printf("Ranked %d provider(s): using best %s (2nd/3rd used as stream backups)", len(ranked), apiBase)
-					movies, series, live, err = indexer.IndexFromPlayerAPI(apiBase, cfg.ProviderUser, cfg.ProviderPass, "m3u8", cfg.LiveOnly, baseURLs, nil)
-					if err == nil && len(live) > 0 {
-						for i := range live {
-							urls := streamURLsFromRankedBases(live[i].StreamURL, ranked)
-							if len(urls) > 0 {
-								live[i].StreamURLs = urls
-								if live[i].StreamURL == "" {
-									live[i].StreamURL = urls[0]
-								}
-							}
-						}
-					}
-				}
-				// Fallback to M3U when player_api failed or returned no live.
-				if err != nil || apiBase == "" || len(live) == 0 {
-					if url != "" {
-						movies, series, live, err = indexer.ParseM3U(url, nil)
-						if err == nil {
-							log.Printf("Using get.php M3U (player_api had no live)")
-						}
-					} else {
-						for _, u := range cfg.M3UURLsOrBuild() {
-							movies, series, live, err = indexer.ParseM3U(u, nil)
-							if err == nil {
-								log.Printf("Using get.php from %s", u)
-								break
-							}
-						}
-					}
-					if err != nil {
-						err = fmt.Errorf("player_api failed and get.php failed: %w", err)
-					}
-				}
-			}
-		} else if url != "" {
-			movies, series, live, err = indexer.ParseM3U(url, nil)
-		} else {
-			err = fmt.Errorf("need -m3u URL or set PLEX_TUNER_PROVIDER_USER and PLEX_TUNER_PROVIDER_PASS in .env")
-		}
+		res, err := fetchCatalog(cfg, *m3uURL)
 		if err != nil {
 			log.Printf("Index failed: %v", err)
 			os.Exit(1)
 		}
-		if cfg.LiveEPGOnly {
-			filtered := make([]catalog.LiveChannel, 0, len(live))
-			for _, ch := range live {
-				if ch.EPGLinked {
-					filtered = append(filtered, ch)
-				}
-			}
-			live = filtered
-			log.Printf("Filtered to EPG-linked only: %d live channels", len(live))
-		}
-		if cfg.SmoketestEnabled {
-			before := len(live)
-			live = indexer.FilterLiveBySmoketest(live, nil, cfg.SmoketestTimeout, cfg.SmoketestConcurrency, cfg.SmoketestMaxChannels, cfg.SmoketestMaxDuration)
-			log.Printf("Smoketest: %d/%d channels passed", len(live), before)
-		}
-		epgLinked, withBackups := 0, 0
-		for _, ch := range live {
-			if ch.EPGLinked {
-				epgLinked++
-			}
-			if len(ch.StreamURLs) > 1 {
-				withBackups++
-			}
-		}
+		epgLinked, withBackups := catalogStats(res.Live)
 		c := catalog.New()
-		c.ReplaceWithLive(movies, series, live)
+		c.ReplaceWithLive(res.Movies, res.Series, res.Live)
 		if err := c.Save(path); err != nil {
 			log.Printf("Save catalog failed: %v", err)
 			os.Exit(1)
 		}
-		log.Printf("Saved catalog to %s: %d movies, %d series, %d live channels (%d EPG-linked, %d with backup feeds)", path, len(movies), len(series), len(live), epgLinked, withBackups)
+		log.Printf("Saved catalog to %s: %d movies, %d series, %d live channels (%d EPG-linked, %d with backup feeds)",
+			path, len(res.Movies), len(res.Series), len(res.Live), epgLinked, withBackups)
 
 	case "mount":
 		_ = mountCmd.Parse(os.Args[2:])
@@ -250,6 +279,7 @@ func main() {
 			TunerCount:          cfg.TunerCount,
 			LineupMaxChannels:   serveLineupCap,
 			DeviceID:            cfg.DeviceID,
+			FriendlyName:        cfg.FriendlyName,
 			StreamBufferBytes:   cfg.StreamBufferBytes,
 			StreamTranscodeMode: cfg.StreamTranscodeMode,
 			Channels:            nil,
@@ -265,6 +295,33 @@ func main() {
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
+
+		// Start HDHomeRun network mode if enabled
+		hdhrConfig := hdhomerun.LoadConfig()
+		log.Printf("HDHomeRun config: enabled=%v, deviceID=0x%x, tuners=%d",
+			hdhrConfig.Enabled, hdhrConfig.DeviceID, hdhrConfig.TunerCount)
+		if hdhrConfig.Enabled {
+			// Only override BaseURL if it wasn't set from environment
+			if hdhrConfig.BaseURL == "" {
+				hdhrConfig.BaseURL = *serveBaseURL
+			}
+			// Create stream function that uses the gateway via localhost HTTP
+			streamFunc := func(ctx context.Context, channelID string) (io.ReadCloser, error) {
+				return srv.GetStream(ctx, channelID)
+			}
+			server, err := hdhomerun.NewServer(hdhrConfig, streamFunc)
+			if err != nil {
+				log.Printf("HDHomeRun network mode failed to start: %v", err)
+			} else {
+				go func() {
+					if err := server.Run(ctx); err != nil {
+						log.Printf("HDHomeRun network server error: %v", err)
+					}
+				}()
+				log.Printf("HDHomeRun network mode enabled (UDP 65001 + TCP 65001)")
+			}
+		}
+
 		if err := srv.Run(ctx); err != nil {
 			log.Printf("Serve failed: %v", err)
 			os.Exit(1)
@@ -279,92 +336,29 @@ func main() {
 		if path == "" {
 			path = cfg.CatalogPath
 		}
-		var runApiBase string // best ranked provider from index; used for health check
-		// 1) Refresh catalog at startup unless skipped (same strategy as xtream-to-m3u.js: player_api first)
+
+		// 1) Refresh catalog at startup unless skipped.
+		var runApiBase string // best ranked provider; used for health check URL below
 		if !*runSkipIndex {
-			var movies []catalog.Movie
-			var series []catalog.Series
-			var live []catalog.LiveChannel
-			var err error
-			apiBase := ""
-			if cfg.ProviderUser != "" && cfg.ProviderPass != "" {
-				baseURLs := cfg.ProviderURLs()
-				if len(baseURLs) > 0 {
-					log.Print("Refreshing catalog ...")
-					ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-					defer cancel()
-					ranked := provider.RankedPlayerAPI(ctx, baseURLs, cfg.ProviderUser, cfg.ProviderPass, nil)
-					if len(ranked) > 0 {
-						apiBase = ranked[0]
-						runApiBase = apiBase
-						log.Printf("Ranked %d provider(s): using best %s (2nd/3rd used as stream backups)", len(ranked), apiBase)
-						movies, series, live, err = indexer.IndexFromPlayerAPI(apiBase, cfg.ProviderUser, cfg.ProviderPass, "m3u8", cfg.LiveOnly, baseURLs, nil)
-						if err == nil && len(live) > 0 {
-							for i := range live {
-								urls := streamURLsFromRankedBases(live[i].StreamURL, ranked)
-								if len(urls) > 0 {
-									live[i].StreamURLs = urls
-									if live[i].StreamURL == "" {
-										live[i].StreamURL = urls[0]
-									}
-								}
-							}
-						}
-					}
-				}
-			} else {
-				err = fmt.Errorf("set PLEX_TUNER_PROVIDER_USER and PLEX_TUNER_PROVIDER_PASS in .env to refresh catalog")
-			}
-			if err != nil || (apiBase == "" && cfg.ProviderUser != "" && cfg.ProviderPass != "") {
-				m3uURLs := cfg.M3UURLsOrBuild()
-				for _, u := range m3uURLs {
-					movies, series, live, err = indexer.ParseM3U(u, nil)
-					if err == nil {
-						break
-					}
-				}
-				if err != nil {
-					err = fmt.Errorf("no player_api OK and no get.php OK on any host")
-				}
-			}
+			log.Print("Refreshing catalog ...")
+			res, err := fetchCatalog(cfg, "")
 			if err != nil {
 				log.Printf("Catalog refresh failed: %v", err)
 				os.Exit(1)
 			}
-			if cfg.LiveEPGOnly {
-				filtered := make([]catalog.LiveChannel, 0, len(live))
-				for _, ch := range live {
-					if ch.EPGLinked {
-						filtered = append(filtered, ch)
-					}
-				}
-				live = filtered
-				log.Printf("Filtered to EPG-linked only: %d live channels", len(live))
-			}
-			if cfg.SmoketestEnabled && *runMode != "easy" {
-				before := len(live)
-				live = indexer.FilterLiveBySmoketest(live, nil, cfg.SmoketestTimeout, cfg.SmoketestConcurrency, cfg.SmoketestMaxChannels, cfg.SmoketestMaxDuration)
-				log.Printf("Smoketest: %d/%d channels passed", len(live), before)
-			}
-			epgLinked, withBackups := 0, 0
-			for _, ch := range live {
-				if ch.EPGLinked {
-					epgLinked++
-				}
-				if len(ch.StreamURLs) > 1 {
-					withBackups++
-				}
-			}
+			runApiBase = res.APIBase
+			epgLinked, withBackups := catalogStats(res.Live)
 			c := catalog.New()
-			c.ReplaceWithLive(movies, series, live)
+			c.ReplaceWithLive(res.Movies, res.Series, res.Live)
 			if err := c.Save(path); err != nil {
 				log.Printf("Save catalog failed: %v", err)
 				os.Exit(1)
 			}
-			log.Printf("Catalog saved: %d movies, %d series, %d live (%d EPG-linked, %d with backups)", len(movies), len(series), len(live), epgLinked, withBackups)
+			log.Printf("Catalog saved: %d movies, %d series, %d live (%d EPG-linked, %d with backups)",
+				len(res.Movies), len(res.Series), len(res.Live), epgLinked, withBackups)
 		}
 
-		// 2) Health check provider unless skipped (use best ranked base when we just indexed, else first configured)
+		// 2) Health check provider unless skipped (use best ranked base when we just indexed, else first configured).
 		var checkURL string
 		if cfg.ProviderUser != "" && cfg.ProviderPass != "" {
 			base := runApiBase
@@ -381,15 +375,14 @@ func main() {
 			log.Print("Checking provider ...")
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
-			err := health.CheckProvider(ctx, checkURL)
-			if err != nil {
+			if err := health.CheckProvider(ctx, checkURL); err != nil {
 				log.Printf("Provider check failed: %v", err)
 				os.Exit(1)
 			}
 			log.Print("Provider OK")
 		}
 
-		// 3) Load catalog and start server
+		// 3) Load catalog and start server.
 		c := catalog.New()
 		if err := c.Load(path); err != nil {
 			log.Printf("Load catalog failed: %v", err)
@@ -419,6 +412,7 @@ func main() {
 			TunerCount:          cfg.TunerCount,
 			LineupMaxChannels:   lineupCap,
 			DeviceID:            cfg.DeviceID,
+			FriendlyName:        cfg.FriendlyName,
 			StreamBufferBytes:   cfg.StreamBufferBytes,
 			StreamTranscodeMode: cfg.StreamTranscodeMode,
 			Channels:            nil, // set by UpdateChannels
@@ -433,7 +427,8 @@ func main() {
 			log.Printf("External XMLTV enabled: %s (timeout %v)", cfg.XMLTVURL, cfg.XMLTVTimeout)
 		}
 
-		// Optional: background catalog refresh (same strategy: player_api first, then get.php). Stops when runCtx is cancelled.
+		// Optional: background catalog refresh. Consistent with startup: same player_api→get.php strategy
+		// with all configured filters (EPG-only, smoketest) applied. Stops when runCtx is cancelled.
 		if *runRefresh > 0 && cfg.ProviderUser != "" && cfg.ProviderPass != "" {
 			go func() {
 				ticker := time.NewTicker(*runRefresh)
@@ -445,52 +440,20 @@ func main() {
 					case <-ticker.C:
 					}
 					log.Print("Refreshing catalog (scheduled) ...")
-					var movies []catalog.Movie
-					var series []catalog.Series
-					var live []catalog.LiveChannel
-					var err error
-					baseURLs := cfg.ProviderURLs()
-					apiBase := ""
-					if len(baseURLs) > 0 {
-						ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-						ranked := provider.RankedPlayerAPI(ctx, baseURLs, cfg.ProviderUser, cfg.ProviderPass, nil)
-						cancel()
-						if len(ranked) > 0 {
-							apiBase = ranked[0]
-							movies, series, live, err = indexer.IndexFromPlayerAPI(apiBase, cfg.ProviderUser, cfg.ProviderPass, "m3u8", cfg.LiveOnly, baseURLs, nil)
-							if err == nil && len(live) > 0 {
-								for i := range live {
-									urls := streamURLsFromRankedBases(live[i].StreamURL, ranked)
-									if len(urls) > 0 {
-										live[i].StreamURLs = urls
-										if live[i].StreamURL == "" {
-											live[i].StreamURL = urls[0]
-										}
-									}
-								}
-							}
-						}
-					}
-					if err != nil || apiBase == "" {
-						for _, u := range cfg.M3UURLsOrBuild() {
-							movies, series, live, err = indexer.ParseM3U(u, nil)
-							if err == nil {
-								break
-							}
-						}
-					}
+					res, err := fetchCatalog(cfg, "")
 					if err != nil {
 						log.Printf("Scheduled refresh failed: %v", err)
 						continue
 					}
 					cat := catalog.New()
-					cat.ReplaceWithLive(movies, series, live)
+					cat.ReplaceWithLive(res.Movies, res.Series, res.Live)
 					if err := cat.Save(path); err != nil {
 						log.Printf("Save catalog failed (scheduled refresh): %v", err)
 						continue
 					}
-					srv.UpdateChannels(live)
-					log.Printf("Catalog refreshed: %d movies, %d series, %d live channels (lineup updated)", len(movies), len(series), len(live))
+					srv.UpdateChannels(res.Live)
+					log.Printf("Catalog refreshed: %d movies, %d series, %d live channels (lineup updated)",
+						len(res.Movies), len(res.Series), len(res.Live))
 				}
 			}()
 		}
@@ -534,12 +497,6 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Full (zero-touch): -mode=full -register-plex=/path/to/Plex → max feeds, no wizard.\n")
 			fmt.Fprintf(os.Stderr, "  Device / Base URL: %s   Guide: %s/guide.xml\n", baseURL, baseURL)
 			fmt.Fprintf(os.Stderr, "---\n\n")
-		}
-
-		log.Printf("Tuner listening on %s", *runAddr)
-		if err := srv.Run(runCtx); err != nil {
-			log.Printf("Serve failed: %v", err)
-			os.Exit(1)
 		}
 
 	case "probe":
@@ -590,23 +547,20 @@ func main() {
 			if apiR.Status == provider.StatusOK {
 				apiOK = append(apiOK, base)
 			}
-			displayGet := base + "/get.php?..."
-			if getR != nil {
-				displayGet = getR.URL
-				if cfg.ProviderPass != "" {
-					displayGet = strings.Replace(displayGet, "password="+cfg.ProviderPass, "password=***", 1)
-				}
-				if len(displayGet) > 70 {
-					displayGet = displayGet[:67] + "..."
-				}
-			}
 			getLatency := int64(0)
 			if getR != nil {
 				getLatency = getR.LatencyMs
 			}
 			log.Printf("  %s", base)
 			if getR != nil {
-				log.Printf("    get.php     %s  HTTP %d  %dms", getR.Status, getR.StatusCode, getLatency)
+				displayGet := getR.URL
+				if cfg.ProviderPass != "" {
+					displayGet = strings.Replace(displayGet, "password="+cfg.ProviderPass, "password=***", 1)
+				}
+				if len(displayGet) > 70 {
+					displayGet = displayGet[:67] + "..."
+				}
+				log.Printf("    get.php     %s  HTTP %d  %dms  %s", getR.Status, getR.StatusCode, getLatency, displayGet)
 			} else {
 				log.Printf("    get.php     (no result)")
 			}

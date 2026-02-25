@@ -103,7 +103,111 @@ go run ./cmd/plex-tuner probe -urls=http://host1.com,http://host2.com -timeout=6
 
 ---
 
-## 6. Tuner endpoints (sanity check)
+## 6. Plex Live TV startup race (session opens, consumer never starts)
+
+**Typical signs (PMS side):** `dash_init_404`, `/livetv/sessions/.../index.m3u8 404`, `Failed to find consumer`.
+
+This usually means Plex accepted the tuner session, but did not receive valid/usable MPEG-TS bytes quickly enough to spin up its internal consumer/packager.
+
+### Race-focused config profile (first pass)
+
+Use this to minimize "200 OK but no usable bytes" windows:
+
+```bash
+PLEX_TUNER_STREAM_BUFFER_BYTES=0
+
+PLEX_TUNER_WEBSAFE_BOOTSTRAP=true
+PLEX_TUNER_WEBSAFE_BOOTSTRAP_ALL=true
+PLEX_TUNER_WEBSAFE_BOOTSTRAP_SECONDS=0.35
+
+PLEX_TUNER_WEBSAFE_STARTUP_MIN_BYTES=65536
+PLEX_TUNER_WEBSAFE_STARTUP_MAX_BYTES=524288
+PLEX_TUNER_WEBSAFE_STARTUP_TIMEOUT_MS=30000
+PLEX_TUNER_WEBSAFE_REQUIRE_GOOD_START=false
+
+# Optional: send null TS packets (PID 0x1FFF) while startup gate waits.
+# Keeps TCP alive but carries no program structure.
+PLEX_TUNER_WEBSAFE_NULL_TS_KEEPALIVE=true
+PLEX_TUNER_WEBSAFE_NULL_TS_KEEPALIVE_MS=100
+PLEX_TUNER_WEBSAFE_NULL_TS_KEEPALIVE_PACKETS=1
+
+# Optional: send PAT+PMT packets while startup gate waits (stronger than null TS).
+# Delivers real program-structure information (program map) so Plex's DASH packager
+# can instantiate its consumer before the first IDR frame arrives.
+# PIDs match ffmpeg mpegts defaults (PMT=0x1000, video H.264=0x0100, audio AAC=0x0101).
+# Try this when null TS keepalive alone does not prevent dash_init_404.
+PLEX_TUNER_WEBSAFE_PROGRAM_KEEPALIVE=true
+PLEX_TUNER_WEBSAFE_PROGRAM_KEEPALIVE_MS=500
+```
+
+If this stabilizes playback, tighten it:
+
+```bash
+PLEX_TUNER_WEBSAFE_REQUIRE_GOOD_START=true
+PLEX_TUNER_STREAM_BUFFER_BYTES=auto
+```
+
+### Log lines to watch
+
+- `bootstrap-ts bytes=... startup=...` or `bootstrap-ts bytes=... dur=...`
+- `startup-gate buffered=... ts_pkts=... idr=... aac=...`
+- `null-ts-keepalive start interval_ms=... packets=...`
+- `null-ts-keepalive stop=startup-gate-ready ...`
+- `pat-pmt-keepalive start interval_ms=...`
+- `pat-pmt-keepalive stop=startup-gate-ready bytes=... ticks=... startup=...`
+- `startup-gate timeout after=...ms` (upstream/ffmpeg likely too slow)
+
+If keepalive is running but startup often times out, the bottleneck is usually upstream readiness/ffmpeg output timing rather than the Plex consumer race itself.
+
+**Keepalive strategy comparison:**
+
+| Keepalive | PID | What Plex gets | When to use |
+|-----------|-----|----------------|-------------|
+| None | — | Nothing until IDR | Fast ffmpeg only |
+| Null TS | 0x1FFF | TCP alive, no program info | Basic race guard |
+| PAT+PMT | 0x0000 + 0x1000 | Full program map (video+audio PIDs) | `dash_init_404` / consumer never starts |
+
+---
+
+## 7. Unified Diagnostics Harness (all five experiments in one run)
+
+Use `scripts/live-race-harness.sh` to collect evidence for:
+
+- synthetic local source stability (no provider)
+- replayed local TS source stability (provider timing removed)
+- optional wire capture (`tcpdump`)
+- optional PMS log snapshots
+- concurrent same-time request traces (with request IDs in gateway logs)
+
+```bash
+cd /path/to/plextuner
+
+# Optional but recommended when running on the Plex host:
+# export USE_TCPDUMP=true
+# export TCPDUMP_IFACE=lo
+# export PMS_LOG_DIR="/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Logs"
+
+# Optional: use a recorded TS file instead of auto-generated replay input
+# export REPLAY_TS_FILE=/path/to/capture.ts
+
+RUN_SECONDS=30 CONCURRENCY=6 ./scripts/live-race-harness.sh
+```
+
+Artifacts are written under `.diag/live-race/<timestamp>/` and include:
+
+- `plex-tuner.log`
+- `curl.log`
+- `synth-ffmpeg.log`
+- `replay-ffmpeg.log`
+- `summary.txt`
+- optional `tuner-loopback.pcap`
+- optional PMS log snapshot directory
+
+Start one or more real Plex clients during the harness run window to correlate PMS + tuner behavior against the synthetic/replay probes.
+
+---
+
+## 8. Tuner endpoints (sanity check)
 
 Once the server is running, quick HTTP checks:
 
@@ -120,7 +224,7 @@ Non-200 → check server logs and config (catalog loaded, base URL, port).
 
 ---
 
-## 7. Checklist for “is the tuner OK?”
+## 9. Checklist for “is the tuner OK?”
 
 1. **Verify passes:** `./scripts/verify`
 2. **Probe OK (if using provider):** `plex-tuner probe` shows at least one get.php or player_api OK

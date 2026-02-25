@@ -2,11 +2,9 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Goal:** Deploy Plex Tuner and push its output (lineup/streams) to Plex running at **plex.home**.
+**Goal:** Continue live Plex integration testing on the direct PlexTuner path (no Threadfin) without restarting Plex, while preserving other agents' work. Direct Trial/WebSafe tuners remain re-established and mapped at 91 channels, and the WebSafe ffmpeg path now starts/streams real payload again (DNS + HLS reconnect-loop issues fixed), but Plex Web browser playback is still blocked by Plex's internal DASH packaging (`start.mpd` timeout / `CaptureBuffer`). New focus is the remaining startup/packager gap in Plex itself: first-stage Plex recorder sessions write many TS segment files and report stream metadata, but Plex's internal live HLS endpoint (`/livetv/sessions/<live>/<client>/index.m3u8`) can return zero bytes for minutes while `buildLiveM3U8` repeatedly logs `no segment info available`. This reproduces across WebSafe output profiles (`aaccfr`, `plexsafe`, and forced `pmsxcode`) and is now the leading blocker for `HR-001` / `HR-002`. New evidence from a fresh TS-instrumented probe (`DVR 138`, channel `111`) shows the first ~6s of PlexTuner WebSafe ffmpeg output are structurally clean (PAT/PMT/PCR/PTS present, no sync loss, `idr=true`) while PMS still delays `decision`/`start.mpd` ~100s. A second fresh probe (`channel 108`) now proves Plex is actively writing dozens of first-stage `media-*.ts` files (session cache populated, non-zero segments) while the corresponding internal `/livetv/sessions/.../index.m3u8` still returns 0 bytes during the browser timeout window.
 
-**Scope:** In: one-command deploy (k8s standup), tuner reachable at `plextuner-hdhr.plex.home`, Plex at plex.home using tuner (zero-touch via `-register-plex` or manual add). Out: cluster runtime must be available where you run the script (kubectl + cluster + .env).
-
-**Status:** Ready to deploy. Run `./k8s/standup-local-cluster.sh` on a host with kubectl + cluster access. Ensure Plex is stopped before deploy (for -register-plex). **Next:** Execute deploy, then start Plex and verify Live TV at plex.home.
+**Scope:** In: live validation/triage only (k3s + Plex API/logs), minimal process restarts inside `plextuner-build` pod, runtime-only tuner env/catalog experiments (WebSafe/Trial), minimal tuner-code instrumentation needed for live triage, and documenting operational findings (ffmpeg DNS/startup-gate behavior, hidden Plex capture-session reuse). Out: Plex pod restarts, Threadfin pipeline changes, infra/firewall persistence, and unrelated code changes (another agent is modifying `internal/hdhomerun/*`).
 
 **Last updated:** 2026-02-24
 
@@ -14,17 +12,12 @@
 
 ## Assumptions & questions (only if uncertainty matters)
 Assumptions (safe defaults you are proceeding with):
-- Agent 1 owns core/non-HDHR testing in this session; Agent 2 owns HDHR-focused testing in this session.
-- "Core functionality" for Agent 1 excludes HDHR-specific test implementation/changes because Agent 2 is actively testing HDHR functionality in the same repo.
-- Use read-only cluster inspection/testing only; avoid applying manifests or changing shared k8s resources while another agent is working (especially `k8s/` HDHR test assets).
-- If cluster access is blocked by sandbox/network policy, continue with local tests and report the exact blocker.
-- User authorized external validation via SSH to `kspls0` (sudo/passwordless available), but this Codex sandbox cannot open outbound sockets (`ssh`/`kubectl` fail with `socket: operation not permitted`).
-- Localhost/loopback validation is also blocked in this Codex sandbox (`curl` to `127.0.0.1:5004` and `127.0.0.1:30004` fails with `failed to open socket: Operation not permitted`).
+- Local environment may not have Go installed; OK to use a temporary local Go toolchain (non-system install) only for verification.
+- k3s/Plex troubleshooting changes on remote hosts may be temporary runtime fixes unless later codified in infra manifests or host firewall config.
 
 Questions (ONLY if blocked or high-risk ambiguity):
-- Q: *(none yet)*
-  Why it matters: *(n/a)*
-  Suggested default: *(n/a)*
+- Q: None currently blocking for this patch-sized change.
+- Q: None currently blocking. User confirmed initial tier-1 client matrix for `HR-003`: LG webOS, Plex Web (Firefox/Chrome), iPhone iOS, and NVIDIA Shield TV (Android TV/Google target coverage).
 
 ## Opportunity radar (don't derail)
 - If you notice out-of-scope improvements, record them in `memory-bank/opportunities.md` and raise to the user in your summary.
@@ -33,16 +26,23 @@ Questions (ONLY if blocked or high-risk ambiguity):
 - **Agent 2 (this session):** HDHR k8s standup: Ingress, run-mode deployment, BaseURL=http://plextuner-hdhr.plex.home, k8s/README.md.
 
 ## Self-check (quality bar — fill before claiming done)
-- **Correctness:** Deploy scripts ready; verify cluster connectivity before running.
-- **Tests:** Core packages passed; cluster integration requires live environment.
-- **Risk:** medium (cluster access required; verify nodeSelector for -register-plex)
-- **Performance impact:** none
-- **Security impact:** none (credentials in .env which is gitignored)
+- **Correctness:** ✅ WebSafe (`:5005`) is currently running in the existing `plextuner-build` pod from `/workspace/plex-tuner-tsinspect` (runtime build including new TS inspector instrumentation) with real XMLTV and the 93-channel alias test catalog (`catalog-websafe-dedup-alias112.json`). Runtime is otherwise config-identical to the baseline direct-test profile (`aaccfr` default + client adaptation enabled) plus targeted TS instrumentation env (`PLEX_TUNER_TS_INSPECT=true`, `PLEX_TUNER_TS_INSPECT_CHANNEL=111`). Trial (`:5004`) was intentionally untouched to minimize disruption.
+- **Tests:** ⚠️ Fresh WebSafe browser probes still fail (`startmpd1_0`) on channels `103`, `104`, `107`, `108`, `109`, and `111`, but triage advanced materially: (1) the `103` and `104` sessions proved Plex eventually returns `decision` and `start.mpd` after ~100s (probe times out at ~35s first); (2) for the same sessions, Plex's first-stage recorder wrote many `media-*.ts` segments and accepted `progress/stream` + `progress/streamDetail` callbacks, yet internal `GET /livetv/sessions/<live>/<client>/index.m3u8` returned **0 bytes** during repeated in-container polls and PMS logged repeated `buildLiveM3U8: no segment info available`; (3) changing WebSafe output profile did not fix the startup window (`plexsafe` via client adaptation and forced `pmsxcode` with `client_adapt=false` both reproduced the ~35s Web timeout); (4) the forced `pmsxcode` run confirms the first-stage codec/path actually changed (`mpeg2video` + `mp2` in Plex progress streamDetail) while the browser timeout behavior stayed the same; (5) new TS instrumentation on fresh channel `111` captured the first 12,000 TS packets of PlexTuner ffmpeg output with `sync_losses=0`, PAT/PMT/PCR present, monotonic PCR/PTS, `idr=true`, and no CC errors on media PIDs (null PID duplicate count only), while PMS still delayed `decision/start.mpd` ~100s before launching the second-stage DASH transcode from `/livetv/sessions/.../index.m3u8`; (6) fresh channel `108` session `dfeb3d9f-...` showed a cache directory full of first-stage `media-00000.ts`..`media-00038.ts` (mostly non-zero sizes) while a concurrent in-container `curl -m 5` to `http://127.0.0.1:32400/livetv/sessions/dfeb3d9f-.../ff10b85.../index.m3u8?...` still timed out with 0 bytes.
+- **Risk:** med-high (runtime state in Plex/k3s can drift after Plex restarts, hidden Plex capture/transcode reuse can invalidate probe results, and current tuner env/catalog experiments are temporary)
+- **Performance impact:** direct guide path remains fast enough at 91 channels (~1s `guide.xml`); the current browser blocker is now a startup/packager-readiness issue (early video/IDR timing + Plex capture behavior), not raw throughput or ffmpeg startup.
+- **Security impact:** none (token used in-container only; not printed)
 
 ## Decisions (single source of truth)
 - If you make a **durable** decision, promote it to **ADR** (`docs/adr/`) or **memory-bank**.
 - If you're **unsure whether it's durable**, don't promote yet — note it in Assumptions.
 
 ## Docs (done = doc update when behavior changes)
-- If you changed **behavior, interfaces, or config:** update or create **one** doc in `docs/`; add cross-links. Conventions: [docs/_meta/linking.md](../docs/_meta/linking.md).
+- If you changed **behavior, interfaces, or config:** update or create **one** doc in `docs/`; add cross-links. Conventions: [docs/_meta/linking.md](../docs/_meta/linking.md). (Memory-bank updates are in scope for this patch; broader docs can follow if this behavior is promoted.)
 - If you **noticed doc gaps** but it's out of scope: file in `memory-bank/opportunities.md`.
+
+---
+
+## Parallel threads (2026-02-24)
+
+- **agent1:** Live Plex Web packaging/`start.mpd` triage on direct PlexTuner (WebSafe/Trial) via k3s/PMS logs; avoid Plex restarts and preserve current runtime state.
+- **agent2:** Non-HDHR validation lane for main PlexTuner functionality: local automated tests + live-race harness (synthetic/replay), VOD/FUSE virtual-file smoke check, and non-disruptive direct Plex API probe loop against `https://plex.home` using existing preconfigured DVRs only (no re-registration/restart).

@@ -2,6 +2,7 @@ package tuner
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -140,6 +141,128 @@ func TestGateway_notFound(t *testing.T) {
 	g.ServeHTTP(w2, req2)
 	if w2.Code != http.StatusNotFound {
 		t.Errorf("path other code: %d", w2.Code)
+	}
+}
+
+func TestGateway_autoPath_fallsBackToGuideNumber(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer up.Close()
+
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{
+				ChannelID:   "eurosport1.de",
+				GuideNumber: "112",
+				GuideName:   "DE: EURO SPORT 1",
+				StreamURL:   up.URL,
+			},
+		},
+		TunerCount: 2,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://local/auto/v112", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code: %d", w.Code)
+	}
+	if w.Body.String() != "ok" {
+		t.Fatalf("body: %q", w.Body.String())
+	}
+}
+
+func TestGateway_requestAdaptation_unknownDefaultsWebsafe(t *testing.T) {
+	g := &Gateway{PlexClientAdapt: true}
+	ch := &catalog.LiveChannel{GuideName: "Test"}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/test", nil)
+
+	hasOverride, transcode, profile, reason := g.requestAdaptation(context.Background(), req, ch, "test")
+	if !hasOverride {
+		t.Fatalf("expected transcode override for unknown client")
+	}
+	if !transcode {
+		t.Fatalf("expected unknown client to default to websafe transcode")
+	}
+	if profile != profilePlexSafe {
+		t.Fatalf("profile=%q want %q", profile, profilePlexSafe)
+	}
+	if reason != "unknown-client-websafe" {
+		t.Fatalf("reason=%q", reason)
+	}
+}
+
+func TestGateway_requestAdaptation_resolvedNonWebGetsFull(t *testing.T) {
+	pms := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/status/sessions" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer size="1"><Video title="Live TV"><Session id="sid-1"/><Player machineIdentifier="cid-1" product="Plex for Roku" platform="Roku"/></Video></MediaContainer>`))
+	}))
+	defer pms.Close()
+
+	g := &Gateway{
+		PlexClientAdapt: true,
+		PlexPMSURL:      pms.URL,
+		PlexPMSToken:    "tok",
+		Client:          pms.Client(),
+	}
+	ch := &catalog.LiveChannel{GuideName: "Test"}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/test", nil)
+	req.Header.Set("X-Plex-Session-Identifier", "sid-1")
+
+	hasOverride, transcode, profile, reason := g.requestAdaptation(context.Background(), req, ch, "test")
+	if !hasOverride {
+		t.Fatalf("expected override for resolved non-web client")
+	}
+	if transcode {
+		t.Fatalf("expected resolved non-web client to force full mode (transcode off)")
+	}
+	if profile != "" {
+		t.Fatalf("profile=%q want empty", profile)
+	}
+	if reason != "resolved-nonweb-client" {
+		t.Fatalf("reason=%q", reason)
+	}
+}
+
+func TestGateway_requestAdaptation_resolvedWebGetsWebsafe(t *testing.T) {
+	pms := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/status/sessions" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer size="1"><Video title="Live TV"><Session id="sid-web"/><Player machineIdentifier="cid-web" product="Plex Web" platform="Firefox"/></Video></MediaContainer>`))
+	}))
+	defer pms.Close()
+
+	g := &Gateway{
+		PlexClientAdapt: true,
+		PlexPMSURL:      pms.URL,
+		PlexPMSToken:    "tok",
+		Client:          pms.Client(),
+	}
+	ch := &catalog.LiveChannel{GuideName: "Test"}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/test", nil)
+	req.Header.Set("X-Plex-Session-Identifier", "sid-web")
+
+	hasOverride, transcode, profile, reason := g.requestAdaptation(context.Background(), req, ch, "test")
+	if !hasOverride {
+		t.Fatalf("expected override for resolved web client")
+	}
+	if !transcode {
+		t.Fatalf("expected resolved web client to use websafe transcode")
+	}
+	if profile != profilePlexSafe {
+		t.Fatalf("profile=%q want %q", profile, profilePlexSafe)
+	}
+	if reason != "resolved-web-client" {
+		t.Fatalf("reason=%q", reason)
 	}
 }
 
