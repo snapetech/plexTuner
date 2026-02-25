@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Shared pre-commit secret scanner
+# Scans staged content (not just working tree) and blocks on high-confidence secrets.
+# Bypass once with: SKIP_SECRET_SCAN=1 git commit ...
+
+if [[ "${SKIP_SECRET_SCAN:-}" == "1" ]]; then
+  exit 0
+fi
+
+if ! command -v rg >/dev/null 2>&1; then
+  echo "pre-commit secret scan: ripgrep (rg) not found; skipping" >&2
+  exit 0
+fi
+
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null || true)
+if [[ -z "$repo_root" ]]; then
+  exit 0
+fi
+
+# High-confidence patterns only (kept narrow to reduce false positives).
+PAT='github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|glpat-[A-Za-z0-9_-]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|sk-(proj-)?[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|ya29\.[0-9A-Za-z_-]+|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN (RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----|X-Plex-Token=[A-Za-z0-9._-]{20,}'
+
+# Common placeholders/examples to ignore.
+ALLOW='REDACTED|EXAMPLE|example|xxxxxxxx|your[_ -]?token|<token>|sk-\.\.\.|ghp_\.\.\.'
+
+# Suspicious filenames that often contain cookies/sessions/keys. We warn (do not fail) unless content matches PAT.
+SUSP_PATH='(^|/)(\.env(\.|$)|sessionstore(\.jsonlz4)?|cookies?\.(sqlite|txt|json)|cookiejar|auth\.json|credentials\.json|id_(rsa|ed25519)|.*\.pem$|.*\.p12$|.*\.kdbx$|token(s)?\.(txt|json)$|\.codex/|\.claude/|\.cursor/)'
+
+redact_line() {
+  sed -E \
+    -e 's#(github_pat_)[A-Za-z0-9_]+#\1[REDACTED]#g' \
+    -e 's#(gh[pousr]_)[A-Za-z0-9]+#\1[REDACTED]#g' \
+    -e 's#(glpat-)[A-Za-z0-9_-]+#\1[REDACTED]#g' \
+    -e 's#(sk-ant-)[A-Za-z0-9_-]+#\1[REDACTED]#g' \
+    -e 's#(sk-(proj-)?)[A-Za-z0-9_-]+#\1[REDACTED]#g' \
+    -e 's#(AKIA|ASIA)[0-9A-Z]{16}#\1[REDACTED]#g' \
+    -e 's#(AIza)[0-9A-Za-z_-]{35}#\1[REDACTED]#g' \
+    -e 's#(ya29\.)[A-Za-z0-9_-]+#\1[REDACTED]#g' \
+    -e 's#(xox[baprs]-)[A-Za-z0-9-]+#\1[REDACTED]#g' \
+    -e 's#(X-Plex-Token=)[A-Za-z0-9._-]+#\1[REDACTED]#g'
+}
+
+# staged files only
+mapfile -d '' paths < <(git diff --cached --name-only -z --diff-filter=ACMR)
+[[ ${#paths[@]} -eq 0 ]] && exit 0
+
+warned_paths=0
+blocked=0
+report_file=$(mktemp)
+trap 'rm -f "$report_file"' EXIT
+
+for path in "${paths[@]}"; do
+  [[ -z "$path" ]] && continue
+
+  if printf '%s\n' "$path" | rg -qi "$SUSP_PATH"; then
+    # Ignore common safe examples/templates.
+    if ! printf '%s\n' "$path" | rg -qi '(\.example$|example|sample|template)'; then
+      printf 'warn:path:%s\n' "$path" >> "$report_file"
+      warned_paths=1
+    fi
+  fi
+
+  # Pull staged blob content. If binary, skip content scan.
+  if ! staged=$(git show ":$path" 2>/dev/null); then
+    continue
+  fi
+  if ! printf '%s' "$staged" | grep -Iq .; then
+    continue
+  fi
+
+  # Search staged content for high-confidence secrets, then drop placeholder/test matches.
+  hits=$(printf '%s' "$staged" | rg -n --no-heading -e "$PAT" 2>/dev/null || true)
+  if [[ -z "$hits" ]]; then
+    continue
+  fi
+  filtered=$(printf '%s\n' "$hits" | rg -vn "$ALLOW" || true)
+  if [[ -z "$filtered" ]]; then
+    continue
+  fi
+
+  blocked=1
+  printf 'hit:file:%s\n' "$path" >> "$report_file"
+  printf '%s\n' "$filtered" | head -n 5 | redact_line | sed 's/^/  /' >> "$report_file"
+
+done
+
+if [[ "$blocked" -eq 1 ]]; then
+  echo "Commit blocked: potential secret/token detected in staged content." >&2
+  echo "" >&2
+  awk '
+    /^hit:file:/ { sub(/^hit:file:/, "", $0); printf("- %s\n", $0); next }
+    /^warn:path:/ { next }
+    { print }
+  ' "$report_file" >&2
+  echo "" >&2
+  echo "If this is an intentional fake/example value, replace it with a placeholder like REDACTED/EXAMPLE." >&2
+  echo "One-time bypass: SKIP_SECRET_SCAN=1 git commit ..." >&2
+  exit 1
+fi
+
+if [[ "$warned_paths" -eq 1 ]]; then
+  echo "pre-commit secret scan: warning, suspicious filenames staged (no secret pattern match):" >&2
+  awk '/^warn:path:/ { sub(/^warn:path:/, "", $0); printf("- %s\n", $0) }' "$report_file" >&2
+fi
+
+exit 0
