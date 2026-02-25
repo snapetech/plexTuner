@@ -13,13 +13,13 @@ import (
 
 // Config holds HDHomeRun network mode configuration
 type Config struct {
-	Enabled        bool
-	DeviceID       uint32
-	TunerCount     int
-	DiscoverPort   int
-	ControlPort    int
-	BaseURL        string
-	FriendlyName   string
+	Enabled      bool
+	DeviceID     uint32
+	TunerCount   int
+	DiscoverPort int
+	ControlPort  int
+	BaseURL      string
+	FriendlyName string
 }
 
 // StreamFunc is a function that returns a stream for a channel
@@ -113,65 +113,17 @@ func (s *Server) GetDevice() *Device {
 	return s.device
 }
 
-// LoadConfig loads HDHomeRun configuration from environment
-func LoadConfig() *Config {
-	return &Config{
-		Enabled:        getEnvBool("PLEX_TUNER_HDHR_NETWORK_MODE", false),
-		DeviceID:      getEnvUint32("PLEX_TUNER_HDHR_DEVICE_ID", 0x12345678),
-		TunerCount:    getEnvInt("PLEX_TUNER_HDHR_TUNER_COUNT", 2),
-		DiscoverPort:  getEnvInt("PLEX_TUNER_HDHR_DISCOVER_PORT", 65001),
-		ControlPort:   getEnvInt("PLEX_TUNER_HDHR_CONTROL_PORT", 65001),
-		BaseURL:       os.Getenv("PLEX_TUNER_BASE_URL"),
-		FriendlyName:  os.Getenv("PLEX_TUNER_HDHR_FRIENDLY_NAME"),
-	}
-}
-
-func getEnvBool(key string, def bool) bool {
-	v := os.Getenv(key)
-	if v == "" {
-		return def
-	}
-	switch v {
-	case "1", "true", "yes", "on":
-		return true
-	case "0", "false", "no", "off":
-		return false
-	default:
-		return def
-	}
-}
-
-func getEnvInt(key string, def int) int {
-	v := os.Getenv(key)
-	if v == "" {
-		return def
-	}
-	var n int
-	if _, err := fmt.Sscanf(v, "%d", &n); err != nil {
-		return def
-	}
-	return n
-}
-
-func getEnvUint32(key string, def uint32) uint32 {
-	v := os.Getenv(key)
-	if v == "" {
-		return def
-	}
-	var n uint32
-	if _, err := fmt.Sscanf(v, "%d", &n); err != nil {
-		return def
-	}
-	return n
-}
-
 // Example main function showing usage
 func Example() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	config := LoadConfig()
-	config.BaseURL = "http://192.168.1.100:5004"
+	config := &Config{
+		Enabled:    false,
+		DeviceID:   0x12345678,
+		TunerCount: 2,
+		BaseURL:    "http://192.168.1.100:5004",
+	}
 
 	// Example stream function - would connect to existing gateway
 	streamFunc := func(ctx context.Context, channelID string) (io.ReadCloser, error) {

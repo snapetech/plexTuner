@@ -23,8 +23,8 @@ import (
 
 	"github.com/plextuner/plex-tuner/internal/catalog"
 	"github.com/plextuner/plex-tuner/internal/config"
-	"github.com/plextuner/plex-tuner/internal/health"
 	"github.com/plextuner/plex-tuner/internal/hdhomerun"
+	"github.com/plextuner/plex-tuner/internal/health"
 	"github.com/plextuner/plex-tuner/internal/indexer"
 	"github.com/plextuner/plex-tuner/internal/materializer"
 	"github.com/plextuner/plex-tuner/internal/plex"
@@ -135,12 +135,19 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 		log.Printf("Filtered to EPG-linked only: %d live channels", len(res.Live))
 	}
 	if cfg.SmoketestEnabled {
+		cache := indexer.LoadSmoketestCache(cfg.SmoketestCacheFile)
 		before := len(res.Live)
-		res.Live = indexer.FilterLiveBySmoketest(
-			res.Live, nil, cfg.SmoketestTimeout, cfg.SmoketestConcurrency,
+		res.Live = indexer.FilterLiveBySmoketestWithCache(
+			res.Live, cache, cfg.SmoketestCacheTTL, nil,
+			cfg.SmoketestTimeout, cfg.SmoketestConcurrency,
 			cfg.SmoketestMaxChannels, cfg.SmoketestMaxDuration,
 		)
-		log.Printf("Smoketest: %d/%d channels passed", len(res.Live), before)
+		if cfg.SmoketestCacheFile != "" {
+			if err := cache.Save(cfg.SmoketestCacheFile); err != nil {
+				log.Printf("Smoketest cache save failed: %v", err)
+			}
+		}
+		log.Printf("Smoketest: %d/%d passed", len(res.Live), before)
 	}
 
 	return res, nil
@@ -287,6 +294,7 @@ func main() {
 			ProviderPass:        cfg.ProviderPass,
 			XMLTVSourceURL:      cfg.XMLTVURL,
 			XMLTVTimeout:        cfg.XMLTVTimeout,
+			XMLTVCacheTTL:       cfg.XMLTVCacheTTL,
 			EpgPruneUnlinked:    cfg.EpgPruneUnlinked,
 		}
 		srv.UpdateChannels(live)
@@ -297,7 +305,15 @@ func main() {
 		defer stop()
 
 		// Start HDHomeRun network mode if enabled
-		hdhrConfig := hdhomerun.LoadConfig()
+		hdhrConfig := &hdhomerun.Config{
+			Enabled:      cfg.HDHREnabled,
+			DeviceID:     cfg.HDHRDeviceID,
+			TunerCount:   cfg.HDHRTunerCount,
+			DiscoverPort: cfg.HDHRDiscoverPort,
+			ControlPort:  cfg.HDHRControlPort,
+			BaseURL:      cfg.BaseURL,
+			FriendlyName: cfg.HDHRFriendlyName,
+		}
 		log.Printf("HDHomeRun config: enabled=%v, deviceID=0x%x, tuners=%d",
 			hdhrConfig.Enabled, hdhrConfig.DeviceID, hdhrConfig.TunerCount)
 		if hdhrConfig.Enabled {
@@ -420,6 +436,7 @@ func main() {
 			ProviderPass:        cfg.ProviderPass,
 			XMLTVSourceURL:      cfg.XMLTVURL,
 			XMLTVTimeout:        cfg.XMLTVTimeout,
+			XMLTVCacheTTL:       cfg.XMLTVCacheTTL,
 			EpgPruneUnlinked:    cfg.EpgPruneUnlinked,
 		}
 		srv.UpdateChannels(live)
@@ -427,19 +444,32 @@ func main() {
 			log.Printf("External XMLTV enabled: %s (timeout %v)", cfg.XMLTVURL, cfg.XMLTVTimeout)
 		}
 
-		// Optional: background catalog refresh. Consistent with startup: same player_api→get.php strategy
-		// with all configured filters (EPG-only, smoketest) applied. Stops when runCtx is cancelled.
-		if *runRefresh > 0 && cfg.ProviderUser != "" && cfg.ProviderPass != "" {
-			go func() {
+		// Optional: background catalog refresh. Responds to scheduled ticker and SIGHUP.
+		// Consistent with startup: same player_api→get.php strategy with all configured
+		// filters (EPG-only, smoketest) applied. Stops when runCtx is cancelled.
+		credentials := cfg.ProviderUser != "" && cfg.ProviderPass != ""
+		if credentials {
+			sigHUP := make(chan os.Signal, 1)
+			signal.Notify(sigHUP, syscall.SIGHUP)
+			defer signal.Stop(sigHUP)
+
+			var tickerC <-chan time.Time
+			if *runRefresh > 0 {
 				ticker := time.NewTicker(*runRefresh)
 				defer ticker.Stop()
+				tickerC = ticker.C
+			}
+
+			go func() {
 				for {
 					select {
 					case <-runCtx.Done():
 						return
-					case <-ticker.C:
+					case <-tickerC:
+						log.Print("Refreshing catalog (scheduled) ...")
+					case <-sigHUP:
+						log.Print("SIGHUP received — reloading catalog")
 					}
-					log.Print("Refreshing catalog (scheduled) ...")
 					res, err := fetchCatalog(cfg, "")
 					if err != nil {
 						log.Printf("Scheduled refresh failed: %v", err)
@@ -451,6 +481,7 @@ func main() {
 						log.Printf("Save catalog failed (scheduled refresh): %v", err)
 						continue
 					}
+					// Invariant: UpdateChannels only called after successful Save.
 					srv.UpdateChannels(res.Live)
 					log.Printf("Catalog refreshed: %d movies, %d series, %d live channels (lineup updated)",
 						len(res.Movies), len(res.Series), len(res.Live))
@@ -497,6 +528,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Full (zero-touch): -mode=full -register-plex=/path/to/Plex → max feeds, no wizard.\n")
 			fmt.Fprintf(os.Stderr, "  Device / Base URL: %s   Guide: %s/guide.xml\n", baseURL, baseURL)
 			fmt.Fprintf(os.Stderr, "---\n\n")
+		}
+
+		if err := srv.Run(runCtx); err != nil {
+			log.Printf("Tuner failed: %v", err)
+			os.Exit(1)
 		}
 
 	case "probe":

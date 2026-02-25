@@ -1,6 +1,7 @@
 package tuner
 
 import (
+	"bytes"
 	"encoding/xml"
 	"errors"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/plextuner/plex-tuner/internal/catalog"
@@ -16,12 +18,19 @@ import (
 // XMLTV serves /guide.xml. By default it emits a minimal placeholder XMLTV.
 // When SourceURL is set, it fetches that XMLTV feed, filters to channels present
 // in the live catalog, and remaps programme channel IDs to local guide numbers.
+// The remapped result is cached for CacheTTL (default 10m) to avoid hammering
+// the upstream on every Plex metadata refresh.
 type XMLTV struct {
 	Channels         []catalog.LiveChannel
 	EpgPruneUnlinked bool // when true, only include channels with TVGID set
 	SourceURL        string
 	SourceTimeout    time.Duration
 	Client           *http.Client
+	CacheTTL         time.Duration // 0 = use default 10m; only used when SourceURL is set
+
+	mu        sync.RWMutex
+	cachedXML []byte
+	cacheExp  time.Time
 }
 
 func (x *XMLTV) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -61,6 +70,48 @@ func (x *XMLTV) serveExternalXMLTV(w http.ResponseWriter, channels []catalog.Liv
 	if len(channels) == 0 {
 		return errors.New("no live channels available")
 	}
+
+	ttl := x.CacheTTL
+	if ttl == 0 {
+		ttl = 10 * time.Minute
+	}
+
+	// Fast path: cache hit under read lock.
+	x.mu.RLock()
+	if len(x.cachedXML) > 0 && time.Now().Before(x.cacheExp) {
+		data := x.cachedXML
+		x.mu.RUnlock()
+		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+		_, err := w.Write(data)
+		return err
+	}
+	x.mu.RUnlock()
+
+	// Cache miss — acquire write lock, double-check, then fetch.
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if len(x.cachedXML) > 0 && time.Now().Before(x.cacheExp) {
+		// Another goroutine populated the cache while we waited for the lock.
+		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+		_, err := w.Write(x.cachedXML)
+		return err
+	}
+
+	data, err := x.fetchExternalXMLTV(channels)
+	if err != nil {
+		return err
+	}
+	x.cachedXML = data
+	x.cacheExp = time.Now().Add(ttl)
+
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	_, err = w.Write(data)
+	return err
+}
+
+// fetchExternalXMLTV performs the upstream HTTP fetch and remaps channel IDs.
+// Called under the XMLTV write lock; returns the full remapped XML bytes.
+func (x *XMLTV) fetchExternalXMLTV(channels []catalog.LiveChannel) ([]byte, error) {
 	timeout := x.SourceTimeout
 	if timeout <= 0 {
 		timeout = 45 * time.Second
@@ -71,20 +122,23 @@ func (x *XMLTV) serveExternalXMLTV(w http.ResponseWriter, channels []catalog.Liv
 	}
 	req, err := http.NewRequest(http.MethodGet, x.SourceURL, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("User-Agent", "PlexTuner/1.0")
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return errors.New(resp.Status)
+		return nil, errors.New(resp.Status)
 	}
 
-	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-	return writeRemappedXMLTV(w, resp.Body, channels)
+	var buf bytes.Buffer
+	if err := writeRemappedXMLTV(&buf, resp.Body, channels); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 func (x *XMLTV) servePlaceholderXMLTV(w http.ResponseWriter, channels []catalog.LiveChannel) {

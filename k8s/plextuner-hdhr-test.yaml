@@ -9,6 +9,7 @@ data:
   PLEX_TUNER_PROVIDER_PASS: "REPLACE"
   PLEX_TUNER_PROVIDER_URL: "https://REPLACE"
   PLEX_TUNER_M3U_URL: "http://REPLACE/get.php?username=REPLACE&password=REPLACE&type=m3u_plus&output=ts"
+  PLEX_TUNER_LIVE_ONLY: "true"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -78,22 +79,21 @@ spec:
         - name: catalog
           mountPath: /data
         - name: plex-db
-          mountPath: /var/lib/plex
+          mountPath: /config
         args:
         - run
-        - -skip-index
         - -catalog=/data/catalog.json
         - -addr=:5004
         - -base-url=http://plextuner-hdhr.plex.home
-        - -register-plex=/var/lib/plex
-        - -mode=easy
+        - -register-plex=/config/Library/Application Support/Plex Media Server
+        - -mode=full
         readinessProbe:
           httpGet:
-            path: /discover.json
+            path: /healthz
             port: 5004
-          initialDelaySeconds: 60
+          initialDelaySeconds: 180
           periodSeconds: 10
-          failureThreshold: 18
+          failureThreshold: 30
         resources:
           requests:
             memory: "512Mi"
@@ -106,9 +106,8 @@ spec:
         configMap:
           name: plextuner-test-catalog
       - name: plex-db
-        hostPath:
-          path: /var/lib/plex
-          type: Directory
+        persistentVolumeClaim:
+          claimName: plex-data
 ---
 apiVersion: v1
 kind: Service
@@ -131,7 +130,7 @@ metadata:
   name: plextuner-hdhr
   namespace: plex
 spec:
-  ingressClassName: nginx
+  ingressClassName: traefik
   rules:
   - host: plextuner-hdhr.plex.home
     http:

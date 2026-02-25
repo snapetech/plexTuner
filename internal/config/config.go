@@ -47,6 +47,18 @@ type Config struct {
 	SmoketestConcurrency int
 	SmoketestMaxChannels int           // 0 = all; else sample up to N random channels to cap runtime
 	SmoketestMaxDuration time.Duration // hard cap total smoketest runtime (e.g. 5m); 0 = 5m default
+	// Smoketest cache: persist probe results across runs to avoid re-probing fresh entries.
+	SmoketestCacheFile string        // path to JSON cache; "" = disabled
+	SmoketestCacheTTL  time.Duration // how long a probe result is considered fresh (default 4h)
+	// XMLTV cache: cache the external XMLTV feed to avoid hammering the upstream on every /guide.xml request.
+	XMLTVCacheTTL time.Duration // 0 = use default 10m
+	// HDHomeRun network mode: native HDHomeRun protocol (UDP+TCP) instead of HTTP-only.
+	HDHREnabled      bool
+	HDHRDeviceID     uint32
+	HDHRTunerCount   int
+	HDHRDiscoverPort int
+	HDHRControlPort  int
+	HDHRFriendlyName string
 }
 
 // Load reads config from environment. Call LoadEnvFile(".env") before Load() to use a .env file.
@@ -64,7 +76,7 @@ func Load() *Config {
 		LineupMaxChannels:    getEnvInt("PLEX_TUNER_LINEUP_MAX_CHANNELS", 480),
 		BaseURL:              os.Getenv("PLEX_TUNER_BASE_URL"),
 		DeviceID:             getEnv("PLEX_TUNER_DEVICE_ID", "plextuner01"),
-		FriendlyName:        os.Getenv("PLEX_TUNER_FRIENDLY_NAME"),
+		FriendlyName:         os.Getenv("PLEX_TUNER_FRIENDLY_NAME"),
 		StreamBufferBytes:    getEnvIntOrAuto("PLEX_TUNER_STREAM_BUFFER_BYTES", -1),
 		StreamTranscodeMode:  getEnvTranscodeMode("PLEX_TUNER_STREAM_TRANSCODE", "off"),
 		XMLTVURL:             os.Getenv("PLEX_TUNER_XMLTV_URL"),
@@ -77,6 +89,15 @@ func Load() *Config {
 		SmoketestConcurrency: getEnvInt("PLEX_TUNER_SMOKETEST_CONCURRENCY", 10),
 		SmoketestMaxChannels: getEnvInt("PLEX_TUNER_SMOKETEST_MAX_CHANNELS", 0),
 		SmoketestMaxDuration: getEnvDuration("PLEX_TUNER_SMOKETEST_MAX_DURATION", 5*time.Minute),
+		SmoketestCacheFile:   os.Getenv("PLEX_TUNER_SMOKETEST_CACHE_FILE"),
+		SmoketestCacheTTL:    getEnvDuration("PLEX_TUNER_SMOKETEST_CACHE_TTL", 4*time.Hour),
+		XMLTVCacheTTL:        getEnvDuration("PLEX_TUNER_XMLTV_CACHE_TTL", 10*time.Minute),
+		HDHREnabled:          getEnvBool("PLEX_TUNER_HDHR_NETWORK_MODE", false),
+		HDHRDeviceID:         getEnvUint32("PLEX_TUNER_HDHR_DEVICE_ID", 0x12345678),
+		HDHRTunerCount:       getEnvInt("PLEX_TUNER_HDHR_TUNER_COUNT", 2),
+		HDHRDiscoverPort:     getEnvInt("PLEX_TUNER_HDHR_DISCOVER_PORT", 65001),
+		HDHRControlPort:      getEnvInt("PLEX_TUNER_HDHR_CONTROL_PORT", 65001),
+		HDHRFriendlyName:     os.Getenv("PLEX_TUNER_HDHR_FRIENDLY_NAME"),
 	}
 	if c.TunerCount <= 0 {
 		c.TunerCount = 2
@@ -259,4 +280,17 @@ func getEnvDuration(key string, defaultVal time.Duration) time.Duration {
 		}
 	}
 	return defaultVal
+}
+
+func getEnvUint32(key string, defaultVal uint32) uint32 {
+	v := os.Getenv(key)
+	if v == "" {
+		return defaultVal
+	}
+	// base 0: auto-detect (handles "0x" hex prefix as well as decimal)
+	n, err := strconv.ParseUint(v, 0, 32)
+	if err != nil {
+		return defaultVal
+	}
+	return uint32(n)
 }

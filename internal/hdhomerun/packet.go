@@ -20,28 +20,28 @@ import (
 
 // Packet types
 const (
-	TypeDiscoverReq  = 0x0002
-	TypeDiscoverRpy  = 0x0003
-	TypeGetSetReq    = 0x0004
-	TypeGetSetRpy    = 0x0005
-	TypeUpgradeReq   = 0x0006
-	TypeUpgradeRpy   = 0x0007
+	TypeDiscoverReq = 0x0002
+	TypeDiscoverRpy = 0x0003
+	TypeGetSetReq   = 0x0004
+	TypeGetSetRpy   = 0x0005
+	TypeUpgradeReq  = 0x0006
+	TypeUpgradeRpy  = 0x0007
 )
 
 // Tags for TLV format
 const (
-	TagDeviceType      = 0x01
-	TagDeviceID        = 0x02
-	TagGetSetName      = 0x03
-	TagGetSetValue     = 0x04
-	TagErrorMessage    = 0x05
-	TagTunerCount      = 0x10
-	TagLineupURL       = 0x27
-	TagStorageURL      = 0x28
-	TagBaseURL         = 0x2A
-	TagDeviceAuthStr   = 0x2B
-	TagStorageID       = 0x2C
-	TagMultiType       = 0x2D
+	TagDeviceType    = 0x01
+	TagDeviceID      = 0x02
+	TagGetSetName    = 0x03
+	TagGetSetValue   = 0x04
+	TagErrorMessage  = 0x05
+	TagTunerCount    = 0x10
+	TagLineupURL     = 0x27
+	TagStorageURL    = 0x28
+	TagBaseURL       = 0x2A
+	TagDeviceAuthStr = 0x2B
+	TagStorageID     = 0x2C
+	TagMultiType     = 0x2D
 )
 
 // Device types
@@ -148,7 +148,7 @@ func UnmarshalTLVs(payload []byte) ([]TLV, error) {
 	pos := 0
 
 	for pos < len(payload) {
-		if pos + 2 > len(payload) {
+		if pos+2 > len(payload) {
 			return nil, errors.New("truncated TLV")
 		}
 

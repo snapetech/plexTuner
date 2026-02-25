@@ -27,12 +27,12 @@ type StreamHandler interface {
 
 // TunerState represents the state of a tuner
 type TunerState struct {
-	Index       int
-	Channel     string
-	LockKey     int
-	StreamURL   string
-	InUse       bool
-	Conn        net.Conn
+	Index     int
+	Channel   string
+	LockKey   int
+	StreamURL string
+	InUse     bool
+	Conn      net.Conn
 }
 
 // ControlServer handles TCP control connections
@@ -53,7 +53,7 @@ func NewControlServer(device *Device, tunerCount int, baseURL string, streamFunc
 			Channel:   "",
 			LockKey:   0,
 			StreamURL: fmt.Sprintf("hdhr://%d", i),
-			InUse:    false,
+			InUse:     false,
 		}
 	}
 
@@ -91,7 +91,7 @@ func (s *ControlServer) handleHTTPRequest(conn net.Conn, initialBuf []byte) {
 	reqData := initialBuf
 	buf := make([]byte, 8192)
 	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	
+
 	for {
 		n, err := conn.Read(buf)
 		if err != nil {
@@ -103,27 +103,27 @@ func (s *ControlServer) handleHTTPRequest(conn net.Conn, initialBuf []byte) {
 			break
 		}
 	}
-	
+
 	req := string(reqData)
-	
+
 	// Parse the request line
 	lines := strings.Split(req, "\r\n")
 	if len(lines) == 0 {
 		conn.Close()
 		return
 	}
-	
+
 	parts := strings.Split(lines[0], " ")
 	if len(parts) < 2 {
 		conn.Close()
 		return
 	}
-	
+
 	method := parts[0]
 	path := parts[1]
-	
+
 	log.Printf("hdhomerun: HTTP %s %s", method, path)
-	
+
 	// Handle different endpoints
 	var response string
 	switch path {
@@ -136,7 +136,7 @@ func (s *ControlServer) handleHTTPRequest(conn net.Conn, initialBuf []byte) {
 	default:
 		response = "404 Not Found"
 	}
-	
+
 	// Send HTTP response
 	httpResponse := "HTTP/1.1 200 OK\r\n"
 	if path == "/discover.json" || path == "/lineup.json" || path == "/lineup_status.json" {
@@ -148,7 +148,7 @@ func (s *ControlServer) handleHTTPRequest(conn net.Conn, initialBuf []byte) {
 	httpResponse += fmt.Sprintf("Content-Length: %d\r\n", len(response))
 	httpResponse += "\r\n"
 	httpResponse += response
-	
+
 	conn.Write([]byte(httpResponse))
 	conn.Close()
 }
@@ -366,10 +366,10 @@ func (s *ControlServer) handleTunerProperty(name, value string, conn net.Conn) *
 			// SET stream - start streaming!
 			// value is the stream URL or program number
 			log.Printf("hdhomerun: tuner %d starting stream: %s", tunerIdx, value)
-			
+
 			// Start streaming in background
 			go s.startStream(tunerIdx, value, conn)
-			
+
 			// Return success
 			return NewGetSetRpy(name, "ok", "")
 		}

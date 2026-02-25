@@ -286,6 +286,87 @@ func TestStreamTranscodeMode(t *testing.T) {
 	}
 }
 
+func TestHDHRConfig(t *testing.T) {
+	os.Clearenv()
+	c := Load()
+	// Defaults
+	if c.HDHREnabled {
+		t.Error("HDHREnabled should default false")
+	}
+	if c.HDHRDeviceID != 0x12345678 {
+		t.Errorf("HDHRDeviceID default: got 0x%x", c.HDHRDeviceID)
+	}
+	if c.HDHRTunerCount != 2 {
+		t.Errorf("HDHRTunerCount default: got %d", c.HDHRTunerCount)
+	}
+	if c.HDHRDiscoverPort != 65001 {
+		t.Errorf("HDHRDiscoverPort default: got %d", c.HDHRDiscoverPort)
+	}
+	if c.HDHRControlPort != 65001 {
+		t.Errorf("HDHRControlPort default: got %d", c.HDHRControlPort)
+	}
+
+	// Explicit values
+	os.Setenv("PLEX_TUNER_HDHR_NETWORK_MODE", "true")
+	os.Setenv("PLEX_TUNER_HDHR_DEVICE_ID", "0xDEADBEEF")
+	os.Setenv("PLEX_TUNER_HDHR_TUNER_COUNT", "4")
+	os.Setenv("PLEX_TUNER_HDHR_DISCOVER_PORT", "65002")
+	os.Setenv("PLEX_TUNER_HDHR_CONTROL_PORT", "65003")
+	os.Setenv("PLEX_TUNER_HDHR_FRIENDLY_NAME", "MyTuner")
+	c = Load()
+	if !c.HDHREnabled {
+		t.Error("HDHREnabled should be true")
+	}
+	if c.HDHRDeviceID != 0xDEADBEEF {
+		t.Errorf("HDHRDeviceID hex: got 0x%x, want 0xDEADBEEF", c.HDHRDeviceID)
+	}
+	if c.HDHRTunerCount != 4 {
+		t.Errorf("HDHRTunerCount: got %d", c.HDHRTunerCount)
+	}
+	if c.HDHRDiscoverPort != 65002 {
+		t.Errorf("HDHRDiscoverPort: got %d", c.HDHRDiscoverPort)
+	}
+	if c.HDHRControlPort != 65003 {
+		t.Errorf("HDHRControlPort: got %d", c.HDHRControlPort)
+	}
+	if c.HDHRFriendlyName != "MyTuner" {
+		t.Errorf("HDHRFriendlyName: got %q", c.HDHRFriendlyName)
+	}
+}
+
+func TestXMLTVCacheTTL(t *testing.T) {
+	os.Clearenv()
+	c := Load()
+	if c.XMLTVCacheTTL != 10*time.Minute {
+		t.Errorf("XMLTVCacheTTL default: got %v", c.XMLTVCacheTTL)
+	}
+	os.Setenv("PLEX_TUNER_XMLTV_CACHE_TTL", "5m")
+	c = Load()
+	if c.XMLTVCacheTTL != 5*time.Minute {
+		t.Errorf("XMLTVCacheTTL: got %v", c.XMLTVCacheTTL)
+	}
+}
+
+func TestSmoketestCacheConfig(t *testing.T) {
+	os.Clearenv()
+	c := Load()
+	if c.SmoketestCacheFile != "" {
+		t.Errorf("SmoketestCacheFile default: got %q", c.SmoketestCacheFile)
+	}
+	if c.SmoketestCacheTTL != 4*time.Hour {
+		t.Errorf("SmoketestCacheTTL default: got %v", c.SmoketestCacheTTL)
+	}
+	os.Setenv("PLEX_TUNER_SMOKETEST_CACHE_FILE", "/tmp/cache.json")
+	os.Setenv("PLEX_TUNER_SMOKETEST_CACHE_TTL", "2h")
+	c = Load()
+	if c.SmoketestCacheFile != "/tmp/cache.json" {
+		t.Errorf("SmoketestCacheFile: got %q", c.SmoketestCacheFile)
+	}
+	if c.SmoketestCacheTTL != 2*time.Hour {
+		t.Errorf("SmoketestCacheTTL: got %v", c.SmoketestCacheTTL)
+	}
+}
+
 func TestStreamBufferBytes_auto(t *testing.T) {
 	os.Clearenv()
 	c := Load()

@@ -2,12 +2,14 @@ package tuner
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/plextuner/plex-tuner/internal/catalog"
@@ -39,7 +41,13 @@ type Server struct {
 	ProviderPass        string
 	XMLTVSourceURL      string
 	XMLTVTimeout        time.Duration
-	EpgPruneUnlinked    bool // when true, guide.xml and /live.m3u only include channels with tvg-id
+	XMLTVCacheTTL       time.Duration // 0 = use default 10m
+	EpgPruneUnlinked    bool          // when true, guide.xml and /live.m3u only include channels with tvg-id
+
+	// health state updated by UpdateChannels; read by /healthz.
+	healthMu       sync.RWMutex
+	healthChannels int
+	healthRefresh  time.Time
 
 	hdhr     *HDHR
 	gateway  *Gateway
@@ -64,6 +72,10 @@ func (s *Server) UpdateChannels(live []catalog.LiveChannel) {
 		}
 	}
 	s.Channels = live
+	s.healthMu.Lock()
+	s.healthChannels = len(live)
+	s.healthRefresh = time.Now()
+	s.healthMu.Unlock()
 	if s.hdhr != nil {
 		s.hdhr.Channels = live
 	}
@@ -179,6 +191,7 @@ func (s *Server) Run(ctx context.Context) error {
 		EpgPruneUnlinked: s.EpgPruneUnlinked,
 		SourceURL:        s.XMLTVSourceURL,
 		SourceTimeout:    s.XMLTVTimeout,
+		CacheTTL:         s.XMLTVCacheTTL,
 	}
 	s.xmltv = xmltv
 	m3uServe := &M3UServe{BaseURL: s.BaseURL, Channels: s.Channels, EpgPruneUnlinked: s.EpgPruneUnlinked}
@@ -199,6 +212,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/guide.xml", xmltv)
 	mux.Handle("/live.m3u", m3uServe)
 	mux.Handle("/stream/", gateway)
+	mux.Handle("/healthz", s.serveHealth())
 
 	srv := &http.Server{Addr: addr, Handler: logRequests(mux)}
 
@@ -269,6 +283,30 @@ func logRequests(next http.Handler) http.Handler {
 			"http: %s %s status=%d bytes=%d dur=%s ua=%q remote=%s",
 			r.Method, r.URL.Path, status, lw.bytes, time.Since(start).Round(time.Millisecond), r.UserAgent(), r.RemoteAddr,
 		)
+	})
+}
+
+// serveHealth returns an http.Handler for GET /healthz.
+// Returns 200 {"status":"ok",...} once channels have been loaded, 503 {"status":"loading"} before.
+func (s *Server) serveHealth() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.healthMu.RLock()
+		count := s.healthChannels
+		lastRefresh := s.healthRefresh
+		s.healthMu.RUnlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		if count == 0 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"status":"loading"}`))
+			return
+		}
+		body, _ := json.Marshal(map[string]interface{}{
+			"status":       "ok",
+			"channels":     count,
+			"last_refresh": lastRefresh.Format(time.RFC3339),
+		})
+		_, _ = w.Write(body)
 	})
 }
 
