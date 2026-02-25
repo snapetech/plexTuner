@@ -150,3 +150,80 @@ It exists to encourage quality gains without derailing the current task.
   Suggested fix: Add a temporary/debug-only TS introspection mode in PlexTuner (or a helper script) that samples the first N packets/seconds from the emitted MPEG-TS and logs parsed PCR/PTS/DTS continuity + discontinuity indicators for one request ID.
   Risk/Scope: med | fits current scope: no (new debug tooling/format)
   User decision needed?: no
+
+- Date: 2026-02-25
+  Category: performance
+  Title: XMLTV external fetch blocks every concurrent /guide.xml request for up to 45s
+  Context: internal/tuner/xmltv.go serveExternalXMLTV — synchronous HTTP fetch on every request, no caching.
+  Why it matters: Plex metadata refresh and DVR guide sync send concurrent /guide.xml requests. Each one blocks for up to 45s (SourceTimeout default). Under normal Plex usage this causes request pile-ups, server memory growth, and downstream API timeouts in Plex DVR channel enumeration.
+  Evidence: xmltv.go:60-88 — no cache; new HTTP request created and awaited per handler call. Live measurement: ~45.15s with external XMLTV vs ~0.19s placeholder. Confirmed via existing opportunity entry 2026-02-24.
+  Suggested fix: Add an in-memory XMLTV cache with a configurable TTL (e.g. 10m default via PLEX_TUNER_XMLTV_CACHE_TTL). Background goroutine refreshes asynchronously; requests return the last good cached bytes immediately. On first startup: block until first fetch completes or falls back to placeholder. Serialize with a sync.RWMutex — reads never block once cache is warm.
+  Implementation notes: (1) Add `cachedXML []byte`, `cacheExpiry time.Time`, `mu sync.RWMutex` to XMLTV struct. (2) `ServeHTTP` acquires read lock; if cache hit, write cached bytes and return. (3) Cache miss or expiry: acquire write lock, re-check (double-checked locking), fetch, store, release. (4) New PLEX_TUNER_XMLTV_CACHE_TTL env (default 10m). (5) Unit test: inject two calls; assert only one fetch. No behavior change for placeholder path (remains per-request).
+  Risk/Scope: low-med (adds concurrency; mutex must be held correctly) | fits current scope: no (separate PR)
+  User decision needed?: yes (TTL default; stale-serve-on-error vs fallback-to-placeholder preference).
+
+- Date: 2026-02-25
+  Category: maintainability
+  Title: hdhomerun package duplicates env-helper functions already in internal/config
+  Context: internal/hdhomerun/server.go lines 129-166 define getEnvBool, getEnvInt, getEnvUint32 that are near-identical to helpers in internal/config/config.go.
+  Why it matters: Duplicate logic means future env-parsing fixes (e.g. trimming whitespace, handling "yes"/"no") must be applied in two places. Already diverged: hdhomerun getEnvBool handles "on"/"off" while config does not; hdhomerun uses fmt.Sscanf while config uses strconv.Atoi.
+  Evidence: internal/hdhomerun/server.go:129-166 vs internal/config/config.go:208-268.
+  Suggested fix: Either (a) export config helpers to a shared internal/envutil package and import from both, or (b) load all HDHR env vars in internal/config/config.go and pass them via hdhomerun.Config already constructed in main.go (simpler: no new package). Option (b) is lower risk.
+  Implementation notes: Option B — add HDHREnabled, HDHRDeviceID, HDHRTunerCount, HDHRDiscoverPort, HDHRControlPort fields to config.Config; populate in config.Load(); delete hdhomerun/server.go env helpers; hdhomerun.LoadConfig becomes a no-op or is deleted; main.go passes config fields. No behavior change. Add one config_test for new HDHR fields.
+  Risk/Scope: low (pure refactor, no behavior change) | fits current scope: no (refactor PR)
+  User decision needed?: no
+
+- Date: 2026-02-25
+  Category: reliability
+  Title: Catalog disk save failure leaves in-memory state ahead of persisted state
+  Context: cmd/plex-tuner/main.go run command catalog refresh goroutine — calls server.UpdateChannels then c.Save.
+  Why it matters: If c.Save fails (disk full, permissions, NFS hang), the server is serving the new channel list but the catalog on disk is stale. On next restart the process loads the old channels and re-indexes from scratch, causing a silent regression in channel availability between restart and next successful index.
+  Evidence: main.go run refresh loop: UpdateChannels called before Save completes. Save error only logs and continues; no rollback of in-memory state.
+  Suggested fix: Invert the order — Save to a temp file first (atomic rename), then call UpdateChannels only on success. Alternatively log a prominent warning that disk and memory are out of sync so operators know why post-restart state differs. The atomic-rename approach is the cleanest and has no user-visible behavior change when disk writes succeed (common case).
+  Implementation notes: (1) catalog.Save should write to a .tmp file then os.Rename atomically. (2) In the refresh goroutine: call c.Save first; only if err == nil call server.UpdateChannels. (3) Add test: inject failing Save, assert UpdateChannels not called. Low blast radius — only changes success/failure ordering of two independent operations.
+  Risk/Scope: low | fits current scope: no (correctness fix, separate PR)
+  User decision needed?: no
+
+- Date: 2026-02-25
+  Category: operability
+  Title: SIGHUP-triggered catalog reload without process restart
+  Context: cmd/plex-tuner/main.go run command — catalog only refreshes on the built-in timer or full restart.
+  Why it matters: Operators running in Docker/k8s often want to trigger an immediate lineup refresh (e.g. after provider maintenance) without a full pod restart, which resets streams and causes Plex to re-scan tuners. A SIGHUP reload is idiomatic Unix and expected by ops tooling.
+  Evidence: main.go run command: refresh only in a background goroutine on a fixed interval. No signal handler.
+  Suggested fix: Add a signal.NotifyContext or explicit signal channel for SIGHUP in the run command. On receipt, trigger a catalog refresh immediately (same logic as the periodic refresh goroutine). Log "SIGHUP received — reloading catalog". In k8s: kubectl exec kill -HUP <pid> or use a lifecycle hook.
+  Implementation notes: (1) Add `sigHUP := make(chan os.Signal, 1); signal.Notify(sigHUP, syscall.SIGHUP)` in run. (2) Select on ticker and sigHUP in refresh loop. (3) No lock changes needed — same code path as periodic refresh. (4) Add a test that sends SIGHUP and asserts catalog was reloaded (or mock the fetch). Low risk: signal handling is additive and doesn't change normal operation.
+  Risk/Scope: low | fits current scope: no (ops feature)
+  User decision needed?: no
+
+- Date: 2026-02-25
+  Category: operability
+  Title: Add dedicated /healthz or /ready endpoint for Kubernetes probes
+  Context: k8s/plextuner-hdhr-test.yaml readinessProbe on /discover.json. internal/tuner/server.go — no /healthz route.
+  Why it matters: /discover.json is an HDHomeRun protocol endpoint; its content and latency depend on catalog load state, not just server health. Using it as a readiness probe couples k8s readiness to HDHomeRun emulation correctness. A dedicated /healthz endpoint can return 200 immediately (liveness) or 200 once the catalog is loaded (readiness) with a JSON body including catalog size and last-refresh timestamp for ops visibility.
+  Evidence: k8s/plextuner-hdhr-test.yaml readinessProbe.httpGet.path: /discover.json (initialDelaySeconds 90). No /healthz in server.go.
+  Suggested fix: Add /healthz to the HTTP mux in Server.Run. Returns 200 + JSON `{"status":"ok","channels":<N>,"last_refresh":"<RFC3339>"}`. For readiness: 503 until first catalog load completes (channels > 0). Liveness: always 200 while HTTP server is up. Update k8s manifest readinessProbe to /healthz.
+  Implementation notes: (1) Add lastRefresh time.Time and channelCount int64 (atomic) fields to Server, updated in UpdateChannels. (2) /healthz handler: if channels == 0, return 503 `{"status":"loading"}`; else 200. (3) Update k8s manifest. (4) Add test: new server returns 503; after UpdateChannels with channels, returns 200. No behavior change to existing endpoints.
+  Risk/Scope: low | fits current scope: no (ops/k8s feature)
+  User decision needed?: no
+
+- Date: 2026-02-25
+  Category: operability
+  Title: Multi-arch (ARM64) Docker images for k8s clusters with ARM nodes
+  Context: Dockerfile.static, Dockerfile.static.distroless, Dockerfile.static.scratch — all use standard Go cross-compile but don't declare platform targets.
+  Why it matters: Home k8s clusters (Raspberry Pi, Apple Silicon VMs, cloud Graviton) often have ARM64 nodes. Without a multi-arch build, the image silently runs under QEMU emulation or fails to schedule. Static Go binaries cross-compile trivially with GOARCH=arm64 CGO_ENABLED=0.
+  Evidence: Dockerfile.static uses `RUN go build` with no GOARCH override. k8s/plextuner-hdhr-test.yaml has no nodeSelector; would fail on ARM node without multi-arch image.
+  Suggested fix: Use Docker Buildx with `--platform linux/amd64,linux/arm64` in CI. Add `ARG TARGETARCH` to Dockerfile.static; pass `GOARCH=$TARGETARCH` to `go build`. CI: `docker buildx build --platform linux/amd64,linux/arm64 --push`. No code changes to Go source needed; CGO_ENABLED=0 already required.
+  Implementation notes: (1) Edit Dockerfile.static build stage: `ARG TARGETARCH` + `ENV GOARCH=$TARGETARCH CGO_ENABLED=0`. (2) Add `.github/workflows/docker.yml` or extend existing CI with `docker buildx` step. (3) No Go source changes. (4) Test: `docker run --platform linux/arm64 <image> /plex-tuner probe` should print help without QEMU error. Risk: none to existing amd64 behavior.
+  Risk/Scope: low | fits current scope: no (CI/build feature)
+  User decision needed?: no
+
+- Date: 2026-02-25
+  Category: reliability
+  Title: Smoketest results not cached to disk — all channels re-probed on every restart/refresh
+  Context: internal/indexer smoketest (PLEX_TUNER_SMOKETEST_ENABLED). Catalog save/load cycle in cmd/plex-tuner/main.go.
+  Why it matters: With 500+ channels and SMOKETEST_TIMEOUT=8s at CONCURRENCY=10, a full smoketest takes ~400s (6.5 min) for a single refresh. On restart or -refresh this full cost is paid again. Channels that passed last time are very likely to pass again; re-probing all of them wastes provider bandwidth and slows startup.
+  Evidence: filterLiveBySmoketest runs a full probe on every call (no state file). With 48 threads and CDN rate limits, false-fail rate was 99.6% (observed 2026-02-25 in 13-DVR pipeline — led to disabling smoketest entirely).
+  Suggested fix: Persist smoketest pass/fail results to a sidecar file (e.g. catalog.smoketest.json, keyed by channel StreamURL hash). On next run: skip re-probe for channels whose last-passed timestamp is within a configurable staleness window (e.g. PLEX_TUNER_SMOKETEST_CACHE_TTL=4h default). Re-probe only new/changed channels and those whose cached result is stale or was a fail.
+  Implementation notes: (1) New internal/indexer.SmoketestCache struct: `map[urlHash]{pass bool, ts time.Time}`. (2) Load from disk before probing; save after. (3) New PLEX_TUNER_SMOKETEST_CACHE_TTL env (default 4h). (4) filterLiveBySmoketest skips channels with valid cache hit. (5) Unit test: inject cache hits, assert those channels skip probe. No behavior change when cache file absent (falls back to full probe). Only risk: stale cache passes a now-dead URL — mitigated by TTL and full re-probe on miss.
+  Risk/Scope: med | fits current scope: no (separate feature)
+  User decision needed?: yes (cache TTL default and whether to re-probe past-failures immediately or also cache them with shorter TTL).
