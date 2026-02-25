@@ -183,12 +183,16 @@ func main() {
 	catalogPathServe := serveCmd.String("catalog", "", "Catalog JSON path for live channels (default: PLEX_TUNER_CATALOG)")
 	serveAddr := serveCmd.String("addr", ":5004", "Listen address")
 	serveBaseURL := serveCmd.String("base-url", "http://localhost:5004", "Base URL for discover/lineup (set to your host for Plex)")
+	serveDeviceID := serveCmd.String("device-id", "", "HDHR Device ID (default: PLEX_TUNER_DEVICE_ID)")
+	serveFriendlyName := serveCmd.String("friendly-name", "", "HDHR Friendly Name (default: PLEX_TUNER_FRIENDLY_NAME)")
 	serveMode := serveCmd.String("mode", "", "easy = lineup capped at 479 for Plex wizard; full = use PLEX_TUNER_LINEUP_MAX_CHANNELS or no cap")
 
 	runCmd := flag.NewFlagSet("run", flag.ExitOnError)
 	runCatalog := runCmd.String("catalog", "", "Catalog path (default: PLEX_TUNER_CATALOG)")
 	runAddr := runCmd.String("addr", ":5004", "Listen address")
 	runBaseURL := runCmd.String("base-url", "http://localhost:5004", "Base URL for Plex (use your host, e.g. http://192.168.1.10:5004)")
+	runDeviceID := runCmd.String("device-id", "", "HDHR Device ID (default: PLEX_TUNER_DEVICE_ID)")
+	runFriendlyName := runCmd.String("friendly-name", "", "HDHR Friendly Name (default: PLEX_TUNER_FRIENDLY_NAME)")
 	runRefresh := runCmd.Duration("refresh", 0, "Refresh catalog interval (e.g. 6h). 0 = only at startup")
 	runSkipIndex := runCmd.Bool("skip-index", false, "Skip catalog refresh at startup (use existing catalog)")
 	runSkipHealth := runCmd.Bool("skip-health", false, "Skip provider health check at startup")
@@ -280,13 +284,21 @@ func main() {
 		if *serveMode == "easy" {
 			serveLineupCap = tuner.PlexDVRWizardSafeMax
 		}
+		deviceID := cfg.DeviceID
+		if *serveDeviceID != "" {
+			deviceID = *serveDeviceID
+		}
+		friendlyName := cfg.FriendlyName
+		if *serveFriendlyName != "" {
+			friendlyName = *serveFriendlyName
+		}
 		srv := &tuner.Server{
 			Addr:                *serveAddr,
 			BaseURL:             *serveBaseURL,
 			TunerCount:          cfg.TunerCount,
 			LineupMaxChannels:   serveLineupCap,
-			DeviceID:            cfg.DeviceID,
-			FriendlyName:        cfg.FriendlyName,
+			DeviceID:            deviceID,
+			FriendlyName:        friendlyName,
 			StreamBufferBytes:   cfg.StreamBufferBytes,
 			StreamTranscodeMode: cfg.StreamTranscodeMode,
 			Channels:            nil,
@@ -422,13 +434,21 @@ func main() {
 		default:
 			log.Printf("Unknown -mode=%q; use easy or full", *runMode)
 		}
+		deviceID := cfg.DeviceID
+		if *runDeviceID != "" {
+			deviceID = *runDeviceID
+		}
+		friendlyName := cfg.FriendlyName
+		if *runFriendlyName != "" {
+			friendlyName = *runFriendlyName
+		}
 		srv := &tuner.Server{
 			Addr:                *runAddr,
 			BaseURL:             baseURL,
 			TunerCount:          cfg.TunerCount,
 			LineupMaxChannels:   lineupCap,
-			DeviceID:            cfg.DeviceID,
-			FriendlyName:        cfg.FriendlyName,
+			DeviceID:            deviceID,
+			FriendlyName:        friendlyName,
 			StreamBufferBytes:   cfg.StreamBufferBytes,
 			StreamTranscodeMode: cfg.StreamTranscodeMode,
 			Channels:            nil, // set by UpdateChannels
@@ -489,34 +509,80 @@ func main() {
 			}()
 		}
 
+		log.Printf("[PLEX-REG] START: runRegisterPlex=%q runMode=%q", *runRegisterPlex, *runMode)
 		// Optional: write tuner/XMLTV URLs and full lineup into Plex DB (stop Plex first, backup DB). Zero wizard; no 480 cap. Only in full mode.
 		if *runRegisterPlex != "" && *runMode != "easy" {
-			if err := plex.RegisterTuner(*runRegisterPlex, baseURL); err != nil {
-				log.Printf("Register Plex failed: %v", err)
-			} else {
-				log.Printf("Plex DB updated at %s (DVR + XMLTV -> %s)", *runRegisterPlex, baseURL)
-			}
-			lineupChannels := make([]plex.LineupChannel, len(live))
-			for i := range live {
-				ch := &live[i]
-				channelID := ch.ChannelID
-				if channelID == "" {
-					channelID = strconv.Itoa(i)
+			plexHost := os.Getenv("PLEX_HOST")
+			plexToken := os.Getenv("PLEX_TOKEN")
+
+			log.Printf("[PLEX-REG] Checking API registration: runRegisterPlex=%q mode=%q PLEX_HOST=%q PLEX_TOKEN present=%v",
+				*runRegisterPlex, *runMode, plexHost, plexToken != "")
+
+			apiRegistrationDone := false
+			if plexHost != "" && plexToken != "" {
+				log.Printf("[PLEX-REG] Attempting Threadfin-style API registration...")
+				channelInfo := make([]plex.ChannelInfo, len(live))
+				for i := range live {
+					ch := &live[i]
+					channelInfo[i] = plex.ChannelInfo{
+						GuideNumber: ch.GuideNumber,
+						GuideName:   ch.GuideName,
+					}
 				}
-				lineupChannels[i] = plex.LineupChannel{
-					GuideNumber: ch.GuideNumber,
-					GuideName:   ch.GuideName,
-					URL:         baseURL + "/stream/" + channelID,
-				}
-			}
-			if err := plex.SyncLineupToPlex(*runRegisterPlex, lineupChannels); err != nil {
-				if err == plex.ErrLineupSchemaUnknown {
-					log.Printf("Lineup sync skipped: %v (full lineup still served over HTTP; see docs/adr/0001-zero-touch-plex-lineup.md)", err)
+				if err := plex.FullRegisterPlex(baseURL, plexHost, plexToken, cfg.FriendlyName, cfg.DeviceID, channelInfo); err != nil {
+					log.Printf("Plex API registration failed: %v (falling back to DB registration)", err)
 				} else {
-					log.Printf("Lineup sync failed: %v", err)
+					log.Printf("Plex registered via API (Threadfin-style)")
+					apiRegistrationDone = true
 				}
-			} else {
-				log.Printf("Lineup synced to Plex: %d channels (no wizard needed)", len(lineupChannels))
+			}
+
+			if !apiRegistrationDone {
+				if err := plex.RegisterTuner(*runRegisterPlex, baseURL); err != nil {
+					log.Printf("Register Plex failed: %v", err)
+				} else {
+					log.Printf("Plex DB updated at %s (DVR + XMLTV -> %s)", *runRegisterPlex, baseURL)
+				}
+				lineupChannels := make([]plex.LineupChannel, len(live))
+				for i := range live {
+					ch := &live[i]
+					channelID := ch.ChannelID
+					if channelID == "" {
+						channelID = strconv.Itoa(i)
+					}
+					lineupChannels[i] = plex.LineupChannel{
+						GuideNumber: ch.GuideNumber,
+						GuideName:   ch.GuideName,
+						URL:         baseURL + "/stream/" + channelID,
+					}
+				}
+				if err := plex.SyncLineupToPlex(*runRegisterPlex, lineupChannels); err != nil {
+					if err == plex.ErrLineupSchemaUnknown {
+						log.Printf("Lineup sync skipped: %v (full lineup still served over HTTP; see docs/adr/0001-zero-touch-plex-lineup.md)", err)
+					} else {
+						log.Printf("Lineup sync failed: %v", err)
+					}
+				} else {
+					log.Printf("Lineup synced to Plex: %d channels (no wizard needed)", len(lineupChannels))
+				}
+
+				dvrUUID := os.Getenv("PLEX_TUNER_DVR_UUID")
+				if dvrUUID == "" {
+					dvrUUID = "plextuner-" + cfg.DeviceID
+				}
+				epgChannels := make([]plex.EPGChannel, len(live))
+				for i := range live {
+					ch := &live[i]
+					epgChannels[i] = plex.EPGChannel{
+						GuideNumber: ch.GuideNumber,
+						GuideName:   ch.GuideName,
+					}
+				}
+				if err := plex.SyncEPGToPlex(*runRegisterPlex, dvrUUID, epgChannels); err != nil {
+					log.Printf("EPG sync warning: %v (channels may not appear in guide without wizard)", err)
+				} else {
+					log.Printf("EPG synced to Plex: %d channels", len(epgChannels))
+				}
 			}
 			if *runRegisterOnly {
 				log.Printf("Register-only mode: Plex DB updated, exiting without serving.")

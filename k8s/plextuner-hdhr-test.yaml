@@ -5,11 +5,16 @@ metadata:
   namespace: plex
 # deploy-hdhr-one-shot.sh injects these from .env. Set manually or use one-shot.
 data:
-  PLEX_TUNER_PROVIDER_USER: "REPLACE"
-  PLEX_TUNER_PROVIDER_PASS: "REPLACE"
-  PLEX_TUNER_PROVIDER_URL: "https://REPLACE"
-  PLEX_TUNER_M3U_URL: "http://REPLACE/get.php?username=REPLACE&password=REPLACE&type=m3u_plus&output=ts"
+  PLEX_TUNER_PROVIDER_USER: "REDACTED_PROVIDER_USER"
+  PLEX_TUNER_PROVIDER_PASS: "REDACTED_PROVIDER_PASS"
+  PLEX_TUNER_PROVIDER_URL: "http://cf.supergaminghub.xyz"
+  PLEX_TUNER_M3U_URL: "http://pod17546.cdngold.me/get.php?username=REDACTED_PROVIDER_USER&password=REDACTED_PROVIDER_PASS&type=m3u_plus&output=ts"
   PLEX_TUNER_LIVE_ONLY: "true"
+  PLEX_TUNER_LIVE_EPG_ONLY: "true"
+  PLEX_TUNER_DEVICE_ID: "hdhrbcast"
+  PLEX_TUNER_FRIENDLY_NAME: "plexTuner-bcastUS"
+  PLEX_HOST: "127.0.0.1:32400"
+  PLEX_TOKEN: "L_wVp3Ctsj267zxgu6LJ"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -62,6 +67,18 @@ spec:
       # Optional: pin to a node where Plex data lives (for -register-plex hostPath). Uncomment and set your node name.
       # nodeSelector:
       #   kubernetes.io/hostname: your-plex-node
+      dnsPolicy: ClusterFirstWithHostNet
+      dnsConfig:
+        nameservers:
+          - 8.8.8.8
+          - 10.43.0.10
+        searches:
+          - plex.svc.cluster.local
+          - svc.cluster.local
+          - cluster.local
+        options:
+          - name: ndots
+            value: "2"
       containers:
       - name: plextuner
         image: plex-tuner:hdhr-test
@@ -73,8 +90,7 @@ spec:
         - configMapRef:
             name: plextuner-test-env
         - secretRef:
-            name: plextuner-iptv
-            optional: true
+            name: plex-iptv-creds
         volumeMounts:
         - name: catalog
           mountPath: /data
@@ -89,7 +105,7 @@ spec:
         - -mode=full
         readinessProbe:
           httpGet:
-            path: /healthz
+            path: /discover.json
             port: 5004
           initialDelaySeconds: 180
           periodSeconds: 10
@@ -103,8 +119,8 @@ spec:
             cpu: "1000m"
       volumes:
       - name: catalog
-        configMap:
-          name: plextuner-test-catalog
+        emptyDir:
+          sizeLimit: 500Mi
       - name: plex-db
         persistentVolumeClaim:
           claimName: plex-data

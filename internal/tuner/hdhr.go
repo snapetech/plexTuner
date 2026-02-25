@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/plextuner/plex-tuner/internal/catalog"
@@ -42,17 +41,23 @@ func (h *HDHR) serveDiscover(w http.ResponseWriter) {
 	if base == "" {
 		base = "http://localhost:5004"
 	}
-	// FriendlyName: use struct field first, then env var for backward compat
+	// FriendlyName: use struct field first, then env var, then default
 	friendly := h.FriendlyName
 	if friendly == "" {
 		friendly = os.Getenv("PLEX_TUNER_FRIENDLY_NAME")
 	}
 	if friendly == "" {
+		friendly = os.Getenv("HOSTNAME") // fallback to pod hostname
+	}
+	if friendly == "" {
 		friendly = "Plex Tuner"
 	}
-	deviceID := strings.TrimSpace(os.Getenv("PLEX_TUNER_DEVICE_ID"))
+	deviceID := h.DeviceID
 	if deviceID == "" {
-		deviceID = h.DeviceID
+		deviceID = os.Getenv("PLEX_TUNER_DEVICE_ID")
+	}
+	if deviceID == "" {
+		deviceID = os.Getenv("HOSTNAME")
 	}
 	if deviceID == "" {
 		deviceID = "plextuner01"

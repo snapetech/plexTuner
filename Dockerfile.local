@@ -1,0 +1,5 @@
+FROM busybox:latest
+COPY plex-tuner /usr/local/bin/plex-tuner
+EXPOSE 5004
+ENTRYPOINT ["plex-tuner"]
+CMD ["run", "-addr", ":5004"]
