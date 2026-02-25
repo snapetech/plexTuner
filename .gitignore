@@ -133,3 +133,5 @@ catalog.json
 # Agent CLI local config (per-user, do not commit)
 .claude/settings.local.json
 opencode.json
+.claude/
+.cursor/
