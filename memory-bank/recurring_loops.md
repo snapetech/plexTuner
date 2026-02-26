@@ -175,6 +175,30 @@
 **Where it's documented**
 - `memory-bank/current_task.md` (2026-02-25 pure-app 13-DVR pivot + validation)
 
+### Loop: Trying to fix Plex Live TV source-tab labels by patching DVR/provider DB rows
+
+**Symptom**
+- Live TV source/guide tabs still show the Plex server name (for example `plexKube`) for every provider even after per-DVR device IDs, guide URIs, and provider metadata appear correct.
+- Agents keep patching `media_provider_resources` (`type 1/3/4`) rows or tuner `FriendlyName`/HDHR metadata hoping a missing DB field will change the labels.
+
+**Why it's tricky**
+- Plex has multiple metadata layers, and some clients derive labels from `/media/providers` while others (and current Plex Web in the inspected version) override with client-side logic using the server friendly name for owned multi-LiveTV sources.
+- `media_provider_resources` does not contain an obvious per-provider title/friendly-name field for the Live TV provider rows (`type=3`); patching URI/extra_data fixes guide/device drift but not client tab labels.
+- Server-side `/media/providers` rewrites can be fully correct and still have no visible effect if the client hardcodes `serverFriendlyName`.
+
+**What works**
+- First prove the data path before changing DB rows:
+  1. Inspect `/media/providers` and provider-scoped `/tv.plex.providers.epg.xmltv:<id>*` responses
+  2. Confirm whether labels are distinct there
+  3. Only then decide if the remaining behavior is client-side
+- Use a reversible proxy rewrite for `/media/providers` (and optionally provider-scoped endpoints) instead of DB hacks when testing server-side label changes.
+- If labels still collapse after server responses are distinct, stop patching DVR/provider DB rows: the remaining issue is client UI logic (or requires a client-specific patch).
+
+**Where it's documented**
+- `memory-bank/current_task.md` (2026-02-26 label proxy rollout + proof)
+- `docs/runbooks/plex-livetv-tab-label-rewrite-proxy.md`
+- `docs/reference/plex-dvr-lifecycle-and-api.md`
+
 ### Loop: ffmpeg HLS startup "looks broken" but the real cause is generic reconnect flags fighting live `.m3u8` semantics
 
 **Symptom**

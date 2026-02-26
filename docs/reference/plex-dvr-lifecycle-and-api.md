@@ -32,6 +32,11 @@ Key consequences:
 - UI labels can be driven by Plex provider metadata (for example Plex server name) instead of tuner `FriendlyName`.
 - Guide weirdness can be a provider-row mismatch even when tuner feeds are healthy.
 
+Per-tab label caveat:
+- Some Plex clients (and the Plex Web version inspected during testing) can collapse Live TV source/tab labels to the Plex server friendly name even when providers/DVRs are distinct.
+- A server-side `/media/providers` rewrite proxy can improve labels for clients that honor provider metadata.
+- Plex Web may still require a client-bundle patch on versions whose source-label code hardcodes the server friendly name for owned multi-LiveTV sources.
+
 ## Supported workflows in this repo
 
 ### 1. HDHR wizard path (UI or wizard-equivalent API)
@@ -219,6 +224,8 @@ Validate all of:
   - stale Plex live-session cleanup helper (external script)
 - `scripts/plex-hidden-grab-recover.sh`
   - operational recovery for hidden Plex grabs
+- `scripts/plex-media-providers-label-proxy.py`
+  - reverse proxy that rewrites `/media/providers` Live TV labels per provider/DVR
 - `scripts/plex-generate-stream-overrides.py`
   - analyze channels for profile/transcode override candidates
 - `scripts/plex-supervisor-cutover-map.py`
