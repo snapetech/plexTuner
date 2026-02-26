@@ -269,6 +269,8 @@ func main() {
 	vodPlexToken := vodRegisterCmd.String("token", "", "Plex token (default: PLEX_TUNER_PMS_TOKEN or PLEX_TOKEN)")
 	vodShowsName := vodRegisterCmd.String("shows-name", "VOD", "Plex TV library name")
 	vodMoviesName := vodRegisterCmd.String("movies-name", "VOD-Movies", "Plex Movie library name")
+	vodShowsOnly := vodRegisterCmd.Bool("shows-only", false, "Register only the TV library for this mount (skip Movies)")
+	vodMoviesOnly := vodRegisterCmd.Bool("movies-only", false, "Register only the Movie library for this mount (skip TV)")
 	vodSafePreset := vodRegisterCmd.Bool("vod-safe-preset", true, "Apply per-library Plex settings to disable heavy analysis jobs (credits/intros/thumbnails) on VODFS libraries")
 	vodRefresh := vodRegisterCmd.Bool("refresh", true, "Trigger library refresh after create/reuse")
 
@@ -830,6 +832,10 @@ func main() {
 
 	case "plex-vod-register":
 		_ = vodRegisterCmd.Parse(os.Args[2:])
+		if *vodShowsOnly && *vodMoviesOnly {
+			log.Print("Use at most one of -shows-only or -movies-only")
+			os.Exit(1)
+		}
 		mp := strings.TrimSpace(*vodMount)
 		if mp == "" {
 			mp = strings.TrimSpace(cfg.MountPoint)
@@ -840,13 +846,19 @@ func main() {
 		}
 		moviesPath := filepath.Clean(filepath.Join(mp, "Movies"))
 		tvPath := filepath.Clean(filepath.Join(mp, "TV"))
-		if st, err := os.Stat(moviesPath); err != nil || !st.IsDir() {
-			log.Printf("Movies path not found (is VODFS mounted?): %s", moviesPath)
-			os.Exit(1)
+		needShows := !*vodMoviesOnly
+		needMovies := !*vodShowsOnly
+		if needMovies {
+			if st, err := os.Stat(moviesPath); err != nil || !st.IsDir() {
+				log.Printf("Movies path not found (is VODFS mounted?): %s", moviesPath)
+				os.Exit(1)
+			}
 		}
-		if st, err := os.Stat(tvPath); err != nil || !st.IsDir() {
-			log.Printf("TV path not found (is VODFS mounted?): %s", tvPath)
-			os.Exit(1)
+		if needShows {
+			if st, err := os.Stat(tvPath); err != nil || !st.IsDir() {
+				log.Printf("TV path not found (is VODFS mounted?): %s", tvPath)
+				os.Exit(1)
+			}
 		}
 
 		plexBaseURL := strings.TrimSpace(*vodPlexURL)
@@ -870,9 +882,16 @@ func main() {
 			os.Exit(1)
 		}
 
-		specs := []plex.LibraryCreateSpec{
-			{Name: strings.TrimSpace(*vodShowsName), Type: "show", Path: tvPath, Language: "en-US"},
-			{Name: strings.TrimSpace(*vodMoviesName), Type: "movie", Path: moviesPath, Language: "en-US"},
+		specs := make([]plex.LibraryCreateSpec, 0, 2)
+		if needShows {
+			specs = append(specs, plex.LibraryCreateSpec{Name: strings.TrimSpace(*vodShowsName), Type: "show", Path: tvPath, Language: "en-US"})
+		}
+		if needMovies {
+			specs = append(specs, plex.LibraryCreateSpec{Name: strings.TrimSpace(*vodMoviesName), Type: "movie", Path: moviesPath, Language: "en-US"})
+		}
+		if len(specs) == 0 {
+			log.Print("No libraries selected for registration")
+			os.Exit(1)
 		}
 		for _, spec := range specs {
 			sec, created, err := plex.EnsureLibrarySection(plexBaseURL, plexToken, spec)

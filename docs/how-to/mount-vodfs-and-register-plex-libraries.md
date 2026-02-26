@@ -222,6 +222,23 @@ Examples:
 Note:
 - A lane catalog still contains both `Movies/` and `TV/`; Plex library type
   remains one section per media type.
+- `plex-vod-register` can now create only one side of the lane when desired:
+  - `-shows-only` registers only `<mount>/TV`
+  - `-movies-only` registers only `<mount>/Movies`
+  - this is useful for split lanes such as `euroUKMovies` (movie-only) and
+    `euroUKTV` (TV-only) so Plex does not end up with unwanted empty companion
+    libraries.
+
+Example (movie-only lane):
+
+```bash
+plex-tuner plex-vod-register \
+  -mount /media/iptv-vodfs-euroUKMovies \
+  -plex-url http://127.0.0.1:32400 \
+  -token "$PLEX_TOKEN" \
+  -movies-only \
+  -movies-name euroUK-Movies
+```
 
 ## Full TV catalog repair -> cutover helper
 
