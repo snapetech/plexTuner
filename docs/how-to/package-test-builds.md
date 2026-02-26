@@ -85,7 +85,7 @@ Includes:
 - `manifest.json` (machine-readable package inventory and feature limits)
 - `TESTER-README.txt` (quick handoff note)
 
-## CI automation (artifact build)
+## CI automation (artifact + release publishing)
 
 GitHub Actions workflow:
 - `.github/workflows/tester-bundles.yml`
@@ -94,7 +94,34 @@ Triggers:
 - manual (`workflow_dispatch`)
 - tag push (`v*`)
 
-It uploads the staged tester bundle as a workflow artifact (`tester-bundle-<version>`).
+Behavior:
+- Always uploads the staged tester bundle as a workflow artifact (`tester-bundle-<version>`)
+- On tag pushes (`v*`), also packs the staged bundle directory and uploads it to the GitHub Release as a `.tar.gz` asset
+
+Related release automation:
+- `.github/workflows/docker.yml`
+  - pushes GHCR multi-arch images (`linux/amd64`, `linux/arm64`)
+  - publishes versioned image tags on `v*` pushes
+  - publishes `latest` on `main`
+  - also emits `sha-*` tags for traceability
+
+## Tag-based test release flow (recommended)
+
+Use a version tag (for example `v0.1.0-test1`) to produce both:
+- versioned GHCR image tags
+- tester bundle GitHub Release asset
+
+Example:
+
+```bash
+git tag v0.1.0-test1
+git push origin v0.1.0-test1
+```
+
+Expected outputs after workflows finish:
+- GitHub Release `v0.1.0-test1` with tester bundle `.tar.gz` asset
+- Actions artifact `tester-bundle-v0.1.0-test1`
+- GHCR image tags including `v0.1.0-test1` and `sha-<commit>`
 
 ## What is included in each bundle
 

@@ -38,6 +38,16 @@ ls dist/test-releases/<version>/packages/SHA256SUMS.txt
 - `examples/plextuner-supervisor-multi.example.json`
 - `examples/plextuner-supervisor-singlepod.example.yaml`
 
+## If using a tag-based release (recommended)
+
+After pushing `v*` tag, confirm all release outputs exist:
+
+1. GitHub Actions `tester-bundles` workflow succeeded
+2. GitHub Actions `docker` workflow succeeded
+3. GitHub Release contains the tester bundle `.tar.gz` asset
+4. GHCR image has the expected version tag (`v*`)
+5. (Optional) GHCR image also has `sha-*` trace tag for the same commit
+
 ## Tester instructions (minimum)
 
 Tell testers to validate:
@@ -58,6 +68,7 @@ Tell testers to validate:
 
 - `mount` is not supported (`VODFS` Linux-only)
 - HDHR network mode is intended to work, but native testing is required (do not treat `wine` as authoritative)
+- `ffmpeg` is not bundled; install it separately if testing transcode/web-safe playback paths
 
 ## Recommended smoke tests for testers
 
@@ -94,4 +105,3 @@ See also
 - [package-test-builds](package-test-builds.md)
 - [testing-and-supervisor-config](../reference/testing-and-supervisor-config.md)
 - [plex-hidden-live-grab-recovery](../runbooks/plex-hidden-live-grab-recovery.md)
-
