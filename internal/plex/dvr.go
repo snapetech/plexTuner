@@ -36,6 +36,13 @@ type DeviceInfo struct {
 	URI  string
 }
 
+type DVRInfo struct {
+	Key         int
+	UUID        string
+	LineupTitle string
+	DeviceKey   string
+}
+
 func RegisterTunerViaAPI(cfg PlexAPIConfig) (*DeviceInfo, error) {
 	baseURL := cfg.BaseURL
 	if !strings.HasPrefix(baseURL, "http") {
@@ -115,6 +122,8 @@ type Device struct {
 type Dvr struct {
 	Key           string   `xml:"key,attr"`
 	UUID          string   `xml:"uuid,attr"`
+	Title         string   `xml:"title,attr"`
+	LineupTitle   string   `xml:"lineupTitle,attr"`
 	EPGIdentifier string   `xml:"epgIdentifier,attr"`
 	DeviceKey     string   `xml:"deviceKey,attr"`
 	Lineups       []Lineup `xml:"Lineup"`
@@ -282,6 +291,148 @@ func ActivateChannelsAPI(cfg PlexAPIConfig, deviceKey string, channels []Channel
 	fmt.Printf("[PLEX-REG] Activate channels response: status=%d body=%s\n", resp.StatusCode, bodyStr)
 
 	return len(channels), nil
+}
+
+func ListDVRsAPI(plexHost, token string) ([]DVRInfo, error) {
+	u := fmt.Sprintf("http://%s/livetv/dvrs", plexHost)
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Plex-Token", token)
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return nil, fmt.Errorf("list dvrs returned %d: %s", resp.StatusCode, string(body))
+	}
+	var mc MediaContainer
+	if err := xml.NewDecoder(resp.Body).Decode(&mc); err != nil {
+		return nil, err
+	}
+	out := make([]DVRInfo, 0, len(mc.Dvr))
+	for _, d := range mc.Dvr {
+		k, _ := strconv.Atoi(strings.TrimSpace(d.Key))
+		title := strings.TrimSpace(d.LineupTitle)
+		if title == "" {
+			title = strings.TrimSpace(d.Title)
+		}
+		out = append(out, DVRInfo{
+			Key:         k,
+			UUID:        strings.TrimSpace(d.UUID),
+			LineupTitle: title,
+			DeviceKey:   strings.TrimSpace(d.DeviceKey),
+		})
+	}
+	return out, nil
+}
+
+func ListDevicesAPI(plexHost, token string) ([]Device, error) {
+	paths := []string{
+		"/media/grabbers/devices",
+		"/media/grabbers/tv.plex.grabbers.hdhomerun/devices",
+	}
+	client := &http.Client{Timeout: 30 * time.Second}
+	var lastErr error
+	for _, p := range paths {
+		u := fmt.Sprintf("http://%s%s", plexHost, p)
+		req, err := http.NewRequest(http.MethodGet, u, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("X-Plex-Token", token)
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if resp.StatusCode == http.StatusNotFound {
+			resp.Body.Close()
+			lastErr = fmt.Errorf("%s returned 404", p)
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+			resp.Body.Close()
+			lastErr = fmt.Errorf("%s returned %d: %s", p, resp.StatusCode, string(body))
+			continue
+		}
+		var mc MediaContainer
+		err = xml.NewDecoder(resp.Body).Decode(&mc)
+		resp.Body.Close()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		return mc.Device, nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no device endpoint succeeded")
+	}
+	return nil, lastErr
+}
+
+func DeleteDVRAPI(plexHost, token string, dvrKey int) error {
+	u := fmt.Sprintf("http://%s/livetv/dvrs/%d", plexHost, dvrKey)
+	req, err := http.NewRequest(http.MethodDelete, u, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-Plex-Token", token)
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("delete dvr %d returned %d: %s", dvrKey, resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+func DeleteDeviceAPI(plexHost, token, deviceKey string) error {
+	paths := []string{
+		fmt.Sprintf("/media/grabbers/devices/%s", url.PathEscape(deviceKey)),
+		fmt.Sprintf("/media/grabbers/tv.plex.grabbers.hdhomerun/devices/%s", url.PathEscape(deviceKey)),
+	}
+	client := &http.Client{Timeout: 30 * time.Second}
+	var lastErr error
+	for _, p := range paths {
+		u := fmt.Sprintf("http://%s%s", plexHost, p)
+		req, err := http.NewRequest(http.MethodDelete, u, nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("X-Plex-Token", token)
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if resp.StatusCode == http.StatusNotFound {
+			resp.Body.Close()
+			lastErr = fmt.Errorf("%s returned 404", p)
+			continue
+		}
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+			resp.Body.Close()
+			lastErr = fmt.Errorf("%s returned %d: %s", p, resp.StatusCode, string(body))
+			continue
+		}
+		resp.Body.Close()
+		return nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("delete device %s failed", deviceKey)
+	}
+	return lastErr
 }
 
 type Channel struct {

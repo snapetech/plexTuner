@@ -14,6 +14,7 @@
 - The command reads `catalog.json` live channels + XMLTV, applies deterministic matching tiers (`tvg-id` exact, alias exact, normalized-name exact unique), and emits coverage/unmatched reports for operator review.
 - This is intentionally non-invasive: it does **not** mutate runtime guide linkage yet.
 - Next phase would add a persistent alias/override store and optional application of high-confidence matches during indexing.
+- Added an in-app Plex wizard-oracle command (`plex-epg-oracle`) to automate HDHR registration + DVR create + guide reload + channelmap retrieval across multiple tuner base URLs (or a `{cap}` URL template with `-caps`) for EPG-linking experiments. This is report/probe tooling and can create DVR rows in Plex, so use on a test Plex instance.
 
 **Live category capacity follow-up (2026-02-26):**
 - Added runtime lineup sharding envs in tuner pre-cap path:

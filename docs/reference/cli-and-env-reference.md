@@ -180,6 +180,47 @@ Use for:
 - provider host failover validation
 - diagnosing Cloudflare/proxy failures
 
+## `plex-tuner plex-epg-oracle`
+
+Probe Plex's wizard-equivalent HDHR registration/guide/channelmap flow across one
+or more tuner base URLs and report what Plex maps.
+
+This is an in-app tool for using Plex as a provider/EPG matching oracle during
+EPG-linking experiments (for example different lineup sizes/orderings for a region).
+
+Common flags:
+- `-plex-url`
+- `-token`
+- `-base-urls` (comma-separated tuner URLs to test)
+- `-base-url-template` + `-caps` (expand `{cap}` into multiple URLs)
+- `-reload-guide` (default `true`)
+- `-activate` (default `false`; report/probe only unless enabled)
+- `-out` (JSON report)
+
+Notes:
+- Creates/registers Plex DVR/device rows as part of the probe flow.
+- Best used in a lab/test Plex instance.
+- Intended to harvest mapping outcomes, not as a runtime dependency.
+
+## `plex-tuner plex-epg-oracle-cleanup`
+
+Clean up DVR/device rows created during oracle experiments.
+
+Default behavior is **dry-run** (prints matching DVR/device rows without deleting).
+
+Common flags:
+- `-plex-url`
+- `-token`
+- `-lineup-prefix` (default `oracle-`)
+- `-device-uri-substr` (optional extra filter)
+- `-do` (actually delete)
+
+Typical flow:
+1. Dry-run inspect:
+   - `plex-tuner plex-epg-oracle-cleanup -plex-url ... -token ...`
+2. Apply cleanup:
+   - `plex-tuner plex-epg-oracle-cleanup -plex-url ... -token ... -do`
+
 ## `plex-tuner supervise`
 
 Run multiple child `plex-tuner` instances from one JSON config.
