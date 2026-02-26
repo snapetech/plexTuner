@@ -30,28 +30,32 @@ type Catalog struct {
 
 // Movie is a single movie with Plex-friendly naming fields.
 type Movie struct {
-	ID         string `json:"id"` // stable ID (e.g. from provider or hash)
-	Title      string `json:"title"`
-	Year       int    `json:"year"`
-	StreamURL  string `json:"stream_url"`
-	ArtworkURL string `json:"artwork_url,omitempty"`
-	Category   string `json:"category,omitempty"`    // catch-up taxonomy bucket (e.g. movies, sports, news)
-	Region     string `json:"region,omitempty"`      // coarse region (e.g. us, ca, uk, mena, intl)
-	Language   string `json:"language,omitempty"`    // coarse language code guess (e.g. en, ar)
-	SourceTag  string `json:"source_tag,omitempty"`  // parsed provider/source prefix (e.g. 4K-NF)
+	ID                   string `json:"id"` // stable ID (e.g. from provider or hash)
+	Title                string `json:"title"`
+	Year                 int    `json:"year"`
+	StreamURL            string `json:"stream_url"`
+	ArtworkURL           string `json:"artwork_url,omitempty"`
+	Category             string `json:"category,omitempty"`               // catch-up taxonomy bucket (e.g. movies, sports, news)
+	Region               string `json:"region,omitempty"`                 // coarse region (e.g. us, ca, uk, mena, intl)
+	Language             string `json:"language,omitempty"`               // coarse language code guess (e.g. en, ar)
+	SourceTag            string `json:"source_tag,omitempty"`             // parsed provider/source prefix (e.g. 4K-NF)
+	ProviderCategoryID   string `json:"provider_category_id,omitempty"`   // source/provider category identifier (e.g. Xtream category_id)
+	ProviderCategoryName string `json:"provider_category_name,omitempty"` // source/provider category display name
 }
 
 // Series is a show with seasons and episodes.
 type Series struct {
-	ID         string   `json:"id"`
-	Title      string   `json:"title"`
-	Year       int      `json:"year"`
-	Seasons    []Season `json:"seasons"`
-	ArtworkURL string   `json:"artwork_url,omitempty"`
-	Category   string   `json:"category,omitempty"`
-	Region     string   `json:"region,omitempty"`
-	Language   string   `json:"language,omitempty"`
-	SourceTag  string   `json:"source_tag,omitempty"`
+	ID                   string   `json:"id"`
+	Title                string   `json:"title"`
+	Year                 int      `json:"year"`
+	Seasons              []Season `json:"seasons"`
+	ArtworkURL           string   `json:"artwork_url,omitempty"`
+	Category             string   `json:"category,omitempty"`
+	Region               string   `json:"region,omitempty"`
+	Language             string   `json:"language,omitempty"`
+	SourceTag            string   `json:"source_tag,omitempty"`
+	ProviderCategoryID   string   `json:"provider_category_id,omitempty"`
+	ProviderCategoryName string   `json:"provider_category_name,omitempty"`
 }
 
 // Season holds episodes for one season.

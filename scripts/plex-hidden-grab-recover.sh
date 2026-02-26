@@ -51,7 +51,7 @@ require() {
   command -v "$1" >/dev/null 2>&1 || { echo "missing command: $1" >&2; exit 1; }
 }
 require kubectl
-require python3
+require date
 
 pod_exec() {
   kubectl -n "$NAMESPACE" exec "deploy/$DEPLOYMENT" -c "$CONTAINER" -- "$@"
@@ -78,18 +78,19 @@ fi
 # Count active videos in /status/sessions.
 ACTIVE_VIDEOS="$(
   pod_exec curl -fsS "http://127.0.0.1:32400/status/sessions?X-Plex-Token=${TOKEN}" \
-    | python3 - <<'PY'
-import sys, xml.etree.ElementTree as ET
-raw = sys.stdin.read()
-root = ET.fromstring(raw)
-print(len(root.findall("Video")))
-PY
+    | grep -c '<Video[ >]' || true
+)"
+ACTIVE_VIDEOS="$(
+  printf '%s' "${ACTIVE_VIDEOS}" \
+    | tr -d '[:space:]'
 )"
 
-# Detect recent hidden-grab signature in any rotated Plex logs.
+# Detect recent hidden-grab signature from deployment logs (honors lookback).
+# We intentionally use kubectl logs --since to avoid matching stale history in rotated files.
 HIDDEN_MATCHES="$(
-  pod_exec sh -lc "grep -R -n 'Subscription: Waiting for media grab to start\\|There are [0-9][0-9]* active grabs at the end' \
-    \"/config/Library/Application Support/Plex Media Server/Logs/Plex Media Server\"* 2>/dev/null | tail -n 40" || true
+  kubectl -n "$NAMESPACE" logs "deploy/$DEPLOYMENT" -c "$CONTAINER" --since="${LOOKBACK_MIN}m" 2>/dev/null \
+    | grep -E 'Subscription: Waiting for media grab to start|There are [0-9][0-9]* active grabs at the end|Recording failed\. Please check your tuner or antenna\.' \
+    | tail -n 40 || true
 )"
 
 echo "  active_videos: ${ACTIVE_VIDEOS}"
@@ -122,4 +123,3 @@ echo "Restarting deploy/$DEPLOYMENT..."
 kubectl -n "$NAMESPACE" rollout restart "deploy/$DEPLOYMENT"
 kubectl -n "$NAMESPACE" rollout status "deploy/$DEPLOYMENT" --timeout=300s
 echo "Restart complete."
-

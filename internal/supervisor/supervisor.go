@@ -310,11 +310,11 @@ func copyPrefixed(name, stream string, r io.Reader) {
 }
 
 func mergedEnv(base []string, overrides map[string]string) []string {
+	out := filterChildBaseEnv(base)
 	if len(overrides) == 0 {
-		return base
+		return out
 	}
-	idx := make(map[string]int, len(base))
-	out := append([]string(nil), base...)
+	idx := make(map[string]int, len(out))
 	for i, kv := range out {
 		k, _, ok := strings.Cut(kv, "=")
 		if ok {
@@ -330,4 +330,33 @@ func mergedEnv(base []string, overrides map[string]string) []string {
 		}
 	}
 	return out
+}
+
+func filterChildBaseEnv(base []string) []string {
+	if len(base) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(base))
+	for _, kv := range base {
+		k, _, ok := strings.Cut(kv, "=")
+		if !ok {
+			continue
+		}
+		if shouldDropChildInheritedEnv(k) {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
+}
+
+func shouldDropChildInheritedEnv(key string) bool {
+	switch {
+	case strings.HasPrefix(key, "PLEX_TUNER_PLEX_SESSION_REAPER"):
+		return true
+	case key == "PLEX_TUNER_PMS_URL", key == "PLEX_TUNER_PMS_TOKEN":
+		return true
+	default:
+		return false
+	}
 }

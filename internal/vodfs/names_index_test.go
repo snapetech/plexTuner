@@ -13,13 +13,13 @@ func TestBuildUniqueMovieDirNames_DedupesCollisions(t *testing.T) {
 		{ID: "b1", Title: "Different", Year: 2024},
 	}
 	got := buildUniqueMovieDirNames(movies)
-	if got["b1"] != "Different (2024)" {
+	if got["b1"] != "Live: Different (2024)" {
 		t.Fatalf("non-colliding movie name changed: %q", got["b1"])
 	}
 	if got["a1"] == got["a2"] {
 		t.Fatalf("colliding movie names not uniquified: %q", got["a1"])
 	}
-	if got["a1"] != "Same (2024) [a1]" && got["a2"] != "Same (2024) [a2]" {
+	if got["a1"] != "Live: Same (2024) [a1]" && got["a2"] != "Live: Same (2024) [a2]" {
 		t.Fatalf("unexpected collision naming: %+v", got)
 	}
 }
@@ -31,7 +31,7 @@ func TestBuildUniqueSeriesDirNames_DedupesCollisions(t *testing.T) {
 		{ID: "s3", Title: "Show", Year: 2021},
 	}
 	got := buildUniqueSeriesDirNames(series)
-	if got["s3"] != "Show (2021)" {
+	if got["s3"] != "Live: Show (2021)" {
 		t.Fatalf("non-colliding series name changed: %q", got["s3"])
 	}
 	if got["s1"] == got["s2"] {

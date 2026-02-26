@@ -361,3 +361,10 @@ Questions (ONLY if blocked or high-risk ambiguity):
 - `plex-vod-register` can now configure per-library Plex prefs for VODFS libraries (default-on VOD-safe preset).
 - Added VOD taxonomy enrichment + deterministic sorting for catalog movies/series (`category`, `region`, `language`, `source_tag`) during `fetchCatalog`.
 - Added `vod-split` CLI command to generate per-lane VOD catalogs for category-scoped VODFS mounts/libraries.
+
+- VODFS presented file/folder names are now prefixed with `Live: ` (via VODFS name builders), which may require Plex library refresh/metadata refresh to reflect on already-imported items.
+- VOD lane heuristic tuning improved obvious false positives (`news`, `music`, `kids`, `mena`) and added provider-category-aware classification hooks, but the current local `catalog.json` has **no provider_category_* fields populated** yet (`0/157331` movies, `0/41391` series), so lane quality is still limited by title/source-tag heuristics until the catalog is regenerated with the patched Xtream indexer.
+- Provider-category-driven VOD lane classification is now wired and validated via a merged test catalog; next taxonomy tuning target is region-heavy lanes (`euroUK`, `mena`) and optional `bcastUS` narrowing (currently broad because many provider categories imply region/country but not content family).
+- VOD lane model now uses `euroUKMovies/euroUKTV` and `menaMovies/menaTV` plus a stricter `bcastUS` series gate. Next tuning (optional) is sub-lanes within `menaTV`/`euroUKTV` (e.g. news/kids) if desired for UX/packageing.
+
+- Supervisor now filters parent Plex reaper/PMS env vars before spawning children to avoid accidental per-child Plex polling/SSE storms.

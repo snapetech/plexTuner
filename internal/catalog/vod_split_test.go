@@ -10,7 +10,7 @@ func TestSplitVODIntoLanes(t *testing.T) {
 	}
 	series := []Series{
 		{ID: "s1", Title: "4K-ESPN - NHL Tonight", Category: "sports", Region: "us"},
-		{ID: "s2", Title: "4K-NF - Cobra Kai (US)", Category: "tv", Region: "us"},
+		{ID: "s2", Title: "4K-NF - Cobra Kai (US)", Category: "tv", Region: "us", Language: "en", SourceTag: "4K-NF", ProviderCategoryName: "ENGLISH SERIES"},
 		{ID: "s3", Title: "4K-NF - Dark (DE)", Category: "tv", Region: "europe"},
 	}
 
@@ -35,7 +35,25 @@ func TestSplitVODIntoLanes(t *testing.T) {
 	if got := counts["bcastUS"]; got.s != 1 {
 		t.Fatalf("bcastUS lane series=%d want 1", got.s)
 	}
-	if got := counts["euroUK"]; got.s != 1 {
-		t.Fatalf("euroUK lane series=%d want 1", got.s)
+	if got := counts["euroUKTV"]; got.s != 1 {
+		t.Fatalf("euroUKTV lane series=%d want 1", got.s)
+	}
+}
+
+func TestSplitVODIntoLanes_BcastUSStricterForDubbedUSCATitles(t *testing.T) {
+	series := []Series{
+		{ID: "s1", Title: "IR - North of North (2025) (CA)", Category: "tv", Region: "ca", Language: "en", SourceTag: "IR", ProviderCategoryName: "PERSIAN انگلیسی"},
+		{ID: "s2", Title: "EN - Reacher (2022) (US)", Category: "tv", Region: "us", Language: "en", SourceTag: "EN", ProviderCategoryName: "ENGLISH SERIES"},
+	}
+	lanes := SplitVODIntoLanes(nil, series)
+	counts := map[string]int{}
+	for _, lane := range lanes {
+		counts[lane.Name] = len(lane.Series)
+	}
+	if counts["bcastUS"] != 1 {
+		t.Fatalf("bcastUS series=%d want 1", counts["bcastUS"])
+	}
+	if counts["tv"] != 1 {
+		t.Fatalf("tv series=%d want 1 (dubbed CA title should fall back to tv)", counts["tv"])
 	}
 }

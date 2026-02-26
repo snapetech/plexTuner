@@ -10,9 +10,11 @@ import (
 	"strings"
 )
 
+const liveNamePrefix = "Live: "
+
 // MovieDirName returns the Plex movie folder name: "MovieName (Year)".
 func MovieDirName(title string, year int) string {
-	title = safeFSName(title)
+	title = livePrefixedName(title)
 	if year > 0 {
 		return fmt.Sprintf("%s (%d)", title, year)
 	}
@@ -31,7 +33,7 @@ func MovieFileNameForStream(title string, year int, streamURL string) string {
 
 // ShowDirName returns the Plex TV show folder name: "Show Name (Year)".
 func ShowDirName(title string, year int) string {
-	title = safeFSName(title)
+	title = livePrefixedName(title)
 	if year > 0 {
 		return fmt.Sprintf("%s (%d)", title, year)
 	}
@@ -105,4 +107,12 @@ func safeFSName(name string) string {
 		return "_"
 	}
 	return name
+}
+
+func livePrefixedName(name string) string {
+	name = safeFSName(name)
+	if name == "" || strings.HasPrefix(name, liveNamePrefix) {
+		return name
+	}
+	return liveNamePrefix + name
 }
