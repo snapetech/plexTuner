@@ -351,7 +351,7 @@ def build_cutover_tsv(supervisor_cfg: dict[str, Any]) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--k3s-plex-dir", default="/home/keith/Documents/code/k3s/plex")
+    ap.add_argument("--k3s-plex-dir", default="../k3s/plex")
     ap.add_argument("--out-json", default="plextuner-supervisor-multi.generated.json")
     ap.add_argument("--out-yaml", default="plextuner-supervisor-singlepod.generated.yaml")
     ap.add_argument("--out-tsv", default="plextuner-supervisor-cutover-map.generated.tsv")

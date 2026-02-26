@@ -11,7 +11,7 @@
 **Breakthrough (2026-02-25 late):**
 - Reused the existing `k3s/plex/scripts/plex-websafe-pcap-repro.sh` harness on pure `DVR 218` (`FOX WEATHER`, helper AB4 `:5009`) and finally captured the missing signal: PMS first-stage `Lavf` `/video/:/transcode/session/.../manifest` callbacks were hitting `127.0.0.1:32400` and receiving repeated HTTP `403` responses (visible in localhost pcap), while Plex logs only showed `buildLiveM3U8: no segment info available`.
 - Root cause is Plex-side callback auth, not PlexTuner TS formatting: first-stage `ssegment` was posting valid CSV segment rows, but PMS rejected the callback updates, so `/livetv/sessions/.../index.m3u8` had no segment info.
-- Applied a Plex runtime workaround by adding `allowedNetworks="127.0.0.1/8,::1/128,192.168.50.0/24"` to PMS `Preferences.xml` and restarting `deploy/plex`.
+- Applied a Plex runtime workaround by adding `allowedNetworks="127.0.0.1/8,::1/128,<lan-cidr>"` to PMS `Preferences.xml` and restarting `deploy/plex`.
 - Post-fix validation:
   - pcap harness rerun: first-stage callback responses flipped from `403` to `200`; PMS internal `/livetv/sessions/.../index.m3u8` returned `200` with real HLS entries; logs changed from `buildLiveM3U8: no segment info available` to healthy `buildLiveM3U8: min ... max ...`.
   - Plex Web probe path (`DVR 218`, `FOX WEATHER`) now reaches immediate `decision` + `start.mpd` success and returns DASH init headers and first segments (`/0/header`, `/0/0.m4s`, `/1/header`, `/1/0.m4s` all with bytes).
@@ -26,7 +26,7 @@
   - `internal/tuner/gateway.go` logs explicit warnings when transcode was requested but `ffmpeg` is unavailable
   - added `scripts/plex-live-session-drain.py` for manual Plex Live TV session cleanup (no max-live TTL behavior)
 - Found and fixed a real app regression during rollout: `cmd/plex-tuner` `run -mode=easy` (`fetchCatalog`) ignored configured `PLEX_TUNER_M3U_URL` / built M3U URLs unless `-m3u` was passed explicitly; patched it to honor `cfg.M3UURLsOrBuild()` first.
-- Runtime rollout completed on `kspls0` (all 13 category pods):
+- Runtime rollout completed on `<plex-node>` (all 13 category pods):
   - built/imported ffmpeg-enabled `plex-tuner:hdhr-test` into k3s containerd on-node
   - restarted all 13 category deployments successfully and verified `ffmpeg` exists in category pods
   - set `PLEX_TUNER_STREAM_TRANSCODE=on` across the 13 category deployments for immediate web audio normalization (client-adapt optimization can follow later)
@@ -45,7 +45,7 @@
 - Root cause of earlier empty 13-bucket category tuners was not PlexTuner indexing: `iptv-m3u-server` postvalidation had zeroed many generated `dvr-*.m3u` files after probe failures. Rerunning only the splitter (skipping postvalidate) restored non-empty category M3Us; all 13 `plextuner-*` deployments then loaded live channels and exposed service endpoints.
 - Pure-app channel activation completed successfully for all 13 injected DVRs (`plex-activate-dvr-lineups.py ... --dvr 218 ... 242`): final status `OK` with mapped counts `44,136,308,307,257,206,212,111,465,52,479,273,404` (total `3254` mapped channels).
 - Pure-app playback proof (category DVR): `plex-web-livetv-probe.py --dvr 218` tuned `US: NEWS 12 BROOKLYN` (`POST /livetv/dvrs/218/channels/39/tune -> 200`), PlexTuner `plextuner-newsus` logged `/stream/News12Brooklyn.us` startup + HLS playlist relay, but Plex probe still failed `startmpd1_0` after ~35s.
-- Smart TV spin proof from Plex logs (client `192.168.50.148`): Plex starts first-stage grabber, reads from PlexTuner stream URLs, receives `progress/streamDetail`, then its own internal `GET /livetv/sessions/.../index.m3u8` returns `500` with `buildLiveM3U8: no segment info available`, while client `start.mpd` requests complete ~100–125s later or after stop.
+- Smart TV spin proof from Plex logs (client `<client-ip-a>`): Plex starts first-stage grabber, reads from PlexTuner stream URLs, receives `progress/streamDetail`, then its own internal `GET /livetv/sessions/.../index.m3u8` returns `500` with `buildLiveM3U8: no segment info available`, while client `start.mpd` requests complete ~100–125s later or after stop.
 - Repo hygiene pass completed for this concern: removed non-essential "Threadfin-style" wording from Plex API registration code/logs and stale k8s helper comments; remaining `threadfin` references in this repo are comparison docs, historical memory-bank notes, or explicit legacy secret-name context.
 - Plex cleanup completed: deleted all stale Threadfin-era DVRs (`141,144,147,150,153,156,159,162,165,168,171,174,177`). Current DVR inventory is now only the 2 direct test DVRs (`135`, `138`) plus the 13 pure `plextuner-*` injected DVRs (`218..242`) with no `threadfin-*` entries left.
 - Category A/B test completed on `DVR 218` (`plextuner-newsus`): temporarily switched the `plextuner-newsus` deployment to WebSafe-style settings (`STREAM_TRANSCODE=true`, `PROFILE=plexsafe`, `CLIENT_ADAPT=false`, `FFMPEG_PATH=/usr/bin/ffmpeg`), reran Plex Web probe, then rolled back the deployment to original `STREAM_TRANSCODE=off`.
@@ -125,13 +125,13 @@ Questions (ONLY if blocked or high-risk ambiguity):
   - `PLEX_TUNER_LINEUP_DROP_MUSIC=true`
   - `PLEX_TUNER_LINEUP_MAX_CHANNELS=479`
   - XMLTV English-first normalization envs enabled
-- Reapplied only the generated supervisor `ConfigMap` + `Deployment` in `k3s/plex`, then patched the deployment image back to the custom locally imported tag (`plex-tuner:supervisor-cutover-20260225223451`) on `kspls0` to retain the new `supervise` binary.
+- Reapplied only the generated supervisor `ConfigMap` + `Deployment` in `k3s/plex`, then patched the deployment image back to the custom locally imported tag (`plex-tuner:supervisor-cutover-20260225223451`) on `<plex-node>` to retain the new `supervise` binary.
 - Verified the supervisor pod is healthy (`1/1`) and all 14 child instances start, with category children serving bare category identities (`FriendlyName`/`DeviceID` = `newsus`, `generalent`, etc.) and the HDHR child advertising `BaseURL=http://plextuner-hdhr.plex.home`.
 - Verified HDHR child behavior inside the supervisor pod:
   - `Loaded 6207 live channels`
   - `Lineup pre-cap filter: dropped 72 music/radio channels`
   - `/lineup.json` count = `479`
-- Applied only the generated Service documents and confirmed category/HDHR Services now route to the supervisor pod endpoints (`192.168.50.85:510x` / `:5004`), then scaled the old 13 category deployments to `0/0`.
+- Applied only the generated Service documents and confirmed category/HDHR Services now route to the supervisor pod endpoints (`<plex-host-ip>:510x` / `:5004`), then scaled the old 13 category deployments to `0/0`.
 - Sample post-cutover validation from inside the Plex pod:
   - `http://plextuner-newsus.plex.svc:5004/discover.json` reports `FriendlyName=newsus`
   - `http://plextuner-hdhr-test.plex.svc:5004/lineup.json` returns `479` entries
@@ -145,7 +145,7 @@ Questions (ONLY if blocked or high-risk ambiguity):
   - `plextuner-otherworld` -> `ScanPossible=0`
   - `plextuner-hdhr-test` -> `ScanPossible=1`
 - Cleaned the stale helper cache row (`newsus-websafeab5:5010`) from Plex's `media_provider_resources`; it no longer appears in `/media/grabbers/devices`.
-- Important operational gotcha rediscovered: image imports must happen on the actual scheduled node (`kspls0`) runtime, not the local `k3s` runtime on `kspld0`, or kubelet will keep reporting `ErrImageNeverPull` even when local `crictl` on the wrong host shows the image.
+- Important operational gotcha rediscovered: image imports must happen on the actual scheduled node (`<plex-node>`) runtime, not the local `k3s` runtime on `<work-node>`, or kubelet will keep reporting `ErrImageNeverPull` even when local `crictl` on the wrong host shows the image.
 
 **Plex TV UI / provider metadata follow-up (2026-02-26 late):**
 - User-reported TV symptom ("all tabs labelled `plexKube`" and identical-looking guides) is **not** caused by flattened tuner feeds. Verified live tuner outputs remain distinct after the supervisor cutover:
@@ -162,7 +162,7 @@ Questions (ONLY if blocked or high-risk ambiguity):
   - Need live LG/webOS request capture to confirm whether the TV app is actually requesting distinct `tv.plex.providers.epg.xmltv:<id>` grids when switching tabs.
 
 **LG TV guide-path capture + cleanup (2026-02-26 late):**
-- File-level Plex logs (`Plex Media Server.log`, not `kubectl logs`) finally captured the LG client (`192.168.50.225`) guide requests.
+- File-level Plex logs (`Plex Media Server.log`, not `kubectl logs`) finally captured the LG client (`<client-ip-b>`) guide requests.
 - Root cause for the wrong TV guide behavior in the captured session: the LG was requesting **only provider `tv.plex.providers.epg.xmltv:135`** (`DVR 135` / legacy direct `plextunerTrial`) for:
   - `/lineups/dvr/channels`
   - `/grid?...`
@@ -182,7 +182,7 @@ Questions (ONLY if blocked or high-risk ambiguity):
   - category tuners all exposed `GuideNumber` sequences starting at `1,2,3...`
   - Plex provider/UI layers could cache/reuse guide/grid content when multiple DVRs shared overlapping channel IDs.
 - Implemented in-app `PLEX_TUNER_GUIDE_NUMBER_OFFSET` and wired it into `tuner.Server.UpdateChannels` so each child instance can expose a distinct channel/guide-number range.
-- Rolled a new supervisor image (`plex-tuner:supervisor-guideoffset-20260226001027`) on `kspls0` and updated the live supervisor `ConfigMap` to assign offsets:
+- Rolled a new supervisor image (`plex-tuner:supervisor-guideoffset-20260226001027`) on `<plex-node>` and updated the live supervisor `ConfigMap` to assign offsets:
   - examples: `bcastus=1000`, `newsus=2000`, `sportsa=3000`, ..., `otherworld=13000`, `hdhr-main2=100000`
 - Live validation from the Plex pod after rollout:
   - tuner `guide.xml` channel IDs are now distinct by source (`newsus:2001+`, `bcastus:1001+`, `sportsa:3001+`, `otherworld:13001+`)
@@ -247,3 +247,25 @@ Questions (ONLY if blocked or high-risk ambiguity):
   - `docs/reference/plex-dvr-lifecycle-and-api.md`
 - Covers wizard-equivalent HDHR API flow, injected DVR lifecycle, remove/cleanup, guide reload + channelmap activation, and Plex UI/backend metadata gotchas (device-centric UI, provider drift, stale client cache, hidden grabs).
 - Linked from `docs/reference/index.md` so future agents/users have one place for "wizard / inject / remove / refresh / EPG shenanigans" instead of scattered notes.
+
+**Docs/packaging polish follow-up (2026-02-26 late):**
+- Rewrote `README.md` from the ground up to reflect the current app shape:
+  - single-tuner mode + `supervise` mode
+  - HDHR wizard and injected DVR flows
+  - platform support/limits (`VODFS` Linux-only)
+  - tester packaging and runbook references
+- Updated both feature summaries:
+  - `features.md` (short overview)
+  - `docs/features.md` (canonical list) with current capabilities like supervisor mode, built-in Plex session reaper, XMLTV normalization, lineup shaping, and platform support matrix.
+- Added `docs/how-to/tester-release-notes-draft.md` and linked it from `docs/how-to/index.md` and `docs/index.md` for tester handoffs.
+
+**Repo hygiene audit + root cleanup (2026-02-26 late):**
+- Audited tracked files for secrets, local hostnames/paths, and personal identifiers (`<user>`, `/home/...`, `<plex-node>`, `<work-node>`, `plex.home` examples).
+- No high-confidence committed secrets/tokens/private keys found in tracked files (pattern scan).
+- Cleaned root-level cruft:
+  - deleted tracked archive artifact `plextuner-main-fixed.zip`
+  - moved ad hoc/manual test scripts from repo root to `scripts/legacy/`:
+    - `test_hdhr.sh`
+    - `test_hdhr_network.sh`
+    - `<work-node>_plex_test.sh`
+  - added `scripts/legacy/README.md` clarifying they are historical/manual helpers, not supported CLI surface.

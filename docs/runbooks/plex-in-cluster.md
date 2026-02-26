@@ -60,7 +60,7 @@ So **Plex is missing from the cluster** if nothing in your environment deploys i
 
 | Location | Meaning |
 |----------|--------|
-| **Sibling `k3s` directory** | Scripts reference `../k3s/plex/scripts/`. If you have a repo or folder like `~/Documents/code/k3s` or `$REPO_PARENT/k3s` with a `plex` subdir, Plex (and Threadfin) may be defined there. |
+| **Sibling `k3s` directory** | Scripts reference `../k3s/plex/scripts/`. If you have a repo or folder like `$REPO_PARENT/k3s` or `$REPO_PARENT/k3s` with a `plex` subdir, Plex (and Threadfin) may be defined there. |
 | **Another repo / private config** | Plex and Threadfin may be in a different Git repo or server config that isn’t plexTuner. |
 | **Never deployed in cluster** | Plex might always have run on a single node (e.g. bare metal) with data at `/var/lib/plex`; the cluster only runs the tuner and expects that path via hostPath. |
 
