@@ -29,6 +29,23 @@ Example:
   - Use unique ranges per DVR child (example: `newsus=2000`, `bcastus=1000`, `otherworld=13000`).
   - Purpose: avoid Plex client/provider cache collisions when many DVRs all start at channel `1`.
 
+### Per-child lineup sharding (overflow buckets)
+
+- `PLEX_TUNER_LINEUP_SKIP`
+- `PLEX_TUNER_LINEUP_TAKE`
+
+Behavior:
+- Applied **after** pre-cap filtering/shaping (EPG-linked-only, music-drop, wizard shaping)
+- Applied **before** `PLEX_TUNER_LINEUP_MAX_CHANNELS` final cap
+
+Use:
+- Split a large category into multiple injected DVR children that all point at the same
+  source M3U/XMLTV but expose different channel slices (`cat`, `cat2`, `cat3`, ...)
+- Example:
+  - shard 1: `TAKE=479`
+  - shard 2: `SKIP=479 TAKE=479`
+  - shard 3: `SKIP=958 TAKE=479`
+
 ### Built-in Plex stale-session reaper (cross-platform, no Python)
 
 Required:
@@ -80,6 +97,22 @@ Use:
 
 Important:
 - only one child should enable HDHR network mode on default ports unless custom HDHR ports are assigned.
+- if you create overflow category shards, assign unique `PLEX_TUNER_GUIDE_NUMBER_OFFSET` ranges per shard to avoid cross-provider channel collisions.
+
+### Supervisor manifest generator overflow support
+
+`scripts/generate-k3s-supervisor-manifests.py` can now auto-create overflow
+category children from a confirmed linked-channel count file.
+
+Flags:
+- `--category-counts-json <path>` (JSON map of base category -> linked count)
+- `--category-cap 479` (overflow threshold and shard take size)
+
+It expands categories into:
+- `<category>`
+- `<category>2`
+- `<category>3`
+...as needed, and injects per-child `PLEX_TUNER_LINEUP_SKIP/TAKE`.
 
 ## Platform notes
 

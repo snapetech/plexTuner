@@ -191,3 +191,41 @@ func TestApplyLineupPreCapFilters_shapeNAENReordersBeforeCap(t *testing.T) {
 		t.Fatalf("shopping channel ranked ahead of FOX News: shopping=%d fox=%d", idxShopping, idxFox)
 	}
 }
+
+func TestApplyLineupPreCapFilters_shardSkipTake(t *testing.T) {
+	t.Setenv("PLEX_TUNER_LINEUP_DROP_MUSIC", "false")
+	t.Setenv("PLEX_TUNER_LINEUP_EXCLUDE_REGEX", "")
+	t.Setenv("PLEX_TUNER_LINEUP_SHAPE", "")
+	t.Setenv("PLEX_TUNER_LINEUP_SKIP", "2")
+	t.Setenv("PLEX_TUNER_LINEUP_TAKE", "3")
+	in := []catalog.LiveChannel{
+		{GuideName: "A"}, {GuideName: "B"}, {GuideName: "C"}, {GuideName: "D"}, {GuideName: "E"}, {GuideName: "F"},
+	}
+	got := applyLineupPreCapFilters(in)
+	if len(got) != 3 {
+		t.Fatalf("len=%d want 3", len(got))
+	}
+	if got[0].GuideName != "C" || got[1].GuideName != "D" || got[2].GuideName != "E" {
+		t.Fatalf("unexpected shard result: %+v", got)
+	}
+}
+
+func TestUpdateChannels_shardThenCap(t *testing.T) {
+	t.Setenv("PLEX_TUNER_LINEUP_DROP_MUSIC", "false")
+	t.Setenv("PLEX_TUNER_LINEUP_EXCLUDE_REGEX", "")
+	t.Setenv("PLEX_TUNER_LINEUP_SHAPE", "")
+	t.Setenv("PLEX_TUNER_LINEUP_SKIP", "4")
+	t.Setenv("PLEX_TUNER_LINEUP_TAKE", "10")
+	in := make([]catalog.LiveChannel, 20)
+	for i := range in {
+		in[i] = catalog.LiveChannel{GuideName: string(rune('A' + i))}
+	}
+	s := &Server{LineupMaxChannels: 5}
+	s.UpdateChannels(in)
+	if len(s.Channels) != 5 {
+		t.Fatalf("len=%d want 5", len(s.Channels))
+	}
+	if s.Channels[0].GuideName != "E" || s.Channels[4].GuideName != "I" {
+		t.Fatalf("unexpected shard+cap result: first=%q last=%q", s.Channels[0].GuideName, s.Channels[4].GuideName)
+	}
+}

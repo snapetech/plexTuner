@@ -1104,3 +1104,44 @@ Verification:
 - 2026-02-26: Reverted the experimental Plex Web `main-*.js` bundle patch after it broke Web UI loading for the user. Implemented `scripts/plex-media-providers-label-proxy.py` instead: a server-side reverse proxy that rewrites `/media/providers` Live TV `MediaProvider` labels (`friendlyName`, `sourceTitle`, `title`, content root Directory title, watchnow title) using `/livetv/dvrs` lineup titles. Validated on captured `/media/providers` XML: all 15 `tv.plex.providers.epg.xmltv:<id>` providers rewrite to distinct labels (`newsus`, `bcastus`, ..., `plextunerHDHR479B`). Caveat documented: current Plex Web version still hardcodes server-friendly-name labels for owned multi-LiveTV sources, so proxy primarily targets TV/native clients unless WebClient is separately patched.
 
 - 2026-02-26: Deployed `plex-label-proxy` in k8s (`plex` namespace) and patched live `Ingress/plex` to route `Exact /media/providers` to `plex-label-proxy:33240` while leaving all other paths on `plex:32400`. Proxy is fed by ConfigMap from `scripts/plex-media-providers-label-proxy.py` and rewrites Live TV provider labels per DVR using `/livetv/dvrs`. Fixed gzip-compressed `/media/providers` handling after initial parse failures. End-to-end validation via `https://plex.home/media/providers` confirms rewritten labels for `tv.plex.providers.epg.xmltv:{218,220,247,250}` (`newsus`, `bcastus`, `plextunerHDHR479`, `plextunerHDHR479B`).
+## 2026-02-26 — Phase 1 EPG-linking report CLI (deterministic, report-only)
+
+- Added `internal/epglink` package for:
+  - XMLTV channel extraction (`<channel id=...><display-name>...`)
+  - conservative channel-name normalization
+  - deterministic match tiers (`tvg-id` exact, alias exact, normalized-name exact unique)
+  - JSON-friendly coverage/unmatched report structures
+- Added `plex-tuner epg-link-report` CLI command:
+  - `-catalog`
+  - `-xmltv` (file or `http(s)` URL)
+  - `-aliases` (JSON name->xmltv overrides)
+  - `-out`, `-unmatched-out`
+- Added tests for normalization, XMLTV parsing, and deterministic match tiers.
+- Updated docs:
+  - `docs/reference/cli-and-env-reference.md`
+  - `docs/reference/epg-linking-pipeline.md` (Phase 1 status)
+
+Verification:
+- `go test ./internal/epglink ./internal/indexer ./internal/catalog -run '^Test'`
+- `go test ./cmd/plex-tuner -run '^$'`
+- CLI smoke test with synthetic catalog/XMLTV/alias files (`go run ./cmd/plex-tuner epg-link-report ...`)
+## 2026-02-26 — Live category overflow bucket support (auto-sharded injected DVR children)
+
+- Added runtime lineup sharding for live tuner children:
+  - `PLEX_TUNER_LINEUP_SKIP`
+  - `PLEX_TUNER_LINEUP_TAKE`
+- Sharding is applied after pre-cap filters/shaping and before final lineup cap, so overflow buckets are sliced from the confirmed filtered lineup.
+- Updated supervisor manifest generator (`scripts/generate-k3s-supervisor-manifests.py`) to auto-create overflow category children from a linked-count JSON:
+  - `--category-counts-json`
+  - `--category-cap` (default `479`)
+- Overflow children are emitted as `<category>2`, `<category>3`, ... and get:
+  - per-child `PLEX_TUNER_LINEUP_SKIP/TAKE`
+  - unique service/base URL identity (`plextuner-<categoryN>`)
+  - shard-adjusted `PLEX_TUNER_GUIDE_NUMBER_OFFSET` when a base offset exists
+
+Verification:
+- `go test ./internal/tuner -run 'Test(ApplyLineupPreCapFilters_shardSkipTake|UpdateChannels_shardThenCap)$'`
+- `python -m py_compile scripts/generate-k3s-supervisor-manifests.py`
+- synthetic generator smoke run with counts (`newsus=1100`, `sportsa=500`) produced expected shards:
+  - `newsus`, `newsus2`, `newsus3`
+  - `sportsa`, `sportsa2`

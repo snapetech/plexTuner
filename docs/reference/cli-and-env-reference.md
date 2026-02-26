@@ -135,6 +135,40 @@ Use for:
 - reduced scan scope / faster targeted rescans
 - operational isolation of high-churn catch-up lanes
 
+## `plex-tuner epg-link-report`
+
+Generate a deterministic EPG-link coverage report for `live_channels` in a
+catalog against an XMLTV source. This is the Phase 1 workflow for improving the
+long-tail unlinked channel set without changing runtime playback behavior.
+
+Match tiers (current):
+- `tvg-id` exact
+- alias override exact
+- normalized channel-name exact (unique only)
+
+Common flags:
+- `-catalog`
+- `-xmltv` (required; file path or `http(s)` URL)
+- `-aliases` (optional JSON alias override file)
+- `-out` (optional JSON full report)
+- `-unmatched-out` (optional JSON unmatched-only list)
+
+Alias override JSON shape:
+
+```json
+{
+  "name_to_xmltv_id": {
+    "Nick Junior Canada": "nickjr.ca",
+    "Fox News Channel US": "foxnews.us"
+  }
+}
+```
+
+Use for:
+- measuring current XMLTV coverage before changing lineups
+- generating a review queue for the unlinked tail
+- iterating alias mappings safely (report-only, no runtime mutation)
+
 ## `plex-tuner probe`
 
 Probe provider URLs and print ranked results (best host first).

@@ -168,6 +168,33 @@ func applyLineupPreCapFilters(live []catalog.LiveChannel) []catalog.LiveChannel 
 		// Continue with optional wizard-shaping reordering before cap.
 	}
 	out = applyLineupWizardShape(out)
+	out = applyLineupShard(out)
+	return out
+}
+
+func applyLineupShard(live []catalog.LiveChannel) []catalog.LiveChannel {
+	if len(live) == 0 {
+		return live
+	}
+	skip := envInt("PLEX_TUNER_LINEUP_SKIP", 0)
+	take := envInt("PLEX_TUNER_LINEUP_TAKE", 0)
+	if skip < 0 {
+		skip = 0
+	}
+	if skip > len(live) {
+		skip = len(live)
+	}
+	start := skip
+	end := len(live)
+	if take > 0 && start+take < end {
+		end = start + take
+	}
+	if start == 0 && end == len(live) {
+		return live
+	}
+	out := make([]catalog.LiveChannel, end-start)
+	copy(out, live[start:end])
+	log.Printf("Lineup shard applied: skip=%d take=%d selected=%d/%d", skip, take, len(out), len(live))
 	return out
 }
 

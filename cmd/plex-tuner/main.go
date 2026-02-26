@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
@@ -25,6 +26,7 @@ import (
 
 	"github.com/plextuner/plex-tuner/internal/catalog"
 	"github.com/plextuner/plex-tuner/internal/config"
+	"github.com/plextuner/plex-tuner/internal/epglink"
 	"github.com/plextuner/plex-tuner/internal/hdhomerun"
 	"github.com/plextuner/plex-tuner/internal/health"
 	"github.com/plextuner/plex-tuner/internal/indexer"
@@ -274,8 +276,15 @@ func main() {
 	vodSafePreset := vodRegisterCmd.Bool("vod-safe-preset", true, "Apply per-library Plex settings to disable heavy analysis jobs (credits/intros/thumbnails) on VODFS libraries")
 	vodRefresh := vodRegisterCmd.Bool("refresh", true, "Trigger library refresh after create/reuse")
 
+	epgLinkReportCmd := flag.NewFlagSet("epg-link-report", flag.ExitOnError)
+	epgLinkCatalog := epgLinkReportCmd.String("catalog", "", "Input catalog.json (default: PLEX_TUNER_CATALOG)")
+	epgLinkXMLTV := epgLinkReportCmd.String("xmltv", "", "XMLTV file path or http(s) URL (required)")
+	epgLinkAliases := epgLinkReportCmd.String("aliases", "", "Optional alias override JSON (name_to_xmltv_id map)")
+	epgLinkOut := epgLinkReportCmd.String("out", "", "Optional full JSON report output path")
+	epgLinkUnmatchedOut := epgLinkReportCmd.String("unmatched-out", "", "Optional unmatched-only JSON output path")
+
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <run|index|mount|serve|probe|supervise|vod-split|plex-vod-register> [flags]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s <run|index|mount|serve|probe|supervise|vod-split|plex-vod-register|epg-link-report> [flags]\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  run    One-run: refresh catalog, health check, serve tuner (for systemd)\n")
 		fmt.Fprintf(os.Stderr, "  index  Fetch M3U, save catalog\n")
 		fmt.Fprintf(os.Stderr, "  mount  Mount VODFS (use -cache for on-demand download)\n")
@@ -284,6 +293,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  supervise  Start multiple child plex-tuner instances from one JSON config (single pod/container supervisor)\n")
 		fmt.Fprintf(os.Stderr, "  vod-split  Split VOD catalog into category/region lane catalogs for separate VODFS mounts/libraries\n")
 		fmt.Fprintf(os.Stderr, "  plex-vod-register  Create/reuse Plex libraries for VODFS (TV + Movies)\n")
+		fmt.Fprintf(os.Stderr, "  epg-link-report  Deterministic EPG match coverage report for live channels vs XMLTV\n")
 		os.Exit(1)
 	}
 
@@ -920,8 +930,97 @@ func main() {
 			}
 		}
 
+	case "epg-link-report":
+		_ = epgLinkReportCmd.Parse(os.Args[2:])
+		path := strings.TrimSpace(*epgLinkCatalog)
+		if path == "" {
+			path = cfg.CatalogPath
+		}
+		xmltvRef := strings.TrimSpace(*epgLinkXMLTV)
+		if xmltvRef == "" {
+			log.Print("Set -xmltv to a local file or http(s) XMLTV URL")
+			os.Exit(1)
+		}
+		c := catalog.New()
+		if err := c.Load(path); err != nil {
+			log.Printf("Load catalog %s: %v", path, err)
+			os.Exit(1)
+		}
+		live := c.SnapshotLive()
+		if len(live) == 0 {
+			log.Printf("Catalog %s contains no live_channels", path)
+			os.Exit(1)
+		}
+		xmltvR, err := openFileOrURL(xmltvRef)
+		if err != nil {
+			log.Printf("Open XMLTV %s: %v", xmltvRef, err)
+			os.Exit(1)
+		}
+		xmltvChans, err := epglink.ParseXMLTVChannels(xmltvR)
+		_ = xmltvR.Close()
+		if err != nil {
+			log.Printf("Parse XMLTV channels: %v", err)
+			os.Exit(1)
+		}
+		aliases := epglink.AliasOverrides{NameToXMLTVID: map[string]string{}}
+		if p := strings.TrimSpace(*epgLinkAliases); p != "" {
+			aliasR, err := openFileOrURL(p)
+			if err != nil {
+				log.Printf("Open aliases %s: %v", p, err)
+				os.Exit(1)
+			}
+			aliases, err = epglink.LoadAliasOverrides(aliasR)
+			_ = aliasR.Close()
+			if err != nil {
+				log.Printf("Parse aliases: %v", err)
+				os.Exit(1)
+			}
+		}
+		rep := epglink.MatchLiveChannels(live, xmltvChans, aliases)
+		log.Print(rep.SummaryString())
+		for _, row := range rep.UnmatchedRows() {
+			log.Printf("UNMATCHED #%s %-40s tvg-id=%q norm=%q reason=%s",
+				row.GuideNumber, row.GuideName, row.TVGID, row.Normalized, row.Reason)
+		}
+		if p := strings.TrimSpace(*epgLinkOut); p != "" {
+			data, _ := json.MarshalIndent(rep, "", "  ")
+			if err := os.WriteFile(p, data, 0o600); err != nil {
+				log.Printf("Write report %s: %v", p, err)
+				os.Exit(1)
+			}
+			log.Printf("Wrote report: %s", p)
+		}
+		if p := strings.TrimSpace(*epgLinkUnmatchedOut); p != "" {
+			data, _ := json.MarshalIndent(rep.UnmatchedRows(), "", "  ")
+			if err := os.WriteFile(p, data, 0o600); err != nil {
+				log.Printf("Write unmatched %s: %v", p, err)
+				os.Exit(1)
+			}
+			log.Printf("Wrote unmatched list: %s", p)
+		}
+
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %q\n", os.Args[1])
 		os.Exit(1)
 	}
+}
+
+func openFileOrURL(ref string) (io.ReadCloser, error) {
+	if strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://") {
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ref, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("User-Agent", "PlexTuner/1.0")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			defer resp.Body.Close()
+			return nil, fmt.Errorf("http %d", resp.StatusCode)
+		}
+		return resp.Body, nil
+	}
+	return os.Open(ref)
 }

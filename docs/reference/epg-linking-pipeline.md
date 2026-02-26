@@ -23,6 +23,24 @@ This is designed for Plex Tuner’s channel/guide workflows:
 4. Keep false-positive matches low
 5. Preserve manual overrides and operator review decisions
 
+## Current implementation status (Phase 1)
+
+Implemented in-app (report-only, no runtime guide mutation):
+- `plex-tuner epg-link-report`
+  - parses XMLTV channel ids / display names
+  - matches against catalog `live_channels`
+  - deterministic tiers only:
+    - `tvg-id` exact
+    - alias override exact
+    - normalized channel-name exact (unique only)
+  - writes JSON report + unmatched queue exports
+
+Not implemented yet:
+- persistent match store / DB tables
+- automatic application of medium-confidence matches
+- fuzzy/schedule-fingerprint matching
+- multi-EPG merge resolver
+
 ## Non-goals
 
 - Perfectly link all channels in one pass
