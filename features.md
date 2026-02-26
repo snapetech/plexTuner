@@ -11,13 +11,16 @@ Short feature overview. Canonical list: [`docs/features.md`](docs/features.md).
 - **Multi-DVR Plex support** (category/injected DVR fleets + HDHR wizard lane in parallel)
 - **XMLTV remap + normalization** (English/Latin preference options)
 - **Lineup shaping + wizard-safe caps** (for HDHR/provider matching workflows)
+- **Injected DVR overflow sharding** (`PLEX_TUNER_LINEUP_SKIP/TAKE`, generator support for `category2/category3/...`)
 - **Built-in Plex stale-session reaper** (optional)
 - **Optional VODFS mount** (`mount`, Linux only)
+- **VOD Plex library registration** (`plex-vod-register`, including `--shows-only` / `--movies-only`)
+- **EPG linking report (Phase 1)** (`epg-link-report` deterministic coverage/unmatched reports)
 - **Cross-platform test packaging** (Linux/macOS/Windows bundles)
 
 ## Commands
 
-- `run`, `serve`, `index`, `probe`, `mount`, `plex-vod-register`, `supervise`
+- `run`, `serve`, `index`, `probe`, `mount`, `plex-vod-register`, `epg-link-report`, `supervise`
 
 ## Plex workflows supported
 
@@ -40,5 +43,6 @@ See: [`docs/reference/plex-dvr-lifecycle-and-api.md`](docs/reference/plex-dvr-li
 - Staged tester handoff bundle: `scripts/build-tester-release.sh`
 - Plex hidden-grab recovery helper: `scripts/plex-hidden-grab-recover.sh`
 - Plex stale session drain helper (external): `scripts/plex-live-session-drain.py`
+- Plex Live TV provider label rewrite proxy (experimental/client-dependent): `scripts/plex-media-providers-label-proxy.py`
 
 Full details: [`docs/features.md`](docs/features.md)

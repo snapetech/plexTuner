@@ -20,6 +20,7 @@ Source: <https://github.com/snapetech/plexTuner>
 - Serves XMLTV guide data (placeholder or external XMLTV remap)
 - Supports both Plex wizard-based setup and programmatic DVR/injection workflows
 - Supports multi-DVR setups (for example category DVRs) in one app via `supervise`
+- Supports deterministic EPG-link coverage reporting for long-tail unlinked channels (`epg-link-report`)
 
 ## Two Plex Integration Paths (Important)
 
@@ -54,6 +55,7 @@ This path supports:
 - guide reload workflows
 - channelmap activation / replay workflows
 - repeatable cutover/update operations
+- overflow category buckets via lineup sharding (`category2`, `category3`, ...)
 
 This is the path used for:
 - category DVR fleets
@@ -155,6 +157,7 @@ Common headless operations include:
 - `probe` — provider host probe / ranking
 - `mount` — VODFS mount (Linux only)
 - `plex-vod-register` — create/reuse Plex libraries for a VODFS mount (`VOD`, `VOD-Movies` by default)
+- `epg-link-report` — deterministic EPG coverage + unmatched report for live channels vs XMLTV
 - `supervise` — run multiple child tuner instances from one JSON config
 
 Reference:
@@ -187,6 +190,10 @@ By default, `plex-vod-register` creates/reuses:
 - `VOD` -> `<mount>/TV`
 - `VOD-Movies` -> `<mount>/Movies`
 
+Optional one-sided registration:
+- `-shows-only` (create/reuse only the TV library)
+- `-movies-only` (create/reuse only the Movie library)
+
 Example:
 
 ```bash
@@ -204,6 +211,18 @@ Important:
 ### Windows note (HDHR network mode)
 
 Windows builds include the HDHR network-mode code path, but native Windows validation is still recommended (do not treat `wine` smoke tests as authoritative for discovery/network behavior).
+
+## Recent Advanced Features / Ops Notes
+
+- **EPG long-tail tooling (Phase 1):**
+  - `plex-tuner epg-link-report` compares `catalog.json` live channels vs XMLTV and reports deterministic matches (`tvg-id`, alias exact, normalized-name exact unique)
+  - intended for safely improving the large unlinked-channel tail before auto-applying matches
+- **Injected DVR overflow buckets:**
+  - runtime lineup sharding envs `PLEX_TUNER_LINEUP_SKIP` / `PLEX_TUNER_LINEUP_TAKE`
+  - supervisor manifest generator can auto-create `category2/category3/...` children from confirmed linked counts (`--category-counts-json`)
+- **Live TV provider label proxy tooling (experimental/client-dependent):**
+  - server-side `/media/providers` and provider-endpoint rewrite proxy is available for per-source labels in clients that honor provider metadata
+  - current Plex Web/TV clients may still display server-level labels (`plexKube`) in some source-tab UIs
 
 ## Packaging for Testers / Test Releases
 
