@@ -7,10 +7,25 @@ func testTSPacket(payload []byte) []byte {
 	p[0] = 0x47
 	p[1] = 0x00
 	p[2] = 0x00
-	p[3] = 0x10 // payload only
-	n := copy(p[4:], payload)
-	for i := 4 + n; i < len(p); i++ {
-		p[i] = 0xff
+	// Use adaptation+payload so short synthetic payloads do not get padded inside the
+	// payload region (which would break cross-packet boundary tests).
+	p[3] = 0x30
+	alen := len(p) - 5 - len(payload)
+	if alen < 0 {
+		alen = 0
+	}
+	p[4] = byte(alen)
+	if alen > 0 {
+		// First adaptation byte is flags; remainder can be stuffing.
+		p[5] = 0x00
+		for i := 6; i < 5+alen; i++ {
+			p[i] = 0xff
+		}
+	}
+	start := 5 + alen
+	n := copy(p[start:], payload)
+	for i := start + n; i < len(p); i++ {
+		p[i] = 0x00
 	}
 	return p
 }

@@ -280,3 +280,7 @@ Questions (ONLY if blocked or high-risk ambiguity):
   - explicit `contents: write`
   - still uploads the tester bundle as a workflow artifact
   - now also packs the staged tester bundle directory and uploads it to the GitHub Release on tag pushes (`v*`)
+
+**Verification unblock (2026-02-26 late):**
+- Fixed the pre-existing failing `internal/tuner` startup-signal test (`TestLooksLikeGoodTSStartDetectsSplitIDRStartCodeAcrossPackets`) by correcting the synthetic TS packet helper in `gateway_startsignal_test.go` to use adaptation stuffing for short payloads instead of padding bytes in the payload region.
+- This restores realistic packet-boundary semantics for the cross-packet Annex-B IDR detection test and makes `./scripts/verify` green again.
