@@ -1145,3 +1145,25 @@ Verification:
 - synthetic generator smoke run with counts (`newsus=1100`, `sportsa=500`) produced expected shards:
   - `newsus`, `newsus2`, `newsus3`
   - `sportsa`, `sportsa2`
+## 2026-02-26 — In-app Plex wizard-oracle probe command (`plex-epg-oracle`)
+
+- Added `plex-tuner plex-epg-oracle` to automate the wizard-equivalent Plex HDHR flow for one or more tuner base URLs:
+  - register device (`/media/grabbers/.../devices`)
+  - create DVR (`/livetv/dvrs`)
+  - optional `reloadGuide`
+  - fetch channelmap (`/livetv/epg/channelmap`)
+  - optional activation
+- Supports testing a URL matrix directly with:
+  - `-base-urls`
+  - or `-base-url-template` + `-caps` (template expansion for `{cap}`)
+- Intended for EPG-linking experiments (using Plex as a mapping oracle), not runtime playback.
+
+Verification:
+- `go test ./cmd/plex-tuner -run '^$'`
+
+Follow-up:
+- Added `plex-tuner plex-epg-oracle-cleanup` (dry-run by default) to remove oracle-created DVR/device rows by lineup-title prefix (`oracle-`) and/or device URI substring.
+- Added Plex API helper functions in `internal/plex` for listing/deleting DVRs/devices via HTTP API.
+
+Verification:
+- `go test ./internal/plex ./cmd/plex-tuner -run '^$'`
