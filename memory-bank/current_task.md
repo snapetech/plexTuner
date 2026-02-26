@@ -8,6 +8,23 @@
 
 **Last updated:** 2026-02-26
 
+**Current focus shift (EPG long-tail, 2026-02-26):**
+- Began Phase 1 implementation of the documented EPG-linking pipeline (`docs/reference/epg-linking-pipeline.md`) with a **report-only** in-app CLI:
+  - `plex-tuner epg-link-report`
+- The command reads `catalog.json` live channels + XMLTV, applies deterministic matching tiers (`tvg-id` exact, alias exact, normalized-name exact unique), and emits coverage/unmatched reports for operator review.
+- This is intentionally non-invasive: it does **not** mutate runtime guide linkage yet.
+- Next phase would add a persistent alias/override store and optional application of high-confidence matches during indexing.
+
+**Live category capacity follow-up (2026-02-26):**
+- Added runtime lineup sharding envs in tuner pre-cap path:
+  - `PLEX_TUNER_LINEUP_SKIP`
+  - `PLEX_TUNER_LINEUP_TAKE`
+- Sharding is applied after pre-cap EPG/music/shaping filters and before final lineup cap, so overflow DVR buckets are based on the **confirmed filtered/linkable lineup**, not raw source order.
+- Updated `scripts/generate-k3s-supervisor-manifests.py` to support optional auto-overflow child creation from confirmed per-category linked counts:
+  - `--category-counts-json`
+  - `--category-cap` (default `479`)
+- Generator now emits `category2`, `category3`, ... children (as needed) that reuse the same base category M3U/XMLTV but set `PLEX_TUNER_LINEUP_SKIP/TAKE`.
+
 **Current status (VOD work, 2026-02-26):**
 - There was no in-app equivalent of Live TV DVR injection for standard Plex Movies/TV libraries; VOD support existed only as `plex-tuner mount` (Linux FUSE/VODFS) + manual Plex library creation.
 - Added new CLI command `plex-vod-register` that creates/reuses Plex library sections for a VODFS mount:

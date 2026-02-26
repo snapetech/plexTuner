@@ -97,6 +97,18 @@ func envBool(name string, def bool) bool {
 	}
 }
 
+func envInt(name string, def int) int {
+	v := strings.TrimSpace(os.Getenv(name))
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return def
+	}
+	return n
+}
+
 func envDurationSeconds(name string, def time.Duration) time.Duration {
 	v := strings.TrimSpace(os.Getenv(name))
 	if v == "" {

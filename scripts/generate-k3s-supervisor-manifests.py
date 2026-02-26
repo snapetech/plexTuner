@@ -27,6 +27,59 @@ CATEGORIES = [
     "otherworld",
 ]
 
+
+def parse_category_counts(payload: dict[str, Any] | None) -> dict[str, int]:
+    if not isinstance(payload, dict):
+        return {}
+    out: dict[str, int] = {}
+    for k, v in payload.items():
+        key = str(k).strip().lower()
+        if not key:
+            continue
+        n: int | None = None
+        if isinstance(v, int):
+            n = v
+        elif isinstance(v, float):
+            n = int(v)
+        elif isinstance(v, str) and v.strip().isdigit():
+            n = int(v.strip())
+        elif isinstance(v, dict):
+            for field in ("confirmed_epg_stream_count", "linked_count", "count", "epg_linked"):
+                raw = v.get(field)
+                if isinstance(raw, int):
+                    n = raw
+                    break
+                if isinstance(raw, str) and raw.strip().isdigit():
+                    n = int(raw.strip())
+                    break
+        if n is None or n < 0:
+            continue
+        out[key] = n
+    return out
+
+
+def expand_category_shards(base_categories: list[str], counts: dict[str, int], cap: int) -> list[dict[str, Any]]:
+    shards: list[dict[str, Any]] = []
+    for base in base_categories:
+        total = counts.get(base.lower(), 0)
+        if cap <= 0 or total <= 0 or total <= cap:
+            shards.append({"base": base, "name": base, "skip": 0, "take": 0, "shard_index": 0, "expected_count": total})
+            continue
+        num = (total + cap - 1) // cap
+        for i in range(num):
+            suffix = "" if i == 0 else str(i + 1)
+            shards.append(
+                {
+                    "base": base,
+                    "name": f"{base}{suffix}",
+                    "skip": i * cap,
+                    "take": cap,
+                    "shard_index": i,
+                    "expected_count": max(0, min(cap, total - i*cap)),
+                }
+            )
+    return shards
+
 REGION_BUCKET_PRESETS = {
     "na_en": {
         # Use the broad live feed for the HDHR wizard lane so it resembles the
@@ -87,6 +140,7 @@ def parse_addr(args: list[str]) -> str:
 def build_supervisor_json(
     multi_deploys: list[dict[str, Any]],
     hdhr_deploy: dict[str, Any],
+    category_shards: list[dict[str, Any]],
     *,
     hdhr_m3u_url: str,
     hdhr_xmltv_url: str,
@@ -151,8 +205,10 @@ def build_supervisor_json(
     )
 
     base_port = 5101
-    for idx, cat in enumerate(CATEGORIES):
-        dep_name = f"plextuner-{cat}"
+    for idx, shard in enumerate(category_shards):
+        cat = shard["name"]
+        base_cat = shard["base"]
+        dep_name = f"plextuner-{base_cat}"
         dep = by_name[dep_name]
         c = dep["spec"]["template"]["spec"]["containers"][0]
         env_map = env_list_to_map(c.get("env", []))
@@ -168,6 +224,7 @@ def build_supervisor_json(
             "PLEX_TUNER_STREAM_TRANSCODE",
             "PLEX_TUNER_STREAM_BUFFER_BYTES",
             "PLEX_TUNER_LINEUP_MAX_CHANNELS",
+            "PLEX_TUNER_GUIDE_NUMBER_OFFSET",
             "TZ",
         ]:
             if k in env_map:
@@ -184,6 +241,19 @@ def build_supervisor_json(
         child_env["PLEX_TUNER_XMLTV_PREFER_LANGS"] = "en,eng"
         child_env["PLEX_TUNER_XMLTV_PREFER_LATIN"] = "true"
         child_env["PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK"] = "channel"
+        if int(shard.get("skip", 0)) > 0:
+            child_env["PLEX_TUNER_LINEUP_SKIP"] = str(int(shard["skip"]))
+        if int(shard.get("take", 0)) > 0:
+            child_env["PLEX_TUNER_LINEUP_TAKE"] = str(int(shard["take"]))
+        # Prevent guide-number collisions across overflow shards when a base category
+        # already has a guide offset configured.
+        if int(shard.get("shard_index", 0)) > 0:
+            base_off = 0
+            try:
+                base_off = int(child_env.get("PLEX_TUNER_GUIDE_NUMBER_OFFSET", "0"))
+            except ValueError:
+                base_off = 0
+            child_env["PLEX_TUNER_GUIDE_NUMBER_OFFSET"] = str(base_off + (int(shard["shard_index"]) * 100000))
 
         instances.append(
             {
@@ -366,6 +436,8 @@ def main() -> int:
     )
     ap.add_argument("--hdhr-m3u-url", default="", help="Override HDHR wizard-feed M3U URL")
     ap.add_argument("--hdhr-xmltv-url", default="", help="Override HDHR wizard-feed XMLTV URL")
+    ap.add_argument("--category-counts-json", default="", help="Optional JSON file with confirmed linked counts per base category for auto-overflow shard creation")
+    ap.add_argument("--category-cap", type=int, default=479, help="Per-category confirmed linked-channel cap before creating overflow shards (default: 479)")
     ap.add_argument("--hdhr-lineup-max", type=int, default=-1, help="Override HDHR child lineup max (wizard-safe default from preset)")
     ap.add_argument("--hdhr-live-epg-only", action="store_true", default=None, help="Keep only EPG-linked channels in HDHR child")
     ap.add_argument("--no-hdhr-live-epg-only", dest="hdhr_live_epg_only", action="store_false")
@@ -384,6 +456,11 @@ def main() -> int:
     hdhr = load_yaml_docs(root / "plextuner-hdhr-test-deployment.yaml")[0]
     image = hdhr["spec"]["template"]["spec"]["containers"][0]["image"]
 
+    category_counts: dict[str, int] = {}
+    if args.category_counts_json:
+        category_counts = parse_category_counts(json.loads(Path(args.category_counts_json).read_text()))
+    category_shards = expand_category_shards(CATEGORIES, category_counts, args.category_cap)
+
     if args.hdhr_region_profile == "auto":
         preset_name, preset = choose_hdhr_preset(args.country, args.postal_code, args.timezone)
     else:
@@ -399,6 +476,7 @@ def main() -> int:
     sup = build_supervisor_json(
         multi,
         hdhr,
+        category_shards,
         hdhr_m3u_url=hdhr_m3u_url,
         hdhr_xmltv_url=hdhr_xmltv_url,
         hdhr_lineup_max=hdhr_lineup_max,
@@ -419,6 +497,9 @@ def main() -> int:
     (root / args.out_tsv).write_text(tsv)
 
     print(f"HDHR preset: {preset_name} (timezone/country/postal used locally; not echoed)")
+    if category_counts:
+        overflowed = [s for s in category_shards if s["name"] != s["base"]]
+        print(f"Category shards: {len(category_shards)} instances from {len(CATEGORIES)} bases (overflow shards={len(overflowed)})")
     print(f"Wrote {root / args.out_json}")
     print(f"Wrote {root / args.out_yaml}")
     print(f"Wrote {root / args.out_tsv}")
