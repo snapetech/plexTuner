@@ -1020,3 +1020,13 @@ Verification:
 
 Verification:
 - YAML parse (`python/yaml.safe_load`) for both workflow files
+
+## 2026-02-26 - Fixed pre-existing startup-signal test helper regression and restored green verify
+
+- Fixed `internal/tuner/gateway_startsignal_test.go` synthetic TS packet helper so short test payloads are emitted with adaptation-field stuffing instead of `0xff` bytes inside the payload region.
+- This restores correct cross-packet boundary conditions for `TestLooksLikeGoodTSStartDetectsSplitIDRStartCodeAcrossPackets`.
+- `./scripts/verify` now passes again (format, vet, test, build).
+
+Verification:
+- `go test ./internal/tuner -run TestLooksLikeGoodTSStartDetectsSplitIDRStartCodeAcrossPackets -count=1`
+- `./scripts/verify`
