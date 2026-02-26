@@ -18,6 +18,9 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[adr/](adr/index.md)** | Decision log: architecture decision records. |
 | **[runbooks/](runbooks/index.md)** | Operational procedures. |
 | **[how-to/run-without-kubernetes.md](how-to/run-without-kubernetes.md)** | Run without Kubernetes (binary, Docker, systemd, local test script). |
+| **[how-to/package-test-builds.md](how-to/package-test-builds.md)** | Build cross-platform test bundles for testers (Linux/macOS/Windows). |
+| **[how-to/tester-handoff-checklist.md](how-to/tester-handoff-checklist.md)** | Tester handoff checklist (bundle contents, platform expectations, bug report capture). |
+| **[reference/cli-and-env-reference.md](reference/cli-and-env-reference.md)** | Commands, flags, and key env vars (including supervisor/testing knobs). |
 | **[k8s/README.md](../k8s/README.md)** | Kubernetes deployment (HDHR in cluster). |
 | **[epics/](epics/EPIC-template.md)** | Multi-PR epic template. Use with [memory-bank/work_breakdown.md](../memory-bank/work_breakdown.md). |
 | **product/** · **stories/** | [PRD template](product/PRD-template.md), [STORY template](stories/STORY-template.md). |

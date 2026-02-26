@@ -65,6 +65,8 @@ On a single host (no Kubernetes): use the **binary**, **Docker**, or **systemd**
 | **systemd** | Copy [docs/systemd/plextuner.service.example](docs/systemd/plextuner.service.example) to `/etc/systemd/system/plextuner.service`, set WorkingDirectory and EnvironmentFile, then `systemctl enable --now plextuner`. |
 | **Local test** | `./scripts/plextuner-local-test.sh` — QA (vet, test), serve/run, and smoke-check endpoints (options: `qa`, `serve`, `run`, `smoke`, `all`). |
 
+Cross-platform tester bundles (Linux/macOS/Windows, amd64/arm64 + Linux armv7): **[docs/how-to/package-test-builds.md](docs/how-to/package-test-builds.md)** via `./scripts/build-test-packages.sh` or staged handoff bundles via `./scripts/build-tester-release.sh` (see **[docs/how-to/tester-handoff-checklist.md](docs/how-to/tester-handoff-checklist.md)**).
+
 ---
 
 ## Quick start
@@ -193,6 +195,7 @@ Optional: `TUNER_BASE_URL=http://<node-ip>:30004` for NodePort-only; `--static` 
 
 - **Before push:** `./scripts/verify` (format → vet → test → build). Same as CI.
 - **Quick tests:** `./scripts/quick-check.sh` (tests only).
+- **Cross-platform test bundles:** `./scripts/build-test-packages.sh` (archives + checksums for tester handoff).
 - **When something breaks:** [docs/runbooks/plextuner-troubleshooting.md](docs/runbooks/plextuner-troubleshooting.md)—fail-fast checklist, probe, log patterns, common failures.
 - **Push to both remotes:** `git push origin main && git push plex main` (see `memory-bank/repo_map.md` for remote names).
 
