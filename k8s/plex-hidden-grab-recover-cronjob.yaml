@@ -1,0 +1,70 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: plex-hidden-grab-recover
+  namespace: plex
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: plex-hidden-grab-recover
+  namespace: plex
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create", "get"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: plex-hidden-grab-recover
+  namespace: plex
+subjects:
+  - kind: ServiceAccount
+    name: plex-hidden-grab-recover
+    namespace: plex
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: plex-hidden-grab-recover
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: plex-hidden-grab-recover
+  namespace: plex
+spec:
+  schedule: "*/2 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        spec:
+          serviceAccountName: plex-hidden-grab-recover
+          restartPolicy: Never
+          containers:
+            - name: recover
+              image: bitnami/kubectl:latest
+              command: ["/bin/bash", "/opt/recover/plex-hidden-grab-recover.sh"]
+              args: ["--namespace","plex","--deployment","plex","--container","plex","--lookback-min","3","--restart"]
+              volumeMounts:
+                - name: script
+                  mountPath: /opt/recover
+                  readOnly: true
+          volumes:
+            - name: script
+              configMap:
+                name: plex-hidden-grab-recover-script
+                defaultMode: 0755

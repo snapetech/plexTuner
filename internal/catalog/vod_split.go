@@ -22,6 +22,12 @@ func DefaultVODLanes() []string {
 		"news",
 		"kids",
 		"music",
+		"euroUKMovies",
+		"euroUKTV",
+		"menaMovies",
+		"menaTV",
+		// legacy aggregate names kept in order list for backward compatibility if
+		// custom/older splitters emit them.
 		"euroUK",
 		"mena",
 		"movies",
@@ -73,7 +79,7 @@ func SplitVODIntoLanes(movies []Movie, series []Series) []VODLaneCatalog {
 }
 
 func laneForMovie(m Movie) string {
-	category, region, lang, source := movieSeriesFields(m.Category, m.Region, m.Language, m.SourceTag, m.Title, "movie")
+	category, region, lang, source := movieSeriesFields(m.Category, m.Region, m.Language, m.SourceTag, m.ProviderCategoryName, m.Title, "movie")
 	_ = lang
 	_ = source
 	switch category {
@@ -88,9 +94,9 @@ func laneForMovie(m Movie) string {
 	}
 	switch region {
 	case "uk", "europe":
-		return "euroUK"
+		return "euroUKMovies"
 	case "mena":
-		return "mena"
+		return "menaMovies"
 	case "us", "ca":
 		return "movies"
 	case "intl":
@@ -101,7 +107,7 @@ func laneForMovie(m Movie) string {
 }
 
 func laneForSeries(s Series) string {
-	category, region, lang, source := movieSeriesFields(s.Category, s.Region, s.Language, s.SourceTag, s.Title, "show")
+	category, region, lang, source := movieSeriesFields(s.Category, s.Region, s.Language, s.SourceTag, s.ProviderCategoryName, s.Title, "show")
 	_ = lang
 	_ = source
 	switch category {
@@ -116,11 +122,14 @@ func laneForSeries(s Series) string {
 	}
 	switch region {
 	case "uk", "europe":
-		return "euroUK"
+		return "euroUKTV"
 	case "mena":
-		return "mena"
+		return "menaTV"
 	case "us", "ca":
-		return "bcastUS"
+		if isLikelyBcastUSSeries(region, languageOrDefault(lang), source, s.ProviderCategoryName, s.Title) {
+			return "bcastUS"
+		}
+		return "tv"
 	case "intl":
 		return "tv"
 	default:
@@ -128,9 +137,46 @@ func laneForSeries(s Series) string {
 	}
 }
 
-func movieSeriesFields(category, region, language, sourceTag, title, kind string) (string, string, string, string) {
+func isLikelyBcastUSSeries(region, language, sourceTag, providerCategoryName, title string) bool {
+	if region != "us" && region != "ca" {
+		return false
+	}
+	if language != "en" {
+		return false
+	}
+	upCat := strings.ToUpper(strings.TrimSpace(providerCategoryName))
+	upTag := strings.ToUpper(strings.TrimSpace(sourceTag))
+	upTitle := strings.ToUpper(strings.TrimSpace(title))
+
+	// Keep dubbed/subbed/regional repack categories out of the broadcast lane.
+	if containsAny(upCat, "PERSIAN", "ARAB", "HINDI", "TURK", "DUB", "SUB", "FRENCH", "GERMAN", "ITALIAN", "SPANISH") {
+		return false
+	}
+	if upTag != "" && !containsAny(upTag, "EN", "US", "CA", "4K-NF", "4K-A+", "4K-D+", "AMZN", "HBO", "HULU", "NF", "A+", "D+") {
+		return false
+	}
+	if containsAny(upCat, "CANADIAN", "CANADA", "US SERIES", "USA", "AMERICAN", "ENGLISH SERIES", "ENGLISH TV") {
+		return true
+	}
+	// Generic provider categories like "ENGLISH SERIES" often vary; allow common TV buckets.
+	if containsAny(upCat, "SERIES", "TV SHOW", "DRAMA", "COMEDY", "SITCOM", "REALITY", "SOAP", "CRIME", "THRILLER") &&
+		containsAny(upTitle, "(US)", "(CA)") {
+		return true
+	}
+	// Final weak fallback: explicit US/CA marker + English-ish source tag.
+	return containsAny(upTitle, "(US)", "(CA)") && containsAny(upTag, "EN", "US", "CA", "4K-EN")
+}
+
+func languageOrDefault(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return "en"
+	}
+	return s
+}
+
+func movieSeriesFields(category, region, language, sourceTag, providerCategoryName, title, kind string) (string, string, string, string) {
 	if category == "" || region == "" || language == "" {
-		c, r, l, s := classifyVODTitle(title, kind)
+		c, r, l, s := classifyVOD(title, kind, providerCategoryName)
 		if category == "" {
 			category = c
 		}

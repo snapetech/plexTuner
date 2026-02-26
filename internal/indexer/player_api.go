@@ -257,6 +257,7 @@ func parseSeriesEpisodes(v interface{}) []seriesEpisodeRaw {
 }
 
 func fetchVODStreams(ctx context.Context, apiBase, user, pass, streamBase string, client *http.Client) ([]catalog.Movie, error) {
+	vodCats, _ := fetchXtreamCategoryMap(ctx, apiBase, user, pass, "get_vod_categories", client)
 	u := apiBase + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&action=get_vod_streams"
 	resp, err := doGetWithRetry(ctx, client, u)
 	if err != nil {
@@ -267,11 +268,12 @@ func fetchVODStreams(ctx context.Context, apiBase, user, pass, streamBase string
 		return nil, &apiError{url: u, status: resp.StatusCode}
 	}
 	var raw []struct {
-		StreamID   int    `json:"stream_id"`
-		Name       string `json:"name"`
-		Added      string `json:"added"`
-		Container  string `json:"container_extension"`
-		StreamIcon string `json:"stream_icon"`
+		StreamID   int         `json:"stream_id"`
+		Name       string      `json:"name"`
+		Added      string      `json:"added"`
+		Container  string      `json:"container_extension"`
+		StreamIcon string      `json:"stream_icon"`
+		CategoryID interface{} `json:"category_id"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, err
@@ -296,11 +298,13 @@ func fetchVODStreams(ctx context.Context, apiBase, user, pass, streamBase string
 			artwork = r.StreamIcon
 		}
 		out = append(out, catalog.Movie{
-			ID:         strconv.Itoa(r.StreamID),
-			Title:      r.Name,
-			Year:       year,
-			StreamURL:  streamURL,
-			ArtworkURL: artwork,
+			ID:                   strconv.Itoa(r.StreamID),
+			Title:                r.Name,
+			Year:                 year,
+			StreamURL:            streamURL,
+			ArtworkURL:           artwork,
+			ProviderCategoryID:   stringNum(r.CategoryID),
+			ProviderCategoryName: vodCats[stringNum(r.CategoryID)],
 		})
 	}
 	return out, nil
@@ -309,6 +313,7 @@ func fetchVODStreams(ctx context.Context, apiBase, user, pass, streamBase string
 const maxConcurrentSeriesInfo = 10
 
 func fetchSeries(ctx context.Context, apiBase, user, pass, streamBase string, client *http.Client) ([]catalog.Series, error) {
+	seriesCats, _ := fetchXtreamCategoryMap(ctx, apiBase, user, pass, "get_series_categories", client)
 	u := apiBase + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&action=get_series"
 	resp, err := doGetWithRetry(ctx, client, u)
 	if err != nil {
@@ -319,10 +324,11 @@ func fetchSeries(ctx context.Context, apiBase, user, pass, streamBase string, cl
 		return nil, &apiError{url: u, status: resp.StatusCode}
 	}
 	var rawList []struct {
-		SeriesID    int    `json:"series_id"`
-		Name        string `json:"name"`
-		Cover       string `json:"cover"`
-		ReleaseYear string `json:"releaseDate"`
+		SeriesID    int         `json:"series_id"`
+		Name        string      `json:"name"`
+		Cover       string      `json:"cover"`
+		ReleaseYear string      `json:"releaseDate"`
+		CategoryID  interface{} `json:"category_id"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&rawList); err != nil {
 		return nil, err
@@ -361,12 +367,43 @@ func fetchSeries(ctx context.Context, apiBase, user, pass, streamBase string, cl
 			artwork = strings.TrimSuffix(apiBase, "/") + "/" + strings.TrimPrefix(artwork, "/")
 		}
 		out = append(out, catalog.Series{
-			ID:         strconv.Itoa(s.SeriesID),
-			Title:      s.Name,
-			Year:       year,
-			Seasons:    r.info,
-			ArtworkURL: artwork,
+			ID:                   strconv.Itoa(s.SeriesID),
+			Title:                s.Name,
+			Year:                 year,
+			Seasons:              r.info,
+			ArtworkURL:           artwork,
+			ProviderCategoryID:   stringNum(s.CategoryID),
+			ProviderCategoryName: seriesCats[stringNum(s.CategoryID)],
 		})
+	}
+	return out, nil
+}
+
+func fetchXtreamCategoryMap(ctx context.Context, apiBase, user, pass, action string, client *http.Client) (map[string]string, error) {
+	u := apiBase + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&action=" + url.QueryEscape(action)
+	resp, err := doGetWithRetry(ctx, client, u)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, &apiError{url: u, status: resp.StatusCode}
+	}
+	var raw []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(raw))
+	for _, r := range raw {
+		id := stringNum(r["category_id"])
+		if id == "" {
+			continue
+		}
+		name := strings.TrimSpace(str(r["category_name"]))
+		if name == "" {
+			name = strings.TrimSpace(str(r["name"]))
+		}
+		out[id] = name
 	}
 	return out, nil
 }

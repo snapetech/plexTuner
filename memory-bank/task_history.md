@@ -1066,3 +1066,20 @@ Verification:
   - `.github/workflows/tester-bundles.yml` now uploads individual ZIPs + `SHA256SUMS.txt` directly to GitHub Releases instead of a single combined bundle tarball.
   - Fixed cross-platform packaging regression by adding `MountWithAllowOther` to non-Linux VODFS stub (`internal/vodfs/mount_unsupported.go`).
   - Local verification: `v0.1.0-test2-rc1` package build + staged tester release contained source ZIP + 7 platform ZIPs + checksums.
+
+- VODFS naming now prefixes presented movie/show/episode names with `Live: ` (idempotent) so Plex search/results make live-origin items obvious.
+  - Implemented in `internal/vodfs/plexname.go` (`MovieDirName` / `ShowDirName` path generation) and verified with `internal/vodfs` naming tests.
+- 2026-02-26 (morning): Added provider-category-aware VOD taxonomy hooks and Xtream indexer support for `category_id/category_name` on movies/series.
+  - `catalog.Movie`/`catalog.Series` provider category fields are now populated by `internal/indexer/player_api.go` (via `get_vod_categories` / `get_series_categories`) for newly generated catalogs.
+  - Tightened VOD taxonomy heuristics to avoid common title-substring false positives (`News of the World`, `The Sound of Music`, `Nickel Boys`, `Phantom Menace`, `The Newsroom`).
+  - Re-ran `vod-split` on existing local catalog (which lacks provider categories): `sports/music/kids` lanes improved materially; `euroUK`/`mena` remain broad due to noisy source-tag region inference.
+- 2026-02-26 (morning): Validated provider-category-driven VOD lane split quality using a fast merge into existing `catalog.json`.
+  - Built `/tmp/catalog.providermerge.json` by fetching Xtream `get_vod_streams`/`get_series` + `get_vod_categories`/`get_series_categories` and merging `provider_category_id/name` into the current local catalog by ID (movies: `157321/157331` merged, series: `41391/41391` merged).
+  - Re-ran `vod-split` on merged catalog: `sports`, `kids`, and `music` lanes became materially cleaner and larger (driven by provider categories instead of title substrings).
+  - `euroUK`/`mena` remain broad by design/heuristics and need a second-pass taxonomy ruleset (sub-lanes or package-scoped region rules) if tighter segmentation is desired.
+- 2026-02-26 (morning): Refined VOD lane model and `bcastUS` gating.
+  - Split region-heavy lanes into explicit movie/TV lanes: `euroUKMovies`, `euroUKTV`, `menaMovies`, `menaTV`.
+  - Tightened `bcastUS` to English US/CA TV-like provider categories (and common EN source tags), preventing dubbed/imported US/CA copies from crowding the broadcast lane.
+  - Validation on provider-category-merged catalog: `bcastUS` reduced from `9631` to `2179` series; non-English/translated US/CA content moved to `tv`.
+
+- Fixed recurring supervisor env leak: parent `PLEX_TUNER_PLEX_SESSION_REAPER*` / `PLEX_TUNER_PMS_*` vars are now stripped from child environments by default in `internal/supervisor` (children can still set explicit values in supervisor config).
