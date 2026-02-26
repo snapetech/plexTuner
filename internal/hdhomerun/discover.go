@@ -5,7 +5,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"syscall"
 	"time"
 )
 
@@ -43,19 +42,6 @@ func NewDiscoverServer(device *Device, port int) (*DiscoverServer, error) {
 	conn, err := net.ListenUDP("udp4", addr)
 	if err != nil {
 		return nil, fmt.Errorf("listen UDP: %w", err)
-	}
-
-	// Enable broadcast using syscall
-	file, err := conn.File()
-	if err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("get file: %w", err)
-	}
-	defer file.Close()
-	err = syscall.SetsockoptInt(int(file.Fd()), syscall.SOL_SOCKET, syscall.SO_BROADCAST, 1)
-	if err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("enable broadcast: %w", err)
 	}
 
 	return &DiscoverServer{
