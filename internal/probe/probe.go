@@ -1,9 +1,11 @@
 package probe
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -23,9 +25,10 @@ type LineupItem struct {
 type StreamType string
 
 const (
-	StreamUnknown   StreamType = ""
-	StreamDirectMP4 StreamType = "direct_mp4"
-	StreamHLS       StreamType = "hls"
+	StreamUnknown    StreamType = ""
+	StreamDirectMP4  StreamType = "direct_mp4"
+	StreamDirectFile StreamType = "direct_file"
+	StreamHLS        StreamType = "hls"
 )
 
 // Probe inspects a stream URL and returns a coarse stream type.
@@ -35,12 +38,8 @@ func Probe(streamURL string, client *http.Client) (StreamType, error) {
 	if err != nil {
 		return StreamUnknown, err
 	}
-	path := strings.ToLower(u.Path)
-	if strings.HasSuffix(path, ".m3u8") {
-		return StreamHLS, nil
-	}
-	if strings.HasSuffix(path, ".mp4") || strings.HasSuffix(path, ".m4v") {
-		return StreamDirectMP4, nil
+	if t := classifyPath(u.Path); t != StreamUnknown {
+		return t, nil
 	}
 	if client == nil {
 		client = &http.Client{Timeout: 8 * time.Second}
@@ -51,22 +50,72 @@ func Probe(streamURL string, client *http.Client) (StreamType, error) {
 	if err != nil {
 		return StreamUnknown, err
 	}
-	req.Header.Set("Range", "bytes=0-0")
+	req.Header.Set("Range", "bytes=0-4095")
 	resp, err := client.Do(req)
 	if err != nil {
 		return StreamUnknown, err
 	}
 	defer resp.Body.Close()
+
+	// Followed redirects may reveal the real media suffix.
+	if resp.Request != nil && resp.Request.URL != nil {
+		if t := classifyPath(resp.Request.URL.Path); t != StreamUnknown {
+			return t, nil
+		}
+	}
+
 	ct := strings.ToLower(resp.Header.Get("Content-Type"))
 	switch {
 	case strings.Contains(ct, "mpegurl"), strings.Contains(ct, "application/vnd.apple.mpegurl"), strings.Contains(ct, "audio/mpegurl"):
 		return StreamHLS, nil
-	case strings.Contains(ct, "video/mp4"), strings.Contains(ct, "application/mp4"):
-		return StreamDirectMP4, nil
+	case strings.Contains(ct, "video/mp4"), strings.Contains(ct, "application/mp4"),
+		strings.Contains(ct, "video/x-matroska"), strings.Contains(ct, "video/webm"),
+		strings.Contains(ct, "application/octet-stream"):
+		// `octet-stream` is common from IPTV/VOD providers; path/body sniff below
+		// narrows many cases, but treating it as direct file is a better fallback for
+		// VOD than rejecting it outright.
+		return StreamDirectFile, nil
 	case strings.Contains(ct, "video/mp2t"):
 		return StreamHLS, nil
 	}
+
+	// Some providers return generic content-types; sniff a small prefix.
+	buf, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+	trim := bytes.TrimSpace(buf)
+	upper := bytes.ToUpper(trim)
+	switch {
+	case bytes.HasPrefix(upper, []byte("#EXTM3U")):
+		return StreamHLS, nil
+	case len(buf) >= 12 && bytes.Contains(buf[:min(len(buf), 64)], []byte("ftyp")):
+		return StreamDirectMP4, nil
+	case bytes.HasPrefix(buf, []byte{0x1A, 0x45, 0xDF, 0xA3}):
+		return StreamDirectFile, nil // Matroska/WebM EBML header
+	}
+
 	return StreamUnknown, errors.New("unknown stream type")
+}
+
+func classifyPath(path string) StreamType {
+	p := strings.ToLower(path)
+	switch {
+	case strings.HasSuffix(p, ".m3u8"):
+		return StreamHLS
+	case strings.HasSuffix(p, ".mp4"), strings.HasSuffix(p, ".m4v"):
+		return StreamDirectMP4
+	case strings.HasSuffix(p, ".mkv"), strings.HasSuffix(p, ".webm"), strings.HasSuffix(p, ".avi"), strings.HasSuffix(p, ".mov"):
+		return StreamDirectFile
+	case strings.HasSuffix(p, ".ts"):
+		return StreamHLS
+	default:
+		return StreamUnknown
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // Lineup returns the lineup.json payload for the given live channels. baseURL is the base URL for stream links (e.g. http://tuner-host:port/stream?url=...).

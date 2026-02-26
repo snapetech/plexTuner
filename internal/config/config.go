@@ -22,9 +22,10 @@ type Config struct {
 	M3UURL          string // optional: full M3U URL if different from base
 
 	// Paths
-	MountPoint  string // e.g. /mnt/vodfs
-	CacheDir    string // e.g. /var/cache/plextuner
-	CatalogPath string // e.g. /var/lib/plextuner/catalog.json
+	MountPoint      string // e.g. /mnt/vodfs
+	CacheDir        string // e.g. /var/cache/plextuner
+	CatalogPath     string // e.g. /var/lib/plextuner/catalog.json
+	VODFSAllowOther bool   // Linux only: mount VODFS with FUSE allow_other (needed for some Plex/k8s hostPath setups)
 
 	// Live tuner
 	TunerCount        int
@@ -73,6 +74,7 @@ func Load() *Config {
 		MountPoint:           getEnv("PLEX_TUNER_MOUNT", "/mnt/vodfs"),
 		CacheDir:             getEnv("PLEX_TUNER_CACHE", "/var/cache/plextuner"),
 		CatalogPath:          getEnv("PLEX_TUNER_CATALOG", "./catalog.json"),
+		VODFSAllowOther:      getEnvBool("PLEX_TUNER_VODFS_ALLOW_OTHER", false),
 		TunerCount:           getEnvInt("PLEX_TUNER_TUNER_COUNT", 2),
 		LineupMaxChannels:    getEnvInt("PLEX_TUNER_LINEUP_MAX_CHANNELS", 480),
 		GuideNumberOffset:    getEnvInt("PLEX_TUNER_GUIDE_NUMBER_OFFSET", 0),

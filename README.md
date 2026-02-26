@@ -154,6 +154,7 @@ Common headless operations include:
 - `index` — fetch provider data and write catalog
 - `probe` — provider host probe / ranking
 - `mount` — VODFS mount (Linux only)
+- `plex-vod-register` — create/reuse Plex libraries for a VODFS mount (`VOD`, `VOD-Movies` by default)
 - `supervise` — run multiple child tuner instances from one JSON config
 
 Reference:
@@ -173,6 +174,32 @@ Supported:
 ### Linux-only
 
 - `mount` / `VODFS` (FUSE)
+
+### VOD Libraries in Plex (VODFS)
+
+VOD library injection is not the same as Live TV DVR injection.
+
+Current supported flow:
+1. mount VODFS (`plex-tuner mount`) on a path the Plex server can see
+2. register libraries via `plex-vod-register`
+
+By default, `plex-vod-register` creates/reuses:
+- `VOD` -> `<mount>/TV`
+- `VOD-Movies` -> `<mount>/Movies`
+
+Example:
+
+```bash
+plex-tuner mount -catalog ./catalog.json -mount /srv/plextuner-vodfs
+plex-tuner plex-vod-register \
+  -mount /srv/plextuner-vodfs \
+  -plex-url http://127.0.0.1:32400 \
+  -token "$PLEX_TOKEN"
+```
+
+Important:
+- the VODFS mount path must be visible to Plex (same host / shared filesystem path)
+- Kubernetes Plex pods usually need a host-level/systemd VODFS mount or a privileged mount-propagation setup; mounting VODFS in a separate helper pod does not automatically make it visible to the Plex pod
 
 ### Windows note (HDHR network mode)
 

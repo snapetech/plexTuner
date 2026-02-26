@@ -195,6 +195,67 @@ func intNum(v interface{}) int {
 	}
 }
 
+type seriesEpisodeRaw struct {
+	ID          string
+	EpisodeNum  int
+	SeasonNum   int
+	Title       string
+	ReleaseDate string
+	Container   string
+}
+
+func appendEpisodeFromMap(dst *[]seriesEpisodeRaw, m map[string]interface{}) {
+	*dst = append(*dst, seriesEpisodeRaw{
+		ID:          str(m["id"]),
+		EpisodeNum:  intNum(m["episode_num"]),
+		SeasonNum:   intNum(m["season_num"]),
+		Title:       str(m["title"]),
+		ReleaseDate: str(m["releaseDate"]),
+		Container:   str(m["container_extension"]),
+	})
+}
+
+func parseSeriesEpisodes(v interface{}) []seriesEpisodeRaw {
+	var list []seriesEpisodeRaw
+	switch tv := v.(type) {
+	case map[string]interface{}:
+		for seasonKey, mv := range tv {
+			switch x := mv.(type) {
+			case map[string]interface{}:
+				appendEpisodeFromMap(&list, x)
+			case []interface{}:
+				for _, item := range x {
+					m, ok := item.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					if intNum(m["season_num"]) == 0 {
+						// Some Xtream APIs key episodes by season and omit season_num in each item.
+						m2 := make(map[string]interface{}, len(m)+1)
+						for k, v := range m {
+							m2[k] = v
+						}
+						if n, err := strconv.Atoi(seasonKey); err == nil {
+							m2["season_num"] = n
+						}
+						m = m2
+					}
+					appendEpisodeFromMap(&list, m)
+				}
+			}
+		}
+	case []interface{}:
+		for _, item := range tv {
+			m, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			appendEpisodeFromMap(&list, m)
+		}
+	}
+	return list
+}
+
 func fetchVODStreams(ctx context.Context, apiBase, user, pass, streamBase string, client *http.Client) ([]catalog.Movie, error) {
 	u := apiBase + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&action=get_vod_streams"
 	resp, err := doGetWithRetry(ctx, client, u)
@@ -326,43 +387,7 @@ func fetchSeriesInfo(ctx context.Context, apiBase, user, pass, streamBase string
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
 		return nil, err
 	}
-	type epStruct struct {
-		ID          string `json:"id"`
-		EpisodeNum  int    `json:"episode_num"`
-		SeasonNum   int    `json:"season_num"`
-		Title       string `json:"title"`
-		ReleaseDate string `json:"releaseDate"`
-		Container   string `json:"container_extension"`
-	}
-	var list []epStruct
-	switch v := info.Episodes.(type) {
-	case map[string]interface{}:
-		for _, m := range v {
-			if m, ok := m.(map[string]interface{}); ok {
-				list = append(list, epStruct{
-					ID:          str(m["id"]),
-					EpisodeNum:  intNum(m["episode_num"]),
-					SeasonNum:   intNum(m["season_num"]),
-					Title:       str(m["title"]),
-					ReleaseDate: str(m["releaseDate"]),
-					Container:   str(m["container_extension"]),
-				})
-			}
-		}
-	case []interface{}:
-		for _, m := range v {
-			if m, ok := m.(map[string]interface{}); ok {
-				list = append(list, epStruct{
-					ID:          str(m["id"]),
-					EpisodeNum:  intNum(m["episode_num"]),
-					SeasonNum:   intNum(m["season_num"]),
-					Title:       str(m["title"]),
-					ReleaseDate: str(m["releaseDate"]),
-					Container:   str(m["container_extension"]),
-				})
-			}
-		}
-	}
+	list := parseSeriesEpisodes(info.Episodes)
 	bySeason := make(map[int][]catalog.Episode)
 	for _, ep := range list {
 		ext := ep.Container

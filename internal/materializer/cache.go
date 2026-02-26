@@ -2,6 +2,7 @@ package materializer
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -37,8 +38,10 @@ func (c *Cache) Materialize(ctx context.Context, assetID string, streamURL strin
 
 	typ, err := probe.Probe(streamURL, client)
 	if err != nil {
+		log.Printf("materializer: probe failed asset=%s url=%q err=%v", assetID, streamURL, err)
 		return "", err
 	}
+	log.Printf("materializer: probe asset=%s url=%q type=%s", assetID, streamURL, typ)
 
 	partialPath := cache.PartialPath(c.CacheDir, assetID)
 	c.mu.Lock()
@@ -83,14 +86,18 @@ func (c *Cache) Materialize(ctx context.Context, assetID string, streamURL strin
 
 	var matErr error
 	switch typ {
-	case probe.StreamDirectMP4:
+	case probe.StreamDirectMP4, probe.StreamDirectFile:
+		log.Printf("materializer: download direct asset=%s dest=%q", assetID, partialPath)
 		matErr = DownloadToFile(ctx, streamURL, partialPath, client)
 	case probe.StreamHLS:
+		log.Printf("materializer: download hls asset=%s dest=%q", assetID, partialPath)
 		matErr = materializeHLS(ctx, streamURL, partialPath)
 	default:
+		log.Printf("materializer: unsupported type asset=%s type=%q", assetID, typ)
 		return "", ErrNotReady{AssetID: assetID}
 	}
 	if matErr != nil {
+		log.Printf("materializer: materialize failed asset=%s err=%v", assetID, matErr)
 		os.Remove(partialPath)
 		c.mu.Lock()
 		c.lastErr[assetID] = matErr
@@ -99,8 +106,10 @@ func (c *Cache) Materialize(ctx context.Context, assetID string, streamURL strin
 	}
 
 	if err := os.Rename(partialPath, finalPath); err != nil {
+		log.Printf("materializer: rename failed asset=%s from=%q to=%q err=%v", assetID, partialPath, finalPath, err)
 		os.Remove(partialPath)
 		return "", err
 	}
+	log.Printf("materializer: materialize ok asset=%s final=%q", assetID, finalPath)
 	return finalPath, nil
 }

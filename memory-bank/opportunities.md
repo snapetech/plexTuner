@@ -23,6 +23,17 @@ It exists to encourage quality gains without derailing the current task.
 ## Entries
 
 - Date: 2026-02-26
+  Category: operability
+  Title: Add near-live catch-up library mode with category-split Plex libraries and targeted scans
+  Context: User product-direction discussion during VODFS/Plex import debugging; Live TV sharing constraints and large-library scan pain both surfaced.
+  Why it matters: Plex Live TV sharing is limited (Plex Home-focused) and giant hot libraries are expensive to scan/update. A near-live catch-up model using ordinary Plex libraries could improve remote sharing, UX, and scanner performance if designed around program-bounded assets + targeted scans.
+  Evidence: Current VOD tests show full-library scale (~157k movies / ~41k series) makes validation and scan feedback slow; subset libraries (`VOD-SUBSET`, `VOD-SUBSET-Movies`) provide much faster, clearer signal. User provided detailed architecture/cadence proposal (EPG backend metadata; published assets as Plex items; collections/recommendation rows as UX veneer).
+  Suggested fix: Design and implement a first-class catch-up mode with: (1) program-bounded finalized assets only, (2) event-driven publish + path-specific section scans, (3) hourly-ish retention sweeps, (4) category-split Plex libraries (e.g. `bcastUS`, `sports`, `news`, regional buckets), and (5) optional collection/shelf curator on a 10–15 minute cadence.
+  Risk/Scope: high | fits current scope: no (new product mode / multi-worker architecture)
+  User decision needed?: yes
+  If yes: 1) Spike only (taxonomy + schema + worker plan) (Recommended), 2) MVP implementation for one category library + publisher/scan worker, 3) Full catch-up product roadmap/epic. If no answer: keep as documented opportunity and continue current VODFS/library import stabilization.
+
+- Date: 2026-02-26
   Category: reliability
   Title: Add in-app/operator command to detect and clear Plex hidden Live TV "active grabs" without full Plex restart
   Context: Post guide-number-offset remap validation for 15 DVRs; Plex Web clicks did nothing until Plex restart.
