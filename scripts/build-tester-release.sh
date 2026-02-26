@@ -54,8 +54,7 @@ rm -rf "$REL_DIR"
 mkdir -p "$REL_DIR/packages" "$REL_DIR/examples" "$REL_DIR/docs"
 
 cp "$PKG_DIR"/SHA256SUMS.txt "$REL_DIR/packages/"
-cp "$PKG_DIR"/*.tar.gz "$REL_DIR/packages/" 2>/dev/null || true
-cp "$PKG_DIR"/*.zip "$REL_DIR/packages/" 2>/dev/null || true
+  cp "$PKG_DIR"/*.zip "$REL_DIR/packages/" 2>/dev/null || true
 
 cp k8s/plextuner-supervisor-multi.example.json "$REL_DIR/examples/"
 cp k8s/plextuner-supervisor-singlepod.example.yaml "$REL_DIR/examples/"
@@ -120,10 +119,13 @@ for p in sorted(packages_dir.iterdir()):
     if p.name == "SHA256SUMS.txt" or not p.is_file():
         continue
     name = p.name
-    base = name[:-7] if name.endswith(".tar.gz") else name[:-4] if name.endswith(".zip") else name
+    base = name[:-4] if name.endswith(".zip") else name
     parts = base.split("_")
     os_name = arch = "unknown"
-    if len(parts) >= 4 and parts[0] == "plex-tuner":
+    if name.endswith("_source.zip"):
+        os_name = "source"
+        arch = "src"
+    elif len(parts) >= 4 and parts[0] == "plex-tuner":
         os_name = parts[-2]
         arch = parts[-1]
     packages.append({

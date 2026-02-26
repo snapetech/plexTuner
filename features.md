@@ -17,7 +17,7 @@ Short feature overview. Canonical list: [`docs/features.md`](docs/features.md).
 
 ## Commands
 
-- `run`, `serve`, `index`, `probe`, `mount`, `supervise`
+- `run`, `serve`, `index`, `probe`, `mount`, `plex-vod-register`, `supervise`
 
 ## Plex workflows supported
 

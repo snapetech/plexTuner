@@ -5,7 +5,8 @@ set -euo pipefail
 #
 # Output:
 #   dist/test-packages/<version>/
-#     plex-tuner_<version>_<os>_<arch>.tar.gz|zip
+#     plex-tuner_<version>_source.zip
+#     plex-tuner_<version>_<os>_<arch>.zip
 #     SHA256SUMS.txt
 #
 # Usage:
@@ -24,9 +25,9 @@ require() {
 }
 
 require go
-require tar
 require zip
 require sha256sum
+require git
 
 DEFAULT_PLATFORMS=(
   "linux/amd64"
@@ -86,6 +87,13 @@ copy_bundle_files() {
   cp scripts/plex-live-session-drain.py "$target_dir/scripts/"
 }
 
+build_source_zip() {
+  local out="$1"
+  git archive --format=zip --output "$out" --prefix="plex-tuner_${VERSION}_source/" HEAD
+}
+
+build_source_zip "$DIST_DIR/plex-tuner_${VERSION}_source.zip"
+
 for spec in "${PLATFORMS_ARR[@]}"; do
   IFS='/' read -r GOOS GOARCH GOARM_REST <<<"$spec"
   GOARM=""
@@ -120,14 +128,10 @@ for spec in "${PLATFORMS_ARR[@]}"; do
 
   copy_bundle_files "$stage_dir"
 
-  if [[ "$GOOS" == "windows" ]]; then
-    (cd "$STAGE_ROOT" && zip -qr "$DIST_DIR/$base.zip" "$base")
-  else
-    tar -C "$STAGE_ROOT" -czf "$DIST_DIR/$base.tar.gz" "$base"
-  fi
+  (cd "$STAGE_ROOT" && zip -qr "$DIST_DIR/$base.zip" "$base")
 done
 
-(cd "$DIST_DIR" && sha256sum ./*.tar.gz ./*.zip > SHA256SUMS.txt)
+(cd "$DIST_DIR" && sha256sum ./*.zip > SHA256SUMS.txt)
 
 echo
 echo "Done. Generated packages:"

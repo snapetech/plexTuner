@@ -1030,3 +1030,39 @@ Verification:
 Verification:
 - `go test ./internal/tuner -run TestLooksLikeGoodTSStartDetectsSplitIDRStartCodeAcrossPackets -count=1`
 - `./scripts/verify`
+
+## 2026-02-26 - Added in-app Plex VOD library registration (`plex-vod-register`) for VODFS mounts
+
+- Added `internal/plex/library.go` with Plex library section APIs:
+  - list sections
+  - create section (`/library/sections`)
+  - refresh section (`/library/sections/<key>/refresh`)
+  - idempotent ensure-by-name+path
+- Added new CLI command `plex-vod-register` to create/reuse:
+  - `VOD` -> `<mount>/TV` (show library)
+  - `VOD-Movies` -> `<mount>/Movies` (movie library)
+  with Plex URL/token env fallbacks and optional refresh.
+- Updated docs (`README.md`, `docs/reference/cli-and-env-reference.md`, `features.md`) to document the VODFS + Plex library registration workflow and the k8s mount-visibility caveat.
+- Live validation against test Plex API (inside Plex pod) succeeded using temporary names (`PTVODTEST`, `PTVODTEST-Movies`): create + reuse + refresh behavior confirmed.
+
+Verification:
+- `go test ./cmd/plex-tuner ./internal/plex -run '^$'`
+- `go build -o /tmp/plex-tuner-vodreg ./cmd/plex-tuner`
+- Live Plex API smoke via in-pod binary execution: `plex-vod-register` create/reuse against `http://127.0.0.1:32400`
+- 2026-02-26 (late): VODFS/Plex VOD TV imports unblocked by per-library Plex analysis suppression.
+  - Proved `VOD-SUBSET` TV imports (`count` moved from `0` to `>0`, observed `6` and climbing) after disabling library-level credits/chapter-thumbnail/preview/ad/voice jobs and restarting Plex.
+  - Added in-app Plex library prefs support (`internal/plex/library.go`) and wired `plex-vod-register` to apply a default VOD-safe preset.
+  - Added in-app VOD taxonomy enrichment + deterministic sorting (`internal/catalog/vod_taxonomy.go`) and applied it during `fetchCatalog` for future category-split catch-up libraries.
+  - Verification: `go test ./internal/plex ./internal/catalog ./cmd/plex-tuner -run '^$|TestApplyVODTaxonomy'` and live PMS prefs `PUT /library/sections/<id>/prefs` checks on sections `7/8/9/10`.
+
+- 2026-02-26 (late): Added built-in VOD category-lane split tooling for post-backfill reruns.
+  - New `plex-tuner vod-split` command emits per-lane catalogs (`bcastUS`, `sports`, `news`, `kids`, `music`, `euroUK`, `mena`, `movies`, `tv`, `intl`) plus `manifest.json`.
+  - Added `internal/catalog` lane split logic + tests and wired taxonomy enrichment/sorting into `fetchCatalog`.
+  - Added host-side helper `scripts/vod-seriesfixed-cutover.sh` for retry+swap+remount after `catalog.seriesfixed.json` backfill completes.
+
+- 2026-02-26 (late): Switched tester release packaging to GitHub-style per-asset ZIPs.
+  - `scripts/build-test-packages.sh` now emits ZIPs for every platform plus a source ZIP (`plex-tuner_<version>_source.zip`) and `SHA256SUMS.txt`.
+  - `scripts/build-tester-release.sh` now stages only ZIP-based package assets and records source ZIP metadata in `manifest.json`.
+  - `.github/workflows/tester-bundles.yml` now uploads individual ZIPs + `SHA256SUMS.txt` directly to GitHub Releases instead of a single combined bundle tarball.
+  - Fixed cross-platform packaging regression by adding `MountWithAllowOther` to non-Linux VODFS stub (`internal/vodfs/mount_unsupported.go`).
+  - Local verification: `v0.1.0-test2-rc1` package build + staged tester release contained source ZIP + 7 platform ZIPs + checksums.

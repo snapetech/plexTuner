@@ -24,6 +24,7 @@ func DownloadToFile(ctx context.Context, streamURL, destPath string, client *htt
 	if client == nil {
 		client = http.DefaultClient
 	}
+	transferClient := cloneClientNoTimeout(client)
 	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		return err
 	}
@@ -39,9 +40,9 @@ func DownloadToFile(ctx context.Context, streamURL, destPath string, client *htt
 	acceptRanges := resp.Header.Get("Accept-Ranges") == "bytes"
 
 	if acceptRanges && size > 0 {
-		return downloadRange(ctx, client, streamURL, destPath, size)
+		return downloadRange(ctx, transferClient, streamURL, destPath, size)
 	}
-	return downloadFull(ctx, client, streamURL, destPath)
+	return downloadFull(ctx, transferClient, streamURL, destPath)
 }
 
 func downloadRange(ctx context.Context, client *http.Client, streamURL, destPath string, total int64) error {
@@ -110,3 +111,15 @@ func errStatus(code int) error {
 type downloadError struct{ code int }
 
 func (e *downloadError) Error() string { return "download: HTTP " + strconv.Itoa(e.code) }
+
+func cloneClientNoTimeout(c *http.Client) *http.Client {
+	if c == nil {
+		return &http.Client{}
+	}
+	clone := *c
+	clone.Timeout = 0
+	if t, ok := c.Transport.(*http.Transport); ok && t != nil {
+		clone.Transport = t.Clone()
+	}
+	return &clone
+}

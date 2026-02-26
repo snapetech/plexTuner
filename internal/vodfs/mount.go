@@ -19,6 +19,12 @@ import (
 // Mount mounts VODFS at mountPoint using the given catalog snapshot and materializer.
 // It blocks until the process receives SIGINT or the server exits.
 func Mount(mountPoint string, movies []catalog.Movie, series []catalog.Series, mat materializer.Interface) error {
+	return MountWithAllowOther(mountPoint, movies, series, mat, false)
+}
+
+// MountWithAllowOther mounts VODFS and optionally enables FUSE allow_other so
+// non-mounting users/processes (for example Plex in another runtime context) can access it.
+func MountWithAllowOther(mountPoint string, movies []catalog.Movie, series []catalog.Series, mat materializer.Interface, allowOther bool) error {
 	root := &Root{
 		Movies: movies,
 		Series: series,
@@ -27,10 +33,12 @@ func Mount(mountPoint string, movies []catalog.Movie, series []catalog.Series, m
 	if root.Mat == nil {
 		root.Mat = &materializer.Stub{}
 	}
+	root.buildNameIndexes()
 
 	opts := &fs.Options{
 		MountOptions: fuse.MountOptions{
-			Debug: false,
+			Debug:      false,
+			AllowOther: allowOther,
 		},
 	}
 	server, err := fs.Mount(mountPoint, root, opts)

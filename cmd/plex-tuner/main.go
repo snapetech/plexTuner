@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -55,6 +57,35 @@ func streamURLsFromRankedBases(streamURL string, rankedBases []string) []string 
 		out = append(out, base+path)
 	}
 	return out
+}
+
+func applyPlexVODLibraryPreset(plexBaseURL, plexToken string, sec *plex.LibrarySection) error {
+	if sec == nil {
+		return fmt.Errorf("nil library section")
+	}
+	prefs, err := plex.GetLibrarySectionPrefs(plexBaseURL, plexToken, sec.Key)
+	if err != nil {
+		return err
+	}
+	// Disable expensive media-analysis/background jobs for virtual catch-up libraries only.
+	desired := map[string]string{
+		"enableBIFGeneration":           "0",
+		"enableChapterThumbGeneration":  "0",
+		"enableIntroMarkerGeneration":   "0",
+		"enableCreditsMarkerGeneration": "0",
+		"enableAdMarkerGeneration":      "0",
+		"enableVoiceActivityGeneration": "0",
+	}
+	updates := map[string]string{}
+	for k, v := range desired {
+		if got, ok := prefs[k]; ok && got != v {
+			updates[k] = v
+		}
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+	return plex.UpdateLibrarySectionPrefs(plexBaseURL, plexToken, sec.Key, updates)
 }
 
 // catalogResult holds the output of fetchCatalog.
@@ -139,6 +170,10 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 		return res, fmt.Errorf("need -m3u URL or set PLEX_TUNER_PROVIDER_USER and PLEX_TUNER_PROVIDER_PASS in .env")
 	}
 
+	// Enrich and sort VOD content deterministically so downstream VODFS and future
+	// catch-up/category library splits do not depend on provider ordering.
+	res.Movies, res.Series = catalog.ApplyVODTaxonomy(res.Movies, res.Series)
+
 	// Apply configured live-channel filters (applied consistently on every fetch path).
 	if cfg.LiveEPGOnly {
 		filtered := make([]catalog.LiveChannel, 0, len(res.Live))
@@ -194,6 +229,7 @@ func main() {
 	mountPoint := mountCmd.String("mount", "", "Mount point (default: PLEX_TUNER_MOUNT)")
 	catalogPathMount := mountCmd.String("catalog", "", "Catalog JSON path (default: PLEX_TUNER_CATALOG)")
 	cacheDir := mountCmd.String("cache", "", "Cache dir for VOD (default: PLEX_TUNER_CACHE); if set, direct-file URLs are downloaded on demand")
+	mountAllowOther := mountCmd.Bool("allow-other", false, "Linux/FUSE: mount with allow_other so other users/processes can access the VODFS mount (may require user_allow_other in /etc/fuse.conf)")
 
 	serveCmd := flag.NewFlagSet("serve", flag.ExitOnError)
 	catalogPathServe := serveCmd.String("catalog", "", "Catalog JSON path for live channels (default: PLEX_TUNER_CATALOG)")
@@ -223,14 +259,29 @@ func main() {
 	superviseCmd := flag.NewFlagSet("supervise", flag.ExitOnError)
 	superviseConfig := superviseCmd.String("config", "", "JSON supervisor config (instances[] with args/env)")
 
+	vodSplitCmd := flag.NewFlagSet("vod-split", flag.ExitOnError)
+	vodSplitCatalog := vodSplitCmd.String("catalog", "", "Input catalog.json (default: PLEX_TUNER_CATALOG)")
+	vodSplitOutDir := vodSplitCmd.String("out-dir", "", "Output directory for per-lane catalogs (required)")
+
+	vodRegisterCmd := flag.NewFlagSet("plex-vod-register", flag.ExitOnError)
+	vodMount := vodRegisterCmd.String("mount", "", "VODFS mount root (contains Movies/ and TV/; default: PLEX_TUNER_MOUNT)")
+	vodPlexURL := vodRegisterCmd.String("plex-url", "", "Plex base URL (default: PLEX_TUNER_PMS_URL or http://PLEX_HOST:32400)")
+	vodPlexToken := vodRegisterCmd.String("token", "", "Plex token (default: PLEX_TUNER_PMS_TOKEN or PLEX_TOKEN)")
+	vodShowsName := vodRegisterCmd.String("shows-name", "VOD", "Plex TV library name")
+	vodMoviesName := vodRegisterCmd.String("movies-name", "VOD-Movies", "Plex Movie library name")
+	vodSafePreset := vodRegisterCmd.Bool("vod-safe-preset", true, "Apply per-library Plex settings to disable heavy analysis jobs (credits/intros/thumbnails) on VODFS libraries")
+	vodRefresh := vodRegisterCmd.Bool("refresh", true, "Trigger library refresh after create/reuse")
+
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <run|index|mount|serve|probe|supervise> [flags]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s <run|index|mount|serve|probe|supervise|vod-split|plex-vod-register> [flags]\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  run    One-run: refresh catalog, health check, serve tuner (for systemd)\n")
 		fmt.Fprintf(os.Stderr, "  index  Fetch M3U, save catalog\n")
 		fmt.Fprintf(os.Stderr, "  mount  Mount VODFS (use -cache for on-demand download)\n")
 		fmt.Fprintf(os.Stderr, "  serve  Run tuner server only\n")
 		fmt.Fprintf(os.Stderr, "  probe  Cycle through provider URLs, report OK / Cloudflare / fail (use -urls a,b,c to try specific hosts)\n")
 		fmt.Fprintf(os.Stderr, "  supervise  Start multiple child plex-tuner instances from one JSON config (single pod/container supervisor)\n")
+		fmt.Fprintf(os.Stderr, "  vod-split  Split VOD catalog into category/region lane catalogs for separate VODFS mounts/libraries\n")
+		fmt.Fprintf(os.Stderr, "  plex-vod-register  Create/reuse Plex libraries for VODFS (TV + Movies)\n")
 		os.Exit(1)
 	}
 
@@ -283,7 +334,8 @@ func main() {
 		if cache != "" {
 			mat = &materializer.Cache{CacheDir: cache}
 		}
-		if err := vodfs.Mount(mp, movies, series, mat); err != nil {
+		allowOther := *mountAllowOther || cfg.VODFSAllowOther
+		if err := vodfs.MountWithAllowOther(mp, movies, series, mat, allowOther); err != nil {
 			log.Printf("Mount failed: %v", err)
 			os.Exit(1)
 		}
@@ -720,6 +772,133 @@ func main() {
 		if err := supervisor.Run(ctx, *superviseConfig); err != nil {
 			log.Printf("Supervisor failed: %v", err)
 			os.Exit(1)
+		}
+
+	case "vod-split":
+		_ = vodSplitCmd.Parse(os.Args[2:])
+		path := strings.TrimSpace(*vodSplitCatalog)
+		if path == "" {
+			path = cfg.CatalogPath
+		}
+		outDir := strings.TrimSpace(*vodSplitOutDir)
+		if outDir == "" {
+			log.Print("Set -out-dir for lane catalog output")
+			os.Exit(1)
+		}
+		c := catalog.New()
+		if err := c.Load(path); err != nil {
+			log.Printf("Load catalog %s: %v", path, err)
+			os.Exit(1)
+		}
+		movies, series := c.Snapshot()
+		movies, series = catalog.ApplyVODTaxonomy(movies, series)
+		lanes := catalog.SplitVODIntoLanes(movies, series)
+		written, err := catalog.SaveVODLanes(outDir, lanes)
+		if err != nil {
+			log.Printf("VOD lane split failed: %v", err)
+			os.Exit(1)
+		}
+		type laneSummary struct {
+			Movies int    `json:"movies"`
+			Series int    `json:"series"`
+			File   string `json:"file"`
+		}
+		summary := map[string]laneSummary{}
+		for _, lane := range lanes {
+			p := written[lane.Name]
+			if p == "" {
+				continue
+			}
+			summary[lane.Name] = laneSummary{
+				Movies: len(lane.Movies),
+				Series: len(lane.Series),
+				File:   p,
+			}
+			log.Printf("Lane %-8s movies=%-6d series=%-6d file=%s", lane.Name, len(lane.Movies), len(lane.Series), p)
+		}
+		manifestPath := filepath.Join(outDir, "manifest.json")
+		data, _ := json.MarshalIndent(map[string]any{
+			"source_catalog": filepath.Clean(path),
+			"lanes":          summary,
+			"lane_order":     catalog.DefaultVODLanes(),
+		}, "", "  ")
+		if err := os.WriteFile(manifestPath, data, 0o600); err != nil {
+			log.Printf("Write manifest failed: %v", err)
+			os.Exit(1)
+		}
+		log.Printf("Wrote VOD lane catalogs to %s (%d lanes)", outDir, len(summary))
+
+	case "plex-vod-register":
+		_ = vodRegisterCmd.Parse(os.Args[2:])
+		mp := strings.TrimSpace(*vodMount)
+		if mp == "" {
+			mp = strings.TrimSpace(cfg.MountPoint)
+		}
+		if mp == "" {
+			log.Print("Set -mount or PLEX_TUNER_MOUNT to the VODFS mount root")
+			os.Exit(1)
+		}
+		moviesPath := filepath.Clean(filepath.Join(mp, "Movies"))
+		tvPath := filepath.Clean(filepath.Join(mp, "TV"))
+		if st, err := os.Stat(moviesPath); err != nil || !st.IsDir() {
+			log.Printf("Movies path not found (is VODFS mounted?): %s", moviesPath)
+			os.Exit(1)
+		}
+		if st, err := os.Stat(tvPath); err != nil || !st.IsDir() {
+			log.Printf("TV path not found (is VODFS mounted?): %s", tvPath)
+			os.Exit(1)
+		}
+
+		plexBaseURL := strings.TrimSpace(*vodPlexURL)
+		if plexBaseURL == "" {
+			plexBaseURL = strings.TrimSpace(os.Getenv("PLEX_TUNER_PMS_URL"))
+		}
+		if plexBaseURL == "" {
+			if host := strings.TrimSpace(os.Getenv("PLEX_HOST")); host != "" {
+				plexBaseURL = "http://" + host + ":32400"
+			}
+		}
+		plexToken := strings.TrimSpace(*vodPlexToken)
+		if plexToken == "" {
+			plexToken = strings.TrimSpace(os.Getenv("PLEX_TUNER_PMS_TOKEN"))
+		}
+		if plexToken == "" {
+			plexToken = strings.TrimSpace(os.Getenv("PLEX_TOKEN"))
+		}
+		if plexBaseURL == "" || plexToken == "" {
+			log.Print("Need Plex API access: set -plex-url/-token or PLEX_TUNER_PMS_URL+PLEX_TUNER_PMS_TOKEN (or PLEX_HOST+PLEX_TOKEN)")
+			os.Exit(1)
+		}
+
+		specs := []plex.LibraryCreateSpec{
+			{Name: strings.TrimSpace(*vodShowsName), Type: "show", Path: tvPath, Language: "en-US"},
+			{Name: strings.TrimSpace(*vodMoviesName), Type: "movie", Path: moviesPath, Language: "en-US"},
+		}
+		for _, spec := range specs {
+			sec, created, err := plex.EnsureLibrarySection(plexBaseURL, plexToken, spec)
+			if err != nil {
+				log.Printf("Plex VOD library ensure failed for %q: %v", spec.Name, err)
+				os.Exit(1)
+			}
+			if created {
+				log.Printf("Created Plex %s library %q (key=%s path=%s)", spec.Type, sec.Title, sec.Key, spec.Path)
+			} else {
+				log.Printf("Reusing Plex %s library %q (key=%s path=%s)", spec.Type, sec.Title, sec.Key, spec.Path)
+			}
+			if *vodSafePreset {
+				if err := applyPlexVODLibraryPreset(plexBaseURL, plexToken, sec); err != nil {
+					log.Printf("Apply VOD-safe Plex preset failed for %q: %v", spec.Name, err)
+					os.Exit(1)
+				}
+				log.Printf("Applied VOD-safe Plex preset for %q", spec.Name)
+			}
+			if *vodRefresh {
+				if err := plex.RefreshLibrarySection(plexBaseURL, plexToken, sec.Key); err != nil {
+					log.Printf("Refresh library %q failed: %v", spec.Name, err)
+					os.Exit(1)
+				}
+				log.Printf("Refresh started for %q", spec.Name)
+			}
 		}
 
 	default:

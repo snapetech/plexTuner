@@ -1,0 +1,183 @@
+# Example taxonomy/rules file for a future near-live catch-up mode.
+# This is a planning artifact (not yet consumed by plex-tuner runtime).
+#
+# Goals:
+# - Split very large hot libraries into smaller Plex sections (easier scans/ops)
+# - Drive both publishing (which library gets an item) and curation (shelves/collections)
+# - Keep channel-based and program-based browse dimensions in parallel
+
+version: 1
+
+defaults:
+  language_priority: [en, eng]
+  retention_profile: catchup-7d
+  allow_adult: false
+
+libraries:
+  - key: bcastUS
+    plex_name: Broadcast US
+    plex_type: show_and_movie_split
+    retention_profile: catchup-7d
+    channel_rules:
+      family: [broadcast]
+      market: [us, ca]
+      brand_group_any: [abc, nbc, cbs, fox, cw, ctv, global, citytv, cbc]
+    item_rules:
+      genres_exclude: [adult]
+    shelf_rows:
+      - tonight
+      - just_aired
+      - broadcast_channels
+
+  - key: sports
+    plex_name: Sports Replay
+    plex_type: catchup
+    retention_profile: replay-72h
+    channel_rules:
+      family: [sports]
+    item_rules:
+      sports_only: true
+      genres_exclude: [adult]
+    shelf_rows:
+      - live_now
+      - starting_soon
+      - todays_replays
+      - sports_channels
+
+  - key: news
+    plex_name: News Catch-Up
+    plex_type: catchup
+    retention_profile: catchup-24h
+    channel_rules:
+      family: [news]
+    item_rules:
+      news_only: true
+    shelf_rows:
+      - breaking_now
+      - just_aired
+      - local_news
+      - world_news
+
+  - key: movies
+    plex_name: Movies This Week
+    plex_type: movie
+    retention_profile: catchup-30d
+    channel_rules:
+      family_any: [movies, broadcast, entertainment]
+    item_rules:
+      media_kind: [movie]
+      genres_exclude: [adult]
+    shelf_rows:
+      - movies_tonight
+      - trending_movies
+      - this_week
+
+  - key: tv
+    plex_name: TV Catch-Up
+    plex_type: show
+    retention_profile: catchup-14d
+    channel_rules:
+      family_any: [broadcast, entertainment, lifestyle, documentary]
+    item_rules:
+      media_kind: [episode, dated_episode]
+      genres_exclude: [adult]
+    shelf_rows:
+      - new_episodes
+      - just_aired
+      - trending
+
+  - key: euroUK
+    plex_name: Euro / UK Catch-Up
+    plex_type: catchup
+    retention_profile: catchup-7d
+    channel_rules:
+      region_any: [uk, europe]
+      languages_any: [en, fr, de, es, it, nl, sv, no, da, fi]
+    item_rules:
+      genres_exclude: [adult]
+    shelf_rows:
+      - uk_tonight
+      - euro_news
+      - euro_sports
+      - channels
+
+  - key: mena
+    plex_name: Middle East Catch-Up
+    plex_type: catchup
+    retention_profile: catchup-7d
+    channel_rules:
+      region_any: [mena]
+      languages_any: [ar, en, tr]
+    item_rules:
+      genres_exclude: [adult]
+    shelf_rows:
+      - arabic_trending
+      - mena_news
+      - channels
+
+  - key: kids
+    plex_name: Kids & Family Catch-Up
+    plex_type: catchup
+    retention_profile: catchup-7d
+    channel_rules:
+      family: [kids]
+    item_rules:
+      audience_any: [kids, family]
+      genres_exclude: [adult]
+    shelf_rows:
+      - family_tonight
+      - new_family
+      - kids_channels
+
+retention_profiles:
+  catchup-24h:
+    ttl_hours: 24
+    delete_sweep_minutes: 60
+  replay-72h:
+    ttl_hours: 72
+    delete_sweep_minutes: 60
+  catchup-7d:
+    ttl_hours: 168
+    delete_sweep_minutes: 120
+  catchup-14d:
+    ttl_hours: 336
+    delete_sweep_minutes: 180
+  catchup-30d:
+    ttl_hours: 720
+    delete_sweep_minutes: 360
+
+shelf_definitions:
+  tonight:
+    window: now_to_plus_6h
+    sort: [editorial_weight, start_time]
+  just_aired:
+    window: ended_last_3h
+    sort: [ended_at_desc]
+  this_week:
+    window: last_7d
+    sort: [score_desc]
+  trending:
+    source: published_items
+    sort: [score_desc]
+  live_now:
+    source: live_epg
+    sort: [importance_desc, start_time]
+  starting_soon:
+    source: live_epg
+    window: plus_2h
+    sort: [start_time]
+  todays_replays:
+    source: published_items
+    filter_tags_any: [sports]
+    window: last_24h
+    sort: [score_desc]
+  movies_tonight:
+    source: live_epg_or_published
+    filter_kinds: [movie]
+    window: now_to_plus_12h
+    sort: [editorial_weight, start_time]
+  new_episodes:
+    source: published_items
+    filter_kinds: [episode, dated_episode]
+    window: last_72h
+    sort: [published_at_desc]

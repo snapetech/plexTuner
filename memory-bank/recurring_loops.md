@@ -416,3 +416,23 @@
 **Where it's documented**
 - `memory-bank/current_task.md` (2026-02-26 guide-number-offset rollout + post-remap Plex hidden-grab stall)
 - `memory-bank/known_issues.md` (hidden active grabs after remap)
+
+### Loop: "Mounted VODFS in a helper pod" but Plex still cannot see the IPTV VOD library contents
+
+**Symptom**
+- VODFS mounts successfully in a Kubernetes helper pod and `Movies/` / `TV/` look correct there, but Plex scanning a library path still shows nothing (or the path appears unchanged).
+
+**Why it's tricky**
+- FUSE mounts are container/mount-namespace local by default.
+- A separate Plex pod/container does not automatically inherit the helper pod's mount, even if both use the same PVC/NFS-backed path.
+- This gets misdiagnosed as a Plex library API or scanner issue, when the real problem is mount visibility.
+
+**What works**
+- Treat VOD setup as two separate steps:
+  1. mount VODFS on a path the Plex server process can directly see
+  2. create/reuse Plex libraries (`plex-vod-register`)
+- In k8s, the practical solution is usually a host-level/systemd mount on the Plex node (or an explicit privileged mount-propagation design), not a random helper pod mount.
+
+**Where it's documented**
+- `README.md` (VOD Libraries in Plex / VODFS section)
+- `memory-bank/known_issues.md` (VODFS mount visibility issue)

@@ -14,3 +14,8 @@ import (
 func Mount(mountPoint string, movies []catalog.Movie, series []catalog.Series, mat materializer.Interface) error {
 	return fmt.Errorf("vodfs mount is only supported on linux builds")
 }
+
+// MountWithAllowOther is unavailable on non-Linux builds because VODFS currently depends on go-fuse.
+func MountWithAllowOther(mountPoint string, movies []catalog.Movie, series []catalog.Series, mat materializer.Interface, allowOther bool) error {
+	return fmt.Errorf("vodfs mount is only supported on linux builds")
+}

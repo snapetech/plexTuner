@@ -35,6 +35,10 @@ type Movie struct {
 	Year       int    `json:"year"`
 	StreamURL  string `json:"stream_url"`
 	ArtworkURL string `json:"artwork_url,omitempty"`
+	Category   string `json:"category,omitempty"`    // catch-up taxonomy bucket (e.g. movies, sports, news)
+	Region     string `json:"region,omitempty"`      // coarse region (e.g. us, ca, uk, mena, intl)
+	Language   string `json:"language,omitempty"`    // coarse language code guess (e.g. en, ar)
+	SourceTag  string `json:"source_tag,omitempty"`  // parsed provider/source prefix (e.g. 4K-NF)
 }
 
 // Series is a show with seasons and episodes.
@@ -44,6 +48,10 @@ type Series struct {
 	Year       int      `json:"year"`
 	Seasons    []Season `json:"seasons"`
 	ArtworkURL string   `json:"artwork_url,omitempty"`
+	Category   string   `json:"category,omitempty"`
+	Region     string   `json:"region,omitempty"`
+	Language   string   `json:"language,omitempty"`
+	SourceTag  string   `json:"source_tag,omitempty"`
 }
 
 // Season holds episodes for one season.

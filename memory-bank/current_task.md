@@ -2,11 +2,67 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Goal:** Restore actual Plex Live TV playback (not just tune success) on the pure PlexTuner injected DVR path and document the true root cause/fix. Current focus has shifted from PlexTuner stream-format hypotheses to Plex Media Server Live TV internal callback authorization behavior after proving the first-stage recorder was healthy.
+**Goal:** Add and validate an in-app VOD Plex library registration path (`plex-vod-register`) so mounted VODFS content can be created/reused in Plex as `VOD` (TV) and `VOD-Movies` (Movies), and document the remaining k8s test-environment blocker for making the IPTV VOD mount visible to the Plex pod.
 
-**Scope:** In: live validation/triage only (k3s + Plex API/logs), minimal process restarts inside `plextuner-build` pod, runtime-only tuner env/catalog experiments (WebSafe/Trial), minimal tuner-code instrumentation needed for live triage, and documenting operational findings (ffmpeg DNS/startup-gate behavior, hidden Plex capture-session reuse). Out: Plex pod restarts, Threadfin pipeline changes, infra/firewall persistence, and unrelated code changes (another agent is modifying `internal/hdhomerun/*`).
+**Scope:** In: in-app CLI/API support for Plex library section create/reuse/refresh, docs/reference updates, live PMS API validation against the test Plex server, and documenting the VODFS mount-visibility constraint in k8s. Out: redesigning VODFS away from FUSE, invasive Plex deployment privilege/mount-propagation changes, or implementing a brand-new non-filesystem VOD library ingestion path.
 
 **Last updated:** 2026-02-26
+
+**Current status (VOD work, 2026-02-26):**
+- There was no in-app equivalent of Live TV DVR injection for standard Plex Movies/TV libraries; VOD support existed only as `plex-tuner mount` (Linux FUSE/VODFS) + manual Plex library creation.
+- Added new CLI command `plex-vod-register` that creates/reuses Plex library sections for a VODFS mount:
+  - `VOD` -> `<mount>/TV` (show library)
+  - `VOD-Movies` -> `<mount>/Movies` (movie library)
+  - idempotent by library `name + path`, with optional refresh (default on)
+- Live-validated the command against the running test PMS API inside the Plex pod using temporary section names (`PTVODTEST`, `PTVODTEST-Movies`) with successful create + reuse + refresh behavior.
+- Remaining blocker for "IPTV VOD libraries running in k8s Plex" is mount placement, not Plex API registration:
+  - the Plex pod has no `/dev/fuse`, so VODFS cannot be mounted inside it as-is
+  - a VODFS mount in a separate helper pod will not automatically be visible to the Plex pod (separate mount namespaces / no mount propagation)
+  - the real VODFS mount must exist on a filesystem path visible to the Plex server process (host-level/systemd on the Plex node or an equivalent privileged mount-propagation setup)
+- Live k3s host-mount path is now in place and Plex libraries `VOD` / `VOD-Movies` exist, but imports remain blocked after scan:
+  - Plex file logs show both scanners traversing `/media/iptv-vodfs/TV` and `/media/iptv-vodfs/Movies`
+  - section counts still report `size=0`
+- VODFS traversal blockers fixed in code during live bring-up:
+  - invalid `/` in titles causing bad FUSE names / `readdir` failures
+  - duplicate top-level movie/show names causing entry collisions
+- Additional import blocker fixed in code (likely Plex-specific):
+  - file `Lookup()` attrs for movie/episode entries were still returning `EntryOut.Size=0` even after `Getattr()` was patched to expose a non-zero placeholder size
+  - movie/episode lookup paths now return the same placeholder size as `Getattr()`
+- Additional VODFS correctness fixes proven on host mount (2026-02-26):
+  - `VirtualFileNode` now implements `NodeOpener` (file opens no longer fail with `Errno 95 / EOPNOTSUPP`)
+  - VOD probe/materializer now accepts direct non-MP4 files such as `.mkv` (`StreamDirectFile`)
+  - direct sample VOD file on host now reaches materializer and starts downloading into cache (`.partial`)
+- Newly proven root cause for Plex VOD import/scanner pain:
+  - `VirtualFileNode.Read()` blocks until `Materialize()` completes a full download/remux and renames the final cache file
+  - for large VOD assets, Plex's first read/probe can stall for a long time waiting for the entire file, which likely causes scan/import failures or "failed quickly" UI behavior
+  - evidence: sample `.mkv` asset `1750487` reached `materializer: download direct ...` and wrote a large `.partial` file (~551 MB) while the first `read()` remained blocked with no bytes returned yet
+- Progressive-read VODFS fix is now live/proven on host (2026-02-26):
+  - VODFS now returns early bytes from `.partial` cache files during the first read instead of waiting for full materialization
+  - sample asset `1750487` returned a real Matroska header (`READ 256 ... matroska`) via `vodfs: progressive read ... using=.partial`
+- New blocker after progressive-read fix:
+  - background/direct materialization for the sample asset later failed with `context deadline exceeded (Client.Timeout or context cancellation while reading body)`
+  - the current shared HTTP client timeout appears too short for large VOD downloads during scanner-triggered materialization, which can still prevent successful full cache completion/import
+- Operational note: huge top-level `Movies` / `TV` shell listings can hang for a long time on the current catalog size (~157k movies / ~41k series); use Plex scanner logs or nested known paths instead of repeated top-level `ls/find` probes.
+- VOD subset proof path established to avoid waiting on huge full-library scans:
+  - created temporary Plex libraries `VOD-SUBSET` (TV, section `9`) and `VOD-SUBSET-Movies` (Movies, section `10`) backed by a separate host-mounted subset VODFS (`/media/iptv-vodfs-subset`)
+  - subset movie import is now proven working (non-zero item counts and active metadata updates in Plex)
+- Root cause for subset TV remaining empty was **not Plex/VODFS at that point**:
+  - the subset `catalog.json` had `series` rows with empty `seasons` (show folders existed but were empty)
+  - confirmed by inspecting both the subset catalog JSON and mounted TV show directories
+- Found likely upstream parser bug causing empty TV seasons in Xtream-derived catalogs:
+  - `internal/indexer/player_api.go` `get_series_info` parsing handled flat episode arrays and map-of-episode objects, but missed the common Xtream shape `episodes: { "<season>": [episode, ...] }`
+  - patched parser and added regression tests (`internal/indexer/player_api_test.go`)
+- Rebuilt the subset TV series data directly from provider `get_series_info` calls on the Plex node and remounted subset VODFS:
+  - subset catalog now contains `50` series with seasons and `528` total episodes
+  - mounted TV tree now shows real season folders and episode files (e.g. `4K-NF - 13 Reasons Why (US) (2017)/Season 01/...`)
+- Current wait state:
+  - `VOD-SUBSET-Movies` scan is still occupying the Plex scanner in observed polls (movie subset count increasing)
+  - need a fresh/complete `VOD-SUBSET` TV scan pass after movie scan clears to confirm TV import rises above `0`
+
+**User product-direction note (capture before loss, 2026-02-26):**
+- User is considering a broader "near-live catch-up libraries" model (program-bounded assets + targeted scans + collections/shelves) as a distribution strategy for remote/non-Plex-Home sharing and better UX than raw Live TV/EPG.
+- Important architectural implication for Plex ingest/perf: **prefer multiple smaller category libraries over one giant hot library** when churn is high (for example `bcastUS`, `sports`, `news`, `movies`, regional/world buckets), because Plex scan/update work is section-scoped and targeted path scans are easier/cheaper when sections are narrower.
+- Keep this in scope as a design/documentation follow-on after current VODFS import validation is complete.
 
 **Breakthrough (2026-02-25 late):**
 - Reused the existing `k3s/plex/scripts/plex-websafe-pcap-repro.sh` harness on pure `DVR 218` (`FOX WEATHER`, helper AB4 `:5009`) and finally captured the missing signal: PMS first-stage `Lavf` `/video/:/transcode/session/.../manifest` callbacks were hitting `127.0.0.1:32400` and receiving repeated HTTP `403` responses (visible in localhost pcap), while Plex logs only showed `buildLiveM3U8: no segment info available`.
@@ -284,3 +340,24 @@ Questions (ONLY if blocked or high-risk ambiguity):
 **Verification unblock (2026-02-26 late):**
 - Fixed the pre-existing failing `internal/tuner` startup-signal test (`TestLooksLikeGoodTSStartDetectsSplitIDRStartCodeAcrossPackets`) by correcting the synthetic TS packet helper in `gateway_startsignal_test.go` to use adaptation stuffing for short payloads instead of padding bytes in the payload region.
 - This restores realistic packet-boundary semantics for the cross-packet Annex-B IDR detection test and makes `./scripts/verify` green again.
+## Current Focus (2026-02-26 late, VODFS/Plex VOD bring-up)
+
+- VODFS/Plex VOD import path is now largely fixed and **TV subset imports are confirmed working**.
+- Root unblocker for Plex VOD TV scans was **per-library Plex analysis jobs** (credits/chapter thumbnails/etc.) consuming/scanning the virtual libraries poorly.
+- `plex-vod-register` now applies a **VOD-safe per-library preset by default** (disable heavy analysis jobs only on the VODFS libraries).
+- `VOD-SUBSET` TV section started importing immediately after applying that preset and restarting/refreshing (`count > 0`, observed climbing during scan).
+
+### In progress
+
+- Let subset scans continue while full catalog TV backfill (`catalog.seriesfixed.json`) runs on the Plex node.
+- After backfill completes, swap main VOD TV mount catalog to the repaired file and rescan the real `VOD` TV library.
+- Continue hardening VOD/catch-up category support (taxonomy + deterministic sort now in-app).
+- New post-backfill category rerun path is now in-app:
+  - `plex-tuner vod-split -catalog <repaired> -out-dir <lanes-dir>` writes per-lane catalogs (`bcastUS`, `sports`, `news`, `euroUK`, `mena`, `movies`, `tv`, etc.)
+  - host-side helper `scripts/vod-seriesfixed-cutover.sh` can perform retry+swap+remount cleanly before running the lane split.
+
+### New in-app work completed this pass
+
+- `plex-vod-register` can now configure per-library Plex prefs for VODFS libraries (default-on VOD-safe preset).
+- Added VOD taxonomy enrichment + deterministic sorting for catalog movies/series (`category`, `region`, `language`, `source_tag`) during `fetchCatalog`.
+- Added `vod-split` CLI command to generate per-lane VOD catalogs for category-scoped VODFS mounts/libraries.

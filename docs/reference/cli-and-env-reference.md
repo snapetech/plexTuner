@@ -77,6 +77,64 @@ Common flags:
 Notes:
 - Linux-only (`FUSE`)
 
+## `plex-tuner plex-vod-register`
+
+Create or reuse Plex libraries for a mounted VODFS tree.
+
+Default library names:
+- `VOD` -> `<mount>/TV` (Plex TV library)
+- `VOD-Movies` -> `<mount>/Movies` (Plex Movie library)
+
+Common flags:
+- `-mount`
+- `-plex-url`
+- `-token`
+- `-shows-name`
+- `-movies-name`
+- `-vod-safe-preset` (default `true`)
+- `-refresh`
+
+Env fallbacks:
+- `PLEX_TUNER_PMS_URL` (or `PLEX_HOST` -> `http://<host>:32400`)
+- `PLEX_TUNER_PMS_TOKEN` (or `PLEX_TOKEN`)
+- `PLEX_TUNER_MOUNT`
+
+Notes:
+- Requires the VODFS mount path to be visible to the Plex server host/container.
+- Creates/reuses sections idempotently by section name + path.
+- If the same section name exists with a different path/type, the command returns an error instead of mutating it.
+- By default, applies a per-library VOD-safe Plex preset to disable expensive analysis jobs (credits, intro/chapter/preview thumbnails, ad/voice analysis) on these virtual catch-up libraries only.
+
+## `plex-tuner vod-split`
+
+Split a VOD catalog into multiple category/region lane catalogs for separate
+VODFS mounts/libraries.
+
+Built-in lane names (current):
+- `bcastUS`
+- `sports`
+- `news`
+- `kids`
+- `music`
+- `euroUK`
+- `mena`
+- `movies`
+- `tv`
+- `intl`
+
+Common flags:
+- `-catalog`
+- `-out-dir` (required)
+
+Output:
+- `<out-dir>/<lane>.json`
+- `<out-dir>/manifest.json` (lane counts + source catalog)
+
+Use for:
+- smaller category-scoped Plex VOD libraries
+- reduced scan scope / faster targeted rescans
+- operational isolation of high-churn catch-up lanes
+
 ## `plex-tuner probe`
 
 Probe provider URLs and print ranked results (best host first).
@@ -205,4 +263,3 @@ See also
 - [package-test-builds](../how-to/package-test-builds.md)
 - [tester-handoff-checklist](../how-to/tester-handoff-checklist.md)
 - [memory-bank/commands.yml](../../memory-bank/commands.yml)
-

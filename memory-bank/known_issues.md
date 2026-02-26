@@ -195,3 +195,52 @@
   - Non-Linux builds: VODFS mount (`internal/vodfs`) compiles via a stub and returns "only supported on linux builds".
   - HDHomeRun network mode now compiles on Windows/macOS/Linux (stub removed), but Windows smoke validation in this environment used `wine`, which can fail UDP/TCP socket calls with WinSock errors unrelated to native Windows behavior.
   - Impact: packaged binaries are valid for `run`/`serve`/`supervise` testing across platforms; `mount` is still Linux-only.
+
+- **VODFS mount visibility is the blocker for k8s Plex VOD libraries, not Plex library-section registration:** Reconfirmed on 2026-02-26 while adding in-app `plex-vod-register`.
+  - What works now: `plex-vod-register` can create/reuse/refresh Plex libraries (`VOD`, `VOD-Movies`) via Plex API when given a mount root that contains `TV/` and `Movies/` and is visible to PMS.
+  - k8s constraint observed in test cluster: the Plex pod has no `/dev/fuse`, so VODFS cannot be mounted inside the Plex container as deployed.
+  - Important trap: mounting VODFS in a separate helper pod does **not** make the mount visible to the Plex pod because they are different mount namespaces (without explicit mount propagation design).
+  - Impact: to run IPTV VOD libraries in the current k8s test setup, VODFS must be mounted on a path Plex already sees (for example host-level on the Plex node / shared filesystem path) or the Plex deployment must be deliberately changed to support a privileged FUSE mount path.
+
+- **VODFS can still produce empty Plex VOD libraries even while Plex scanner logs show traversal, because Plex may rely on `Lookup` entry attrs (size) and skip virtual files reported as zero-byte:** Reconfirmed on 2026-02-26 during k3s VOD library bring-up.
+  - Symptom: `VOD` / `VOD-Movies` scans visibly progress in Plex file logs, but `/library/sections/<id>/all` remains `size=0`.
+  - Root cause (observed in code): `VirtualFileNode.Getattr()` was patched to return a non-zero placeholder size, but movie/episode `Lookup()` handlers still set `EntryOut.Size=0`, so Plex could still see zero-byte files during scan/import.
+  - Fix (repo, 2026-02-26): `MovieDirNode.Lookup` and `SeasonDirNode.Lookup` now use the same non-zero placeholder size as `Getattr()`.
+  - Follow-up still needed: live re-scan validation after remounting the patched VODFS binary on the Plex node host.
+
+- **Large VODFS top-level directory reads (`Movies` / `TV`) can appear hung in shell probes on huge catalogs, even when the mount is alive:** Reconfirmed on 2026-02-26 with ~157k movies / ~41k series.
+  - Symptom: `ls /media/iptv-vodfs/Movies | head` or `find ... | head -n 1` can block for many seconds (or longer) before any output.
+  - Why: VODFS `Readdir` currently builds a full in-memory entry list for the directory before returning, so top-level reads scale with the total catalog size.
+  - Impact: shell checks can look like a dead mount; prefer Plex scanner logs or known nested paths when validating progress.
+
+- **VODFS `Read()` currently blocks until full materialization completes, which can make Plex VOD scans/imports stall or fail on large files even after traversal/open bugs are fixed:** Proved on 2026-02-26.
+  - Evidence:
+    - VODFS file opens now succeed (`NodeOpener` fix) and `Read()` is invoked.
+    - Sample movie asset `1750487` (`.mkv`) now probes as `direct_file` and starts a real cache download (`materializer: download direct ...`).
+    - The first VODFS `read()` remains blocked while `/srv/plextuner-vodfs-cache/vod/1750487.partial` grows (observed ~551 MB), and no bytes are returned to the reader until materialization completes and the final file is renamed.
+
+- **Xtream `get_series_info` responses commonly encode `episodes` as a map of season keys to arrays (`{\"1\":[...],\"2\":[...]}`); older parser logic could silently produce series with empty `Seasons`, leading to empty TV folders in VODFS and Plex TV libraries that scan but import nothing:** Identified on 2026-02-26 during subset VOD validation.
+  - Symptom: movies import into Plex, but TV libraries stay at `size=0`; mounted show folders exist but contain no `Season xx` entries.
+  - Root cause: `internal/indexer/player_api.go` only parsed flat episode arrays or map-of-episode-object shapes and missed the season-keyed-array shape.
+  - Fix (repo, 2026-02-26): parser now supports season-keyed arrays and backfills `season_num` from the map key when missing; regression tests added in `internal/indexer/player_api_test.go`.
+  - Follow-up required: regenerate any previously built VOD catalogs (`catalog.json`) created with the old parser, or they will continue to have empty TV series even with a fixed binary.
+
+- **Single huge hot VOD library sections are expensive to scan and hard to validate under churn; separate Plex libraries by content/category can reduce scan latency and isolate failures:** Operational design finding from 2026-02-26 VOD bring-up.
+  - Context: full test VOD catalog (`~157k movies`, `~41k series`) makes top-level traversal and scan feedback slow/non-obvious.
+  - Practical mitigation: use smaller, category-scoped libraries (for example `bcastUS`, `sports`, `news`, regional buckets) and trigger targeted scans/path refreshes only for changed assets in that section.
+  - Note: this is a product/integration strategy choice, not a VODFS correctness fix.
+  - Impact: Plex scanner/prober reads can wait on full-file downloads, which is a poor fit for huge IPTV VOD assets and likely explains "scan runs but libraries stay empty / fail quickly" behavior.
+  - Mitigation/fix (2026-02-26): VODFS now supports progressive reads from a growing `.partial` cache file, allowing first probe bytes to return before full materialization completes.
+  - Remaining limitation: background/full materialization still relies on the HTTP client timeout and can fail on large/slow VOD downloads (`context deadline exceeded`), leaving partial cache files and potentially preventing durable import/playback.
+- **Plex VODFS libraries can stall or import 0 items when per-library analysis features (credits/chapter thumbnails/preview thumbs/etc.) are left enabled on virtual catch-up libraries:** Proved on 2026-02-26 during VOD subset bring-up.
+  - Symptom: `VOD-SUBSET` TV scans ran but imports stayed `0`, and Plex activities filled with `Detecting Credits` / chapter thumbnail jobs on VODFS assets.
+  - Fix / mitigation: disable these jobs **per library** (not globally) on VODFS libraries:
+    - `enableBIFGeneration=0`
+    - `enableIntroMarkerGeneration=0` (TV)
+    - `enableCreditsMarkerGeneration=0`
+    - `enableAdMarkerGeneration=0`
+    - `enableVoiceActivityGeneration=0`
+    - `enableChapterThumbGeneration=0` (where present)
+  - Productized fix: `plex-tuner plex-vod-register` now applies a VOD-safe per-library preset by default when creating/reusing `VOD` / `VOD-Movies`.
+  - Operational note: if Plex is already wedged on these activities, restart Plex once to clear the queue, then rescan.
+  - Limitation (current Plex build): some expensive jobs (notably `media.generate.chapter.thumbs`) may still run because Plex does not expose a per-library chapter-thumbnail toggle in `/library/sections/<id>/prefs` on all library types/versions. The app only mutates prefs keys that actually exist on the section.

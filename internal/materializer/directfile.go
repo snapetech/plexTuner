@@ -35,7 +35,7 @@ func (d *DirectFile) Materialize(ctx context.Context, assetID string, streamURL 
 	if err != nil {
 		return "", err
 	}
-	if typ != probe.StreamDirectMP4 {
+	if typ != probe.StreamDirectMP4 && typ != probe.StreamDirectFile {
 		return "", ErrNotReady{AssetID: assetID}
 	}
 
