@@ -11,7 +11,9 @@ Dense and factual. Add CLI reference, env vars, API docs as needed.
 
 | Doc | Description |
 |-----|-------------|
-| *(none yet)* | Add command reference, config, env vars. |
+| [cli-and-env-reference](cli-and-env-reference.md) | Commands, common flags, and key environment variables (including multi-DVR/testing options). |
+| [plex-dvr-lifecycle-and-api](plex-dvr-lifecycle-and-api.md) | Plex Live TV/DVR lifecycle reference: wizard-equivalent API flow, injected DVRs, remove/refresh/channelmap, and UI/backend gotchas. |
+| [testing-and-supervisor-config](testing-and-supervisor-config.md) | Supervisor mode and recent test/lab env vars (guide offsets, reaper, HDHR shaping, XMLTV normalization). |
 | [memory-bank/commands.yml](../../memory-bank/commands.yml) | Verification commands. |
 
 See also

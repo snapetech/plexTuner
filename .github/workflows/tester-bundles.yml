@@ -1,0 +1,59 @@
+name: Tester Bundles
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Override bundle version label (optional)"
+        required: false
+        type: string
+      platforms:
+        description: "Platform matrix (space-separated, optional)"
+        required: false
+        type: string
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-tester-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install packaging deps
+        run: sudo apt-get update && sudo apt-get install -y zip
+
+      - name: Build tester release bundle
+        env:
+          VERSION: ${{ github.event.inputs.version }}
+          PLATFORMS: ${{ github.event.inputs.platforms }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VERSION:-}" ] && [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME}"
+          fi
+          chmod +x ./scripts/build-test-packages.sh ./scripts/build-tester-release.sh
+          ./scripts/build-tester-release.sh
+
+      - name: Resolve release dir
+        id: out
+        run: |
+          set -euo pipefail
+          latest="$(ls -1dt dist/test-releases/* | head -n1)"
+          echo "release_dir=$latest" >> "$GITHUB_OUTPUT"
+          echo "release_name=$(basename "$latest")" >> "$GITHUB_OUTPUT"
+          echo "Using $latest"
+
+      - name: Upload tester bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tester-bundle-${{ steps.out.outputs.release_name }}
+          path: ${{ steps.out.outputs.release_dir }}
+          if-no-files-found: error
+

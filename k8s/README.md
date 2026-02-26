@@ -23,7 +23,7 @@ The manifest uses a ConfigMap `plextuner-test-env` with a placeholder M3U URL. *
 **Option C — OpenBao + External Secrets (recommended when the cluster uses OpenBao):** Store IPTV creds in OpenBao; External Secrets sync them into the cluster so you never put provider credentials in manifests or one-shot env.
 
 1. In the **k3s** repo: add `~/Documents/k3s-secrets/iptv.env` with `XTREAM_USER`, `XTREAM_PASS`, and optionally `XTREAM_HOST`. Run `scripts/sync-secrets-to-openbao.sh` (with `VAULT_TOKEN` or `BAO_TOKEN`) to push `secret/iptv` to OpenBao.
-2. Apply the k3s ExternalSecret that creates `iptv-threadfin` in namespace `plex` (see k3s `external-secrets/external-secret-iptv-plex.yaml`).
+2. Apply the k3s ExternalSecret that creates the IPTV secret in namespace `plex` (legacy name in that stack is `iptv-threadfin`; see k3s `external-secrets/external-secret-iptv-plex.yaml`).
 3. In this repo, apply `k8s/external-secret-plextuner-iptv.yaml` so ESO creates Secret `plextuner-iptv` in namespace `plex` from OpenBao `secret/iptv` (mapped to `PLEX_TUNER_PROVIDER_*`). The deployment already uses `envFrom` with `secretRef: plextuner-iptv` (optional), so once the secret exists it overrides the ConfigMap placeholders.
 
 **Option D — One-shot script (no manifest edits):** Use `k8s/deploy-hdhr-one-shot.sh` to inject credentials into a temporary manifest and call `k8s/deploy.sh`.
@@ -49,6 +49,67 @@ From the repo root with `kubectl` pointing at your **local cluster** and `.env` 
 ```
 
 This uses `deploy-hdhr-one-shot.sh` (loads `.env`), builds the image, deploys with **-base-url=http://plextuner-hdhr.plex.home** and **-register-plex=/var/lib/plex**. The tuner indexes from your provider, then writes DVR + lineup into Plex's DB so **plex.home** has Live TV without the wizard. Ensure the tuner pod runs on the node where Plex's data is (see **Plex data path** below).
+
+### Built-in Live TV zombie-session reaper (packaged app friendly)
+
+The app now includes an optional Plex-side Live TV session reaper (no Python helper required) to prune sessions that linger after browser tab closes or TV input switches.
+
+- The example manifest enables it by default and maps `PLEX_TUNER_PMS_TOKEN` from the existing `PLEX_TOKEN` secret value.
+- It uses Plex API polling (`/status/sessions`) plus Plex SSE notifications (`/:/eventsource/notifications`) and stops stale live transcodes via Plex API.
+
+Main knobs (in `plextuner-test-env` ConfigMap):
+
+- `PLEX_TUNER_PLEX_SESSION_REAPER` = `true|false`
+- `PLEX_TUNER_PLEX_SESSION_REAPER_IDLE_S` (idle timeout before prune)
+- `PLEX_TUNER_PLEX_SESSION_REAPER_RENEW_LEASE_S` (renewable heartbeat lease)
+- `PLEX_TUNER_PLEX_SESSION_REAPER_HARD_LEASE_S` (backstop max lifetime)
+- `PLEX_TUNER_PLEX_SESSION_REAPER_POLL_S` (poll interval)
+- `PLEX_TUNER_PLEX_SESSION_REAPER_SSE` = `true|false` (wake scans faster)
+
+If you are debugging live playback and want zero interference, temporarily set `PLEX_TUNER_PLEX_SESSION_REAPER=false`.
+
+### XMLTV guide language normalization (in-app)
+
+If your upstream XMLTV feed contains mixed-language programme text and Plex shows non-English titles/descriptions, PlexTuner can normalize programme nodes before serving `/guide.xml`.
+
+Env knobs:
+
+- `PLEX_TUNER_XMLTV_PREFER_LANGS` (comma-separated, e.g. `en,eng`) — prefers matching `lang=` variants when the XMLTV feed includes multilingual `<title>/<desc>` nodes
+- `PLEX_TUNER_XMLTV_PREFER_LATIN` (`true|false`) — if no preferred lang match exists, prefer a Latin-script variant among repeated `<title>/<desc>` nodes
+- `PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK=channel` — if the chosen `<title>` still looks mostly non-Latin, replace the programme title with the channel display name (keeps the guide readable)
+
+Recommended starting point for "mostly non-English EPG text" feeds:
+
+- `PLEX_TUNER_XMLTV_PREFER_LANGS=en,eng`
+- `PLEX_TUNER_XMLTV_PREFER_LATIN=true`
+- `PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK=channel`
+
+Note: If the upstream feed only provides a single non-English programme title/description and no English/Latin alternative, PlexTuner cannot translate it. The fallback only replaces the title (not the description).
+
+### Single-pod supervisor mode (multi-DVR in one container)
+
+For a self-contained single app/container that runs many DVR buckets, use:
+
+```bash
+plex-tuner supervise -config /etc/plextuner/supervisor.json
+```
+
+The supervisor starts multiple child `plex-tuner run`/`serve` processes inside one container, each with its own args/env (M3U URL, Base URL, Device ID, reaper settings, etc.).
+
+Example config: `k8s/plextuner-supervisor-multi.example.json`
+
+Cutover mapping helper (13 injected DVRs -> single supervisor pod):
+
+- `scripts/plex-supervisor-cutover-map.py`
+- Example TSV: `k8s/plextuner-supervisor-cutover-map.example.tsv`
+
+The provided supervisor examples preserve the injected DVR URIs (`http://plextuner-<category>.plex.svc:5004`) by keeping per-category Services and mapping each service's port `5004` to a unique child port inside the single supervisor pod. In that layout, Plex DVR URI reinjection is usually not required for the 13 injected DVRs.
+
+Important for HDHomeRun network mode in supervisor:
+
+- Only **one** child instance should enable `PLEX_TUNER_HDHR_NETWORK_MODE=true` with the default HDHR ports (`UDP/TCP 65001`)
+- The other child instances should stay HTTP-only (normal `/discover.json`, `/lineup.json`, `/guide.xml`, `/stream/...`)
+- In Kubernetes, HDHR broadcast discovery usually needs `hostNetwork: true` (or explicit host UDP/TCP port exposure); Service/Ingress HTTP alone is not enough for LAN broadcast discovery
 
 ## Deploy and verify (generic)
 
@@ -140,6 +201,7 @@ If Plex cannot reach that hostname, ensure DNS for `plextuner-hdhr.plex.home` re
 - **Node for Plex hostPath:** To use `-register-plex=/var/lib/plex` with the hostPath volume, the tuner must run on the node where Plex’s data directory lives. Uncomment the `nodeSelector` in the Deployment and set `kubernetes.io/hostname` to that node’s name. Ensure the image is loaded on that node when using `imagePullPolicy: Never`.
 - **Ingress class:** Change `ingressClassName: nginx` if your cluster uses traefik or another controller.
 - **Catalog refresh:** To refresh the channel list on a schedule, add `-refresh=6h` to the container `args` (default is refresh only at startup).
+- **Built-in stale session cleanup:** Tune `PLEX_TUNER_PLEX_SESSION_REAPER_*` envs in `plextuner-test-env` (or disable the feature entirely during debugging with `PLEX_TUNER_PLEX_SESSION_REAPER=false`).
 
 ## See also
 
