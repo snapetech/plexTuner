@@ -87,7 +87,7 @@ autoload_defaults() {
   # Repo-local .env is the most likely source in this project.
   load_env_file_if_present "$REPO_ROOT/.env"
 
-  # Common k3s/Threadfin helper env and subscription sources.
+  # Common k3s helper env and subscription sources.
   local k3s_env_file="${IPTV_M3U_ENV_FILE:-$HOME/.config/iptv-m3u.env}"
   local k3s_sub_file="${IPTV_SUBSCRIPTION_FILE:-$HOME/Documents/iptv.subscription.2026.txt}"
   load_env_file_if_present "$k3s_env_file"
