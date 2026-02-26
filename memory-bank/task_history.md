@@ -1083,3 +1083,18 @@ Verification:
   - Validation on provider-category-merged catalog: `bcastUS` reduced from `9631` to `2179` series; non-English/translated US/CA content moved to `tv`.
 
 - Fixed recurring supervisor env leak: parent `PLEX_TUNER_PLEX_SESSION_REAPER*` / `PLEX_TUNER_PMS_*` vars are now stripped from child environments by default in `internal/supervisor` (children can still set explicit values in supervisor config).
+- 2026-02-26 (morning): Phase A VOD lane rollout completed live (`sports`, `kids`, `music`) without replacing existing VOD libraries.
+  - Created and mounted host VODFS lanes on Plex node: `/srv/plextuner-vodfs-{sports,kids,music}` (plus separate cache/run dirs).
+  - Patched Plex deployment to mount lane paths into pod: `/media/iptv-vodfs-{sports,kids,music}`.
+  - Registered six new Plex libraries with in-app `plex-vod-register` and VOD-safe preset enabled by default:
+    - shows: `sports` (11), `kids` (13), `music` (15)
+    - movies: `sports-Movies` (12), `kids-Movies` (14), `music-Movies` (16)
+  - Observed immediate import activity: `sports-Movies` scanning and `size>0` quickly.
+  - Hit and repaired a host FUSE mount failure during rollout (`/srv/plextuner-vodfs` transport endpoint disconnected) before recycling Plex.
+- 2026-02-26 (morning): Completed Phase B + C VOD lane rollout in Plex.
+  - Phase B movie-region lanes mounted and registered: `euroUK-Movies` (18), `mena-Movies` (20).
+  - Phase C TV lanes mounted and registered with clean display names: `euroUK` (21), `mena` (23), `bcastUS` (25), `TV-Intl` (27).
+  - Companion movie libraries were also created by the current `plex-vod-register` helper for TV lanes (`euroUKTV-Movies`, `menaTV-Movies`, `bcastUS-Movies`, `TV-Intl-Movies`) because the command always provisions both TV + Movies paths.
+  - Verified live scan activity on new lane libraries (e.g. `Scanning euroUK`).
+
+- 2026-02-26: Completed VOD lane Phase B/C Plex library rollout and cleanup; added `plex-vod-register` `-shows-only/-movies-only` flags. Live cleanup removed unintended companion lane libraries (`euroUKMovies`, `menaMovies`, `euroUKTV-Movies`, `menaTV-Movies`, `bcastUS-Movies`, `TV-Intl-Movies`). Performed a deliberate Plex library DB reverse-engineering pass on a copied `com.plexapp.plugins.library.db` (using `PRAGMA writable_schema=ON` workaround) and documented the core library table relationships (`library_sections`, `section_locations`, `metadata_items`, `media_items`, `media_parts`, `media_streams`) plus the Live TV provider chain (`media_provider_resources` type 1/3/4). Key finding: `media_provider_resources` has no per-provider friendly-name/title fields; `/media/providers` `friendlyName=plexKube` labels appear Plex-synthesized from server-level `friendlyName`, so the guide-tab title issue is not fixable via the DVR/provider URI DB patch path. Verification: live Plex API section list before/after cleanup, local DB schema/row inspection, `go test ./cmd/plex-tuner -run '^$'`.

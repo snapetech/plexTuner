@@ -368,3 +368,32 @@ Questions (ONLY if blocked or high-risk ambiguity):
 - VOD lane model now uses `euroUKMovies/euroUKTV` and `menaMovies/menaTV` plus a stricter `bcastUS` series gate. Next tuning (optional) is sub-lanes within `menaTV`/`euroUKTV` (e.g. news/kids) if desired for UX/packageing.
 
 - Supervisor now filters parent Plex reaper/PMS env vars before spawning children to avoid accidental per-child Plex polling/SSE storms.
+- Phase A lane libraries (`sports`, `kids`, `music` + `-Movies`) are now live and scanning. Next steps are scan verification and Phase B region movie lanes (`euroUKMovies`, `menaMovies`) using the same host-mount + `plex-vod-register` pattern.
+- Phase A/B/C VOD lane libraries are now mounted and registered in Plex (sports/kids/music + euroUK/mena movie+TV lanes + bcastUS + TV-Intl). Remaining VOD cleanup is optional removal of unwanted companion libraries for movie-only or TV-only lane mounts (current `plex-vod-register` creates both by design).
+
+
+**VOD lane Phase B/C rollout + cleanup (2026-02-26):**
+- Completed Phase B and Phase C live registration in Plex for split VOD lane libraries. Intended lanes now present:
+  - `euroUK-Movies`, `mena-Movies`
+  - `euroUK`, `mena`, `bcastUS`, `TV-Intl`
+  - plus previously added `sports`, `sports-Movies`, `kids`, `kids-Movies`, `music`, `music-Movies`
+- Removed unwanted auto-created companion lane libraries caused by current `plex-vod-register` behavior always creating both TV + Movies libraries:
+  - deleted Plex sections `17` (`euroUKMovies`), `19` (`menaMovies`), `22` (`euroUKTV-Movies`), `24` (`menaTV-Movies`), `26` (`bcastUS-Movies`), `28` (`TV-Intl-Movies`).
+- Added `plex-vod-register` flags to avoid recreating companion libraries in future lane rollouts:
+  - `-shows-only` (register only `<mount>/TV`)
+  - `-movies-only` (register only `<mount>/Movies`)
+
+**Plex library DB reverse-engineering pass (2026-02-26):**
+- Extracted and inspected a live copy of `com.plexapp.plugins.library.db` using `PRAGMA writable_schema=ON` (local sqlite workaround for Plex tokenizer schema entries).
+- Confirmed VOD library core table relationships and schema used by current imports:
+  - `library_sections` (section metadata / agent / scanner)
+  - `section_locations` (section -> root path mapping)
+  - `metadata_items` (movies/shows/seasons/episodes rows)
+  - `media_items` (per-metadata media summary rows)
+  - `media_parts` (file path rows)
+  - `media_streams` (stream analysis rows; often empty until deeper analysis runs)
+- Sample observations from lane libraries:
+  - `sports-Movies` imported items currently have `metadata_items` rows and placeholder `media_items/media_parts` (`size=1`, empty codecs/container) due VODFS placeholder attr strategy and VOD-safe analysis settings
+  - `VOD-SUBSET` TV section shows full hierarchy (`metadata_type` distribution `2=shows`, `3=seasons`, `4=episodes`) with episode `media_parts.file` paths pointing at the VODFS mount.
+- Confirmed `media_provider_resources` schema for Live TV provider/device chain contains only IDs/URIs/protocol/status (`id,parent_id,type,identifier,protocol,uri,...`) and **does not contain per-provider friendly-name/title columns**.
+- Combined with `/media/providers` API capture showing every Live TV provider emitted as `friendlyName="plexKube"`, this strongly indicates Plex synthesizes source-tab labels from the server-level `friendlyName`, not from per-DVR/provider DB rows.
