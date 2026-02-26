@@ -1006,3 +1006,17 @@ Verification:
 Verification:
 - `rg` scans for secrets/path identifiers (tracked + untracked triage)
 - `git status --short` confirms file moves/removal are tracked as rename/delete
+
+## 2026-02-26 - Hardened release workflows (versioned Docker tags + GitHub Release tester bundles)
+
+- Updated `.github/workflows/docker.yml` to:
+  - set explicit GHCR publish permissions (`packages: write`)
+  - generate tags via `docker/metadata-action` (tag refs, `latest` on `main`, and `sha-*` trace tags)
+  - publish versioned image tags on `v*` pushes instead of only `latest`
+- Updated `.github/workflows/tester-bundles.yml` to:
+  - set `contents: write`
+  - package the staged tester bundle directory as a `.tar.gz` on tag pushes
+  - upload that archive to the GitHub Release (while still uploading the workflow artifact)
+
+Verification:
+- YAML parse (`python/yaml.safe_load`) for both workflow files

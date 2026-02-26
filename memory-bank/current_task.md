@@ -269,3 +269,14 @@ Questions (ONLY if blocked or high-risk ambiguity):
     - `test_hdhr_network.sh`
     - `<work-node>_plex_test.sh`
   - added `scripts/legacy/README.md` clarifying they are historical/manual helpers, not supported CLI surface.
+
+**Release automation follow-up (2026-02-26 late):**
+- Updated `.github/workflows/docker.yml`:
+  - explicit GHCR permissions (`packages: write`)
+  - versioned tags on `v*` pushes via `docker/metadata-action`
+  - retained `latest` for `main`
+  - added SHA tag output (`sha-<commit>`) for traceability
+- Updated `.github/workflows/tester-bundles.yml`:
+  - explicit `contents: write`
+  - still uploads the tester bundle as a workflow artifact
+  - now also packs the staged tester bundle directory and uploads it to the GitHub Release on tag pushes (`v*`)
