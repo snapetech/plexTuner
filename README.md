@@ -2,45 +2,87 @@
 
 Plex Tuner bridges IPTV feeds into Plex Live TV & DVR.
 
-It provides:
-- an HDHomeRun-compatible tuner interface (`discover.json`, `lineup.json`, `guide.xml`, `/stream/...`)
-- IPTV indexing (M3U and Xtream `player_api`)
-- optional Plex registration paths (wizard-compatible HDHR lane, API/DB-assisted flows)
-- optional VOD filesystem mount (`VODFS`, Linux only)
-- a single-process supervisor mode to run many virtual tuners in one container/pod
+It supports two major integration modes with Plex:
+- **HDHR mode**: act like an HDHomeRun tuner (`discover.json`, `lineup.json`, `guide.xml`, `/stream/...`) so Plex can use the normal Live TV wizard.
+- **DVR injection mode**: programmatic / headless Plex DVR creation and updates (including multi-DVR/category setups), plus guide refresh and channelmap activation workflows.
+
+It also supports running many virtual tuners from one process (`supervise`) and optional VOD filesystem mounting on Linux.
 
 No web UI. Configuration is CLI + env vars.
 
 Source: <https://github.com/snapetech/plexTuner>
 
-## What It Is Good At
+## What This App Does
 
-- **Plex Live TV & DVR testing** with real IPTV feeds
-- **Multi-DVR category setups** (for example 13 injected DVRs) in one app process via `supervise`
-- **HDHR wizard lane** alongside injected DVRs (same app, separate child identity)
-- **Headless/automated Plex workflows** for lineups, guide refreshes, and channelmap activation
-- **Operational debugging** with Plex-specific helpers and runbooks
+- Indexes IPTV sources (M3U and Xtream `player_api`)
+- Exposes a Plex-compatible tuner interface (HDHR-compatible HTTP endpoints)
+- Proxies/transcodes streams for Plex playback
+- Serves XMLTV guide data (placeholder or external XMLTV remap)
+- Supports both Plex wizard-based setup and programmatic DVR/injection workflows
+- Supports multi-DVR setups (for example category DVRs) in one app via `supervise`
 
-## Core Features
+## Two Plex Integration Paths (Important)
 
-- **Inputs:** M3U URL or Xtream `player_api` (live, VOD, series)
-- **Provider failover:** multi-host probing + ranked backup stream URLs
-- **Tuner:** HDHomeRun-compatible endpoints + stream gateway
-- **Guide:** placeholder XMLTV or external XMLTV fetch/filter/remap
-- **XMLTV normalization:** English-preferred / Latin-preferred programme text selection and non-Latin title fallback (optional)
-- **Lineup shaping:** pre-cap filtering/order for HDHR wizard/provider matching (music/radio drop, region profile hints)
-- **Multi-DVR safety:** per-instance guide number offsets to avoid Plex guide cache collisions
-- **Built-in Plex stale-session reaper:** optional background worker (poll + SSE + lease model)
-- **Supervisor mode:** run many `plex-tuner` child instances from one JSON config (`plex-tuner supervise`)
-- **VODFS (optional):** mount VOD catalog as `Movies/` and `TV/` (Linux only)
+## 1. HDHR Functions (Wizard-Compatible)
 
-Feature details: [`docs/features.md`](docs/features.md)
+Use this when you want Plex to discover/add Plex Tuner as if it were an HDHomeRun tuner.
 
-## Supported Modes
+Plex Tuner provides:
+- `GET /discover.json`
+- `GET /lineup.json`
+- `GET /lineup_status.json`
+- `GET /guide.xml`
+- `GET /stream/<id>`
 
-### 1. Single tuner (simple)
+This path is used for:
+- normal Plex “Add DVR / Set up” wizard flows
+- HDHR-style manual URL entry
+- HDHR lane testing in parallel with injected DVRs
 
-Run one Plex Tuner instance and add it in Plex via the HDHR wizard.
+Related features for this path:
+- lineup shaping / wizard-safe caps (for provider matching behavior)
+- HDHR metadata controls (`Manufacturer`, `ModelNumber`, etc.)
+- `ScanPossible` control (so category tuners can be de-emphasized in wizard selection)
+
+## 2. DVR Injection Functions (Programmatic / Headless)
+
+Use this when you want Plex DVRs created/managed without relying on the wizard UI.
+
+This path supports:
+- programmatic DVR registration flows (API/DB-assisted)
+- multi-DVR category setups (for example 13 injected DVRs)
+- guide reload workflows
+- channelmap activation / replay workflows
+- repeatable cutover/update operations
+
+This is the path used for:
+- category DVR fleets
+- headless Plex lab/test setups
+- fast rebuilds after guide/channel remaps
+
+Reference (authoritative for Plex-side manipulation details):
+- [`docs/reference/plex-dvr-lifecycle-and-api.md`](docs/reference/plex-dvr-lifecycle-and-api.md)
+
+## Core App Features
+
+- **Inputs**: M3U URL or Xtream `player_api` (live, VOD, series)
+- **Provider failover**: multi-host probing + ranked backup stream URLs
+- **Streaming gateway**: HLS relay/transcode to Plex-friendly MPEG-TS paths
+- **Guide handling**: placeholder XMLTV or external XMLTV fetch/filter/remap
+- **XMLTV normalization**: language/script preference options (optional)
+- **Multi-DVR safety**: per-instance guide number offsets (avoid Plex guide collisions)
+- **Built-in Plex stale-session reaper**: optional background worker (poll + SSE + lease)
+- **Supervisor mode**: many child tuner instances from one JSON config (`plex-tuner supervise`)
+- **VODFS (optional)**: Linux-only FUSE mount for VOD catalog browsing
+
+Feature reference:
+- [`docs/features.md`](docs/features.md)
+
+## Supported Runtime Modes
+
+## 1. Single Tuner (Simple)
+
+Run one Plex Tuner instance for a single HDHR-style tuner endpoint.
 
 ```bash
 plex-tuner run
@@ -48,50 +90,19 @@ plex-tuner run
 plex-tuner serve -addr :5004
 ```
 
-### 2. Multi-instance supervisor (single app / single container)
+## 2. Multi-Instance Supervisor (Single App / Single Container)
 
-Run multiple virtual tuners (for example category DVR children + one HDHR wizard child) from one process supervisor:
+Run many virtual tuners (for example category DVR children + one HDHR wizard child) from one process:
 
 ```bash
 plex-tuner supervise -config /path/to/supervisor.json
 ```
 
-Example config and k8s manifests:
+Examples:
 - [`k8s/plextuner-supervisor-multi.example.json`](k8s/plextuner-supervisor-multi.example.json)
 - [`k8s/plextuner-supervisor-singlepod.example.yaml`](k8s/plextuner-supervisor-singlepod.example.yaml)
 
-### 3. Plex registration flows
-
-Plex Tuner supports multiple ways to land in Plex:
-- **HDHR wizard path** (manual or wizard-equivalent API flow)
-- **Injected DVR path** (programmatic / DB-assisted registration for category DVR fleets)
-- **Guide reload + channelmap activation** tooling for repeatable updates
-
-Reference: [`docs/reference/plex-dvr-lifecycle-and-api.md`](docs/reference/plex-dvr-lifecycle-and-api.md)
-
-## Platform Support
-
-### Works on Linux / macOS / Windows (core app)
-
-- `run`
-- `serve`
-- `index`
-- `probe`
-- `supervise`
-- HDHR-compatible HTTP tuner endpoints
-- XMLTV handling and guide remap/normalization
-- built-in Plex session reaper
-
-### Linux-only
-
-- `mount` (`VODFS` / FUSE)
-
-### Windows note (HDHR network mode)
-
-Windows builds include the HDHR network-mode code path again, but validation in this repo was only smoke-tested under `wine`.
-Native Windows testing is still recommended for authoritative UDP/TCP discovery behavior.
-
-## Quick Start (Single Host)
+## Quick Start (HDHR / Wizard Path)
 
 1. Build
 
@@ -112,16 +123,31 @@ Set at least:
 ./plex-tuner run
 ```
 
-4. Add in Plex (wizard path)
+4. Add in Plex (wizard)
 
 Plex -> Settings -> Live TV & DVR -> Add DVR / Set up
 - Device URL: your base URL
 - Guide URL: `<base>/guide.xml` (if Plex asks for XMLTV)
 
-More complete local options (binary / Docker / systemd):
+For local binary/Docker/systemd setups:
 - [`docs/how-to/run-without-kubernetes.md`](docs/how-to/run-without-kubernetes.md)
 
-## Commands
+## Quick Start (DVR Injection / Headless Path)
+
+Use the programmatic registration/injection path when you want multiple DVRs or repeatable headless setup.
+
+Start with:
+- Plex lifecycle/API reference: [`docs/reference/plex-dvr-lifecycle-and-api.md`](docs/reference/plex-dvr-lifecycle-and-api.md)
+- Supervisor/testing config reference: [`docs/reference/testing-and-supervisor-config.md`](docs/reference/testing-and-supervisor-config.md)
+- k8s deployment examples and cutover docs: [`k8s/README.md`](k8s/README.md)
+
+Common headless operations include:
+- create/update DVRs
+- reload guides
+- replay channelmaps
+- clean stale devices/providers
+
+## CLI Commands
 
 - `run` — refresh catalog + health check + serve (systemd-friendly)
 - `serve` — tuner only
@@ -130,18 +156,39 @@ More complete local options (binary / Docker / systemd):
 - `mount` — VODFS mount (Linux only)
 - `supervise` — run multiple child tuner instances from one JSON config
 
-Command and env reference:
+Reference:
 - [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-and-env-reference.md)
 - [`docs/reference/testing-and-supervisor-config.md`](docs/reference/testing-and-supervisor-config.md)
 
-## Packaging for Testers
+## Platform Support
 
-Cross-platform test bundles (Linux/macOS/Windows):
+### Linux / macOS / Windows (core app)
+
+Supported:
+- `run`, `serve`, `index`, `probe`, `supervise`
+- HDHR-compatible HTTP tuner endpoints
+- XMLTV remap/normalization
+- built-in Plex session reaper
+
+### Linux-only
+
+- `mount` / `VODFS` (FUSE)
+
+### Windows note (HDHR network mode)
+
+Windows builds include the HDHR network-mode code path, but native Windows validation is still recommended (do not treat `wine` smoke tests as authoritative for discovery/network behavior).
+
+## Packaging for Testers / Test Releases
+
+Cross-platform tester bundles:
 
 ```bash
 ./scripts/build-test-packages.sh
 ./scripts/build-tester-release.sh
 ```
+
+Tag-based test release flow (recommended):
+- push `v*` tag -> versioned GHCR images + tester bundle GitHub Release asset
 
 Docs:
 - [`docs/how-to/package-test-builds.md`](docs/how-to/package-test-builds.md)
@@ -154,17 +201,17 @@ Docs:
 - [`docs/runbooks/plex-hidden-live-grab-recovery.md`](docs/runbooks/plex-hidden-live-grab-recovery.md)
 - [`docs/runbooks/plex-in-cluster.md`](docs/runbooks/plex-in-cluster.md)
 
-## Repository Layout (high-value paths)
+## Repo Layout (High-Value Paths)
 
 - `cmd/plex-tuner/` — CLI entrypoint
 - `internal/tuner/` — HDHR endpoints, XMLTV, streaming gateway, Plex reaper
 - `internal/supervisor/` — multi-instance supervisor runtime
-- `internal/plex/` — Plex registration helpers
-- `internal/provider/` — Xtream/M3U probing and indexing support
+- `internal/plex/` — Plex registration helpers (API/DB-assisted flows)
+- `internal/provider/` — Xtream/M3U probing + indexing support
 - `internal/vodfs/` — VOD filesystem mount (Linux-only runtime)
-- `k8s/` — manifests, supervisor examples, deployment scripts
+- `k8s/` — manifests, supervisor examples, deploy scripts
 - `scripts/` — packaging, Plex ops helpers, analysis tools
-- `memory-bank/` — current task state, known issues, recurring loops, history
+- `memory-bank/` — project state/history/recurring issue notes
 
 ## Development
 
