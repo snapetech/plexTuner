@@ -143,6 +143,19 @@ func applyLineupPreCapFilters(live []catalog.LiveChannel) []catalog.LiveChannel 
 			out = filtered
 		}
 	}
+	if want := normalizeLineupLangFilter(strings.TrimSpace(os.Getenv("PLEX_TUNER_LINEUP_LANGUAGE"))); want != "" && want != "all" {
+		filtered := make([]catalog.LiveChannel, 0, len(out))
+		dropped := 0
+		for _, ch := range out {
+			if liveChannelMatchesLanguage(ch, want) {
+				filtered = append(filtered, ch)
+				continue
+			}
+			dropped++
+		}
+		log.Printf("Lineup pre-cap filter: language=%s kept=%d dropped=%d", want, len(filtered), dropped)
+		out = filtered
+	}
 	if pat := strings.TrimSpace(os.Getenv("PLEX_TUNER_LINEUP_EXCLUDE_REGEX")); pat != "" {
 		re, err := regexp.Compile("(?i)" + pat)
 		if err != nil {
@@ -170,6 +183,114 @@ func applyLineupPreCapFilters(live []catalog.LiveChannel) []catalog.LiveChannel 
 	out = applyLineupWizardShape(out)
 	out = applyLineupShard(out)
 	return out
+}
+
+func normalizeLineupLangFilter(v string) string {
+	v = strings.ToLower(strings.TrimSpace(v))
+	switch v {
+	case "", "all", "*", "any":
+		return "all"
+	case "eng", "english":
+		return "en"
+	case "arabic":
+		return "ar"
+	case "french":
+		return "fr"
+	case "spanish":
+		return "es"
+	case "portuguese":
+		return "pt"
+	case "german":
+		return "de"
+	case "italian":
+		return "it"
+	case "turkish":
+		return "tr"
+	case "russian":
+		return "ru"
+	case "hindi":
+		return "hi"
+	default:
+		return v
+	}
+}
+
+func liveChannelMatchesLanguage(ch catalog.LiveChannel, want string) bool {
+	want = normalizeLineupLangFilter(want)
+	if want == "" || want == "all" {
+		return true
+	}
+	guess := inferLiveChannelLanguage(ch)
+	if guess == "" {
+		// Conservative default for unknowns: keep only in English mode.
+		return want == "en"
+	}
+	return guess == want
+}
+
+func inferLiveChannelLanguage(ch catalog.LiveChannel) string {
+	s := strings.ToLower(strings.TrimSpace(ch.GuideName + " " + ch.TVGID + " " + ch.ChannelID))
+	if s == "" {
+		return ""
+	}
+	// Strong textual/script signals first.
+	if looksMostlyNonLatinText(ch.GuideName) || looksMostlyNonLatinText(ch.ChannelID) || looksMostlyNonLatinText(ch.TVGID) {
+		if hasAnyToken(s, []string{" arab", ".ar", " ar ", "bein ar", "mbc "}) {
+			return "ar"
+		}
+		if hasAnyToken(s, []string{" persian", " farsi", ".ir"}) {
+			return "fa"
+		}
+		if hasAnyToken(s, []string{"рус", ".ru", " ru "}) {
+			return "ru"
+		}
+		return "nonlatin"
+	}
+	// Common explicit tags in IPTV lineups.
+	switch {
+	case hasAnyToken(s, []string{".fr", " fr ", " french", " france "}):
+		return "fr"
+	case hasAnyToken(s, []string{".es", " es ", " spanish", " espanol", " españa", " spain "}):
+		return "es"
+	case hasAnyToken(s, []string{".pt", " pt ", " portuguese", " portugal", " brazil", "brasil"}):
+		return "pt"
+	case hasAnyToken(s, []string{".de", " de ", " german", " germany"}):
+		return "de"
+	case hasAnyToken(s, []string{".it", " it ", " italian", " italy"}):
+		return "it"
+	case hasAnyToken(s, []string{".tr", " tr ", " turkish", " turkey"}):
+		return "tr"
+	case hasAnyToken(s, []string{".pl", " pl ", " polish", " poland"}):
+		return "pl"
+	case hasAnyToken(s, []string{".nl", " dutch", " netherlands"}):
+		return "nl"
+	case hasAnyToken(s, []string{".sv", " swedish", " sweden"}):
+		return "sv"
+	case hasAnyToken(s, []string{".da", " danish", " denmark"}):
+		return "da"
+	case hasAnyToken(s, []string{".no", " norwegian", " norway"}):
+		return "no"
+	case hasAnyToken(s, []string{".fi", " finnish", " finland"}):
+		return "fi"
+	case hasAnyToken(s, []string{".ar", " arabic", " arab "}):
+		return "ar"
+	case hasAnyToken(s, []string{".hi", " hindi", " india "}):
+		return "hi"
+	case hasAnyToken(s, []string{".en", " english", ".us", ".ca", ".uk", ".gb", ".au", ".nz", ".ie", ".za"}):
+		return "en"
+	default:
+		return "en"
+	}
+}
+
+func hasAnyToken(s string, needles []string) bool {
+	padded := " " + s + " "
+	for _, n := range needles {
+		if strings.Contains(padded, strings.ToLower(n)) {
+			return true
+		}
+	}
+	return false
 }
 
 func applyLineupShard(live []catalog.LiveChannel) []catalog.LiveChannel {

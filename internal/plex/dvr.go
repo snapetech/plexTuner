@@ -53,6 +53,7 @@ func RegisterTunerViaAPI(cfg PlexAPIConfig) (*DeviceInfo, error) {
 	var body []byte
 	var lastErr error
 	devicePaths := []string{
+		"/media/grabbers/devices/discover", // newer Plex builds
 		"/media/grabbers/tv.plex.grabbers.hdhomerun/devices",
 		"/media/grabbers/devices",
 	}
@@ -99,6 +100,16 @@ func RegisterTunerViaAPI(cfg PlexAPIConfig) (*DeviceInfo, error) {
 			return &DeviceInfo{Key: dev.Key, UUID: dev.UUID, URI: dev.URI}, nil
 		}
 	}
+	// Newer Plex registration/discovery flows may normalize the URI they store from
+	// the device's advertised discover.json BaseURL (which can differ from the URL we
+	// probed). Fall back to matching the unique deviceId if present.
+	for _, dev := range mc.Device {
+		if strings.EqualFold(strings.TrimSpace(dev.Name), strings.TrimSpace(cfg.DeviceID)) ||
+			strings.EqualFold(strings.TrimSpace(dev.DeviceID), strings.TrimSpace(cfg.DeviceID)) {
+			fmt.Printf("[PLEX-REG] Found device by name/deviceId fallback: key=%s uuid=%s uri=%s name=%s deviceId=%s\n", dev.Key, dev.UUID, dev.URI, dev.Name, dev.DeviceID)
+			return &DeviceInfo{Key: dev.Key, UUID: dev.UUID, URI: dev.URI}, nil
+		}
+	}
 
 	return nil, fmt.Errorf("device not found in response")
 }
@@ -111,12 +122,13 @@ type MediaContainer struct {
 }
 
 type Device struct {
-	Key  string `xml:"key,attr"`
-	UUID string `xml:"uuid,attr"`
-	URI  string `xml:"uri,attr"`
-	Name string `xml:"name,attr"`
-	IP   string `xml:"ipAddress,attr"`
-	Port string `xml:"port,attr"`
+	Key      string `xml:"key,attr"`
+	UUID     string `xml:"uuid,attr"`
+	URI      string `xml:"uri,attr"`
+	Name     string `xml:"name,attr"`
+	DeviceID string `xml:"deviceId,attr"`
+	IP       string `xml:"ipAddress,attr"`
+	Port     string `xml:"port,attr"`
 }
 
 type Dvr struct {
