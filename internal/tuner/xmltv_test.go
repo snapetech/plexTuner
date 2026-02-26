@@ -227,3 +227,55 @@ func TestXMLTV_externalSourceRemap(t *testing.T) {
 		t.Fatalf("programme channel remap wrong: %+v", tv.Programmes)
 	}
 }
+
+func TestXMLTV_externalSourceRemap_PrefersEnglishLang(t *testing.T) {
+	srcXML := `<?xml version="1.0" encoding="utf-8"?>
+<tv>
+  <channel id="foo"><display-name>Foo</display-name></channel>
+  <programme start="20260222000000 +0000" stop="20260222010000 +0000" channel="foo">
+    <title lang="ar">اختبار</title>
+    <title lang="en">Test Title</title>
+    <desc lang="pl">Opis</desc>
+    <desc lang="en">English Description</desc>
+  </programme>
+</tv>`
+	var out strings.Builder
+	err := writeRemappedXMLTVWithPolicy(&out, strings.NewReader(srcXML), []catalog.LiveChannel{
+		{GuideNumber: "101", GuideName: "Foo EN", TVGID: "foo"},
+	}, xmltvTextPolicy{PreferLangs: []string{"en", "eng"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := out.String()
+	if strings.Contains(body, "اختبار") || strings.Contains(body, ">Opis<") {
+		t.Fatalf("non-English variants were not pruned: %s", body)
+	}
+	if !strings.Contains(body, ">Test Title<") || !strings.Contains(body, ">English Description<") {
+		t.Fatalf("expected English variants in output: %s", body)
+	}
+}
+
+func TestXMLTV_externalSourceRemap_NonLatinTitleFallbackToChannel(t *testing.T) {
+	srcXML := `<?xml version="1.0" encoding="utf-8"?>
+<tv>
+  <channel id="foo"><display-name>Foo</display-name></channel>
+  <programme start="20260222000000 +0000" stop="20260222010000 +0000" channel="foo">
+    <title>Новости</title>
+    <desc>Русское описание</desc>
+  </programme>
+</tv>`
+	var out strings.Builder
+	err := writeRemappedXMLTVWithPolicy(&out, strings.NewReader(srcXML), []catalog.LiveChannel{
+		{GuideNumber: "101", GuideName: "BBC ONE HD", TVGID: "foo"},
+	}, xmltvTextPolicy{NonLatinTitleFallback: "channel"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := out.String()
+	if !strings.Contains(body, "<title>BBC ONE HD</title>") {
+		t.Fatalf("expected channel-name title fallback, got: %s", body)
+	}
+	if !strings.Contains(body, "Русское описание") {
+		t.Fatalf("desc should remain untouched, got: %s", body)
+	}
+}

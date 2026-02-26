@@ -1,0 +1,14 @@
+# category	old_uri	new_uri	uri_changed	device_id	friendly_name
+bcastus	http://plextuner-bcastus.plex.svc:5004	http://plextuner-bcastus.plex.svc:5004	no	bcastus	bcastus
+newsus	http://plextuner-newsus.plex.svc:5004	http://plextuner-newsus.plex.svc:5004	no	newsus	newsus
+sportsa	http://plextuner-sportsa.plex.svc:5004	http://plextuner-sportsa.plex.svc:5004	no	sportsa	sportsa
+sportsb	http://plextuner-sportsb.plex.svc:5004	http://plextuner-sportsb.plex.svc:5004	no	sportsb	sportsb
+moviesprem	http://plextuner-moviesprem.plex.svc:5004	http://plextuner-moviesprem.plex.svc:5004	no	moviesprem	moviesprem
+generalent	http://plextuner-generalent.plex.svc:5004	http://plextuner-generalent.plex.svc:5004	no	generalent	generalent
+docsfam	http://plextuner-docsfam.plex.svc:5004	http://plextuner-docsfam.plex.svc:5004	no	docsfam	docsfam
+ukie	http://plextuner-ukie.plex.svc:5004	http://plextuner-ukie.plex.svc:5004	no	ukie	ukie
+eunordics	http://plextuner-eunordics.plex.svc:5004	http://plextuner-eunordics.plex.svc:5004	no	eunordics	eunordics
+eusouth	http://plextuner-eusouth.plex.svc:5004	http://plextuner-eusouth.plex.svc:5004	no	eusouth	eusouth
+eueast	http://plextuner-eueast.plex.svc:5004	http://plextuner-eueast.plex.svc:5004	no	eueast	eueast
+latin	http://plextuner-latin.plex.svc:5004	http://plextuner-latin.plex.svc:5004	no	latin	latin
+otherworld	http://plextuner-otherworld.plex.svc:5004	http://plextuner-otherworld.plex.svc:5004	no	otherworld	otherworld

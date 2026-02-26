@@ -1,0 +1,257 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: plextuner-supervisor-config
+  namespace: plex
+data:
+  supervisor.json: |
+    REPLACE_WITH_k8s/plextuner-supervisor-multi.example.json
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plextuner-supervisor
+  namespace: plex
+  labels:
+    app: plextuner-supervisor
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: plextuner-supervisor
+  template:
+    metadata:
+      labels:
+        app: plextuner-supervisor
+    spec:
+      nodeSelector:
+        media: plex
+      # Required for HDHR LAN broadcast discovery (UDP/TCP 65001) in most k8s setups.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: plextuner
+          image: plex-tuner:hdhr-test
+          imagePullPolicy: IfNotPresent
+          args: ["supervise", "-config", "/config/supervisor.json"]
+          env:
+            # Common inherited envs for all child instances (per-child JSON envs override these).
+            - name: TZ
+              value: America/Chicago
+            - name: PLEX_TUNER_PMS_URL
+              value: http://plex.plex.svc:32400
+            - name: PLEX_TUNER_PMS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: plex-token
+                  key: token
+            - name: PLEX_TUNER_PLEX_SESSION_REAPER
+              value: "true"
+            - name: PLEX_TUNER_PLEX_SESSION_REAPER_POLL_S
+              value: "2"
+            - name: PLEX_TUNER_PLEX_SESSION_REAPER_IDLE_S
+              value: "15"
+            - name: PLEX_TUNER_PLEX_SESSION_REAPER_RENEW_LEASE_S
+              value: "20"
+            - name: PLEX_TUNER_PLEX_SESSION_REAPER_HARD_LEASE_S
+              value: "1800"
+            - name: PLEX_TUNER_PLEX_SESSION_REAPER_SSE
+              value: "true"
+          ports:
+            - { name: hdhr-http, containerPort: 5004, protocol: TCP }
+            - { name: cat-5101, containerPort: 5101, protocol: TCP }
+            - { name: cat-5102, containerPort: 5102, protocol: TCP }
+            - { name: cat-5103, containerPort: 5103, protocol: TCP }
+            - { name: cat-5104, containerPort: 5104, protocol: TCP }
+            - { name: cat-5105, containerPort: 5105, protocol: TCP }
+            - { name: cat-5106, containerPort: 5106, protocol: TCP }
+            - { name: cat-5107, containerPort: 5107, protocol: TCP }
+            - { name: cat-5108, containerPort: 5108, protocol: TCP }
+            - { name: cat-5109, containerPort: 5109, protocol: TCP }
+            - { name: cat-5110, containerPort: 5110, protocol: TCP }
+            - { name: cat-5111, containerPort: 5111, protocol: TCP }
+            - { name: cat-5112, containerPort: 5112, protocol: TCP }
+            - { name: cat-5113, containerPort: 5113, protocol: TCP }
+            - { name: hdhr-disc, containerPort: 65001, protocol: UDP }
+            - { name: hdhr-ctrl, containerPort: 65001, protocol: TCP }
+          volumeMounts:
+            - name: supervisor-config
+              mountPath: /config
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /discover.json
+              port: 5004
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+      volumes:
+        - name: supervisor-config
+          configMap:
+            name: plextuner-supervisor-config
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plextuner-hdhr
+  namespace: plex
+spec:
+  selector:
+    app: plextuner-supervisor
+  ports:
+    - { name: http, port: 5004, targetPort: 5004, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plextuner-bcastus
+  namespace: plex
+spec:
+  selector:
+    app: plextuner-supervisor
+  ports:
+    - { name: http, port: 5004, targetPort: 5101, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plextuner-newsus
+  namespace: plex
+spec:
+  selector:
+    app: plextuner-supervisor
+  ports:
+    - { name: http, port: 5004, targetPort: 5102, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plextuner-sportsa
+  namespace: plex
+spec:
+  selector:
+    app: plextuner-supervisor
+  ports:
+    - { name: http, port: 5004, targetPort: 5103, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plextuner-sportsb
+  namespace: plex
+spec:
+  selector:
+    app: plextuner-supervisor
+  ports:
+    - { name: http, port: 5004, targetPort: 5104, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plextuner-moviesprem
+  namespace: plex
+spec:
+  selector:
+    app: plextuner-supervisor
+  ports:
+    - { name: http, port: 5004, targetPort: 5105, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plextuner-generalent
+  namespace: plex
+spec:
+  selector:
+    app: plextuner-supervisor
+  ports:
+    - { name: http, port: 5004, targetPort: 5106, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plextuner-docsfam
+  namespace: plex
+spec:
+  selector:
+    app: plextuner-supervisor
+  ports:
+    - { name: http, port: 5004, targetPort: 5107, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plextuner-ukie
+  namespace: plex
+spec:
+  selector:
+    app: plextuner-supervisor
+  ports:
+    - { name: http, port: 5004, targetPort: 5108, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plextuner-eunordics
+  namespace: plex
+spec:
+  selector:
+    app: plextuner-supervisor
+  ports:
+    - { name: http, port: 5004, targetPort: 5109, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plextuner-eusouth
+  namespace: plex
+spec:
+  selector:
+    app: plextuner-supervisor
+  ports:
+    - { name: http, port: 5004, targetPort: 5110, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plextuner-eueast
+  namespace: plex
+spec:
+  selector:
+    app: plextuner-supervisor
+  ports:
+    - { name: http, port: 5004, targetPort: 5111, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plextuner-latin
+  namespace: plex
+spec:
+  selector:
+    app: plextuner-supervisor
+  ports:
+    - { name: http, port: 5004, targetPort: 5112, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plextuner-otherworld
+  namespace: plex
+spec:
+  selector:
+    app: plextuner-supervisor
+  ports:
+    - { name: http, port: 5004, targetPort: 5113, protocol: TCP }

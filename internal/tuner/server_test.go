@@ -90,3 +90,104 @@ func TestUpdateChannels_capsLineup(t *testing.T) {
 		t.Errorf("expected easy-mode cap %d, got %d", PlexDVRWizardSafeMax, len(s5.Channels))
 	}
 }
+
+func TestUpdateChannels_appliesGuideNumberOffset(t *testing.T) {
+	s := &Server{LineupMaxChannels: NoLineupCap, GuideNumberOffset: 1000}
+	live := []catalog.LiveChannel{
+		{GuideNumber: "1", GuideName: "One"},
+		{GuideNumber: "12", GuideName: "Twelve"},
+		{GuideNumber: "abc", GuideName: "NonNumeric"},
+	}
+	s.UpdateChannels(live)
+	if got := s.Channels[0].GuideNumber; got != "1001" {
+		t.Fatalf("ch0 GuideNumber=%q want %q", got, "1001")
+	}
+	if got := s.Channels[1].GuideNumber; got != "1012" {
+		t.Fatalf("ch1 GuideNumber=%q want %q", got, "1012")
+	}
+	if got := s.Channels[2].GuideNumber; got != "abc" {
+		t.Fatalf("ch2 GuideNumber=%q want %q", got, "abc")
+	}
+	if live[0].GuideNumber != "1" {
+		t.Fatalf("input slice mutated; got %q", live[0].GuideNumber)
+	}
+}
+
+func TestApplyLineupPreCapFilters_dropMusicHeuristic(t *testing.T) {
+	t.Setenv("PLEX_TUNER_LINEUP_DROP_MUSIC", "true")
+	t.Setenv("PLEX_TUNER_LINEUP_EXCLUDE_REGEX", "")
+	in := []catalog.LiveChannel{
+		{GuideName: "CBC Toronto"},
+		{GuideName: "Stingray Hits"},
+		{GuideName: "Classic Radio One"},
+		{GuideName: "Sportsnet"},
+	}
+	got := applyLineupPreCapFilters(in)
+	if len(got) != 2 {
+		t.Fatalf("len=%d want 2", len(got))
+	}
+	if got[0].GuideName != "CBC Toronto" || got[1].GuideName != "Sportsnet" {
+		t.Fatalf("unexpected filtered channels: %+v", got)
+	}
+}
+
+func TestApplyLineupPreCapFilters_regex(t *testing.T) {
+	t.Setenv("PLEX_TUNER_LINEUP_DROP_MUSIC", "false")
+	t.Setenv("PLEX_TUNER_LINEUP_EXCLUDE_REGEX", "shopping|adult")
+	in := []catalog.LiveChannel{
+		{GuideName: "News"},
+		{GuideName: "Shopping Channel"},
+		{GuideName: "Adult Swim"},
+		{GuideName: "Movies"},
+	}
+	got := applyLineupPreCapFilters(in)
+	if len(got) != 2 {
+		t.Fatalf("len=%d want 2", len(got))
+	}
+	if got[0].GuideName != "News" || got[1].GuideName != "Movies" {
+		t.Fatalf("unexpected filtered channels: %+v", got)
+	}
+}
+
+func TestApplyLineupPreCapFilters_shapeNAENReordersBeforeCap(t *testing.T) {
+	t.Setenv("PLEX_TUNER_LINEUP_DROP_MUSIC", "false")
+	t.Setenv("PLEX_TUNER_LINEUP_EXCLUDE_REGEX", "")
+	t.Setenv("PLEX_TUNER_LINEUP_SHAPE", "na_en")
+	t.Setenv("PLEX_TUNER_LINEUP_REGION_PROFILE", "ca_west")
+
+	in := []catalog.LiveChannel{
+		{GuideName: "Random Foreign", TVGID: "foreign.example", GuideNumber: "1800"},
+		{GuideName: "CTV Regina", TVGID: "ctvregina.ca", GuideNumber: "7", EPGLinked: true},
+		{GuideName: "CBC Winnipeg", TVGID: "cbcwinnipeg.ca", GuideNumber: "6", EPGLinked: true},
+		{GuideName: "Shopping Channel", TVGID: "shopping.ca", GuideNumber: "20"},
+		{GuideName: "FOX News", TVGID: "foxnews.us", GuideNumber: "42", EPGLinked: true},
+	}
+
+	got := applyLineupPreCapFilters(in)
+	if len(got) != len(in) {
+		t.Fatalf("len=%d want %d", len(got), len(in))
+	}
+	// Local Canadian channels should bubble to the top ahead of unrelated channels.
+	if got[0].GuideName != "CTV Regina" && got[0].GuideName != "CBC Winnipeg" {
+		t.Fatalf("top channel not local Canadian: %+v", got[0])
+	}
+	if got[1].GuideName != "CTV Regina" && got[1].GuideName != "CBC Winnipeg" {
+		t.Fatalf("second channel not local Canadian: %+v", got[1])
+	}
+	// Shopping should be de-prioritized behind conventional news/network channels.
+	var idxShopping, idxFox int = -1, -1
+	for i, ch := range got {
+		if ch.GuideName == "Shopping Channel" {
+			idxShopping = i
+		}
+		if ch.GuideName == "FOX News" {
+			idxFox = i
+		}
+	}
+	if idxShopping == -1 || idxFox == -1 {
+		t.Fatalf("missing expected channels in result: %+v", got)
+	}
+	if idxShopping < idxFox {
+		t.Fatalf("shopping channel ranked ahead of FOX News: shopping=%d fox=%d", idxShopping, idxFox)
+	}
+}

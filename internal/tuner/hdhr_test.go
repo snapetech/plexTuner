@@ -10,6 +10,11 @@ import (
 )
 
 func TestHDHR_discover(t *testing.T) {
+	t.Setenv("PLEX_TUNER_HDHR_MANUFACTURER", "Silicondust")
+	t.Setenv("PLEX_TUNER_HDHR_MODEL_NUMBER", "HDHR5-2US")
+	t.Setenv("PLEX_TUNER_HDHR_FIRMWARE_NAME", "hdhomerun5_atsc")
+	t.Setenv("PLEX_TUNER_HDHR_FIRMWARE_VERSION", "20240101")
+	t.Setenv("PLEX_TUNER_HDHR_DEVICE_AUTH", "plextuner")
 	h := &HDHR{
 		BaseURL:    "http://test:5004",
 		TunerCount: 2,
@@ -30,6 +35,12 @@ func TestHDHR_discover(t *testing.T) {
 	}
 	if n, ok := out["TunerCount"].(float64); !ok || n != 2 {
 		t.Errorf("TunerCount: %v", out["TunerCount"])
+	}
+	if out["DeviceAuth"] != "plextuner" {
+		t.Errorf("DeviceAuth: %v", out["DeviceAuth"])
+	}
+	if out["ModelNumber"] == nil || out["FirmwareVersion"] == nil {
+		t.Errorf("missing HDHR metadata fields: %v", out)
 	}
 }
 
@@ -69,6 +80,31 @@ func TestHDHR_lineup_status(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("code: %d", w.Code)
 	}
+	var out map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := out["ScanPossible"].(float64); !ok || got != 1 {
+		t.Fatalf("expected ScanPossible=1 default, got: %v", out["ScanPossible"])
+	}
+}
+
+func TestHDHR_lineup_status_scan_possible_false(t *testing.T) {
+	t.Setenv("PLEX_TUNER_HDHR_SCAN_POSSIBLE", "false")
+	h := &HDHR{}
+	req := httptest.NewRequest(http.MethodGet, "/lineup_status.json", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code: %d", w.Code)
+	}
+	var out map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := out["ScanPossible"].(float64); !ok || got != 0 {
+		t.Fatalf("expected ScanPossible=0, got: %v", out["ScanPossible"])
+	}
 }
 
 func TestHDHR_discover_defaults(t *testing.T) {
@@ -91,6 +127,9 @@ func TestHDHR_discover_defaults(t *testing.T) {
 	}
 	if n, ok := out["TunerCount"].(float64); !ok || n != 2 {
 		t.Errorf("expected default TunerCount 2, got: %v", out["TunerCount"])
+	}
+	if out["Manufacturer"] != nil || out["ModelNumber"] != nil || out["DeviceAuth"] != nil {
+		t.Errorf("expected generic discover without HDHR metadata envs, got: %v", out)
 	}
 }
 

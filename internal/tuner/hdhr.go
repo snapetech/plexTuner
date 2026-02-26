@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/plextuner/plex-tuner/internal/catalog"
@@ -69,14 +70,35 @@ func (h *HDHR) serveDiscover(w http.ResponseWriter) {
 		"TunerCount":   tunerCount,
 		"DeviceID":     deviceID,
 	}
+	if v := strings.TrimSpace(os.Getenv("PLEX_TUNER_HDHR_MANUFACTURER")); v != "" {
+		out["Manufacturer"] = v
+	}
+	if v := strings.TrimSpace(os.Getenv("PLEX_TUNER_HDHR_MODEL_NUMBER")); v != "" {
+		out["ModelNumber"] = v
+	}
+	if v := strings.TrimSpace(os.Getenv("PLEX_TUNER_HDHR_FIRMWARE_NAME")); v != "" {
+		out["FirmwareName"] = v
+	}
+	if v := strings.TrimSpace(os.Getenv("PLEX_TUNER_HDHR_FIRMWARE_VERSION")); v != "" {
+		out["FirmwareVersion"] = v
+	}
+	if v := strings.TrimSpace(os.Getenv("PLEX_TUNER_HDHR_DEVICE_AUTH")); v != "" {
+		out["DeviceAuth"] = v
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out)
 }
 
 func (h *HDHR) serveLineupStatus(w http.ResponseWriter) {
+	scanPossible := 1
+	if v := strings.TrimSpace(os.Getenv("PLEX_TUNER_HDHR_SCAN_POSSIBLE")); v != "" {
+		if strings.EqualFold(v, "0") || strings.EqualFold(v, "false") || strings.EqualFold(v, "no") {
+			scanPossible = 0
+		}
+	}
 	out := map[string]interface{}{
 		"ScanInProgress": 0,
-		"ScanPossible":   1,
+		"ScanPossible":   scanPossible,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out)

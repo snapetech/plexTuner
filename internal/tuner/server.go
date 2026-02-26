@@ -8,9 +8,13 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/plextuner/plex-tuner/internal/catalog"
 	"github.com/plextuner/plex-tuner/internal/httpclient"
@@ -32,6 +36,7 @@ type Server struct {
 	BaseURL             string
 	TunerCount          int
 	LineupMaxChannels   int    // max channels in lineup/guide (default PlexDVRMaxChannels); 0 = use PlexDVRMaxChannels
+	GuideNumberOffset   int    // add offset to exposed GuideNumber values to avoid cross-DVR collisions in Plex clients
 	DeviceID            string // HDHomeRun discover.json; set from PLEX_TUNER_DEVICE_ID
 	FriendlyName        string // HDHomeRun discover.json; set from PLEX_TUNER_FRIENDLY_NAME
 	StreamBufferBytes   int    // 0 = no buffer; -1 = auto; e.g. 2097152 for 2 MiB
@@ -59,6 +64,7 @@ type Server struct {
 // Caps at LineupMaxChannels (default PlexDVRMaxChannels) so Plex DVR can save the lineup when using the wizard (Plex fails above ~480).
 // When LineupMaxChannels is NoLineupCap, no cap is applied (for programmatic lineup sync; see -register-plex).
 func (s *Server) UpdateChannels(live []catalog.LiveChannel) {
+	live = applyLineupPreCapFilters(live)
 	if s.LineupMaxChannels == NoLineupCap {
 		// Full lineup for programmatic sync; do not cap.
 	} else {
@@ -71,6 +77,7 @@ func (s *Server) UpdateChannels(live []catalog.LiveChannel) {
 			live = live[:max]
 		}
 	}
+	live = applyGuideNumberOffset(live, s.GuideNumberOffset)
 	s.Channels = live
 	s.healthMu.Lock()
 	s.healthChannels = len(live)
@@ -88,6 +95,294 @@ func (s *Server) UpdateChannels(live []catalog.LiveChannel) {
 	if s.m3uServe != nil {
 		s.m3uServe.Channels = live
 	}
+}
+
+func applyGuideNumberOffset(live []catalog.LiveChannel, offset int) []catalog.LiveChannel {
+	if offset == 0 || len(live) == 0 {
+		return live
+	}
+	out := make([]catalog.LiveChannel, len(live))
+	copy(out, live)
+	changed := 0
+	for i := range out {
+		g := strings.TrimSpace(out[i].GuideNumber)
+		if g == "" {
+			continue
+		}
+		n, err := strconv.Atoi(g)
+		if err != nil {
+			continue
+		}
+		out[i].GuideNumber = strconv.Itoa(n + offset)
+		changed++
+	}
+	if changed > 0 {
+		log.Printf("Guide number offset applied: offset=%d changed=%d/%d channels", offset, changed, len(out))
+	}
+	return out
+}
+
+func applyLineupPreCapFilters(live []catalog.LiveChannel) []catalog.LiveChannel {
+	if len(live) == 0 {
+		return live
+	}
+	before := len(live)
+	out := live
+	if envBool("PLEX_TUNER_LINEUP_DROP_MUSIC", false) {
+		filtered := make([]catalog.LiveChannel, 0, len(out))
+		dropped := 0
+		for _, ch := range out {
+			if looksLikeMusicOrRadioChannel(ch) {
+				dropped++
+				continue
+			}
+			filtered = append(filtered, ch)
+		}
+		if dropped > 0 {
+			log.Printf("Lineup pre-cap filter: dropped %d music/radio channels by name heuristic (remaining %d)", dropped, len(filtered))
+			out = filtered
+		}
+	}
+	if pat := strings.TrimSpace(os.Getenv("PLEX_TUNER_LINEUP_EXCLUDE_REGEX")); pat != "" {
+		re, err := regexp.Compile("(?i)" + pat)
+		if err != nil {
+			log.Printf("Lineup pre-cap exclude regex ignored (compile failed): %v", err)
+		} else {
+			filtered := make([]catalog.LiveChannel, 0, len(out))
+			dropped := 0
+			for _, ch := range out {
+				target := ch.GuideName + " " + ch.TVGID
+				if re.MatchString(target) {
+					dropped++
+					continue
+				}
+				filtered = append(filtered, ch)
+			}
+			if dropped > 0 {
+				log.Printf("Lineup pre-cap filter: dropped %d channels by PLEX_TUNER_LINEUP_EXCLUDE_REGEX (remaining %d)", dropped, len(filtered))
+				out = filtered
+			}
+		}
+	}
+	if len(out) != before {
+		// Continue with optional wizard-shaping reordering before cap.
+	}
+	out = applyLineupWizardShape(out)
+	return out
+}
+
+func applyLineupWizardShape(live []catalog.LiveChannel) []catalog.LiveChannel {
+	shape := strings.ToLower(strings.TrimSpace(os.Getenv("PLEX_TUNER_LINEUP_SHAPE")))
+	if shape == "" || shape == "off" || shape == "none" {
+		return live
+	}
+	region := strings.ToLower(strings.TrimSpace(os.Getenv("PLEX_TUNER_LINEUP_REGION_PROFILE")))
+	type scored struct {
+		ch    catalog.LiveChannel
+		score int
+		idx   int
+	}
+	scoredCh := make([]scored, 0, len(live))
+	for i, ch := range live {
+		scoredCh = append(scoredCh, scored{
+			ch:    ch,
+			score: scoreLineupChannelForShape(shape, region, ch),
+			idx:   i,
+		})
+	}
+	sort.SliceStable(scoredCh, func(i, j int) bool {
+		if scoredCh[i].score == scoredCh[j].score {
+			return scoredCh[i].idx < scoredCh[j].idx
+		}
+		return scoredCh[i].score > scoredCh[j].score
+	})
+	out := make([]catalog.LiveChannel, 0, len(live))
+	moved := 0
+	for i, s := range scoredCh {
+		out = append(out, s.ch)
+		if s.idx != i {
+			moved++
+		}
+	}
+	if moved > 0 {
+		log.Printf("Lineup pre-cap shape: shape=%s region=%s reordered %d/%d channels for wizard/provider matching", shape, regionOrDash(region), moved, len(out))
+	}
+	return out
+}
+
+func regionOrDash(v string) string {
+	if strings.TrimSpace(v) == "" {
+		return "-"
+	}
+	return v
+}
+
+func scoreLineupChannelForShape(shape, region string, ch catalog.LiveChannel) int {
+	if shape != "na_en" {
+		return 0
+	}
+	name := strings.ToLower(strings.TrimSpace(ch.GuideName))
+	tvgid := strings.ToLower(strings.TrimSpace(ch.TVGID))
+	s := " " + name + " " + tvgid + " "
+	score := 0
+	naAffinity := 0
+
+	// Prefer North American English-ish channels.
+	switch {
+	case strings.HasSuffix(tvgid, ".ca"):
+		score += 80
+		naAffinity = 2
+	case strings.HasSuffix(tvgid, ".us"):
+		score += 60
+		naAffinity = 1
+	case strings.HasSuffix(tvgid, ".mx"):
+		score += 20
+	case tvgid != "":
+		score -= 80
+	}
+
+	// Prefer likely local/provider channels for western/prairie Canada style lineups.
+	if region == "ca_west" || region == "ca_prairies" {
+		for _, n := range []string{
+			" regina", " saskatoon", " sask ", " winnipeg", " calgary", " edmonton", " vancouver", " victoria",
+			" alberta", " manitoba", " british columbia", " bc ",
+		} {
+			if strings.Contains(s, n) {
+				score += 55
+			}
+		}
+	}
+
+	// Core networks/channels that help provider matching feel local and conventional.
+	for _, n := range []string{
+		" cbc", " ctv", " global", " citytv", " omni", " ctv2", " noovo", " tva",
+		" abc", " cbs", " nbc", " fox", " pbs", " cw",
+		" tsn", " sportsnet", " sn ", " cp24", " cnn", " fox news", " msnbc", " weather network",
+		" a&e", " history", " discovery", " national geographic", " hgtv", " food", " tlc",
+	} {
+		if strings.Contains(s, n) {
+			score += 25
+		}
+	}
+
+	// De-prioritize content that often confuses or bloats wizard/provider matching.
+	for _, n := range []string{
+		" adult", " ppv", " pay per view", " event", " test", " promo", " barker", " shopping",
+		" qvc", " tsc ", " shop", " 4k", " uhd", " cam", " xxx",
+	} {
+		if strings.Contains(s, n) {
+			score -= 80
+		}
+	}
+
+	if looksMostlyNonLatinText(name) {
+		score -= 35
+	}
+	if naAffinity == 0 && tvgid != "" {
+		score -= 120
+	}
+
+	// Prefer conventional low channel numbers slightly, but don't let numbering dominate.
+	if n := leadingGuideNumber(ch.GuideNumber); n > 0 {
+		bump := 0
+		switch {
+		case n <= 99:
+			bump = 20
+		case n <= 199:
+			bump = 12
+		case n <= 399:
+			bump = 6
+		case n >= 1000:
+			bump = -6
+		}
+		// Only trust channel numbering as a positive signal when the channel already
+		// looks like part of the target NA provider shape.
+		if bump > 0 && naAffinity == 0 {
+			bump = 0
+		}
+		score += bump
+	}
+
+	if ch.EPGLinked || tvgid != "" {
+		score += 8
+	}
+	return score
+}
+
+func leadingGuideNumber(s string) int {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	var b strings.Builder
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+			continue
+		}
+		if b.Len() > 0 {
+			break
+		}
+	}
+	if b.Len() == 0 {
+		return 0
+	}
+	n, err := strconv.Atoi(b.String())
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+func looksMostlyNonLatinText(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false
+	}
+	letters := 0
+	latin := 0
+	for _, r := range s {
+		if !unicode.IsLetter(r) {
+			continue
+		}
+		letters++
+		if unicode.In(r, unicode.Latin) {
+			latin++
+		}
+	}
+	if letters < 3 {
+		return false
+	}
+	return latin*2 < letters
+}
+
+func looksLikeMusicOrRadioChannel(ch catalog.LiveChannel) bool {
+	s := strings.ToLower(strings.TrimSpace(ch.GuideName + " " + ch.TVGID))
+	if s == "" {
+		return false
+	}
+	needles := []string{
+		" stingray ",
+		" vevo ",
+		" mtv live",
+		"music",
+		"radio",
+		"karaoke",
+		"jukebox",
+		"djazz",
+		"mezzo",
+		"trace ",
+		"clubbing",
+		"hits",
+		"cmt",
+	}
+	padded := " " + s + " "
+	for _, n := range needles {
+		if strings.Contains(padded, n) {
+			return true
+		}
+	}
+	return false
 }
 
 // GetStream returns a reader for the given channel.
@@ -185,6 +480,7 @@ func (s *Server) Run(ctx context.Context) error {
 	if gateway.Client == nil {
 		gateway.Client = httpclient.ForStreaming()
 	}
+	maybeStartPlexSessionReaper(ctx, gateway.Client)
 	s.gateway = gateway
 	xmltv := &XMLTV{
 		Channels:         s.Channels,
@@ -202,7 +498,11 @@ func (s *Server) Run(ctx context.Context) error {
 		addr = ":5004"
 	}
 
-	StartSSDP(ctx, addr, s.BaseURL, s.DeviceID)
+	if envBool("PLEX_TUNER_SSDP_DISABLED", false) {
+		log.Printf("SSDP disabled via PLEX_TUNER_SSDP_DISABLED")
+	} else {
+		StartSSDP(ctx, addr, s.BaseURL, s.DeviceID)
+	}
 
 	mux := http.NewServeMux()
 	mux.Handle("/discover.json", hdhr)
