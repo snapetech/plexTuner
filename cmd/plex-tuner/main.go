@@ -29,6 +29,7 @@ import (
 	"github.com/plextuner/plex-tuner/internal/materializer"
 	"github.com/plextuner/plex-tuner/internal/plex"
 	"github.com/plextuner/plex-tuner/internal/provider"
+	"github.com/plextuner/plex-tuner/internal/supervisor"
 	"github.com/plextuner/plex-tuner/internal/tuner"
 	"github.com/plextuner/plex-tuner/internal/vodfs"
 )
@@ -77,6 +78,21 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 			return res, fmt.Errorf("parse M3U: %w", err)
 		}
 		res.Movies, res.Series, res.Live = movies, series, live
+	} else if m3uURLs := cfg.M3UURLsOrBuild(); len(m3uURLs) > 0 {
+		var lastErr error
+		for _, u := range m3uURLs {
+			movies, series, live, err := indexer.ParseM3U(u, nil)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			res.Movies, res.Series, res.Live = movies, series, live
+			lastErr = nil
+			break
+		}
+		if lastErr != nil {
+			return res, fmt.Errorf("parse M3U: %w", lastErr)
+		}
 	} else if cfg.ProviderUser != "" && cfg.ProviderPass != "" {
 		baseURLs := cfg.ProviderURLs()
 		if len(baseURLs) == 0 {
@@ -204,13 +220,17 @@ func main() {
 	probeURLs := probeCmd.String("urls", "", "Comma-separated base URLs to probe (default: from .env PLEX_TUNER_PROVIDER_URL or PLEX_TUNER_PROVIDER_URLS)")
 	probeTimeout := probeCmd.Duration("timeout", 60*time.Second, "Timeout per URL")
 
+	superviseCmd := flag.NewFlagSet("supervise", flag.ExitOnError)
+	superviseConfig := superviseCmd.String("config", "", "JSON supervisor config (instances[] with args/env)")
+
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <run|index|mount|serve|probe> [flags]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s <run|index|mount|serve|probe|supervise> [flags]\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  run    One-run: refresh catalog, health check, serve tuner (for systemd)\n")
 		fmt.Fprintf(os.Stderr, "  index  Fetch M3U, save catalog\n")
 		fmt.Fprintf(os.Stderr, "  mount  Mount VODFS (use -cache for on-demand download)\n")
 		fmt.Fprintf(os.Stderr, "  serve  Run tuner server only\n")
 		fmt.Fprintf(os.Stderr, "  probe  Cycle through provider URLs, report OK / Cloudflare / fail (use -urls a,b,c to try specific hosts)\n")
+		fmt.Fprintf(os.Stderr, "  supervise  Start multiple child plex-tuner instances from one JSON config (single pod/container supervisor)\n")
 		os.Exit(1)
 	}
 
@@ -297,6 +317,7 @@ func main() {
 			BaseURL:             *serveBaseURL,
 			TunerCount:          cfg.TunerCount,
 			LineupMaxChannels:   serveLineupCap,
+			GuideNumberOffset:   cfg.GuideNumberOffset,
 			DeviceID:            deviceID,
 			FriendlyName:        friendlyName,
 			StreamBufferBytes:   cfg.StreamBufferBytes,
@@ -447,6 +468,7 @@ func main() {
 			BaseURL:             baseURL,
 			TunerCount:          cfg.TunerCount,
 			LineupMaxChannels:   lineupCap,
+			GuideNumberOffset:   cfg.GuideNumberOffset,
 			DeviceID:            deviceID,
 			FriendlyName:        friendlyName,
 			StreamBufferBytes:   cfg.StreamBufferBytes,
@@ -520,7 +542,7 @@ func main() {
 
 			apiRegistrationDone := false
 			if plexHost != "" && plexToken != "" {
-				log.Printf("[PLEX-REG] Attempting Threadfin-style API registration...")
+				log.Printf("[PLEX-REG] Attempting Plex API registration...")
 				channelInfo := make([]plex.ChannelInfo, len(live))
 				for i := range live {
 					ch := &live[i]
@@ -532,7 +554,7 @@ func main() {
 				if err := plex.FullRegisterPlex(baseURL, plexHost, plexToken, cfg.FriendlyName, cfg.DeviceID, channelInfo); err != nil {
 					log.Printf("Plex API registration failed: %v (falling back to DB registration)", err)
 				} else {
-					log.Printf("Plex registered via API (Threadfin-style)")
+					log.Printf("Plex registered via API")
 					apiRegistrationDone = true
 				}
 			}
@@ -685,6 +707,19 @@ func main() {
 		}
 		if len(getOK) == 0 && len(apiOK) == 0 {
 			log.Print("No viable host. Check credentials and network.")
+		}
+
+	case "supervise":
+		_ = superviseCmd.Parse(os.Args[2:])
+		if strings.TrimSpace(*superviseConfig) == "" {
+			log.Print("Set -config=/path/to/supervisor.json")
+			os.Exit(1)
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		if err := supervisor.Run(ctx, *superviseConfig); err != nil {
+			log.Printf("Supervisor failed: %v", err)
+			os.Exit(1)
 		}
 
 	default:

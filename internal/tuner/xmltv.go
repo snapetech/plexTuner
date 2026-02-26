@@ -7,10 +7,12 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/plextuner/plex-tuner/internal/catalog"
 )
@@ -31,6 +33,12 @@ type XMLTV struct {
 	mu        sync.RWMutex
 	cachedXML []byte
 	cacheExp  time.Time
+}
+
+type xmltvTextPolicy struct {
+	PreferLangs           []string
+	PreferLatin           bool
+	NonLatinTitleFallback string // "", "channel"
 }
 
 func (x *XMLTV) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -171,6 +179,10 @@ func (x *XMLTV) servePlaceholderXMLTV(w http.ResponseWriter, channels []catalog.
 }
 
 func writeRemappedXMLTV(dst io.Writer, src io.Reader, channels []catalog.LiveChannel) error {
+	return writeRemappedXMLTVWithPolicy(dst, src, channels, loadXMLTVTextPolicyFromEnv())
+}
+
+func writeRemappedXMLTVWithPolicy(dst io.Writer, src io.Reader, channels []catalog.LiveChannel, policy xmltvTextPolicy) error {
 	type channelRef struct {
 		GuideNumber string
 		GuideName   string
@@ -267,6 +279,7 @@ func writeRemappedXMLTV(dst io.Writer, src io.Reader, channels []catalog.LiveCha
 						}
 						node.XMLName = xml.Name{Local: "programme"}
 						node.Attrs = setXMLAttr(node.Attrs, "channel", ref.GuideNumber)
+						normalizeProgrammeText(&node, ref.GuideName, policy)
 						if err := enc.EncodeElement(node, xml.StartElement{Name: xml.Name{Local: "programme"}}); err != nil {
 							return err
 						}
@@ -327,6 +340,10 @@ type xmlRawNode struct {
 	InnerXML string     `xml:",innerxml"`
 }
 
+type xmlRawChildren struct {
+	Nodes []xmlRawNode `xml:",any"`
+}
+
 type xmlTVRoot struct {
 	XMLName    xml.Name       `xml:"tv"`
 	Source     string         `xml:"source-info-name,attr,omitempty"`
@@ -348,4 +365,159 @@ type xmlProgramme struct {
 
 type xmlValue struct {
 	Value string `xml:",chardata"`
+}
+
+func loadXMLTVTextPolicyFromEnv() xmltvTextPolicy {
+	var p xmltvTextPolicy
+	if s := strings.TrimSpace(os.Getenv("PLEX_TUNER_XMLTV_PREFER_LANGS")); s != "" {
+		for _, part := range strings.Split(s, ",") {
+			v := strings.ToLower(strings.TrimSpace(part))
+			if v != "" {
+				p.PreferLangs = append(p.PreferLangs, v)
+			}
+		}
+	}
+	p.PreferLatin = envBool("PLEX_TUNER_XMLTV_PREFER_LATIN", false)
+	p.NonLatinTitleFallback = strings.ToLower(strings.TrimSpace(os.Getenv("PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK")))
+	return p
+}
+
+func normalizeProgrammeText(node *xmlRawNode, channelName string, policy xmltvTextPolicy) {
+	if node == nil {
+		return
+	}
+	if len(policy.PreferLangs) == 0 && !policy.PreferLatin && policy.NonLatinTitleFallback == "" {
+		return
+	}
+	wrapped := "<root>" + node.InnerXML + "</root>"
+	var frag xmlRawChildren
+	if err := xml.Unmarshal([]byte(wrapped), &frag); err != nil {
+		return
+	}
+	chooseAndPruneRepeatedNodes(frag.Nodes, "title", policy)
+	chooseAndPruneRepeatedNodes(frag.Nodes, "sub-title", policy)
+	chooseAndPruneRepeatedNodes(frag.Nodes, "desc", policy)
+	if policy.NonLatinTitleFallback == "channel" {
+		for i := range frag.Nodes {
+			if frag.Nodes[i].XMLName.Local != "title" {
+				continue
+			}
+			txt := strings.TrimSpace(xmlNodeText(frag.Nodes[i]))
+			if txt == "" || !looksMostlyNonLatin(txt) {
+				continue
+			}
+			frag.Nodes[i].InnerXML = xmlEscapeText(channelName)
+		}
+	}
+	var out bytes.Buffer
+	enc := xml.NewEncoder(&out)
+	for _, child := range frag.Nodes {
+		if child.XMLName.Local == "" {
+			continue
+		}
+		if err := enc.EncodeElement(child, xml.StartElement{Name: child.XMLName}); err != nil {
+			return
+		}
+	}
+	if err := enc.Flush(); err != nil {
+		return
+	}
+	node.InnerXML = out.String()
+}
+
+func chooseAndPruneRepeatedNodes(nodes []xmlRawNode, localName string, policy xmltvTextPolicy) {
+	idxs := make([]int, 0, 2)
+	for i := range nodes {
+		if nodes[i].XMLName.Local == localName {
+			idxs = append(idxs, i)
+		}
+	}
+	if len(idxs) < 2 {
+		return
+	}
+	keep := idxs[0]
+	if k, ok := chooseByPreferredLang(nodes, idxs, policy.PreferLangs); ok {
+		keep = k
+	} else if policy.PreferLatin {
+		if k, ok := chooseByLatin(nodes, idxs); ok {
+			keep = k
+		}
+	}
+	for _, i := range idxs {
+		if i == keep {
+			continue
+		}
+		nodes[i].XMLName = xml.Name{}
+		nodes[i].Attrs = nil
+		nodes[i].InnerXML = ""
+	}
+}
+
+func chooseByPreferredLang(nodes []xmlRawNode, idxs []int, langs []string) (int, bool) {
+	if len(langs) == 0 {
+		return 0, false
+	}
+	for _, want := range langs {
+		for _, i := range idxs {
+			lang := strings.ToLower(strings.TrimSpace(xmlAttr(nodes[i].Attrs, "lang")))
+			if lang == "" {
+				continue
+			}
+			if lang == want || strings.HasPrefix(lang, want+"-") {
+				return i, true
+			}
+		}
+	}
+	return 0, false
+}
+
+func chooseByLatin(nodes []xmlRawNode, idxs []int) (int, bool) {
+	for _, i := range idxs {
+		txt := strings.TrimSpace(xmlNodeText(nodes[i]))
+		if txt != "" && !looksMostlyNonLatin(txt) {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+func xmlNodeText(n xmlRawNode) string {
+	var v struct {
+		Text string `xml:",chardata"`
+	}
+	b, err := xml.Marshal(n)
+	if err != nil {
+		return ""
+	}
+	if err := xml.Unmarshal(b, &v); err != nil {
+		return ""
+	}
+	return v.Text
+}
+
+func looksMostlyNonLatin(s string) bool {
+	var letters, latinLetters, nonLatinLetters int
+	for _, r := range s {
+		if !unicode.IsLetter(r) {
+			continue
+		}
+		letters++
+		if unicode.In(r, unicode.Latin) {
+			latinLetters++
+		} else {
+			nonLatinLetters++
+		}
+	}
+	if letters == 0 {
+		return false
+	}
+	return nonLatinLetters > latinLetters && nonLatinLetters >= 3
+}
+
+func xmlEscapeText(s string) string {
+	var b bytes.Buffer
+	if err := xml.EscapeText(&b, []byte(s)); err != nil {
+		return s
+	}
+	return b.String()
 }

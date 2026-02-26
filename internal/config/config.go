@@ -29,6 +29,7 @@ type Config struct {
 	// Live tuner
 	TunerCount        int
 	LineupMaxChannels int    // max channels in lineup/guide (Plex DVR limit 480). 0 = use default 480.
+	GuideNumberOffset int    // add offset to exposed GuideNumber values (lineup/guide) to avoid cross-DVR key collisions
 	BaseURL           string // e.g. http://192.168.1.10:5004 for Plex to use
 	DeviceID          string // HDHomeRun discover.json DeviceID (stable; some Plex versions are picky about format)
 	FriendlyName      string // HDHomeRun discover.json FriendlyName (shown in Plex Live TV tuner list)
@@ -65,21 +66,22 @@ type Config struct {
 // If ProviderUser or ProviderPass are empty, Load tries PLEX_TUNER_SUBSCRIPTION_FILE (or default path) with "Username:" / "Password:" lines.
 func Load() *Config {
 	c := &Config{
-		ProviderBaseURL:      os.Getenv("PLEX_TUNER_PROVIDER_URL"),
+		ProviderBaseURL:      getEnvURL("PLEX_TUNER_PROVIDER_URL"),
 		ProviderUser:         os.Getenv("PLEX_TUNER_PROVIDER_USER"),
 		ProviderPass:         os.Getenv("PLEX_TUNER_PROVIDER_PASS"),
-		M3UURL:               os.Getenv("PLEX_TUNER_M3U_URL"),
+		M3UURL:               getEnvURL("PLEX_TUNER_M3U_URL"),
 		MountPoint:           getEnv("PLEX_TUNER_MOUNT", "/mnt/vodfs"),
 		CacheDir:             getEnv("PLEX_TUNER_CACHE", "/var/cache/plextuner"),
 		CatalogPath:          getEnv("PLEX_TUNER_CATALOG", "./catalog.json"),
 		TunerCount:           getEnvInt("PLEX_TUNER_TUNER_COUNT", 2),
 		LineupMaxChannels:    getEnvInt("PLEX_TUNER_LINEUP_MAX_CHANNELS", 480),
+		GuideNumberOffset:    getEnvInt("PLEX_TUNER_GUIDE_NUMBER_OFFSET", 0),
 		BaseURL:              os.Getenv("PLEX_TUNER_BASE_URL"),
 		DeviceID:             getEnv("PLEX_TUNER_DEVICE_ID", "plextuner01"),
 		FriendlyName:         os.Getenv("PLEX_TUNER_FRIENDLY_NAME"),
 		StreamBufferBytes:    getEnvIntOrAuto("PLEX_TUNER_STREAM_BUFFER_BYTES", -1),
 		StreamTranscodeMode:  getEnvTranscodeMode("PLEX_TUNER_STREAM_TRANSCODE", "off"),
-		XMLTVURL:             os.Getenv("PLEX_TUNER_XMLTV_URL"),
+		XMLTVURL:             getEnvURL("PLEX_TUNER_XMLTV_URL"),
 		XMLTVTimeout:         getEnvDuration("PLEX_TUNER_XMLTV_TIMEOUT", 45*time.Second),
 		LiveEPGOnly:          getEnvBool("PLEX_TUNER_LIVE_EPG_ONLY", false),
 		LiveOnly:             getEnvBool("PLEX_TUNER_LIVE_ONLY", false),
@@ -123,6 +125,16 @@ func Load() *Config {
 		}
 	}
 	return c
+}
+
+func getEnvURL(key string) string {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return ""
+	}
+	// Some shell/secret workflows persist URLs with escaped ampersands (e.g. "\&"),
+	// which breaks url parsing/fetches when consumed as a literal env value.
+	return strings.ReplaceAll(v, `\&`, `&`)
 }
 
 // readSubscriptionFile reads "Username: x" and "Password: x" from path. path may be empty to try default.
@@ -205,7 +217,7 @@ func (c *Config) ProviderURLs() []string {
 		parts := strings.Split(s, ",")
 		out := make([]string, 0, len(parts))
 		for _, p := range parts {
-			p = strings.TrimSpace(p)
+			p = strings.ReplaceAll(strings.TrimSpace(p), `\&`, `&`)
 			if p != "" {
 				out = append(out, p)
 			}

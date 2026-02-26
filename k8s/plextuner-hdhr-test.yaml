@@ -11,6 +11,15 @@ data:
   PLEX_TUNER_DEVICE_ID: "hdhrbcast"
   PLEX_TUNER_FRIENDLY_NAME: "plexTuner-bcastUS"
   PLEX_HOST: "127.0.0.1:32400"
+  # Built-in Plex session reaper (optional but recommended for lingering Live TV sessions).
+  # Disable by setting PLEX_TUNER_PLEX_SESSION_REAPER to "false".
+  PLEX_TUNER_PMS_URL: "http://plex:32400"
+  PLEX_TUNER_PLEX_SESSION_REAPER: "true"
+  PLEX_TUNER_PLEX_SESSION_REAPER_POLL_S: "2"
+  PLEX_TUNER_PLEX_SESSION_REAPER_IDLE_S: "15"
+  PLEX_TUNER_PLEX_SESSION_REAPER_RENEW_LEASE_S: "20"
+  PLEX_TUNER_PLEX_SESSION_REAPER_HARD_LEASE_S: "1800"
+  PLEX_TUNER_PLEX_SESSION_REAPER_SSE: "true"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -87,6 +96,12 @@ spec:
             name: plextuner-test-env
         - secretRef:
             name: plex-iptv-creds
+        env:
+        - name: PLEX_TUNER_PMS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: plex-iptv-creds
+              key: PLEX_TOKEN
         volumeMounts:
         - name: catalog
           mountPath: /data
