@@ -38,7 +38,7 @@ Append-only. One entry per completed task.
     - EPG counts: bcastus=136, docsfam=189, eunordics=173, eueast=336, latin=218, otherworld=220, sportsa=22, generalent=22
     - Plex has 13 DVRs registered, 8 with channels in EPG, guide reloads completed
   Notes:
-    - kubectl must use KUBECONFIG=/home/keith/.kube/config (not default k3s /etc/rancher/k3s/k3s.yaml which is root-only)
+    - kubectl must use KUBECONFIG=<user-kubeconfig> (not default k3s /etc/rancher/k3s/k3s.yaml which is root-only)
     - Plex container has curl but NOT wget; all scripts must use curl
     - Plex device URI format: IP:port (no http://) when registering via POST query param
     - DVR activation PUT needs --globoff for literal [] in channelMappingByKey[id]=id query params
@@ -317,14 +317,14 @@ Append-only. One entry per completed task.
 - Date: 2026-02-24
   Title: Live Plex integration triage (plex.home 502, WebSafe guide latency, direct tune)
   Summary:
-    - Diagnosed `plex.home` 502 as Traefik backend reachability failure to Plex on `kspls0:32400` (Plex itself was healthy; `kspld0` could not reach `192.168.50.85:32400`).
-    - Fixed host firewall on `kspls0` by allowing LAN TCP `32400` in `inet filter input`, restoring `http://plex.home` / `https://plex.home` (401 unauthenticated expected).
+    - Diagnosed `plex.home` 502 as Traefik backend reachability failure to Plex on `<plex-node>:32400` (Plex itself was healthy; `<work-node>` could not reach `<plex-host-ip>:32400`).
+    - Fixed host firewall on `<plex-node>` by allowing LAN TCP `32400` in `inet filter input`, restoring `http://plex.home` / `https://plex.home` (401 unauthenticated expected).
     - Validated from inside the Plex pod that `plextuner-websafe` (`:5005`) is reachable and `plextuner-trial` (`:5004`) is not.
     - Identified `guide.xml` latency root cause: external XMLTV remap (~45s per request). Restarted WebSafe `plex-tuner serve` in the lab pod without `PLEX_TUNER_XMLTV_URL` (placeholder guide) to make `guide.xml` fast again (~0.2s).
     - Proved live Plex→PlexTuner path works after fixes: direct Plex API `POST /livetv/dvrs/138/channels/11141/tune` returned `200`, and `plextuner-websafe` logged `/stream/11141` with HLS relay first bytes.
   Verification:
     - `curl -I http://plex.home` / `curl -k -I https://plex.home` → `502` before fix, `401` after firewall fix
-    - `kubectl` checks on `kspld0`: `get pods/svc/endpoints`, Plex pod `curl` to `plextuner-websafe.plex.svc:5005`
+    - `kubectl` checks on `<work-node>`: `get pods/svc/endpoints`, Plex pod `curl` to `plextuner-websafe.plex.svc:5005`
     - Plex pod timing: `guide.xml` ~45.15s with external XMLTV; ~0.19s after WebSafe restart without XMLTV
     - Plex direct tune API for DVR `138` / channel `11141` returned `200` and produced `/stream/11141` request in `plextuner-websafe` logs
   Notes:
@@ -354,7 +354,7 @@ Append-only. One entry per completed task.
   Opportunities filed:
     - `memory-bank/opportunities.md` (split-pipeline stage count instrumentation; empty-DVR activation helper hardening)
   Links:
-    - memory-bank/known_issues.md, memory-bank/opportunities.md, /home/keith/Documents/code/k3s/plex/scripts/plex-dvr-setup-multi.sh, /home/keith/Documents/code/k3s/plex/scripts/plex-activate-dvr-lineups.py
+    - memory-bank/known_issues.md, memory-bank/opportunities.md, <sibling-k3s-repo>/plex/scripts/plex-dvr-setup-multi.sh, <sibling-k3s-repo>/plex/scripts/plex-activate-dvr-lineups.py
 
 - Date: 2026-02-24
   Title: Direct PlexTuner WebSafe hardening for Plex routing (guide-number fallback + default-safe client adaptation)
@@ -386,18 +386,18 @@ Append-only. One entry per completed task.
     - Re-ran Plex Web probes on both `DVR 138` and `DVR 135`: both now `tune=200` but still fail at `startmpd1_0`. Trial logs confirm the client-adaptation switch is active and defaults unknown clients to websafe mode (`reason=unknown-client-websafe`).
     - Collected matching Plex logs showing the remaining browser failure is Plex-side: `decision` and `start.mpd` requests complete only after long waits, followed by `Failed to start session.`, while PlexTuner logs show successful `/stream/...` byte relay.
   Verification:
-    - k3s runtime checks via `sudo kubectl` on `kspld0` (Plex pod + `plextuner-build` pod): endpoint health, log tails, DVR/device detail XML
-    - `sudo python3 /home/keith/Documents/code/k3s/plex/scripts/plex-activate-dvr-lineups.py --dvr 138`
-    - `sudo python3 /home/keith/Documents/code/k3s/plex/scripts/plex-activate-dvr-lineups.py --dvr 135`
-    - `sudo python3 /home/keith/Documents/code/k3s/plex/scripts/plex-web-livetv-probe.py --dvr 138 --channel-id 112`
-    - `sudo python3 /home/keith/Documents/code/k3s/plex/scripts/plex-web-livetv-probe.py --dvr 135 --channel-id 112`
+    - k3s runtime checks via `sudo kubectl` on `<work-node>` (Plex pod + `plextuner-build` pod): endpoint health, log tails, DVR/device detail XML
+    - `sudo python3 <sibling-k3s-repo>/plex/scripts/plex-activate-dvr-lineups.py --dvr 138`
+    - `sudo python3 <sibling-k3s-repo>/plex/scripts/plex-activate-dvr-lineups.py --dvr 135`
+    - `sudo python3 <sibling-k3s-repo>/plex/scripts/plex-web-livetv-probe.py --dvr 138 --channel-id 112`
+    - `sudo python3 <sibling-k3s-repo>/plex/scripts/plex-web-livetv-probe.py --dvr 135 --channel-id 112`
   Notes:
     - The probe script `plex-dvr-random-stream-probe.py` reported timeout/0-byte failures on direct `/stream/...` URLs due its fixed 60s timeout, but PlexTuner logs for the same probes show HTTP 200 and tens/hundreds of MB relayed over ~60–130s; use tuner logs as the source of truth for those runs.
     - Another agent is actively changing `internal/hdhomerun/*`; no code changes were made in that area and no Plex restarts were performed.
   Opportunities filed:
     - none
   Links:
-    - memory-bank/known_issues.md, memory-bank/recurring_loops.md, /home/keith/Documents/code/k3s/plex/scripts/plex-activate-dvr-lineups.py, /home/keith/Documents/code/k3s/plex/scripts/plex-web-livetv-probe.py
+    - memory-bank/known_issues.md, memory-bank/recurring_loops.md, <sibling-k3s-repo>/plex/scripts/plex-activate-dvr-lineups.py, <sibling-k3s-repo>/plex/scripts/plex-web-livetv-probe.py
 
 - Date: 2026-02-24
   Title: WebSafe ffmpeg-path triage (k3s ffmpeg DNS failure, startup-gate fallback, hidden Plex CaptureBuffer reuse)
@@ -423,7 +423,7 @@ Append-only. One entry per completed task.
   Opportunities filed:
     - `memory-bank/opportunities.md` (ffmpeg HLS host canonicalization before ffmpeg; stronger stale-session detection in Plex probe/drain helpers)
   Links:
-    - memory-bank/known_issues.md, memory-bank/recurring_loops.md, memory-bank/opportunities.md, /home/keith/Documents/code/k3s/plex/scripts/plex-live-session-drain.py, /home/keith/Documents/code/k3s/plex/scripts/plex-web-livetv-probe.py
+    - memory-bank/known_issues.md, memory-bank/recurring_loops.md, memory-bank/opportunities.md, <sibling-k3s-repo>/plex/scripts/plex-live-session-drain.py, <sibling-k3s-repo>/plex/scripts/plex-web-livetv-probe.py
 
 - Date: 2026-02-24
   Title: Add ffmpeg HLS input host canonicalization in gateway (k3s short-host compatibility)
@@ -457,7 +457,7 @@ Append-only. One entry per completed task.
     - `PATH=/tmp/go/bin:$PATH /tmp/go/bin/go test ./internal/tuner -count=1`
     - Manual ffmpeg repro (inside `plextuner-build` pod) with reconnect flags enabled: repeated playlist EOF reconnect loop (`Will reconnect at 1071 ...`)
     - Manual ffmpeg control (same pod/channel) without reconnect flags: opened HLS segment and wrote valid TS (`/tmp/manual106.ts`, ~3.9 MB in ~6s)
-    - `python3 /home/keith/Documents/code/k3s/plex/scripts/plex-web-livetv-probe.py --dvr 138 --channel 106` (via temporary `kubectl` wrapper to `sudo k3s kubectl`) before and after runtime tuning
+    - `python3 <sibling-k3s-repo>/plex/scripts/plex-web-livetv-probe.py --dvr 138 --channel 106` (via temporary `kubectl` wrapper to `sudo k3s kubectl`) before and after runtime tuning
     - WebSafe log correlation in `/tmp/plextuner-websafe.log` confirming `reconnect=false`, `startup-gate-ready`, `first-bytes`, and `ffmpeg-transcode bytes/client-done` payload sizes
   Notes:
     - No Plex restart was performed.
@@ -469,21 +469,21 @@ Append-only. One entry per completed task.
     - internal/tuner/gateway.go, memory-bank/current_task.md, memory-bank/known_issues.md, memory-bank/recurring_loops.md, memory-bank/opportunities.md
 
 - Date: 2026-02-24
-  Title: Restore `plex.home` via manual endpoint slice during `kspls0` read-only-root outage (no Plex restart)
+  Title: Restore `plex.home` via manual endpoint slice during `<plex-node>` read-only-root outage (no Plex restart)
   Summary:
-    - Investigated `https://plex.home` `503` and found the Plex host node `kspls0` was `NotReady`; the Plex pod on `kspls0` was stuck `Terminating` and the Service had no ready endpoints.
-    - Confirmed the host Plex process itself was still alive on `192.168.50.85:32400` (direct HTTP returned Plex `401` unauth).
-    - Diagnosed `k3s` startup failure on `kspls0`: root Btrfs (`/`) was mounted read-only, and foreground `k3s server` failed with `failed to bootstrap cluster data ... chmod kine.sock: read-only file system`.
-    - Confirmed the replacement Plex pod on `kspld0` could not start because NFS mounts from `192.168.50.85` failed (`Host is unreachable`), leaving the `EndpointSlice` endpoint `ready=false`.
-    - Restored `plex.home` without restarting Plex by patching Service `plex` to be selectorless and attaching a manual `EndpointSlice` to `192.168.50.85:32400`; `https://plex.home` returned `401` afterward.
+    - Investigated `https://plex.home` `503` and found the Plex host node `<plex-node>` was `NotReady`; the Plex pod on `<plex-node>` was stuck `Terminating` and the Service had no ready endpoints.
+    - Confirmed the host Plex process itself was still alive on `<plex-host-ip>:32400` (direct HTTP returned Plex `401` unauth).
+    - Diagnosed `k3s` startup failure on `<plex-node>`: root Btrfs (`/`) was mounted read-only, and foreground `k3s server` failed with `failed to bootstrap cluster data ... chmod kine.sock: read-only file system`.
+    - Confirmed the replacement Plex pod on `<work-node>` could not start because NFS mounts from `<plex-host-ip>` failed (`Host is unreachable`), leaving the `EndpointSlice` endpoint `ready=false`.
+    - Restored `plex.home` without restarting Plex by patching Service `plex` to be selectorless and attaching a manual `EndpointSlice` to `<plex-host-ip>:32400`; `https://plex.home` returned `401` afterward.
   Verification:
     - `curl -k -I https://plex.home` (before: `503`, after: `401`)
-    - `ssh kspld0 'sudo k3s kubectl get nodes -o wide'`
-    - `ssh kspld0 'sudo k3s kubectl -n plex get svc/endpoints/endpointslice ...'`
-    - `ssh keith@kspls0 'findmnt -no TARGET,SOURCE,FSTYPE,OPTIONS /'`
-    - `ssh keith@kspls0 'timeout 20s /usr/local/bin/k3s server ...'` (foreground capture of `kine.sock` read-only failure)
+    - `ssh <work-node> 'sudo k3s kubectl get nodes -o wide'`
+    - `ssh <work-node> 'sudo k3s kubectl -n plex get svc/endpoints/endpointslice ...'`
+    - `ssh <user>@<plex-node> 'findmnt -no TARGET,SOURCE,FSTYPE,OPTIONS /'`
+    - `ssh <user>@<plex-node> 'timeout 20s /usr/local/bin/k3s server ...'` (foreground capture of `kine.sock` read-only failure)
   Notes:
-    - This is a temporary traffic-routing workaround only. `kspls0` still needs host-level filesystem recovery (root Btrfs back to `rw`) and `k3s` restart.
+    - This is a temporary traffic-routing workaround only. `<plex-node>` still needs host-level filesystem recovery (root Btrfs back to `rw`) and `k3s` restart.
     - After host recovery, restore the normal `plex` Service selector (`app=plex`) and remove the manual `EndpointSlice`.
     - No Plex process restart was performed.
   Opportunities filed:
@@ -492,18 +492,18 @@ Append-only. One entry per completed task.
     - memory-bank/current_task.md, memory-bank/known_issues.md
 
 - Date: 2026-02-24
-  Title: Persist `kspls0` LAN Plex/NFS firewall allows in boot-loaded nftables config and restore Plex after reboot
+  Title: Persist `<plex-node>` LAN Plex/NFS firewall allows in boot-loaded nftables config and restore Plex after reboot
   Summary:
-    - Rebooted `kspls0` to recover the root Btrfs `ro` remount condition; confirmed `/` returned `rw` and `postgresql` + `k3s` were active after boot.
-    - Found the post-reboot regression was the same firewall persistence issue: `/etc/nftables/kspls0-host-firewall.conf` still contained Plex/NFS allows, but the later `table inet filter` base chain from `/etc/nftables.conf` dropped LAN Plex/NFS traffic.
-    - Added temporary live `nft` rules to `inet filter input` to restore LAN access for NFS/Plex (`111/2049/20048/.../32400`) and re-established `kspld0 -> kspls0` NFS RPC connectivity.
+    - Rebooted `<plex-node>` to recover the root Btrfs `ro` remount condition; confirmed `/` returned `rw` and `postgresql` + `k3s` were active after boot.
+    - Found the post-reboot regression was the same firewall persistence issue: `/etc/nftables/<plex-node>-host-firewall.conf` still contained Plex/NFS allows, but the later `table inet filter` base chain from `/etc/nftables.conf` dropped LAN Plex/NFS traffic.
+    - Added temporary live `nft` rules to `inet filter input` to restore LAN access for NFS/Plex (`111/2049/20048/.../32400`) and re-established `<work-node> -> <plex-node>` NFS RPC connectivity.
     - Patched `/etc/nftables.conf` (the file loaded by `nftables.service`) to persist the LAN Plex/NFS allow rules in the actual `inet filter input` chain so they survive future reboot/reload.
-    - Restored normal Plex service routing (selector-based Service, removed temporary manual `EndpointSlice`), deleted the stuck pending Plex pod, and verified a new Plex pod came up on `kspls0` and `https://plex.home` returned `401`.
+    - Restored normal Plex service routing (selector-based Service, removed temporary manual `EndpointSlice`), deleted the stuck pending Plex pod, and verified a new Plex pod came up on `<plex-node>` and `https://plex.home` returned `401`.
   Verification:
-    - `ssh keith@kspls0 'findmnt -no OPTIONS /; systemctl is-active postgresql k3s'`
-    - `ssh keith@kspls0 'sudo nft -c -f /etc/nftables.conf'`
-    - `ssh kspld0 'rpcinfo -p 192.168.50.85 && showmount -e 192.168.50.85'`
-    - `ssh kspld0 'sudo k3s kubectl -n plex get pod -o wide'`
+    - `ssh <user>@<plex-node> 'findmnt -no OPTIONS /; systemctl is-active postgresql k3s'`
+    - `ssh <user>@<plex-node> 'sudo nft -c -f /etc/nftables.conf'`
+    - `ssh <work-node> 'rpcinfo -p <plex-host-ip> && showmount -e <plex-host-ip>'`
+    - `ssh <work-node> 'sudo k3s kubectl -n plex get pod -o wide'`
     - `curl -k -I https://plex.home` (final `401`)
   Notes:
     - Persisted NFS auxiliary RPC ports match the currently observed `rpcinfo` ports (`nlockmgr/statd`) and may change after future NFS restarts/reboots unless pinned in NFS config.
@@ -516,7 +516,7 @@ Append-only. One entry per completed task.
 - Date: 2026-02-24
   Title: Verify sticky NFS/firewall recovery and isolate Plex internal live-manifest stall (`index.m3u8` zero-byte) across WebSafe profiles
   Summary:
-    - Verified the post-reboot `kspls0` LAN access fixes are truly persistent: `/etc/nfs.conf` still pins `lockd`/`mountd`/`statd` ports, `inet filter input` still contains the matching NFS + Plex `32400` allow rules, and `kspld0 -> kspls0` `rpcinfo`/`showmount` succeeds.
+    - Verified the post-reboot `<plex-node>` LAN access fixes are truly persistent: `/etc/nfs.conf` still pins `lockd`/`mountd`/`statd` ports, `inet filter input` still contains the matching NFS + Plex `32400` allow rules, and `<work-node> -> <plex-node>` `rpcinfo`/`showmount` succeeds.
     - Confirmed direct WebSafe service is up and resumed fresh browser probes without restarting Plex; Trial (`:5004`) was down during this cycle and intentionally left untouched to minimize disruption.
     - Reproduced the Web browser failure on fresh WebSafe channels `103` and `104` with new hidden Plex `CaptureBuffer` sessions (`startmpd1_0` at ~35s), while PlexTuner logs showed healthy ffmpeg startup and real streamed bytes (`startup-gate` ready, `first-bytes`, `idr=true` in the `103/104` runs).
     - Demonstrated that Plex `decision` / `start.mpd` for the `103` and `104` sessions can complete only after ~100s (PMS logs), which is longer than the probe/browser startup timeout.
@@ -527,10 +527,10 @@ Append-only. One entry per completed task.
       - Forced `pmsxcode` with `PLEX_TUNER_CLIENT_ADAPT=false` on channel `109` also failed `startmpd1_0`; PMS first-stage progress confirmed the codec path really changed (`mpeg2video` + `mp2`), but the browser timeout remained and the internal live `index.m3u8` still timed out with 0 bytes.
     - Restored the WebSafe runtime to the baseline test profile afterward (`aaccfr` default + client adaptation enabled, explicit ffmpeg path, HLS reconnect=false, no bootstrap/keepalive), again without restarting Plex.
   Verification:
-    - `ssh keith@kspls0 'grep -n ... /etc/nfs.conf; sudo nft list chain inet filter input; rpcinfo -p localhost'`
-    - `ssh kspld0 'rpcinfo -p 192.168.50.85; showmount -e 192.168.50.85'`
+    - `ssh <user>@<plex-node> 'grep -n ... /etc/nfs.conf; sudo nft list chain inet filter input; rpcinfo -p localhost'`
+    - `ssh <work-node> 'rpcinfo -p <plex-host-ip>; showmount -e <plex-host-ip>'`
     - `kubectl -n plex get pods -o wide`, `kubectl -n plex exec deploy/plex -c plex -- curl .../discover.json`
-    - `sudo env PWPROBE_DEBUG_MPD=1 python3 /home/keith/Documents/code/k3s/plex/scripts/plex-web-livetv-probe.py --dvr 138 --channel {103,104,107,109}`
+    - `sudo env PWPROBE_DEBUG_MPD=1 python3 <sibling-k3s-repo>/plex/scripts/plex-web-livetv-probe.py --dvr 138 --channel {103,104,107,109}`
     - `kubectl -n plex exec deploy/plex -c plex -- curl http://127.0.0.1:32400/livetv/sessions/<live>/<client>/index.m3u8?...` (in-container internal live-manifest polling)
     - PMS log correlation in `/config/Library/Application Support/Plex Media Server/Logs/Plex Media Server.log` for `buildLiveM3U8`, recorder segment sessions, and delayed `decision`/`start.mpd`
     - WebSafe runtime log correlation in `/tmp/plextuner-websafe.log` for effective profile (`aaccfr` / `plexsafe` / `pmsxcode`) and startup-gate readiness
@@ -541,7 +541,7 @@ Append-only. One entry per completed task.
   Opportunities filed:
     - `memory-bank/opportunities.md` (TS timing/continuity debug capture for first-seconds WebSafe output)
   Links:
-    - memory-bank/current_task.md, memory-bank/known_issues.md, memory-bank/recurring_loops.md, memory-bank/opportunities.md, /home/keith/Documents/code/k3s/plex/scripts/plex-web-livetv-probe.py
+    - memory-bank/current_task.md, memory-bank/known_issues.md, memory-bank/recurring_loops.md, memory-bank/opportunities.md, <sibling-k3s-repo>/plex/scripts/plex-web-livetv-probe.py
 
 - Date: 2026-02-24
   Title: Instrument first-seconds WebSafe TS output and confirm clean startup TS on a fresh failing Plex Web probe
@@ -627,7 +627,7 @@ Append-only. One entry per completed task.
   Verification:
     - `kubectl --kubeconfig ~/.kube/config -n plex get svc,ep plextuner-trial plextuner-websafe iptv-m3u-server iptv-hlsfix`
     - `kubectl --kubeconfig ~/.kube/config -n plex exec deploy/plextuner-build -- tail -n ... /tmp/plextuner-{trial,websafe}.log`
-    - `python3 /home/keith/Documents/code/k3s/plex/scripts/plex-web-livetv-probe.py --namespace plex --target deploy/plex --container plex --dvr 138 --channel-id 108 --hold 4` (still fails `startmpd1_0`, but tune=200 + ffmpeg-transcode confirmed)
+    - `python3 <sibling-k3s-repo>/plex/scripts/plex-web-livetv-probe.py --namespace plex --target deploy/plex --container plex --dvr 138 --channel-id 108 --hold 4` (still fails `startmpd1_0`, but tune=200 + ffmpeg-transcode confirmed)
     - `go test ./internal/config`
     - `go test ./internal/tuner -run '^$'` (compile-only pass)
     - `go test ./internal/tuner ./internal/config` (known unrelated failure in `TestLooksLikeGoodTSStartDetectsSplitIDRStartCodeAcrossPackets`)
@@ -647,11 +647,11 @@ Append-only. One entry per completed task.
     - Deleted the earlier mixed-mode DVRs (PlexTuner device + Threadfin lineup) and recreated 13 pure-app DVRs pointing both device and lineup/guide at `plextuner-*` services: IDs `218,220,222,224,226,228,230,232,234,236,238,240,242`.
     - Ran `plex-activate-dvr-lineups.py` across all 13 new DVRs; activation finished `status=OK` with mapped channel counts: `218=44`, `220=136`, `222=308`, `224=307`, `226=257`, `228=206`, `230=212`, `232=111`, `234=465`, `236=52`, `238=479`, `240=273`, `242=404` (total `3254`).
     - Probed a pure category DVR (`218` / `plextuner-newsus`) and confirmed the same failure class remains: `tune=200`, PlexTuner serves `/stream/News12Brooklyn.us`, but Plex Web probe still fails `startmpd1_0`.
-    - Pulled Smart TV/Plex logs (client `192.168.50.148`) and confirmed the same sequence during user-visible spinning: Plex starts the grabber and reads a PlexTuner stream successfully, then PMS internal `/livetv/sessions/.../index.m3u8` returns `500` with `buildLiveM3U8: no segment info available`, and the client reports `state=stopped`.
+    - Pulled Smart TV/Plex logs (client `<client-ip-a>`) and confirmed the same sequence during user-visible spinning: Plex starts the grabber and reads a PlexTuner stream successfully, then PMS internal `/livetv/sessions/.../index.m3u8` returns `500` with `buildLiveM3U8: no segment info available`, and the client reports `state=stopped`.
     - Removed non-essential `Threadfin` wording in this repo's code/log text and k8s helper comments (`internal/plex/dvr.go`, `cmd/plex-tuner/main.go`, `k8s/deploy-hdhr-one-shot.sh`, `k8s/standup-and-verify.sh`, `k8s/README.md`), leaving only comparison docs / historical/context references.
   Verification:
-    - `KUBECONFIG=$HOME/.kube/config python3 /home/keith/Documents/code/k3s/plex/scripts/plex-activate-dvr-lineups.py --namespace plex --target deploy/plex --container plex --dvr 218 --dvr 220 --dvr 222 --dvr 224 --dvr 226 --dvr 228 --dvr 230 --dvr 232 --dvr 234 --dvr 236 --dvr 238 --dvr 240 --dvr 242` (final `status=OK`)
-    - `KUBECONFIG=$HOME/.kube/config python3 /home/keith/Documents/code/k3s/plex/scripts/plex-web-livetv-probe.py --namespace plex --target deploy/plex --container plex --dvr 218 --per-dvr 1 --json-out /tmp/pure218-probe.json` (expected fail: `startmpd1_0`; tune success + PlexTuner stream request observed)
+    - `KUBECONFIG=$HOME/.kube/config python3 <sibling-k3s-repo>/plex/scripts/plex-activate-dvr-lineups.py --namespace plex --target deploy/plex --container plex --dvr 218 --dvr 220 --dvr 222 --dvr 224 --dvr 226 --dvr 228 --dvr 230 --dvr 232 --dvr 234 --dvr 236 --dvr 238 --dvr 240 --dvr 242` (final `status=OK`)
+    - `KUBECONFIG=$HOME/.kube/config python3 <sibling-k3s-repo>/plex/scripts/plex-web-livetv-probe.py --namespace plex --target deploy/plex --container plex --dvr 218 --per-dvr 1 --json-out /tmp/pure218-probe.json` (expected fail: `startmpd1_0`; tune success + PlexTuner stream request observed)
     - `KUBECONFIG=$HOME/.kube/config kubectl -n plex logs deploy/plextuner-newsus --since=5m` (shows `/stream/News12Brooklyn.us` startup during pure-app probe)
     - `KUBECONFIG=$HOME/.kube/config kubectl -n plex exec deploy/plex -c plex -- grep ... \"Plex Media Server*.log\"` (Smart TV and probe session logs showing `buildLiveM3U8` / delayed `start.mpd`)
     - `rg -ni --hidden --glob '!.git' 'threadfin' .` (post-cleanup scan; remaining refs are comparison docs, memory-bank history/context, or explicit legacy-secret context)
@@ -673,7 +673,7 @@ Append-only. One entry per completed task.
     - Late `connection refused` PMS errors against `plextuner-newsus:5004` were induced by the intentional rollback restart while PMS still held the background live grab; they are not a new root cause.
   Verification:
     - `DELETE /livetv/dvrs/<id>` for stale Threadfin IDs (all returned `200`; subsequent inventory shows no `threadfin-*`)
-    - `KUBECONFIG=$HOME/.kube/config python3 /home/keith/Documents/code/k3s/plex/scripts/plex-web-livetv-probe.py --namespace plex --target deploy/plex --container plex --dvr 218 --per-dvr 1 --json-out /tmp/pure218-websafeab-probe.json` (expected fail: `startmpd1_0`)
+    - `KUBECONFIG=$HOME/.kube/config python3 <sibling-k3s-repo>/plex/scripts/plex-web-livetv-probe.py --namespace plex --target deploy/plex --container plex --dvr 218 --per-dvr 1 --json-out /tmp/pure218-websafeab-probe.json` (expected fail: `startmpd1_0`)
     - `kubectl -n plex logs deploy/plextuner-newsus` (A/B run shows HLS relay, no `ffmpeg-transcode`)
     - `kubectl -n plex exec deploy/plex -c plex -- grep ... \"Plex Media Server*.log\"` (grabber/progress + delayed `decision`/`start.mpd` on A/B session)
   Notes:
@@ -740,16 +740,16 @@ Append-only. One entry per completed task.
   Summary:
     - Re-read and reused the existing `k3s/plex` diagnostics harness (`plex-websafe-pcap-repro.sh`) instead of ad hoc probes to revisit the already-trodden first-stage `ssegment`/manifest path on the pure PlexTuner injected setup (`DVR 218`, `FOX WEATHER`, helper AB4 `:5009`).
     - Harness localhost pcap proved the hidden root cause: PMS first-stage `Lavf` repeatedly `POST`ed CSV segment updates to `/video/:/transcode/session/.../manifest`, but PMS responded `403` to those callback requests while `Plex Media Server.log` only showed downstream `buildLiveM3U8: no segment info available`.
-    - Confirmed PMS callback rejection was the blocker (not PlexTuner TS format) by applying a Plex runtime workaround: added `allowedNetworks="127.0.0.1/8,::1/128,192.168.50.0/24"` to PMS `Preferences.xml` and restarted `deploy/plex`.
+    - Confirmed PMS callback rejection was the blocker (not PlexTuner TS format) by applying a Plex runtime workaround: added `allowedNetworks="127.0.0.1/8,::1/128,<lan-cidr>"` to PMS `Preferences.xml` and restarted `deploy/plex`.
     - Post-fix pcap harness rerun showed the expected behavior flip: first-stage `/manifest` callback responses became `200`, PMS internal `/livetv/sessions/.../index.m3u8` returned `200` with real HLS entries, and PMS logs switched to healthy `buildLiveM3U8: min ... max ...`.
     - Verified browser-path recovery on the same channel: PMS logs now show fast `decision` + `start.mpd` completion and `GET /video/:/transcode/universal/session/.../0/header` returning `200` (previously `404`/timeout).
-    - Patched the external probe harness (`/home/keith/Documents/code/k3s/plex/scripts/plex-web-livetv-probe.py`) to be binary-safe (`subprocess.run(..., errors="replace")`) because successful DASH init/media fetches were causing false `UnicodeDecodeError` failures.
+    - Patched the external probe harness (`<sibling-k3s-repo>/plex/scripts/plex-web-livetv-probe.py`) to be binary-safe (`subprocess.run(..., errors="replace")`) because successful DASH init/media fetches were causing false `UnicodeDecodeError` failures.
     - Final probe validation succeeded (`SUMMARY ok=1/1`) for `DVR 218` / `FOX WEATHER`.
   Verification:
-    - `bash /home/keith/Documents/code/k3s/plex/scripts/plex-websafe-pcap-repro.sh` (before fix, `DVR=218`, `CH=14`, AB4 `:5009`): localhost pcap shows repeated `/manifest` callback POSTs + `403` responses and PMS `buildLiveM3U8: no segment info available`
+    - `bash <sibling-k3s-repo>/plex/scripts/plex-websafe-pcap-repro.sh` (before fix, `DVR=218`, `CH=14`, AB4 `:5009`): localhost pcap shows repeated `/manifest` callback POSTs + `403` responses and PMS `buildLiveM3U8: no segment info available`
     - `kubectl -n plex exec deploy/plex -c plex -- ... Preferences.xml` (add `allowedNetworks=...`) + `kubectl -n plex rollout restart deploy/plex`
-    - `bash /home/keith/Documents/code/k3s/plex/scripts/plex-websafe-pcap-repro.sh` (after fix, same args): PMS `/livetv/sessions/.../index.m3u8` returns `200`; logs show `buildLiveM3U8: min ... max ...`
-    - `python3 /home/keith/Documents/code/k3s/plex/scripts/plex-web-livetv-probe.py --dvr 218 --channel 'FOX WEATHER'` (after binary-safe harness patch): `OK`, DASH init/media fetches succeed
+    - `bash <sibling-k3s-repo>/plex/scripts/plex-websafe-pcap-repro.sh` (after fix, same args): PMS `/livetv/sessions/.../index.m3u8` returns `200`; logs show `buildLiveM3U8: min ... max ...`
+    - `python3 <sibling-k3s-repo>/plex/scripts/plex-web-livetv-probe.py --dvr 218 --channel 'FOX WEATHER'` (after binary-safe harness patch): `OK`, DASH init/media fetches succeed
     - PMS log checks for `decision`, `start.mpd`, `.../0/header` (`200`) on the post-fix session
   Notes:
     - This is a Plex-side runtime/auth workaround in the PMS pod (`Preferences.xml`), not a PlexTuner code change.
@@ -759,7 +759,7 @@ Append-only. One entry per completed task.
   Links:
     - memory-bank/current_task.md, memory-bank/known_issues.md, memory-bank/recurring_loops.md
 - 2026-02-25: Fixed category runtime/image for Plex Web audio path and added manual stale-session drain helper.
-  - Rebuilt/imported ffmpeg-enabled `plex-tuner:hdhr-test` on `kspls0`, restarted all 13 category deployments, and set `PLEX_TUNER_STREAM_TRANSCODE=on` for immediate web audio normalization.
+  - Rebuilt/imported ffmpeg-enabled `plex-tuner:hdhr-test` on `<plex-node>`, restarted all 13 category deployments, and set `PLEX_TUNER_STREAM_TRANSCODE=on` for immediate web audio normalization.
   - Fixed `cmd/plex-tuner` `run -mode=easy` regression so `PLEX_TUNER_M3U_URL` / configured M3U URLs are honored again in `fetchCatalog()`.
   - Added missing-ffmpeg fallback warnings in `internal/tuner/gateway.go` and a manual `scripts/plex-live-session-drain.py` helper (no TTL behavior).
   - Verification: `go test ./cmd/plex-tuner -run '^$'`, `go test ./internal/tuner -run '^$'`, `python -m py_compile scripts/plex-live-session-drain.py`, category deployments back to `1/1`, `ffmpeg` present in category pods.
@@ -843,15 +843,15 @@ Append-only. One entry per completed task.
   - Title: Complete live k3s cutover to single-pod supervisor (13 injected DVR children + 1 HDHR child)
   - Summary:
     - Regenerated supervisor artifacts with timezone-guided HDHR preset selection (`na_en`) after changing the HDHR child to use broad `live.m3u` plus in-app music/radio stripping and wizard-safe lineup cap (`479`).
-    - Reapplied generated supervisor `ConfigMap` + `Deployment` in sibling `k3s/plex`, then re-patched the deployment image to the locally imported custom tag (`plex-tuner:supervisor-cutover-20260225223451`) because the generated YAML's default image (`plex-tuner:hdhr-test`) on `kspls0` lacked the new `supervise` command.
-    - Verified supervisor pod startup on `kspls0` with all 14 children healthy and category children reporting bare category identities (`FriendlyName`/`DeviceID` without `plextuner-` prefix).
+    - Reapplied generated supervisor `ConfigMap` + `Deployment` in sibling `k3s/plex`, then re-patched the deployment image to the locally imported custom tag (`plex-tuner:supervisor-cutover-20260225223451`) because the generated YAML's default image (`plex-tuner:hdhr-test`) on `<plex-node>` lacked the new `supervise` command.
+    - Verified supervisor pod startup on `<plex-node>` with all 14 children healthy and category children reporting bare category identities (`FriendlyName`/`DeviceID` without `plextuner-` prefix).
     - Verified HDHR child loads broad feed (`6207` live channels), drops music/radio via pre-cap filter (`72` dropped), and serves exactly `479` channels on `lineup.json`.
     - Applied only the generated Service documents to cut category + HDHR HTTP routing over to the supervisor pod, then scaled the old 13 category deployments to `0/0`.
     - Post-cutover validation from Plex pod confirmed service responses (`plextuner-newsus` discover identity and `plextuner-hdhr-test` lineup count `479`).
   - Verification:
     - `python scripts/generate-k3s-supervisor-manifests.py --timezone 'America/Regina'` (generator does not echo timezone/postal)
     - `sudo kubectl -n plex apply -f /tmp/plextuner-supervisor-bootstrap.yaml` (ConfigMap+Deployment only)
-    - `docker save plex-tuner:supervisor-cutover-20260225223451 | ssh kspls0 'sudo k3s ctr -n k8s.io images import -'`
+    - `docker save plex-tuner:supervisor-cutover-20260225223451 | ssh <plex-node> 'sudo k3s ctr -n k8s.io images import -'`
     - `sudo kubectl -n plex set image deploy/plextuner-supervisor plextuner=plex-tuner:supervisor-cutover-20260225223451`
     - `sudo kubectl -n plex rollout status deploy/plextuner-supervisor`
     - `sudo kubectl -n plex apply -f /tmp/plextuner-supervisor-services.yaml` (Services only)
@@ -860,7 +860,7 @@ Append-only. One entry per completed task.
 
 - Added in-app `/lineup_status.json` configurability for HDHR compatibility endpoint (`PLEX_TUNER_HDHR_SCAN_POSSIBLE`) and updated the supervisor manifest generator to set category children `false` and the dedicated HDHR child `true`.
 - Added/updated tests for HDHR lineup status scan-possible behavior.
-- Regenerated supervisor manifests and rolled the patched supervisor binary to the actual node runtime (`kspls0`) after diagnosing image imports had been going to the wrong host runtime (`kspld0`).
+- Regenerated supervisor manifests and rolled the patched supervisor binary to the actual node runtime (`<plex-node>`) after diagnosing image imports had been going to the wrong host runtime (`<work-node>`).
 - Live-verified the running supervisor binary hash and endpoint behavior:
   - `plextuner-otherworld` returns `ScanPossible=0`
   - `plextuner-hdhr-test` returns `ScanPossible=1`
@@ -895,7 +895,7 @@ Verification:
 
 ## 2026-02-26 - LG TV guide-path capture proved legacy provider pinning; removed direct test DVRs
 
-- Captured the LG TV (`192.168.50.225`) guide path from the actual Plex log file (`Plex Media Server.log` inside the pod), not container stdout.
+- Captured the LG TV (`<client-ip-b>`) guide path from the actual Plex log file (`Plex Media Server.log` inside the pod), not container stdout.
 - Proved the TV guide flow was hitting only legacy provider `tv.plex.providers.epg.xmltv:135` (`DVR 135`, direct `plextunerTrial`) for:
   - `/lineups/dvr/channels`
   - `/grid`
@@ -906,7 +906,7 @@ Verification:
 - Confirmed remaining DVR inventory is now only injected categories (`218..242`) plus the two HDHR wizard-path tuners (`247`, `250`).
 
 Verification:
-- File-log grep/tail on `Plex Media Server.log` inside Plex pod for `192.168.50.225` and `tv.plex.providers.epg.xmltv:*`
+- File-log grep/tail on `Plex Media Server.log` inside Plex pod for `<client-ip-b>` and `tv.plex.providers.epg.xmltv:*`
 - Plex API:
   - `/livetv/dvrs`
   - `/media/grabbers/devices`
@@ -917,7 +917,7 @@ Verification:
 
 - Root-caused "all tabs same guide but different channel names" to overlapping channel/guide IDs across DVRs (many children exposed `GuideNumber` starting at `1`).
 - Added in-app `PLEX_TUNER_GUIDE_NUMBER_OFFSET` support and wired it through `config` -> `tuner.Server.UpdateChannels`.
-- Rolled a new supervisor image (`plex-tuner:supervisor-guideoffset-20260226001027`) plus offset-enabled supervisor config in live k3s (`kspls0`), assigning distinct channel ID ranges per category/HDHR child.
+- Rolled a new supervisor image (`plex-tuner:supervisor-guideoffset-20260226001027`) plus offset-enabled supervisor config in live k3s (`<plex-node>`), assigning distinct channel ID ranges per category/HDHR child.
 - Re-ran Plex guide reloads (`scripts/plex-reload-guides-batched.py`) and channelmap activation (`scripts/plex-activate-dvr-lineups.py`) for all 15 DVRs.
 - Verified Plex provider channel lists now have non-overlapping IDs (examples: `newsus=2001+`, `bcastus=1001+`, `otherworld=13001+`, `HDHR2=103260+`) and user confirmed the first tabs now show distinct EPGs.
 - Post-remap playback stall was traced to Plex hidden stale "active grabs" (`Waiting for media grab to start`) and cleared by restarting `deploy/plex`; same remapped channel tuned successfully afterward.
@@ -987,3 +987,22 @@ Verification:
 
 Verification:
 - Manual doc review for coverage of wizard/API/inject/remove/refresh/channelmap + Plex UI/backend gotchas
+
+## 2026-02-26 - Repo hygiene audit and root cleanup (secrets/path scan + cruft relocation)
+
+- Audited tracked files for:
+  - high-confidence secret patterns (tokens, private keys)
+  - local paths/hostnames and personal identifiers (`<user>`, `/home/...`, `<plex-node>`, `<work-node>`)
+  - agent/test artifacts unrelated to core app surface
+- No high-confidence secrets found in tracked files.
+- Cleaned root-level tracked cruft:
+  - removed `plextuner-main-fixed.zip`
+  - moved ad hoc/manual test scripts into `scripts/legacy/`:
+    - `test_hdhr.sh`
+    - `test_hdhr_network.sh`
+    - `<work-node>_plex_test.sh`
+  - added `scripts/legacy/README.md` documenting legacy status
+
+Verification:
+- `rg` scans for secrets/path identifiers (tracked + untracked triage)
+- `git status --short` confirms file moves/removal are tracked as rename/delete

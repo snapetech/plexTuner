@@ -1,12 +1,12 @@
-# systemd unit for qbit-datapool-guard (kspls0).
+# systemd unit for qbit-datapool-guard (example host).
 # Starts qbittorrent-nox in screen 'qbit' only when /mnt/datapool_lvm_media
 # is mounted from /dev/mapper/datapool_lvm-media; stops qbittorrent when the
 # mount disappears.
 #
-# Install on kspls0:
-#   sudo cp scripts/qbit-datapool-guard.sh /usr/local/bin/
+# Install on your host:
+#   sudo cp extras/unrelated/qbit-datapool-guard.sh /usr/local/bin/
 #   sudo chmod +x /usr/local/bin/qbit-datapool-guard.sh
-#   sudo cp scripts/qbit-datapool-guard.service /etc/systemd/system/
+#   sudo cp extras/unrelated/qbit-datapool-guard.service /etc/systemd/system/
 #   sudo systemctl daemon-reload
 #   sudo systemctl enable --now qbit-datapool-guard
 #
@@ -26,8 +26,8 @@ ExecStart=/usr/local/bin/qbit-datapool-guard.sh
 Restart=on-failure
 RestartSec=30
 # Run as the user that owns qbittorrent config (set via override or here)
-User=keith
-Group=keith
+User=YOUR_USER
+Group=YOUR_GROUP
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=qbit-datapool-guard

@@ -7,101 +7,139 @@ tags: [features, reference]
 
 # Plex Tuner — Feature list
 
-Canonical list of features. See [README](../README.md) for quick start and [comparison matrix](../README.md#comparison-plex-tuner-vs-alternatives) vs xTeVe/Threadfin.
+Canonical feature list for the current app.
 
----
+See also:
+- [README](../README.md)
+- [cli-and-env-reference](reference/cli-and-env-reference.md)
+- [plex-dvr-lifecycle-and-api](reference/plex-dvr-lifecycle-and-api.md)
 
 ## 1. Input and indexing
 
 | Feature | Description |
 |---------|-------------|
-| **M3U URL** | Fetch a single M3U via URL (e.g. provider `get.php?username=...&password=...&type=m3u_plus&output=ts`). Parsed for live channels and optional VOD/series when present. |
-| **Xtream player_api** | First-class indexing from `player_api.php`: live, VOD movies, series. Same strategy as xtream-to-m3u.js: auth → server_info → prefer non-Cloudflare host for stream URLs, `.m3u8` for playback. |
-| **Multi-host (ranked, all probed)** | Multiple provider base URLs. We **probe every host** (one player_api request each, concurrency capped), rank OK-by-latency then non-OK, use best for indexing and **set each channel’s StreamURLs to [best, 2nd, 3rd, …]** so the gateway fails over to 2nd/3rd instead of dying. Non-abusive: one GET per host. |
-| **Subscription file** | Credentials can be read from a file (e.g. `iptv.subscription.2026.txt`) with `Username:` and `Password:` lines. Env `PLEX_TUNER_SUBSCRIPTION_FILE` or default `~/Documents/iptv.subscription.2026.txt`. |
-| **Live-only mode** | `PLEX_TUNER_LIVE_ONLY=true`: only fetch live channels from API (skip VOD and series); faster indexing. |
-| **EPG-linked only** | `PLEX_TUNER_LIVE_EPG_ONLY=true`: only include channels that have `tvg-id` (EPG link) in the catalog. |
-| **Stream smoketest** | `PLEX_TUNER_SMOKETEST_ENABLED=true`: at index time, probe each channel’s primary stream URL (HLS playlist + segment); drop channels that fail. Configurable timeout and concurrency. |
+| **M3U URL** | Fetch and parse IPTV M3U lineups (live, and VOD/series when present). |
+| **Xtream `player_api`** | First-class indexing for live, movies, and series. |
+| **Multi-host probing + ranking** | Probe all provider URLs, rank by health/latency, index from the best host, and store backup stream URLs for failover. |
+| **Subscription-file credentials** | Load `Username:` / `Password:` from a subscription file when env vars are not set. |
+| **Live-only / EPG-only** | Filter catalog generation to live-only or EPG-linked channels only. |
+| **Stream smoketest (optional)** | Drop channels that fail probe checks during indexing. |
 
----
-
-## 2. Catalog
+## 2. Catalog and stream source handling
 
 | Feature | Description |
 |---------|-------------|
-| **JSON catalog** | Single file (default `catalog.json`) holding live channels, movies, and series. |
-| **Snapshot-then-encode** | Safe concurrent writes: snapshot in memory, then encode and write so readers never see partial state. |
-| **Backup stream URLs** | Live channels can have multiple `StreamURLs`; gateway tries in order on failure. |
-| **EPG metadata** | Per-channel: name, tvg-id, tvg-logo, group; used for lineup and XMLTV. |
+| **JSON catalog** | Single catalog file for live channels, movies, and series. |
+| **Atomic-ish write behavior** | Snapshot-then-write flow to avoid partial read state. |
+| **Per-channel backup stream URLs** | Gateway can fail over to secondary/tertiary provider URLs. |
+| **EPG metadata retention** | Keeps tvg-id/name/logo/group metadata for lineup and XMLTV mapping. |
 
----
-
-## 3. Tuner (HDHomeRun emulation)
+## 3. HDHomeRun-compatible tuner service
 
 | Feature | Description |
 |---------|-------------|
-| **discover.json** | HDHomeRun discovery endpoint so Plex can find the tuner. |
-| **lineup.json** | Channel lineup for Plex DVR. |
-| **lineup_status.json** | Status endpoint. |
-| **guide.xml** | XMLTV guide. Default: placeholder. Optional: fetch external XMLTV URL, filter to catalog channels, remap programme channel IDs to local guide numbers. |
-| **live.m3u** | M3U export of live channels (for external use or debugging). |
-| **/stream/<id>** | Stream gateway: proxy to provider URL with optional basic auth; tuner count limit; fallback to backup URLs. HLS is remuxed or transcoded to MPEG-TS via ffmpeg when available. |
-| **Stream buffering** | `PLEX_TUNER_STREAM_BUFFER_BYTES`: 0 = off; `auto` or -1 = **adaptive** when transcoding (starts 1 MiB, grows up to 2 MiB when client is slow, shrinks to 64 KiB when client keeps up); or fixed bytes (e.g. 2097152 = 2 MiB). |
-| **Stream transcoding** | `PLEX_TUNER_STREAM_TRANSCODE`: `off` = remux only; `on` = always transcode (libx264/aac); `auto` = probe with ffprobe and transcode only when codec is not Plex-friendly (e.g. HEVC, VP9). |
-| **Tuner count** | Configurable concurrent stream limit (`PLEX_TUNER_TUNER_COUNT`, default 2). Returns HDHomeRun error 805 when all tuners in use. |
-| **Base URL** | Configurable base URL for discover/lineup/guide so Plex can reach this host (`PLEX_TUNER_BASE_URL` or `-base-url`). |
+| **`discover.json`** | HDHR discovery endpoint (Plex-compatible). |
+| **`lineup.json` / `lineup_status.json`** | Tuner channel lineup and status endpoints. |
+| **`guide.xml`** | Placeholder or remapped external XMLTV guide output. |
+| **`live.m3u`** | Live channel M3U export. |
+| **`/stream/<id>`** | Stream gateway with provider auth/failover and tuner count limiting. |
+| **Tuner count limit** | Configurable concurrent streams, HDHR-style “all tuners in use” behavior. |
+| **HDHR metadata controls** | Per-instance discover metadata (manufacturer/model/fw/device auth) and `ScanPossible` control for wizard-lane vs category tuners. |
 
----
-
-## 4. EPG / XMLTV
+## 4. Stream gateway and transcoding
 
 | Feature | Description |
 |---------|-------------|
-| **Placeholder guide** | Default `/guide.xml`: minimal valid XMLTV with channel entries and no programmes (Plex still shows channels). |
-| **External XMLTV** | `PLEX_TUNER_XMLTV_URL`: fetch external feed, keep only channels present in live catalog, remap programme channel IDs to our lineup numbers. Timeout configurable. |
-| **EPG prune** | `PLEX_TUNER_EPG_PRUNE_UNLINKED=true`: guide.xml and live.m3u only include channels that have tvg-id set (reduces noise). |
+| **HLS -> MPEG-TS relay** | Native relay path for HLS inputs to Plex-facing TS output. |
+| **ffmpeg transcode path** | Optional ffmpeg-based remux/transcode for web-safe / Plex-friendly output. |
+| **Transcode modes** | `off`, `on`, `auto` (codec/probe-driven behavior depending config/runtime). |
+| **Startup/bootstrap controls** | Web-safe bootstrap and startup-gate tuning for Plex web playback behavior. |
+| **Client disconnect handling** | Better classification of downstream disconnects to avoid false relay errors. |
+| **Optional realtime ffmpeg pacing** | HLS ffmpeg `-re` option (env-controlled) for startup pacing experiments. |
 
----
-
-## 5. VOD and VODFS
-
-| Feature | Description |
-|---------|-------------|
-| **VOD in catalog** | Movies and series from player_api (or M3U when present) stored in catalog. |
-| **FUSE mount (VODFS)** | Mount catalog as a filesystem: `Movies/` and `TV/` (series) with virtual files. Plex or other tools can scan the mount. |
-| **Optional cache** | With `-cache` / `PLEX_TUNER_CACHE`, direct-file URLs are downloaded on demand and served from cache; HLS remains pass-through. |
-
----
-
-## 6. Two flows: easy (HDHR + wizard) vs full (DVR builder)
-
-| Flow | Use case | Lineup | Plex setup |
-|------|----------|--------|------------|
-| **Easy** (`-mode=easy`) | HDHR with whatever guide Plex suggests (e.g. Rogers West Canada). Fast, minimal setup. | Capped at **479** channels (strip from end so wizard doesn’t fail). No smoketest at index. | Add tuner in Plex wizard; pick suggested guide. |
-| **Full** (`-mode=full` or default) | Maximum feeds: index, smoketest, sort, backup URLs. Zero-touch when used with `-register-plex`. | No cap when `-register-plex`; else `PLEX_TUNER_LINEUP_MAX_CHANNELS` (default 480). | Either wizard (capped) or **zero-touch**: `-register-plex=/path` syncs full lineup into Plex DB (no wizard, no 480 limit). |
-
-**Commands:** `run -mode=easy` or `serve -mode=easy` for easy flow; `run -mode=full -register-plex=/path` for full DVR builder + zero-touch.
-
----
-
-## 7. Operations and deployment
+## 5. XMLTV / EPG behavior
 
 | Feature | Description |
 |---------|-------------|
-| **Subcommands** | `run`, `index`, `serve`, `mount`, `probe` so indexing, serving, and mounting can be run separately or together. |
-| **run (one-shot)** | For systemd/Docker: refresh catalog (unless `-skip-index`), provider health check (unless `-skip-health`), then serve. Optional scheduled refresh (`-refresh=6h`). Use `-mode=easy` or `-mode=full`. |
-| **probe** | Cycle through provider URLs; report get.php and player_api status (OK / Cloudflare / fail) and latency. Use to choose which host to use. |
-| **Health check** | Before serve in `run`, optional HTTP check of provider player_api URL; exit non-zero if down. |
-| **Plex DB registration** | Optional `-register-plex=/path/to/Plex/Media/Server`: update Plex’s SQLite DB so DVR and XMLTV point to this tuner (stop Plex first; backup DB). |
-| **Kubernetes (HDHR)** | Deploy in-cluster: [k8s/README.md](../k8s/README.md). Manifest + `deploy.sh` and `standup-and-verify.sh` (build, apply, verify discover/lineup). Optional Ingress and NodePort; one-shot script for provider credentials without editing manifests. |
-| **Local (no cluster)** | Binary, Docker, or systemd: [how-to/run-without-kubernetes.md](how-to/run-without-kubernetes.md). Local QA/smoke: `scripts/plextuner-local-test.sh` (qa, serve, run, smoke, all). |
-| **Config** | Env vars and `.env` file; no web UI. Subscription file fallback for credentials. |
+| **Placeholder XMLTV** | Valid XMLTV output even without external guide source. |
+| **External XMLTV fetch/remap** | Fetch XMLTV, filter to current lineup, remap programme channel IDs to local guide numbers. |
+| **Language preference normalization** | Prefer selected language variants (for example `en,eng`) when multiple programme nodes exist. |
+| **Latin-script preference** | Prefer Latin-script title/desc variants where available. |
+| **Non-Latin title fallback** | Optional fallback to channel name when title text is non-Latin and no usable variant exists. |
+| **Guide number offsets** | Per-instance channel/guide number offsets to avoid Plex multi-DVR guide collisions. |
 
----
+## 6. Lineup shaping for HDHR wizard / provider matching
 
-## 8. Not supported (by design)
+| Feature | Description |
+|---------|-------------|
+| **Wizard-safe cap** | `PLEX_TUNER_LINEUP_MAX_CHANNELS` support (commonly `479`) for Plex wizard stability. |
+| **Music/radio drop heuristic** | Optional pre-cap lineup filtering by name heuristic. |
+| **Regex exclusions** | Optional pre-cap channel exclusion regex. |
+| **Region/profile shaping** | Pre-cap channel ordering (`PLEX_TUNER_LINEUP_SHAPE`, `PLEX_TUNER_LINEUP_REGION_PROFILE`) to improve provider matching behavior. |
 
-- **Web UI** — configuration is CLI and env only.
-- **Channel mapping UI** — filtering is via env (EPG-only, smoketest, live-only).
-- **Plex API DVR creation** — we do not create DVRs via Plex HTTP API. We use DB-based `RegisterTuner` (DVR + XMLTV URIs) and **programmatic lineup sync** (`SyncLineupToPlex`): we write the full channel list into Plex's DB when `-register-plex` is set so the wizard is never used and the 480-channel limit is bypassed (see [ADR 0001](adr/0001-zero-touch-plex-lineup.md)). Schema discovery is automatic where possible.
+## 7. Plex integration workflows
+
+| Workflow | Supported | Notes |
+|----------|-----------|-------|
+| **HDHR wizard path** | Yes | Manual Plex setup using HDHR-compatible endpoints. |
+| **Wizard-equivalent API flow** | Yes (tooling / operational flows) | Programmatic creation/activation patterns via Plex endpoints used by the wizard. |
+| **Injected DVR path** | Yes | Programmatic/DB-assisted DVR fleets (for example category DVRs). |
+| **Guide reload + channelmap replay** | Yes | Operational workflow for remaps, offsets, and feed updates. |
+| **Plex DB registration helpers** | Yes | Existing DB-assisted registration/sync flows remain supported. |
+
+Reference:
+- [plex-dvr-lifecycle-and-api](reference/plex-dvr-lifecycle-and-api.md)
+
+## 8. Multi-instance supervisor mode (single app / single pod)
+
+| Feature | Description |
+|---------|-------------|
+| **`supervise` command** | Starts multiple child `plex-tuner` instances from one JSON config. |
+| **Child env/args isolation** | Each child gets its own args/env/workdir while sharing one binary/container. |
+| **Restart/fail-fast controls** | Supervisor-level restart and fail-fast behavior. |
+| **Category + HDHR split** | Supports many injected DVR children plus one (or more) HDHR wizard children in parallel. |
+| **k8s cutover examples** | Example JSON/manifests and URI cutover mapping included. |
+
+## 9. Plex session cleanup / stale playback handling
+
+| Feature | Description |
+|---------|-------------|
+| **Built-in reaper (Go)** | Optional background worker in app for Plex Live TV stale-session cleanup. |
+| **Polling + SSE** | Polls Plex sessions and optionally listens to Plex SSE notifications for faster wakeups. |
+| **Idle / renewable lease / hard lease** | Tunable timers for stale-session pruning and backstop cleanup. |
+| **External helper (Python)** | `scripts/plex-live-session-drain.py` remains available for lab/k8s workflows. |
+
+## 10. VOD and VODFS
+
+| Feature | Description |
+|---------|-------------|
+| **VOD cataloging** | Movies/series stored in catalog from provider feeds/APIs. |
+| **VODFS mount** | FUSE-based filesystem exposing `Movies/` and `TV/`. |
+| **On-demand cache** | Optional cache materialization for direct-file VOD paths. |
+| **Platform scope** | `mount` / VODFS is Linux-only. Non-Linux builds provide a stub. |
+
+## 11. Packaging, testing, and ops tooling
+
+| Feature | Description |
+|---------|-------------|
+| **Cross-platform tester package builder** | `scripts/build-test-packages.sh` builds archives + checksums for Linux/macOS/Windows. |
+| **Tester handoff bundle builder** | `scripts/build-tester-release.sh` stages packages + docs + examples + manifest for distribution. |
+| **Tester handoff docs** | Packaging and tester checklists are documented under `docs/how-to/`. |
+| **CI tester bundles** | GitHub Actions workflow builds tester bundles on demand/tag. |
+| **Hidden Plex grab recovery** | `scripts/plex-hidden-grab-recover.sh` + runbook for Plex Live TV hidden active-grab wedges. |
+| **Plex stream override analysis helper** | `scripts/plex-generate-stream-overrides.py` for feed/profile override candidate generation. |
+
+## 12. Platform support summary
+
+| Platform | Core app (`run/serve/index/probe/supervise`) | HDHR HTTP endpoints | HDHR network mode | `mount` / VODFS |
+|----------|----------------------------------------------|---------------------|-------------------|-----------------|
+| Linux | Yes | Yes | Yes | Yes |
+| macOS | Yes | Yes | Compiles (runtime validation depends on environment) | No |
+| Windows | Yes | Yes | Compiles (native validation recommended; `wine` smoke not authoritative) | No |
+
+## 13. Not supported / limits (current)
+
+- **Web UI** (by design; CLI/env only)
+- **Plex wizard checkbox preselection for >479 channels** (HDHR protocol/wizard limitation; serve only the channels you want selectable)
+- **VODFS on non-Linux** (current platform scope)
 

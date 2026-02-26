@@ -6,9 +6,9 @@ Starts **qbittorrent-nox** in a screen session named **qbit** only when `/mnt/da
 
 1. Copy files:
    ```bash
-   sudo cp scripts/qbit-datapool-guard.sh /usr/local/bin/
+   sudo cp extras/unrelated/qbit-datapool-guard.sh /usr/local/bin/
    sudo chmod +x /usr/local/bin/qbit-datapool-guard.sh
-   sudo cp scripts/qbit-datapool-guard.service /etc/systemd/system/
+   sudo cp extras/unrelated/qbit-datapool-guard.service /etc/systemd/system/
    ```
 
 2. Set the user that should run qbittorrent:

@@ -116,7 +116,7 @@
 
 **Where it's documented**
 - `memory-bank/known_issues.md` (Trial DVR wrong-URI entry)
-- `/home/keith/Documents/code/k3s/plex/scripts/plex-activate-dvr-lineups.py`
+- `<sibling-k3s-repo>/plex/scripts/plex-activate-dvr-lineups.py`
 
 ### Loop: Plex Web probe reuses hidden Live TV `CaptureBuffer` state, so tuner changes are not actually exercised
 
@@ -135,8 +135,8 @@
 
 **Where it's documented**
 - `memory-bank/known_issues.md` (hidden CaptureBuffer reuse entry)
-- `/home/keith/Documents/code/k3s/plex/scripts/plex-live-session-drain.py`
-- `/home/keith/Documents/code/k3s/plex/scripts/plex-web-livetv-probe.py`
+- `<sibling-k3s-repo>/plex/scripts/plex-live-session-drain.py`
+- `<sibling-k3s-repo>/plex/scripts/plex-web-livetv-probe.py`
 
 ### Loop: WebSafe profile experiments are silently overridden by client adaptation (`unknown-client-websafe`)
 
@@ -224,12 +224,12 @@
 - `kubectl` rollout to a locally built image tag stays `ErrImageNeverPull` on the pod, even though `k3s ctr images ls` / `k3s crictl images` on the current shell machine show the image present.
 
 **Why it's tricky**
-- In this setup the working shell can be on `kspld0` while the pod is scheduled on `kspls0`.
-- Importing into local `k3s` containerd on `kspld0` does nothing for kubelet on `kspls0`, but the local CRI tools still make it look like the import succeeded.
+- In this setup the working shell can be on `<work-node>` while the pod is scheduled on `<plex-node>`.
+- Importing into local `k3s` containerd on `<work-node>` does nothing for kubelet on `<plex-node>`, but the local CRI tools still make it look like the import succeeded.
 
 **What works**
 - Check the scheduled node first (`kubectl get pod -o wide`).
-- Import the image into the runtime on that exact node (for example stream `docker save` over `ssh kspls0 'sudo k3s ctr -n k8s.io images import -'`).
+- Import the image into the runtime on that exact node (for example stream `docker save` over `ssh <plex-node> 'sudo k3s ctr -n k8s.io images import -'`).
 - Then restart the pod / rollout.
 
 **Where it's documented**
@@ -247,25 +247,25 @@
 - `memory-bank/known_issues.md` (WebSafe bootstrap/profile mismatch entry)
 - `internal/tuner/gateway.go` (`writeBootstrapTS`, `bootstrapAudioArgsForProfile`)
 
-### Loop: `kspls0` host-firewall rules exist but LAN Plex/NFS traffic still gets dropped after reboot
+### Loop: `<plex-node>` host-firewall rules exist but LAN Plex/NFS traffic still gets dropped after reboot
 
 **Symptom**
-- `kspls0` appears to "have the right rules" in `/etc/nftables/kspls0-host-firewall.conf` (including Plex `32400` and NFS ports), but after reboot `kspld0` gets `No route to host` / `admin-prohibited` for Plex (`32400`) and NFS (`111/2049/...`), and Plex/NFS-backed pods fail.
+- `<plex-node>` appears to "have the right rules" in `/etc/nftables/<plex-node>-host-firewall.conf` (including Plex `32400` and NFS ports), but after reboot `<work-node>` gets `No route to host` / `admin-prohibited` for Plex (`32400`) and NFS (`111/2049/...`), and Plex/NFS-backed pods fail.
 
 **Why it's tricky**
-- `kspls0` loads **two** hooked nftables base chains for `input`:
-  - `table inet host-firewall` (priority `-400`, from `/etc/nftables/kspls0-host-firewall.conf`)
+- `<plex-node>` loads **two** hooked nftables base chains for `input`:
+  - `table inet host-firewall` (priority `-400`, from `/etc/nftables/<plex-node>-host-firewall.conf`)
   - `table inet filter` (priority `filter`, from `/etc/nftables.conf`)
 - An `accept` in the earlier `host-firewall` chain does **not** prevent a later base chain (`inet filter input`) from dropping the same packet.
 - Agents see the host-firewall file and assume persistence is already configured, then reapply temporary `nft insert rule ...` fixes that disappear on reboot/reload.
 
 **What works**
-- Persist the LAN Plex/NFS allows in **`/etc/nftables.conf`** (the boot-loaded file that defines `table inet filter`), not just in `/etc/nftables/kspls0-host-firewall.conf`.
+- Persist the LAN Plex/NFS allows in **`/etc/nftables.conf`** (the boot-loaded file that defines `table inet filter`), not just in `/etc/nftables/<plex-node>-host-firewall.conf`.
 - For immediate runtime recovery, add the same rules directly to `inet filter input` with `nft insert rule ...` (temporary) and then patch `/etc/nftables.conf` (durable).
-- Verify from `kspld0` with `rpcinfo -p 192.168.50.85`, `showmount -e 192.168.50.85`, and `curl`/TCP checks.
+- Verify from `<work-node>` with `rpcinfo -p <plex-host-ip>`, `showmount -e <plex-host-ip>`, and `curl`/TCP checks.
 
 **Where it's documented**
-- `memory-bank/known_issues.md` (`kspls0` read-only-root outage + temporary Plex endpoint workaround)
+- `memory-bank/known_issues.md` (`<plex-node>` read-only-root outage + temporary Plex endpoint workaround)
 - `memory-bank/task_history.md` (reboot + firewall persistence follow-up on 2026-02-24)
 
 ### Loop: Direct DVR probe sessions get blamed for Plex/WebSafe packaging regressions when the direct services are simply orphaned
@@ -325,7 +325,7 @@
 **What works**
 - Reuse the localhost pcap capture path (`plex-websafe-pcap-repro.sh`) and inspect `pms-local-http-responses.tsv` directly.
 - If `Lavf` `/manifest` callbacks are returning `403`, treat it as a PMS callback-auth issue first.
-- In this environment, setting PMS `Preferences.xml` `allowedNetworks="127.0.0.1/8,::1/128,192.168.50.0/24"` and restarting Plex changed callback responses to `200`, restored `buildLiveM3U8` segment info, and unblocked Plex Web playback on `DVR 218`.
+- In this environment, setting PMS `Preferences.xml` `allowedNetworks="127.0.0.1/8,::1/128,<lan-cidr>"` and restarting Plex changed callback responses to `200`, restored `buildLiveM3U8` segment info, and unblocked Plex Web playback on `DVR 218`.
 
 **Where it's documented**
 - `memory-bank/current_task.md` (2026-02-25 late breakthrough)
