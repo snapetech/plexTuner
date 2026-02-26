@@ -1,0 +1,145 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: plextuner-oracle-config
+  namespace: plex
+data:
+  supervisor.json: |
+    REPLACE_WITH_k8s/plextuner-supervisor-oracle.example.json
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plextuner-oracle
+  namespace: plex
+  labels:
+    app: plextuner-oracle
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: plextuner-oracle
+  template:
+    metadata:
+      labels:
+        app: plextuner-oracle
+    spec:
+      nodeSelector:
+        media: plex
+      hostNetwork: false
+      dnsPolicy: ClusterFirst
+      containers:
+        - name: plextuner
+          image: plex-tuner:hdhr-test
+          imagePullPolicy: IfNotPresent
+          args: ["supervise", "-config", "/config/supervisor.json"]
+          env:
+            - name: TZ
+              value: America/Chicago
+            - name: PLEX_TUNER_PMS_URL
+              value: http://plex.plex.svc:32400
+            - name: PLEX_TUNER_PMS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: plex-token
+                  key: token
+          ports:
+            - { name: oracle100, containerPort: 5201, protocol: TCP }
+            - { name: oracle200, containerPort: 5202, protocol: TCP }
+            - { name: oracle300, containerPort: 5203, protocol: TCP }
+            - { name: oracle400, containerPort: 5204, protocol: TCP }
+            - { name: oracle479, containerPort: 5205, protocol: TCP }
+            - { name: oracle600, containerPort: 5206, protocol: TCP }
+          volumeMounts:
+            - name: oracle-config
+              mountPath: /config
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /discover.json
+              port: 5201
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+      volumes:
+        - name: oracle-config
+          configMap:
+            name: plextuner-oracle-config
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plextuner-oracle100
+  namespace: plex
+spec:
+  selector:
+    app: plextuner-oracle
+  ports:
+    - { name: http, port: 5004, targetPort: 5201, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plextuner-oracle200
+  namespace: plex
+spec:
+  selector:
+    app: plextuner-oracle
+  ports:
+    - { name: http, port: 5004, targetPort: 5202, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plextuner-oracle300
+  namespace: plex
+spec:
+  selector:
+    app: plextuner-oracle
+  ports:
+    - { name: http, port: 5004, targetPort: 5203, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plextuner-oracle400
+  namespace: plex
+spec:
+  selector:
+    app: plextuner-oracle
+  ports:
+    - { name: http, port: 5004, targetPort: 5204, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plextuner-oracle479
+  namespace: plex
+spec:
+  selector:
+    app: plextuner-oracle
+  ports:
+    - { name: http, port: 5004, targetPort: 5205, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plextuner-oracle600
+  namespace: plex
+spec:
+  selector:
+    app: plextuner-oracle
+  ports:
+    - { name: http, port: 5004, targetPort: 5206, protocol: TCP }
