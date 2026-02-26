@@ -24,6 +24,7 @@ See also:
 | **Subscription-file credentials** | Load `Username:` / `Password:` from a subscription file when env vars are not set. |
 | **Live-only / EPG-only** | Filter catalog generation to live-only or EPG-linked channels only. |
 | **Stream smoketest (optional)** | Drop channels that fail probe checks during indexing. |
+| **EPG-link report (Phase 1)** | Deterministic coverage/unmatched report for live channels vs XMLTV (`epg-link-report`). |
 
 ## 2. Catalog and stream source handling
 
@@ -76,6 +77,7 @@ See also:
 | **Music/radio drop heuristic** | Optional pre-cap lineup filtering by name heuristic. |
 | **Regex exclusions** | Optional pre-cap channel exclusion regex. |
 | **Region/profile shaping** | Pre-cap channel ordering (`PLEX_TUNER_LINEUP_SHAPE`, `PLEX_TUNER_LINEUP_REGION_PROFILE`) to improve provider matching behavior. |
+| **Lineup sharding (overflow buckets)** | Post-filter/pre-cap slicing with `PLEX_TUNER_LINEUP_SKIP` / `PLEX_TUNER_LINEUP_TAKE` for `category2/category3/...` injected DVR overflow children. |
 
 ## 7. Plex integration workflows
 
@@ -99,6 +101,7 @@ Reference:
 | **Restart/fail-fast controls** | Supervisor-level restart and fail-fast behavior. |
 | **Category + HDHR split** | Supports many injected DVR children plus one (or more) HDHR wizard children in parallel. |
 | **k8s cutover examples** | Example JSON/manifests and URI cutover mapping included. |
+| **Overflow shard generation** | Supervisor manifest generator can auto-create overflow category children from confirmed linked counts (`--category-counts-json`, `--category-cap`). |
 
 ## 9. Plex session cleanup / stale playback handling
 
@@ -116,6 +119,8 @@ Reference:
 | **VOD cataloging** | Movies/series stored in catalog from provider feeds/APIs. |
 | **VODFS mount** | FUSE-based filesystem exposing `Movies/` and `TV/`. |
 | **On-demand cache** | Optional cache materialization for direct-file VOD paths. |
+| **Plex library registration helper** | `plex-vod-register` creates/reuses Plex TV/Movie libraries for a VODFS mount, with optional VOD-safe library prefs. |
+| **One-sided VOD registration** | `plex-vod-register --shows-only` / `--movies-only` for lane-specific library creation without unwanted companion sections. |
 | **Platform scope** | `mount` / VODFS is Linux-only. Non-Linux builds provide a stub. |
 
 ## 11. Packaging, testing, and ops tooling
@@ -128,6 +133,7 @@ Reference:
 | **CI tester bundles** | GitHub Actions workflow builds tester bundles on demand/tag. |
 | **Hidden Plex grab recovery** | `scripts/plex-hidden-grab-recover.sh` + runbook for Plex Live TV hidden active-grab wedges. |
 | **Plex stream override analysis helper** | `scripts/plex-generate-stream-overrides.py` for feed/profile override candidate generation. |
+| **Live TV provider label rewrite proxy** | `scripts/plex-media-providers-label-proxy.py` + k8s deploy helper to rewrite `/media/providers` labels (client-dependent effect). |
 
 ## 12. Platform support summary
 
@@ -142,4 +148,3 @@ Reference:
 - **Web UI** (by design; CLI/env only)
 - **Plex wizard checkbox preselection for >479 channels** (HDHR protocol/wizard limitation; serve only the channels you want selectable)
 - **VODFS on non-Linux** (current platform scope)
-
