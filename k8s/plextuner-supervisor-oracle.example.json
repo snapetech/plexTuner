@@ -1,0 +1,474 @@
+{
+  "restart": true,
+  "restartDelay": "2s",
+  "failFast": false,
+  "instances": [
+    {
+      "name": "hdhr-main",
+      "args": [
+        "run",
+        "-mode=easy",
+        "-addr=:5004",
+        "-catalog=/data/hdhr-main/catalog.json"
+      ],
+      "env": {
+        "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/live.m3u",
+        "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+        "PLEX_TUNER_BASE_URL": "http://plextuner-hdhr.plex.home",
+        "PLEX_TUNER_DEVICE_ID": "hdhrbcast",
+        "PLEX_TUNER_FRIENDLY_NAME": "plexTuner-HDHR",
+        "PLEX_TUNER_LIVE_EPG_ONLY": "true",
+        "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true",
+        "PLEX_TUNER_STREAM_TRANSCODE": "on",
+        "PLEX_TUNER_STREAM_BUFFER_BYTES": "-1",
+        "PLEX_TUNER_LINEUP_MAX_CHANNELS": "479",
+        "PLEX_TUNER_HDHR_NETWORK_MODE": "true",
+        "PLEX_TUNER_HDHR_DEVICE_ID": "0x12345678",
+        "PLEX_TUNER_HDHR_TUNER_COUNT": "2",
+        "PLEX_TUNER_HDHR_DISCOVER_PORT": "65001",
+        "PLEX_TUNER_HDHR_CONTROL_PORT": "65001",
+        "PLEX_TUNER_XMLTV_PREFER_LANGS": "en,eng",
+        "PLEX_TUNER_XMLTV_PREFER_LATIN": "true",
+        "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": "channel"
+      }
+    },
+    {
+      "name": "bcastus",
+      "args": [
+        "run",
+        "-mode=easy",
+        "-addr=:5101",
+        "-catalog=/data/bcastus/catalog.json"
+      ],
+      "env": {
+        "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/dvr-bcastus.m3u",
+        "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+        "PLEX_TUNER_BASE_URL": "http://plextuner-bcastus.plex.svc:5004",
+        "PLEX_TUNER_DEVICE_ID": "bcastus",
+        "PLEX_TUNER_LIVE_EPG_ONLY": "true",
+        "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true",
+        "PLEX_TUNER_STREAM_TRANSCODE": "on",
+        "PLEX_TUNER_STREAM_BUFFER_BYTES": "-1",
+        "PLEX_TUNER_LINEUP_MAX_CHANNELS": "479",
+        "PLEX_TUNER_XMLTV_PREFER_LANGS": "en,eng",
+        "PLEX_TUNER_XMLTV_PREFER_LATIN": "true",
+        "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": "channel",
+        "PLEX_TUNER_FRIENDLY_NAME": "bcastus"
+      }
+    },
+    {
+      "name": "newsus",
+      "args": [
+        "run",
+        "-mode=easy",
+        "-addr=:5102",
+        "-catalog=/data/newsus/catalog.json"
+      ],
+      "env": {
+        "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/dvr-newsus.m3u",
+        "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+        "PLEX_TUNER_BASE_URL": "http://plextuner-newsus.plex.svc:5004",
+        "PLEX_TUNER_DEVICE_ID": "newsus",
+        "PLEX_TUNER_LIVE_EPG_ONLY": "true",
+        "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true",
+        "PLEX_TUNER_STREAM_TRANSCODE": "on",
+        "PLEX_TUNER_STREAM_BUFFER_BYTES": "-1",
+        "PLEX_TUNER_LINEUP_MAX_CHANNELS": "479",
+        "PLEX_TUNER_XMLTV_PREFER_LANGS": "en,eng",
+        "PLEX_TUNER_XMLTV_PREFER_LATIN": "true",
+        "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": "channel",
+        "PLEX_TUNER_FRIENDLY_NAME": "newsus"
+      }
+    },
+    {
+      "name": "sportsa",
+      "args": [
+        "run",
+        "-mode=easy",
+        "-addr=:5103",
+        "-catalog=/data/sportsa/catalog.json"
+      ],
+      "env": {
+        "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/dvr-sportsa.m3u",
+        "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+        "PLEX_TUNER_BASE_URL": "http://plextuner-sportsa.plex.svc:5004",
+        "PLEX_TUNER_DEVICE_ID": "sportsa",
+        "PLEX_TUNER_LIVE_EPG_ONLY": "true",
+        "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true",
+        "PLEX_TUNER_STREAM_TRANSCODE": "on",
+        "PLEX_TUNER_STREAM_BUFFER_BYTES": "-1",
+        "PLEX_TUNER_LINEUP_MAX_CHANNELS": "479",
+        "PLEX_TUNER_XMLTV_PREFER_LANGS": "en,eng",
+        "PLEX_TUNER_XMLTV_PREFER_LATIN": "true",
+        "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": "channel",
+        "PLEX_TUNER_FRIENDLY_NAME": "sportsa"
+      }
+    },
+    {
+      "name": "sportsb",
+      "args": [
+        "run",
+        "-mode=easy",
+        "-addr=:5104",
+        "-catalog=/data/sportsb/catalog.json"
+      ],
+      "env": {
+        "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/dvr-sportsb.m3u",
+        "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+        "PLEX_TUNER_BASE_URL": "http://plextuner-sportsb.plex.svc:5004",
+        "PLEX_TUNER_DEVICE_ID": "sportsb",
+        "PLEX_TUNER_LIVE_EPG_ONLY": "true",
+        "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true",
+        "PLEX_TUNER_STREAM_TRANSCODE": "on",
+        "PLEX_TUNER_STREAM_BUFFER_BYTES": "-1",
+        "PLEX_TUNER_LINEUP_MAX_CHANNELS": "479",
+        "PLEX_TUNER_XMLTV_PREFER_LANGS": "en,eng",
+        "PLEX_TUNER_XMLTV_PREFER_LATIN": "true",
+        "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": "channel",
+        "PLEX_TUNER_FRIENDLY_NAME": "sportsb"
+      }
+    },
+    {
+      "name": "moviesprem",
+      "args": [
+        "run",
+        "-mode=easy",
+        "-addr=:5105",
+        "-catalog=/data/moviesprem/catalog.json"
+      ],
+      "env": {
+        "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/dvr-moviesprem.m3u",
+        "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+        "PLEX_TUNER_BASE_URL": "http://plextuner-moviesprem.plex.svc:5004",
+        "PLEX_TUNER_DEVICE_ID": "moviesprem",
+        "PLEX_TUNER_LIVE_EPG_ONLY": "true",
+        "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true",
+        "PLEX_TUNER_STREAM_TRANSCODE": "on",
+        "PLEX_TUNER_STREAM_BUFFER_BYTES": "-1",
+        "PLEX_TUNER_LINEUP_MAX_CHANNELS": "479",
+        "PLEX_TUNER_XMLTV_PREFER_LANGS": "en,eng",
+        "PLEX_TUNER_XMLTV_PREFER_LATIN": "true",
+        "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": "channel",
+        "PLEX_TUNER_FRIENDLY_NAME": "moviesprem"
+      }
+    },
+    {
+      "name": "generalent",
+      "args": [
+        "run",
+        "-mode=easy",
+        "-addr=:5106",
+        "-catalog=/data/generalent/catalog.json"
+      ],
+      "env": {
+        "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/dvr-generalent.m3u",
+        "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+        "PLEX_TUNER_BASE_URL": "http://plextuner-generalent.plex.svc:5004",
+        "PLEX_TUNER_DEVICE_ID": "generalent",
+        "PLEX_TUNER_LIVE_EPG_ONLY": "true",
+        "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true",
+        "PLEX_TUNER_STREAM_TRANSCODE": "on",
+        "PLEX_TUNER_STREAM_BUFFER_BYTES": "-1",
+        "PLEX_TUNER_LINEUP_MAX_CHANNELS": "479",
+        "PLEX_TUNER_XMLTV_PREFER_LANGS": "en,eng",
+        "PLEX_TUNER_XMLTV_PREFER_LATIN": "true",
+        "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": "channel",
+        "PLEX_TUNER_FRIENDLY_NAME": "generalent"
+      }
+    },
+    {
+      "name": "docsfam",
+      "args": [
+        "run",
+        "-mode=easy",
+        "-addr=:5107",
+        "-catalog=/data/docsfam/catalog.json"
+      ],
+      "env": {
+        "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/dvr-docsfam.m3u",
+        "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+        "PLEX_TUNER_BASE_URL": "http://plextuner-docsfam.plex.svc:5004",
+        "PLEX_TUNER_DEVICE_ID": "docsfam",
+        "PLEX_TUNER_LIVE_EPG_ONLY": "true",
+        "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true",
+        "PLEX_TUNER_STREAM_TRANSCODE": "on",
+        "PLEX_TUNER_STREAM_BUFFER_BYTES": "-1",
+        "PLEX_TUNER_LINEUP_MAX_CHANNELS": "479",
+        "PLEX_TUNER_XMLTV_PREFER_LANGS": "en,eng",
+        "PLEX_TUNER_XMLTV_PREFER_LATIN": "true",
+        "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": "channel",
+        "PLEX_TUNER_FRIENDLY_NAME": "docsfam"
+      }
+    },
+    {
+      "name": "ukie",
+      "args": [
+        "run",
+        "-mode=easy",
+        "-addr=:5108",
+        "-catalog=/data/ukie/catalog.json"
+      ],
+      "env": {
+        "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/dvr-ukie.m3u",
+        "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+        "PLEX_TUNER_BASE_URL": "http://plextuner-ukie.plex.svc:5004",
+        "PLEX_TUNER_DEVICE_ID": "ukie",
+        "PLEX_TUNER_LIVE_EPG_ONLY": "true",
+        "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true",
+        "PLEX_TUNER_STREAM_TRANSCODE": "on",
+        "PLEX_TUNER_STREAM_BUFFER_BYTES": "-1",
+        "PLEX_TUNER_LINEUP_MAX_CHANNELS": "479",
+        "PLEX_TUNER_XMLTV_PREFER_LANGS": "en,eng",
+        "PLEX_TUNER_XMLTV_PREFER_LATIN": "true",
+        "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": "channel",
+        "PLEX_TUNER_FRIENDLY_NAME": "ukie"
+      }
+    },
+    {
+      "name": "eunordics",
+      "args": [
+        "run",
+        "-mode=easy",
+        "-addr=:5109",
+        "-catalog=/data/eunordics/catalog.json"
+      ],
+      "env": {
+        "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/dvr-eunordics.m3u",
+        "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+        "PLEX_TUNER_BASE_URL": "http://plextuner-eunordics.plex.svc:5004",
+        "PLEX_TUNER_DEVICE_ID": "eunordics",
+        "PLEX_TUNER_LIVE_EPG_ONLY": "true",
+        "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true",
+        "PLEX_TUNER_STREAM_TRANSCODE": "on",
+        "PLEX_TUNER_STREAM_BUFFER_BYTES": "-1",
+        "PLEX_TUNER_LINEUP_MAX_CHANNELS": "479",
+        "PLEX_TUNER_XMLTV_PREFER_LANGS": "en,eng",
+        "PLEX_TUNER_XMLTV_PREFER_LATIN": "true",
+        "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": "channel",
+        "PLEX_TUNER_FRIENDLY_NAME": "eunordics"
+      }
+    },
+    {
+      "name": "eusouth",
+      "args": [
+        "run",
+        "-mode=easy",
+        "-addr=:5110",
+        "-catalog=/data/eusouth/catalog.json"
+      ],
+      "env": {
+        "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/dvr-eusouth.m3u",
+        "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+        "PLEX_TUNER_BASE_URL": "http://plextuner-eusouth.plex.svc:5004",
+        "PLEX_TUNER_DEVICE_ID": "eusouth",
+        "PLEX_TUNER_LIVE_EPG_ONLY": "true",
+        "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true",
+        "PLEX_TUNER_STREAM_TRANSCODE": "on",
+        "PLEX_TUNER_STREAM_BUFFER_BYTES": "-1",
+        "PLEX_TUNER_LINEUP_MAX_CHANNELS": "479",
+        "PLEX_TUNER_XMLTV_PREFER_LANGS": "en,eng",
+        "PLEX_TUNER_XMLTV_PREFER_LATIN": "true",
+        "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": "channel",
+        "PLEX_TUNER_FRIENDLY_NAME": "eusouth"
+      }
+    },
+    {
+      "name": "eueast",
+      "args": [
+        "run",
+        "-mode=easy",
+        "-addr=:5111",
+        "-catalog=/data/eueast/catalog.json"
+      ],
+      "env": {
+        "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/dvr-eueast.m3u",
+        "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+        "PLEX_TUNER_BASE_URL": "http://plextuner-eueast.plex.svc:5004",
+        "PLEX_TUNER_DEVICE_ID": "eueast",
+        "PLEX_TUNER_LIVE_EPG_ONLY": "true",
+        "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true",
+        "PLEX_TUNER_STREAM_TRANSCODE": "on",
+        "PLEX_TUNER_STREAM_BUFFER_BYTES": "-1",
+        "PLEX_TUNER_LINEUP_MAX_CHANNELS": "479",
+        "PLEX_TUNER_XMLTV_PREFER_LANGS": "en,eng",
+        "PLEX_TUNER_XMLTV_PREFER_LATIN": "true",
+        "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": "channel",
+        "PLEX_TUNER_FRIENDLY_NAME": "eueast"
+      }
+    },
+    {
+      "name": "latin",
+      "args": [
+        "run",
+        "-mode=easy",
+        "-addr=:5112",
+        "-catalog=/data/latin/catalog.json"
+      ],
+      "env": {
+        "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/dvr-latin.m3u",
+        "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+        "PLEX_TUNER_BASE_URL": "http://plextuner-latin.plex.svc:5004",
+        "PLEX_TUNER_DEVICE_ID": "latin",
+        "PLEX_TUNER_LIVE_EPG_ONLY": "true",
+        "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true",
+        "PLEX_TUNER_STREAM_TRANSCODE": "on",
+        "PLEX_TUNER_STREAM_BUFFER_BYTES": "-1",
+        "PLEX_TUNER_LINEUP_MAX_CHANNELS": "479",
+        "PLEX_TUNER_XMLTV_PREFER_LANGS": "en,eng",
+        "PLEX_TUNER_XMLTV_PREFER_LATIN": "true",
+        "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": "channel",
+        "PLEX_TUNER_FRIENDLY_NAME": "latin"
+      }
+    },
+    {
+      "name": "otherworld",
+      "args": [
+        "run",
+        "-mode=easy",
+        "-addr=:5113",
+        "-catalog=/data/otherworld/catalog.json"
+      ],
+      "env": {
+        "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/dvr-otherworld.m3u",
+        "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+        "PLEX_TUNER_BASE_URL": "http://plextuner-otherworld.plex.svc:5004",
+        "PLEX_TUNER_DEVICE_ID": "otherworld",
+        "PLEX_TUNER_LIVE_EPG_ONLY": "true",
+        "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true",
+        "PLEX_TUNER_STREAM_TRANSCODE": "on",
+        "PLEX_TUNER_STREAM_BUFFER_BYTES": "-1",
+        "PLEX_TUNER_LINEUP_MAX_CHANNELS": "479",
+        "PLEX_TUNER_XMLTV_PREFER_LANGS": "en,eng",
+        "PLEX_TUNER_XMLTV_PREFER_LATIN": "true",
+        "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": "channel",
+        "PLEX_TUNER_FRIENDLY_NAME": "otherworld"
+      }
+    },
+    {
+      "name": "oracle100",
+      "args": [
+        "run",
+        "-mode=easy",
+        "-addr=:5201",
+        "-catalog=/data/oracle100/catalog.json"
+      ],
+      "env": {
+        "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/live.m3u",
+        "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+        "PLEX_TUNER_BASE_URL": "http://plextuner-oracle100.plex.svc:5004",
+        "PLEX_TUNER_DEVICE_ID": "oracle100",
+        "PLEX_TUNER_FRIENDLY_NAME": "plexTuner-Oracle-100",
+        "PLEX_TUNER_LIVE_EPG_ONLY": "true",
+        "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true",
+        "PLEX_TUNER_LINEUP_MAX_CHANNELS": "100",
+        "PLEX_TUNER_LINEUP_LANGUAGE": "en",
+        "PLEX_TUNER_HDHR_SCAN_POSSIBLE": "false"
+      }
+    },
+    {
+      "name": "oracle200",
+      "args": [
+        "run",
+        "-mode=easy",
+        "-addr=:5202",
+        "-catalog=/data/oracle200/catalog.json"
+      ],
+      "env": {
+        "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/live.m3u",
+        "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+        "PLEX_TUNER_BASE_URL": "http://plextuner-oracle200.plex.svc:5004",
+        "PLEX_TUNER_DEVICE_ID": "oracle200",
+        "PLEX_TUNER_FRIENDLY_NAME": "plexTuner-Oracle-200",
+        "PLEX_TUNER_LIVE_EPG_ONLY": "true",
+        "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true",
+        "PLEX_TUNER_LINEUP_MAX_CHANNELS": "200",
+        "PLEX_TUNER_LINEUP_LANGUAGE": "en",
+        "PLEX_TUNER_HDHR_SCAN_POSSIBLE": "false"
+      }
+    },
+    {
+      "name": "oracle300",
+      "args": [
+        "run",
+        "-mode=easy",
+        "-addr=:5203",
+        "-catalog=/data/oracle300/catalog.json"
+      ],
+      "env": {
+        "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/live.m3u",
+        "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+        "PLEX_TUNER_BASE_URL": "http://plextuner-oracle300.plex.svc:5004",
+        "PLEX_TUNER_DEVICE_ID": "oracle300",
+        "PLEX_TUNER_FRIENDLY_NAME": "plexTuner-Oracle-300",
+        "PLEX_TUNER_LIVE_EPG_ONLY": "true",
+        "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true",
+        "PLEX_TUNER_LINEUP_MAX_CHANNELS": "300",
+        "PLEX_TUNER_LINEUP_LANGUAGE": "en",
+        "PLEX_TUNER_HDHR_SCAN_POSSIBLE": "false"
+      }
+    },
+    {
+      "name": "oracle400",
+      "args": [
+        "run",
+        "-mode=easy",
+        "-addr=:5204",
+        "-catalog=/data/oracle400/catalog.json"
+      ],
+      "env": {
+        "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/live.m3u",
+        "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+        "PLEX_TUNER_BASE_URL": "http://plextuner-oracle400.plex.svc:5004",
+        "PLEX_TUNER_DEVICE_ID": "oracle400",
+        "PLEX_TUNER_FRIENDLY_NAME": "plexTuner-Oracle-400",
+        "PLEX_TUNER_LIVE_EPG_ONLY": "true",
+        "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true",
+        "PLEX_TUNER_LINEUP_MAX_CHANNELS": "400",
+        "PLEX_TUNER_LINEUP_LANGUAGE": "en",
+        "PLEX_TUNER_HDHR_SCAN_POSSIBLE": "false"
+      }
+    },
+    {
+      "name": "oracle479",
+      "args": [
+        "run",
+        "-mode=easy",
+        "-addr=:5205",
+        "-catalog=/data/oracle479/catalog.json"
+      ],
+      "env": {
+        "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/live.m3u",
+        "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+        "PLEX_TUNER_BASE_URL": "http://plextuner-oracle479.plex.svc:5004",
+        "PLEX_TUNER_DEVICE_ID": "oracle479",
+        "PLEX_TUNER_FRIENDLY_NAME": "plexTuner-Oracle-479",
+        "PLEX_TUNER_LIVE_EPG_ONLY": "true",
+        "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true",
+        "PLEX_TUNER_LINEUP_MAX_CHANNELS": "479",
+        "PLEX_TUNER_LINEUP_LANGUAGE": "en",
+        "PLEX_TUNER_HDHR_SCAN_POSSIBLE": "false"
+      }
+    },
+    {
+      "name": "oracle600",
+      "args": [
+        "run",
+        "-mode=easy",
+        "-addr=:5206",
+        "-catalog=/data/oracle600/catalog.json"
+      ],
+      "env": {
+        "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/live.m3u",
+        "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+        "PLEX_TUNER_BASE_URL": "http://plextuner-oracle600.plex.svc:5004",
+        "PLEX_TUNER_DEVICE_ID": "oracle600",
+        "PLEX_TUNER_FRIENDLY_NAME": "plexTuner-Oracle-600",
+        "PLEX_TUNER_LIVE_EPG_ONLY": "true",
+        "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true",
+        "PLEX_TUNER_LINEUP_MAX_CHANNELS": "600",
+        "PLEX_TUNER_LINEUP_LANGUAGE": "en",
+        "PLEX_TUNER_HDHR_SCAN_POSSIBLE": "false"
+      }
+    }
+  ]
+}
