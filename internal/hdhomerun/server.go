@@ -8,7 +8,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"syscall"
 )
 
 // Config holds HDHomeRun network mode configuration
@@ -115,7 +114,7 @@ func (s *Server) GetDevice() *Device {
 
 // Example main function showing usage
 func Example() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
 	config := &Config{
