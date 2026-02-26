@@ -22,6 +22,26 @@ It exists to encourage quality gains without derailing the current task.
 
 ## Entries
 
+- Date: 2026-02-26
+  Category: reliability
+  Title: Add in-app/operator command to detect and clear Plex hidden Live TV "active grabs" without full Plex restart
+  Context: Post guide-number-offset remap validation for 15 DVRs; Plex Web clicks did nothing until Plex restart.
+  Why it matters: After large guide/channel remaps, Plex can wedge tunes (`Waiting for media grab to start`) even when `/status/sessions` is empty. Restarting Plex works but is heavy-handed and interrupts all clients.
+  Evidence: `Plex Media Server.5.log` during `POST /livetv/dvrs/218/channels/2001/tune` showed `There are 2 active grabs at the end.` and `Waiting for media grab to start.`; same channel tuned normally after `deploy/plex` restart.
+  Suggested fix: Investigate PMS APIs or DB/state paths for stale grab cleanup (or add an operator helper that detects the log pattern and recommends/executes a targeted restart only when no active sessions exist).
+  Risk/Scope: med | fits current scope: no (Plex internals / ops tooling)
+  User decision needed?: no
+
+- Date: 2026-02-26
+  Category: maintainability
+  Title: Add official command/config reference pages for new envs and supervisor mode (beyond testing doc)
+  Context: Added `docs/reference/testing-and-supervisor-config.md` as a practical tester reference.
+  Why it matters: Recent features (`supervise`, guide offsets, reaper, XMLTV language normalization, HDHR shaping) now exist but are not yet in a canonical exhaustive CLI/env reference.
+  Evidence: `docs/reference/index.md` was effectively empty before this session; README lists only core envs.
+  Suggested fix: Add a proper generated or hand-maintained CLI + env reference page (all commands/flags/envs), and cross-link from README and `docs/index.md`.
+  Risk/Scope: med | fits current scope: no (docs expansion)
+  User decision needed?: no
+
 - Date: 2026-02-25
   Category: reliability
   Title: Postvalidate CDN rate-limiting causes false-positive stream drops

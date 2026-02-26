@@ -157,6 +157,24 @@
 - `memory-bank/current_task.md` (2026-02-24 live triage notes)
 - `internal/tuner/gateway.go` (client adaptation + profile selection path)
 
+### Loop: Falling back to Threadfin during PlexTuner playback triage hides whether the app path is actually fixed
+
+**Symptom**
+- Agents restore or test Plex DVR delivery using Threadfin-backed lineups/devices (or mixed Threadfin lineup + PlexTuner device) while the user is specifically asking for PlexTuner-only validation.
+- Results become ambiguous: a "working" setup may prove Plex + Threadfin, not PlexTuner end-to-end.
+
+**Why it's tricky**
+- Threadfin is a familiar known-good control path and can unblock lineup/guide issues quickly, so it is tempting as a troubleshooting shortcut.
+- Mixed-mode DVRs (PlexTuner device + Threadfin lineup) can partially work and look "close enough" while violating the user's stated goal.
+
+**What works**
+- In this repo/testing lane, keep both the **device URI** and **lineup/guide URL** on PlexTuner (`http://plextuner-*.plex.svc:5004` and `/guide.xml`) unless the user explicitly requests a comparison/control test.
+- If Threadfin is mentioned only for external-stack context (legacy secret names, historical notes, comparison docs), label it as context and avoid using it in active validation steps.
+- For injected DVRs, verify purity by inspecting `/livetv/dvrs/<id>` and confirming both `lineupTitle` and nested `Device uri` point to `plextuner-*`.
+
+**Where it's documented**
+- `memory-bank/current_task.md` (2026-02-25 pure-app 13-DVR pivot + validation)
+
 ### Loop: ffmpeg HLS startup "looks broken" but the real cause is generic reconnect flags fighting live `.m3u8` semantics
 
 **Symptom**
@@ -175,6 +193,59 @@
 **Where it's documented**
 - `memory-bank/known_issues.md` (WebSafe ffmpeg startup gate + HLS reconnect follow-up)
 - `internal/tuner/gateway.go` (`PLEX_TUNER_FFMPEG_HLS_RECONNECT` default for HLS ffmpeg path)
+
+### Loop: "WebSafe" probes are interpreted as ffmpeg-transcode tests even when the helper pod has no ffmpeg binary
+
+**Symptom**
+- WebSafe (`PLEX_TUNER_STREAM_TRANSCODE=true`) appears to be under test, but logs only show `hls-relay ...` lines and Plex Web still fails `startmpd1_0`.
+- Agents keep changing profiles/HLS settings while assuming ffmpeg-transcoded output is being exercised.
+
+**Why it's tricky**
+- The ad hoc `plextuner-build` helper pod can be recreated from a minimal image without `ffmpeg`.
+- PlexTuner silently falls back to the Go HLS relay when `ffmpeg` is unavailable (unless a failing `PLEX_TUNER_FFMPEG_PATH` is explicitly set and logged), so WebSafe still streams bytes and tune requests succeed.
+
+**What works**
+- Before WebSafe profile/startup-gate experiments, verify ffmpeg presence inside the active runtime (`command -v ffmpeg`) and confirm per-request logs contain `ffmpeg-transcode` / `ffmpeg-remux`.
+- In the helper pod, install ffmpeg (`apt-get install -y ffmpeg`) or provide a compatible binary, then restart only the WebSafe `serve` process with `PLEX_TUNER_FFMPEG_PATH=/usr/bin/ffmpeg`.
+- Treat `hls-mode transcode=true` without `ffmpeg-*` request logs as a degraded raw-relay run, not a valid WebSafe ffmpeg result.
+
+**Where it's documented**
+- `memory-bank/known_issues.md` (ad hoc WebSafe runtime missing ffmpeg)
+
+### Loop: WebSafe bootstrap fixes startup timing but can silently change codecs and break Plex's recorder
+
+**Symptom**
+- A WebSafe ffmpeg probe looks "better" because `bootstrap-ts` is emitted quickly, but PMS then aborts the first-stage recorder with tuner/antenna errors or demux errors before playback starts.
+- Plex logs can show repeated AAC parser errors right after startup even when the main profile under test is `plexsafe` (MP3 audio).
+
+### Loop: Importing a new image into the wrong node's container runtime makes kubelet `ErrImageNeverPull` look like a broken tag/import
+
+**Symptom**
+- `kubectl` rollout to a locally built image tag stays `ErrImageNeverPull` on the pod, even though `k3s ctr images ls` / `k3s crictl images` on the current shell machine show the image present.
+
+**Why it's tricky**
+- In this setup the working shell can be on `kspld0` while the pod is scheduled on `kspls0`.
+- Importing into local `k3s` containerd on `kspld0` does nothing for kubelet on `kspls0`, but the local CRI tools still make it look like the import succeeded.
+
+**What works**
+- Check the scheduled node first (`kubectl get pod -o wide`).
+- Import the image into the runtime on that exact node (for example stream `docker save` over `ssh kspls0 'sudo k3s ctr -n k8s.io images import -'`).
+- Then restart the pod / rollout.
+
+**Where it's documented**
+- `memory-bank/current_task.md` (2026-02-26 HDHR wizard noise reduction follow-up)
+
+**Why it's tricky**
+- `bootstrap-ts` happens before the main ffmpeg stream and is easy to treat as harmless startup filler.
+- If the bootstrap codec does not match the active profile, Plex sees a single TS stream that changes audio codec midstream, and the resulting recorder failure looks like an upstream stream problem.
+
+**What works**
+- Keep bootstrap audio aligned with the active output profile (MP3 for `plexsafe`, MP2 for `pmsxcode`, no audio for `videoonly`, AAC for AAC profiles), or disable bootstrap during A/B tests.
+- Confirm Plex-side impact from PMS logs (`progress/streamDetail` codec and absence/presence of `AAC bitstream not in ADTS...`) instead of relying only on PlexTuner startup logs.
+
+**Where it's documented**
+- `memory-bank/known_issues.md` (WebSafe bootstrap/profile mismatch entry)
+- `internal/tuner/gateway.go` (`writeBootstrapTS`, `bootstrapAudioArgsForProfile`)
 
 ### Loop: `kspls0` host-firewall rules exist but LAN Plex/NFS traffic still gets dropped after reboot
 
@@ -196,3 +267,152 @@
 **Where it's documented**
 - `memory-bank/known_issues.md` (`kspls0` read-only-root outage + temporary Plex endpoint workaround)
 - `memory-bank/task_history.md` (reboot + firewall persistence follow-up on 2026-02-24)
+
+### Loop: Direct DVR probe sessions get blamed for Plex/WebSafe packaging regressions when the direct services are simply orphaned
+
+**Symptom**
+- Agents keep running `plex-web-*` probes and reading Plex packaging logs (`start.mpd`, `CaptureBuffer`, `buildLiveM3U8`) while direct DVRs `135` / `138` are dead for a more basic reason.
+- Plex `/livetv/dvrs` still shows the DVRs as configured, so it looks like a tuning/packaging regression instead of a service/backend outage.
+
+**Why it's tricky**
+- `plextuner-trial` / `plextuner-websafe` service objects can remain present for days even when their selected backend (`app=plextuner-build`) no longer exists, so a quick `kubectl get svc` looks "fine".
+- Plex device URIs can drift independently of lineup URLs (for example to `plextuner-otherworld`), which creates mixed signals: the DVR lineup points to direct services, but the HDHomeRun device points elsewhere.
+- This can happen after prior runtime-only experiments because `plextuner-build` was ad hoc, not a durable managed deployment.
+
+**What works**
+- Before any Plex Web or packager probe, always run this triage in order:
+  1. `kubectl -n plex get endpoints plextuner-trial plextuner-websafe` (must not be `<none>`)
+  2. `curl /livetv/dvrs/<id>` and inspect nested `<Device ... uri=...>` for `135` and `138`
+  3. Confirm actual tuner traffic in `/tmp/plextuner-{trial,websafe}.log` (new `PlexMediaServer` requests)
+- If endpoints are missing, restore `app=plextuner-build` backend first.
+- If URIs drifted, repair them with in-place re-registration (`/media/grabbers/tv.plex.grabbers.hdhomerun/devices?uri=...`) before interpreting probe failures.
+
+**Where it's documented**
+- `memory-bank/known_issues.md` (direct services orphaned + URI drift entries)
+- `memory-bank/current_task.md` (2026-02-25 takeover progress)
+
+### Loop: Concurrent `decision` + `start.mpd` probes create a real second-stage self-kill, but removing the race still doesn't fix Plex Live TV startup
+
+**Symptom**
+- `plex-web-livetv-probe.py` starts `decision` and `start.mpd` concurrently; after a long stall (~100s+), PMS can let both proceed and then one request kills the same second-stage transcode session the other just started.
+- Probe output then shows `dash_init_404` (or header/segment 404s) and it is tempting to assume the entire failure is just a probe artifact.
+
+**Why it's tricky**
+- The race is real and reproducible (PMS logs show one `Req#/Transcode` killing the job/session started by the sibling request), so it can dominate the logs.
+- But a no-race test is still required: the same Plex Live TV path may independently fail with `timed out waiting to find duration for live session`, which also leads to `dash_init_404`.
+
+**What works**
+- Treat the concurrent probe race as a **confounder**, not the default root cause.
+- Re-run a serialized/no-decision probe (or manually serialize calls) on the same channel/runtime before concluding.
+- In this repo's 2026-02-25 `DVR 218` Fox Weather tests, the no-decision probe still failed after ~125s with persistent DASH init `404`, and PMS logged `TranscodeSession: timed out waiting to find duration for live session`, proving the core failure remains without the race.
+
+**Where it's documented**
+- `memory-bank/current_task.md` (2026-02-26 helper AB4 long-wait no-decision findings)
+- `memory-bank/known_issues.md` (Plex internal Live TV manifest / duration-timeout follow-ups)
+
+### Loop: Agents blame PlexTuner TS/HLS formatting when PMS is actually rejecting its own first-stage `/manifest` callbacks
+
+**Symptom**
+- Plex tunes successfully and PlexTuner streams bytes; PMS first-stage recorder writes `media-*.ts` files and sends `progress/streamDetail`.
+- PMS still logs `buildLiveM3U8: no segment info available`, `/livetv/sessions/.../index.m3u8` returns `500`/empty, and Plex Web fails at `start.mpd`.
+- Repeated TS integrity checks look clean, which makes the investigation loop on subtle stream-format theories.
+
+**Why it's tricky**
+- PMS does not clearly log the first-stage `/video/:/transcode/session/.../manifest` callback failures in `Plex Media Server.log`.
+- You only see the downstream symptom (`buildLiveM3U8 no segment info`), not the upstream callback rejection.
+- Existing harness reports can miss the callback response codes because loopback pcap `tcp.stream` correlation is imperfect and parser logic may under-report responses.
+
+**What works**
+- Reuse the localhost pcap capture path (`plex-websafe-pcap-repro.sh`) and inspect `pms-local-http-responses.tsv` directly.
+- If `Lavf` `/manifest` callbacks are returning `403`, treat it as a PMS callback-auth issue first.
+- In this environment, setting PMS `Preferences.xml` `allowedNetworks="127.0.0.1/8,::1/128,192.168.50.0/24"` and restarting Plex changed callback responses to `200`, restored `buildLiveM3U8` segment info, and unblocked Plex Web playback on `DVR 218`.
+
+**Where it's documented**
+- `memory-bank/current_task.md` (2026-02-25 late breakthrough)
+- `memory-bank/known_issues.md` (Plex internal Live TV manifest issue follow-up with callback `403` root cause)
+
+### Loop: Category deployments suddenly "lose" M3U env support after rebuilding images (looks like k8s env breakage but is an app regression)
+
+**Symptom**
+- Rebuilt category `plextuner-*` pods crashloop with:
+  - `Catalog refresh failed: need -m3u URL or set PLEX_TUNER_PROVIDER_USER and PLEX_TUNER_PROVIDER_PASS in .env`
+- Deployment YAML still clearly contains `PLEX_TUNER_M3U_URL` and `PLEX_TUNER_XMLTV_URL`.
+
+**Why it's tricky**
+- It looks like a bad image build, wrong entrypoint, or Kubernetes env propagation problem.
+- The actual issue is code-path specific: `run -mode=easy` can regress if `fetchCatalog()` stops checking `cfg.M3UURLsOrBuild()` when `-m3u` is not passed explicitly.
+
+**What works**
+- Check `cmd/plex-tuner/main.go` `fetchCatalog()` before changing k8s manifests.
+- Ensure the order is: explicit `-m3u` -> configured M3U URLs (`cfg.M3UURLsOrBuild()`) -> provider creds/player_api.
+- Rebuild/reimport image, then restart category deployments.
+
+**Where it's documented**
+- `memory-bank/known_issues.md` (easy-mode M3U env regression)
+- `cmd/plex-tuner/main.go`
+
+### Loop: Applying the full generated supervisor YAML silently rolls the deployment back to a generic local image tag
+
+**Symptom**
+- `plextuner-supervisor` starts crashlooping after a generated-manifest apply with:
+  - `Unknown command "supervise"`
+- It looks like the supervisor JSON/config is wrong even though it was working moments earlier.
+
+**Why it's tricky**
+- The generated single-pod YAML intentionally uses a generic image tag (for example `plex-tuner:hdhr-test`) so it can be checked in and reused.
+- Live k3s rollouts may be using a one-off locally imported tag that contains newer code (`supervise`, rollout fixes).
+- Applying the full generated YAML overwrites the deployment image field back to the generic tag, and with `imagePullPolicy: Never` the node may run an older cached image under that tag.
+
+**What works**
+- During supervisor cutover iterations, split applies:
+  1. apply generated `ConfigMap` + `Deployment`
+  2. immediately patch the deployment image to the exact imported tag on the target node
+  3. apply generated `Service` docs separately
+- When startup fails with `Unknown command "supervise"`, check the pod's resolved image first (`kubectl describe pod`) before debugging the supervisor config.
+
+**Where it's documented**
+- `memory-bank/current_task.md` (2026-02-26 single-pod supervisor live cutover notes)
+
+### Loop: Treating Plex backend `/livetv/dvrs` success as proof the Plex UI/client path is fixed
+
+**Symptom**
+- Agent creates/patches DVRs/devices and sees correct rows in `/livetv/dvrs`, `/media/grabbers/devices`, or the Plex DB, then reports success.
+- User opens Plex Web/TV and still does not see the expected tuner/device (or sees duplicated/misleading labels/guides).
+
+**Why it's tricky**
+- Plex has multiple layers of state: DVR rows, device rows, provider rows (`/media/providers` / `media_provider_resources`), and client-specific UI logic/cache.
+- The configured-tuner/setup screens are often device-centric and UI-driven, not a simple reflection of `/livetv/dvrs`.
+- Plex can have valid backend provider endpoints while clients still render misleading labels (for example every Live TV provider tab labelled from the server `friendlyName`).
+
+**What works**
+- Validate the user-facing path before calling it done:
+  1. backend rows (`/livetv/dvrs`, `/media/grabbers/devices`)
+  2. provider layer (`/media/providers`, `tv.plex.providers.epg.xmltv:<id>/*`)
+  3. actual client request capture (PMS logs) while reproducing the UI screen
+- If the UI symptom is labels/merged guides, compare provider endpoint counts (`/lineups/dvr/channels`) before assuming tuner feeds were flattened.
+- Patch real metadata drift (for example `media_provider_resources` type=3 `uri` mismatches) first, then re-test UI behavior.
+
+**Where it's documented**
+- `memory-bank/current_task.md` (2026-02-26 Plex TV UI / provider metadata follow-up)
+- `memory-bank/known_issues.md` (Plex TV `plexKube` tab labels note)
+
+### Loop: After large DVR/guide remaps, "playback broke" is blamed on feed changes when Plex is actually stuck on hidden active grabs
+
+**Symptom**
+- Guides/tabs become correct after a metadata/channel-ID fix, but channel clicks suddenly do nothing.
+- Probe `tune` requests hang ~35s and time out; PlexTuner sees no `/stream/...` request.
+
+**Why it's tricky**
+- It happens right after a real server-side change (guide remap), so it looks like the remap broke playback.
+- `/status/sessions` can show zero active playback while Plex still has hidden Live TV grabs/schedulers occupying tuner state.
+
+**What works**
+- Check Plex file logs for the tune request and look for:
+  - `Subscription: There are <N> active grabs at the end.`
+  - `Subscription: Waiting for media grab to start.`
+- If present, restart Plex before rolling back PlexTuner changes.
+- Re-test the exact same channel after restart; in the 2026-02-26 incident, `DVR 218 / channel 2001` returned to `tune 200` immediately post-restart.
+
+**Where it's documented**
+- `memory-bank/current_task.md` (2026-02-26 guide-number-offset rollout + post-remap Plex hidden-grab stall)
+- `memory-bank/known_issues.md` (hidden active grabs after remap)
