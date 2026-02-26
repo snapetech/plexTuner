@@ -1,5 +1,5 @@
 // Package plex provides optional programmatic registration of our tuner and XMLTV
-// with Plex Media Server via API (like Threadfin does).
+// with Plex Media Server via API.
 package plex
 
 import (
@@ -42,27 +42,43 @@ func RegisterTunerViaAPI(cfg PlexAPIConfig) (*DeviceInfo, error) {
 		baseURL = "http://" + baseURL
 	}
 	deviceURI := baseURL
-	deviceURL := fmt.Sprintf("http://%s/media/grabbers/tv.plex.grabbers.hdhomerun/devices?uri=%s",
-		cfg.PlexHost, url.QueryEscape(deviceURI))
-
-	req, err := http.NewRequest("POST", deviceURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("X-Plex-Token", cfg.PlexToken)
-
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("register device request failed: %w", err)
+	var body []byte
+	var lastErr error
+	devicePaths := []string{
+		"/media/grabbers/tv.plex.grabbers.hdhomerun/devices",
+		"/media/grabbers/devices",
 	}
-	defer resp.Body.Close()
+	for i, p := range devicePaths {
+		deviceURL := fmt.Sprintf("http://%s%s?uri=%s", cfg.PlexHost, p, url.QueryEscape(deviceURI))
+		req, err := http.NewRequest("POST", deviceURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("X-Plex-Token", cfg.PlexToken)
 
-	body, _ := io.ReadAll(resp.Body)
-	fmt.Printf("[PLEX-REG] Register device response: status=%d body_len=%d\n", resp.StatusCode, len(body))
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("register device request failed via %s: %w", p, err)
+			continue
+		}
+		body, _ = io.ReadAll(resp.Body)
+		resp.Body.Close()
+		fmt.Printf("[PLEX-REG] Register device response (%s): status=%d body_len=%d\n", p, resp.StatusCode, len(body))
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("register device returned %d: %s", resp.StatusCode, string(body))
+		if resp.StatusCode == 404 && i < len(devicePaths)-1 {
+			// Plex API path changed across versions; try the generic devices endpoint.
+			lastErr = fmt.Errorf("register device endpoint %s returned 404", p)
+			continue
+		}
+		if resp.StatusCode != 200 {
+			return nil, fmt.Errorf("register device via %s returned %d: %s", p, resp.StatusCode, string(body))
+		}
+		lastErr = nil
+		break
+	}
+	if lastErr != nil {
+		return nil, lastErr
 	}
 
 	var mc MediaContainer
@@ -293,7 +309,7 @@ func FullRegisterPlex(baseURL, plexHost, plexToken, friendlyName, deviceID strin
 		tokenPreview = tokenPreview[:8] + "..."
 	}
 
-	fmt.Printf("[PLEX-REG] === Starting Threadfin-style registration ===\n")
+	fmt.Printf("[PLEX-REG] === Starting Plex API registration ===\n")
 	fmt.Printf("[PLEX-REG] BaseURL=%s Host=%s Token=%s\n", baseURL, plexHost, tokenPreview)
 
 	fmt.Printf("[PLEX-REG] Step 1: Register HDHR device...\n")

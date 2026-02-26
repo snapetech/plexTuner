@@ -2,7 +2,7 @@
 # Stand up Plex Tuner HDHR in the cluster and verify endpoints (discover, lineup).
 # Run from repo root on a host with kubectl and (optional) Docker. Exits 0 only if tuner is up and returning 200.
 #
-# Prerequisites: Plex (see docs/runbooks/plex-in-cluster.md if missing). Threadfin or M3U URL in manifest.
+# Prerequisites: Plex (see docs/runbooks/plex-in-cluster.md if missing) and a real M3U URL in the manifest/secret.
 # Optional: TUNER_BASE_URL=http://plextuner-hdhr.plex.home  (default) or http://<node-ip>:30004 for NodePort.
 # If kubectl requires root: sudo ./k8s/standup-and-verify.sh
 

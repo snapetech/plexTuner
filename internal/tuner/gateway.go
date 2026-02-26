@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -100,6 +101,31 @@ func getenvBool(key string, def bool) bool {
 		return def
 	}
 	return v == "1" || v == "true" || v == "yes" || v == "on"
+}
+
+func mpegTSFlagsWithOptionalInitialDiscontinuity() string {
+	flags := []string{"resend_headers", "pat_pmt_at_frames"}
+	if getenvBool("PLEX_TUNER_MPEGTS_INITIAL_DISCONTINUITY", true) {
+		flags = append(flags, "initial_discontinuity")
+	}
+	return "+" + strings.Join(flags, "+")
+}
+
+func isClientDisconnectWriteError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) ||
+		errors.Is(err, io.ErrClosedPipe) ||
+		errors.Is(err, net.ErrClosed) ||
+		errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, syscall.ECONNRESET) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "broken pipe") ||
+		strings.Contains(msg, "connection reset by peer") ||
+		strings.Contains(msg, "use of closed network connection")
 }
 
 type streamDebugOptions struct {
@@ -1528,6 +1554,8 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			} else if strings.TrimSpace(os.Getenv("PLEX_TUNER_FFMPEG_PATH")) != "" {
 				log.Printf("gateway: channel=%q id=%s ffmpeg unavailable path=%q err=%v",
 					channel.GuideName, channelID, os.Getenv("PLEX_TUNER_FFMPEG_PATH"), ffmpegErr)
+			} else if transcode {
+				log.Printf("gateway: channel=%q id=%s ffmpeg unavailable transcode-requested=true err=%v (falling back to go relay; web clients may get incompatible audio/video codecs)", channel.GuideName, channelID, ffmpegErr)
 			}
 			if err := g.relayHLSAsTS(
 				w,
@@ -1590,6 +1618,7 @@ func channelIDFromRequestPath(path string) (string, bool) {
 }
 
 func buildFFmpegMPEGTSCodecArgs(transcode bool, profile string) []string {
+	mpegtsFlags := mpegTSFlagsWithOptionalInitialDiscontinuity()
 	var codecArgs []string
 	if !transcode {
 		codecArgs = []string{
@@ -1733,7 +1762,7 @@ func buildFFmpegMPEGTSCodecArgs(transcode bool, profile string) []string {
 		"-max_interleave_delta", "0",
 		"-muxdelay", "0",
 		"-muxpreload", "0",
-		"-mpegts_flags", "+resend_headers+pat_pmt_at_frames+initial_discontinuity",
+		"-mpegts_flags", mpegtsFlags,
 		"-f", "mpegts",
 		"pipe:1",
 	)
@@ -1772,6 +1801,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	// Generic HTTP reconnect flags (especially reconnect-at-EOF) can cause
 	// live .m3u8 inputs to loop on playlist EOF and never start segment reads.
 	hlsReconnect := getenvBool("PLEX_TUNER_FFMPEG_HLS_RECONNECT", false)
+	hlsRealtime := getenvBool("PLEX_TUNER_FFMPEG_HLS_REALTIME", false)
 	hlsLogLevel := strings.TrimSpace(os.Getenv("PLEX_TUNER_FFMPEG_HLS_LOGLEVEL"))
 	if hlsLogLevel == "" {
 		hlsLogLevel = "error"
@@ -1798,6 +1828,11 @@ func (g *Gateway) relayHLSWithFFmpeg(
 			"-reconnect_on_network_error", "1",
 			"-reconnect_delay_max", "2",
 		)
+	}
+	if hlsRealtime {
+		// Pace ffmpeg reads to input timestamps (wall-clock-ish) to avoid racing
+		// far ahead of Plex's live consumer attach during startup on HLS inputs.
+		args = append(args, "-re")
 	}
 	if hlsLiveStartIndex != 0 {
 		args = append(args, "-live_start_index", strconv.Itoa(hlsLiveStartIndex))
@@ -1828,8 +1863,8 @@ func (g *Gateway) relayHLSWithFFmpeg(
 			reqField, channelName, channelID, modeLabel, ffmpegInputHost, ffmpegInputIP)
 	}
 	log.Printf("gateway:%s channel=%q id=%s %s profile=%s", reqField, channelName, channelID, modeLabel, profile)
-	log.Printf("gateway:%s channel=%q id=%s %s hls-input analyzeduration_us=%d probesize=%d rw_timeout_us=%d live_start_index=%d nobuffer=%t reconnect=%t loglevel=%s",
-		reqField, channelName, channelID, modeLabel, hlsAnalyzeDurationUs, hlsProbeSize, hlsRWTimeoutUs, hlsLiveStartIndex, hlsUseNoBuffer, hlsReconnect, hlsLogLevel)
+	log.Printf("gateway:%s channel=%q id=%s %s hls-input analyzeduration_us=%d probesize=%d rw_timeout_us=%d live_start_index=%d nobuffer=%t reconnect=%t realtime=%t loglevel=%s",
+		reqField, channelName, channelID, modeLabel, hlsAnalyzeDurationUs, hlsProbeSize, hlsRWTimeoutUs, hlsLiveStartIndex, hlsUseNoBuffer, hlsReconnect, hlsRealtime, hlsLogLevel)
 	// In web-safe transcode modes, hold back the first bytes (and optionally prepend a short
 	// deterministic H264/AAC TS bootstrap) so Plex's live DASH packager gets a clean start.
 	startupMin := getenvInt("PLEX_TUNER_WEBSAFE_STARTUP_MIN_BYTES", 65536)
@@ -2000,7 +2035,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 			stopNullTSKeepalive("startup-gate-timeout")
 			stopPATMPTKeepalive("startup-gate-timeout")
 			if responseStarted && enableBootstrap && enableTimeoutBootstrap && bootstrapSec > 0 {
-				if err := writeBootstrapTS(r.Context(), ffmpegPath, bodyOut, channelName, channelID, bootstrapSec); err != nil {
+				if err := writeBootstrapTS(r.Context(), ffmpegPath, bodyOut, channelName, channelID, bootstrapSec, profile); err != nil {
 					log.Printf("gateway:%s channel=%q id=%s %s timeout-bootstrap failed: %v", reqField, channelName, channelID, modeLabel, err)
 				} else {
 					bootstrapAlreadySent = true
@@ -2037,7 +2072,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	startResponse()
 
 	if enableBootstrap && bootstrapSec > 0 && !bootstrapAlreadySent {
-		if err := writeBootstrapTS(r.Context(), ffmpegPath, bodyOut, channelName, channelID, bootstrapSec); err != nil {
+		if err := writeBootstrapTS(r.Context(), ffmpegPath, bodyOut, channelName, channelID, bootstrapSec, profile); err != nil {
 			log.Printf("gateway:%s channel=%q id=%s bootstrap failed: %v", reqField, channelName, channelID, err)
 		}
 		if joinDelayMs := getenvInt("PLEX_TUNER_WEBSAFE_JOIN_DELAY_MS", 0); joinDelayMs > 0 {
@@ -2349,13 +2384,46 @@ func (g *Gateway) startHLSRelayFFmpegStdinNormalizer(
 	return norm, nil
 }
 
-func writeBootstrapTS(ctx context.Context, ffmpegPath string, dst io.Writer, channelName, channelID string, seconds float64) error {
+func bootstrapAudioArgsForProfile(profile string) []string {
+	switch normalizeProfileName(profile) {
+	case profilePlexSafe:
+		return []string{
+			"-c:a", "libmp3lame",
+			"-ac", "2",
+			"-ar", "48000",
+			"-b:a", "128k",
+			"-af", "aresample=async=1:first_pts=0",
+		}
+	case profilePMSXcode:
+		return []string{
+			"-c:a", "mp2",
+			"-ac", "2",
+			"-ar", "48000",
+			"-b:a", "128k",
+			"-af", "aresample=async=1:first_pts=0",
+		}
+	case profileVideoOnly:
+		return []string{"-an"}
+	default:
+		return []string{
+			"-c:a", "aac",
+			"-profile:a", "aac_low",
+			"-ac", "2",
+			"-ar", "48000",
+			"-b:a", "96k",
+			"-af", "aresample=async=1:first_pts=0",
+		}
+	}
+}
+
+func writeBootstrapTS(ctx context.Context, ffmpegPath string, dst io.Writer, channelName, channelID string, seconds float64, profile string) error {
 	if seconds <= 0 {
 		return nil
 	}
 	if seconds > 5 {
 		seconds = 5
 	}
+	mpegtsFlags := mpegTSFlagsWithOptionalInitialDiscontinuity()
 	args := []string{
 		"-nostdin",
 		"-hide_banner",
@@ -2365,7 +2433,13 @@ func writeBootstrapTS(ctx context.Context, ffmpegPath string, dst io.Writer, cha
 		"-t", strconv.FormatFloat(seconds, 'f', 2, 64),
 		"-shortest",
 		"-map", "0:v:0",
-		"-map", "1:a:0",
+	}
+	if normalizeProfileName(profile) != profileVideoOnly {
+		// Keep bootstrap audio codec aligned with the active stream profile so Plex
+		// does not see a mid-stream audio codec switch (for example AAC -> MP3).
+		args = append(args, "-map", "1:a:0")
+	}
+	args = append(args,
 		"-c:v", "libx264",
 		"-preset", "ultrafast",
 		"-tune", "zerolatency",
@@ -2377,19 +2451,16 @@ func writeBootstrapTS(ctx context.Context, ffmpegPath string, dst io.Writer, cha
 		"-b:v", "900k",
 		"-maxrate", "900k",
 		"-bufsize", "900k",
-		"-c:a", "aac",
-		"-profile:a", "aac_low",
-		"-ac", "2",
-		"-ar", "48000",
-		"-b:a", "96k",
-		"-af", "aresample=async=1:first_pts=0",
+	)
+	args = append(args, bootstrapAudioArgsForProfile(profile)...)
+	args = append(args,
 		"-flush_packets", "1",
 		"-muxdelay", "0",
 		"-muxpreload", "0",
-		"-mpegts_flags", "+resend_headers+pat_pmt_at_frames+initial_discontinuity",
+		"-mpegts_flags", mpegtsFlags,
 		"-f", "mpegts",
 		"pipe:1",
-	}
+	)
 	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -2412,7 +2483,8 @@ func writeBootstrapTS(ctx context.Context, ffmpegPath string, dst io.Writer, cha
 		}
 		return errors.New(msg)
 	}
-	log.Printf("gateway:%s channel=%q id=%s bootstrap-ts bytes=%d dur=%.2fs", gatewayReqIDField(ctx), channelName, channelID, n, seconds)
+	log.Printf("gateway:%s channel=%q id=%s bootstrap-ts bytes=%d dur=%.2fs profile=%s",
+		gatewayReqIDField(ctx), channelName, channelID, n, seconds, normalizeProfileName(profile))
 	return nil
 }
 
@@ -2483,6 +2555,8 @@ func (g *Gateway) relayHLSAsTS(
 		} else if strings.TrimSpace(os.Getenv("PLEX_TUNER_FFMPEG_PATH")) != "" {
 			log.Printf("gateway:%s channel=%q id=%s hls-relay-ffmpeg-stdin ffmpeg unavailable path=%q err=%v",
 				reqField, channelName, channelID, os.Getenv("PLEX_TUNER_FFMPEG_PATH"), ffmpegErr)
+		} else if transcode {
+			log.Printf("gateway:%s channel=%q id=%s hls-relay-ffmpeg-stdin ffmpeg unavailable transcode-requested=true err=%v", reqField, channelName, channelID, ffmpegErr)
 		}
 	}
 	if normalizer != nil {
@@ -2571,6 +2645,14 @@ func (g *Gateway) relayHLSAsTS(
 					}
 				}
 				if err != nil {
+					if isClientDisconnectWriteError(err) {
+						if n > 0 {
+							sentBytes += n
+						}
+						log.Printf("gateway:%s channel=%q id=%s %s client-done write-closed segs=%d bytes=%d dur=%s",
+							reqField, channelName, channelID, relayLogLabel, sentSegments, sentBytes, time.Since(start).Round(time.Millisecond))
+						return nil
+					}
 					if !clientStarted() {
 						return err
 					}
