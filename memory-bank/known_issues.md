@@ -2,6 +2,29 @@
 
 <!-- Add bugs, limitations, and design tradeoffs as they are discovered or fixed. -->
 
+## Infrastructure / OpenBao
+
+- **OpenBao has three init-output files; only one has working unseal keys.** Discovered 2026-02-27 when the cluster became unsealed after scaling to 2 raft replicas.
+  - **Good file (use this):** `~/Documents/code/k3s/openbao/openbao-init-output.txt`
+    - Root token: `REDACTED_OPENBAO_ROOT_TOKEN`
+    - Keys 1–3 (any 3 of 5) unseal correctly.
+  - **Bad files (DO NOT rely on these — cipher auth fails on the 3rd key):**
+    - `~/Documents/openbao-init-output.txt` (root token `REDACTED_OPENBAO_ROOT_TOKEN`) — keys 1+2 are accepted for progress but key 3+ all return `cipher: message authentication failed`.
+    - `~/Documents/k3s-secrets/openbao/openbao-init-output.json` (root token `REDACTED_OPENBAO_ROOT_TOKEN`) — same failure mode.
+  - These appear to be init artifacts from aborted or test inits; the raft storage was actually sealed with the `k3s/openbao` keyset.
+  - The existing unseal script (`scripts/unseal-openbao.sh`) hardcodes keys from the bad `openbao-init-output.txt`; update it to use keys from the good file if re-init is not performed.
+
+- **OpenBao raft can lose quorum when only 1 of 2 nodes is unsealed (e.g. after a restart/crash).** The 2-node raft cluster requires both pods unsealed for leader election. Recovery steps (2026-02-27):
+  1. Scale down to 1 replica: `kubectl -n openbao scale sts openbao --replicas=1`
+  2. Delete the stale raft peer db: `kubectl -n openbao exec openbao-0 -- rm /openbao/data/raft/raft.db`
+  3. Delete the pod to restart it: `kubectl -n openbao delete pod openbao-0`
+  4. Unseal openbao-0 with the **good** keys (3 of 5 from `k3s/openbao/openbao-init-output.txt`).
+  5. Scale back to 2: `kubectl -n openbao scale sts openbao --replicas=2`
+  6. Unseal openbao-1 with the same good keys once it starts.
+  - Note: deleting `raft.db` forces a single-node re-bootstrap; `vault.db` (the actual data) is preserved.
+
+- **`secret/iptv` in OpenBao holds both providers** (written 2026-02-27, version 2). Keys: `provider1_{user,pass,host,m3u,epg}` and `provider2_{user,pass,host,m3u,epg}`. Provider1 = supergaminghub/cdngold; provider2 = trex/dambora (`line.dambora.xyz`). The `sync-secrets-to-openbao.sh` script now reads both from `plexTuner/.env` and re-syncs idempotently.
+
 ## Cluster / Plex
 
 - **Plex DVR channel limit (~480) applies to the wizard only.** When users add the tuner via Plex's "Set up" wizard, Plex fetches our lineup and tries to save it; that path fails above ~480 channels. For **zero-touch, no wizard**: use `-register-plex=/path/to/Plex` so we write DVR + XMLTV URIs and attempt to sync the full lineup into Plex's DB. When `-register-plex` is set we do not cap (full catalog); lineup sync into the DB requires Plex to use a table we can discover (see [docs/adr/0001-zero-touch-plex-lineup.md](docs/adr/0001-zero-touch-plex-lineup.md)). If lineup sync fails (schema unknown), we still serve the full lineup over HTTP but Plex may only show 480 if it re-fetches via the wizard path.

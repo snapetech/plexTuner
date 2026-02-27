@@ -18,6 +18,8 @@ type LiveChannel struct {
 	StreamURLs  []string `json:"stream_urls"` // primary + backups for failover
 	EPGLinked   bool     `json:"epg_linked"`  // has tvg-id / can be matched to guide
 	TVGID       string   `json:"tvg_id,omitempty"`
+	GroupTitle  string   `json:"group_title,omitempty"` // M3U group-title attribute (e.g. "US | Sports HD")
+	SourceTag   string   `json:"source_tag,omitempty"`  // provider identifier when merging multiple sources
 }
 
 // Catalog is the normalized VOD catalog plus optional live channels.

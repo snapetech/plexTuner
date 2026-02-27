@@ -1,0 +1,15 @@
+# Static binary build - for scratch/distroless images
+FROM golang:1.24-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+# Replace ./cmd/your-app with your actual main package path
+RUN CGO_ENABLED=0 go build -ldflags='-w -s' -o /your-app ./cmd/your-app
+
+FROM scratch
+COPY --from=build /your-app /your-app
+# Copy CA certs if your app makes HTTPS requests
+# COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+EXPOSE 8080
+ENTRYPOINT ["/your-app"]

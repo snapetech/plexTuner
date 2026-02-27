@@ -150,6 +150,8 @@ Common flags:
 - `-catalog`
 - `-xmltv` (required; file path or `http(s)` URL)
 - `-aliases` (optional JSON alias override file)
+- `-oracle-report` (optional `plex-epg-oracle` JSON output; generates alias suggestions for unmatched channels)
+- `-suggest-out` (optional path to write oracle-derived alias suggestions; the output is `name_to_xmltv_id`-compatible and can be passed to the next run via `-aliases`)
 - `-out` (optional JSON full report)
 - `-unmatched-out` (optional JSON unmatched-only list)
 
@@ -164,10 +166,17 @@ Alias override JSON shape:
 }
 ```
 
+### Oracle-assisted alias suggestion workflow
+
+1. Run `plex-epg-oracle -out oracle.json` against a test tuner to capture Plex's channelmap decisions.
+2. Run `epg-link-report -xmltv xmltv.xml -oracle-report oracle.json -suggest-out suggestions.json` to produce suggested aliases for unmatched channels.
+3. Review `suggestions.json`, prune false positives, then pass it to the next report run via `-aliases suggestions.json` to measure the coverage lift.
+
 Use for:
 - measuring current XMLTV coverage before changing lineups
 - generating a review queue for the unlinked tail
 - iterating alias mappings safely (report-only, no runtime mutation)
+- harvesting Plex oracle channelmap hints to improve match rate
 
 ## `plex-tuner probe`
 
@@ -201,6 +210,7 @@ Notes:
 - Creates/registers Plex DVR/device rows as part of the probe flow.
 - Best used in a lab/test Plex instance.
 - Intended to harvest mapping outcomes, not as a runtime dependency.
+- Output now includes full per-channel mapping rows (`channels[]`) with `guide_name`, `guide_number`, `tvg_id`, and `lineup_identifier` (the XMLTV channel ID Plex oracle matched). This is the input for `epg-link-report -oracle-report`.
 
 ## `plex-tuner plex-epg-oracle-cleanup`
 
@@ -236,12 +246,39 @@ Use for:
 
 ## Provider / input
 
-- `PLEX_TUNER_PROVIDER_URL`
-- `PLEX_TUNER_PROVIDER_URLS`
+### Primary source
+
+- `PLEX_TUNER_PROVIDER_URL` — single Xtream provider base URL
+- `PLEX_TUNER_PROVIDER_URLS` — comma-separated list of provider base URLs (ranked failover; first success wins)
 - `PLEX_TUNER_PROVIDER_USER`
 - `PLEX_TUNER_PROVIDER_PASS`
-- `PLEX_TUNER_SUBSCRIPTION_FILE`
-- `PLEX_TUNER_M3U_URL`
+- `PLEX_TUNER_SUBSCRIPTION_FILE` — path to a `Username: / Password:` file (auto-detects `~/Documents/iptv.subscription.*.txt`)
+- `PLEX_TUNER_M3U_URL` — direct M3U URL (bypasses player_api/get.php construction)
+
+### Second provider (live-channel merge)
+
+When set, live channels from the second provider are **merged** into the primary catalog after the primary fetch. Deduplication is by `tvg-id` (when present) or normalized stream-URL hostname+path (credential query-strings are stripped). Merged-in channels are tagged with `source_tag: "provider2"` in the catalog. VOD from the second provider is not merged (live only).
+
+- `PLEX_TUNER_M3U_URL_2` — direct M3U URL for the second provider (highest priority)
+- `PLEX_TUNER_PROVIDER_URL_2` — Xtream base URL for the second provider (used to build `get.php` URL when `M3U_URL_2` is absent)
+- `PLEX_TUNER_PROVIDER_USER_2`
+- `PLEX_TUNER_PROVIDER_PASS_2`
+
+Example (two separate IPTV service accounts):
+```
+PLEX_TUNER_M3U_URL=http://provider1.example/get.php?username=u1&password=p1&type=m3u_plus
+PLEX_TUNER_M3U_URL_2=http://provider2.example/get.php?username=u2&password=p2&type=m3u_plus
+```
+
+Or via Xtream creds:
+```
+PLEX_TUNER_PROVIDER_URL=http://provider1.example
+PLEX_TUNER_PROVIDER_USER=u1
+PLEX_TUNER_PROVIDER_PASS=p1
+PLEX_TUNER_PROVIDER_URL_2=http://provider2.example
+PLEX_TUNER_PROVIDER_USER_2=u2
+PLEX_TUNER_PROVIDER_PASS_2=p2
+```
 
 ## Paths
 
@@ -309,15 +346,60 @@ Enable/tune:
 - `PLEX_TUNER_PLEX_SESSION_REAPER_HARD_LEASE_S`
 - `PLEX_TUNER_PLEX_SESSION_REAPER_SSE`
 
-## HDHR wizard-lane shaping (optional)
+## Lineup filtering and shaping
 
-- `PLEX_TUNER_LINEUP_DROP_MUSIC`
-- `PLEX_TUNER_LINEUP_SHAPE`
-- `PLEX_TUNER_LINEUP_REGION_PROFILE`
+### Category filter (DVR injection lanes)
+
+`PLEX_TUNER_LINEUP_CATEGORY` — filter the lineup to a named content/region bucket before the cap is applied. Accepts one or more comma-separated values (case-insensitive).
+
+Content type values:
+- `sports` — all sports channels (ESPN, TSN, DAZN, NFL, NBA, NHL, MLB, UFC, F1, etc.)
+- `movies` — movie/premium channels (HBO, Showtime, Starz, Sky Cinema, etc.)
+- `news` — news/weather/business channels
+- `kids` — children's channels (Disney, Nickelodeon, PBS Kids, Treehouse, etc.)
+- `music` — music/radio channels
+
+Region values:
+- `canada` or `ca` — Canadian channels (CBC, CTV, Global, Sportsnet, etc.)
+- `us` — US channels (NBC, CBS, ABC, Fox, PBS, etc.)
+- `na` — both Canada and US
+- `uk` or `ukie` — UK and Irish channels
+- `europe` — FR/DE/NL/BE/CH/AT/ES/PT + Nordics
+- `nordics` — SE/NO/DK/FI specifically
+- `eusouth` — IT/GR/CY/MT
+- `eueast` — PL/RU/HU/RO/CZ/BG/HR/TR/UA/etc.
+- `latam` — Latin America (AR/BR/MX/CO/CL/PE/CU)
+- `intl` — everything not matched to a specific region
+
+Classification is derived from the M3U `group-title` prefix (e.g. `US | ESPN HD` → prefix `US`) with name-keyword fallback. Channels that match either the content type or region component qualify.
+
+Example supervisor child env:
+```
+PLEX_TUNER_LINEUP_CATEGORY=sports          # all sports channels
+PLEX_TUNER_LINEUP_CATEGORY=canada          # Canadian general/news/bcast
+PLEX_TUNER_LINEUP_CATEGORY=us             # US general/news/bcast
+PLEX_TUNER_LINEUP_CATEGORY=canadamovies   # Canadian movie channels
+PLEX_TUNER_LINEUP_CATEGORY=usmovies       # US movie channels
+```
+
+Category DVR children use the full live M3U/XMLTV feed — no pre-split per-category M3U files needed.
+
+### Sharding (overflow buckets)
+
+- `PLEX_TUNER_LINEUP_SKIP` — skip the first N channels after all pre-cap filters; used for overflow buckets (e.g. `sports2`)
+- `PLEX_TUNER_LINEUP_TAKE` — take at most N channels after skip; use with `LINEUP_MAX_CHANNELS` for tight caps
+
+### HDHR wizard-lane shaping
+
+- `PLEX_TUNER_LINEUP_DROP_MUSIC` — drop music/radio channels by name heuristic (default off)
+- `PLEX_TUNER_LINEUP_SHAPE` — wizard sort profile; currently `na_en` (North American English priority) or `off`
+- `PLEX_TUNER_LINEUP_REGION_PROFILE` — regional sub-profile for wizard shape (e.g. `ca_west`, `ca_prairies`)
+- `PLEX_TUNER_LINEUP_LANGUAGE` — keep only channels matching a language guess (e.g. `en`, `fr`, `es`)
+- `PLEX_TUNER_LINEUP_EXCLUDE_REGEX` — drop channels whose `GuideName + TVGID` matches this regex
 
 Typical use:
-- broad feed HDHR lane capped to `479`
-- category DVR lanes use separate M3U inputs and no shaping
+- HDHR wizard lane: broad feed, `na_en` shape, capped to `479`, music dropped
+- Category DVR lanes: full feed, `PLEX_TUNER_LINEUP_CATEGORY` set, no shape needed
 
 ## Platform notes
 

@@ -12,19 +12,17 @@ import yaml
 
 
 CATEGORIES = [
-    "bcastus",
-    "newsus",
-    "sportsa",
-    "sportsb",
-    "moviesprem",
-    "generalent",
-    "docsfam",
-    "ukie",
-    "eunordics",
+    "sports",
+    "canada",
+    "us",
+    "canadamovies",
+    "usmovies",
+    "uk",
+    "europe",
     "eusouth",
     "eueast",
-    "latin",
-    "otherworld",
+    "latam",
+    "intl",
 ]
 
 
@@ -138,10 +136,11 @@ def parse_addr(args: list[str]) -> str:
 
 
 def build_supervisor_json(
-    multi_deploys: list[dict[str, Any]],
     hdhr_deploy: dict[str, Any],
     category_shards: list[dict[str, Any]],
     *,
+    cat_m3u_url: str,
+    cat_xmltv_url: str,
     hdhr_m3u_url: str,
     hdhr_xmltv_url: str,
     hdhr_lineup_max: int,
@@ -154,28 +153,26 @@ def build_supervisor_json(
     hdhr_lineup_shape: str,
     hdhr_lineup_region_profile: str,
 ) -> dict[str, Any]:
-    by_name = {d["metadata"]["name"]: d for d in multi_deploys}
     instances: list[dict[str, Any]] = []
 
-    # HDHR child from the existing hdhr-test deployment (inherits many envs from parent envFrom),
-    # but run it in wizard mode (no Plex DB registration) per desired testing flow.
+    # HDHR child: wizard-facing tuner. Uses network mode + SSDP so Plex's scanner
+    # finds it and presents a real channel lineup via the guided setup flow.
     hdhr_container = hdhr_deploy["spec"]["template"]["spec"]["containers"][0]
     hdhr_base = "http://plextuner-hdhr.plex.home"
     for a in hdhr_container.get("args", []):
         if isinstance(a, str) and a.startswith("-base-url="):
             hdhr_base = a.split("=", 1)[1]
             break
-    hdhr_args = [
-        "run",
-        "-mode=easy",
-        "-addr=:5004",
-        "-catalog=/data/hdhr-main/catalog.json",
-        f"-base-url={hdhr_base}",
-    ]
     instances.append(
         {
             "name": "hdhr-main",
-            "args": hdhr_args,
+            "args": [
+                "run",
+                "-mode=easy",
+                "-addr=:5004",
+                "-catalog=/data/hdhr-main/catalog.json",
+                f"-base-url={hdhr_base}",
+            ],
             "env": {
                 "PLEX_TUNER_HDHR_NETWORK_MODE": "true",
                 "PLEX_TUNER_SSDP_DISABLED": "false",
@@ -200,60 +197,67 @@ def build_supervisor_json(
                 "PLEX_TUNER_XMLTV_PREFER_LANGS": hdhr_prefer_langs,
                 "PLEX_TUNER_XMLTV_PREFER_LATIN": "true" if hdhr_prefer_latin else "false",
                 "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": hdhr_non_latin_title_fallback,
+                "PLEX_TUNER_GUIDE_NUMBER_OFFSET": "0",
             },
         }
     )
+
+    # Category DVR-injection children. Each gets the full M3U/XMLTV feed and uses
+    # PLEX_TUNER_LINEUP_CATEGORY to filter in-app — no pre-split per-category M3U needed.
+    # Guide number offsets are assigned per-base in blocks of 1000 to prevent collisions.
+    GUIDE_OFFSET_MAP: dict[str, int] = {
+        "sports":       1000,
+        "canada":       2000,
+        "us":           3000,
+        "canadamovies": 4000,
+        "usmovies":     5000,
+        "uk":           6000,
+        "europe":       7000,
+        "eusouth":      8000,
+        "eueast":       9000,
+        "latam":        10000,
+        "intl":         11000,
+    }
 
     base_port = 5101
     for idx, shard in enumerate(category_shards):
         cat = shard["name"]
         base_cat = shard["base"]
-        dep_name = f"plextuner-{base_cat}"
-        dep = by_name[dep_name]
-        c = dep["spec"]["template"]["spec"]["containers"][0]
-        env_map = env_list_to_map(c.get("env", []))
         child_port = str(base_port + idx)
+        base_offset = GUIDE_OFFSET_MAP.get(base_cat, (11 + idx) * 1000)
+        shard_i = int(shard.get("shard_index", 0))
+        # Each overflow shard gets a +100000 block to stay non-overlapping.
+        guide_offset = base_offset + shard_i * 100000
 
-        child_env = {}
-        # Preserve category-specific settings, omit common reaper/token settings provided by parent env.
-        for k in [
-            "PLEX_TUNER_M3U_URL",
-            "PLEX_TUNER_XMLTV_URL",
-            "PLEX_TUNER_LIVE_EPG_ONLY",
-            "PLEX_TUNER_EPG_PRUNE_UNLINKED",
-            "PLEX_TUNER_STREAM_TRANSCODE",
-            "PLEX_TUNER_STREAM_BUFFER_BYTES",
-            "PLEX_TUNER_LINEUP_MAX_CHANNELS",
-            "PLEX_TUNER_GUIDE_NUMBER_OFFSET",
-            "TZ",
-        ]:
-            if k in env_map:
-                child_env[k] = env_map[k]
-        # Identity signal for Plex DVR tab/title.
-        child_env["PLEX_TUNER_DEVICE_ID"] = cat
-        child_env["PLEX_TUNER_FRIENDLY_NAME"] = cat
-        # Preserve old injected DVR URI shape so Plex reinjection is unnecessary.
-        child_env["PLEX_TUNER_BASE_URL"] = f"http://plextuner-{cat}.plex.svc:5004"
-        child_env["PLEX_TUNER_SSDP_DISABLED"] = "true"
-        # Keep injected DVRs working, but make category tuners less attractive in Plex's HDHR wizard.
-        child_env["PLEX_TUNER_HDHR_SCAN_POSSIBLE"] = "false"
-        # In-app XMLTV guide text normalization (can be removed if undesired).
-        child_env["PLEX_TUNER_XMLTV_PREFER_LANGS"] = "en,eng"
-        child_env["PLEX_TUNER_XMLTV_PREFER_LATIN"] = "true"
-        child_env["PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK"] = "channel"
+        child_env: dict[str, Any] = {
+            # Feed: full live M3U + XMLTV; in-app category filter does the split.
+            "PLEX_TUNER_M3U_URL": cat_m3u_url,
+            "PLEX_TUNER_XMLTV_URL": cat_xmltv_url,
+            # In-app category filter — new mechanism replacing pre-split DVR M3U files.
+            "PLEX_TUNER_LINEUP_CATEGORY": cat if shard_i == 0 else base_cat,
+            "PLEX_TUNER_LIVE_EPG_ONLY": "true",
+            "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true",
+            "PLEX_TUNER_STREAM_TRANSCODE": "off",
+            "PLEX_TUNER_STREAM_BUFFER_BYTES": "-1",
+            "PLEX_TUNER_LINEUP_MAX_CHANNELS": "479",
+            "TZ": "America/Chicago",
+            # Identity.
+            "PLEX_TUNER_DEVICE_ID": cat,
+            "PLEX_TUNER_FRIENDLY_NAME": cat,
+            "PLEX_TUNER_BASE_URL": f"http://plextuner-{cat}.plex.svc:5004",
+            "PLEX_TUNER_SSDP_DISABLED": "true",
+            "PLEX_TUNER_HDHR_SCAN_POSSIBLE": "false",
+            # Guide normalization.
+            "PLEX_TUNER_XMLTV_PREFER_LANGS": "en,eng",
+            "PLEX_TUNER_XMLTV_PREFER_LATIN": "true",
+            "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": "channel",
+            "PLEX_TUNER_GUIDE_NUMBER_OFFSET": str(guide_offset),
+        }
+
         if int(shard.get("skip", 0)) > 0:
             child_env["PLEX_TUNER_LINEUP_SKIP"] = str(int(shard["skip"]))
         if int(shard.get("take", 0)) > 0:
             child_env["PLEX_TUNER_LINEUP_TAKE"] = str(int(shard["take"]))
-        # Prevent guide-number collisions across overflow shards when a base category
-        # already has a guide offset configured.
-        if int(shard.get("shard_index", 0)) > 0:
-            base_off = 0
-            try:
-                base_off = int(child_env.get("PLEX_TUNER_GUIDE_NUMBER_OFFSET", "0"))
-            except ValueError:
-                base_off = 0
-            child_env["PLEX_TUNER_GUIDE_NUMBER_OFFSET"] = str(base_off + (int(shard["shard_index"]) * 100000))
 
         instances.append(
             {
@@ -436,6 +440,16 @@ def main() -> int:
     )
     ap.add_argument("--hdhr-m3u-url", default="", help="Override HDHR wizard-feed M3U URL")
     ap.add_argument("--hdhr-xmltv-url", default="", help="Override HDHR wizard-feed XMLTV URL")
+    ap.add_argument(
+        "--cat-m3u-url",
+        default="http://iptv-m3u-server.plex.svc/live.m3u",
+        help="M3U URL for category DVR children (full feed; in-app PLEX_TUNER_LINEUP_CATEGORY filters it)",
+    )
+    ap.add_argument(
+        "--cat-xmltv-url",
+        default="http://iptv-m3u-server.plex.svc/xmltv.xml",
+        help="XMLTV URL for category DVR children",
+    )
     ap.add_argument("--category-counts-json", default="", help="Optional JSON file with confirmed linked counts per base category for auto-overflow shard creation")
     ap.add_argument("--category-cap", type=int, default=479, help="Per-category confirmed linked-channel cap before creating overflow shards (default: 479)")
     ap.add_argument("--hdhr-lineup-max", type=int, default=-1, help="Override HDHR child lineup max (wizard-safe default from preset)")
@@ -452,7 +466,6 @@ def main() -> int:
     args = ap.parse_args()
 
     root = Path(args.k3s_plex_dir)
-    multi = load_yaml_docs(root / "plextuner-deployments-multi.yaml")
     hdhr = load_yaml_docs(root / "plextuner-hdhr-test-deployment.yaml")[0]
     image = hdhr["spec"]["template"]["spec"]["containers"][0]["image"]
 
@@ -474,9 +487,10 @@ def main() -> int:
     hdhr_stream_transcode = args.hdhr_stream_transcode or preset["stream_transcode"]
 
     sup = build_supervisor_json(
-        multi,
         hdhr,
         category_shards,
+        cat_m3u_url=args.cat_m3u_url,
+        cat_xmltv_url=args.cat_xmltv_url,
         hdhr_m3u_url=hdhr_m3u_url,
         hdhr_xmltv_url=hdhr_xmltv_url,
         hdhr_lineup_max=hdhr_lineup_max,
@@ -497,9 +511,8 @@ def main() -> int:
     (root / args.out_tsv).write_text(tsv)
 
     print(f"HDHR preset: {preset_name} (timezone/country/postal used locally; not echoed)")
-    if category_counts:
-        overflowed = [s for s in category_shards if s["name"] != s["base"]]
-        print(f"Category shards: {len(category_shards)} instances from {len(CATEGORIES)} bases (overflow shards={len(overflowed)})")
+    overflowed = [s for s in category_shards if s["name"] != s["base"]]
+    print(f"Category shards: {len(category_shards)} instances from {len(CATEGORIES)} bases (overflow shards={len(overflowed)})")
     print(f"Wrote {root / args.out_json}")
     print(f"Wrote {root / args.out_yaml}")
     print(f"Wrote {root / args.out_tsv}")

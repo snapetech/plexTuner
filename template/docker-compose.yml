@@ -1,0 +1,15 @@
+# Docker Compose template - customize for your project
+# 1. Copy .env.example to .env and set your configuration
+# 2. docker compose up -d
+# 3. Verify: curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health  # expect 200
+
+services:
+  app:
+    build: .
+    image: your-app:local
+    ports:
+      - "8080:8080"
+    env_file: .env
+    # Replace with your application's command
+    command: ["--port", "8080"]
+    restart: unless-stopped

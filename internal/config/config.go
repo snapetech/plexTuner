@@ -21,6 +21,14 @@ type Config struct {
 	ProviderPass    string
 	M3UURL          string // optional: full M3U URL if different from base
 
+	// Second provider (PLEX_TUNER_PROVIDER_USER_2 / PASS_2 / URL_2 / M3U_URL_2).
+	// When set, live channels from this provider are merged (deduped) into the primary
+	// catalog after the primary fetch. VOD from the second provider is ignored.
+	ProviderUser2 string
+	ProviderPass2 string
+	ProviderURL2  string
+	M3UURL2       string
+
 	// Paths
 	MountPoint      string // e.g. /mnt/vodfs
 	CacheDir        string // e.g. /var/cache/plextuner
@@ -71,6 +79,10 @@ func Load() *Config {
 		ProviderUser:         os.Getenv("PLEX_TUNER_PROVIDER_USER"),
 		ProviderPass:         os.Getenv("PLEX_TUNER_PROVIDER_PASS"),
 		M3UURL:               getEnvURL("PLEX_TUNER_M3U_URL"),
+		ProviderUser2:        os.Getenv("PLEX_TUNER_PROVIDER_USER_2"),
+		ProviderPass2:        os.Getenv("PLEX_TUNER_PROVIDER_PASS_2"),
+		ProviderURL2:         getEnvURL("PLEX_TUNER_PROVIDER_URL_2"),
+		M3UURL2:              getEnvURL("PLEX_TUNER_M3U_URL_2"),
 		MountPoint:           getEnv("PLEX_TUNER_MOUNT", "/mnt/vodfs"),
 		CacheDir:             getEnv("PLEX_TUNER_CACHE", "/var/cache/plextuner"),
 		CatalogPath:          getEnv("PLEX_TUNER_CATALOG", "./catalog.json"),
@@ -209,6 +221,21 @@ func (c *Config) M3UURLsOrBuild() []string {
 		out = append(out, base+"/get.php?username="+url.QueryEscape(user)+"&password="+url.QueryEscape(pass)+"&type=m3u_plus&output=ts")
 	}
 	return out
+}
+
+// SecondM3UURL returns the M3U URL for the second provider, if configured.
+// It uses PLEX_TUNER_M3U_URL_2 directly, or builds from PLEX_TUNER_PROVIDER_URL_2 +
+// PLEX_TUNER_PROVIDER_USER_2 + PLEX_TUNER_PROVIDER_PASS_2.
+func (c *Config) SecondM3UURL() string {
+	if c.M3UURL2 != "" {
+		return c.M3UURL2
+	}
+	if c.ProviderURL2 != "" && c.ProviderUser2 != "" && c.ProviderPass2 != "" {
+		base := strings.TrimSuffix(c.ProviderURL2, "/")
+		return base + "/get.php?username=" + url.QueryEscape(c.ProviderUser2) +
+			"&password=" + url.QueryEscape(c.ProviderPass2) + "&type=m3u_plus&output=ts"
+	}
+	return ""
 }
 
 // ProviderURLs returns all base URLs to try (PLEX_TUNER_PROVIDER_URLS comma-separated, or single PLEX_TUNER_PROVIDER_URL).

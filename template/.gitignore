@@ -1,0 +1,138 @@
+# =========================
+# Secrets / local config
+# =========================
+.env
+.env.*
+!.env.example
+
+# TLS / certs / keys (local dev PKI)
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+
+# SSH keys (just in case someone drops one in the repo)
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+
+# =========================
+# Build / dist (any language)
+# =========================
+/bin/
+/dist/
+/out/
+/build/
+
+# =========================
+# Go
+# =========================
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+
+# =========================
+# Node
+# =========================
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.npm
+.yarn-integrity
+.pnp.*
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+ENV/
+*.egg-info/
+.eggs/
+
+# =========================
+# Rust
+# =========================
+target/
+
+# =========================
+# Coverage / profiles (any language)
+# =========================
+coverage/
+cover.out
+coverage.out
+coverage.txt
+*.prof
+*.pprof
+cpu.prof
+mem.prof
+trace.out
+
+# =========================
+# Logs / temp files
+# =========================
+*.log
+*.tmp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# =========================
+# Editor / IDE
+# =========================
+.idea/
+*.iml
+
+# VS Code: keep recommended settings if you want them committed
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+
+# =========================
+# OS / tooling
+# =========================
+.direnv/
+.envrc
+
+# =========================
+# Docker / Compose local overrides
+# =========================
+docker-compose.override.yml
+compose.override.yml
+
+# =========================
+# Project-specific (add your project's build artifacts)
+# =========================
+# Add your project's generated files here
+# Example: /your-app
+# Example: *.generated.go
+
+# =========================
+# Databases (local dev)
+# =========================
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+
+# Agent CLI local config (per-user, do not commit)
+.claude/settings.local.json
+opencode.json
+.claude/
+.cursor/

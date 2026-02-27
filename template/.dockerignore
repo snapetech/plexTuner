@@ -1,0 +1,35 @@
+# Don't send secrets or local artifacts into the build context
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite*
+catalog.json
+# /plex-tuner not ignored so Dockerfile.static can COPY it
+
+# Git and IDE
+.git
+.gitignore
+.idea
+.vscode
+
+# Docs and extras (not needed for build)
+docs/
+extras/
+memory-bank/
+*.md
+
+# Scripts and k8s (not needed for image build)
+scripts/
+k8s/
+.pre-commit-config.yaml
+.github
+
+# Build output and caches
+/bin
+/dist
+/out
+*.exe
+*.test
+coverage.*
+*.prof

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Verification script: runs project-defined checks (any language).
+# CI runs only this script. Define your steps in scripts/verify-steps.sh
+# and keep memory-bank/commands.yml in sync for agent reference.
+
+set -e
+cd "$(dirname "$0")/.."
+
+if [[ -x scripts/verify-steps.sh ]]; then
+  ./scripts/verify-steps.sh
+  echo "==> verify OK"
+else
+  echo "==> No scripts/verify-steps.sh; add your format/lint/test/build there (see scripts/verify-steps.sh.example)."
+  echo "==> verify OK (template default)"
+fi

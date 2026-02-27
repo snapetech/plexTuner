@@ -2,11 +2,42 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Goal:** Add and validate an in-app VOD Plex library registration path (`plex-vod-register`) so mounted VODFS content can be created/reused in Plex as `VOD` (TV) and `VOD-Movies` (Movies), and document the remaining k8s test-environment blocker for making the IPTV VOD mount visible to the Plex pod.
+**Goal:** ~~Complete in-cluster oracle-cap matrix testing~~ DONE (2026-02-27). Next: wire provider2 (trex/dambora) into live cluster, run merge, re-run oracle to see if provider2 channels improve EPG coverage.
 
-**Scope:** In: in-app CLI/API support for Plex library section create/reuse/refresh, docs/reference updates, live PMS API validation against the test Plex server, and documenting the VODFS mount-visibility constraint in k8s. Out: redesigning VODFS away from FUSE, invasive Plex deployment privilege/mount-propagation changes, or implementing a brand-new non-filesystem VOD library ingestion path.
+**Scope:** In: create in-cluster oracle-cap helper pod with unique device identities per cap, run plex-epg-oracle against cluster Services, harvest cap→channelmap rows, update alias/override improvements. Out: redesigning EPG matching logic or modifying existing category DVR deployments.
 
 **Last updated:** 2026-02-26
+
+**Oracle-cap in-cluster setup (2026-02-26):**
+- Created `k8s/plextuner-supervisor-oracle.example.json` supervisor config with 6 oracle-cap instances:
+  - oracle100 (port 5201, cap 100, DeviceID oracle100)
+  - oracle200 (port 5202, cap 200, DeviceID oracle200)
+  - oracle300 (port 5203, cap 300, DeviceID oracle300)
+  - oracle400 (port 5204, cap 400, DeviceID oracle400)
+  - oracle479 (port 5205, cap 479, DeviceID oracle479)
+  - oracle600 (port 5206, cap 600, DeviceID oracle600)
+- Each uses PLEX_TUNER_LINEUP_LANGUAGE=en to filter to English channels
+- Each sets PLEX_TUNER_HDHR_SCAN_POSSIBLE=false to avoid wizard noise
+- Created `k8s/plextuner-oracle-cap.yaml` with Deployment + Services for cluster access
+- Committed prior pass changes: oracle registration fallback + language filter
+
+**Oracle-cap findings (2026-02-27):**
+- All 6 caps (100/200/300/400/479/600) produce identical results: **479 channelmap rows, 415 with EPG lineup_id**.
+- Plex channelmap is deterministic and cap-independent for this provider/language-filtered lineup.
+- EPG match rate on the in-cluster catalog: **6242/6248 (99.9%)** — all via `tvg_id_exact`.
+- 6 unmatched channels: 5 Albanian (`GOLD: KINO 1/2/3`, `GOLD: EPISODE`, `GOLD: PRIME`) + 1 Polish Unicode channel. Corner cases only.
+- Oracle alias suggestions: **0 new mappings** — no gap to close via oracle data on current catalog.
+- Conclusion: EPG matching is essentially solved for provider1. Focus shifts to provider2 (trex/dambora) merge.
+
+**Next steps:**
+1. Wire `PLEX_TUNER_PROVIDER_USER_2/PASS_2/URL_2/M3U_URL_2` into the running iptv-m3u-server or supervisor env
+2. Trigger catalog refresh to merge provider2 channels
+3. Re-run oracle to check if provider2 adds new EPG-matchable channels
+
+**Prior pass status:**
+- Baseline deterministic report: complete and useful
+- Plex oracle matrix: tooling works, but test harness path was invalid (Plex could not reach local disposable tuners)
+- Fix: now using in-cluster Services instead of localhost ports
 
 **Current focus shift (EPG long-tail, 2026-02-26):**
 - Began Phase 1 implementation of the documented EPG-linking pipeline (`docs/reference/epg-linking-pipeline.md`) with a **report-only** in-app CLI:
@@ -358,6 +389,29 @@ Questions (ONLY if blocked or high-risk ambiguity):
 **Verification unblock (2026-02-26 late):**
 - Fixed the pre-existing failing `internal/tuner` startup-signal test (`TestLooksLikeGoodTSStartDetectsSplitIDRStartCodeAcrossPackets`) by correcting the synthetic TS packet helper in `gateway_startsignal_test.go` to use adaptation stuffing for short payloads instead of padding bytes in the payload region.
 - This restores realistic packet-boundary semantics for the cross-packet Annex-B IDR detection test and makes `./scripts/verify` green again.
+**Multi-source merge + oracle alias pipeline (2026-02-26):**
+- Added second-provider config fields to `internal/config/config.go`: `ProviderUser2`, `ProviderPass2`, `ProviderURL2`, `M3UURL2` loaded from `PLEX_TUNER_PROVIDER_USER_2`, `PASS_2`, `URL_2`, `M3U_URL_2`. New `SecondM3UURL()` helper builds the fetch URL.
+- Added `MergeLiveChannels(primary, secondary []LiveChannel, sourceTag string)` to `internal/indexer/m3u.go`: dedup by `tvg-id` (primary key) then normalized stream-URL (credential query stripped). Merged channels tagged `source_tag=provider2` in catalog.
+- Added `SourceTag` field to `catalog.LiveChannel` (`source_tag`, omitempty).
+- Wired merge into `fetchCatalog`: after primary fetch, if `SecondM3UURL()` non-empty, fetches and merges (logs added/total).
+- Added `FetchTunerLineup(baseURL)` to `internal/plex/dvr.go`: fetches `/lineup.json` and returns `[]catalog.LiveChannel` with GuideNumber/GuideName; used by oracle command to annotate channel names alongside channelmap rows.
+- Extended `plex-epg-oracle` oracle result output to include full `channels[]` rows (guide_name, guide_number, tvg_id, lineup_identifier) in addition to the count, enabling downstream alias suggestion.
+- Added to `internal/epglink/epglink.go`:
+  - `OracleChannelRow`, `OracleReport`, `AliasSuggestion` types
+  - `SuggestAliasesFromOracle(oracle, linkReport, xmltv)` — correlates unmatched channels in the link report against oracle channelmap by normalized name; returns suggestions + ready-to-use `name_to_xmltv_id` map
+  - `LoadOracleReport(r)` — parses oracle JSON output
+- Added `-oracle-report` and `-suggest-out` flags to `epg-link-report`: when oracle report is provided, suggestions are logged and written to `-suggest-out` (output is alias-file compatible; pass directly as `-aliases` on next run).
+- Updated `docs/reference/cli-and-env-reference.md`: second-provider envs, multi-source merge description, oracle-assisted alias workflow, updated oracle command notes.
+- Verification: green.
+
+**In-app category filter + DVR sync (2026-02-26, resumed after crash):**
+- Added `GroupTitle` field to `catalog.LiveChannel` and populated it from `group-title` M3U attribute during indexing.
+- Added `PLEX_TUNER_LINEUP_CATEGORY` env-controlled in-app lineup filter in `internal/tuner/server.go` (`classifyLiveChannel`, `liveChannelMatchesCategory`). Category children now use the full feed + this filter instead of pre-split per-category M3U files.
+- Added `plex-dvr-sync` CLI subcommand (`internal/plex/dvr_sync.go` + `dvr_sync_test.go`): idempotent reconcile of injected DVR tuners against Plex, driven by supervisor JSON config or explicit `-base-urls/-device-ids` flags. Key behaviors: create-on-missing, URI-drift patch, reload+re-activate on existing, optional `--delete-unknown` (skips real Silicondust HDHR rows).
+- Updated `scripts/generate-k3s-supervisor-manifests.py` to use new category names (`sports`, `canada`, `us`, `canadamovies`, `usmovies`, `uk`, `europe`, `eusouth`, `eueast`, `latam`, `intl`) with `PLEX_TUNER_LINEUP_CATEGORY` env per child; no longer reads per-category deployment YAMLs (removed `multi` arg). Added `--cat-m3u-url`/`--cat-xmltv-url` CLI flags.
+- Updated `docs/reference/cli-and-env-reference.md` with category filter values + `plex-dvr-sync` command.
+- Verification: green (gofmt fix applied to `dvr_sync_test.go`, all tests pass).
+
 ## Current Focus (2026-02-26 late, VODFS/Plex VOD bring-up)
 
 - VODFS/Plex VOD import path is now largely fixed and **TV subset imports are confirmed working**.

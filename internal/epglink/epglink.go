@@ -309,3 +309,126 @@ func pct(a, b int) float64 {
 	}
 	return float64(a) * 100 / float64(b)
 }
+
+// OracleChannelRow mirrors the JSON shape written by the plex-epg-oracle command
+// for each channel mapping row. Only the fields needed for alias suggestion are used.
+type OracleChannelRow struct {
+	GuideNumber      string `json:"guide_number"`
+	GuideName        string `json:"guide_name"`
+	TVGID            string `json:"tvg_id"`
+	LineupIdentifier string `json:"lineup_identifier"` // XMLTV channel ID Plex oracle matched
+}
+
+// OracleReport mirrors the top-level shape of plex-epg-oracle JSON output.
+type OracleReport struct {
+	Results []struct {
+		Channels []OracleChannelRow `json:"channels"`
+	} `json:"results"`
+}
+
+// AliasSuggestion is one proposed name→xmltv_id mapping derived from oracle data.
+type AliasSuggestion struct {
+	GuideName        string `json:"guide_name"`
+	NormalizedName   string `json:"normalized_name"`
+	LineupIdentifier string `json:"lineup_identifier"` // suggested XMLTV channel ID
+	OracleConfidence string `json:"oracle_confidence"` // "tvg_id_match" | "name_match" | "name_only"
+	TVGID            string `json:"current_tvg_id,omitempty"`
+}
+
+// SuggestAliasesFromOracle reads an oracle report and a current EPG-link report and
+// returns alias suggestions for channels that are unmatched in the link report but
+// appear in the oracle channelmap.
+//
+// Strategy:
+//  1. Build a map of normalized guide name → LineupIdentifier from oracle rows.
+//  2. For each unmatched channel in the link report, look up by normalized name.
+//  3. If the oracle mapped it to a LineupIdentifier that is a valid XMLTV ID, emit a suggestion.
+//
+// The returned map is suitable for use as AliasOverrides.NameToXMLTVID.
+func SuggestAliasesFromOracle(oracle OracleReport, linkReport Report, xmltv []XMLTVChannel) ([]AliasSuggestion, map[string]string) {
+	// Index valid XMLTV IDs.
+	validXMLTV := make(map[string]struct{}, len(xmltv))
+	for _, ch := range xmltv {
+		if id := strings.TrimSpace(ch.ID); id != "" {
+			validXMLTV[strings.ToLower(id)] = struct{}{}
+		}
+	}
+
+	// Build normalized-name → best LineupIdentifier from oracle (prefer tvg_id match, then first seen).
+	type oracleEntry struct {
+		lineupID   string
+		confidence string
+	}
+	oracleByNorm := map[string]oracleEntry{}
+	for _, result := range oracle.Results {
+		for _, row := range result.Channels {
+			lid := strings.TrimSpace(row.LineupIdentifier)
+			if lid == "" {
+				continue
+			}
+			// If the oracle row itself already has a tvg-id that matches the lineup_identifier,
+			// that's highest confidence.
+			confidence := "name_only"
+			if tvg := strings.TrimSpace(row.TVGID); tvg != "" {
+				if strings.EqualFold(tvg, lid) {
+					confidence = "tvg_id_match"
+				}
+			}
+			norm := NormalizeName(row.GuideName)
+			if norm == "" {
+				continue
+			}
+			if existing, ok := oracleByNorm[norm]; !ok || confidence == "tvg_id_match" && existing.confidence != "tvg_id_match" {
+				oracleByNorm[norm] = oracleEntry{lineupID: lid, confidence: confidence}
+			}
+		}
+	}
+
+	// Find unmatched channels from the link report.
+	var suggestions []AliasSuggestion
+	aliasMap := map[string]string{}
+	for _, row := range linkReport.Rows {
+		if row.Matched {
+			continue
+		}
+		norm := row.Normalized
+		if norm == "" {
+			continue
+		}
+		entry, ok := oracleByNorm[norm]
+		if !ok {
+			continue
+		}
+		// Only suggest if the lineup_identifier is a known XMLTV ID.
+		if _, valid := validXMLTV[strings.ToLower(entry.lineupID)]; !valid {
+			continue
+		}
+		suggestions = append(suggestions, AliasSuggestion{
+			GuideName:        row.GuideName,
+			NormalizedName:   norm,
+			LineupIdentifier: entry.lineupID,
+			OracleConfidence: entry.confidence,
+			TVGID:            row.TVGID,
+		})
+		aliasMap[norm] = entry.lineupID
+	}
+
+	sort.Slice(suggestions, func(i, j int) bool {
+		if suggestions[i].OracleConfidence != suggestions[j].OracleConfidence {
+			// tvg_id_match > name_only
+			return suggestions[i].OracleConfidence < suggestions[j].OracleConfidence
+		}
+		return strings.ToLower(suggestions[i].GuideName) < strings.ToLower(suggestions[j].GuideName)
+	})
+
+	return suggestions, aliasMap
+}
+
+// LoadOracleReport parses a plex-epg-oracle JSON output file.
+func LoadOracleReport(r io.Reader) (OracleReport, error) {
+	var rep OracleReport
+	if err := json.NewDecoder(r).Decode(&rep); err != nil {
+		return OracleReport{}, fmt.Errorf("parse oracle report: %w", err)
+	}
+	return rep, nil
+}

@@ -1,0 +1,25 @@
+# Authoritative verification commands (machine-readable).
+# CI runs scripts/verify, which runs scripts/verify-steps.sh.
+# Keep this file in sync with scripts/verify-steps.sh for agent reference.
+
+# TODO: Replace with your project's commands
+bootstrap: "N/A"
+format: "N/A  # Add your format command"
+lint: "N/A  # Add your lint command"
+typecheck: "N/A  # Add your typecheck command"
+test: "N/A  # Add your test command"
+integration_test: "N/A  # Add integration test command"
+build: "N/A  # Add your build command"
+run: "N/A  # Add your run command"
+run_single_test: "N/A  # Add single test command"
+clean: "N/A  # Add your clean command"
+
+# Verification order (scripts/verify-steps.sh)
+verify_steps:
+  - format
+  - lint
+  - test
+  - build
+
+# Short / QA helpers
+quick_verify: "scripts/verify"

@@ -126,7 +126,6 @@ func applyLineupPreCapFilters(live []catalog.LiveChannel) []catalog.LiveChannel 
 	if len(live) == 0 {
 		return live
 	}
-	before := len(live)
 	out := live
 	if envBool("PLEX_TUNER_LINEUP_DROP_MUSIC", false) {
 		filtered := make([]catalog.LiveChannel, 0, len(out))
@@ -177,12 +176,227 @@ func applyLineupPreCapFilters(live []catalog.LiveChannel) []catalog.LiveChannel 
 			}
 		}
 	}
-	if len(out) != before {
-		// Continue with optional wizard-shaping reordering before cap.
+	if cat := strings.TrimSpace(os.Getenv("PLEX_TUNER_LINEUP_CATEGORY")); cat != "" && cat != "all" {
+		filtered := make([]catalog.LiveChannel, 0, len(out))
+		dropped := 0
+		for _, ch := range out {
+			if liveChannelMatchesCategory(ch, cat) {
+				filtered = append(filtered, ch)
+			} else {
+				dropped++
+			}
+		}
+		log.Printf("Lineup pre-cap filter: category=%s kept=%d dropped=%d", cat, len(filtered), dropped)
+		out = filtered
 	}
 	out = applyLineupWizardShape(out)
 	out = applyLineupShard(out)
 	return out
+}
+
+// classifyLiveChannel derives coarse content-type and region from a LiveChannel's
+// GroupTitle and GuideName. The classification mirrors the external split-m3u.py
+// logic so that in-app PLEX_TUNER_LINEUP_CATEGORY filtering produces the same
+// buckets as the external splitter.
+//
+// Content type values: sports, movies, news, kids, music, general
+// Region values: ca, us, na (either CA or US), uk, ie, ukie, europe, nordics,
+//
+//	eusouth, eueast, latam, mena, intl
+func classifyLiveChannel(ch catalog.LiveChannel) (contentType, region string) {
+	group := strings.ToUpper(strings.TrimSpace(ch.GroupTitle))
+	name := strings.ToUpper(strings.TrimSpace(ch.GuideName))
+	tvg := strings.ToUpper(strings.TrimSpace(ch.TVGID))
+	all := " " + group + " " + name + " " + tvg + " "
+
+	// --- Region from group-title prefix (e.g. "US | ESPN HD" → prefix = "US") ---
+	prefix := ""
+	if idx := strings.Index(group, "|"); idx > 0 {
+		prefix = strings.TrimSpace(group[:idx])
+	} else if idx := strings.Index(group, ":"); idx > 0 {
+		prefix = strings.TrimSpace(group[:idx])
+	}
+
+	switch prefix {
+	case "CA", "CAN":
+		region = "ca"
+	case "US", "USA":
+		region = "us"
+	case "UK", "GB":
+		region = "uk"
+	case "IE":
+		region = "ukie"
+	case "SE", "NO", "DK", "FI":
+		region = "nordics"
+	case "FR", "DE", "NL", "BE", "CH", "AT":
+		region = "europe"
+	case "IT", "GR", "CY", "MT":
+		region = "eusouth"
+	case "ES", "PT":
+		region = "europe"
+	case "PL", "RU", "SR", "HU", "RO", "CZ", "BG", "AL", "HR", "TR", "MK", "BA", "SI", "UA":
+		region = "eueast"
+	case "AR", "BR", "MX", "CO", "CL", "PE", "CU":
+		region = "latam"
+	}
+
+	// Fallback region from tvg-id TLD.
+	if region == "" {
+		switch {
+		case strings.HasSuffix(tvg, ".CA"):
+			region = "ca"
+		case strings.HasSuffix(tvg, ".US"):
+			region = "us"
+		case strings.HasSuffix(tvg, ".UK"), strings.HasSuffix(tvg, ".GB"):
+			region = "uk"
+		}
+	}
+
+	// Fallback region from name keywords.
+	if region == "" {
+		switch {
+		case liveHasAny(all, " CBC ", " CTV ", " CITY TV ", " CITYTV ", " OMNI ", " NOOVO ", " TVA "):
+			region = "ca"
+		case liveHasAny(all, " NBC ", " CBS ", " ABC ", " FOX ", " PBS ", " CW "):
+			region = "us"
+		case liveHasAny(all, " BBC ", " ITV ", " CHANNEL 4 ", " SKY ONE ", " CHANNEL 5 "):
+			region = "uk"
+		}
+	}
+
+	if region == "" {
+		region = "intl"
+	}
+
+	// --- Content type ---
+	switch {
+	case liveHasAny(all,
+		" SPORT", "SPORTS", " ESPN", " TSN ", " DAZN ", " BEIN SPORT",
+		" NFL ", " NBA ", " NHL ", " MLB ", " UFC ", " WWE ",
+		" F1 ", " FORMULA 1 ", " MOTOGP ", " PREMIER LEAGUE ", " BUNDESLIGA ",
+		" LALIGA ", " SERIE A ", " CHAMPIONS LEAGUE ", " SPORTSNET ", " SPORTSCENTRE "):
+		contentType = "sports"
+	case liveHasAny(all,
+		" NEWS", " BUSINESS ", " WEATHER NETWORK ", " CNN ", " FOX NEWS ", " MSNBC ",
+		" CNBC ", " BLOOMBERG ", " AL JAZEERA ", " FRANCE 24 ", " SKY NEWS ",
+		" CP24 ", " LCN ", " BNN "):
+		contentType = "news"
+	case liveHasAny(all,
+		" MOVIE", " MOVIES", " CINEMA", " FILM", " HBO ", " SHOWTIME ", " STARZ ",
+		" CINEMAX ", " EPIX ", " MGM+", " SKY CINEMA"):
+		contentType = "movies"
+	case liveHasAny(all,
+		" KIDS", " CARTOON", " ANIME", " DISNEY ", " DISNEY JR", " DISNEY XD",
+		" NICKELODEON", " NICK JR", " PBS KIDS", " TREEHOUSE", " FAMILY CHANNEL",
+		" TELETOON", " BABY", " BAMBINI"):
+		contentType = "kids"
+	case liveHasAny(all,
+		"MUSIC", " RADIO ", " STINGRAY ", " VEVO ", " MTV ", " MUCHMUSIC ",
+		"KARAOKE", "JUKEBOX", " MEZZO ", " CLUBBING "):
+		contentType = "music"
+	default:
+		contentType = "general"
+	}
+	return contentType, region
+}
+
+// liveChannelMatchesCategory returns true when the channel belongs to the
+// requested category bucket. Category values match the new DVR bucket names
+// (case-insensitive). Multiple comma-separated values are supported.
+//
+// Supported values:
+//
+//	canada, us, na, sports, movies, news, kids, music, general,
+//	uk, ukie, europe, nordics, eusouth, eueast, latam, mena, intl
+func liveChannelMatchesCategory(ch catalog.LiveChannel, want string) bool {
+	ctype, region := classifyLiveChannel(ch)
+	for _, w := range strings.Split(strings.ToLower(want), ",") {
+		w = strings.TrimSpace(w)
+		switch w {
+		case "canada", "ca":
+			if region == "ca" {
+				return true
+			}
+		case "us":
+			if region == "us" {
+				return true
+			}
+		case "na":
+			if region == "ca" || region == "us" {
+				return true
+			}
+		case "sports":
+			if ctype == "sports" {
+				return true
+			}
+		case "movies":
+			if ctype == "movies" {
+				return true
+			}
+		case "news":
+			if ctype == "news" {
+				return true
+			}
+		case "kids":
+			if ctype == "kids" {
+				return true
+			}
+		case "music":
+			if ctype == "music" {
+				return true
+			}
+		case "general":
+			if ctype == "general" {
+				return true
+			}
+		case "uk":
+			if region == "uk" || region == "ukie" {
+				return true
+			}
+		case "ukie":
+			if region == "uk" || region == "ukie" {
+				return true
+			}
+		case "europe":
+			if region == "europe" || region == "nordics" || region == "eusouth" || region == "eueast" || region == "uk" || region == "ukie" {
+				return true
+			}
+		case "nordics":
+			if region == "nordics" {
+				return true
+			}
+		case "eusouth":
+			if region == "eusouth" {
+				return true
+			}
+		case "eueast":
+			if region == "eueast" {
+				return true
+			}
+		case "latam":
+			if region == "latam" {
+				return true
+			}
+		case "mena":
+			if region == "mena" {
+				return true
+			}
+		case "intl":
+			if region == "intl" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func liveHasAny(s string, needles ...string) bool {
+	for _, n := range needles {
+		if strings.Contains(s, n) {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeLineupLangFilter(v string) string {

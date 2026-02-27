@@ -86,6 +86,7 @@ func parseM3UBody(r interface {
 			StreamURLs:  urls,
 			EPGLinked:   tvgID != "",
 			TVGID:       tvgID,
+			GroupTitle:  extinf["group-title"],
 		}
 		out = append(out, ch)
 		extinf = nil
@@ -111,6 +112,73 @@ func parseM3UBody(r interface {
 	}
 	emit()
 	return out
+}
+
+// MergeLiveChannels merges secondary channels into primary, deduplicating by
+// tvg-id (when both have one) and by normalized stream-URL hostname+path (when
+// tvg-id is absent). Channels that survive dedup are tagged with the given
+// sourceTag and appended after the primary list.
+//
+// Dedup policy:
+//   - If a secondary channel has a tvg-id that already exists in primary → skip.
+//   - If a secondary channel has no tvg-id and its primary stream URL (host+path)
+//     already exists in primary → skip.
+//   - Otherwise append.
+//
+// The primary list is returned unchanged (no tagging). This preserves the
+// caller's ability to detect which channels came from each provider by
+// checking SourceTag on the returned extras.
+func MergeLiveChannels(primary, secondary []catalog.LiveChannel, sourceTag string) []catalog.LiveChannel {
+	seenTVGID := make(map[string]struct{}, len(primary))
+	seenURLKey := make(map[string]struct{}, len(primary))
+	for _, ch := range primary {
+		if tid := strings.ToLower(strings.TrimSpace(ch.TVGID)); tid != "" {
+			seenTVGID[tid] = struct{}{}
+		}
+		if key := streamURLKey(ch.StreamURL); key != "" {
+			seenURLKey[key] = struct{}{}
+		}
+	}
+	var extras []catalog.LiveChannel
+	for _, ch := range secondary {
+		tid := strings.ToLower(strings.TrimSpace(ch.TVGID))
+		if tid != "" {
+			if _, dup := seenTVGID[tid]; dup {
+				continue
+			}
+		} else {
+			key := streamURLKey(ch.StreamURL)
+			if key != "" {
+				if _, dup := seenURLKey[key]; dup {
+					continue
+				}
+			}
+		}
+		if sourceTag != "" {
+			ch.SourceTag = sourceTag
+		}
+		extras = append(extras, ch)
+		if tid != "" {
+			seenTVGID[tid] = struct{}{}
+		}
+		if key := streamURLKey(ch.StreamURL); key != "" {
+			seenURLKey[key] = struct{}{}
+		}
+	}
+	return append(primary, extras...)
+}
+
+// streamURLKey returns a dedup key for a stream URL: lower-cased host+path,
+// stripping any query string (credentials/tokens differ per provider).
+func streamURLKey(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return ""
+	}
+	if idx := strings.Index(rawURL, "?"); idx >= 0 {
+		rawURL = rawURL[:idx]
+	}
+	return strings.ToLower(rawURL)
 }
 
 // parseEXTINF parses #EXTINF:-1 key="val" key2="val2",Title into a map.

@@ -172,6 +172,21 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 		return res, fmt.Errorf("need -m3u URL or set PLEX_TUNER_PROVIDER_USER and PLEX_TUNER_PROVIDER_PASS in .env")
 	}
 
+	// Second provider live merge: only use when stream URLs are confirmed NOT
+	// Cloudflare-routed. Provider2 (dambora) was found to route all streams via
+	// Cloudflare and was excluded. See opportunities.md for CF detection work item.
+	if secondURL := cfg.SecondM3UURL(); secondURL != "" {
+		_, _, secondary, err2 := indexer.ParseM3U(secondURL, nil)
+		if err2 != nil {
+			log.Printf("Second provider M3U fetch failed (continuing with primary only): %v", err2)
+		} else {
+			before := len(res.Live)
+			res.Live = indexer.MergeLiveChannels(res.Live, secondary, "provider2")
+			log.Printf("Merged second provider: primary=%d secondary=%d merged=%d added=%d",
+				before, len(secondary), len(res.Live), len(res.Live)-before)
+		}
+	}
+
 	// Enrich and sort VOD content deterministically so downstream VODFS and future
 	// catch-up/category library splits do not depend on provider ordering.
 	res.Movies, res.Series = catalog.ApplyVODTaxonomy(res.Movies, res.Series)
@@ -278,6 +293,17 @@ func main() {
 	superviseCmd := flag.NewFlagSet("supervise", flag.ExitOnError)
 	superviseConfig := superviseCmd.String("config", "", "JSON supervisor config (instances[] with args/env)")
 
+	dvrSyncCmd := flag.NewFlagSet("plex-dvr-sync", flag.ExitOnError)
+	dvrSyncPlexURL := dvrSyncCmd.String("plex-url", "", "Plex base URL (default: PLEX_TUNER_PMS_URL or http://PLEX_HOST:32400)")
+	dvrSyncToken := dvrSyncCmd.String("token", "", "Plex token (default: PLEX_TUNER_PMS_TOKEN or PLEX_TOKEN)")
+	dvrSyncConfig := dvrSyncCmd.String("config", "", "Supervisor JSON config to derive DVR instances from (mutually exclusive with -instance flags)")
+	dvrSyncBaseURLs := dvrSyncCmd.String("base-urls", "", "Comma-separated tuner base URLs (alternative to -config)")
+	dvrSyncDeviceIDs := dvrSyncCmd.String("device-ids", "", "Comma-separated stable device IDs matching -base-urls order")
+	dvrSyncNames := dvrSyncCmd.String("names", "", "Comma-separated friendly names matching -base-urls order (optional)")
+	dvrSyncDeleteUnknown := dvrSyncCmd.Bool("delete-unknown", false, "Delete injected DVRs not present in the desired set (skips real HDHR devices)")
+	dvrSyncDryRun := dvrSyncCmd.Bool("dry-run", false, "Print planned actions without making any API calls")
+	dvrSyncGuideWait := dvrSyncCmd.Duration("guide-wait", 15*time.Second, "How long to wait after reloadGuide before fetching the channel map")
+
 	vodSplitCmd := flag.NewFlagSet("vod-split", flag.ExitOnError)
 	vodSplitCatalog := vodSplitCmd.String("catalog", "", "Input catalog.json (default: PLEX_TUNER_CATALOG)")
 	vodSplitOutDir := vodSplitCmd.String("out-dir", "", "Output directory for per-lane catalogs (required)")
@@ -297,11 +323,13 @@ func main() {
 	epgLinkCatalog := epgLinkReportCmd.String("catalog", "", "Input catalog.json (default: PLEX_TUNER_CATALOG)")
 	epgLinkXMLTV := epgLinkReportCmd.String("xmltv", "", "XMLTV file path or http(s) URL (required)")
 	epgLinkAliases := epgLinkReportCmd.String("aliases", "", "Optional alias override JSON (name_to_xmltv_id map)")
+	epgLinkOracleReport := epgLinkReportCmd.String("oracle-report", "", "Optional plex-epg-oracle JSON output; used to generate alias suggestions for unmatched channels")
+	epgLinkSuggestOut := epgLinkReportCmd.String("suggest-out", "", "Optional path to write oracle-derived alias suggestions JSON (name_to_xmltv_id ready for -aliases)")
 	epgLinkOut := epgLinkReportCmd.String("out", "", "Optional full JSON report output path")
 	epgLinkUnmatchedOut := epgLinkReportCmd.String("unmatched-out", "", "Optional unmatched-only JSON output path")
 
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <run|index|mount|serve|probe|plex-epg-oracle|plex-epg-oracle-cleanup|supervise|vod-split|plex-vod-register|epg-link-report> [flags]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s <run|index|mount|serve|probe|plex-epg-oracle|plex-epg-oracle-cleanup|supervise|plex-dvr-sync|vod-split|plex-vod-register|epg-link-report> [flags]\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  run    One-run: refresh catalog, health check, serve tuner (for systemd)\n")
 		fmt.Fprintf(os.Stderr, "  index  Fetch M3U, save catalog\n")
 		fmt.Fprintf(os.Stderr, "  mount  Mount VODFS (use -cache for on-demand download)\n")
@@ -310,6 +338,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  plex-epg-oracle  Probe Plex wizard-equivalent HDHR suggestions/channelmaps for one or more tuner base URLs\n")
 		fmt.Fprintf(os.Stderr, "  plex-epg-oracle-cleanup  Delete oracle-created DVR/device rows by prefix/URI filter (dry-run by default)\n")
 		fmt.Fprintf(os.Stderr, "  supervise  Start multiple child plex-tuner instances from one JSON config (single pod/container supervisor)\n")
+		fmt.Fprintf(os.Stderr, "  plex-dvr-sync  Idempotent reconcile of injected DVRs in Plex; driven by supervisor config or explicit instance flags\n")
 		fmt.Fprintf(os.Stderr, "  vod-split  Split VOD catalog into category/region lane catalogs for separate VODFS mounts/libraries\n")
 		fmt.Fprintf(os.Stderr, "  plex-vod-register  Create/reuse Plex libraries for VODFS (TV + Movies)\n")
 		fmt.Fprintf(os.Stderr, "  epg-link-report  Deterministic EPG match coverage report for live channels vs XMLTV\n")
@@ -829,16 +858,27 @@ func main() {
 			log.Print("Set -base-urls or -base-url-template with -caps")
 			os.Exit(1)
 		}
+		// OracleChannelRow records one channelmap entry plus the channel name
+		// from the tuner's lineup so alias suggestions can be generated later.
+		type OracleChannelRow struct {
+			GuideNumber      string `json:"guide_number"`
+			GuideName        string `json:"guide_name,omitempty"`
+			TVGID            string `json:"tvg_id,omitempty"`
+			ChannelKey       string `json:"channel_key"`
+			DeviceIdentifier string `json:"device_identifier"`
+			LineupIdentifier string `json:"lineup_identifier"` // XMLTV channel ID Plex matched
+		}
 		type oracleResult struct {
-			BaseURL        string   `json:"base_url"`
-			DeviceKey      string   `json:"device_key,omitempty"`
-			DeviceUUID     string   `json:"device_uuid,omitempty"`
-			DVRKey         int      `json:"dvr_key,omitempty"`
-			DVRUUID        string   `json:"dvr_uuid,omitempty"`
-			LineupIDs      []string `json:"lineup_ids,omitempty"`
-			ChannelMapRows int      `json:"channelmap_rows,omitempty"`
-			Activated      int      `json:"activated,omitempty"`
-			Error          string   `json:"error,omitempty"`
+			BaseURL        string             `json:"base_url"`
+			DeviceKey      string             `json:"device_key,omitempty"`
+			DeviceUUID     string             `json:"device_uuid,omitempty"`
+			DVRKey         int                `json:"dvr_key,omitempty"`
+			DVRUUID        string             `json:"dvr_uuid,omitempty"`
+			LineupIDs      []string           `json:"lineup_ids,omitempty"`
+			ChannelMapRows int                `json:"channelmap_rows,omitempty"`
+			Channels       []OracleChannelRow `json:"channels,omitempty"`
+			Activated      int                `json:"activated,omitempty"`
+			Error          string             `json:"error,omitempty"`
 		}
 		results := make([]oracleResult, 0, len(targets))
 		for i, base := range targets {
@@ -847,12 +887,24 @@ func main() {
 				continue
 			}
 			r := oracleResult{BaseURL: base}
+			// Derive DeviceID/FriendlyName from the tuner's own discover.json so Plex
+			// can match by deviceId when the URI lookup falls through.
+			devID := fmt.Sprintf("oracle%02d", i+1)
+			friendlyName := fmt.Sprintf("oracle-%d", i+1)
+			if disc, err2 := plex.FetchDiscoverJSON(base); err2 == nil {
+				if disc.DeviceID != "" {
+					devID = disc.DeviceID
+				}
+				if disc.FriendlyName != "" {
+					friendlyName = disc.FriendlyName
+				}
+			}
 			cfgAPI := plex.PlexAPIConfig{
 				BaseURL:      base,
 				PlexHost:     plexHost,
 				PlexToken:    plexToken,
-				FriendlyName: fmt.Sprintf("oracle-%d", i+1),
-				DeviceID:     fmt.Sprintf("oracle%02d", i+1),
+				FriendlyName: friendlyName,
+				DeviceID:     devID,
 			}
 			dev, err := plex.RegisterTunerViaAPI(cfgAPI)
 			if err != nil {
@@ -882,6 +934,31 @@ func main() {
 				continue
 			}
 			r.ChannelMapRows = len(mappings)
+
+			// Fetch lineup to annotate channel names alongside mapping rows.
+			lineupByNum := map[string]catalog.LiveChannel{}
+			if lineupChans, err2 := plex.FetchTunerLineup(base); err2 == nil {
+				for _, ch := range lineupChans {
+					lineupByNum[ch.GuideNumber] = ch
+				}
+			}
+			r.Channels = make([]OracleChannelRow, 0, len(mappings))
+			for _, m := range mappings {
+				row := OracleChannelRow{
+					ChannelKey:       m.ChannelKey,
+					DeviceIdentifier: m.DeviceIdentifier,
+					LineupIdentifier: m.LineupIdentifier,
+				}
+				if ch, ok := lineupByNum[m.DeviceIdentifier]; ok {
+					row.GuideName = ch.GuideName
+					row.GuideNumber = ch.GuideNumber
+					row.TVGID = ch.TVGID
+				} else {
+					row.GuideNumber = m.DeviceIdentifier
+				}
+				r.Channels = append(r.Channels, row)
+			}
+
 			if *epgOracleActivate {
 				n, err := plex.ActivateChannelsAPI(cfgAPI, dev.Key, mappings)
 				if err != nil {
@@ -1022,6 +1099,137 @@ func main() {
 		if err := supervisor.Run(ctx, *superviseConfig); err != nil {
 			log.Printf("Supervisor failed: %v", err)
 			os.Exit(1)
+		}
+
+	case "plex-dvr-sync":
+		_ = dvrSyncCmd.Parse(os.Args[2:])
+		plexBaseURL := strings.TrimSpace(*dvrSyncPlexURL)
+		if plexBaseURL == "" {
+			plexBaseURL = strings.TrimSpace(os.Getenv("PLEX_TUNER_PMS_URL"))
+		}
+		if plexBaseURL == "" {
+			if host := strings.TrimSpace(os.Getenv("PLEX_HOST")); host != "" {
+				plexBaseURL = "http://" + host + ":32400"
+			}
+		}
+		dvrToken := strings.TrimSpace(*dvrSyncToken)
+		if dvrToken == "" {
+			dvrToken = strings.TrimSpace(os.Getenv("PLEX_TUNER_PMS_TOKEN"))
+		}
+		if dvrToken == "" {
+			dvrToken = strings.TrimSpace(os.Getenv("PLEX_TOKEN"))
+		}
+		if plexBaseURL == "" || dvrToken == "" {
+			log.Print("Need Plex API access: set -plex-url/-token or PLEX_TUNER_PMS_URL+PLEX_TUNER_PMS_TOKEN (or PLEX_HOST+PLEX_TOKEN)")
+			os.Exit(1)
+		}
+		dvrPlexHost, err := hostPortFromBaseURL(plexBaseURL)
+		if err != nil {
+			log.Printf("Bad -plex-url: %v", err)
+			os.Exit(1)
+		}
+
+		var dvrInstances []plex.DVRSyncInstance
+		if cfgPath := strings.TrimSpace(*dvrSyncConfig); cfgPath != "" {
+			raw, err := os.ReadFile(cfgPath)
+			if err != nil {
+				log.Printf("Read supervisor config %s: %v", cfgPath, err)
+				os.Exit(1)
+			}
+			dvrInstances, err = plex.InstancesFromSupervisorConfig(raw)
+			if err != nil {
+				log.Printf("Parse supervisor config: %v", err)
+				os.Exit(1)
+			}
+			log.Printf("[dvr-sync] loaded %d instances from %s", len(dvrInstances), cfgPath)
+		} else if rawURLs := strings.TrimSpace(*dvrSyncBaseURLs); rawURLs != "" {
+			baseURLs := strings.Split(rawURLs, ",")
+			deviceIDs := strings.Split(strings.TrimSpace(*dvrSyncDeviceIDs), ",")
+			names := strings.Split(strings.TrimSpace(*dvrSyncNames), ",")
+			for i, bu := range baseURLs {
+				bu = strings.TrimSpace(bu)
+				if bu == "" {
+					continue
+				}
+				did := ""
+				if i < len(deviceIDs) {
+					did = strings.TrimSpace(deviceIDs[i])
+				}
+				if did == "" {
+					log.Printf("-device-ids[%d] is empty; provide a stable device ID for each base URL", i)
+					os.Exit(1)
+				}
+				name := fmt.Sprintf("instance-%d", i+1)
+				if i < len(names) && strings.TrimSpace(names[i]) != "" {
+					name = strings.TrimSpace(names[i])
+				}
+				dvrInstances = append(dvrInstances, plex.DVRSyncInstance{
+					Name:         name,
+					BaseURL:      bu,
+					DeviceID:     did,
+					FriendlyName: name,
+				})
+			}
+		} else {
+			log.Print("Provide -config (supervisor JSON) or -base-urls + -device-ids")
+			os.Exit(1)
+		}
+
+		if len(dvrInstances) == 0 {
+			log.Print("[dvr-sync] no instances to reconcile")
+			os.Exit(0)
+		}
+
+		syncCtx, syncCancel := context.WithCancel(context.Background())
+		defer syncCancel()
+		syncSig := make(chan os.Signal, 1)
+		signal.Notify(syncSig, os.Interrupt, syscall.SIGTERM)
+		go func() {
+			<-syncSig
+			syncCancel()
+		}()
+
+		results := plex.ReconcileDVRs(syncCtx, plex.DVRSyncConfig{
+			PlexHost:          dvrPlexHost,
+			Token:             dvrToken,
+			Instances:         dvrInstances,
+			DeleteUnknown:     *dvrSyncDeleteUnknown,
+			DryRun:            *dvrSyncDryRun,
+			GuideWaitDuration: *dvrSyncGuideWait,
+		})
+
+		type syncRow struct {
+			Name     string `json:"name"`
+			DeviceID string `json:"device_id"`
+			Action   string `json:"action"`
+			DVRKey   int    `json:"dvr_key,omitempty"`
+			Channels int    `json:"channels,omitempty"`
+			Error    string `json:"error,omitempty"`
+		}
+		out := make([]syncRow, len(results))
+		exitCode := 0
+		for i, r := range results {
+			out[i] = syncRow{
+				Name:     r.Instance.Name,
+				DeviceID: r.Instance.DeviceID,
+				Action:   r.Action,
+				DVRKey:   r.DVRKey,
+				Channels: r.Channels,
+			}
+			if r.Err != nil {
+				out[i].Error = r.Err.Error()
+				exitCode = 1
+			}
+		}
+		b, _ := json.MarshalIndent(map[string]any{
+			"plex_url":       plexBaseURL,
+			"dry_run":        *dvrSyncDryRun,
+			"delete_unknown": *dvrSyncDeleteUnknown,
+			"results":        out,
+		}, "", "  ")
+		fmt.Println(string(b))
+		if exitCode != 0 {
+			os.Exit(exitCode)
 		}
 
 	case "vod-split":
@@ -1235,6 +1443,39 @@ func main() {
 				os.Exit(1)
 			}
 			log.Printf("Wrote unmatched list: %s", p)
+		}
+		// Oracle-derived alias suggestions.
+		if oraclePath := strings.TrimSpace(*epgLinkOracleReport); oraclePath != "" {
+			oracleR, err := openFileOrURL(oraclePath)
+			if err != nil {
+				log.Printf("Open oracle report %s: %v", oraclePath, err)
+				os.Exit(1)
+			}
+			oracleRep, err := epglink.LoadOracleReport(oracleR)
+			_ = oracleR.Close()
+			if err != nil {
+				log.Printf("Parse oracle report: %v", err)
+				os.Exit(1)
+			}
+			suggestions, aliasMap := epglink.SuggestAliasesFromOracle(oracleRep, rep, xmltvChans)
+			log.Printf("Oracle alias suggestions: %d new mappings for unmatched channels", len(suggestions))
+			for _, s := range suggestions {
+				log.Printf("  SUGGEST %-40s -> %s (%s)", s.GuideName, s.LineupIdentifier, s.OracleConfidence)
+			}
+			if p := strings.TrimSpace(*epgLinkSuggestOut); p != "" {
+				// Write in alias-file format (name_to_xmltv_id) so the output can be
+				// passed directly to the next run via -aliases.
+				payload := map[string]any{
+					"name_to_xmltv_id": aliasMap,
+					"_suggestions":     suggestions,
+				}
+				data, _ := json.MarshalIndent(payload, "", "  ")
+				if err := os.WriteFile(p, data, 0o600); err != nil {
+					log.Printf("Write suggestions %s: %v", p, err)
+					os.Exit(1)
+				}
+				log.Printf("Wrote alias suggestions: %s (%d entries)", p, len(aliasMap))
+			}
 		}
 
 	default:

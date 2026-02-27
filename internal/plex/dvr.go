@@ -4,6 +4,7 @@ package plex
 
 import (
 	"database/sql"
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -15,6 +16,8 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/plextuner/plex-tuner/internal/catalog"
 )
 
 const (
@@ -52,12 +55,39 @@ func RegisterTunerViaAPI(cfg PlexAPIConfig) (*DeviceInfo, error) {
 	client := &http.Client{Timeout: 30 * time.Second}
 	var body []byte
 	var lastErr error
+	// Try each path in order. The /media/grabbers/devices/discover endpoint returns 200
+	// but only lists already-registered devices (doesn't include the just-registered one).
+	// The hdhomerun-specific path registers AND returns the newly added device.
+	// We therefore try all paths and use the first response that contains our device.
 	devicePaths := []string{
-		"/media/grabbers/devices/discover", // newer Plex builds
-		"/media/grabbers/tv.plex.grabbers.hdhomerun/devices",
+		"/media/grabbers/tv.plex.grabbers.hdhomerun/devices", // always returns the registered device
+		"/media/grabbers/devices/discover",                   // newer path; 200 but may not include new device
 		"/media/grabbers/devices",
 	}
-	for i, p := range devicePaths {
+
+	tryParse := func(b []byte) *DeviceInfo {
+		var mc MediaContainer
+		if err := xml.Unmarshal(b, &mc); err != nil {
+			return nil
+		}
+		for _, dev := range mc.Device {
+			if dev.URI == deviceURI {
+				fmt.Printf("[PLEX-REG] Found device: key=%s uuid=%s uri=%s\n", dev.Key, dev.UUID, dev.URI)
+				return &DeviceInfo{Key: dev.Key, UUID: dev.UUID, URI: dev.URI}
+			}
+		}
+		// Fall back to matching by deviceId (Plex may normalise the stored URI).
+		for _, dev := range mc.Device {
+			if strings.EqualFold(strings.TrimSpace(dev.Name), strings.TrimSpace(cfg.DeviceID)) ||
+				strings.EqualFold(strings.TrimSpace(dev.DeviceID), strings.TrimSpace(cfg.DeviceID)) {
+				fmt.Printf("[PLEX-REG] Found device by name/deviceId fallback: key=%s uuid=%s uri=%s name=%s deviceId=%s\n", dev.Key, dev.UUID, dev.URI, dev.Name, dev.DeviceID)
+				return &DeviceInfo{Key: dev.Key, UUID: dev.UUID, URI: dev.URI}
+			}
+		}
+		return nil
+	}
+
+	for _, p := range devicePaths {
 		deviceURL := fmt.Sprintf("http://%s%s?uri=%s", cfg.PlexHost, p, url.QueryEscape(deviceURI))
 		req, err := http.NewRequest("POST", deviceURL, nil)
 		if err != nil {
@@ -74,43 +104,36 @@ func RegisterTunerViaAPI(cfg PlexAPIConfig) (*DeviceInfo, error) {
 		resp.Body.Close()
 		fmt.Printf("[PLEX-REG] Register device response (%s): status=%d body_len=%d\n", p, resp.StatusCode, len(body))
 
-		if resp.StatusCode == 404 && i < len(devicePaths)-1 {
-			// Plex API path changed across versions; try the generic devices endpoint.
+		if resp.StatusCode == 404 {
 			lastErr = fmt.Errorf("register device endpoint %s returned 404", p)
 			continue
 		}
 		if resp.StatusCode != 200 {
 			return nil, fmt.Errorf("register device via %s returned %d: %s", p, resp.StatusCode, string(body))
 		}
-		lastErr = nil
-		break
+		if info := tryParse(body); info != nil {
+			return info, nil
+		}
+		// 200 but device not in response yet. Plex may need a moment to persist
+		// the registration. Poll /media/grabbers/devices (full list) up to 3 times.
+		for attempt := 0; attempt < 3; attempt++ {
+			time.Sleep(2 * time.Second)
+			listURL := fmt.Sprintf("http://%s/media/grabbers/devices?X-Plex-Token=%s", cfg.PlexHost, cfg.PlexToken)
+			listReq, _ := http.NewRequest("GET", listURL, nil)
+			if listResp, err := client.Do(listReq); err == nil {
+				listBody, _ := io.ReadAll(listResp.Body)
+				listResp.Body.Close()
+				if info := tryParse(listBody); info != nil {
+					fmt.Printf("[PLEX-REG] Found device via poll of /media/grabbers/devices (attempt %d)\n", attempt+1)
+					return info, nil
+				}
+			}
+		}
+		lastErr = fmt.Errorf("register device via %s: device not found in response after retries", p)
 	}
 	if lastErr != nil {
 		return nil, lastErr
 	}
-
-	var mc MediaContainer
-	if err := xml.Unmarshal(body, &mc); err != nil {
-		return nil, fmt.Errorf("parse response: %w", err)
-	}
-
-	for _, dev := range mc.Device {
-		if dev.URI == deviceURI {
-			fmt.Printf("[PLEX-REG] Found device: key=%s uuid=%s uri=%s\n", dev.Key, dev.UUID, dev.URI)
-			return &DeviceInfo{Key: dev.Key, UUID: dev.UUID, URI: dev.URI}, nil
-		}
-	}
-	// Newer Plex registration/discovery flows may normalize the URI they store from
-	// the device's advertised discover.json BaseURL (which can differ from the URL we
-	// probed). Fall back to matching the unique deviceId if present.
-	for _, dev := range mc.Device {
-		if strings.EqualFold(strings.TrimSpace(dev.Name), strings.TrimSpace(cfg.DeviceID)) ||
-			strings.EqualFold(strings.TrimSpace(dev.DeviceID), strings.TrimSpace(cfg.DeviceID)) {
-			fmt.Printf("[PLEX-REG] Found device by name/deviceId fallback: key=%s uuid=%s uri=%s name=%s deviceId=%s\n", dev.Key, dev.UUID, dev.URI, dev.Name, dev.DeviceID)
-			return &DeviceInfo{Key: dev.Key, UUID: dev.UUID, URI: dev.URI}, nil
-		}
-	}
-
 	return nil, fmt.Errorf("device not found in response")
 }
 
@@ -555,4 +578,68 @@ func updateURI(db *sql.DB, identifier, rawURI string) error {
 		return nil
 	}
 	return nil
+}
+
+// FetchTunerLineup fetches /lineup.json from a PlexTuner base URL and returns
+// the channels as a slice of LiveChannel. Only GuideNumber, GuideName, and TVGID
+// DiscoverJSON represents the minimal subset of a tuner's /discover.json we care about.
+type DiscoverJSON struct {
+	DeviceID     string `json:"DeviceID"`
+	FriendlyName string `json:"FriendlyName"`
+	BaseURL      string `json:"BaseURL"`
+	LineupURL    string `json:"LineupURL"`
+	TunerCount   int    `json:"TunerCount"`
+}
+
+// FetchDiscoverJSON fetches /discover.json from a plex-tuner instance.
+func FetchDiscoverJSON(baseURL string) (*DiscoverJSON, error) {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	u := baseURL + "/discover.json"
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Get(u)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var d DiscoverJSON
+	if err := json.NewDecoder(resp.Body).Decode(&d); err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
+// are populated (the fields available from lineup.json). This is used by
+// plex-epg-oracle to annotate channel names alongside channelmap rows.
+func FetchTunerLineup(baseURL string) ([]catalog.LiveChannel, error) {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	u := baseURL + "/lineup.json"
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get(u)
+	if err != nil {
+		return nil, fmt.Errorf("fetch lineup.json: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8*1024*1024))
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("lineup.json returned %d", resp.StatusCode)
+	}
+
+	// lineup.json format: [{"GuideNumber":"1","GuideName":"ESPN HD","URL":"..."}]
+	var rows []struct {
+		GuideNumber string `json:"GuideNumber"`
+		GuideName   string `json:"GuideName"`
+		URL         string `json:"URL"`
+	}
+	if err := json.Unmarshal(body, &rows); err != nil {
+		return nil, fmt.Errorf("parse lineup.json: %w", err)
+	}
+	out := make([]catalog.LiveChannel, 0, len(rows))
+	for _, r := range rows {
+		ch := catalog.LiveChannel{
+			GuideNumber: r.GuideNumber,
+			GuideName:   r.GuideName,
+			StreamURL:   r.URL,
+		}
+		out = append(out, ch)
+	}
+	return out, nil
 }
