@@ -66,7 +66,9 @@ func TestDoWithRetry_429Then200(t *testing.T) {
 }
 
 func TestDoWithRetry_4xxNoRetry(t *testing.T) {
+	attempts := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
 		w.WriteHeader(http.StatusForbidden)
 	}))
 	defer srv.Close()
@@ -80,5 +82,73 @@ func TestDoWithRetry_4xxNoRetry(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Errorf("status = %d, want 403", resp.StatusCode)
+	}
+	if attempts != 1 {
+		t.Errorf("attempts = %d, want 1 (403 not retried by DefaultRetryPolicy)", attempts)
+	}
+}
+
+func TestDoWithRetry_403RetryThen200(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts < 3 {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	ctx := context.Background()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+	policy := ProviderRetryPolicy
+	policy.Max403Wait = 0 // no wait in tests
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := DoWithRetry(ctx, client, req, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status = %d, want 200", resp.StatusCode)
+	}
+	if attempts != 3 {
+		t.Errorf("attempts = %d, want 3", attempts)
+	}
+}
+
+func TestDoWithRetry_5xxExponentialBackoff(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts < 3 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	ctx := context.Background()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+	policy := RetryPolicy{
+		MaxRetries: 3,
+		Retry5xx:   true,
+		Backoff5xx: 0, // no wait in tests
+		LogHeaders: false,
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := DoWithRetry(ctx, client, req, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status = %d, want 200", resp.StatusCode)
+	}
+	if attempts != 3 {
+		t.Errorf("attempts = %d, want 3", attempts)
 	}
 }

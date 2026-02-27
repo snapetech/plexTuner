@@ -24,11 +24,12 @@ type Config struct {
 }
 
 type Instance struct {
-	Name     string            `json:"name"`
-	Args     []string          `json:"args"`
-	Env      map[string]string `json:"env"`
-	Disabled bool              `json:"disabled"`
-	WorkDir  string            `json:"workDir"`
+	Name       string            `json:"name"`
+	Args       []string          `json:"args"`
+	Env        map[string]string `json:"env"`
+	Disabled   bool              `json:"disabled"`
+	WorkDir    string            `json:"workDir"`
+	StartDelay DurationString    `json:"startDelay"` // optional delay before first start (jitter to avoid thundering-herd on provider)
 }
 
 type DurationString time.Duration
@@ -180,7 +181,16 @@ func Run(ctx context.Context, configPath string) error {
 }
 
 func runInstanceLoop(ctx context.Context, exe string, inst Instance, restart bool, restartDelay time.Duration) error {
+	first := true
 	for {
+		if first && time.Duration(inst.StartDelay) > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(inst.StartDelay)):
+			}
+		}
+		first = false
 		err := runInstanceOnce(ctx, exe, inst)
 		if !restart || ctx.Err() != nil {
 			return err

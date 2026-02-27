@@ -30,6 +30,7 @@ import (
 	"github.com/plextuner/plex-tuner/internal/hdhomerun"
 	"github.com/plextuner/plex-tuner/internal/health"
 	"github.com/plextuner/plex-tuner/internal/indexer"
+	"github.com/plextuner/plex-tuner/internal/indexer/fetch"
 	"github.com/plextuner/plex-tuner/internal/materializer"
 	"github.com/plextuner/plex-tuner/internal/plex"
 	"github.com/plextuner/plex-tuner/internal/provider"
@@ -92,84 +93,38 @@ func applyPlexVODLibraryPreset(plexBaseURL, plexToken string, sec *plex.LibraryS
 
 // catalogResult holds the output of fetchCatalog.
 type catalogResult struct {
-	Movies  []catalog.Movie
-	Series  []catalog.Series
-	Live    []catalog.LiveChannel
-	APIBase string // best-ranked provider base URL; empty when M3U path was used
+	Movies      []catalog.Movie
+	Series      []catalog.Series
+	Live        []catalog.LiveChannel
+	APIBase     string // best-ranked provider base URL; empty when M3U path was used
+	NotModified bool   // true when fetch.Fetcher determined catalog is unchanged (all 304s / hash-match)
 }
 
 // fetchCatalog fetches catalog data from the provider and applies configured filters.
-// Strategy (same as xtream-to-m3u.js): try player_api ranked best-to-worst, then fall back to get.php.
-// If m3uOverride is non-empty it is used directly (bypasses player_api ranking).
+//
+// When cfg.FetchStatePath is set (default: auto-derived from CatalogPath), the resilient
+// fetch.Fetcher is used: conditional GETs, per-category parallelism, crash-safe
+// checkpointing, stream-hash diffs, and Cloudflare detection.
+//
+// When FetchStatePath is empty or m3uOverride is set, the legacy single-shot path is used
+// for compatibility (no state persistence, no conditional GETs).
+//
 // LiveEPGOnly and smoketest filters are always applied so every caller is consistent.
 func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error) {
 	var res catalogResult
 
-	if m3uOverride != "" {
-		movies, series, live, err := indexer.ParseM3U(m3uOverride, nil)
+	// ── Resilient path (fetch.Fetcher) ──────────────────────────────────────────
+	if m3uOverride == "" && cfg.FetchStatePath != "" {
+		r, err := fetchCatalogResilient(cfg)
 		if err != nil {
-			return res, fmt.Errorf("parse M3U: %w", err)
+			return res, err
 		}
-		res.Movies, res.Series, res.Live = movies, series, live
-	} else if m3uURLs := cfg.M3UURLsOrBuild(); len(m3uURLs) > 0 {
-		var lastErr error
-		for _, u := range m3uURLs {
-			movies, series, live, err := indexer.ParseM3U(u, nil)
-			if err != nil {
-				lastErr = err
-				continue
-			}
-			res.Movies, res.Series, res.Live = movies, series, live
-			lastErr = nil
-			break
-		}
-		if lastErr != nil {
-			return res, fmt.Errorf("parse M3U: %w", lastErr)
-		}
-	} else if cfg.ProviderUser != "" && cfg.ProviderPass != "" {
-		baseURLs := cfg.ProviderURLs()
-		if len(baseURLs) == 0 {
-			return res, fmt.Errorf("need -m3u URL or set PLEX_TUNER_PROVIDER_URL(S) in .env")
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-		ranked := provider.RankedPlayerAPI(ctx, baseURLs, cfg.ProviderUser, cfg.ProviderPass, nil)
-		var fetchErr error
-		if len(ranked) > 0 {
-			res.APIBase = ranked[0]
-			log.Printf("Ranked %d provider(s): using best %s (2nd/3rd used as stream backups)", len(ranked), res.APIBase)
-			res.Movies, res.Series, res.Live, fetchErr = indexer.IndexFromPlayerAPI(
-				res.APIBase, cfg.ProviderUser, cfg.ProviderPass, "m3u8", cfg.LiveOnly, baseURLs, nil,
-			)
-			if fetchErr == nil {
-				for i := range res.Live {
-					urls := streamURLsFromRankedBases(res.Live[i].StreamURL, ranked)
-					if len(urls) > 0 {
-						res.Live[i].StreamURLs = urls
-						if res.Live[i].StreamURL == "" {
-							res.Live[i].StreamURL = urls[0]
-						}
-					}
-				}
-			}
-		}
-		// Fall back to get.php when no OK player_api host or when player_api indexing failed.
-		if fetchErr != nil || res.APIBase == "" {
-			res.APIBase = "" // clear in case we're falling back after a partial player_api attempt
-			var fallbackErr error
-			for _, u := range cfg.M3UURLsOrBuild() {
-				res.Movies, res.Series, res.Live, fallbackErr = indexer.ParseM3U(u, nil)
-				if fallbackErr == nil {
-					log.Printf("Using get.php from %s", u)
-					break
-				}
-			}
-			if fallbackErr != nil {
-				return res, fmt.Errorf("no player_api OK and no get.php OK on any host")
-			}
-		}
+		res = *r
 	} else {
-		return res, fmt.Errorf("need -m3u URL or set PLEX_TUNER_PROVIDER_USER and PLEX_TUNER_PROVIDER_PASS in .env")
+		// ── Legacy path ─────────────────────────────────────────────────────────
+		if err := fetchCatalogLegacy(cfg, m3uOverride, &res); err != nil {
+			return res, err
+		}
 	}
 
 	// Second provider live merge: only use when stream URLs are confirmed NOT
@@ -187,11 +142,40 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 		}
 	}
 
-	// Enrich and sort VOD content deterministically so downstream VODFS and future
-	// catch-up/category library splits do not depend on provider ordering.
+	// Enrich and sort VOD content deterministically.
 	res.Movies, res.Series = catalog.ApplyVODTaxonomy(res.Movies, res.Series)
 
-	// Apply configured live-channel filters (applied consistently on every fetch path).
+	// VOD category filter: keep only movies/series whose provider category name
+	// starts with one of the configured prefixes (case-insensitive).
+	if prefixes := cfg.VODCategoryPrefixes(); len(prefixes) > 0 {
+		matchesVODFilter := func(cat string) bool {
+			lower := strings.ToLower(cat)
+			for _, p := range prefixes {
+				if strings.HasPrefix(lower, p) {
+					return true
+				}
+			}
+			return false
+		}
+		beforeM, beforeS := len(res.Movies), len(res.Series)
+		filtered := res.Movies[:0]
+		for _, m := range res.Movies {
+			if matchesVODFilter(m.ProviderCategoryName) {
+				filtered = append(filtered, m)
+			}
+		}
+		res.Movies = filtered
+		filteredS := res.Series[:0]
+		for _, s := range res.Series {
+			if matchesVODFilter(s.ProviderCategoryName) {
+				filteredS = append(filteredS, s)
+			}
+		}
+		res.Series = filteredS
+		log.Printf("VOD category filter: movies %d→%d series %d→%d", beforeM, len(res.Movies), beforeS, len(res.Series))
+	}
+
+	// Live-channel filters (applied on every path).
 	if cfg.LiveEPGOnly {
 		filtered := make([]catalog.LiveChannel, 0, len(res.Live))
 		for _, ch := range res.Live {
@@ -219,6 +203,179 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 	}
 
 	return res, nil
+}
+
+// fetchCatalogResilient uses fetch.Fetcher: conditional GETs, per-category parallelism,
+// crash-safe state, CF detection.
+func fetchCatalogResilient(cfg *config.Config) (*catalogResult, error) {
+	var res catalogResult
+
+	baseURLs := cfg.ProviderURLs()
+	m3uURLs := cfg.M3UURLsOrBuild()
+
+	// Determine the best API base via provider ranking (same as legacy path).
+	// When all probes fail (e.g. transient 403), fall back to the first configured
+	// URL so Xtream API calls can still be attempted directly.
+	var apiBase string
+	var ranked []string
+	if cfg.ProviderUser != "" && cfg.ProviderPass != "" && len(baseURLs) > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ranked = provider.RankedPlayerAPI(ctx, baseURLs, cfg.ProviderUser, cfg.ProviderPass, nil)
+		cancel()
+		if len(ranked) > 0 {
+			apiBase = ranked[0]
+			log.Printf("Ranked %d provider(s): using best %s", len(ranked), apiBase)
+		} else {
+			// All probes failed — use first configured URL optimistically so the
+			// Xtream fetch can still be attempted (the provider may allow API calls
+			// even when player_api probes are rate-limited).
+			apiBase = strings.TrimSuffix(baseURLs[0], "/")
+			log.Printf("Provider probe failed for all %d URL(s); attempting Xtream fetch with %s", len(baseURLs), apiBase)
+		}
+	}
+
+	// Only pass M3UURL to the fetcher when the user explicitly configured one
+	// (PLEX_TUNER_M3U_URL). When it would only be auto-built from provider creds,
+	// omit it so the fetcher does not fall back to M3U on Xtream API errors.
+	m3uURL := ""
+	if cfg.M3UURL != "" && len(m3uURLs) > 0 {
+		m3uURL = m3uURLs[0]
+	}
+
+	fetchCfg := fetch.Config{
+		APIBase:              apiBase,
+		Username:             cfg.ProviderUser,
+		Password:             cfg.ProviderPass,
+		StreamExt:            "m3u8",
+		M3UURL:               m3uURL,
+		FetchLive:            true,
+		FetchVOD:             !cfg.LiveOnly,
+		FetchSeries:          !cfg.LiveOnly,
+		CategoryConcurrency:  cfg.FetchCategoryConcurrency,
+		StreamSampleSize:     cfg.FetchStreamSampleSize,
+		RejectCFStreams:      cfg.FetchCFReject,
+		StatePath:            cfg.FetchStatePath,
+		BaseURLOverrides:     baseURLs,
+	}
+
+	if fetchCfg.APIBase == "" && fetchCfg.M3UURL == "" {
+		return nil, fmt.Errorf("need -m3u URL or set PLEX_TUNER_PROVIDER_URL(S) + USER/PASS in .env")
+	}
+
+	f, err := fetch.New(fetchCfg)
+	if err != nil {
+		return nil, fmt.Errorf("fetch init: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	r, err := f.Fetch(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fetch: %w", err)
+	}
+
+	log.Printf("Fetch complete: %s", r.Stats)
+
+	if r.NotModified {
+		log.Printf("Catalog unchanged (all 304/hash-match) — keeping existing catalog on disk")
+		// Return empty result with NotModified signal; callers must handle.
+		res.NotModified = true
+		return &res, nil
+	}
+
+	res.Live = r.Live
+	res.Movies = r.Movies
+	res.Series = r.Series
+	res.APIBase = apiBase
+
+	// Backfill ranked stream URLs (multi-base failover) for live channels.
+	if len(ranked) > 1 {
+		for i := range res.Live {
+			urls := streamURLsFromRankedBases(res.Live[i].StreamURL, ranked)
+			if len(urls) > 0 {
+				res.Live[i].StreamURLs = urls
+				if res.Live[i].StreamURL == "" {
+					res.Live[i].StreamURL = urls[0]
+				}
+			}
+		}
+	}
+
+	return &res, nil
+}
+
+// fetchCatalogLegacy is the original single-shot fetch path (no state, no conditional GET).
+// Used when FetchStatePath is empty or m3uOverride is set.
+func fetchCatalogLegacy(cfg *config.Config, m3uOverride string, res *catalogResult) error {
+	if m3uOverride != "" {
+		movies, series, live, err := indexer.ParseM3U(m3uOverride, nil)
+		if err != nil {
+			return fmt.Errorf("parse M3U: %w", err)
+		}
+		res.Movies, res.Series, res.Live = movies, series, live
+		return nil
+	}
+
+	if m3uURLs := cfg.M3UURLsOrBuild(); len(m3uURLs) > 0 {
+		var lastErr error
+		for _, u := range m3uURLs {
+			movies, series, live, err := indexer.ParseM3U(u, nil)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			res.Movies, res.Series, res.Live = movies, series, live
+			return nil
+		}
+		return fmt.Errorf("parse M3U: %w", lastErr)
+	}
+
+	if cfg.ProviderUser == "" || cfg.ProviderPass == "" {
+		return fmt.Errorf("need -m3u URL or set PLEX_TUNER_PROVIDER_USER and PLEX_TUNER_PROVIDER_PASS in .env")
+	}
+
+	baseURLs := cfg.ProviderURLs()
+	if len(baseURLs) == 0 {
+		return fmt.Errorf("need -m3u URL or set PLEX_TUNER_PROVIDER_URL(S) in .env")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	ranked := provider.RankedPlayerAPI(ctx, baseURLs, cfg.ProviderUser, cfg.ProviderPass, nil)
+	var fetchErr error
+	if len(ranked) > 0 {
+		res.APIBase = ranked[0]
+		log.Printf("Ranked %d provider(s): using best %s (2nd/3rd used as stream backups)", len(ranked), res.APIBase)
+		res.Movies, res.Series, res.Live, fetchErr = indexer.IndexFromPlayerAPI(
+			res.APIBase, cfg.ProviderUser, cfg.ProviderPass, "m3u8", cfg.LiveOnly, baseURLs, nil,
+		)
+		if fetchErr == nil {
+			for i := range res.Live {
+				urls := streamURLsFromRankedBases(res.Live[i].StreamURL, ranked)
+				if len(urls) > 0 {
+					res.Live[i].StreamURLs = urls
+					if res.Live[i].StreamURL == "" {
+						res.Live[i].StreamURL = urls[0]
+					}
+				}
+			}
+		}
+	}
+	if fetchErr != nil || res.APIBase == "" {
+		res.APIBase = ""
+		var fallbackErr error
+		for _, u := range cfg.M3UURLsOrBuild() {
+			res.Movies, res.Series, res.Live, fallbackErr = indexer.ParseM3U(u, nil)
+			if fallbackErr == nil {
+				log.Printf("Using get.php from %s", u)
+				return nil
+			}
+		}
+		if fallbackErr != nil {
+			return fmt.Errorf("no player_api OK and no get.php OK on any host")
+		}
+	}
+	return nil
 }
 
 // catalogStats returns EPG-linked and multi-URL counts for summary logging.
@@ -268,6 +425,7 @@ func main() {
 	runRegisterPlex := runCmd.String("register-plex", "", "If set, update Plex DB at this path (stop Plex first, backup DB) so DVR/XMLTV point to this tuner")
 	runRegisterOnly := runCmd.Bool("register-only", false, "If set with -register-plex and -mode=full: write Plex DB and exit without starting the tuner server (for one-shot jobs)")
 	runMode := runCmd.String("mode", "", "Flow: easy = HDHR + wizard, lineup capped at 479 (strip from end); full = DVR builder, max feeds, use -register-plex for zero-touch")
+	runMount := runCmd.String("mount", "", "If set, mount VODFS at this path after catalog fetch (Linux only; requires PLEX_TUNER_LIVE_ONLY=false; default: PLEX_TUNER_MOUNT)")
 
 	probeCmd := flag.NewFlagSet("probe", flag.ExitOnError)
 	probeURLs := probeCmd.String("urls", "", "Comma-separated base URLs to probe (default: from .env PLEX_TUNER_PROVIDER_URL or PLEX_TUNER_PROVIDER_URLS)")
@@ -359,15 +517,19 @@ func main() {
 			log.Printf("Index failed: %v", err)
 			os.Exit(1)
 		}
-		epgLinked, withBackups := catalogStats(res.Live)
-		c := catalog.New()
-		c.ReplaceWithLive(res.Movies, res.Series, res.Live)
-		if err := c.Save(path); err != nil {
-			log.Printf("Save catalog failed: %v", err)
-			os.Exit(1)
+		if res.NotModified {
+			log.Printf("Catalog unchanged (304/hash-match) — %s not rewritten", path)
+		} else {
+			epgLinked, withBackups := catalogStats(res.Live)
+			c := catalog.New()
+			c.ReplaceWithLive(res.Movies, res.Series, res.Live)
+			if err := c.Save(path); err != nil {
+				log.Printf("Save catalog failed: %v", err)
+				os.Exit(1)
+			}
+			log.Printf("Saved catalog to %s: %d movies, %d series, %d live channels (%d EPG-linked, %d with backup feeds)",
+				path, len(res.Movies), len(res.Series), len(res.Live), epgLinked, withBackups)
 		}
-		log.Printf("Saved catalog to %s: %d movies, %d series, %d live channels (%d EPG-linked, %d with backup feeds)",
-			path, len(res.Movies), len(res.Series), len(res.Live), epgLinked, withBackups)
 
 	case "mount":
 		_ = mountCmd.Parse(os.Args[2:])
@@ -504,19 +666,31 @@ func main() {
 			log.Print("Refreshing catalog ...")
 			res, err := fetchCatalog(cfg, "")
 			if err != nil {
-				log.Printf("Catalog refresh failed: %v", err)
-				os.Exit(1)
+				// If a catalog already exists on disk, warn and continue with stale data
+				// rather than crashing. This makes instances resilient to transient provider
+				// outages / rate-limits at restart time.
+				if _, statErr := os.Stat(path); statErr == nil {
+					log.Printf("Catalog refresh failed (will serve stale catalog): %v", err)
+				} else {
+					log.Printf("Catalog refresh failed: %v", err)
+					os.Exit(1)
+				}
+			} else {
+				runApiBase = res.APIBase
+				if res.NotModified {
+					log.Print("Catalog unchanged (304/hash-match) — loading existing catalog from disk")
+				} else {
+					epgLinked, withBackups := catalogStats(res.Live)
+					c := catalog.New()
+					c.ReplaceWithLive(res.Movies, res.Series, res.Live)
+					if err := c.Save(path); err != nil {
+						log.Printf("Save catalog failed: %v", err)
+						os.Exit(1)
+					}
+					log.Printf("Catalog saved: %d movies, %d series, %d live (%d EPG-linked, %d with backups)",
+						len(res.Movies), len(res.Series), len(res.Live), epgLinked, withBackups)
+				}
 			}
-			runApiBase = res.APIBase
-			epgLinked, withBackups := catalogStats(res.Live)
-			c := catalog.New()
-			c.ReplaceWithLive(res.Movies, res.Series, res.Live)
-			if err := c.Save(path); err != nil {
-				log.Printf("Save catalog failed: %v", err)
-				os.Exit(1)
-			}
-			log.Printf("Catalog saved: %d movies, %d series, %d live (%d EPG-linked, %d with backups)",
-				len(res.Movies), len(res.Series), len(res.Live), epgLinked, withBackups)
 		}
 
 		// 2) Health check provider unless skipped (use best ranked base when we just indexed, else first configured).
@@ -532,7 +706,7 @@ func main() {
 				checkURL = base + "/player_api.php?username=" + url.QueryEscape(cfg.ProviderUser) + "&password=" + url.QueryEscape(cfg.ProviderPass)
 			}
 		}
-		if !*runSkipHealth && checkURL != "" {
+		if !*runSkipHealth && !cfg.SkipHealth && checkURL != "" {
 			log.Print("Checking provider ...")
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
@@ -546,11 +720,36 @@ func main() {
 		// 3) Load catalog and start server.
 		c := catalog.New()
 		if err := c.Load(path); err != nil {
-			log.Printf("Load catalog failed: %v", err)
-			os.Exit(1)
+			if os.IsNotExist(err) {
+				log.Printf("No catalog found at %s — starting with empty catalog (will populate on next refresh)", path)
+			} else {
+				log.Printf("Load catalog failed: %v", err)
+				os.Exit(1)
+			}
 		}
 		live := c.SnapshotLive()
-		log.Printf("Loaded %d live channels from %s", len(live), path)
+		movies, series := c.Snapshot()
+		log.Printf("Loaded %d live channels, %d movies, %d series from %s", len(live), len(movies), len(series), path)
+
+		// Optional: mount VODFS for VOD-mode children.  -mount or PLEX_TUNER_MOUNT.
+		vodMountPath := strings.TrimSpace(*runMount)
+		if vodMountPath == "" {
+			vodMountPath = strings.TrimSpace(cfg.MountPoint)
+		}
+		var currentVODUnmount func()
+		if vodMountPath != "" {
+			var mat materializer.Interface = &materializer.Stub{}
+			if cfg.CacheDir != "" {
+				mat = &materializer.Cache{CacheDir: cfg.CacheDir}
+			}
+			unmountFn, err := vodfs.MountBackground(runCtx, vodMountPath, movies, series, mat, cfg.VODFSAllowOther)
+			if err != nil {
+				log.Printf("VODFS mount failed at %s: %v (continuing without VOD mount)", vodMountPath, err)
+			} else {
+				currentVODUnmount = unmountFn
+				log.Printf("VODFS mounted at %s (%d movies, %d series)", vodMountPath, len(movies), len(series))
+			}
+		}
 
 		baseURL := *runBaseURL
 		if baseURL == "http://localhost:5004" && cfg.BaseURL != "" {
@@ -629,18 +828,40 @@ func main() {
 						log.Printf("Scheduled refresh failed: %v", err)
 						continue
 					}
+					if res.NotModified {
+						log.Printf("Scheduled refresh: catalog unchanged (304/hash-match) — lineup not updated")
+						continue
+					}
 					cat := catalog.New()
 					cat.ReplaceWithLive(res.Movies, res.Series, res.Live)
 					if err := cat.Save(path); err != nil {
 						log.Printf("Save catalog failed (scheduled refresh): %v", err)
 						continue
 					}
-					// Invariant: UpdateChannels only called after successful Save.
-					srv.UpdateChannels(res.Live)
-					log.Printf("Catalog refreshed: %d movies, %d series, %d live channels (lineup updated)",
-						len(res.Movies), len(res.Series), len(res.Live))
+				// Invariant: UpdateChannels only called after successful Save.
+				srv.UpdateChannels(res.Live)
+				log.Printf("Catalog refreshed: %d movies, %d series, %d live channels (lineup updated)",
+					len(res.Movies), len(res.Series), len(res.Live))
+
+				// Remount VODFS with fresh catalog if a mount path is configured.
+				if vodMountPath != "" {
+					if currentVODUnmount != nil {
+						currentVODUnmount()
+					}
+					var mat materializer.Interface = &materializer.Stub{}
+					if cfg.CacheDir != "" {
+						mat = &materializer.Cache{CacheDir: cfg.CacheDir}
+					}
+					unmountFn, err := vodfs.MountBackground(runCtx, vodMountPath, res.Movies, res.Series, mat, cfg.VODFSAllowOther)
+					if err != nil {
+						log.Printf("VODFS remount failed at %s: %v", vodMountPath, err)
+					} else {
+						currentVODUnmount = unmountFn
+						log.Printf("VODFS remounted at %s (%d movies, %d series)", vodMountPath, len(res.Movies), len(res.Series))
+					}
 				}
-			}()
+			}
+		}()
 		}
 
 		log.Printf("[PLEX-REG] START: runRegisterPlex=%q runMode=%q", *runRegisterPlex, *runMode)

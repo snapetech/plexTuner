@@ -33,7 +33,16 @@ type Config struct {
 	MountPoint      string // e.g. /mnt/vodfs
 	CacheDir        string // e.g. /var/cache/plextuner
 	CatalogPath     string // e.g. /var/lib/plextuner/catalog.json
-	VODFSAllowOther bool   // Linux only: mount VODFS with FUSE allow_other (needed for some Plex/k8s hostPath setups)
+	// FetchStatePath is the path for the resilient fetch checkpoint (ETag cache, per-category
+	// progress, stream hashes). Defaults to <CatalogPath stem>.fetchstate.json when non-empty.
+	// Set PLEX_TUNER_FETCH_STATE="" to disable.
+	FetchStatePath  string
+	VODFSAllowOther bool // Linux only: mount VODFS with FUSE allow_other (needed for some Plex/k8s hostPath setups)
+
+	// Fetch resilience tuning
+	FetchCategoryConcurrency int  // parallel category fetches (default 8)
+	FetchCFReject            bool // reject providers whose streams route via Cloudflare (default true)
+	FetchStreamSampleSize    int  // number of stream URLs to probe for CF detection (default 5; 0=skip)
 
 	// Live tuner
 	TunerCount        int
@@ -49,6 +58,12 @@ type Config struct {
 	XMLTVTimeout        time.Duration
 	LiveEPGOnly         bool // if true, only include channels with tvg-id (EPG-linked) in catalog
 	LiveOnly            bool // if true, only fetch live channels from API (skip VOD and series; faster)
+	// VODCategoryFilter is a comma-separated list of provider category name prefixes (case-insensitive).
+	// When non-empty, only movies/series whose ProviderCategoryName starts with one of the prefixes are kept.
+	// Example: "EN -,NETFLIX MOVIES,AMAZON MOVIES,DISNEY+,APPLE+,TOP MOVIES,MARVEL"
+	VODCategoryFilter string
+	// SkipHealth: when true, skip the provider API health check at startup (useful when provider is rate-limiting).
+	SkipHealth bool
 	// EPG prune: when true, guide.xml and M3U export only include channels with tvg-id set (reduces noise).
 	EpgPruneUnlinked bool
 	// Stream smoketest: when true, at index time probe each channel's primary URL and drop failures.
@@ -83,7 +98,7 @@ func Load() *Config {
 		ProviderPass2:        os.Getenv("PLEX_TUNER_PROVIDER_PASS_2"),
 		ProviderURL2:         getEnvURL("PLEX_TUNER_PROVIDER_URL_2"),
 		M3UURL2:              getEnvURL("PLEX_TUNER_M3U_URL_2"),
-		MountPoint:           getEnv("PLEX_TUNER_MOUNT", "/mnt/vodfs"),
+		MountPoint:           os.Getenv("PLEX_TUNER_MOUNT"),
 		CacheDir:             getEnv("PLEX_TUNER_CACHE", "/var/cache/plextuner"),
 		CatalogPath:          getEnv("PLEX_TUNER_CATALOG", "./catalog.json"),
 		VODFSAllowOther:      getEnvBool("PLEX_TUNER_VODFS_ALLOW_OTHER", false),
@@ -99,6 +114,8 @@ func Load() *Config {
 		XMLTVTimeout:         getEnvDuration("PLEX_TUNER_XMLTV_TIMEOUT", 45*time.Second),
 		LiveEPGOnly:          getEnvBool("PLEX_TUNER_LIVE_EPG_ONLY", false),
 		LiveOnly:             getEnvBool("PLEX_TUNER_LIVE_ONLY", false),
+		VODCategoryFilter:    os.Getenv("PLEX_TUNER_VOD_CATEGORY_FILTER"),
+		SkipHealth:           getEnvBool("PLEX_TUNER_SKIP_HEALTH", false),
 		EpgPruneUnlinked:     getEnvBool("PLEX_TUNER_EPG_PRUNE_UNLINKED", false),
 		SmoketestEnabled:     getEnvBool("PLEX_TUNER_SMOKETEST_ENABLED", false),
 		SmoketestTimeout:     getEnvDuration("PLEX_TUNER_SMOKETEST_TIMEOUT", 8*time.Second),
@@ -106,14 +123,23 @@ func Load() *Config {
 		SmoketestMaxChannels: getEnvInt("PLEX_TUNER_SMOKETEST_MAX_CHANNELS", 0),
 		SmoketestMaxDuration: getEnvDuration("PLEX_TUNER_SMOKETEST_MAX_DURATION", 5*time.Minute),
 		SmoketestCacheFile:   os.Getenv("PLEX_TUNER_SMOKETEST_CACHE_FILE"),
-		SmoketestCacheTTL:    getEnvDuration("PLEX_TUNER_SMOKETEST_CACHE_TTL", 4*time.Hour),
-		XMLTVCacheTTL:        getEnvDuration("PLEX_TUNER_XMLTV_CACHE_TTL", 10*time.Minute),
-		HDHREnabled:          getEnvBool("PLEX_TUNER_HDHR_NETWORK_MODE", false),
+		SmoketestCacheTTL:        getEnvDuration("PLEX_TUNER_SMOKETEST_CACHE_TTL", 4*time.Hour),
+		XMLTVCacheTTL:            getEnvDuration("PLEX_TUNER_XMLTV_CACHE_TTL", 10*time.Minute),
+		FetchStatePath:           os.Getenv("PLEX_TUNER_FETCH_STATE"),
+		FetchCategoryConcurrency: getEnvInt("PLEX_TUNER_FETCH_CATEGORY_CONCURRENCY", 8),
+		FetchCFReject:            getEnvBool("PLEX_TUNER_FETCH_CF_REJECT", true),
+		FetchStreamSampleSize:    getEnvInt("PLEX_TUNER_FETCH_STREAM_SAMPLE_SIZE", 5),
+		HDHREnabled:              getEnvBool("PLEX_TUNER_HDHR_NETWORK_MODE", false),
 		HDHRDeviceID:         getEnvUint32("PLEX_TUNER_HDHR_DEVICE_ID", 0x12345678),
 		HDHRTunerCount:       getEnvInt("PLEX_TUNER_HDHR_TUNER_COUNT", 2),
 		HDHRDiscoverPort:     getEnvInt("PLEX_TUNER_HDHR_DISCOVER_PORT", 65001),
 		HDHRControlPort:      getEnvInt("PLEX_TUNER_HDHR_CONTROL_PORT", 65001),
 		HDHRFriendlyName:     os.Getenv("PLEX_TUNER_HDHR_FRIENDLY_NAME"),
+	}
+	// Auto-derive FetchStatePath from CatalogPath when not explicitly set.
+	// Set PLEX_TUNER_FETCH_STATE="" to opt out of state persistence.
+	if _, set := os.LookupEnv("PLEX_TUNER_FETCH_STATE"); !set && c.CatalogPath != "" {
+		c.FetchStatePath = fetchStatePathFromCatalog(c.CatalogPath)
 	}
 	if c.TunerCount <= 0 {
 		c.TunerCount = 2
@@ -190,6 +216,23 @@ func readSubscriptionFile(path string) (user, pass string, err error) {
 		return "", "", fmt.Errorf("subscription file: missing Username or Password")
 	}
 	return user, pass, nil
+}
+
+// VODCategoryPrefixes returns parsed prefixes from VODCategoryFilter (trimmed, lower-cased).
+// Returns nil when the filter is empty (no filtering).
+func (c *Config) VODCategoryPrefixes() []string {
+	if c.VODCategoryFilter == "" {
+		return nil
+	}
+	parts := strings.Split(c.VODCategoryFilter, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(strings.ToLower(p))
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // M3UURLOrBuild returns M3UURL if set, otherwise builds from ProviderBaseURL + user + pass.
@@ -334,4 +377,11 @@ func getEnvUint32(key string, defaultVal uint32) uint32 {
 		return defaultVal
 	}
 	return uint32(n)
+}
+
+// fetchStatePathFromCatalog derives the fetch state path from the catalog path.
+// e.g. /var/lib/plextuner/catalog.json → /var/lib/plextuner/catalog.fetchstate.json
+func fetchStatePathFromCatalog(catalogPath string) string {
+	ext := filepath.Ext(catalogPath)
+	return catalogPath[:len(catalogPath)-len(ext)] + ".fetchstate.json"
 }

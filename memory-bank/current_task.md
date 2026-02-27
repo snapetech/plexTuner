@@ -2,11 +2,23 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Goal:** ~~Complete in-cluster oracle-cap matrix testing~~ DONE (2026-02-27). Next: wire provider2 (trex/dambora) into live cluster, run merge, re-run oracle to see if provider2 channels improve EPG coverage.
+**Goal:** VOD VODFS libraries deployed; live instances stable on M3U path. VOD instances blocked on Cloudflare IP-level rate-limit from `cf.supergaminghub.xyz` (sustained 503). Waiting for provider cooldown.
 
-**Scope:** In: create in-cluster oracle-cap helper pod with unique device identities per cap, run plex-epg-oracle against cluster Services, harvest cap→channelmap rows, update alias/override improvements. Out: redesigning EPG matching logic or modifying existing category DVR deployments.
+**Completed this session (2026-02-27):**
+- `httpclient`: `ProviderRetryPolicy` — retry 403 (transient provider rate-limit), 3 retries, exp backoff with ±25% jitter, `Retry-After` header parsing, diagnostic header logging (CF-RAY, X-RateLimit-*, Server) on every non-2xx
+- `httpclient`: `GlobalHostSem` (per-host semaphore, intra-process) — limits concurrent requests per host within one process
+- `condget.go` and `player_api.go`: switched to `ProviderRetryPolicy`
+- `fetch/fetcher.go`: M3U-prefer logic — live-only instances now use M3U directly (skip Xtream API), Xtream only used when `FetchVOD || FetchSeries`; M3U falls back to Xtream on failure
+- `fetch/state.go`: nil-map panic fix — `LoadState` now guarantees `LiveCategories`/`VODCategories` non-nil after JSON unmarshal
+- `supervisor`: `Instance.StartDelay` field — per-instance startup delay (jitter) to stagger fetches
+- `main.go`: `PLEX_TUNER_SKIP_HEALTH` env var support; startup fetch failure non-fatal when catalog exists on disk; empty catalog fallback when no catalog file exists
+- Configmap: all 28 instances get `PLEX_TUNER_SKIP_HEALTH=true`, `PLEX_TUNER_FETCH_CATEGORY_CONCURRENCY=2`, VOD instances get staggered `startDelay` (5s–65s)
 
-**Last updated:** 2026-02-26
+**Status:** Live DVR instances (15) — all healthy, catalogs saved, serving Plex. VOD instances (13) — retrying Xtream API 503s; will self-recover when provider cools down (each has `startDelay` + 3-retry backoff).
+
+**Next step:** Once VOD instances successfully fetch, verify FUSE mounts appear in Plex as libraries.
+
+**Last updated:** 2026-02-27
 
 **Oracle-cap in-cluster setup (2026-02-26):**
 - Created `k8s/plextuner-supervisor-oracle.example.json` supervisor config with 6 oracle-cap instances:

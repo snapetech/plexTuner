@@ -12,6 +12,28 @@
 ## Loop protocol
 - If you attempt the same approach twice and it still fails, STOP.
 - Collect evidence (errors, logs, repro steps).
+
+---
+
+## Cloudflare / provider thundering-herd on supervisor restart
+
+**What keeps happening:** On every supervisor pod restart, all 28 instances start concurrently and hammer `cf.supergaminghub.xyz` Xtream API simultaneously, triggering a Cloudflare IP-level block (sustained 503 for minutes/hours).
+
+**Why it's tricky:**
+- `GlobalHostSem` in `httpclient` only works within a single process — 28 supervisor children are separate processes and don't share memory.
+- `CategoryConcurrency=8` × 28 instances = 224 concurrent API requests at startup.
+- Cloudflare enforces IP-level rate limits; once triggered, all requests fail until the block expires.
+- Live instances have an M3U URL fallback; VOD instances require the Xtream API (no M3U fallback for VOD categories).
+
+**What works:**
+1. **M3U-prefer for live-only instances** (`fetch/fetcher.go`): when `!FetchVOD && !FetchSeries` and `M3UURL != ""`, use M3U first. Live instances never hit `cf.supergaminghub.xyz` at all.
+2. **`startDelay` staggering** in supervisor configmap: VOD instances staggered 5s–65s apart.
+3. **`CategoryConcurrency=2`** per instance (was 8).
+4. **`ProviderRetryPolicy`**: 3 retries with exponential backoff + jitter + 403-as-rate-limit handling.
+5. **Non-fatal startup on 503**: if catalog exists, instances serve stale data and retry on schedule.
+6. **If provider remains blocked**: wait 10–20 minutes for Cloudflare to unblock the IP before restarting.
+
+**Rule:** Never restart the supervisor pod during an active fetch cycle. Use `SIGHUP` or the scheduled refresh instead.
 - Pick an alternate strategy (exit ramp) before trying again.
 
 ## Common traps + exit ramps

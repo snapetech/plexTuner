@@ -59,7 +59,7 @@ func doGetWithRetry(ctx context.Context, client *http.Client, u string) (*http.R
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "PlexTuner/1.0")
-	return httpclient.DoWithRetry(ctx, client, req, httpclient.DefaultRetryPolicy)
+	return httpclient.DoWithRetry(ctx, client, req, httpclient.ProviderRetryPolicy)
 }
 
 func resolveStreamBaseURL(ctx context.Context, apiBase, user, pass string, baseURLs []string, client *http.Client) (string, error) {
