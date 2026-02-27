@@ -6,13 +6,14 @@
 
 - **OpenBao has three init-output files; only one has working unseal keys.** Discovered 2026-02-27 when the cluster became unsealed after scaling to 2 raft replicas.
   - **Good file (use this):** `~/Documents/code/k3s/openbao/openbao-init-output.txt`
-    - Root token: `REDACTED_OPENBAO_ROOT_TOKEN`
+    - Root token: stored in OpenBao at `secret/plextuner` (key `openbao_root_token`). **Do not commit tokens to git.**
     - Keys 1–3 (any 3 of 5) unseal correctly.
   - **Bad files (DO NOT rely on these — cipher auth fails on the 3rd key):**
-    - `~/Documents/openbao-init-output.txt` (root token `REDACTED_OPENBAO_ROOT_TOKEN`) — keys 1+2 are accepted for progress but key 3+ all return `cipher: message authentication failed`.
-    - `~/Documents/k3s-secrets/openbao/openbao-init-output.json` (root token `REDACTED_OPENBAO_ROOT_TOKEN`) — same failure mode.
+    - `~/Documents/openbao-init-output.txt` — keys 1+2 are accepted for progress but key 3+ all return `cipher: message authentication failed`.
+    - `~/Documents/k3s-secrets/openbao/openbao-init-output.json` — same failure mode.
   - These appear to be init artifacts from aborted or test inits; the raft storage was actually sealed with the `k3s/openbao` keyset.
   - The existing unseal script (`scripts/unseal-openbao.sh`) hardcodes keys from the bad `openbao-init-output.txt`; update it to use keys from the good file if re-init is not performed.
+  - **Note (2026-02-27):** root token was rotated after accidental git exposure. The token in `openbao-init-output.txt` is now revoked. Current token is in OpenBao at `secret/plextuner` key `openbao_root_token`.
 
 - **OpenBao raft can lose quorum when only 1 of 2 nodes is unsealed (e.g. after a restart/crash).** The 2-node raft cluster requires both pods unsealed for leader election. Recovery steps (2026-02-27):
   1. Scale down to 1 replica: `kubectl -n openbao scale sts openbao --replicas=1`
