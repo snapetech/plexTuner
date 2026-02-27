@@ -1,4 +1,26 @@
-# Opportunities (Continuous Improvement Backlog)
+# Opportunities
+
+## EPG long-tail coverage improvements (2026-02-27)
+
+Three concrete strategies to grow DVR coverage from ~3,232 to potentially 15,000–20,000+ channels:
+
+1. **FAST/AVOD EPG merge** (low effort, ~2k gain): Add `EPG_URL_2` pointing to
+   `https://iptv-org.github.io/epg/` in `iptv-m3u-updater.py`. Covers Sling Freestream
+   (1,017 channels in feed), Roku Channel (652), Pluto/GO (369), Tubi (152).
+   Zero app code changes needed.
+
+2. **Re-encode inheritance** (low effort, ~10k gain): New matching tier in
+   `internal/indexer/m3u.go` — strip `ᴿᴬᵂ`/`ᵁᴴᴰ`/`4K`/`⁶⁰ᶠᵖˢ` markers from channel
+   display name; if the base name matches a linked channel in the same country-prefix
+   group, inherit its tvg-id. ~10,140 RAW + ~3,646 UHD channels in the feed are
+   re-encodes of already-linked channels.
+
+3. **iptv-org channel DB package** (medium effort, ~5k–10k gain): Similar to
+   `internal/gracenote`, a new `internal/iptvorg` package that downloads
+   `iptv-org.github.io/api/channels.json` (~47k channels), normalizes names, and
+   exposes `EnrichTVGID`. Combined with per-country XMLTV from `epg.pw`.
+
+Full analysis: `docs/explanations/epg-long-tail-strategies.md` (Continuous Improvement Backlog)
 
 This is a lightweight backlog for improvements discovered during other work.
 It exists to encourage quality gains without derailing the current task.
@@ -248,31 +270,15 @@ It exists to encourage quality gains without derailing the current task.
   Risk/Scope: low | fits current scope: no (CI/build feature)
   User decision needed?: no
 
-- Date: 2026-02-27
+- Date: 2026-02-27 → IMPLEMENTED 2026-02-26
   Category: reliability / bandwidth
   Title: M3U and Xtream API fetches do not use conditional GET (ETag / If-Modified-Since)
-  Context: internal/indexer/m3u.go ParseM3U, internal/indexer/player_api.go resolveStreamBaseURL + fetchLiveStreams.
-  Why it matters: Every catalog refresh re-downloads the full M3U (~2–3 MB for provider1) and the full live-streams JSON (~51k channels for a large provider like dambora). If the upstream hasn't changed, this wastes bandwidth, hammers the provider, and adds latency to the refresh cycle. ETag + If-None-Match (or Last-Modified + If-Modified-Since) lets the server reply 304 Not Modified — we then skip re-parse and reuse the last catalog directly.
-  Evidence: ParseM3U always issues a bare GET with no conditional headers (m3u.go:22-26). player_api.go fetchLiveStreams similarly issues unconditioned GETs. No ETag storage anywhere in catalog.go or the indexer.
-  Suggested fix:
-    (1) Add `FetchMeta { ETag, LastModified string }` to catalog.Catalog (persisted to catalog.json).
-    (2) ParseM3U: send If-None-Match / If-Modified-Since if stored; on 304 return a sentinel (ErrNotModified); on 200 capture and store ETag/Last-Modified.
-    (3) In the run-loop (main.go): on ErrNotModified skip re-parse, log "catalog unchanged (304)", keep serving existing channels. On 200 proceed normally.
-    (4) Same pattern for fetchLiveStreams (Xtream API).
-    (5) Unit test: mock server returning 304; assert catalog unchanged and UpdateChannels not called.
-  Implementation notes: Not all IPTV providers honour ETag (many are dynamic PHP endpoints). Treat 304 as a fast-path optimisation only; always fall through to full re-fetch on any other response. Add PLEX_TUNER_CONDITIONAL_GET=false env to opt out.
-  Risk/Scope: low | fits current scope: no (bandwidth/reliability improvement, separate PR)
-  User decision needed?: no
+  Resolution: Implemented in internal/indexer/fetch package (fetch.Fetcher). ConditionalGet sends If-None-Match/If-Modified-Since; 304 fast-path skips all parsing. Content-hash fallback handles providers that ignore ETags. FetchState persisted atomically to <catalog>.fetchstate.json. Per-category ETag tracking for Xtream API. All 17 tests passing. Wired into main.go fetchCatalog (resilient path active by default when PLEX_TUNER_FETCH_STATE is non-empty, which it is by default).
 
-- Date: 2026-02-27
+- Date: 2026-02-27 → IMPLEMENTED 2026-02-26
   Category: reliability
   Title: Cloudflare-routed stream URLs should be detected and rejected at index time, not just at postvalidate
-  Context: internal/indexer/player_api.go resolveStreamBaseURL + fetchLiveStreams; iptv-m3u-server BAD_STREAM_HOST_PATTERNS; provider2 (dambora) discovery 2026-02-27.
-  Why it matters: Provider2 (line.dambora.xyz) serves all live streams via Cloudflare (confirmed: `Server: cloudflare` on stream URLs). Cloudflare proxied IPTV streams are unreliable (520s, rate limits, geo-blocks). We currently only filter bad CDN hosts in the external iptv-m3u-server postvalidator, not inside plex-tuner's own indexer. If plex-tuner's `IndexFromPlayerAPI` is ever pointed at a CF-routed provider, those channels flow straight into the catalog undetected.
-  Evidence: provider2 `server_info.url = line.dambora.xyz`; `HEAD /live/...` returns `Server: cloudflare`. The M3U endpoint also returned HTTP 520 on fetch. Dambora was not merged into the live feed for this reason.
-  Suggested fix: In resolveStreamBaseURL / fetchLiveStreams, check the resolved stream base URL's IP or response headers (Server: cloudflare, CF-RAY) and log a warning if all streams will route via Cloudflare. Optionally expose PLEX_TUNER_REJECT_CF_STREAMS=true to hard-fail the index and force operator attention. For the iptv-m3u-server layer, add `cloudflare` / CF-RAY to BAD_STREAM_HOST_PATTERNS (currently only explicit hostnames, not header-based detection).
-  Risk/Scope: low detection / med enforcement | fits current scope: no
-  User decision needed?: yes (warn vs hard-fail; whether to add CF header detection to postvalidator)
+  Resolution: Implemented in internal/indexer/fetch/cfdetect.go (DetectCloudflare). Checks CF-RAY, CF-Cache-Status, CF-Request-ID, CF-Worker response headers and Server: cloudflare substring. Samples up to PLEX_TUNER_FETCH_STREAM_SAMPLE_SIZE (default 5) stream URLs after each category fetch. PLEX_TUNER_FETCH_CF_REJECT=true (default) hard-fails the entire fetch on detection; false logs a warning. Unit tested (TestCFDetect_ByHeader, TestCFDetect_ByServerHeader, TestCFDetect_Clean, TestFetcher_CFReject).
 
 - Date: 2026-02-25
   Category: reliability

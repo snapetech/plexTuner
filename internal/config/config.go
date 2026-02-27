@@ -30,9 +30,9 @@ type Config struct {
 	M3UURL2       string
 
 	// Paths
-	MountPoint      string // e.g. /mnt/vodfs
-	CacheDir        string // e.g. /var/cache/plextuner
-	CatalogPath     string // e.g. /var/lib/plextuner/catalog.json
+	MountPoint  string // e.g. /mnt/vodfs
+	CacheDir    string // e.g. /var/cache/plextuner
+	CatalogPath string // e.g. /var/lib/plextuner/catalog.json
 	// FetchStatePath is the path for the resilient fetch checkpoint (ETag cache, per-category
 	// progress, stream hashes). Defaults to <CatalogPath stem>.fetchstate.json when non-empty.
 	// Set PLEX_TUNER_FETCH_STATE="" to disable.
@@ -84,45 +84,114 @@ type Config struct {
 	HDHRDiscoverPort int
 	HDHRControlPort  int
 	HDHRFriendlyName string
+
+	// GracenoteDBPath is the path to the local Gracenote channel DB JSON file
+	// (produced by `plex-tuner plex-gracenote-harvest` or the Python harvest script).
+	// When non-empty and the file exists, Gracenote callSign/gridKey matching is
+	// applied as tier 1c during live-channel EPG linking (between alias matching
+	// and normalised-name matching).
+	// Env: PLEX_TUNER_GRACENOTE_DB
+	GracenoteDBPath string
+
+	// SchedulesDirectDBPath is the path to the local Schedules Direct station DB
+	// JSON file (produced by `plex-tuner plex-sd-harvest`). When non-empty and
+	// the file exists, SD callSign/name matching is applied after iptv-org
+	// enrichment for channels that still have no tvg-id.
+	// Env: PLEX_TUNER_SD_DB
+	SchedulesDirectDBPath string
+
+	// DVBDBPath is the path to the local DVB services DB JSON file (produced by
+	// `plex-tuner plex-dvbdb-harvest` or loaded from a dvbservices.com CSV).
+	// When non-empty, DVB triplet + name lookup is applied using the SDTMeta
+	// stored on each channel.  Enrichment works even without a harvest because
+	// an embedded ONID→network-name table is always present.
+	// Env: PLEX_TUNER_DVB_DB
+	DVBDBPath string
+
+	// DummyGuideEnabled — when true, the XMLTV handler emits a 24-hour
+	// placeholder programme block for every channel that has no real EPG data,
+	// so Plex never hides the channel due to missing guide.
+	// Env: PLEX_TUNER_DUMMY_GUIDE (default false)
+	DummyGuideEnabled bool
+
+	// IptvOrgDBPath is the path to the local iptv-org channel DB JSON file
+	// (produced by `plex-tuner plex-iptvorg-harvest`). When non-empty and the file
+	// exists, iptv-org name/shortcode matching is applied after Gracenote enrichment
+	// for channels that still have no tvg-id.
+	// Env: PLEX_TUNER_IPTVORG_DB
+	IptvOrgDBPath string
+
+	// SDT Probe background worker — reads the MPEG-TS Service Description Table from
+	// live streams to extract the broadcaster's own service_name for unlinked channels.
+	// This is a last-resort, polite background process; it only runs when no IPTV
+	// streams are active.
+	// Env: PLEX_TUNER_SDT_PROBE_ENABLED (default false)
+	SDTProbeEnabled bool
+	// SDTProbeStartDelay overrides the head-start delay before the first sweep.
+	// 0 = start immediately after channels are loaded (useful for testing/debugging).
+	// Default: 30 s.  Set PLEX_TUNER_SDT_PROBE_START_DELAY=0 for instant start.
+	SDTProbeStartDelay time.Duration
+	// Path to the JSON cache file that persists SDT probe results across restarts.
+	// Env: PLEX_TUNER_SDT_PROBE_CACHE (default: auto-derived from CatalogPath stem)
+	SDTProbeCache string
+	// Maximum concurrent stream fetches during SDT probing.
+	// Env: PLEX_TUNER_SDT_PROBE_CONCURRENCY (default 2)
+	SDTProbeConcurrency int
+	// Minimum delay between individual probe starts.
+	// Env: PLEX_TUNER_SDT_PROBE_INTER_DELAY (default 500ms)
+	SDTProbeInterDelay time.Duration
+	// Per-stream HTTP + read timeout for SDT probing.
+	// Env: PLEX_TUNER_SDT_PROBE_TIMEOUT (default 12s)
+	SDTProbeTimeout time.Duration
+	// How long a cached SDT result stays valid before the channel is re-probed.
+	// Env: PLEX_TUNER_SDT_PROBE_TTL (default 168h = 7 days)
+	SDTProbeResultTTL time.Duration
+	// How long streaming activity must be absent before probing resumes.
+	// Env: PLEX_TUNER_SDT_PROBE_QUIET_WINDOW (default 3m)
+	SDTProbeQuietWindow time.Duration
+	// How often a full forced rescan (ignoring cache TTL) is automatically
+	// triggered.  Default 720h (30 days).  Set to -1 to disable.
+	// Env: PLEX_TUNER_SDT_PROBE_RESCAN_INTERVAL
+	SDTProbeRescanInterval time.Duration
 }
 
 // Load reads config from environment. Call LoadEnvFile(".env") before Load() to use a .env file.
 // If ProviderUser or ProviderPass are empty, Load tries PLEX_TUNER_SUBSCRIPTION_FILE (or default path) with "Username:" / "Password:" lines.
 func Load() *Config {
 	c := &Config{
-		ProviderBaseURL:      getEnvURL("PLEX_TUNER_PROVIDER_URL"),
-		ProviderUser:         os.Getenv("PLEX_TUNER_PROVIDER_USER"),
-		ProviderPass:         os.Getenv("PLEX_TUNER_PROVIDER_PASS"),
-		M3UURL:               getEnvURL("PLEX_TUNER_M3U_URL"),
-		ProviderUser2:        os.Getenv("PLEX_TUNER_PROVIDER_USER_2"),
-		ProviderPass2:        os.Getenv("PLEX_TUNER_PROVIDER_PASS_2"),
-		ProviderURL2:         getEnvURL("PLEX_TUNER_PROVIDER_URL_2"),
-		M3UURL2:              getEnvURL("PLEX_TUNER_M3U_URL_2"),
-		MountPoint:           os.Getenv("PLEX_TUNER_MOUNT"),
-		CacheDir:             getEnv("PLEX_TUNER_CACHE", "/var/cache/plextuner"),
-		CatalogPath:          getEnv("PLEX_TUNER_CATALOG", "./catalog.json"),
-		VODFSAllowOther:      getEnvBool("PLEX_TUNER_VODFS_ALLOW_OTHER", false),
-		TunerCount:           getEnvInt("PLEX_TUNER_TUNER_COUNT", 2),
-		LineupMaxChannels:    getEnvInt("PLEX_TUNER_LINEUP_MAX_CHANNELS", 480),
-		GuideNumberOffset:    getEnvInt("PLEX_TUNER_GUIDE_NUMBER_OFFSET", 0),
-		BaseURL:              os.Getenv("PLEX_TUNER_BASE_URL"),
-		DeviceID:             getEnv("PLEX_TUNER_DEVICE_ID", "plextuner01"),
-		FriendlyName:         os.Getenv("PLEX_TUNER_FRIENDLY_NAME"),
-		StreamBufferBytes:    getEnvIntOrAuto("PLEX_TUNER_STREAM_BUFFER_BYTES", -1),
-		StreamTranscodeMode:  getEnvTranscodeMode("PLEX_TUNER_STREAM_TRANSCODE", "off"),
-		XMLTVURL:             getEnvURL("PLEX_TUNER_XMLTV_URL"),
-		XMLTVTimeout:         getEnvDuration("PLEX_TUNER_XMLTV_TIMEOUT", 45*time.Second),
-		LiveEPGOnly:          getEnvBool("PLEX_TUNER_LIVE_EPG_ONLY", false),
-		LiveOnly:             getEnvBool("PLEX_TUNER_LIVE_ONLY", false),
-		VODCategoryFilter:    os.Getenv("PLEX_TUNER_VOD_CATEGORY_FILTER"),
-		SkipHealth:           getEnvBool("PLEX_TUNER_SKIP_HEALTH", false),
-		EpgPruneUnlinked:     getEnvBool("PLEX_TUNER_EPG_PRUNE_UNLINKED", false),
-		SmoketestEnabled:     getEnvBool("PLEX_TUNER_SMOKETEST_ENABLED", false),
-		SmoketestTimeout:     getEnvDuration("PLEX_TUNER_SMOKETEST_TIMEOUT", 8*time.Second),
-		SmoketestConcurrency: getEnvInt("PLEX_TUNER_SMOKETEST_CONCURRENCY", 10),
-		SmoketestMaxChannels: getEnvInt("PLEX_TUNER_SMOKETEST_MAX_CHANNELS", 0),
-		SmoketestMaxDuration: getEnvDuration("PLEX_TUNER_SMOKETEST_MAX_DURATION", 5*time.Minute),
-		SmoketestCacheFile:   os.Getenv("PLEX_TUNER_SMOKETEST_CACHE_FILE"),
+		ProviderBaseURL:          getEnvURL("PLEX_TUNER_PROVIDER_URL"),
+		ProviderUser:             os.Getenv("PLEX_TUNER_PROVIDER_USER"),
+		ProviderPass:             os.Getenv("PLEX_TUNER_PROVIDER_PASS"),
+		M3UURL:                   getEnvURL("PLEX_TUNER_M3U_URL"),
+		ProviderUser2:            os.Getenv("PLEX_TUNER_PROVIDER_USER_2"),
+		ProviderPass2:            os.Getenv("PLEX_TUNER_PROVIDER_PASS_2"),
+		ProviderURL2:             getEnvURL("PLEX_TUNER_PROVIDER_URL_2"),
+		M3UURL2:                  getEnvURL("PLEX_TUNER_M3U_URL_2"),
+		MountPoint:               os.Getenv("PLEX_TUNER_MOUNT"),
+		CacheDir:                 getEnv("PLEX_TUNER_CACHE", "/var/cache/plextuner"),
+		CatalogPath:              getEnv("PLEX_TUNER_CATALOG", "./catalog.json"),
+		VODFSAllowOther:          getEnvBool("PLEX_TUNER_VODFS_ALLOW_OTHER", false),
+		TunerCount:               getEnvInt("PLEX_TUNER_TUNER_COUNT", 2),
+		LineupMaxChannels:        getEnvInt("PLEX_TUNER_LINEUP_MAX_CHANNELS", 480),
+		GuideNumberOffset:        getEnvInt("PLEX_TUNER_GUIDE_NUMBER_OFFSET", 0),
+		BaseURL:                  os.Getenv("PLEX_TUNER_BASE_URL"),
+		DeviceID:                 getEnv("PLEX_TUNER_DEVICE_ID", "plextuner01"),
+		FriendlyName:             os.Getenv("PLEX_TUNER_FRIENDLY_NAME"),
+		StreamBufferBytes:        getEnvIntOrAuto("PLEX_TUNER_STREAM_BUFFER_BYTES", -1),
+		StreamTranscodeMode:      getEnvTranscodeMode("PLEX_TUNER_STREAM_TRANSCODE", "off"),
+		XMLTVURL:                 getEnvURL("PLEX_TUNER_XMLTV_URL"),
+		XMLTVTimeout:             getEnvDuration("PLEX_TUNER_XMLTV_TIMEOUT", 45*time.Second),
+		LiveEPGOnly:              getEnvBool("PLEX_TUNER_LIVE_EPG_ONLY", false),
+		LiveOnly:                 getEnvBool("PLEX_TUNER_LIVE_ONLY", false),
+		VODCategoryFilter:        os.Getenv("PLEX_TUNER_VOD_CATEGORY_FILTER"),
+		SkipHealth:               getEnvBool("PLEX_TUNER_SKIP_HEALTH", false),
+		EpgPruneUnlinked:         getEnvBool("PLEX_TUNER_EPG_PRUNE_UNLINKED", false),
+		SmoketestEnabled:         getEnvBool("PLEX_TUNER_SMOKETEST_ENABLED", false),
+		SmoketestTimeout:         getEnvDuration("PLEX_TUNER_SMOKETEST_TIMEOUT", 8*time.Second),
+		SmoketestConcurrency:     getEnvInt("PLEX_TUNER_SMOKETEST_CONCURRENCY", 10),
+		SmoketestMaxChannels:     getEnvInt("PLEX_TUNER_SMOKETEST_MAX_CHANNELS", 0),
+		SmoketestMaxDuration:     getEnvDuration("PLEX_TUNER_SMOKETEST_MAX_DURATION", 5*time.Minute),
+		SmoketestCacheFile:       os.Getenv("PLEX_TUNER_SMOKETEST_CACHE_FILE"),
 		SmoketestCacheTTL:        getEnvDuration("PLEX_TUNER_SMOKETEST_CACHE_TTL", 4*time.Hour),
 		XMLTVCacheTTL:            getEnvDuration("PLEX_TUNER_XMLTV_CACHE_TTL", 10*time.Minute),
 		FetchStatePath:           os.Getenv("PLEX_TUNER_FETCH_STATE"),
@@ -130,16 +199,34 @@ func Load() *Config {
 		FetchCFReject:            getEnvBool("PLEX_TUNER_FETCH_CF_REJECT", true),
 		FetchStreamSampleSize:    getEnvInt("PLEX_TUNER_FETCH_STREAM_SAMPLE_SIZE", 5),
 		HDHREnabled:              getEnvBool("PLEX_TUNER_HDHR_NETWORK_MODE", false),
-		HDHRDeviceID:         getEnvUint32("PLEX_TUNER_HDHR_DEVICE_ID", 0x12345678),
-		HDHRTunerCount:       getEnvInt("PLEX_TUNER_HDHR_TUNER_COUNT", 2),
-		HDHRDiscoverPort:     getEnvInt("PLEX_TUNER_HDHR_DISCOVER_PORT", 65001),
-		HDHRControlPort:      getEnvInt("PLEX_TUNER_HDHR_CONTROL_PORT", 65001),
-		HDHRFriendlyName:     os.Getenv("PLEX_TUNER_HDHR_FRIENDLY_NAME"),
+		HDHRDeviceID:             getEnvUint32("PLEX_TUNER_HDHR_DEVICE_ID", 0x12345678),
+		HDHRTunerCount:           getEnvInt("PLEX_TUNER_HDHR_TUNER_COUNT", 2),
+		HDHRDiscoverPort:         getEnvInt("PLEX_TUNER_HDHR_DISCOVER_PORT", 65001),
+		HDHRControlPort:          getEnvInt("PLEX_TUNER_HDHR_CONTROL_PORT", 65001),
+		HDHRFriendlyName:         os.Getenv("PLEX_TUNER_HDHR_FRIENDLY_NAME"),
+		GracenoteDBPath:          os.Getenv("PLEX_TUNER_GRACENOTE_DB"),
+		IptvOrgDBPath:            os.Getenv("PLEX_TUNER_IPTVORG_DB"),
+		SchedulesDirectDBPath:    os.Getenv("PLEX_TUNER_SD_DB"),
+		DVBDBPath:                os.Getenv("PLEX_TUNER_DVB_DB"),
+		DummyGuideEnabled:        getEnvBool("PLEX_TUNER_DUMMY_GUIDE", false),
+		SDTProbeEnabled:          getEnvBool("PLEX_TUNER_SDT_PROBE_ENABLED", false),
+		SDTProbeCache:            os.Getenv("PLEX_TUNER_SDT_PROBE_CACHE"),
+		SDTProbeConcurrency:      getEnvInt("PLEX_TUNER_SDT_PROBE_CONCURRENCY", 2),
+		SDTProbeInterDelay:       getEnvDuration("PLEX_TUNER_SDT_PROBE_INTER_DELAY", 500*time.Millisecond),
+		SDTProbeTimeout:          getEnvDuration("PLEX_TUNER_SDT_PROBE_TIMEOUT", 12*time.Second),
+		SDTProbeResultTTL:        getEnvDuration("PLEX_TUNER_SDT_PROBE_TTL", 7*24*time.Hour),
+		SDTProbeQuietWindow:      getEnvDuration("PLEX_TUNER_SDT_PROBE_QUIET_WINDOW", 3*time.Minute),
+		SDTProbeStartDelay:       getEnvDuration("PLEX_TUNER_SDT_PROBE_START_DELAY", 30*time.Second),
+		SDTProbeRescanInterval:   getEnvDuration("PLEX_TUNER_SDT_PROBE_RESCAN_INTERVAL", 720*time.Hour),
 	}
 	// Auto-derive FetchStatePath from CatalogPath when not explicitly set.
 	// Set PLEX_TUNER_FETCH_STATE="" to opt out of state persistence.
 	if _, set := os.LookupEnv("PLEX_TUNER_FETCH_STATE"); !set && c.CatalogPath != "" {
 		c.FetchStatePath = fetchStatePathFromCatalog(c.CatalogPath)
+	}
+	// Auto-derive SDTProbeCache from CatalogPath when not explicitly set.
+	if _, set := os.LookupEnv("PLEX_TUNER_SDT_PROBE_CACHE"); !set && c.CatalogPath != "" {
+		c.SDTProbeCache = sdtProbeCachePath(c.CatalogPath)
 	}
 	if c.TunerCount <= 0 {
 		c.TunerCount = 2
@@ -384,4 +471,11 @@ func getEnvUint32(key string, defaultVal uint32) uint32 {
 func fetchStatePathFromCatalog(catalogPath string) string {
 	ext := filepath.Ext(catalogPath)
 	return catalogPath[:len(catalogPath)-len(ext)] + ".fetchstate.json"
+}
+
+// sdtProbeCachePath derives the SDT probe cache path from the catalog path.
+// e.g. /var/lib/plextuner/catalog.json → /var/lib/plextuner/catalog.sdtcache.json
+func sdtProbeCachePath(catalogPath string) string {
+	ext := filepath.Ext(catalogPath)
+	return catalogPath[:len(catalogPath)-len(ext)] + ".sdtcache.json"
 }

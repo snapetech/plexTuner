@@ -3,6 +3,7 @@ package fetch_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -126,6 +127,44 @@ func TestCFDetect_Clean(t *testing.T) {
 	}
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestConditionalGet_CFBlockedEndpoint(t *testing.T) {
+	// Simulate a provider where the M3U/API endpoint itself is CF-blocked
+	// (e.g. HTTP 884 with CF-RAY header — the tester's exact case).
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("CF-RAY", "9d449a881ffa5389-LAX")
+		w.Header().Set("Server", "cloudflare")
+		w.WriteHeader(884)
+	}))
+	defer srv.Close()
+
+	_, err := fetch.ConditionalGet(context.Background(), newTestClient(srv), srv.URL+"/get.php", "", "")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var cfErr *fetch.ErrCloudflareDetected
+	if !errors.As(err, &cfErr) {
+		t.Fatalf("expected *ErrCloudflareDetected, got %T: %v", err, err)
+	}
+}
+
+func TestConditionalGetStream_CFBlockedEndpoint(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("CF-RAY", "9d449a881ffa5389-LAX")
+		w.Header().Set("Server", "cloudflare")
+		w.WriteHeader(884)
+	}))
+	defer srv.Close()
+
+	_, _, err := fetch.ConditionalGetStream(context.Background(), newTestClient(srv), srv.URL+"/get.php", "", "")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var cfErr *fetch.ErrCloudflareDetected
+	if !errors.As(err, &cfErr) {
+		t.Fatalf("expected *ErrCloudflareDetected, got %T: %v", err, err)
 	}
 }
 

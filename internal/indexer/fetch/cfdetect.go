@@ -68,6 +68,29 @@ func DetectCloudflare(ctx context.Context, client *http.Client, url string) (boo
 	return false, nil
 }
 
+// IsCFResponse returns (true, ErrCloudflareDetected) if the response headers
+// indicate Cloudflare without reading the response body. Returns (false, nil)
+// if no CF headers are present. Use this to detect CF blocks on the fetch
+// endpoint itself (e.g. M3U URL returning 884 or 403 with CF-RAY header).
+func IsCFResponse(resp *http.Response) (bool, error) {
+	reqURL := ""
+	if resp.Request != nil && resp.Request.URL != nil {
+		reqURL = resp.Request.URL.String()
+	}
+	for _, h := range cfResponseHeaders {
+		if v := resp.Header.Get(h); v != "" {
+			return true, &ErrCloudflareDetected{URL: reqURL, Header: h, Value: v}
+		}
+	}
+	server := strings.ToLower(resp.Header.Get("Server"))
+	for _, sub := range cfServerValues {
+		if strings.Contains(server, sub) {
+			return true, &ErrCloudflareDetected{URL: reqURL, Header: "Server", Value: resp.Header.Get("Server")}
+		}
+	}
+	return false, nil
+}
+
 // SampleStreamURLs returns up to n stream URLs from a list so we can probe them
 // for CF detection without hitting the full list.
 func SampleStreamURLs(urls []string, n int) []string {

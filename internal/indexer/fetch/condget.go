@@ -59,6 +59,11 @@ func ConditionalGet(ctx context.Context, client *http.Client, url, etag, lastMod
 		return nil, ErrNotModified
 	}
 	if resp.StatusCode != http.StatusOK {
+		if ok, cfErr := IsCFResponse(resp); ok {
+			resp.Body.Close()
+			return nil, cfErr
+		}
+		resp.Body.Close()
 		return nil, fmt.Errorf("condget %s: unexpected status %d", url, resp.StatusCode)
 	}
 
@@ -109,6 +114,10 @@ func ConditionalGetStream(ctx context.Context, client *http.Client, url, etag, l
 		return nil, nil, ErrNotModified
 	}
 	if resp.StatusCode != http.StatusOK {
+		if ok, cfErr := IsCFResponse(resp); ok {
+			resp.Body.Close()
+			return nil, nil, cfErr
+		}
 		resp.Body.Close()
 		return nil, nil, fmt.Errorf("condget-stream %s: unexpected status %d", url, resp.StatusCode)
 	}

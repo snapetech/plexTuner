@@ -133,8 +133,9 @@ func DoWithRetry(ctx context.Context, client *http.Client, req *http.Request, po
 			continue
 		}
 
-		// 5xx: exponential backoff with jitter.
-		if code >= 500 && policy.Retry5xx && attempt < maxRetries {
+		// 5xx: exponential backoff with jitter. Only standard 5xx (500-599);
+		// non-standard codes like CF's 884 are not transient server errors.
+		if code >= 500 && code < 600 && policy.Retry5xx && attempt < maxRetries {
 			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 			base := policy.Backoff5xx * time.Duration(1<<uint(attempt))

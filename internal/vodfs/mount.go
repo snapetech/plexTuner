@@ -57,3 +57,36 @@ func MountWithAllowOther(mountPoint string, movies []catalog.Movie, series []cat
 	stop()
 	return nil
 }
+
+// MountBackground mounts VODFS in the background and returns an unmount function.
+// Unlike MountWithAllowOther it does not block; call the returned func to unmount
+// (e.g. before remounting with a refreshed catalog). ctx cancellation also unmounts.
+func MountBackground(ctx context.Context, mountPoint string, movies []catalog.Movie, series []catalog.Series, mat materializer.Interface, allowOther bool) (unmount func(), err error) {
+	root := &Root{
+		Movies: movies,
+		Series: series,
+		Mat:    mat,
+	}
+	if root.Mat == nil {
+		root.Mat = &materializer.Stub{}
+	}
+	root.buildNameIndexes()
+
+	opts := &fs.Options{
+		MountOptions: fuse.MountOptions{
+			Debug:      false,
+			AllowOther: allowOther,
+		},
+	}
+	server, err := fs.Mount(mountPoint, root, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	go func() {
+		<-ctx.Done()
+		_ = server.Unmount()
+	}()
+
+	return func() { _ = server.Unmount() }, nil
+}

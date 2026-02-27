@@ -1,5 +1,184 @@
 # Current task
 
+**Last updated:** 2026-02-27
+
+**DVB DB + Provider 2 stream preference (2026-02-27):**
+- Ran `plex-dvbdb-harvest` locally → 1,720 entries (80 embedded ONID + 1,640 e2se-seeds lamedb). Saved to `/mnt/datapool_lvm_media/plextuner/dvbdb.json`.
+- Patched all 28 supervisor instances with `PLEX_TUNER_DVB_DB=/plextuner-data/dvbdb.json`. DVB DB enrichment is live but produces results only once the SDT prober has run (channels need `SDT != nil`).
+- Fixed splitter (`iptv-m3u-splitter` ConfigMap `split-m3u.py`) to prefer Provider 2 (dambora.xyz) streams over Provider 1 (cdngold.me, which 403s from the pod). Added `provider_rank` field to `Channel` dataclass; `SPLITTER_BAD_STREAM_HOSTS` env (default `cdngold.me`) marks bad-host streams as rank 0 vs rank 1. Rank is now a tiebreaker in `quality_score` above NA preference, below quality score. Sports buckets (`dvr-sportsa.m3u`, `dvr-sportsb.m3u`) flipped from 100% cdngold to 100% dambora. Channels exclusive to cdngold (generalent, newsus) correctly show 0 streams (nothing healthy to offer).
+- Added `SPLITTER_BAD_STREAM_HOSTS=cdngold.me,pod17546.cdngold.me` env to `iptv-m3u-server` deployment.
+- Supervisor restarted and is healthy (1/1); updater ran a full cycle: 55,930 merged, DVR files re-split, postvalidation complete (total_drop_probe=476).
+
+**Goal (2026-02-26):** Expand EPG enrichment pipeline with Schedules Direct,
+DVB services DB, brand-group inheritance, SDT name propagation, and dummy-guide
+fallback. Integrate dvbservices/lyngsat lookup for SDT triplet enrichment.
+Auto-setup: zero-config for DVB (embedded ONID table + iptv-org CSV); SD requires
+a Schedules Direct account (free 7-day trial, US$25/yr).
+
+---
+
+**Completed this session (EPG long-tail C/D + remainder):**
+
+- `internal/schedulesdirect` — new package: SD-JSON API client (`Token`, `Status`,
+  `Lineups`, `LineupStations`), `DB` type with `Load`/`Save`/`Len`/`EnrichTVGID`,
+  harvest loop across configurable country list, `plex-sd-harvest` subcommand.
+  Produces `SD-<stationID>` tvg-ids compatible with any SD XMLTV grabber.
+- `internal/dvbdb` — new package: DVB services DB with embedded ONID→network-name
+  table (~100 major networks; works at startup with zero harvest), `Load`/`Save`,
+  `LookupTriplet(onid,tsid,sid)`, `EnrichTVGID(onid,tsid,sid,displayName)`,
+  `NetworkName(onid)`.  Harvest command supports iptv-org channels CSV (zero-config),
+  dvbservices.com registry CSV (manual download, free account), and lyngsat/kingofsat
+  JSON exports.
+- `internal/indexer/m3u.go` — added:
+  - `InheritTVGIDsByBrandGroup` — second-pass inheritance sweep clustering variants
+    (`ABC East`, `ABC HD`, `ABC 2`) under canonical brand tvg-id (no ambiguity gate).
+  - `EnrichFromSDTMeta` — replaces garbage GuideName (numeric/UUID) with SDT
+    `service_name` so downstream tiers can match it.
+  - `looksLikeGarbageName` — detects pure-numeric / hex / UUID display names.
+  - `brandKey` — normalises a channel name to brand-root token (strips directional,
+    quality, regional, station-code suffixes up to 3 passes).
+- `internal/tuner/xmltv.go` — `DummyGuide bool` field on `XMLTV`; `appendDummyGuide`
+  injects 24×6-hour placeholder programme blocks for unlinked channels before `</tv>`
+  so Plex never hides/deactivates them due to empty guide slots.
+- `internal/tuner/server.go` — `DummyGuide bool` field wired into XMLTV struct.
+- `internal/config/config.go` — 3 new fields: `SchedulesDirectDBPath` (env
+  `PLEX_TUNER_SD_DB`), `DVBDBPath` (env `PLEX_TUNER_DVB_DB`),
+  `DummyGuideEnabled` (env `PLEX_TUNER_DUMMY_GUIDE`).
+- `cmd/plex-tuner/main.go` — enrichment pipeline in `fetchCatalog` now: re-encode
+  inheritance → Gracenote → iptv-org → SDT name propagation → Schedules Direct →
+  DVB DB → brand-group inheritance → best-stream selection.  Two new subcommands:
+  `plex-sd-harvest`, `plex-dvbdb-harvest`.  `DummyGuide` wired in both `serve` and
+  `run` server constructors.
+- `docs/reference/cli-and-env-reference.md` — EPG pipeline section updated to
+  list all 10 tiers; new sections for SD enrichment, DVB DB enrichment, brand-group
+  inheritance, dummy-guide fallback, `plex-sd-harvest`, `plex-dvbdb-harvest`.
+- Verification: green (gofmt -s, vet, all tests, build).
+
+**Auto-setup status (what works with zero config):**
+- DVB DB: embedded ONID table active immediately (covers major broadcast networks
+  worldwide for network identification; triplet resolution needs harvest or SDT probe).
+- Brand-group inheritance: always active (pure in-memory, no external data).
+- SDT name propagation: always active once SDT probe has run once.
+- Dummy guide: opt-in via `PLEX_TUNER_DUMMY_GUIDE=true`.
+- Schedules Direct: requires free account at schedulesdirect.org + harvest run.
+- dvbservices.com triplet CSV: requires manual download from dvbservices.com (free
+  account). Run `plex-dvbdb-harvest -dvbservices-csv <path>` once.
+
+**Deploy steps (new tiers):**
+
+```bash
+# 1. DVB DB (zero-config harvest, iptv-org source):
+kubectl exec -it <supervisor-pod> -- \
+  plex-tuner plex-dvbdb-harvest -out /plextuner-data/dvbdb.json
+# Set env on all instances: PLEX_TUNER_DVB_DB=/plextuner-data/dvbdb.json
+
+# 2. Schedules Direct (requires account):
+kubectl exec -it <supervisor-pod> -- \
+  plex-tuner plex-sd-harvest \
+    -username mySDuser -password mySDpass \
+    -out /plextuner-data/sd.json
+# Set env on all instances: PLEX_TUNER_SD_DB=/plextuner-data/sd.json
+
+# 3. Dummy guide fallback (opt-in):
+# Add PLEX_TUNER_DUMMY_GUIDE=true to all instances that use SourceURL XMLTV.
+```
+
+---
+
+---
+
+**SDT background prober implemented (2026-02-26):**
+
+- `internal/sdtprobe/sdt.go` — new package: pure-Go MPEG-TS SDT parser. Reads up to 64 KB from a live stream URL, scans for PID 0x0011, parses DVB service_descriptor (tag 0x48), extracts `service_name` (Latin-1/charset-prefix aware). No external dependencies.
+- `internal/sdtprobe/sdt_test.go` — 8 unit tests covering basic parse, empty provider, wrong PID, wrong table ID, short buffer, Latin-1 decode, charset prefix, sync-byte scan. All pass.
+- `internal/sdtprobe/worker.go` — background `Worker` that:
+  - waits 30 s after start (head-start for first catalog delivery)
+  - picks only unlinked channels (`EPGLinked=false`) with http(s) stream URLs
+  - shuffles candidates so repeated sweeps don't hit the same channels first
+  - pauses immediately when `gateway.ActiveStreams() > 0`; resumes after `QuietWindow` (default 3 min) of silence
+  - rate-limited: `ConcurrentProbes` (default 2) + `InterProbeDelay` (default 500 ms)
+  - persistent JSON cache (`catalog.sdtcache.json`) survives restarts; skips channels probed within `ResultTTL` (default 7 days)
+  - checkpoints cache every 5 min during sweep
+  - sleeps 24 h between full sweeps
+  - calls `OnResult(channelID, streamURL, serviceName)` when a service_name is found
+- `internal/tuner/gateway.go` — added `ActiveStreams() int` method (mutex-safe)
+- `internal/tuner/server.go` — `Server.SDTProbeConfig *sdtprobe.Config` + `OnSDTResult func(...)` fields; `channelsMu sync.RWMutex` protecting `Channels` for concurrent readers; `Run()` starts the SDT worker goroutine when `SDTProbeConfig != nil`; `UpdateChannels` now uses `channelsMu.Lock()` for the Channels slice assignment.
+- `internal/config/config.go` — 7 new SDT probe fields + `PLEX_TUNER_SDT_PROBE_ENABLED/CACHE/CONCURRENCY/INTER_DELAY/TIMEOUT/TTL/QUIET_WINDOW` env vars. `SDTProbeCache` auto-derived from `CatalogPath` stem.
+- `cmd/plex-tuner/main.go` — wired into both `serve` and `run` commands: creates `sdtprobe.Config`, sets `OnSDTResult` to call `c.UpdateLiveTVGID` + `c.Save` + `srv.UpdateChannels` so live results are persisted immediately and served to Plex.
+- `internal/catalog/catalog.go` — added `UpdateLiveTVGID(channelID, tvgID string) bool` (mutex-safe in-place update).
+- `docs/reference/cli-and-env-reference.md` — added SDT background prober section with env table, behaviour explanation, Kubernetes enable snippet.
+- Verification: green (`gofmt -s`, `vet`, all tests, build).
+
+**Enable in cluster:** Set `PLEX_TUNER_SDT_PROBE_ENABLED=true` on the supervisor deployment. Cache auto-derives from `PLEX_TUNER_CATALOG` stem. No harvest job needed — runs in-process.
+
+**SDT prober upgraded to full identity bundle (2026-02-26):**
+- `sdt.go` now parses three tables from the same 256 KB read:
+  - **PAT** (PID 0x0000) → `TransportStreamID`
+  - **SDT** (PID 0x0011) → `OriginalNetworkID`, `ServiceID`, `ProviderName`, `ServiceName`, `ServiceType`, `EITSchedule`, `EITPresentFollowing`
+  - **EIT p/f** (PID 0x0012) → `NowNext []Programme` (title, text, genre, start time, duration, IsNow flag) when `EITPresentFollowing=true`
+- `Result` struct is now a full identity bundle; old `ServiceName`-only interface removed.
+- `catalog.SDTMeta` struct added to `LiveChannel` with the full DVB triplet + now/next programme titles; `UpdateLiveSDTMeta` method replaces `UpdateLiveTVGID` for SDT results.
+- Worker cache now stores the full `Result` blob; `OnResult` signature is `func(channelID string, result sdtprobe.Result)`.
+- Log line per probe now emits `onid=0x... tsid=0x... svcid=0x... type=0x... eit_pf=... now="..."`.
+- 11 unit tests covering full bundle, SDT-only, no-SDT, EIT now/next, MJD time decode, duration BCD, DVB strings, content nibbles.
+- Verify green.
+
+**Completed this session:**
+
+- `internal/gracenote` — new package: `DB` type with `Load`/`Save`/`Merge`,
+  callSign-normalisation index, `EnrichTVGID(tvgid, name) (gridKey, method)`.
+- `internal/gracenote/harvest.go` — `HarvestFromPlex(token, db, regions, langs)`:
+  queries `epg.provider.plex.tv/lineups` + `/channels` for all world regions
+  (same postal-code map as Python script), deduplicates by gridKey, merges into DB.
+- `internal/epglink` — added tier 1c `GracenoteEnricher` interface +
+  `MatchLiveChannelsWithGracenote`; existing `MatchLiveChannels` unchanged.
+  New match methods: `gracenote_callsign`, `gracenote_gridkey_exact`,
+  `gracenote_title`.
+- `internal/config` — `GracenoteDBPath` field; env `PLEX_TUNER_GRACENOTE_DB`.
+- `cmd/plex-tuner/main.go`:
+  - `fetchCatalog`: Gracenote enrichment step before `LIVE_EPG_ONLY` filter.
+  - `plex-gracenote-harvest` subcommand: harvest → merge → save DB.
+  - `epg-link-report`: now loads Gracenote DB and passes as tier 1c enricher.
+- `docs/reference/cli-and-env-reference.md`: `plex-gracenote-harvest` command
+  docs + `PLEX_TUNER_GRACENOTE_DB` env section.
+- Verification: green (gofmt -s, vet, all tests, build).
+
+**Deployed to cluster (2026-02-27):**
+- Built `plex-tuner:gracenote-20260226220604` image, imported into k3s on `kspld0`
+- Ran `gracenote-harvest` Job → wrote 15,998-channel DB to `/mnt/datapool_lvm_media/plextuner/gracenote.json`
+- Patched supervisor deployment to mount hostPath `/mnt/datapool_lvm_media/plextuner` → `/plextuner-data`
+- Patched configmap: all 15 live children now have `PLEX_TUNER_GRACENOTE_DB=/plextuner-data/gracenote.json`
+- Live results: `hdhr-main`/`hdhr-main2` → **542/47,327 channels enriched**; category children (already fully EPG-linked) → 0 new (expected)
+
+**DB path (persistent):** `/mnt/datapool_lvm_media/plextuner/gracenote.json` on `kspld0`
+**Re-harvest:** `kubectl apply -f` the `gracenote-harvest` Job again (TTL 5min auto-cleanup)
+
+**Last updated:** 2026-02-27
+
+**EPG long-tail implementation completed (2026-02-27):**
+- `iptv-m3u-updater.py`: added `merge_xmltv_extra()` — merges extra XMLTV sources into provider xmltv.xml before prune. Config: `EPG_URL_2`…`EPG_URL_5` or `EPG_EXTRA_URLS`. Deployed with Pluto/Sling/Tubi/Roku iptv-org EPG URLs.
+- `internal/catalog`: `StreamQuality` type (UHD=2, HD=1, SD=0, RAW=-1) + `Quality`/`ReEncodeOf` fields on `LiveChannel`.
+- `internal/indexer/m3u.go`: `DetectStreamQuality`, `InheritTVGIDs` (re-encode inheritance tier), `SelectBestStreams` (dedup by tvg-id keeping highest quality).
+- `internal/iptvorg`: new package — loads/saves/fetches iptv-org channels.json (~39k channels), builds normalised-name + short-code indices, `EnrichTVGID(tvgID, name)`.
+- `internal/config`: `IptvOrgDBPath` field + `PLEX_TUNER_IPTVORG_DB` env.
+- `cmd/plex-tuner/main.go`: re-encode inheritance → Gracenote → iptv-org → best-stream selection pipeline in `fetchCatalog`; `plex-iptvorg-harvest` subcommand.
+- Deployed image `plex-tuner:longtail-20260226230114`, ran `iptvorg-harvest` job (39,087 channels → `/mnt/datapool_lvm_media/plextuner/iptvorg.json`), patched all supervisor instances with `PLEX_TUNER_IPTVORG_DB`.
+- Live results: 246 re-encode inherited + 530 Gracenote + 5,634 iptv-org = **6,410 new EPG links**; best-stream removed 7,826 lower-quality dupes → 41,073 channels.
+- iptv-m3u-server restarted to begin FAST/AVOD EPG merge on next 24h cycle.
+- Docs: `docs/reference/cli-and-env-reference.md` (EPG pipeline section, plex-iptvorg-harvest), `docs/explanations/epg-long-tail-strategies.md` (already existed).
+
+**EPG long-tail research completed (2026-02-27):**
+- Full pipeline accounting: 48,899 raw → ~7,109 with provider EPG → 6,192 after prune → 3,232 after dedup by tvg-id → 13 DVR buckets
+- The 3,232 is NOT a Canada/English filter: XMLTV covers 68 countries; the cap is the provider's own EPG data
+- ~40,135 channels have zero EPG from provider or Gracenote — they are RAW feeds, PPV, dupes, niche IPTV-only
+- Gracenote enrichment: 542 blank tvg-ids → gridKeys set on hdhr-main/hdhr-main2. 499 are Portuguese, 28 English. Provider XMLTV doesn't carry these gridKeys so they're useful only if Plex's own Gracenote/Rovi resolves them
+- Alias/epg-link workflow has 0 gaps on current catalog — normalized matching already covers all near-misses
+- 6 known unfixable channels: 5 Albanian (.al kino/episode/prime), 1 Polish malformed tvg-id
+- Category feeds: 100% XMLTV-matched (LIVE_EPG_ONLY filter keeps only pre-matched channels)
+- Documented: `docs/explanations/epg-coverage-and-long-tail.md` (new), `docs/explanations/index.md` (new)
+
+---
+
 <!-- Update at session start and when focus changes. -->
 
 **Goal:** VOD VODFS libraries deployed; live instances stable on M3U path. VOD instances blocked on Cloudflare IP-level rate-limit from `cf.supergaminghub.xyz` (sustained 503). Waiting for provider cooldown.

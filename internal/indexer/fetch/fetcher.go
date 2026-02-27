@@ -96,9 +96,9 @@ func (c *Config) applyDefaults() {
 
 // Result is the output of a Fetcher.Fetch call.
 type Result struct {
-	Live    []catalog.LiveChannel
-	Movies  []catalog.Movie
-	Series  []catalog.Series
+	Live   []catalog.LiveChannel
+	Movies []catalog.Movie
+	Series []catalog.Series
 
 	// Stats carries per-run counters useful for logging and monitoring.
 	Stats Stats
@@ -366,10 +366,10 @@ func (f *Fetcher) fetchLiveXtream(ctx context.Context, streamBase string) ([]cat
 	}
 
 	var (
-		mu       sync.Mutex
-		allLive  []catalog.LiveChannel
-		stats    Stats
-		catErrs  int32
+		mu      sync.Mutex
+		allLive []catalog.LiveChannel
+		stats   Stats
+		catErrs int32
 	)
 
 	type catJob struct {

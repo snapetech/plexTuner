@@ -2,6 +2,23 @@
 
 Append-only. One entry per completed task.
 
+## Entry
+
+- Date: 2026-02-26
+  Title: Over-engineered resilient fetch engine (internal/indexer/fetch)
+  Summary:
+    - New package `internal/indexer/fetch` (4 files, ~1050 LOC):
+      - `state.go`: `FetchState` crash-safe checkpoint (atomic rename, per-category progress, ETag/LM/content-hash fields, provider-key-based cache invalidation)
+      - `condget.go`: `ConditionalGet` (buffered) + `ConditionalGetStream` (streaming, content-hashing tee) + `RangeRequest` (byte-range resumption) + `ErrNotModified` sentinel
+      - `cfdetect.go`: `DetectCloudflare` (HEAD probe, checks CF-RAY/CF-Cache-Status/CF-Request-ID/CF-Worker/Server headers) + `SampleStreamURLs` (first/mid/last spread sampling)
+      - `fetcher.go`: `Fetcher` with M3U mode, Xtream per-category parallel mode, monolithic fallback, diff engine (stream-hash new/changed/unchanged), CF rejection gate, `ForceFullRefresh`, `Stats` summary
+    - 17 tests in `fetcher_test.go`: 304 fast-path, content-hash fallback, state persistence across instances, category-parallel 304, provider-key invalidation, atomic save, diff hash stability, sample spread, force refresh, CF reject, StatePath helper
+    - Config additions (`internal/config/config.go`): `FetchStatePath` (auto-derived), `FetchCategoryConcurrency`, `FetchCFReject`, `FetchStreamSampleSize`
+    - `cmd/plex-tuner/main.go`: `fetchCatalog` now routes to `fetchCatalogResilient` (new) when `FetchStatePath` set (the default); `fetchCatalogLegacy` retained unchanged for m3uOverride and opt-out. `NotModified` signal propagated to `index`, `run` startup, and `run` refresh loop (skips catalog write and `UpdateChannels` on 304).
+    - Docs: `cli-and-env-reference.md` resilient fetch section + env table; `opportunities.md` two items marked IMPLEMENTED.
+  Verification: `go test ./...` — all packages green, 379ms total.
+  Opportunities filed: n/a (both prior opportunities now resolved).
+
 ## Entry template
 - Date: YYYY-MM-DD
   Title: <short>

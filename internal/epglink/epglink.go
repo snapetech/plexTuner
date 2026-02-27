@@ -28,6 +28,9 @@ type MatchMethod string
 const (
 	MatchTVGIDExact          MatchMethod = "tvg_id_exact"
 	MatchAliasExact          MatchMethod = "alias_exact"
+	MatchGracenoteCallSign   MatchMethod = "gracenote_callsign"
+	MatchGracenoteGridKey    MatchMethod = "gracenote_gridkey_exact"
+	MatchGracenoteTitle      MatchMethod = "gracenote_title"
 	MatchNormalizedNameExact MatchMethod = "name_exact"
 )
 
@@ -159,7 +162,26 @@ func LoadAliasOverrides(r io.Reader) (AliasOverrides, error) {
 	return out, nil
 }
 
+// GracenoteEnricher can resolve a Gracenote gridKey for a channel given its
+// current tvg-id and display name.  Implement with *gracenote.DB.EnrichTVGID.
+// Passing nil disables Gracenote tier (tier 1c) matching.
+type GracenoteEnricher interface {
+	// EnrichTVGID returns the gridKey and the method string, or ("","") if not found.
+	EnrichTVGID(currentTVGID, displayName string) (gridKey string, method string)
+}
+
 func MatchLiveChannels(live []catalog.LiveChannel, xmltv []XMLTVChannel, aliases AliasOverrides) Report {
+	return matchLiveChannels(live, xmltv, aliases, nil)
+}
+
+// MatchLiveChannelsWithGracenote is like MatchLiveChannels but also applies a
+// Gracenote tier (tier 1c) between alias matching and normalized-name matching.
+// When gn is nil the behaviour is identical to MatchLiveChannels.
+func MatchLiveChannelsWithGracenote(live []catalog.LiveChannel, xmltv []XMLTVChannel, aliases AliasOverrides, gn GracenoteEnricher) Report {
+	return matchLiveChannels(live, xmltv, aliases, gn)
+}
+
+func matchLiveChannels(live []catalog.LiveChannel, xmltv []XMLTVChannel, aliases AliasOverrides, gn GracenoteEnricher) Report {
 	byID := map[string]string{}
 	// normalized name -> unique xmltv id; "" means ambiguous
 	nameToID := map[string]string{}
@@ -206,6 +228,17 @@ func MatchLiveChannels(live []catalog.LiveChannel, xmltv []XMLTVChannel, aliases
 		if !row.Matched && row.Normalized != "" {
 			if xmlID := aliases.NameToXMLTVID[row.Normalized]; xmlID != "" {
 				row.Matched, row.MatchedXMLTV, row.Method = true, xmlID, MatchAliasExact
+			}
+		}
+		// Tier 1c: Gracenote callSign / gridKey bridge.
+		// The Gracenote DB maps provider tvg-ids (callSign style, e.g. "TSN1HD")
+		// to gridKeys which can appear as XMLTV channel ids in Plex-sourced XMLTV.
+		if !row.Matched && gn != nil {
+			if gridKey, method := gn.EnrichTVGID(ch.TVGID, ch.GuideName); gridKey != "" {
+				gkLower := strings.ToLower(gridKey)
+				if xmlID, ok := byID[gkLower]; ok {
+					row.Matched, row.MatchedXMLTV, row.Method = true, xmlID, MatchMethod(method)
+				}
 			}
 		}
 		// Tier 2: normalized exact, unique only.

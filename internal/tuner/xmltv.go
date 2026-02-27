@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -25,6 +26,7 @@ import (
 type XMLTV struct {
 	Channels         []catalog.LiveChannel
 	EpgPruneUnlinked bool // when true, only include channels with TVGID set
+	DummyGuide       bool // when true, append placeholder programmes for unlinked channels
 	SourceURL        string
 	SourceTimeout    time.Duration
 	Client           *http.Client
@@ -119,6 +121,8 @@ func (x *XMLTV) serveExternalXMLTV(w http.ResponseWriter, channels []catalog.Liv
 
 // fetchExternalXMLTV performs the upstream HTTP fetch and remaps channel IDs.
 // Called under the XMLTV write lock; returns the full remapped XML bytes.
+// When x.DummyGuide is true, placeholder programmes are appended for any
+// channel not covered by the upstream feed so Plex never hides the channel.
 func (x *XMLTV) fetchExternalXMLTV(channels []catalog.LiveChannel) ([]byte, error) {
 	timeout := x.SourceTimeout
 	if timeout <= 0 {
@@ -146,7 +150,115 @@ func (x *XMLTV) fetchExternalXMLTV(channels []catalog.LiveChannel) ([]byte, erro
 	if err := writeRemappedXMLTV(&buf, resp.Body, channels); err != nil {
 		return nil, err
 	}
+
+	if x.DummyGuide {
+		buf = appendDummyGuide(buf, channels)
+	}
+
 	return buf.Bytes(), nil
+}
+
+// appendDummyGuide appends <channel> and <programme> elements for any channel
+// that has no real EPG data in the existing XML.  The function parses the
+// existing XML minimally (looking for channel IDs already present) and appends
+// before the closing </tv> tag.
+//
+// Dummy programmes span 6 hours each, covering 7 days forward, with a title of
+// the channel's GuideName so the Plex/xTeVe guide shows "No guide data" rather
+// than a blank slot which causes channels to be deactivated.
+func appendDummyGuide(buf bytes.Buffer, channels []catalog.LiveChannel) bytes.Buffer {
+	existing := buf.Bytes()
+
+	// Find channel IDs already present in the XML (fast scan).
+	covered := make(map[string]bool, len(channels))
+	for _, ch := range channels {
+		if ch.TVGID != "" {
+			covered[ch.GuideNumber] = false // present in channel list but may not have programmes
+		}
+	}
+	// Scan for <programme channel="..."> to find which channels have programmes.
+	// We treat "has a <programme> element" as "covered".
+	hasProg := make(map[string]bool)
+	searchIn := existing
+	progTag := []byte(`<programme `)
+	chanAttr := []byte(`channel="`)
+	for {
+		idx := bytes.Index(searchIn, progTag)
+		if idx < 0 {
+			break
+		}
+		rest := searchIn[idx+len(progTag):]
+		ci := bytes.Index(rest, chanAttr)
+		if ci < 0 {
+			searchIn = rest
+			continue
+		}
+		rest = rest[ci+len(chanAttr):]
+		end := bytes.IndexByte(rest, '"')
+		if end < 0 {
+			searchIn = rest
+			continue
+		}
+		hasProg[string(rest[:end])] = true
+		searchIn = rest[end+1:]
+	}
+
+	// Build dummy entries for unlinked channels.
+	var dummy bytes.Buffer
+	now := time.Now().UTC()
+	// Align to previous 6-hour boundary.
+	startBase := now.Truncate(6 * time.Hour)
+
+	for _, ch := range channels {
+		if hasProg[ch.GuideNumber] {
+			continue
+		}
+		// Emit a <channel> element.
+		fmt.Fprintf(&dummy, "  <channel id=%q>\n    <display-name>%s</display-name>\n  </channel>\n",
+			ch.GuideNumber, xmlEscapeStr(ch.GuideName))
+		// Emit 28 × 6-hour slots = 7 days.
+		for i := range 28 {
+			start := startBase.Add(time.Duration(i) * 6 * time.Hour)
+			stop := start.Add(6 * time.Hour)
+			fmt.Fprintf(&dummy,
+				"  <programme start=%q stop=%q channel=%q>\n    <title lang=\"en\">%s</title>\n  </programme>\n",
+				start.Format("20060102150405 +0000"),
+				stop.Format("20060102150405 +0000"),
+				ch.GuideNumber,
+				xmlEscapeStr(ch.GuideName),
+			)
+		}
+	}
+
+	if dummy.Len() == 0 {
+		return buf
+	}
+
+	// Inject before </tv>.
+	closeTag := []byte("</tv>")
+	idx := bytes.LastIndex(existing, closeTag)
+	if idx < 0 {
+		// Malformed XMLTV — just append.
+		var out bytes.Buffer
+		out.Write(existing)
+		out.Write(dummy.Bytes())
+		return out
+	}
+
+	var out bytes.Buffer
+	out.Write(existing[:idx])
+	out.Write(dummy.Bytes())
+	out.Write(existing[idx:])
+	return out
+}
+
+// xmlEscapeStr escapes XML special characters in a string value.
+func xmlEscapeStr(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	s = strings.ReplaceAll(s, "\"", "&quot;")
+	return s
 }
 
 func (x *XMLTV) servePlaceholderXMLTV(w http.ResponseWriter, channels []catalog.LiveChannel) {

@@ -26,18 +26,48 @@ import (
 
 	"github.com/plextuner/plex-tuner/internal/catalog"
 	"github.com/plextuner/plex-tuner/internal/config"
+	"github.com/plextuner/plex-tuner/internal/dvbdb"
 	"github.com/plextuner/plex-tuner/internal/epglink"
+	"github.com/plextuner/plex-tuner/internal/gracenote"
 	"github.com/plextuner/plex-tuner/internal/hdhomerun"
 	"github.com/plextuner/plex-tuner/internal/health"
 	"github.com/plextuner/plex-tuner/internal/indexer"
 	"github.com/plextuner/plex-tuner/internal/indexer/fetch"
+	"github.com/plextuner/plex-tuner/internal/iptvorg"
 	"github.com/plextuner/plex-tuner/internal/materializer"
 	"github.com/plextuner/plex-tuner/internal/plex"
 	"github.com/plextuner/plex-tuner/internal/provider"
+	"github.com/plextuner/plex-tuner/internal/schedulesdirect"
+	"github.com/plextuner/plex-tuner/internal/sdtprobe"
 	"github.com/plextuner/plex-tuner/internal/supervisor"
 	"github.com/plextuner/plex-tuner/internal/tuner"
 	"github.com/plextuner/plex-tuner/internal/vodfs"
 )
+
+// sdtResultToMeta converts a sdtprobe.Result into a catalog.SDTMeta blob for
+// persistence.  Extracts now/next titles from the EIT programme list.
+func sdtResultToMeta(r sdtprobe.Result) *catalog.SDTMeta {
+	m := &catalog.SDTMeta{
+		OriginalNetworkID:   r.OriginalNetworkID,
+		TransportStreamID:   r.TransportStreamID,
+		ServiceID:           r.ServiceID,
+		ProviderName:        r.ProviderName,
+		ServiceName:         r.ServiceName,
+		ServiceType:         r.ServiceType,
+		EITSchedule:         r.EITSchedule,
+		EITPresentFollowing: r.EITPresentFollowing,
+		ProbedAt:            time.Now().UTC().Format(time.RFC3339),
+	}
+	for _, p := range r.NowNext {
+		if p.IsNow {
+			m.NowTitle = p.Title
+			m.NowGenre = p.Genre
+		} else {
+			m.NextTitle = p.Title
+		}
+	}
+	return m
+}
 
 // streamURLsFromRankedBases returns a slice of full stream URLs by combining each ranked base with the path from streamURL.
 // So if streamURL is "http://best.com/live/user/pass/1.m3u8" and ranked is [best, 2nd, 3rd], returns [best+path, 2nd+path, 3rd+path].
@@ -175,6 +205,138 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 		log.Printf("VOD category filter: movies %d→%d series %d→%d", beforeM, len(res.Movies), beforeS, len(res.Series))
 	}
 
+	// Re-encode inheritance: channels labelled ᴿᴬᵂ/4K/UHD that have no tvg-id
+	// inherit the tvg-id from their base channel (same name minus quality markers).
+	// Quality tier is also set on every channel here (UHD=2, HD=1, SD=0, RAW=-1).
+	if inherited := indexer.InheritTVGIDs(res.Live); inherited > 0 {
+		log.Printf("Re-encode inheritance: %d channels inherited tvg-id from base channel", inherited)
+	}
+
+	// Gracenote EPG enrichment: for channels without a tvg-id, attempt to
+	// resolve one via the local Gracenote DB (callSign / gridKey matching).
+	// This runs before LiveEPGOnly so newly-enriched channels survive that filter.
+	if cfg.GracenoteDBPath != "" {
+		gnDB, gnErr := gracenote.Load(cfg.GracenoteDBPath)
+		if gnErr != nil {
+			log.Printf("Gracenote DB load error (skipping enrichment): %v", gnErr)
+		} else if gnDB.Len() > 0 {
+			enriched := 0
+			for i := range res.Live {
+				ch := &res.Live[i]
+				if ch.EPGLinked && ch.TVGID != "" {
+					continue
+				}
+				if gk, _ := gnDB.EnrichTVGID(ch.TVGID, ch.GuideName); gk != "" {
+					ch.TVGID = gk
+					ch.EPGLinked = true
+					enriched++
+				}
+			}
+			log.Printf("Gracenote enrichment: %d/%d channels enriched (DB size: %d)", enriched, len(res.Live), gnDB.Len())
+		}
+	}
+
+	// iptv-org enrichment: for channels still without tvg-id after Gracenote,
+	// attempt match via the iptv-org community channel DB (name + shortcode matching).
+	if cfg.IptvOrgDBPath != "" {
+		ioDB, ioErr := iptvorg.Load(cfg.IptvOrgDBPath)
+		if ioErr != nil {
+			log.Printf("iptv-org DB load error (skipping enrichment): %v", ioErr)
+		} else if ioDB.Len() > 0 {
+			enriched := 0
+			for i := range res.Live {
+				ch := &res.Live[i]
+				if ch.EPGLinked && ch.TVGID != "" {
+					continue
+				}
+				if id, _ := ioDB.EnrichTVGID(ch.TVGID, ch.GuideName); id != "" {
+					ch.TVGID = id
+					ch.EPGLinked = true
+					enriched++
+				}
+			}
+			log.Printf("iptv-org enrichment: %d/%d channels enriched (DB size: %d)", enriched, len(res.Live), ioDB.Len())
+		}
+	}
+
+	// SDT-name propagation: if a channel's GuideName looks like garbage (numeric
+	// stream ID, UUID, etc.) and it has a probed SDT service_name, replace the
+	// display name so downstream enrichment tiers can match it.
+	if sdtFixed := indexer.EnrichFromSDTMeta(res.Live); sdtFixed > 0 {
+		log.Printf("SDT name propagation: %d garbage names replaced with service_name", sdtFixed)
+	}
+
+	// Schedules Direct enrichment: for channels still without tvg-id, attempt
+	// callSign / name match via the local SD station DB.
+	if cfg.SchedulesDirectDBPath != "" {
+		sdDB, sdErr := schedulesdirect.Load(cfg.SchedulesDirectDBPath)
+		if sdErr != nil {
+			log.Printf("Schedules Direct DB load error (skipping): %v", sdErr)
+		} else if sdDB.Len() > 0 {
+			enriched := 0
+			for i := range res.Live {
+				ch := &res.Live[i]
+				if ch.EPGLinked && ch.TVGID != "" {
+					continue
+				}
+				if id, _ := sdDB.EnrichTVGID(ch.TVGID, ch.GuideName); id != "" {
+					ch.TVGID = id
+					ch.EPGLinked = true
+					enriched++
+				}
+			}
+			log.Printf("Schedules Direct enrichment: %d/%d channels enriched (DB size: %d)", enriched, len(res.Live), sdDB.Len())
+		}
+	}
+
+	// DVB triplet enrichment: for channels with SDTMeta (from background probe),
+	// attempt triplet→tvg-id lookup via the DVB services DB.
+	{
+		dvbDB, dvbErr := dvbdb.Load(cfg.DVBDBPath) // Load always succeeds (embedded ONID table)
+		if dvbErr != nil {
+			log.Printf("DVB DB load error (skipping triplet enrichment): %v", dvbErr)
+		} else {
+			enriched := 0
+			for i := range res.Live {
+				ch := &res.Live[i]
+				if ch.EPGLinked && ch.TVGID != "" {
+					continue
+				}
+				if ch.SDT == nil {
+					continue
+				}
+				if id, _ := dvbDB.EnrichTVGID(
+					ch.SDT.OriginalNetworkID,
+					ch.SDT.TransportStreamID,
+					ch.SDT.ServiceID,
+					ch.GuideName,
+				); id != "" {
+					ch.TVGID = id
+					ch.EPGLinked = true
+					enriched++
+				}
+			}
+			if enriched > 0 {
+				log.Printf("DVB DB enrichment: %d channels enriched", enriched)
+			}
+		}
+	}
+
+	// Brand-group inheritance: a second-pass sweep that clusters variants
+	// ("ABC East", "ABC HD", "ABC 2") under a canonical brand tvg-id.
+	if brandInherited := indexer.InheritTVGIDsByBrandGroup(res.Live); brandInherited > 0 {
+		log.Printf("Brand-group inheritance: %d channels inherited tvg-id", brandInherited)
+	}
+
+	// Best-stream selection: for each tvg-id keep only the highest-quality
+	// non-RAW stream (UHD > HD > SD > RAW). Runs after all enrichment tiers so
+	// re-encode-inherited ids are deduplicated correctly.
+	before := len(res.Live)
+	res.Live = indexer.SelectBestStreams(res.Live)
+	if dropped := before - len(res.Live); dropped > 0 {
+		log.Printf("Best-stream selection: %d→%d channels (%d lower-quality dupes removed)", before, len(res.Live), dropped)
+	}
+
 	// Live-channel filters (applied on every path).
 	if cfg.LiveEPGOnly {
 		filtered := make([]catalog.LiveChannel, 0, len(res.Live))
@@ -243,19 +405,19 @@ func fetchCatalogResilient(cfg *config.Config) (*catalogResult, error) {
 	}
 
 	fetchCfg := fetch.Config{
-		APIBase:              apiBase,
-		Username:             cfg.ProviderUser,
-		Password:             cfg.ProviderPass,
-		StreamExt:            "m3u8",
-		M3UURL:               m3uURL,
-		FetchLive:            true,
-		FetchVOD:             !cfg.LiveOnly,
-		FetchSeries:          !cfg.LiveOnly,
-		CategoryConcurrency:  cfg.FetchCategoryConcurrency,
-		StreamSampleSize:     cfg.FetchStreamSampleSize,
-		RejectCFStreams:      cfg.FetchCFReject,
-		StatePath:            cfg.FetchStatePath,
-		BaseURLOverrides:     baseURLs,
+		APIBase:             apiBase,
+		Username:            cfg.ProviderUser,
+		Password:            cfg.ProviderPass,
+		StreamExt:           "m3u8",
+		M3UURL:              m3uURL,
+		FetchLive:           true,
+		FetchVOD:            !cfg.LiveOnly,
+		FetchSeries:         !cfg.LiveOnly,
+		CategoryConcurrency: cfg.FetchCategoryConcurrency,
+		StreamSampleSize:    cfg.FetchStreamSampleSize,
+		RejectCFStreams:     cfg.FetchCFReject,
+		StatePath:           cfg.FetchStatePath,
+		BaseURLOverrides:    baseURLs,
 	}
 
 	if fetchCfg.APIBase == "" && fetchCfg.M3UURL == "" {
@@ -486,8 +648,105 @@ func main() {
 	epgLinkOut := epgLinkReportCmd.String("out", "", "Optional full JSON report output path")
 	epgLinkUnmatchedOut := epgLinkReportCmd.String("unmatched-out", "", "Optional unmatched-only JSON output path")
 
+	gnHarvestCmd := flag.NewFlagSet("plex-gracenote-harvest", flag.ExitOnError)
+	gnHarvestToken := gnHarvestCmd.String("token", "", "plex.tv auth token (required; or set PLEX_TOKEN env)")
+	gnHarvestOut := gnHarvestCmd.String("out", "", "Output Gracenote DB JSON path (required)")
+	gnHarvestRegions := gnHarvestCmd.String("regions", "", "Comma-separated region names to harvest (default: all supported regions)")
+	gnHarvestMerge := gnHarvestCmd.Bool("merge", false, "Merge into existing DB at -out instead of overwriting")
+	gnHarvestLangFilter := gnHarvestCmd.String("lang", "", "Comma-separated language codes to keep (e.g. en,fr); empty = keep all")
+
+	ioHarvestCmd := flag.NewFlagSet("plex-iptvorg-harvest", flag.ExitOnError)
+	ioHarvestOut := ioHarvestCmd.String("out", "", "Output iptv-org DB JSON path (required)")
+	ioHarvestURL := ioHarvestCmd.String("url", "", "Override iptv-org channels.json URL (default: iptv-org.github.io)")
+
+	sdHarvestCmd := flag.NewFlagSet("plex-sd-harvest", flag.ExitOnError)
+	sdHarvestOut := sdHarvestCmd.String("out", "", "Output Schedules Direct DB JSON path (required)")
+	sdHarvestUser := sdHarvestCmd.String("username", "", "Schedules Direct username (or SD_USERNAME env)")
+	sdHarvestPass := sdHarvestCmd.String("password", "", "Schedules Direct password (or SD_PASSWORD env)")
+	sdHarvestCountries := sdHarvestCmd.String("countries", "", "Comma-separated SD country codes to harvest (default: USA,CAN,GBR,AUS,DEU,FRA,ESP,ITA,NLD,MEX)")
+	sdHarvestMaxLineups := sdHarvestCmd.Int("max-lineups", 5, "Max lineups to probe per country (limits API calls)")
+
+	// plex-session-drain
+	sessionDrainCmd := flag.NewFlagSet("plex-session-drain", flag.ExitOnError)
+	sdPlexURL := sessionDrainCmd.String("plex-url", "http://127.0.0.1:32400", "Plex base URL")
+	sdToken := sessionDrainCmd.String("token", "", "Plex token (default: PLEX_TUNER_PMS_TOKEN or PLEX_TOKEN)")
+	sdMachineID := sessionDrainCmd.String("machine-id", "", "Only act on this player machineIdentifier")
+	sdPlayerIP := sessionDrainCmd.String("player-ip", "", "Only act on this player IP")
+	sdAllLive := sessionDrainCmd.Bool("all-live", false, "Act on all live sessions (default when no filter)")
+	sdDryRun := sessionDrainCmd.Bool("dry-run", false, "Print what would be stopped without stopping")
+	sdPoll := sessionDrainCmd.Float64("poll", 1.0, "Poll interval in seconds")
+	sdWait := sessionDrainCmd.Float64("wait", 15.0, "Seconds to wait for sessions to clear after stop")
+	sdWatch := sessionDrainCmd.Bool("watch", false, "Continuously reap stale sessions instead of one-shot drain")
+	sdWatchRuntime := sessionDrainCmd.Float64("watch-runtime", 0.0, "Exit watch mode after N seconds (0=forever)")
+	sdSSE := sessionDrainCmd.Bool("sse", false, "Subscribe to Plex SSE in watch mode for faster rescans")
+	sdIdleSeconds := sessionDrainCmd.Float64("idle-seconds", 0.0, "Stop sessions idle for this many seconds")
+	sdRenewLease := sessionDrainCmd.Float64("renew-lease-seconds", 0.0, "Renewable heartbeat lease: stop if no activity for N seconds")
+	sdLease := sessionDrainCmd.Float64("lease-seconds", 0.0, "Hard backstop: stop after this session age (0=disabled)")
+	sdLogLookback := sessionDrainCmd.Int("log-lookback", 10, "Seconds of Plex logs to scan per poll for activity detection")
+
+	// plex-label-proxy
+	labelProxyCmd := flag.NewFlagSet("plex-label-proxy", flag.ExitOnError)
+	lpListen := labelProxyCmd.String("listen", "127.0.0.1:33240", "host:port to listen on")
+	lpUpstream := labelProxyCmd.String("upstream", "", "Plex PMS URL (required)")
+	lpToken := labelProxyCmd.String("token", "", "Plex token (default: PLEX_TUNER_PMS_TOKEN or PLEX_TOKEN)")
+	lpStripPrefix := labelProxyCmd.String("strip-prefix", "plextuner-", "Strip this prefix from lineup titles")
+	lpRefresh := labelProxyCmd.Int("refresh-seconds", 30, "DVR label map refresh interval")
+
+	// vod-backfill-series
+	vodBackfillCmd := flag.NewFlagSet("vod-backfill-series", flag.ExitOnError)
+	vbCatalogIn := vodBackfillCmd.String("catalog-in", "", "Input catalog.json (required)")
+	vbCatalogOut := vodBackfillCmd.String("catalog-out", "", "Output catalog.json (required)")
+	vbProgressOut := vodBackfillCmd.String("progress-out", "", "Write progress JSON here")
+	vbWorkers := vodBackfillCmd.Int("workers", 6, "Concurrent get_series_info workers")
+	vbTimeout := vodBackfillCmd.Int("timeout", 60, "Per-request timeout in seconds")
+	vbLimit := vodBackfillCmd.Int("limit", 0, "Only process first N series (debug)")
+	vbRetryFrom := vodBackfillCmd.String("retry-failed-from", "", "Progress JSON from a previous run; only retry failed SIDs")
+
+	// plex-probe-overrides
+	probeOverridesCmd := flag.NewFlagSet("plex-probe-overrides", flag.ExitOnError)
+	poLineup := probeOverridesCmd.String("lineup-json", "", "Path or URL to lineup.json (required)")
+	poBaseURL := probeOverridesCmd.String("base-url", "", "Base URL for relative lineup stream URLs")
+	poReplaceURL := probeOverridesCmd.String("replace-url-prefix", "", "OLD=NEW prefix replacement for stream URLs (comma-separated for multiple)")
+	poChannelID := probeOverridesCmd.String("channel-id", "", "Only probe these channel IDs (comma-separated)")
+	poLimit := probeOverridesCmd.Int("limit", 0, "Probe at most N channels (0=all)")
+	poTimeout := probeOverridesCmd.Int("timeout", 12, "ffprobe timeout seconds per channel")
+	poBitrate := probeOverridesCmd.Int("bitrate-threshold", 5_000_000, "Flag channels with bitrate above this bps (0=disabled)")
+	poProfileOut := probeOverridesCmd.String("emit-profile-overrides", "", "Write profile overrides JSON to this path")
+	poTranscodeOut := probeOverridesCmd.String("emit-transcode-overrides", "", "Write transcode overrides JSON to this path")
+	poNoTranscode := probeOverridesCmd.Bool("no-transcode-overrides", false, "Do not emit transcode=true for flagged channels")
+	poSleepMS := probeOverridesCmd.Int("sleep-ms", 0, "Sleep between probes (milliseconds)")
+	poFFprobe := probeOverridesCmd.String("ffprobe", "ffprobe", "Path to ffprobe binary")
+
+	// generate-supervisor-config
+	genSupCmd := flag.NewFlagSet("generate-supervisor-config", flag.ExitOnError)
+	gsK3sDir := genSupCmd.String("k3s-plex-dir", "../k3s/plex", "Path to k3s/plex directory containing plextuner-hdhr-test-deployment.yaml")
+	gsOutJSON := genSupCmd.String("out-json", "plextuner-supervisor-multi.generated.json", "Output supervisor JSON path")
+	gsOutYAML := genSupCmd.String("out-yaml", "plextuner-supervisor-singlepod.generated.yaml", "Output k8s manifest YAML path")
+	gsOutTSV := genSupCmd.String("out-tsv", "plextuner-supervisor-cutover-map.generated.tsv", "Output cutover TSV path")
+	gsCountry := genSupCmd.String("country", "", "Country hint for HDHR preset selection (e.g. CA, US)")
+	gsPostal := genSupCmd.String("postal-code", "", "Postal/ZIP hint (used locally only; not logged)")
+	gsTimezone := genSupCmd.String("timezone", "", "Timezone hint (e.g. America/Vancouver; used locally only; not logged)")
+	gsRegionProfile := genSupCmd.String("hdhr-region-profile", "auto", "HDHR wizard feed preset: auto or na_en")
+	gsHDHRm3u := genSupCmd.String("hdhr-m3u-url", "", "Override HDHR wizard-feed M3U URL")
+	gsHDHRxmlTV := genSupCmd.String("hdhr-xmltv-url", "", "Override HDHR wizard-feed XMLTV URL")
+	gsCatM3U := genSupCmd.String("cat-m3u-url", "http://iptv-m3u-server.plex.svc/live.m3u", "M3U URL for category DVR children")
+	gsCatXMLTV := genSupCmd.String("cat-xmltv-url", "http://iptv-m3u-server.plex.svc/xmltv.xml", "XMLTV URL for category DVR children")
+	gsCatCountsJSON := genSupCmd.String("category-counts-json", "", "Optional JSON file with confirmed linked counts per base category")
+	gsCatCap := genSupCmd.Int("category-cap", 479, "Per-category cap before creating overflow shards")
+	gsHDHRMax := genSupCmd.Int("hdhr-lineup-max", -1, "Override HDHR child lineup max (-1 = from preset)")
+	gsHDHRTranscode := genSupCmd.String("hdhr-stream-transcode", "", "HDHR child stream transcode: on/off/auto/auto_cached (default from preset)")
+
+	dvbdbHarvestCmd := flag.NewFlagSet("plex-dvbdb-harvest", flag.ExitOnError)
+	dvbdbHarvestOut := dvbdbHarvestCmd.String("out", "", "Output DVB DB JSON path (required)")
+	dvbdbHarvestCSV := dvbdbHarvestCmd.String("dvbservices-csv", "", "Path to community triplet CSV (ONID/TSID/SID/ServiceName columns; optional)")
+	dvbdbHarvestLyngsatJSON := dvbdbHarvestCmd.String("lyngsat-json", "", "Path to community lyngsat/kingofsat JSON export (optional)")
+	dvbdbHarvestLamedb := dvbdbHarvestCmd.String("lamedb", "", "Path to Enigma2 lamedb file (optional; widely available from satellite receiver community)")
+	dvbdbHarvestVDR := dvbdbHarvestCmd.String("vdr-channels", "", "Path to VDR channels.conf file (optional; also accepts w_scan2 output)")
+	dvbdbHarvestTvh := dvbdbHarvestCmd.String("tvheadend-json", "", "Path to TvHeadend channel export JSON (optional; export via /api/channel/grid or Web UI)")
+	dvbdbHarvestE2Se := dvbdbHarvestCmd.Bool("e2se-seeds", true, "Auto-fetch community Enigma2 lamedb from e2se/e2se-seeds on GitHub (default: true)")
+
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <run|index|mount|serve|probe|plex-epg-oracle|plex-epg-oracle-cleanup|supervise|plex-dvr-sync|vod-split|plex-vod-register|epg-link-report> [flags]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s <run|index|mount|serve|probe|plex-epg-oracle|plex-epg-oracle-cleanup|supervise|plex-dvr-sync|vod-split|plex-vod-register|epg-link-report|plex-gracenote-harvest|plex-session-drain|plex-label-proxy|vod-backfill-series|generate-supervisor-config> [flags]\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  run    One-run: refresh catalog, health check, serve tuner (for systemd)\n")
 		fmt.Fprintf(os.Stderr, "  index  Fetch M3U, save catalog\n")
 		fmt.Fprintf(os.Stderr, "  mount  Mount VODFS (use -cache for on-demand download)\n")
@@ -500,6 +759,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  vod-split  Split VOD catalog into category/region lane catalogs for separate VODFS mounts/libraries\n")
 		fmt.Fprintf(os.Stderr, "  plex-vod-register  Create/reuse Plex libraries for VODFS (TV + Movies)\n")
 		fmt.Fprintf(os.Stderr, "  epg-link-report  Deterministic EPG match coverage report for live channels vs XMLTV\n")
+		fmt.Fprintf(os.Stderr, "  plex-gracenote-harvest  Harvest Gracenote channel DB from plex.tv EPG API and save for in-app enrichment\n")
+		fmt.Fprintf(os.Stderr, "  plex-iptvorg-harvest    Download iptv-org community channel DB (~47k channels) and save for in-app enrichment\n")
+		fmt.Fprintf(os.Stderr, "  plex-session-drain      Drain/watch active Plex Live TV sessions via Plex API\n")
+		fmt.Fprintf(os.Stderr, "  plex-label-proxy        Reverse proxy that rewrites /media/providers Live TV labels using DVR lineup titles\n")
+		fmt.Fprintf(os.Stderr, "  vod-backfill-series     Refetch per-series episode info and rewrite seasons in catalog.json\n")
+		fmt.Fprintf(os.Stderr, "  generate-supervisor-config  Generate supervisor JSON + k8s singlepod YAML from HDHR deployment template\n")
+		fmt.Fprintf(os.Stderr, "  plex-probe-overrides        Probe lineup streams with ffprobe; emit profile/transcode override JSON files\n")
 		os.Exit(1)
 	}
 
@@ -586,6 +852,22 @@ func main() {
 		if *serveFriendlyName != "" {
 			friendlyName = *serveFriendlyName
 		}
+		var sdtCfgPtr *sdtprobe.Config
+		if cfg.SDTProbeEnabled {
+			sdtCfgPtr = &sdtprobe.Config{
+				CachePath:        cfg.SDTProbeCache,
+				ConcurrentProbes: cfg.SDTProbeConcurrency,
+				InterProbeDelay:  cfg.SDTProbeInterDelay,
+				ProbeTimeout:     cfg.SDTProbeTimeout,
+				ResultTTL:        cfg.SDTProbeResultTTL,
+				QuietWindow:      cfg.SDTProbeQuietWindow,
+				StartDelay:       cfg.SDTProbeStartDelay,
+				RescanInterval:   cfg.SDTProbeRescanInterval,
+			}
+			log.Printf("SDT probe: enabled (concurrency=%d, inter-delay=%s, quiet-window=%s, start-delay=%s, rescan-interval=%s, cache=%s)",
+				cfg.SDTProbeConcurrency, cfg.SDTProbeInterDelay, cfg.SDTProbeQuietWindow, cfg.SDTProbeStartDelay, cfg.SDTProbeRescanInterval, cfg.SDTProbeCache)
+		}
+
 		srv := &tuner.Server{
 			Addr:                *serveAddr,
 			BaseURL:             *serveBaseURL,
@@ -603,6 +885,29 @@ func main() {
 			XMLTVTimeout:        cfg.XMLTVTimeout,
 			XMLTVCacheTTL:       cfg.XMLTVCacheTTL,
 			EpgPruneUnlinked:    cfg.EpgPruneUnlinked,
+			DummyGuide:          cfg.DummyGuideEnabled,
+			SDTProbeConfig:      sdtCfgPtr,
+		}
+		// Wire SDT results back into the on-disk catalog so they survive restarts.
+		if cfg.SDTProbeEnabled {
+			catalogPathForSDT := *catalogPathServe
+			if catalogPathForSDT == "" {
+				catalogPathForSDT = cfg.CatalogPath
+			}
+			srv.OnSDTResult = func(channelID string, result sdtprobe.Result) {
+				meta := sdtResultToMeta(result)
+				// Use service_name as tvg-id fallback so XMLTV matching can start
+				// immediately; the next catalog refresh may overlay with a richer ID.
+				if c.UpdateLiveSDTMeta(channelID, meta, result.ServiceName) {
+					log.Printf("sdt-prober: channel_id=%s svc=%q provider=%q onid=0x%04x tsid=0x%04x svcid=0x%04x",
+						channelID, result.ServiceName, result.ProviderName,
+						result.OriginalNetworkID, result.TransportStreamID, result.ServiceID)
+					if err := c.Save(catalogPathForSDT); err != nil {
+						log.Printf("sdt-prober: catalog save: %v", err)
+					}
+					srv.UpdateChannels(c.SnapshotLive())
+				}
+			}
 		}
 		srv.UpdateChannels(live)
 		if cfg.XMLTVURL != "" {
@@ -660,40 +965,47 @@ func main() {
 			path = cfg.CatalogPath
 		}
 
-		// 1) Refresh catalog at startup unless skipped.
-		var runApiBase string // best ranked provider; used for health check URL below
-		if !*runSkipIndex {
-			log.Print("Refreshing catalog ...")
-			res, err := fetchCatalog(cfg, "")
-			if err != nil {
-				// If a catalog already exists on disk, warn and continue with stale data
-				// rather than crashing. This makes instances resilient to transient provider
-				// outages / rate-limits at restart time.
-				if _, statErr := os.Stat(path); statErr == nil {
-					log.Printf("Catalog refresh failed (will serve stale catalog): %v", err)
-				} else {
-					log.Printf("Catalog refresh failed: %v", err)
-					os.Exit(1)
-				}
+		// 1) Load any existing cached catalog immediately so the server can start
+		// serving clients right away, even before the background refresh completes.
+		// When no catalog exists yet (first run), we must block for an initial fetch.
+		c := catalog.New()
+		hasCachedCatalog := false
+		if _, statErr := os.Stat(path); statErr == nil {
+			if err := c.Load(path); err != nil {
+				log.Printf("Load catalog %s: %v", path, err)
 			} else {
-				runApiBase = res.APIBase
-				if res.NotModified {
-					log.Print("Catalog unchanged (304/hash-match) — loading existing catalog from disk")
-				} else {
-					epgLinked, withBackups := catalogStats(res.Live)
-					c := catalog.New()
-					c.ReplaceWithLive(res.Movies, res.Series, res.Live)
-					if err := c.Save(path); err != nil {
-						log.Printf("Save catalog failed: %v", err)
-						os.Exit(1)
-					}
-					log.Printf("Catalog saved: %d movies, %d series, %d live (%d EPG-linked, %d with backups)",
-						len(res.Movies), len(res.Series), len(res.Live), epgLinked, withBackups)
-				}
+				hasCachedCatalog = true
 			}
 		}
 
-		// 2) Health check provider unless skipped (use best ranked base when we just indexed, else first configured).
+		// 2) If no cache exists (first run), do a blocking fetch now.
+		// If a cache exists and skip-index is not set, the refresh will happen in
+		// the background goroutine below so clients are never left waiting.
+		var runApiBase string // best ranked provider; used for health check URL below
+		if !hasCachedCatalog && !*runSkipIndex {
+			log.Print("No cached catalog — performing initial fetch before serving ...")
+			res, err := fetchCatalog(cfg, "")
+			if err != nil {
+				log.Printf("Initial catalog fetch failed: %v", err)
+				os.Exit(1)
+			}
+			runApiBase = res.APIBase
+			if !res.NotModified {
+				epgLinked, withBackups := catalogStats(res.Live)
+				c.ReplaceWithLive(res.Movies, res.Series, res.Live)
+				if err := c.Save(path); err != nil {
+					log.Printf("Save catalog failed: %v", err)
+					os.Exit(1)
+				}
+				log.Printf("Catalog saved: %d movies, %d series, %d live (%d EPG-linked, %d with backups)",
+					len(res.Movies), len(res.Series), len(res.Live), epgLinked, withBackups)
+				hasCachedCatalog = true
+			}
+		} else if hasCachedCatalog && !*runSkipIndex {
+			log.Printf("Cached catalog found — serving immediately; background refresh will update lineup shortly")
+		}
+
+		// 3) Health check provider unless skipped (use best ranked base when we just indexed, else first configured).
 		var checkURL string
 		if cfg.ProviderUser != "" && cfg.ProviderPass != "" {
 			base := runApiBase
@@ -717,16 +1029,6 @@ func main() {
 			log.Print("Provider OK")
 		}
 
-		// 3) Load catalog and start server.
-		c := catalog.New()
-		if err := c.Load(path); err != nil {
-			if os.IsNotExist(err) {
-				log.Printf("No catalog found at %s — starting with empty catalog (will populate on next refresh)", path)
-			} else {
-				log.Printf("Load catalog failed: %v", err)
-				os.Exit(1)
-			}
-		}
 		live := c.SnapshotLive()
 		movies, series := c.Snapshot()
 		log.Printf("Loaded %d live channels, %d movies, %d series from %s", len(live), len(movies), len(series), path)
@@ -774,6 +1076,22 @@ func main() {
 		if *runFriendlyName != "" {
 			friendlyName = *runFriendlyName
 		}
+		var runSDTCfgPtr *sdtprobe.Config
+		if cfg.SDTProbeEnabled {
+			runSDTCfgPtr = &sdtprobe.Config{
+				CachePath:        cfg.SDTProbeCache,
+				ConcurrentProbes: cfg.SDTProbeConcurrency,
+				InterProbeDelay:  cfg.SDTProbeInterDelay,
+				ProbeTimeout:     cfg.SDTProbeTimeout,
+				ResultTTL:        cfg.SDTProbeResultTTL,
+				QuietWindow:      cfg.SDTProbeQuietWindow,
+				StartDelay:       cfg.SDTProbeStartDelay,
+				RescanInterval:   cfg.SDTProbeRescanInterval,
+			}
+			log.Printf("SDT probe: enabled (concurrency=%d, inter-delay=%s, quiet-window=%s, start-delay=%s, rescan-interval=%s, cache=%s)",
+				cfg.SDTProbeConcurrency, cfg.SDTProbeInterDelay, cfg.SDTProbeQuietWindow, cfg.SDTProbeStartDelay, cfg.SDTProbeRescanInterval, cfg.SDTProbeCache)
+		}
+
 		srv := &tuner.Server{
 			Addr:                *runAddr,
 			BaseURL:             baseURL,
@@ -791,17 +1109,43 @@ func main() {
 			XMLTVTimeout:        cfg.XMLTVTimeout,
 			XMLTVCacheTTL:       cfg.XMLTVCacheTTL,
 			EpgPruneUnlinked:    cfg.EpgPruneUnlinked,
+			DummyGuide:          cfg.DummyGuideEnabled,
+			SDTProbeConfig:      runSDTCfgPtr,
+		}
+		if cfg.SDTProbeEnabled {
+			runCatalogPath := path
+			srv.OnSDTResult = func(channelID string, result sdtprobe.Result) {
+				meta := sdtResultToMeta(result)
+				if c.UpdateLiveSDTMeta(channelID, meta, result.ServiceName) {
+					log.Printf("sdt-prober: channel_id=%s svc=%q provider=%q onid=0x%04x tsid=0x%04x svcid=0x%04x",
+						channelID, result.ServiceName, result.ProviderName,
+						result.OriginalNetworkID, result.TransportStreamID, result.ServiceID)
+					if err := c.Save(runCatalogPath); err != nil {
+						log.Printf("sdt-prober: catalog save: %v", err)
+					}
+					srv.UpdateChannels(c.SnapshotLive())
+				}
+			}
 		}
 		srv.UpdateChannels(live)
 		if cfg.XMLTVURL != "" {
 			log.Printf("External XMLTV enabled: %s (timeout %v)", cfg.XMLTVURL, cfg.XMLTVTimeout)
 		}
 
-		// Optional: background catalog refresh. Responds to scheduled ticker and SIGHUP.
-		// Consistent with startup: same player_api→get.php strategy with all configured
-		// filters (EPG-only, smoketest) applied. Stops when runCtx is cancelled.
+		// Optional: background catalog refresh. Responds to scheduled ticker, SIGHUP,
+		// and POST /refresh (ManualRefreshCh). When a cached catalog was used at
+		// startup, an immediate refresh is queued so the lineup is updated promptly
+		// without blocking the server from accepting Plex connections.
 		credentials := cfg.ProviderUser != "" && cfg.ProviderPass != ""
+		manualRefreshCh := make(chan struct{}, 1)
+		srv.ManualRefreshCh = manualRefreshCh
 		if credentials {
+			// If we served a cached catalog at startup, queue an immediate background
+			// refresh so the lineup is updated without holding up Plex.
+			if hasCachedCatalog && !*runSkipIndex {
+				manualRefreshCh <- struct{}{} // buffered cap 1, never blocks
+			}
+
 			sigHUP := make(chan os.Signal, 1)
 			signal.Notify(sigHUP, syscall.SIGHUP)
 			defer signal.Stop(sigHUP)
@@ -822,6 +1166,8 @@ func main() {
 						log.Print("Refreshing catalog (scheduled) ...")
 					case <-sigHUP:
 						log.Print("SIGHUP received — reloading catalog")
+					case <-manualRefreshCh:
+						log.Print("Refreshing catalog (background) ...")
 					}
 					res, err := fetchCatalog(cfg, "")
 					if err != nil {
@@ -838,30 +1184,30 @@ func main() {
 						log.Printf("Save catalog failed (scheduled refresh): %v", err)
 						continue
 					}
-				// Invariant: UpdateChannels only called after successful Save.
-				srv.UpdateChannels(res.Live)
-				log.Printf("Catalog refreshed: %d movies, %d series, %d live channels (lineup updated)",
-					len(res.Movies), len(res.Series), len(res.Live))
+					// Invariant: UpdateChannels only called after successful Save.
+					srv.UpdateChannels(res.Live)
+					log.Printf("Catalog refreshed: %d movies, %d series, %d live channels (lineup updated)",
+						len(res.Movies), len(res.Series), len(res.Live))
 
-				// Remount VODFS with fresh catalog if a mount path is configured.
-				if vodMountPath != "" {
-					if currentVODUnmount != nil {
-						currentVODUnmount()
-					}
-					var mat materializer.Interface = &materializer.Stub{}
-					if cfg.CacheDir != "" {
-						mat = &materializer.Cache{CacheDir: cfg.CacheDir}
-					}
-					unmountFn, err := vodfs.MountBackground(runCtx, vodMountPath, res.Movies, res.Series, mat, cfg.VODFSAllowOther)
-					if err != nil {
-						log.Printf("VODFS remount failed at %s: %v", vodMountPath, err)
-					} else {
-						currentVODUnmount = unmountFn
-						log.Printf("VODFS remounted at %s (%d movies, %d series)", vodMountPath, len(res.Movies), len(res.Series))
+					// Remount VODFS with fresh catalog if a mount path is configured.
+					if vodMountPath != "" {
+						if currentVODUnmount != nil {
+							currentVODUnmount()
+						}
+						var mat materializer.Interface = &materializer.Stub{}
+						if cfg.CacheDir != "" {
+							mat = &materializer.Cache{CacheDir: cfg.CacheDir}
+						}
+						unmountFn, err := vodfs.MountBackground(runCtx, vodMountPath, res.Movies, res.Series, mat, cfg.VODFSAllowOther)
+						if err != nil {
+							log.Printf("VODFS remount failed at %s: %v", vodMountPath, err)
+						} else {
+							currentVODUnmount = unmountFn
+							log.Printf("VODFS remounted at %s (%d movies, %d series)", vodMountPath, len(res.Movies), len(res.Series))
+						}
 					}
 				}
-			}
-		}()
+			}()
 		}
 
 		log.Printf("[PLEX-REG] START: runRegisterPlex=%q runMode=%q", *runRegisterPlex, *runMode)
@@ -1643,7 +1989,17 @@ func main() {
 				os.Exit(1)
 			}
 		}
-		rep := epglink.MatchLiveChannels(live, xmltvChans, aliases)
+		var gnEnricher epglink.GracenoteEnricher
+		if gnPath := cfg.GracenoteDBPath; gnPath != "" {
+			gnDB, gnErr := gracenote.Load(gnPath)
+			if gnErr != nil {
+				log.Printf("epg-link-report: gracenote DB load error (skipping): %v", gnErr)
+			} else if gnDB.Len() > 0 {
+				gnEnricher = gnDB
+				log.Printf("epg-link-report: using Gracenote DB (%d channels)", gnDB.Len())
+			}
+		}
+		rep := epglink.MatchLiveChannelsWithGracenote(live, xmltvChans, aliases, gnEnricher)
 		log.Print(rep.SummaryString())
 		for _, row := range rep.UnmatchedRows() {
 			log.Printf("UNMATCHED #%s %-40s tvg-id=%q norm=%q reason=%s",
@@ -1699,10 +2055,473 @@ func main() {
 			}
 		}
 
+	case "plex-gracenote-harvest":
+		_ = gnHarvestCmd.Parse(os.Args[2:])
+		token := strings.TrimSpace(*gnHarvestToken)
+		if token == "" {
+			token = os.Getenv("PLEX_TOKEN")
+		}
+		if token == "" {
+			log.Print("plex-gracenote-harvest: -token or PLEX_TOKEN required")
+			os.Exit(1)
+		}
+		outPath := strings.TrimSpace(*gnHarvestOut)
+		if outPath == "" {
+			log.Print("plex-gracenote-harvest: -out path required")
+			os.Exit(1)
+		}
+		gnDB := &gracenote.DB{}
+		if *gnHarvestMerge {
+			loaded, err := gracenote.Load(outPath)
+			if err != nil {
+				log.Printf("plex-gracenote-harvest: load existing DB for merge: %v", err)
+				os.Exit(1)
+			}
+			gnDB = loaded
+			log.Printf("plex-gracenote-harvest: merging into existing DB (%d channels)", gnDB.Len())
+		}
+
+		var regionFilter []string
+		if r := strings.TrimSpace(*gnHarvestRegions); r != "" {
+			regionFilter = strings.Split(r, ",")
+			for i := range regionFilter {
+				regionFilter[i] = strings.TrimSpace(regionFilter[i])
+			}
+		}
+		var langFilter []string
+		if l := strings.TrimSpace(*gnHarvestLangFilter); l != "" {
+			langFilter = strings.Split(l, ",")
+			for i := range langFilter {
+				langFilter[i] = strings.ToLower(strings.TrimSpace(langFilter[i]))
+			}
+		}
+
+		added, total, err := gracenote.HarvestFromPlex(token, gnDB, regionFilter, langFilter)
+		if err != nil {
+			log.Printf("plex-gracenote-harvest: %v", err)
+			os.Exit(1)
+		}
+		log.Printf("plex-gracenote-harvest: harvested %d new channels (%d total in DB)", added, total)
+		if err := gnDB.Save(outPath); err != nil {
+			log.Printf("plex-gracenote-harvest: save %s: %v", outPath, err)
+			os.Exit(1)
+		}
+		log.Printf("plex-gracenote-harvest: saved to %s", outPath)
+
+	case "plex-iptvorg-harvest":
+		_ = ioHarvestCmd.Parse(os.Args[2:])
+		outPath := strings.TrimSpace(*ioHarvestOut)
+		if outPath == "" {
+			log.Print("plex-iptvorg-harvest: -out path required")
+			os.Exit(1)
+		}
+		ioDB := &iptvorg.DB{}
+		n, err := ioDB.Fetch(*ioHarvestURL)
+		if err != nil {
+			log.Printf("plex-iptvorg-harvest: fetch failed: %v", err)
+			os.Exit(1)
+		}
+		log.Printf("plex-iptvorg-harvest: fetched %d channels", n)
+		if err := ioDB.Save(outPath); err != nil {
+			log.Printf("plex-iptvorg-harvest: save %s: %v", outPath, err)
+			os.Exit(1)
+		}
+		log.Printf("plex-iptvorg-harvest: saved to %s", outPath)
+
+	case "plex-sd-harvest":
+		_ = sdHarvestCmd.Parse(os.Args[2:])
+		sdOutPath := strings.TrimSpace(*sdHarvestOut)
+		if sdOutPath == "" {
+			log.Print("plex-sd-harvest: -out path required")
+			os.Exit(1)
+		}
+		sdUser := strings.TrimSpace(*sdHarvestUser)
+		if sdUser == "" {
+			sdUser = os.Getenv("SD_USERNAME")
+		}
+		sdPass := strings.TrimSpace(*sdHarvestPass)
+		if sdPass == "" {
+			sdPass = os.Getenv("SD_PASSWORD")
+		}
+		if sdUser == "" || sdPass == "" {
+			log.Print("plex-sd-harvest: -username/-password (or SD_USERNAME/SD_PASSWORD env) required")
+			log.Print("  Sign up free at https://schedulesdirect.org")
+			os.Exit(1)
+		}
+		var sdCountries []string
+		if c := strings.TrimSpace(*sdHarvestCountries); c != "" {
+			for _, part := range strings.Split(c, ",") {
+				if t := strings.TrimSpace(part); t != "" {
+					sdCountries = append(sdCountries, t)
+				}
+			}
+		}
+		sdDB := &schedulesdirect.DB{}
+		// Merge into existing if file present.
+		if existing, err := schedulesdirect.Load(sdOutPath); err == nil && existing.Len() > 0 {
+			sdDB = existing
+			log.Printf("plex-sd-harvest: merging into existing DB (%d stations)", sdDB.Len())
+		}
+		sdAdded, sdTotal, sdErr := schedulesdirect.Harvest(schedulesdirect.HarvestConfig{
+			Username:             sdUser,
+			Password:             sdPass,
+			Countries:            sdCountries,
+			MaxLineupsPerCountry: *sdHarvestMaxLineups,
+		}, sdDB)
+		if sdErr != nil {
+			log.Printf("plex-sd-harvest: %v", sdErr)
+			os.Exit(1)
+		}
+		log.Printf("plex-sd-harvest: harvested %d new stations (%d total)", sdAdded, sdTotal)
+		if err := sdDB.Save(sdOutPath); err != nil {
+			log.Printf("plex-sd-harvest: save %s: %v", sdOutPath, err)
+			os.Exit(1)
+		}
+		log.Printf("plex-sd-harvest: saved to %s", sdOutPath)
+
+	case "plex-dvbdb-harvest":
+		_ = dvbdbHarvestCmd.Parse(os.Args[2:])
+		dvbOutPath := strings.TrimSpace(*dvbdbHarvestOut)
+		if dvbOutPath == "" {
+			log.Print("plex-dvbdb-harvest: -out path required")
+			os.Exit(1)
+		}
+		dvbDB := dvbdb.New()
+		// Merge existing on-disk DB if present.
+		if existing, err := dvbdb.Load(dvbOutPath); err == nil && existing.Len() > 0 {
+			dvbDB = existing
+			log.Printf("plex-dvbdb-harvest: loaded existing DB (%d entries)", dvbDB.Len())
+		}
+
+		// ── zero-config sources (always run unless disabled) ──────────────
+
+		// iptv-org channels CSV: name + country + tvg-id (no triplets, but good name→id mapping).
+		if a, t, err := dvbdb.HarvestFromIPTVOrg(dvbDB, ""); err != nil {
+			log.Printf("plex-dvbdb-harvest: iptv-org CSV error: %v (continuing)", err)
+		} else {
+			log.Printf("plex-dvbdb-harvest: iptv-org CSV: +%d entries (%d total)", a, t)
+		}
+
+		// e2se-seeds lamedb: community Enigma2 service list from GitHub — has full triplets.
+		if *dvbdbHarvestE2Se {
+			if a, t, err := dvbdb.HarvestFromE2SeSeeds(dvbDB); err != nil {
+				log.Printf("plex-dvbdb-harvest: e2se-seeds error: %v (continuing)", err)
+			} else {
+				log.Printf("plex-dvbdb-harvest: e2se-seeds lamedb: +%d entries (%d total)", a, t)
+			}
+		}
+
+		// ── optional local files ──────────────────────────────────────────
+
+		// Enigma2 lamedb (any local file — from your own receiver, community forum, etc.)
+		for _, p := range splitPaths(*dvbdbHarvestLamedb) {
+			if a, t, err := dvbdb.LoadLamedb(dvbDB, p); err != nil {
+				log.Printf("plex-dvbdb-harvest: lamedb %s error: %v (skipping)", p, err)
+			} else {
+				log.Printf("plex-dvbdb-harvest: lamedb %s: +%d entries (%d total)", p, a, t)
+			}
+		}
+
+		// VDR channels.conf (also accepts w_scan2 output).
+		for _, p := range splitPaths(*dvbdbHarvestVDR) {
+			if a, t, err := dvbdb.LoadVDRChannels(dvbDB, p); err != nil {
+				log.Printf("plex-dvbdb-harvest: vdr-channels %s error: %v (skipping)", p, err)
+			} else {
+				log.Printf("plex-dvbdb-harvest: vdr-channels %s: +%d entries (%d total)", p, a, t)
+			}
+		}
+
+		// TvHeadend channel export JSON.
+		for _, p := range splitPaths(*dvbdbHarvestTvh) {
+			if a, t, err := dvbdb.LoadTvheadendChannels(dvbDB, p); err != nil {
+				log.Printf("plex-dvbdb-harvest: tvheadend-json %s error: %v (skipping)", p, err)
+			} else {
+				log.Printf("plex-dvbdb-harvest: tvheadend-json %s: +%d entries (%d total)", p, a, t)
+			}
+		}
+
+		// Community triplet CSV (any ONID/TSID/SID/ServiceName CSV).
+		for _, p := range splitPaths(*dvbdbHarvestCSV) {
+			if a, t, err := dvbdb.LoadDVBServicesCSV(dvbDB, p); err != nil {
+				log.Printf("plex-dvbdb-harvest: triplet-csv %s error: %v (skipping)", p, err)
+			} else {
+				log.Printf("plex-dvbdb-harvest: triplet-csv %s: +%d entries (%d total)", p, a, t)
+			}
+		}
+
+		// Lyngsat/KingOfSat JSON export.
+		for _, p := range splitPaths(*dvbdbHarvestLyngsatJSON) {
+			if a, t, err := dvbdb.LoadLyngsatJSON(dvbDB, p); err != nil {
+				log.Printf("plex-dvbdb-harvest: lyngsat-json %s error: %v (skipping)", p, err)
+			} else {
+				log.Printf("plex-dvbdb-harvest: lyngsat-json %s: +%d entries (%d total)", p, a, t)
+			}
+		}
+
+		if err := dvbDB.Save(dvbOutPath); err != nil {
+			log.Printf("plex-dvbdb-harvest: save %s: %v", dvbOutPath, err)
+			os.Exit(1)
+		}
+		log.Printf("plex-dvbdb-harvest: saved %d entries to %s", dvbDB.Len(), dvbOutPath)
+
+	case "plex-session-drain":
+		_ = sessionDrainCmd.Parse(os.Args[2:])
+		tok := strings.TrimSpace(*sdToken)
+		if tok == "" {
+			tok = strings.TrimSpace(os.Getenv("PLEX_TUNER_PMS_TOKEN"))
+		}
+		if tok == "" {
+			tok = strings.TrimSpace(os.Getenv("PLEX_TOKEN"))
+		}
+		if tok == "" {
+			log.Fatal("plex-session-drain: -token or PLEX_TUNER_PMS_TOKEN required")
+		}
+		allLive := *sdAllLive || (*sdMachineID == "" && *sdPlayerIP == "")
+		wcfg := plex.SessionDrainConfig{
+			PlexURL:         *sdPlexURL,
+			Token:           tok,
+			MachineID:       *sdMachineID,
+			PlayerIP:        *sdPlayerIP,
+			AllLive:         allLive,
+			DryRun:          *sdDryRun,
+			Poll:            time.Duration(float64(time.Second) * *sdPoll),
+			Wait:            time.Duration(float64(time.Second) * *sdWait),
+			WatchMode:       *sdWatch,
+			WatchFor:        time.Duration(float64(time.Second) * *sdWatchRuntime),
+			SSE:             *sdSSE,
+			IdleAfter:       time.Duration(float64(time.Second) * *sdIdleSeconds),
+			RenewLeaseAfter: time.Duration(float64(time.Second) * *sdRenewLease),
+			LeaseAfter:      time.Duration(float64(time.Second) * *sdLease),
+			LogLookback:     time.Duration(*sdLogLookback) * time.Second,
+		}
+		w := plex.NewSessionWatcher(wcfg)
+		logFn := func(s string) { fmt.Println(s) }
+		if *sdWatch {
+			stop := make(chan struct{})
+			w.Watch(stop, logFn)
+		} else {
+			if err := w.Drain(logFn); err != nil {
+				os.Exit(2)
+			}
+		}
+
+	case "plex-label-proxy":
+		_ = labelProxyCmd.Parse(os.Args[2:])
+		tok := strings.TrimSpace(*lpToken)
+		if tok == "" {
+			tok = strings.TrimSpace(os.Getenv("PLEX_TUNER_PMS_TOKEN"))
+		}
+		if tok == "" {
+			tok = strings.TrimSpace(os.Getenv("PLEX_TOKEN"))
+		}
+		if *lpUpstream == "" {
+			log.Fatal("plex-label-proxy: -upstream required")
+		}
+		if tok == "" {
+			log.Fatal("plex-label-proxy: -token or PLEX_TUNER_PMS_TOKEN required")
+		}
+		if err := plex.RunLabelProxy(plex.LabelProxyConfig{
+			Listen:         *lpListen,
+			Upstream:       *lpUpstream,
+			Token:          tok,
+			StripPrefix:    *lpStripPrefix,
+			RefreshSeconds: *lpRefresh,
+		}); err != nil {
+			log.Fatal(err)
+		}
+
+	case "vod-backfill-series":
+		_ = vodBackfillCmd.Parse(os.Args[2:])
+		if *vbCatalogIn == "" || *vbCatalogOut == "" {
+			log.Fatal("vod-backfill-series: -catalog-in and -catalog-out required")
+		}
+		bCfg := plex.VODBackfillConfig{
+			CatalogIn:   *vbCatalogIn,
+			CatalogOut:  *vbCatalogOut,
+			ProgressOut: *vbProgressOut,
+			Workers:     *vbWorkers,
+			Timeout:     time.Duration(*vbTimeout) * time.Second,
+			Limit:       *vbLimit,
+			RetryFrom:   *vbRetryFrom,
+		}
+		if err := plex.RunVODBackfill(bCfg, func(s plex.VODBackfillStats) {
+			b, _ := json.Marshal(s)
+			fmt.Println(string(b))
+			if *vbProgressOut != "" {
+				_ = os.WriteFile(*vbProgressOut, b, 0644)
+			}
+		}); err != nil {
+			log.Fatal(err)
+		}
+
+	case "generate-supervisor-config":
+		_ = genSupCmd.Parse(os.Args[2:])
+		gsCfg := plex.SupervisorGenConfig{
+			K3sPlexDir:          *gsK3sDir,
+			OutJSON:             *gsOutJSON,
+			OutYAML:             *gsOutYAML,
+			OutTSV:              *gsOutTSV,
+			Country:             *gsCountry,
+			PostalCode:          *gsPostal,
+			Timezone:            *gsTimezone,
+			RegionProfile:       *gsRegionProfile,
+			HDHRm3uURL:          *gsHDHRm3u,
+			HDHRxmltv:           *gsHDHRxmlTV,
+			CatM3UURL:           *gsCatM3U,
+			CatXMLTVURL:         *gsCatXMLTV,
+			CategoryCap:         *gsCatCap,
+			HDHRLineupMax:       *gsHDHRMax,
+			HDHRStreamTranscode: *gsHDHRTranscode,
+		}
+		if *gsCatCountsJSON != "" {
+			data, err := os.ReadFile(*gsCatCountsJSON)
+			if err != nil {
+				log.Fatalf("read category-counts-json: %v", err)
+			}
+			var raw map[string]any
+			if err := json.Unmarshal(data, &raw); err != nil {
+				log.Fatalf("parse category-counts-json: %v", err)
+			}
+			gsCfg.CategoryCounts = parseCategoryCounts(raw)
+		}
+		if err := plex.GenerateSupervisorConfig(gsCfg); err != nil {
+			log.Fatal(err)
+		}
+
+	case "plex-probe-overrides":
+		_ = probeOverridesCmd.Parse(os.Args[2:])
+		if *poLineup == "" {
+			log.Fatal("plex-probe-overrides: -lineup-json required")
+		}
+		var replaceURLs []string
+		for _, s := range strings.Split(*poReplaceURL, ",") {
+			if s = strings.TrimSpace(s); s != "" {
+				replaceURLs = append(replaceURLs, s)
+			}
+		}
+		var channelIDs []string
+		for _, s := range strings.Split(*poChannelID, ",") {
+			if s = strings.TrimSpace(s); s != "" {
+				channelIDs = append(channelIDs, s)
+			}
+		}
+		poCfg := plex.ProbeOverridesConfig{
+			LineupJSON:             *poLineup,
+			BaseURL:                *poBaseURL,
+			ReplaceURLPrefixes:     replaceURLs,
+			ChannelIDs:             channelIDs,
+			Limit:                  *poLimit,
+			TimeoutSeconds:         *poTimeout,
+			BitrateThreshold:       *poBitrate,
+			EmitProfileOverrides:   *poProfileOut,
+			EmitTranscodeOverrides: *poTranscodeOut,
+			NoTranscodeOverrides:   *poNoTranscode,
+			SleepBetweenProbes:     time.Duration(*poSleepMS) * time.Millisecond,
+			FFprobePath:            *poFFprobe,
+		}
+		total := 0
+		flagged := 0
+		errs := 0
+		fmt.Printf("PROBE_START\n")
+		probeErr := plex.RunProbeOverrides(poCfg, func(r plex.ProbeChannelResult, idx, tot int) {
+			total = tot
+			if !r.OK {
+				errs++
+				fmt.Printf("ERR %d/%d id=%s guide=%s err=%s\n", idx, tot, r.ID, r.Guide, r.Error)
+				return
+			}
+			if len(r.Reasons) > 0 {
+				flagged++
+			}
+			status := "OK"
+			if len(r.Reasons) > 0 {
+				status = "FLAG"
+			}
+			fmt.Printf("%s %d/%d id=%s guide=%s v=%s %dx%d@%.3f a=%s bitrate=%d profile=%s reasons=%s\n",
+				status, idx, tot, r.ID, r.Guide,
+				r.VideoCodec, r.Width, r.Height, r.FPS,
+				r.AudioCodec, r.BitRate,
+				func() string {
+					if r.SuggestProfile == "" {
+						return "-"
+					}
+					return r.SuggestProfile
+				}(),
+				func() string {
+					if len(r.Reasons) == 0 {
+						return "-"
+					}
+					return strings.Join(r.Reasons, ",")
+				}(),
+			)
+		})
+		fmt.Printf("PROBE_DONE total=%d flagged=%d errors=%d\n", total, flagged, errs)
+		if *poProfileOut != "" {
+			fmt.Printf("WROTE profile_overrides=%s\n", *poProfileOut)
+		}
+		if *poTranscodeOut != "" {
+			fmt.Printf("WROTE transcode_overrides=%s\n", *poTranscodeOut)
+		}
+		if probeErr != nil && errs > 0 {
+			os.Exit(2)
+		}
+
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %q\n", os.Args[1])
 		os.Exit(1)
 	}
+}
+
+// parseCategoryCounts converts a raw JSON map into a map[string]int for supervisor generation.
+func parseCategoryCounts(raw map[string]any) map[string]int {
+	out := map[string]int{}
+	for k, v := range raw {
+		key := strings.TrimSpace(strings.ToLower(k))
+		if key == "" {
+			continue
+		}
+		var n int
+		switch val := v.(type) {
+		case float64:
+			n = int(val)
+		case int:
+			n = val
+		case string:
+			if i, err := strconv.Atoi(strings.TrimSpace(val)); err == nil {
+				n = i
+			}
+		case map[string]any:
+			for _, field := range []string{"confirmed_epg_stream_count", "linked_count", "count", "epg_linked"} {
+				if fv, ok := val[field]; ok {
+					switch fval := fv.(type) {
+					case float64:
+						n = int(fval)
+					case int:
+						n = fval
+					case string:
+						n, _ = strconv.Atoi(strings.TrimSpace(fval))
+					}
+					break
+				}
+			}
+		}
+		if n > 0 {
+			out[key] = n
+		}
+	}
+	return out
+}
+
+// splitPaths splits a comma-separated list of file paths into individual paths,
+// trimming whitespace and ignoring empties.  Accepts a single path too.
+func splitPaths(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func openFileOrURL(ref string) (io.ReadCloser, error) {

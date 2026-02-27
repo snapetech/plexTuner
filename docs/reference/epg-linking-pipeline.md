@@ -23,23 +23,43 @@ This is designed for Plex Tuner’s channel/guide workflows:
 4. Keep false-positive matches low
 5. Preserve manual overrides and operator review decisions
 
-## Current implementation status (Phase 1)
+## Current implementation status
 
-Implemented in-app (report-only, no runtime guide mutation):
-- `plex-tuner epg-link-report`
-  - parses XMLTV channel ids / display names
-  - matches against catalog `live_channels`
-  - deterministic tiers only:
-    - `tvg-id` exact
-    - alias override exact
-    - normalized channel-name exact (unique only)
-  - writes JSON report + unmatched queue exports
+### Implemented (live)
 
-Not implemented yet:
-- persistent match store / DB tables
-- automatic application of medium-confidence matches
-- fuzzy/schedule-fingerprint matching
-- multi-EPG merge resolver
+**Enrichment tiers** — applied in `fetchCatalog` on every catalog refresh:
+
+| Tier | Package | Coverage |
+|---|---|---|
+| `tvg-id` exact (from M3U) | indexer | Baseline |
+| Re-encode inheritance | `internal/indexer` — `InheritTVGIDs` | ~246 channels |
+| iptv-org channel DB | `internal/iptvorg` — `EnrichTVGID` | ~5,634 channels |
+| Gracenote station DB | `internal/gracenote` — `EnrichTVGID` | ~530 channels |
+| SDT name propagation | `internal/indexer` — `EnrichFromSDTMeta` | Ongoing |
+| Schedules Direct station DB | `internal/schedulesdirect` — `EnrichTVGID` | Pending harvest |
+| DVB triplet DB | `internal/dvbdb` — `EnrichTVGID` | Pending harvest + SDT probe |
+| Brand-group inheritance | `internal/indexer` — `InheritTVGIDsByBrandGroup` | Ongoing |
+| Best-stream selection | `internal/indexer` — `SelectBestStreams` | 7,826 dupes removed |
+| Dummy guide fallback | `internal/tuner/xmltv.go` — `appendDummyGuide` | All unlinked channels |
+
+**Background SDT prober** — runs after first catalog delivery:
+
+- Reads MPEG-TS PAT, SDT (PID 0x0011), and EIT (PID 0x0012) from live streams
+- Extracts DVB triplet (ONID+TSID+SID), service name, provider name, EIT now/next
+- Persists results to `PLEX_TUNER_SDT_PROBE_CACHE`; feeds back into catalog via `OnSDTResult`
+- Pauses automatically when any tuner stream is active; resumes after 3 min quiet
+
+**Reporting:**
+
+- `plex-tuner epg-link-report` — deterministic matching only (tvg-id exact, alias, normalized name exact); writes JSON report + unmatched queue exports
+
+### Not yet implemented
+
+- Persistent match store / DB tables for human review queue
+- Automatic application of medium-confidence matches
+- Fuzzy / schedule-fingerprint matching tier
+- Logo-hash inheritance
+- Multi-EPG merge resolver with source provenance tracking
 
 ## Non-goals
 
@@ -307,5 +327,6 @@ You can, however, get a large and meaningful improvement by:
 
 See also
 --------
+- [EPG Coverage and the Long Tail](../explanations/epg-coverage-and-long-tail.md) — pipeline accounting, why 48k → 3,232, what Gracenote enrichment does
 - [Plex DVR lifecycle and API operations](plex-dvr-lifecycle-and-api.md)
 - [catchup-category-taxonomy.example.yaml](catchup-category-taxonomy.example.yaml)

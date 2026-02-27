@@ -60,12 +60,12 @@ type FetchState struct {
 	// per-category fetching is not used).
 	LiveStreamsETag         string    `json:"live_streams_etag,omitempty"`
 	LiveStreamsLastModified string    `json:"live_streams_last_modified,omitempty"`
-	LiveStreamsFetchedAt   time.Time `json:"live_streams_fetched_at,omitempty"`
+	LiveStreamsFetchedAt    time.Time `json:"live_streams_fetched_at,omitempty"`
 	LiveStreamsContentHash  string    `json:"live_streams_content_hash,omitempty"`
 
 	VODStreamsETag         string    `json:"vod_streams_etag,omitempty"`
 	VODStreamsLastModified string    `json:"vod_streams_last_modified,omitempty"`
-	VODStreamsFetchedAt   time.Time `json:"vod_streams_fetched_at,omitempty"`
+	VODStreamsFetchedAt    time.Time `json:"vod_streams_fetched_at,omitempty"`
 
 	// Stream base URL resolved at last fetch — if it changes, invalidate stream URLs.
 	StreamBase string `json:"stream_base,omitempty"`

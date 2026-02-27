@@ -1,19 +1,17 @@
 ---
 id: explanations-index
-type: reference
-status: stable
-tags: [explanations, index]
+type: explanation
+status: current
+tags: [docs, index, explanations]
 ---
 
-# Explanations (why, architecture, concepts)
+# Explanations
 
-Background and rationale. Add project-specific explanation docs here.
+Concept-oriented docs: why things work the way they do.
 
-| Doc | Description |
-|-----|-------------|
-| *(none yet)* | Add architecture, design tradeoffs, concepts as needed. |
+| Doc | What it explains |
+|-----|-----------------|
+| [EPG Coverage and the Long Tail](epg-coverage-and-long-tail.md) | Why 48k feeds → 3,232 DVR channels; what Gracenote fixes and doesn't; the pipeline in numbers. |
+| [EPG Long-Tail Strategies](epg-long-tail-strategies.md) | How to find or build EPG for the other 40k channels: re-encode inheritance, FAST/AVOD merges, iptv-org DB, stream probing. Realistic coverage ceiling and implementation order. |
 
-See also
---------
-- [ADR index](../adr/index.md).
-- [Reference](../reference/index.md).
+See also: [reference/epg-linking-pipeline.md](../reference/epg-linking-pipeline.md) for the matching tier design.

@@ -18,7 +18,15 @@ import (
 
 	"github.com/plextuner/plex-tuner/internal/catalog"
 	"github.com/plextuner/plex-tuner/internal/httpclient"
+	"github.com/plextuner/plex-tuner/internal/sdtprobe"
 )
+
+// SDTRescanTrigger is satisfied by *sdtprobe.Worker; allows the tuner server to
+// trigger a full SDT rescan without importing the sdtprobe package directly
+// (the server package must not import sdtprobe to avoid cycles).
+type SDTRescanTrigger interface {
+	TriggerRescan()
+}
 
 // PlexDVRMaxChannels is Plex's per-tuner channel limit when using the wizard; exceeding it causes "failed to save channel lineup".
 const PlexDVRMaxChannels = 480
@@ -48,11 +56,33 @@ type Server struct {
 	XMLTVTimeout        time.Duration
 	XMLTVCacheTTL       time.Duration // 0 = use default 10m
 	EpgPruneUnlinked    bool          // when true, guide.xml and /live.m3u only include channels with tvg-id
+	DummyGuide          bool          // when true, placeholder programmes emitted for unlinked channels
+
+	// SDTProbeConfig, when set, enables the background MPEG-TS SDT probe worker.
+	// If nil, SDT probing is disabled.
+	SDTProbeConfig *sdtprobe.Config
+
+	// OnSDTResult is called (on a goroutine) whenever the SDT worker extracts a
+	// service_name for an unlinked channel.  Callers (e.g. main.go) use this to
+	// persist the result back to the catalog file.  May be nil.
+	OnSDTResult func(channelID string, result sdtprobe.Result)
+
+	// ManualRefreshCh, when non-nil, is sent a struct{} on POST /refresh so the
+	// caller's refresh goroutine can respond immediately.  The channel should be
+	// buffered (cap 1) so the HTTP handler never blocks.
+	ManualRefreshCh chan struct{}
+
+	// SDTWorker, when non-nil, exposes POST /rescan to trigger a full SDT sweep
+	// that ignores the cache TTL (re-probes all unlinked channels, not just new ones).
+	SDTWorker SDTRescanTrigger
 
 	// health state updated by UpdateChannels; read by /healthz.
 	healthMu       sync.RWMutex
 	healthChannels int
 	healthRefresh  time.Time
+
+	// channelsMu guards Channels for concurrent readers (e.g. SDT prober) vs. UpdateChannels writers.
+	channelsMu sync.RWMutex
 
 	hdhr     *HDHR
 	gateway  *Gateway
@@ -78,7 +108,9 @@ func (s *Server) UpdateChannels(live []catalog.LiveChannel) {
 		}
 	}
 	live = applyGuideNumberOffset(live, s.GuideNumberOffset)
+	s.channelsMu.Lock()
 	s.Channels = live
+	s.channelsMu.Unlock()
 	s.healthMu.Lock()
 	s.healthChannels = len(live)
 	s.healthRefresh = time.Now()
@@ -844,9 +876,26 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	maybeStartPlexSessionReaper(ctx, gateway.Client)
 	s.gateway = gateway
+
+	// SDT background prober — starts only when enabled and after a 30 s head-start
+	// so the first full catalog fetch + Plex registration completes first.
+	if s.SDTProbeConfig != nil {
+		cfg := *s.SDTProbeConfig // copy so caller's struct isn't mutated
+		if s.OnSDTResult != nil {
+			cfg.OnResult = s.OnSDTResult
+		}
+		worker := sdtprobe.New(cfg, gateway)
+		s.SDTWorker = worker // expose for POST /rescan
+		go worker.Run(ctx, func() []catalog.LiveChannel {
+			s.channelsMu.RLock()
+			defer s.channelsMu.RUnlock()
+			return append([]catalog.LiveChannel(nil), s.Channels...)
+		})
+	}
 	xmltv := &XMLTV{
 		Channels:         s.Channels,
 		EpgPruneUnlinked: s.EpgPruneUnlinked,
+		DummyGuide:       s.DummyGuide,
 		SourceURL:        s.XMLTVSourceURL,
 		SourceTimeout:    s.XMLTVTimeout,
 		CacheTTL:         s.XMLTVCacheTTL,
@@ -875,6 +924,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/live.m3u", m3uServe)
 	mux.Handle("/stream/", gateway)
 	mux.Handle("/healthz", s.serveHealth())
+	mux.Handle("/refresh", s.serveManualRefresh())
+	mux.Handle("/rescan", s.serveSDTRescan())
 
 	srv := &http.Server{Addr: addr, Handler: logRequests(mux)}
 
@@ -969,6 +1020,79 @@ func (s *Server) serveHealth() http.Handler {
 			"last_refresh": lastRefresh.Format(time.RFC3339),
 		})
 		_, _ = w.Write(body)
+	})
+}
+
+// serveManualRefresh handles POST /refresh to trigger an immediate catalog
+// re-fetch outside the normal schedule.  GET returns current refresh status.
+// A non-POST is rejected with 405; if the server was started without a refresh
+// goroutine (ManualRefreshCh is nil), responds 503.
+func (s *Server) serveManualRefresh() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			s.healthMu.RLock()
+			last := s.healthRefresh
+			s.healthMu.RUnlock()
+			body, _ := json.Marshal(map[string]any{
+				"manual_refresh_available": s.ManualRefreshCh != nil,
+				"last_refresh":             last.Format(time.RFC3339),
+				"hint":                     "POST /refresh to trigger an immediate catalog re-fetch",
+			})
+			_, _ = w.Write(body)
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			_, _ = w.Write([]byte(`{"error":"use POST /refresh"}`))
+			return
+		}
+		if s.ManualRefreshCh == nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":"refresh not available (run mode only, or -refresh not set)"}`))
+			return
+		}
+		select {
+		case s.ManualRefreshCh <- struct{}{}:
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"status":"refresh triggered"}`))
+			log.Print("manual refresh triggered via POST /refresh")
+		default:
+			// Channel full — a refresh is already queued/running.
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"status":"refresh already queued"}`))
+		}
+	})
+}
+
+// serveSDTRescan handles POST /rescan to trigger a full SDT sweep that
+// ignores the cache TTL (re-probes every unlinked channel, not just new ones).
+// GET returns status.  Requires SDTWorker to be set (i.e. SDT probe is enabled).
+func (s *Server) serveSDTRescan() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			body, _ := json.Marshal(map[string]any{
+				"sdt_rescan_available": s.SDTWorker != nil,
+				"hint":                 "POST /rescan to re-probe all unlinked channels (ignores 1-week cache). POST /refresh for catalog re-fetch only.",
+			})
+			_, _ = w.Write(body)
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			_, _ = w.Write([]byte(`{"error":"use POST /rescan"}`))
+			return
+		}
+		if s.SDTWorker == nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":"SDT prober not enabled (set PLEX_TUNER_SDT_PROBE_ENABLED=true)"}`))
+			return
+		}
+		s.SDTWorker.TriggerRescan()
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"status":"full rescan queued — all unlinked channels will be re-probed"}`))
+		log.Print("full SDT rescan triggered via POST /rescan")
 	})
 }
 

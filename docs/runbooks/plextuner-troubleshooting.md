@@ -94,6 +94,8 @@ go run ./cmd/plex-tuner probe -urls=http://host1.com,http://host2.com -timeout=6
 | Verify fails: “tests failed” | Failing unit test | Run `go test -v ./...` and fix failing test |
 | Index fails: “no player_api OK and no get.php OK” | Provider down / wrong creds / Cloudflare | Run `plex-tuner probe`; check .env USER/PASS and URL |
 | Run fails: “Provider check failed” | Health check to provider failed | Same as index; run probe; check network |
+| `Catalog refresh failed: parse M3U: m3u: 884 884` | Provider's M3U endpoint is Cloudflare-proxied; CF blocks the `get.php` download with a non-standard 884 status | See §10 below — use `PLEX_TUNER_PROVIDER_URL` instead of `PLEX_TUNER_M3U_URL` |
+| Catalog refresh fails but credentials are valid | `max_connections: 1` on the account and another client (e.g. Xteve) holds the slot | Kill the other client first; verify with `player_api.php` probe (see §10) |
 | “All tuners in use” (805) | More clients than PLEX_TUNER_TUNER_COUNT | Increase tuner count or close other clients |
 | “All upstreams failed” (502) | All stream URLs failed (4xx/5xx, empty body, or SSRF rejected) | Check provider stream URLs; run probe; check gateway logs for `upstream[1/2] status=...` |
 | Stream stalls or buffering | Upstream slow / HLS segment issues | Enable buffer: PLEX_TUNER_STREAM_BUFFER_BYTES=2097152 or `auto`; check logs for segment/playlist fetch failures |
@@ -230,6 +232,88 @@ Non-200 → check server logs and config (catalog loaded, base URL, port).
 2. **Probe OK (if using provider):** `plex-tuner probe` shows at least one get.php or player_api OK
 3. **Endpoints 200:** discover, lineup, guide, live.m3u return 200 (see §6)
 4. **One stream test:** In Plex or `curl "$BASE/stream/0"` (or a known channel ID) — expect 200 and MPEG-TS data or HLS relay
+
+---
+
+## 10. Cloudflare-proxied provider: `get.php` blocked, `player_api.php` works
+
+### What happens
+
+Some IPTV providers route their M3U download endpoint (`get.php`) through Cloudflare CDN.
+Cloudflare can return non-standard status codes (e.g. `884`) to block automated fetches while
+still passing the Xtream API endpoint (`player_api.php`) through normally.
+
+Symptoms:
+- Log: `Catalog refresh failed: parse M3U: m3u: 884 884`
+- Or after the fix in b0c7f8d+: `cloudflare detected on http://host/get.php?...: refusing to index CF-proxied streams`
+- `plex-tuner probe` shows `get.php: cloudflare` but `player_api: ok` for the same host
+
+The provider hostname often has a `cf.` prefix (e.g. `cf.provider.example`) which is the
+DNS entry specifically routed through Cloudflare's network. Trying the bare domain without
+the prefix will usually fail DNS entirely — it's not a real fallback.
+
+### Why `player_api.php` works when `get.php` doesn't
+
+`get.php` delivers the full M3U playlist — a large plain-text file that looks like bulk
+scraping to Cloudflare. CF blocks or rate-limits it.
+
+`player_api.php` returns small JSON responses (user info, channel lists, EPG) that look like
+normal API calls. CF passes these through.
+
+plex-tuner's Xtream API fetch path (`PLEX_TUNER_PROVIDER_URL`) uses `player_api.php`
+exclusively and never touches `get.php`, so it works cleanly even when the host is
+CF-proxied.
+
+### Fix
+
+Do **not** set `PLEX_TUNER_M3U_URL` to the provider's `get.php` URL. Use the Xtream API
+path instead:
+
+```env
+PLEX_TUNER_PROVIDER_URL=http://cf.provider.example
+PLEX_TUNER_PROVIDER_USER=youruser
+PLEX_TUNER_PROVIDER_PASS=yourpass
+# PLEX_TUNER_M3U_URL=  ← leave unset
+```
+
+With `PLEX_TUNER_M3U_URL` unset, the fetcher uses only `player_api.php` endpoints.
+With it set, the fetcher tries the M3U download first (hitting the CF-blocked `get.php`).
+
+### How to confirm before changing config
+
+```bash
+# Check both endpoints on your provider host
+curl -sS -D - -o /dev/null --max-time 15 -A "PlexTuner/1.0" \
+  "http://cf.provider.example/get.php?username=USER&password=PASS&type=m3u_plus&output=ts" \
+  | grep -iE '^HTTP|^server:|^cf-ray:'
+
+curl -sS --max-time 15 -A "PlexTuner/1.0" \
+  "http://cf.provider.example/player_api.php?username=USER&password=PASS" \
+  | grep -o '"auth":[^,]*,"status":"[^"]*"'
+```
+
+Expected when CF is the issue:
+- `get.php` → `HTTP/1.1 884` + `server: cloudflare` + `cf-ray: ...`
+- `player_api.php` → `"auth":1,"status":"Active"`
+
+Or use the built-in probe command which does this for all configured hosts at once:
+
+```bash
+plex-tuner probe -urls=http://cf.provider.example -timeout=30s
+```
+
+### Also check: `max_connections`
+
+The `player_api.php` response includes `max_connections` and `active_cons`. If
+`max_connections` is `1` and another client (Xteve, a second plextuner instance, a direct
+stream) is holding the slot, catalog fetch and streams will fail even with correct config.
+
+```bash
+curl -s "http://cf.provider.example/player_api.php?username=USER&password=PASS" \
+  | grep -o '"max_connections":"[^"]*","active_cons":"[^"]*"'
+```
+
+Kill all other clients, wait 30–60 seconds for the provider to release the slot, then retry.
 
 See also
 --------

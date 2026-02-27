@@ -8,18 +8,64 @@ import (
 	"sync"
 )
 
+// StreamQuality ranks a stream's resolution tier for best-stream selection.
+// Higher is better. Used to prefer UHD > HD > SD when deduplicating channels
+// that share a tvg-id and to determine whether to transcode.
+type StreamQuality int
+
+const (
+	QualitySD  StreamQuality = 0  // default / unknown
+	QualityHD  StreamQuality = 1  // 720p/1080i/1080p
+	QualityUHD StreamQuality = 2  // 4K / UHD
+	QualityRAW StreamQuality = -1 // re-encoded/restream copy — prefer original
+)
+
+// SDTMeta holds broadcaster identity extracted from the MPEG-TS Service
+// Description Table (SDT, PID 0x0011) and associated tables (PAT, EIT).
+// Populated by the background SDT probe worker; all fields are optional.
+type SDTMeta struct {
+	// DVB triplet — globally registered at dvbservices.com.
+	// (OriginalNetworkID, TransportStreamID, ServiceID) uniquely identifies
+	// a service across the entire DVB ecosystem.
+	OriginalNetworkID uint16 `json:"original_network_id,omitempty"`
+	TransportStreamID uint16 `json:"transport_stream_id,omitempty"`
+	ServiceID         uint16 `json:"service_id,omitempty"`
+
+	// Broadcaster-supplied names from the service_descriptor.
+	ProviderName string `json:"provider_name,omitempty"` // e.g. "BBC", "Sky", "ESPN"
+	ServiceName  string `json:"service_name,omitempty"`  // channel's own name
+
+	// Service type byte: 0x01=TV, 0x02=Radio, 0x11=MPEG2 HD, 0x19=AVC HD, etc.
+	ServiceType byte `json:"service_type,omitempty"`
+
+	// EIT flags from the SDT service entry.
+	EITSchedule         bool `json:"eit_schedule,omitempty"`          // stream carries 8-day EPG
+	EITPresentFollowing bool `json:"eit_present_following,omitempty"` // stream carries now/next
+
+	// Now/next programme from EIT (if EITPresentFollowing is true).
+	NowTitle  string `json:"now_title,omitempty"`
+	NowGenre  string `json:"now_genre,omitempty"`
+	NextTitle string `json:"next_title,omitempty"`
+
+	// When this metadata was last captured.
+	ProbedAt string `json:"probed_at,omitempty"` // RFC3339
+}
+
 // LiveChannel is a live TV channel with primary + backup stream URLs.
 // ChannelID is a stable identifier for streaming URLs (e.g. tvg-id or provider stream_id); used in /stream/{ChannelID}.
 type LiveChannel struct {
-	ChannelID   string   `json:"channel_id"` // stable ID for /stream/{ChannelID}
-	GuideNumber string   `json:"guide_number"`
-	GuideName   string   `json:"guide_name"`
-	StreamURL   string   `json:"stream_url"`  // primary (first working)
-	StreamURLs  []string `json:"stream_urls"` // primary + backups for failover
-	EPGLinked   bool     `json:"epg_linked"`  // has tvg-id / can be matched to guide
-	TVGID       string   `json:"tvg_id,omitempty"`
-	GroupTitle  string   `json:"group_title,omitempty"` // M3U group-title attribute (e.g. "US | Sports HD")
-	SourceTag   string   `json:"source_tag,omitempty"`  // provider identifier when merging multiple sources
+	ChannelID   string        `json:"channel_id"` // stable ID for /stream/{ChannelID}
+	GuideNumber string        `json:"guide_number"`
+	GuideName   string        `json:"guide_name"`
+	StreamURL   string        `json:"stream_url"`  // primary (first working)
+	StreamURLs  []string      `json:"stream_urls"` // primary + backups for failover
+	EPGLinked   bool          `json:"epg_linked"`  // has tvg-id / can be matched to guide
+	TVGID       string        `json:"tvg_id,omitempty"`
+	GroupTitle  string        `json:"group_title,omitempty"`  // M3U group-title attribute (e.g. "US | Sports HD")
+	SourceTag   string        `json:"source_tag,omitempty"`   // provider identifier when merging multiple sources
+	Quality     StreamQuality `json:"quality,omitempty"`      // resolution tier: 0=SD,1=HD,2=UHD,-1=RAW re-encode
+	ReEncodeOf  string        `json:"re_encode_of,omitempty"` // tvg-id this channel is a re-encode of (if inherited)
+	SDT         *SDTMeta      `json:"sdt,omitempty"`          // broadcaster identity from MPEG-TS SDT probe
 }
 
 // Catalog is the normalized VOD catalog plus optional live channels.
@@ -172,4 +218,40 @@ func (c *Catalog) Load(path string) error {
 	}
 	c.ReplaceWithLive(out.Movies, out.Series, out.LiveChannels)
 	return nil
+}
+
+// UpdateLiveTVGID finds the live channel with the given channelID and sets its
+// TVGID + EPGLinked fields.  Returns true if the channel was found and updated.
+// Safe to call concurrently with Save/SnapshotLive.
+func (c *Catalog) UpdateLiveTVGID(channelID, tvgID string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i := range c.LiveChannels {
+		if c.LiveChannels[i].ChannelID == channelID {
+			c.LiveChannels[i].TVGID = tvgID
+			c.LiveChannels[i].EPGLinked = true
+			return true
+		}
+	}
+	return false
+}
+
+// UpdateLiveSDTMeta writes the full SDTMeta blob for the given channelID.
+// If tvgID is non-empty it also sets TVGID + EPGLinked (service_name used as
+// tvg-id fallback).  Returns true if the channel was found.
+// Safe to call concurrently with Save/SnapshotLive.
+func (c *Catalog) UpdateLiveSDTMeta(channelID string, meta *SDTMeta, tvgID string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i := range c.LiveChannels {
+		if c.LiveChannels[i].ChannelID == channelID {
+			c.LiveChannels[i].SDT = meta
+			if tvgID != "" {
+				c.LiveChannels[i].TVGID = tvgID
+				c.LiveChannels[i].EPGLinked = true
+			}
+			return true
+		}
+	}
+	return false
 }

@@ -52,6 +52,14 @@ type Gateway struct {
 	reqSeq              uint64
 }
 
+// ActiveStreams returns the number of streams currently being served.
+// Used by background workers (e.g. SDT prober) to yield when users are watching.
+func (g *Gateway) ActiveStreams() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.inUse
+}
+
 type gatewayReqIDKey struct{}
 
 func gatewayReqIDFromContext(ctx context.Context) string {
