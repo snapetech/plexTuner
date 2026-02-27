@@ -17,9 +17,12 @@ This is focused on practical operation/testing. For tester bundles and superviso
 ## `plex-tuner run`
 
 One-shot workflow:
-- refresh catalog (unless skipped)
+- load cached catalog immediately if one exists on disk (serves Plex without delay)
+- refresh catalog in background (or blocking if no cache exists)
 - health-check provider (unless skipped)
 - start tuner server
+
+**Cached startup**: if a `catalog.json` already exists on disk, `run` starts serving it to Plex right away and queues an immediate background refresh.  Clients see no gap in the guide after a restart.  If no cache exists (first run), the initial fetch blocks as before.
 
 Common flags:
 - `-catalog`
@@ -648,8 +651,9 @@ channel list served to Plex is also refreshed via `srv.UpdateChannels`.
 | `PLEX_TUNER_SDT_PROBE_CONCURRENCY` | `2` | Max simultaneous stream fetches. |
 | `PLEX_TUNER_SDT_PROBE_INTER_DELAY` | `500ms` | Minimum delay between probe starts. |
 | `PLEX_TUNER_SDT_PROBE_TIMEOUT` | `12s` | Per-stream HTTP + read timeout. |
-| `PLEX_TUNER_SDT_PROBE_TTL` | `168h` | Cache TTL (7 days). |
+| `PLEX_TUNER_SDT_PROBE_TTL` | `168h` | Cache TTL (7 days). Normal sweeps skip channels with fresh entries. |
 | `PLEX_TUNER_SDT_PROBE_QUIET_WINDOW` | `3m` | Idle period before probing resumes. |
+| `PLEX_TUNER_SDT_PROBE_RESCAN_INTERVAL` | `720h` | Auto-monthly full rescan interval (ignores TTL). Set `0` to disable. |
 
 ### Enabling in Kubernetes
 
@@ -665,6 +669,45 @@ For immediate-start testing:
 - name: PLEX_TUNER_SDT_PROBE_START_DELAY
   value: "0"
 ```
+
+### Forced / monthly full rescan
+
+By default, the SDT prober skips channels whose cache entry has not yet expired (TTL = `PLEX_TUNER_SDT_PROBE_TTL`, default 7 days). A **forced rescan** ignores the TTL and re-probes all unlinked channels:
+
+- **Manual:** `POST /rescan` on the tuner's HTTP port
+- **Auto-monthly:** `PLEX_TUNER_SDT_PROBE_RESCAN_INTERVAL` (default `720h` / 30 days)
+
+```bash
+# Trigger a forced rescan right now:
+curl -X POST http://localhost:5004/rescan
+
+# Check rescan status:
+curl http://localhost:5004/rescan
+
+# Override auto-rescan interval (e.g. every 14 days):
+PLEX_TUNER_SDT_PROBE_RESCAN_INTERVAL=336h
+```
+
+| Variable | Default | Description |
+|---|---|---|
+| `PLEX_TUNER_SDT_PROBE_RESCAN_INTERVAL` | `720h` | Interval for automatic full rescan (ignores cache TTL). Set `0` to disable automatic rescans. |
+
+## Manual catalog refresh
+
+`POST /refresh` — immediately queues a full catalog re-fetch (equivalent to the normal periodic refresh, but on demand).  Returns `202 Accepted` when the signal is queued.  `GET /refresh` returns current status.
+
+```bash
+# Trigger a catalog re-fetch right now:
+curl -X POST http://localhost:5004/refresh
+
+# Check status:
+curl http://localhost:5004/refresh
+```
+
+This is equivalent to the normal periodic catalog refresh but fires immediately.  Useful after:
+- updating provider credentials or M3U URL
+- adding/removing a second provider
+- forcing enrichment re-runs after a harvest (Gracenote, iptv-org, etc.)
 
 ## Gracenote EPG enrichment
 
