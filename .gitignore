@@ -122,6 +122,41 @@ catalog.json
 /plex-tuner
 
 # =========================
+# Secrets — never commit these
+# =========================
+# Runtime catalogs with embedded provider credentials
+*.catalog.json
+*catalog*.json
+!k8s/*.example.json
+!k8s/test-catalog.json
+
+# OpenBao / Vault init output (contains unseal keys + root tokens)
+*openbao-init-output*
+*vault-init-output*
+
+# Kubernetes manifests with real creds (use *.example.yaml for safe templates)
+# Filenames containing -test, -local, -dev, or -prod are likely to have real values
+k8s/*-test.yaml
+k8s/*-local.yaml
+k8s/*-dev.yaml
+k8s/*-prod.yaml
+k3s/
+
+# Subscription / credential files
+*.subscription.txt
+*.subscription.*.txt
+sync-secrets*.sh
+
+# Generated supervisor configs (contain provider URLs with creds)
+*.generated.json
+*.generated.yaml
+*.generated.tsv
+
+# Fetch state / SDT cache (contain provider URLs)
+*.fetchstate.json
+*.sdtcache.json
+
+# =========================
 # Databases (local dev)
 # =========================
 *.db
