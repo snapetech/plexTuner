@@ -153,13 +153,32 @@ type Device struct {
 }
 
 type Dvr struct {
-	Key           string   `xml:"key,attr"`
-	UUID          string   `xml:"uuid,attr"`
-	Title         string   `xml:"title,attr"`
-	LineupTitle   string   `xml:"lineupTitle,attr"`
-	Lineup        string   `xml:"lineup,attr"` // decoded lineup URL, e.g. "lineup://tv.plex.providers.epg.xmltv/http://host/guide.xml#name"
-	EPGIdentifier string   `xml:"epgIdentifier,attr"`
-	Devices       []Device `xml:"Device"`
+	Key           string          `xml:"key,attr"`
+	UUID          string          `xml:"uuid,attr"`
+	Title         string          `xml:"title,attr"`
+	LineupTitle   string          `xml:"lineupTitle,attr"`
+	Lineup        string          `xml:"lineup,attr"` // decoded lineup URL, e.g. "lineup://tv.plex.providers.epg.xmltv/http://host/guide.xml#name"
+	EPGIdentifier string          `xml:"epgIdentifier,attr"`
+	Devices       []DeviceWithMap `xml:"Device"`
+}
+
+// DeviceWithMap is a Device that also carries its nested ChannelMapping children.
+// Used when parsing the full DVR XML (e.g. GET /livetv/dvrs/{key}).
+type DeviceWithMap struct {
+	Key             string          `xml:"key,attr"`
+	UUID            string          `xml:"uuid,attr"`
+	URI             string          `xml:"uri,attr"`
+	Name            string          `xml:"name,attr"`
+	DeviceID        string          `xml:"deviceId,attr"`
+	ChannelMappings []DVRChannelMap `xml:"ChannelMapping"`
+}
+
+// DVRChannelMap is a ChannelMapping child of a Device in a DVR XML response.
+type DVRChannelMap struct {
+	ChannelKey       string `xml:"channelKey,attr"`
+	DeviceIdentifier string `xml:"deviceIdentifier,attr"`
+	LineupIdentifier string `xml:"lineupIdentifier,attr"`
+	Enabled          string `xml:"enabled,attr"`
 }
 
 type Lineup struct {
@@ -578,15 +597,33 @@ func FullRegisterPlex(baseURL, plexHost, plexToken, friendlyName, deviceID strin
 		fmt.Printf("[PLEX-REG] Warning: reload guide failed: %v\n", err)
 	}
 
-	fmt.Printf("[PLEX-REG] Step 4: Wait for guide to populate...\n")
-	time.Sleep(15 * time.Second)
-
-	fmt.Printf("[PLEX-REG] Step 5: Get channel mappings...\n")
-	chMappings, err := GetChannelMap(plexHost, plexToken, deviceInfo.UUID, lineupIDs)
-	if err != nil {
-		return "", 0, fmt.Errorf("get channel map: %w", err)
+	// Step 4+5: Poll for channel mappings until Plex finishes indexing the guide.
+	// Plex can take 30-120s to parse XMLTV and populate the channelmap; a fixed 15s
+	// sleep consistently races and loses, leaving 0 channels forever.
+	// Poll every 10s for up to 3 minutes, then proceed regardless (watchdog will retry).
+	fmt.Printf("[PLEX-REG] Step 4+5: Polling for channel mappings (max 3m, 10s interval)...\n")
+	var chMappings []ChannelMapping
+	pollDeadline := time.Now().Add(3 * time.Minute)
+	pollInterval := 10 * time.Second
+	for {
+		time.Sleep(pollInterval)
+		var mapErr error
+		chMappings, mapErr = GetChannelMap(plexHost, plexToken, deviceInfo.UUID, lineupIDs)
+		if mapErr != nil {
+			fmt.Printf("[PLEX-REG] channelmap poll error: %v\n", mapErr)
+		} else if len(chMappings) > 0 {
+			fmt.Printf("[PLEX-REG] channelmap ready: %d mappings after %v\n",
+				len(chMappings), pollInterval.Round(time.Second))
+			break
+		} else {
+			fmt.Printf("[PLEX-REG] channelmap not ready yet (0 entries), retrying...\n")
+		}
+		if time.Now().After(pollDeadline) {
+			fmt.Printf("[PLEX-REG] channelmap poll timed out after 3m — guide may still be loading; watchdog will retry channel activation\n")
+			break
+		}
+		pollInterval = 10 * time.Second // keep steady
 	}
-	fmt.Printf("[PLEX-REG] Found %d channel mappings\n", len(chMappings))
 
 	if len(chMappings) > 0 {
 		fmt.Printf("[PLEX-REG] Step 6: Activate channels...\n")
@@ -596,11 +633,41 @@ func FullRegisterPlex(baseURL, plexHost, plexToken, friendlyName, deviceID strin
 		}
 		fmt.Printf("[PLEX-REG] Activated %d channels\n", activated)
 	} else {
-		fmt.Printf("[PLEX-REG] No channel mappings found - guide may not have been loaded yet\n")
+		fmt.Printf("[PLEX-REG] WARNING: 0 channel mappings — guide not indexed in time; watchdog will activate channels once guide loads\n")
 	}
 
 	fmt.Printf("[PLEX-REG] === Plex DVR setup complete! ===\n")
 	return deviceInfo.UUID, dvrKeyOut, nil
+}
+
+// dvrEnabledChannelCount fetches the DVR XML for the given DVR key and returns the number
+// of ChannelMapping entries with enabled="1". Returns 0 on any error (treated as "unknown").
+func dvrEnabledChannelCount(plexHost, token string, dvrKey int) int {
+	u := fmt.Sprintf("http://%s/livetv/dvrs/%d?X-Plex-Token=%s", plexHost, dvrKey, token)
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get(u)
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0
+	}
+	var mc MediaContainer
+	if err := xml.NewDecoder(resp.Body).Decode(&mc); err != nil {
+		return 0
+	}
+	count := 0
+	for _, dvr := range mc.Dvr {
+		for _, dev := range dvr.Devices {
+			for _, cm := range dev.ChannelMappings {
+				if cm.Enabled == "1" {
+					count++
+				}
+			}
+		}
+	}
+	return count
 }
 
 // DVRWatchdog periodically verifies that this tuner's DVR registration is present and
@@ -619,6 +686,36 @@ func DVRWatchdog(ctx context.Context, cfg PlexAPIConfig, deviceUUID, guideURL st
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
+	reregister := func(reason string) {
+		log.Printf("[dvr-watchdog] %s — re-registering", reason)
+		_, _, rerr := FullRegisterPlex(cfg.BaseURL, cfg.PlexHost, cfg.PlexToken, cfg.FriendlyName, cfg.DeviceID, channels)
+		if rerr != nil {
+			log.Printf("[dvr-watchdog] re-registration failed: %v", rerr)
+		} else {
+			log.Printf("[dvr-watchdog] re-registration complete")
+		}
+	}
+
+	// activateChannels fetches the current channelmap from Plex and activates all channels
+	// for the given device key. Used by the watchdog when it detects 0 active channels.
+	activateChannels := func(deviceKey string, lineupIDs []string) {
+		chMappings, err := GetChannelMap(cfg.PlexHost, cfg.PlexToken, deviceUUID, lineupIDs)
+		if err != nil {
+			log.Printf("[dvr-watchdog] channelmap fetch failed: %v", err)
+			return
+		}
+		if len(chMappings) == 0 {
+			log.Printf("[dvr-watchdog] channelmap still empty — guide not yet indexed, will retry next cycle")
+			return
+		}
+		activated, err := ActivateChannelsAPI(cfg, deviceKey, chMappings)
+		if err != nil {
+			log.Printf("[dvr-watchdog] channel activation failed: %v", err)
+		} else {
+			log.Printf("[dvr-watchdog] activated %d channels", activated)
+		}
+	}
+
 	check := func() {
 		dvrs, err := ListDVRsAPI(cfg.PlexHost, cfg.PlexToken)
 		if err != nil {
@@ -627,36 +724,34 @@ func DVRWatchdog(ctx context.Context, cfg PlexAPIConfig, deviceUUID, guideURL st
 		}
 		for _, d := range dvrs {
 			for _, uuid := range d.DeviceUUIDs {
-				if uuid == deviceUUID {
-					// The lineup URL stored by Plex percent-encodes the embedded guide URL,
-					// so we check both the raw and encoded forms.
-					encodedGuideURL := url.QueryEscape(guideURL)
-					guideMatch := strings.Contains(d.LineupURL, guideURL) ||
-						strings.Contains(d.LineupURL, encodedGuideURL)
-					if guideMatch {
-						log.Printf("[dvr-watchdog] ok dvr=%d lineupTitle=%q", d.Key, d.LineupTitle)
-					} else {
-						log.Printf("[dvr-watchdog] guide URL mismatch (dvr=%d registered=%q expected=%q) — re-registering",
-							d.Key, d.LineupURL, guideURL)
-						_, _, rerr := FullRegisterPlex(cfg.BaseURL, cfg.PlexHost, cfg.PlexToken, cfg.FriendlyName, cfg.DeviceID, channels)
-						if rerr != nil {
-							log.Printf("[dvr-watchdog] re-registration failed: %v", rerr)
-						} else {
-							log.Printf("[dvr-watchdog] re-registration complete")
-						}
-					}
+				if uuid != deviceUUID {
+					continue
+				}
+				// Found our DVR. Check guide URL.
+				encodedGuideURL := url.QueryEscape(guideURL)
+				guideMatch := strings.Contains(d.LineupURL, guideURL) ||
+					strings.Contains(d.LineupURL, encodedGuideURL)
+				if !guideMatch {
+					reregister(fmt.Sprintf("guide URL mismatch dvr=%d registered=%q expected=%q",
+						d.Key, d.LineupURL, guideURL))
 					return
 				}
+
+				// Guide URL is correct. Check channel activation: fetch the DVR XML and
+				// count enabled ChannelMappings. If 0, the guide hasn't been indexed yet
+				// (or channels were wiped by a re-registration race) — activate now.
+				enabledCount := dvrEnabledChannelCount(cfg.PlexHost, cfg.PlexToken, d.Key)
+				if enabledCount == 0 {
+					log.Printf("[dvr-watchdog] dvr=%d guide ok but 0 channels activated — activating now", d.Key)
+					activateChannels(d.DeviceKey, []string{d.LineupURL})
+				} else {
+					log.Printf("[dvr-watchdog] ok dvr=%d lineupTitle=%q enabled_channels=%d", d.Key, d.LineupTitle, enabledCount)
+				}
+				return
 			}
 		}
-		// DVR not found — our registration was removed from Plex.
-		log.Printf("[dvr-watchdog] dvr missing for device %s — re-registering", deviceUUID)
-		_, _, rerr := FullRegisterPlex(cfg.BaseURL, cfg.PlexHost, cfg.PlexToken, cfg.FriendlyName, cfg.DeviceID, channels)
-		if rerr != nil {
-			log.Printf("[dvr-watchdog] re-registration failed: %v", rerr)
-		} else {
-			log.Printf("[dvr-watchdog] re-registration complete")
-		}
+		// DVR not found.
+		reregister(fmt.Sprintf("dvr missing for device %s", deviceUUID))
 	}
 
 	for {
