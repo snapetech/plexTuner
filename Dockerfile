@@ -2,9 +2,9 @@ FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS build
 ARG TARGETOS TARGETARCH
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
+COPY vendor/ vendor/
 COPY . .
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /plex-tuner ./cmd/plex-tuner
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -mod=vendor -o /plex-tuner ./cmd/plex-tuner
 
 FROM debian:stable-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl wget ffmpeg && rm -rf /var/lib/apt/lists/*

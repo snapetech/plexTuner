@@ -4,6 +4,24 @@
 
 ## Cluster / Plex
 
+- **OpenBao root token invalidated on raft instability — use generate-root ceremony:** When both raft nodes crash/cycle, the active leader entry can point to a dead pod IP. Both nodes become "standby" with no active election. Fix: (1) delete the crashed pod so the stateful set restarts it, (2) unseal both pods with `scripts/unseal-openbao.sh all`, (3) if the existing root token is rejected (403), run `generate-root` ceremony against the active pod IP. Canonical unseal keys: `~/Documents/code/k3s/openbao/openbao-init-output.txt`. Current root token stored in `secret/data/plextuner.openbao_root_token`. Bad/stale init files were at `~/Documents/openbao-init-output.txt` and `~/Documents/k3s-secrets/openbao/` — both deleted 2026-02-27.
+
+- **Supervisor envFiles must be sourced before children start — Bao agent writes files, not process env:** The Bao agent injector writes secrets to `/vault/secrets/*.env` as `export KEY=VALUE` files. The supervisor process does NOT automatically inherit them — they must be listed in the `envFiles` field of `supervisor.json` so `loadEnvFile()` sets them into the supervisor's own process env before spawning children. Children then inherit via `os.Environ()`. Without this, children get old/missing provider credentials even though the files exist.
+
+- **Cloudflare CDN blocks HLS .ts segment fetches with 0-byte streams — use `PLEX_TUNER_FETCH_CF_REJECT=true`:** (Fixed 2026-02-27) When a channel's stream is served via Cloudflare's CDN and the content is flagged, CF returns a redirect to `cloudflare-terms-of-service-abuse.com` for each `.ts` segment. The Go HTTP client follows the redirect, receives the abuse-page HTML, and produces a 0-byte TS segment. PlexTuner relays the zero-length bytes, Plex sees a valid tune but blank video, and the stream silently drains the 12-second stall timeout before dropping with `hls-relay ended no-new-segments`.
+  - Symptom: stream starts, Plex logs `status=200` for `/stream/...`, but video is black/frozen. PlexTuner logs show segments writing 0 bytes. After ~12s: `hls-relay ended no-new-segments`.
+  - Fix: `PLEX_TUNER_FETCH_CF_REJECT=true` (default `false`). When enabled, the gateway detects the CF abuse domain in the segment error and immediately returns `errCFBlock`, aborting the stream with a log line instead of stalling. Set this env var on the Deployment (or in `supervisor.json` child env) for any pod serving CF-proxied channels.
+  - Implementation: `config.FetchCFReject` → `gateway.Gateway.FetchCFReject` → `fetchAndWriteSegment` checks `strings.Contains(err.Error(), "cloudflare-terms-of-service-abuse.com")` → sentinel `errCFBlock` → caught in `relayHLSAsTS` loop → aborts cleanly.
+  - Note: `PLEX_TUNER_BLOCK_CF_PROVIDERS=true` blocks at ingest time (catalog build), which is complementary but does not help when the same channel URL is available from both CF and non-CF CDNs. `FETCH_CF_REJECT` acts at stream time.
+
+- **Cloudflare-proxied provider URLs cause slow 503 storms on ingest:** When `PLEX_TUNER_PROVIDER_URL(S)` resolves to a Cloudflare-fronted host (e.g. `cf.supergaminghub.xyz`), all `player_api.php` category fetches return HTTP 503 with `Server: cloudflare`. With N supervisor children fetching in parallel this triggers CF rate-limit blocks. Fix: set `PLEX_TUNER_BLOCK_CF_PROVIDERS=true` — ingest will skip any CF URL (logged as WARNING) and try alternates; if all URLs are CF-proxied, ingest is blocked with an ALERT log. Default off. Requires multiple non-CF URLs in `PLEX_TUNER_PROVIDER_URLS`.
+
+- **HDHR DVR scaling requires `--hdhr-total-channels` at generator time:** The `generate-k3s-supervisor-manifests.py` generator creates only 1 HDHR instance by default. Pass `--hdhr-total-channels=<N>` (the EPG-linked channel count from logs: `Filtered to EPG-linked only: N live channels`) and `--hdhr-plex-host=<host:port>` to auto-generate `ceil(N/479)` shards. Without this, only the first 479 channels are exposed regardless of how large the EPG feed is.
+  - Pattern: each shard gets `LINEUP_SKIP = i*479`, `LINEUP_TAKE = 479`, a unique device ID (`hdhrbcast2..N`), and guide number offset (`i*100000`).
+  - Extra k8s Services (`plextuner-hdhr-test3` through `plextuner-hdhr-testN`) must be created alongside. Firewall port ranges on kspld0 and kspls0 must also be extended.
+
+- **kspld0 has two overlapping nftables INPUT chains (priority -400 and 0) — both must allow tuner ports:** `kspld0` runs `table inet host-firewall` (priority -400, via `/etc/nftables/kspld0-host-firewall.conf`) **and** `table inet filter` (priority 0, via `/etc/nftables.conf`). In nftables, multiple base chains at the same hook ALL run in priority order and each chain's final verdict is independent. A packet accepted by `host-firewall` at priority -400 is still processed by `inet filter` at priority 0 which then drops it (policy drop, no matching accept rule). **Fix applied (2026-02-27):** Added `ip saddr 192.168.50.0/24 tcp dport { 5004, 5006, 5101-5126 } accept` to `/etc/nftables.conf` `inet filter input` chain. Backup at `/etc/nftables.conf.bak-plextuner-*`. Both files must be updated if new ports are added.
+
 - **Plex DVR channel limit (~480) applies to the wizard only.** When users add the tuner via Plex's "Set up" wizard, Plex fetches our lineup and tries to save it; that path fails above ~480 channels. For **zero-touch, no wizard**: use `-register-plex=/path/to/Plex` so we write DVR + XMLTV URIs and attempt to sync the full lineup into Plex's DB. When `-register-plex` is set we do not cap (full catalog); lineup sync into the DB requires Plex to use a table we can discover (see [docs/adr/0001-zero-touch-plex-lineup.md](docs/adr/0001-zero-touch-plex-lineup.md)). If lineup sync fails (schema unknown), we still serve the full lineup over HTTP but Plex may only show 480 if it re-fetches via the wizard path.
 - **Plex is not deployed by this repo.** Plex Media Server is expected to run in the cluster (or on the node) from a separate deploy (e.g. sibling `k3s/plex`, Helm, or node install). If Plex is missing in the cluster, see [docs/runbooks/plex-in-cluster.md](docs/runbooks/plex-in-cluster.md) for how to check, why it's missing, and how to restore it.
 - **HDHR manifest: nodeSelector + imagePullPolicy Never.** If you pin the deployment to a node (for Plex hostPath), the image must be loaded on that node (e.g. `k3d image import` or build on that node). Otherwise you can see one healthy pod on another node and `ErrImageNeverPull` / stuck rollout on the selected node. Load the image on the chosen node or leave nodeSelector commented out to run on any node.
@@ -12,7 +30,30 @@
 
 - **Credentials:** Secrets must live only in `.env` (or environment). `.env` is in `.gitignore`. Never commit `.env` or log secrets. Use `.env.example` as a template (no real values).
 
+## Build / Deploy
+
+- **`docker build` does NOT update k3s containerd image store — must import explicitly:** (Confirmed 2026-02-27) Docker and k3s/containerd maintain separate image stores. After `docker build -t plex-tuner:latest .`, the k3s pods continue using the old image already in containerd even after `kubectl rollout restart`, because `imagePullPolicy: IfNotPresent` means k3s never checks Docker.
+  - Symptom: after rebuilding and restarting, pod logs show old behavior; binary in pod (`strings /usr/local/bin/plex-tuner | grep <new-string>`) does not contain new code.
+  - Fix: always import after every build:
+    ```bash
+    docker save plex-tuner:latest | sudo k3s ctr images import -
+    sudo kubectl rollout restart deployment/plextuner-supervisor deployment/plextuner-oracle-supervisor -n plex
+    ```
+  - Verify: `sudo k3s ctr images ls | grep plex-tuner:latest` — digest should match `docker image inspect plex-tuner:latest --format '{{.Id}}'`.
+
+- **Oracle-supervisor `PLEX_TUNER_BASE_URL` must be set per-instance in ConfigMap, not omitted:** (Fixed 2026-02-27) When the oracle-supervisor ConfigMap does not include `PLEX_TUNER_BASE_URL` in each instance's `env` block, all 6 hdhrcap instances fall back to `http://localhost:5004` as their advertised base URL. Plex tries to contact `localhost` from Plex's own pod and gets connection refused; the oracle tuners are invisible to Plex even though they're all listening.
+  - Correct per-instance values: `http://plextuner-oracle-hdhr.plex.svc:5201` through `:5206`.
+  - The k8s source file `k8s/plextuner-oracle-supervisor.yaml` now encodes the correct per-instance `PLEX_TUNER_BASE_URL`. Do not remove these entries.
+
+- **`-register-plex=api` is a mode selector, not a filesystem path — file-based fallback must be suppressed:** (Fixed 2026-02-27) When `FullRegisterPlex` (API registration) fails (e.g., Plex returns "device is in use with an existing DVR"), `apiRegistrationDone` stays false and the code previously fell through to `plex.SyncEPGToPlex(plexDataDir, ...)` with `plexDataDir="api"`. This constructed the path `api/Plug-in Support/Databases/...` and logged `EPG sync warning: EPG database not found: api/...` on every restart for all 13 category tuners.
+  - Fix: code now checks `if *runRegisterPlex == "api"` and skips the file-based fallback entirely, logging `[PLEX-REG] API registration failed; skipping file-based fallback`. No filesystem EPG sync is attempted when the mode is `api`.
+
 ## Plex / Integration
+
+- **Plex "device is in use with an existing DVR" on restart is benign — DVRs are already registered:** All 13 category tuner instances log `Plex API registration failed: create DVR: no DVR in response` on every restart. The actual Plex response is HTTP 200 with body `<MediaContainer size="0" message="The device is in use with an existing DVR" status="-1">`. This means the DVR already exists in Plex from a prior run; Plex correctly refuses to create a duplicate. The tuners are already wired up and functional.
+  - The code treats the empty body (no `<Dvr>` element) as "no DVR in response" and logs an error. This is misleading but benign.
+  - The DVR device registrations (Step 1) always succeed (status=200, key assigned). The guide.xml/lineup URLs in Plex remain correct.
+  - No action needed on restart. If a fresh registration is needed (new device ID), delete the existing DVR from Plex first.
 
 - **Category DVRs can crashloop if `run -mode=easy` ignores `PLEX_TUNER_M3U_URL` (code regression):** Observed on 2026-02-25 while rebuilding category images to add `ffmpeg`.
   - Symptom: category `plextuner-*` pods restart with `Catalog refresh failed: need -m3u URL or set PLEX_TUNER_PROVIDER_USER and PLEX_TUNER_PROVIDER_PASS in .env` even though `PLEX_TUNER_M3U_URL` is present in the Deployment env.
@@ -244,3 +285,10 @@
   - Productized fix: `plex-tuner plex-vod-register` now applies a VOD-safe per-library preset by default when creating/reusing `VOD` / `VOD-Movies`.
   - Operational note: if Plex is already wedged on these activities, restart Plex once to clear the queue, then rescan.
   - Limitation (current Plex build): some expensive jobs (notably `media.generate.chapter.thumbs`) may still run because Plex does not expose a per-library chapter-thumbnail toggle in `/library/sections/<id>/prefs` on all library types/versions. The app only mutates prefs keys that actually exist on the section.
+
+- **VODFS FUSE mounts become invisible inside the Plex pod after a pod restart if `mountPropagation: HostToContainer` is not set on the hostPath volumes:** Observed on 2026-02-28 after the Plex pod restarted while VODFS processes were down.
+  - Symptom: `/media/iptv-vodfs*` directories are present in the pod (from the hostPath binding) but `ls` returns empty and `plex-vod-register` fails with "Movies/TV path not found". FUSE mounts started on the host *after* the pod started are not visible because Linux FUSE mounts are not propagated into an already-running container by default.
+  - Root cause: Linux mount namespaces — a FUSE mount on the host (user namespace) is not automatically visible in a container's mount namespace unless `mountPropagation: HostToContainer` (or `Bidirectional`) is set on the volume.
+  - Fix required: add `mountPropagation: HostToContainer` to each VODFS `volumeMount` in the Plex pod spec (requires privileged=true or at least appropriate securityContext on the container to allow shared mounts).
+  - Operational workaround (used 2026-02-28): (1) ensure all VODFS FUSE mounts are running on the Plex node *before* the pod starts; (2) restart the Plex pod after FUSE mounts are confirmed active. This makes the host mounts visible because the container bind-mounts are resolved at pod startup time.
+  - Recovery procedure: `sudo bash` on plex node → `pgrep plex-tuner-vodreg` to confirm processes are up → if down, restart each lane via `nohup <run-dir>/plex-tuner-vodreg mount -catalog ... -mount ... -cache ... -allow-other &` → wait for all mounts → `kubectl rollout restart deployment/plex -n plex` → re-run `plex-tuner plex-vod-register` for each lane from inside the new Plex pod.

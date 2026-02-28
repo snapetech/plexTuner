@@ -1,0 +1,217 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: plextuner-oracle-supervisor-config
+  namespace: plex
+data:
+  supervisor.json: |
+    {
+      "restart": true,
+      "restartDelay": "2s",
+      "failFast": false,
+      "instances": [
+        {
+          "name": "hdhrcap100",
+          "args": ["run", "-mode=easy", "-addr=:5201"],
+          "env": {
+            "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/live.m3u",
+            "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+            "PLEX_TUNER_BASE_URL": "http://plextuner-oracle-hdhr.plex.svc:5201",
+            "PLEX_TUNER_DEVICE_ID": "oraclecap100",
+            "PLEX_TUNER_FRIENDLY_NAME": "oraclecap100",
+            "PLEX_TUNER_LINEUP_SHAPE": "na_en",
+            "PLEX_TUNER_LINEUP_REGION_PROFILE": "ca_west",
+            "PLEX_TUNER_LINEUP_DROP_MUSIC": "true",
+            "PLEX_TUNER_LINEUP_TAKE": "100",
+            "PLEX_TUNER_XMLTV_PREFER_LANGS": "en,eng",
+            "PLEX_TUNER_XMLTV_PREFER_LATIN": "true",
+            "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": "channel"
+          }
+        },
+        {
+          "name": "hdhrcap200",
+          "args": ["run", "-mode=easy", "-addr=:5202"],
+          "env": {
+            "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/live.m3u",
+            "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+            "PLEX_TUNER_BASE_URL": "http://plextuner-oracle-hdhr.plex.svc:5202",
+            "PLEX_TUNER_DEVICE_ID": "oraclecap200",
+            "PLEX_TUNER_FRIENDLY_NAME": "oraclecap200",
+            "PLEX_TUNER_LINEUP_SHAPE": "na_en",
+            "PLEX_TUNER_LINEUP_REGION_PROFILE": "ca_west",
+            "PLEX_TUNER_LINEUP_DROP_MUSIC": "true",
+            "PLEX_TUNER_LINEUP_TAKE": "200",
+            "PLEX_TUNER_XMLTV_PREFER_LANGS": "en,eng",
+            "PLEX_TUNER_XMLTV_PREFER_LATIN": "true",
+            "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": "channel"
+          }
+        },
+        {
+          "name": "hdhrcap300",
+          "args": ["run", "-mode=easy", "-addr=:5203"],
+          "env": {
+            "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/live.m3u",
+            "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+            "PLEX_TUNER_BASE_URL": "http://plextuner-oracle-hdhr.plex.svc:5203",
+            "PLEX_TUNER_DEVICE_ID": "oraclecap300",
+            "PLEX_TUNER_FRIENDLY_NAME": "oraclecap300",
+            "PLEX_TUNER_LINEUP_SHAPE": "na_en",
+            "PLEX_TUNER_LINEUP_REGION_PROFILE": "ca_west",
+            "PLEX_TUNER_LINEUP_DROP_MUSIC": "true",
+            "PLEX_TUNER_LINEUP_TAKE": "300",
+            "PLEX_TUNER_XMLTV_PREFER_LANGS": "en,eng",
+            "PLEX_TUNER_XMLTV_PREFER_LATIN": "true",
+            "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": "channel"
+          }
+        },
+        {
+          "name": "hdhrcap400",
+          "args": ["run", "-mode=easy", "-addr=:5204"],
+          "env": {
+            "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/live.m3u",
+            "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+            "PLEX_TUNER_BASE_URL": "http://plextuner-oracle-hdhr.plex.svc:5204",
+            "PLEX_TUNER_DEVICE_ID": "oraclecap400",
+            "PLEX_TUNER_FRIENDLY_NAME": "oraclecap400",
+            "PLEX_TUNER_LINEUP_SHAPE": "na_en",
+            "PLEX_TUNER_LINEUP_REGION_PROFILE": "ca_west",
+            "PLEX_TUNER_LINEUP_DROP_MUSIC": "true",
+            "PLEX_TUNER_LINEUP_TAKE": "400",
+            "PLEX_TUNER_XMLTV_PREFER_LANGS": "en,eng",
+            "PLEX_TUNER_XMLTV_PREFER_LATIN": "true",
+            "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": "channel"
+          }
+        },
+        {
+          "name": "hdhrcap479",
+          "args": ["run", "-mode=easy", "-addr=:5205"],
+          "env": {
+            "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/live.m3u",
+            "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+            "PLEX_TUNER_BASE_URL": "http://plextuner-oracle-hdhr.plex.svc:5205",
+            "PLEX_TUNER_DEVICE_ID": "oraclecap479",
+            "PLEX_TUNER_FRIENDLY_NAME": "oraclecap479",
+            "PLEX_TUNER_LINEUP_SHAPE": "na_en",
+            "PLEX_TUNER_LINEUP_REGION_PROFILE": "ca_west",
+            "PLEX_TUNER_LINEUP_DROP_MUSIC": "true",
+            "PLEX_TUNER_LINEUP_TAKE": "479",
+            "PLEX_TUNER_XMLTV_PREFER_LANGS": "en,eng",
+            "PLEX_TUNER_XMLTV_PREFER_LATIN": "true",
+            "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": "channel"
+          }
+        },
+        {
+          "name": "hdhrcap600",
+          "args": ["run", "-mode=easy", "-addr=:5206"],
+          "env": {
+            "PLEX_TUNER_M3U_URL": "http://iptv-m3u-server.plex.svc/live.m3u",
+            "PLEX_TUNER_XMLTV_URL": "http://iptv-m3u-server.plex.svc/xmltv.xml",
+            "PLEX_TUNER_BASE_URL": "http://plextuner-oracle-hdhr.plex.svc:5206",
+            "PLEX_TUNER_DEVICE_ID": "oraclecap600",
+            "PLEX_TUNER_FRIENDLY_NAME": "oraclecap600",
+            "PLEX_TUNER_LINEUP_SHAPE": "na_en",
+            "PLEX_TUNER_LINEUP_REGION_PROFILE": "ca_west",
+            "PLEX_TUNER_LINEUP_DROP_MUSIC": "true",
+            "PLEX_TUNER_LINEUP_TAKE": "600",
+            "PLEX_TUNER_XMLTV_PREFER_LANGS": "en,eng",
+            "PLEX_TUNER_XMLTV_PREFER_LATIN": "true",
+            "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": "channel"
+          }
+        }
+      ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plextuner-oracle-supervisor
+  namespace: plex
+  labels:
+    app: plextuner-oracle-supervisor
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: plextuner-oracle-supervisor
+  template:
+    metadata:
+      labels:
+        app: plextuner-oracle-supervisor
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: kspld0
+      tolerations:
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+          effect: NoSchedule
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+          effect: NoExecute
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoSchedule
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoExecute
+      containers:
+        - name: plextuner
+          image: plex-tuner:latest
+          imagePullPolicy: IfNotPresent
+          args: ["supervise", "-config", "/config/supervisor.json"]
+          ports:
+            - { name: p5201, containerPort: 5201, protocol: TCP }
+            - { name: p5202, containerPort: 5202, protocol: TCP }
+            - { name: p5203, containerPort: 5203, protocol: TCP }
+            - { name: p5204, containerPort: 5204, protocol: TCP }
+            - { name: p5205, containerPort: 5205, protocol: TCP }
+            - { name: p5206, containerPort: 5206, protocol: TCP }
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 5201
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          volumeMounts:
+            - name: cfg
+              mountPath: /config
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: cfg
+          configMap:
+            name: plextuner-oracle-supervisor-config
+        - name: data
+          hostPath:
+            path: /srv/plextuner-oracle-data
+            type: DirectoryOrCreate
+---
+# Single service exposing all 6 oracle-supervisor instance ports.
+# Each instance advertises its own port as BASE_URL so Plex routes correctly:
+#   hdhrcap100 -> http://plextuner-oracle-hdhr.plex.svc:5201
+#   hdhrcap200 -> http://plextuner-oracle-hdhr.plex.svc:5202
+#   ... and so on
+apiVersion: v1
+kind: Service
+metadata:
+  name: plextuner-oracle-hdhr
+  namespace: plex
+spec:
+  selector:
+    app: plextuner-oracle-supervisor
+  ports:
+    - { name: p5201, port: 5201, targetPort: 5201, protocol: TCP }
+    - { name: p5202, port: 5202, targetPort: 5202, protocol: TCP }
+    - { name: p5203, port: 5203, targetPort: 5203, protocol: TCP }
+    - { name: p5204, port: 5204, targetPort: 5204, protocol: TCP }
+    - { name: p5205, port: 5205, targetPort: 5205, protocol: TCP }
+    - { name: p5206, port: 5206, targetPort: 5206, protocol: TCP }

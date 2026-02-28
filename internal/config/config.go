@@ -12,6 +12,16 @@ import (
 	"time"
 )
 
+// ProviderEntry is a single Xtream/M3U provider with its own base URL and credentials.
+// Provider 1 is loaded from PLEX_TUNER_PROVIDER_URL / _USER / _PASS.
+// Providers 2+ are loaded from PLEX_TUNER_PROVIDER_URL_2, _USER_2, _PASS_2, etc.
+// All entries are available via Config.ProviderEntries().
+type ProviderEntry struct {
+	BaseURL string
+	User    string
+	Pass    string
+}
+
 // Config holds tuner + VODFS + provider settings.
 // Load from env and/or config file (future).
 type Config struct {
@@ -43,6 +53,15 @@ type Config struct {
 	LiveOnly            bool // if true, only fetch live channels from API (skip VOD and series; faster)
 	// EPG prune: when true, guide.xml and M3U export only include channels with tvg-id set (reduces noise).
 	EpgPruneUnlinked bool
+	// Provider ingest policy: when true, reject any provider URL that is Cloudflare-proxied.
+	// The ranker will skip CF URLs and try alternates; if all URLs are CF-proxied, ingest is
+	// blocked with an alert log. Off by default. Enable with PLEX_TUNER_BLOCK_CF_PROVIDERS=true.
+	BlockCFProviders bool
+	// when true, abort an HLS stream immediately if a segment fetch is redirected to
+	// the Cloudflare abuse page (cloudflare-terms-of-service-abuse.com).
+	// Prevents the 12-second stall timeout that results in 0-byte streams from CF-blocked CDNs.
+	FetchCFReject bool
+
 	// Stream smoketest: when true, at index time probe each channel's primary URL and drop failures.
 	SmoketestEnabled     bool
 	SmoketestTimeout     time.Duration
@@ -88,6 +107,8 @@ func Load() *Config {
 		LiveEPGOnly:          getEnvBool("PLEX_TUNER_LIVE_EPG_ONLY", false),
 		LiveOnly:             getEnvBool("PLEX_TUNER_LIVE_ONLY", false),
 		EpgPruneUnlinked:     getEnvBool("PLEX_TUNER_EPG_PRUNE_UNLINKED", false),
+		BlockCFProviders:     getEnvBool("PLEX_TUNER_BLOCK_CF_PROVIDERS", false),
+		FetchCFReject:        getEnvBool("PLEX_TUNER_FETCH_CF_REJECT", false),
 		SmoketestEnabled:     getEnvBool("PLEX_TUNER_SMOKETEST_ENABLED", false),
 		SmoketestTimeout:     getEnvDuration("PLEX_TUNER_SMOKETEST_TIMEOUT", 8*time.Second),
 		SmoketestConcurrency: getEnvInt("PLEX_TUNER_SMOKETEST_CONCURRENCY", 10),
@@ -232,6 +253,39 @@ func (c *Config) ProviderURLs() []string {
 		return []string{c.ProviderBaseURL}
 	}
 	return nil
+}
+
+// ProviderEntries returns all configured providers in priority order.
+// Provider 1 comes from PLEX_TUNER_PROVIDER_URL(S) / _USER / _PASS (already loaded into Config fields).
+// Providers 2..N come from PLEX_TUNER_PROVIDER_URL_2/_USER_2/_PASS_2, _URL_3/_USER_3/_PASS_3, etc.
+// Scanning stops at the first missing _URL_N. Entries with no BaseURL are skipped.
+func (c *Config) ProviderEntries() []ProviderEntry {
+	var out []ProviderEntry
+	// Entry 1: from the primary fields (PLEX_TUNER_PROVIDER_URL(S) already handled by ProviderURLs).
+	for _, base := range c.ProviderURLs() {
+		if base != "" {
+			out = append(out, ProviderEntry{BaseURL: base, User: c.ProviderUser, Pass: c.ProviderPass})
+		}
+	}
+	// Entries 2..N: PLEX_TUNER_PROVIDER_URL_N / _USER_N / _PASS_N
+	for n := 2; ; n++ {
+		suffix := fmt.Sprintf("_%d", n)
+		base := getEnvURL("PLEX_TUNER_PROVIDER_URL" + suffix)
+		if base == "" {
+			break
+		}
+		user := os.Getenv("PLEX_TUNER_PROVIDER_USER" + suffix)
+		pass := os.Getenv("PLEX_TUNER_PROVIDER_PASS" + suffix)
+		// Fall back to primary creds if per-entry creds are not set.
+		if user == "" {
+			user = c.ProviderUser
+		}
+		if pass == "" {
+			pass = c.ProviderPass
+		}
+		out = append(out, ProviderEntry{BaseURL: base, User: user, Pass: pass})
+	}
+	return out
 }
 
 func getEnv(key, defaultVal string) string {

@@ -9,9 +9,11 @@ ROOT="$PWD"
 err() { echo "[plex-tuner verify] ERROR: $*" >&2; exit 1; }
 step() { echo "[plex-tuner verify] ==> $*"; }
 
-# --- Format (fail if any file needs formatting) ---
+# --- Format (fail if any file needs formatting; vendor/ is excluded) ---
 step "format (gofmt -s -l)"
-UNFORMATTED=$(gofmt -s -l . 2>/dev/null | grep -v '^$' || true)
+# Find all .go files excluding vendor/ and check formatting
+UNFORMATTED=$(find . -name '*.go' -not -path './vendor/*' -print0 \
+  | xargs -0 gofmt -s -l 2>/dev/null | grep -v '^$' || true)
 if [[ -n "$UNFORMATTED" ]]; then
   echo "The following files need 'gofmt -s -w':"
   echo "$UNFORMATTED"

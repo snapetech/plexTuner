@@ -7,6 +7,70 @@ import (
 	"time"
 )
 
+func TestProviderEntries_singleProvider(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("PLEX_TUNER_PROVIDER_URL", "http://host1")
+	os.Setenv("PLEX_TUNER_PROVIDER_USER", "u1")
+	os.Setenv("PLEX_TUNER_PROVIDER_PASS", "p1")
+	c := Load()
+	entries := c.ProviderEntries()
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].BaseURL != "http://host1" || entries[0].User != "u1" || entries[0].Pass != "p1" {
+		t.Errorf("unexpected entry: %+v", entries[0])
+	}
+}
+
+func TestProviderEntries_multiProvider(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("PLEX_TUNER_PROVIDER_URL", "http://host1")
+	os.Setenv("PLEX_TUNER_PROVIDER_USER", "u1")
+	os.Setenv("PLEX_TUNER_PROVIDER_PASS", "p1")
+	os.Setenv("PLEX_TUNER_PROVIDER_URL_2", "http://host2")
+	os.Setenv("PLEX_TUNER_PROVIDER_USER_2", "u2")
+	os.Setenv("PLEX_TUNER_PROVIDER_PASS_2", "p2")
+	c := Load()
+	entries := c.ProviderEntries()
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	if entries[1].BaseURL != "http://host2" || entries[1].User != "u2" || entries[1].Pass != "p2" {
+		t.Errorf("unexpected second entry: %+v", entries[1])
+	}
+}
+
+func TestProviderEntries_stopsAtGap(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("PLEX_TUNER_PROVIDER_URL", "http://host1")
+	os.Setenv("PLEX_TUNER_PROVIDER_USER", "u1")
+	os.Setenv("PLEX_TUNER_PROVIDER_PASS", "p1")
+	// No _2, but has _3 — should NOT pick up _3 because we stop at first gap.
+	os.Setenv("PLEX_TUNER_PROVIDER_URL_3", "http://host3")
+	c := Load()
+	entries := c.ProviderEntries()
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry (gap at _2 stops scan), got %d", len(entries))
+	}
+}
+
+func TestProviderEntries_fallsBackToPrimaryCredentials(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("PLEX_TUNER_PROVIDER_URL", "http://host1")
+	os.Setenv("PLEX_TUNER_PROVIDER_USER", "shared")
+	os.Setenv("PLEX_TUNER_PROVIDER_PASS", "sharedpass")
+	os.Setenv("PLEX_TUNER_PROVIDER_URL_2", "http://host2")
+	// No _USER_2 / _PASS_2 — should inherit primary creds.
+	c := Load()
+	entries := c.ProviderEntries()
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	if entries[1].User != "shared" || entries[1].Pass != "sharedpass" {
+		t.Errorf("expected fallback to primary creds, got user=%q pass=%q", entries[1].User, entries[1].Pass)
+	}
+}
+
 func TestM3UURLOrBuild(t *testing.T) {
 	os.Clearenv()
 	os.Setenv("PLEX_TUNER_PROVIDER_URL", "http://host")

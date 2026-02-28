@@ -153,56 +153,122 @@ def build_supervisor_json(
     hdhr_non_latin_title_fallback: str,
     hdhr_lineup_shape: str,
     hdhr_lineup_region_profile: str,
+    hdhr_total_channels: int = 0,
+    hdhr_plex_host: str = "",
+    hdhr_svc_base_url_template: str = "http://plextuner-hdhr-test{svc_suffix}.plex.svc:5004",
 ) -> dict[str, Any]:
     by_name = {d["metadata"]["name"]: d for d in multi_deploys}
     instances: list[dict[str, Any]] = []
 
-    # HDHR child from the existing hdhr-test deployment (inherits many envs from parent envFrom),
-    # but run it in wizard mode (no Plex DB registration) per desired testing flow.
+    # HDHR child from the existing hdhr-test deployment (inherits many envs from parent envFrom).
+    # The first shard runs in wizard mode (HDHR network mode, SSDP, ScanPossible=true).
+    # Additional shards run in full mode with injected DVR registration (LINEUP_SKIP/TAKE sharding).
+    #
+    # When hdhr_total_channels > hdhr_lineup_max, we auto-generate enough shards to cover
+    # all EPG-linked channels: n_shards = ceil(hdhr_total_channels / hdhr_lineup_max).
+    # Minimum is always 1 shard (hdhr-main). Extra shards are named hdhr-main2, hdhr-main3, ...
     hdhr_container = hdhr_deploy["spec"]["template"]["spec"]["containers"][0]
     hdhr_base = "http://plextuner-hdhr.plex.home"
     for a in hdhr_container.get("args", []):
         if isinstance(a, str) and a.startswith("-base-url="):
             hdhr_base = a.split("=", 1)[1]
             break
-    hdhr_args = [
-        "run",
-        "-mode=easy",
-        "-addr=:5004",
-        "-catalog=/data/hdhr-main/catalog.json",
-        f"-base-url={hdhr_base}",
-    ]
-    instances.append(
-        {
-            "name": "hdhr-main",
-            "args": hdhr_args,
-            "env": {
-                "PLEX_TUNER_HDHR_NETWORK_MODE": "true",
-                "PLEX_TUNER_SSDP_DISABLED": "false",
-                "PLEX_TUNER_HDHR_SCAN_POSSIBLE": "true",
-                "PLEX_TUNER_FRIENDLY_NAME": "hdhr",
-                "PLEX_TUNER_HDHR_FRIENDLY_NAME": "hdhr",
-                "PLEX_TUNER_HDHR_MANUFACTURER": "Silicondust",
-                "PLEX_TUNER_HDHR_MODEL_NUMBER": "HDHR5-2US",
-                "PLEX_TUNER_HDHR_FIRMWARE_NAME": "hdhomerun5_atsc",
-                "PLEX_TUNER_HDHR_FIRMWARE_VERSION": "20240101",
-                "PLEX_TUNER_HDHR_DEVICE_AUTH": "plextuner",
-                "PLEX_TUNER_M3U_URL": hdhr_m3u_url,
-                "PLEX_TUNER_XMLTV_URL": hdhr_xmltv_url,
-                "PLEX_TUNER_LIVE_EPG_ONLY": "true" if hdhr_live_epg_only else "false",
-                "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true" if hdhr_epg_prune else "false",
-                "PLEX_TUNER_LINEUP_MAX_CHANNELS": str(hdhr_lineup_max),
-                "PLEX_TUNER_LINEUP_DROP_MUSIC": "true",
-                "PLEX_TUNER_LINEUP_SHAPE": hdhr_lineup_shape,
-                "PLEX_TUNER_LINEUP_REGION_PROFILE": hdhr_lineup_region_profile,
-                "PLEX_TUNER_STREAM_TRANSCODE": hdhr_stream_transcode,
-                "PLEX_TUNER_STREAM_BUFFER_BYTES": "-1",
-                "PLEX_TUNER_XMLTV_PREFER_LANGS": hdhr_prefer_langs,
-                "PLEX_TUNER_XMLTV_PREFER_LATIN": "true" if hdhr_prefer_latin else "false",
-                "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": hdhr_non_latin_title_fallback,
-            },
-        }
-    )
+
+    cap = hdhr_lineup_max if hdhr_lineup_max > 0 else 479
+    if hdhr_total_channels > cap:
+        n_shards = (hdhr_total_channels + cap - 1) // cap
+    else:
+        n_shards = 1
+
+    # Port assignment: shard 0 (hdhr-main) is at 5004; shards 1+ start at 5006 and go up.
+    # 5005 is reserved for WebSafe, so extra HDHR shards start at 5006.
+    hdhr_extra_base_port = 5006
+
+    hdhr_common_env = {
+        "PLEX_TUNER_HDHR_MANUFACTURER": "Silicondust",
+        "PLEX_TUNER_HDHR_MODEL_NUMBER": "HDHR5-2US",
+        "PLEX_TUNER_HDHR_FIRMWARE_NAME": "hdhomerun5_atsc",
+        "PLEX_TUNER_HDHR_FIRMWARE_VERSION": "20240101",
+        "PLEX_TUNER_M3U_URL": hdhr_m3u_url,
+        "PLEX_TUNER_XMLTV_URL": hdhr_xmltv_url,
+        "PLEX_TUNER_LIVE_EPG_ONLY": "true" if hdhr_live_epg_only else "false",
+        "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true" if hdhr_epg_prune else "false",
+        "PLEX_TUNER_LINEUP_DROP_MUSIC": "true",
+        "PLEX_TUNER_LINEUP_SHAPE": hdhr_lineup_shape,
+        "PLEX_TUNER_LINEUP_REGION_PROFILE": hdhr_lineup_region_profile,
+        "PLEX_TUNER_STREAM_TRANSCODE": hdhr_stream_transcode,
+        "PLEX_TUNER_STREAM_BUFFER_BYTES": "-1",
+        "PLEX_TUNER_XMLTV_PREFER_LANGS": hdhr_prefer_langs,
+        "PLEX_TUNER_XMLTV_PREFER_LATIN": "true" if hdhr_prefer_latin else "false",
+        "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": hdhr_non_latin_title_fallback,
+        "PLEX_TUNER_SKIP_HEALTH": "true",
+        "PLEX_TUNER_FETCH_CATEGORY_CONCURRENCY": "2",
+        "PLEX_TUNER_GRACENOTE_DB": "/plextuner-data/gracenote.json",
+        "PLEX_TUNER_IPTVORG_DB": "/plextuner-data/iptvorg.json",
+        "PLEX_TUNER_DVB_DB": "/plextuner-data/dvbdb.json",
+    }
+
+    for shard_idx in range(n_shards):
+        is_primary = shard_idx == 0
+        suffix = "" if is_primary else str(shard_idx + 1)
+        name = f"hdhr-main{suffix}"
+
+        if is_primary:
+            port = 5004
+            addr = ":5004"
+            device_id = "hdhr"
+            device_auth = "plextuner"
+            guide_offset = 0
+            base_url = hdhr_base
+        else:
+            port = hdhr_extra_base_port + (shard_idx - 1)
+            addr = f":{port}"
+            device_id = f"hdhrbcast{shard_idx + 1}"
+            device_auth = f"plextuner{shard_idx + 1}"
+            guide_offset = shard_idx * 100000
+            svc_suffix = str(shard_idx + 1)
+            base_url = hdhr_svc_base_url_template.format(svc_suffix=svc_suffix)
+
+        catalog_path = f"/data/{name}/catalog.json"
+        env: dict[str, Any] = dict(hdhr_common_env)
+        env.update({
+            "PLEX_TUNER_HDHR_NETWORK_MODE": "true" if is_primary else "false",
+            "PLEX_TUNER_SSDP_DISABLED": "false" if is_primary else "true",
+            "PLEX_TUNER_HDHR_SCAN_POSSIBLE": "true",
+            "PLEX_TUNER_FRIENDLY_NAME": name if is_primary else f"hdhr{shard_idx + 1}",
+            "PLEX_TUNER_HDHR_FRIENDLY_NAME": name if is_primary else f"hdhr{shard_idx + 1}",
+            "PLEX_TUNER_HDHR_DEVICE_AUTH": device_auth,
+            "PLEX_TUNER_LINEUP_MAX_CHANNELS": str(cap),
+            "PLEX_TUNER_GUIDE_NUMBER_OFFSET": str(guide_offset),
+        })
+        if not is_primary:
+            env["PLEX_TUNER_DEVICE_ID"] = device_id
+            if hdhr_plex_host:
+                env["PLEX_HOST"] = hdhr_plex_host
+        if n_shards > 1 and not is_primary:
+            env["PLEX_TUNER_LINEUP_SKIP"] = str(shard_idx * cap)
+            env["PLEX_TUNER_LINEUP_TAKE"] = str(cap)
+        elif n_shards > 1 and is_primary:
+            # Primary shard also takes only the first slice when sharding is active.
+            env["PLEX_TUNER_LINEUP_SKIP"] = "0"
+            env["PLEX_TUNER_LINEUP_TAKE"] = str(cap)
+
+        args = [
+            "run",
+            "-mode=easy" if is_primary else "-mode=full",
+            f"-addr={addr}",
+            f"-catalog={catalog_path}",
+            f"-base-url={base_url}",
+        ]
+        if not is_primary:
+            args.append("-register-plex=api")
+
+        instances.append({
+            "name": name,
+            "args": args,
+            "env": env,
+            "startDelay": "0s",
+        })
 
     base_port = 5101
     for idx, shard in enumerate(category_shards):
@@ -324,6 +390,9 @@ def build_singlepod_manifest(
                                 {"name": "PLEX_TUNER_PLEX_SESSION_REAPER_RENEW_LEASE_S", "value": "20"},
                                 {"name": "PLEX_TUNER_PLEX_SESSION_REAPER_HARD_LEASE_S", "value": "1800"},
                                 {"name": "PLEX_TUNER_PLEX_SESSION_REAPER_SSE", "value": "true"},
+                                # Abort HLS streams immediately on CF-blocked segment fetches
+                                # instead of stalling 12s and delivering 0 bytes.
+                                {"name": "PLEX_TUNER_FETCH_CF_REJECT", "value": "true"},
                             ],
                             "ports": [],
                             "volumeMounts": [
@@ -354,33 +423,45 @@ def build_singlepod_manifest(
         },
     }
 
-    # Ports: HDHR + all child HTTP ports
+    # Separate HDHR shards from category instances.
+    hdhr_shards = [i for i in supervisor_cfg["instances"] if i["name"].startswith("hdhr-main")]
+    category_instances = [i for i in supervisor_cfg["instances"] if not i["name"].startswith("hdhr-main")]
+
+    # Ports: HDHR primary (5004) + all extra HDHR shards + all category HTTP ports.
     ports = [{"name": "hdhr-http", "containerPort": 5004, "protocol": "TCP"}]
-    for inst in supervisor_cfg["instances"]:
+    for inst in hdhr_shards:
         if inst["name"] == "hdhr-main":
             continue
+        port = int(parse_addr(inst["args"]))
+        ports.append({"name": f"p{port}", "containerPort": port, "protocol": "TCP"})
+    for inst in category_instances:
         port = int(parse_addr(inst["args"]))
         ports.append({"name": f"p{port}", "containerPort": port, "protocol": "TCP"})
     ports.append({"name": "hdhr-disc", "containerPort": 65001, "protocol": "UDP"})
     ports.append({"name": "hdhr-ctrl", "containerPort": 65001, "protocol": "TCP"})
     dep["spec"]["template"]["spec"]["containers"][0]["ports"] = ports
 
-    # Services: one for HDHR HTTP, one per category preserving existing hostnames.
+    # Services:
+    # - plextuner-hdhr-test  -> shard 0 (hdhr-main, port 5004), keeps the legacy service name
+    # - plextuner-hdhr-test2, plextuner-hdhr-test3, ... -> extra HDHR shards
+    # - plextuner-<cat>      -> one per category instance
     services: list[dict[str, Any]] = []
-    services.append(
-        {
-            "apiVersion": "v1",
-            "kind": "Service",
-            "metadata": {"name": "plextuner-hdhr-test", "namespace": "plex"},
-            "spec": {
-                "selector": {"app": "plextuner-supervisor"},
-                "ports": [{"name": "http", "port": 5004, "targetPort": 5004, "protocol": "TCP"}],
-            },
-        }
-    )
-    for inst in supervisor_cfg["instances"]:
-        if inst["name"] == "hdhr-main":
-            continue
+    for shard in hdhr_shards:
+        target = int(parse_addr(shard["args"]))
+        shard_idx = hdhr_shards.index(shard)
+        svc_name = "plextuner-hdhr-test" if shard_idx == 0 else f"plextuner-hdhr-test{shard_idx + 1}"
+        services.append(
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {"name": svc_name, "namespace": "plex"},
+                "spec": {
+                    "selector": {"app": "plextuner-supervisor"},
+                    "ports": [{"name": "http", "port": 5004, "targetPort": target, "protocol": "TCP"}],
+                },
+            }
+        )
+    for inst in category_instances:
         cat = inst["name"]
         target = int(parse_addr(inst["args"]))
         services.append(
@@ -439,6 +520,19 @@ def main() -> int:
     ap.add_argument("--category-counts-json", default="", help="Optional JSON file with confirmed linked counts per base category for auto-overflow shard creation")
     ap.add_argument("--category-cap", type=int, default=479, help="Per-category confirmed linked-channel cap before creating overflow shards (default: 479)")
     ap.add_argument("--hdhr-lineup-max", type=int, default=-1, help="Override HDHR child lineup max (wizard-safe default from preset)")
+    ap.add_argument(
+        "--hdhr-total-channels",
+        type=int,
+        default=0,
+        help=(
+            "Total EPG-linked channel count for the HDHR feed. "
+            "The generator creates ceil(hdhr-total-channels / hdhr-lineup-max) HDHR DVR shards "
+            "so all channels are reachable in Plex. Shard 0 is the wizard-facing hdhr-main; "
+            "shards 1+ auto-register with Plex using LINEUP_SKIP/TAKE. "
+            "Example: --hdhr-total-channels=3513 with lineup-max=479 → 8 HDHR instances."
+        ),
+    )
+    ap.add_argument("--hdhr-plex-host", default="", help="PLEX_HOST value (host:port) injected into non-primary HDHR shards for API registration (e.g. 192.168.50.85:32400)")
     ap.add_argument("--hdhr-live-epg-only", action="store_true", default=None, help="Keep only EPG-linked channels in HDHR child")
     ap.add_argument("--no-hdhr-live-epg-only", dest="hdhr_live_epg_only", action="store_false")
     ap.add_argument("--hdhr-epg-prune", action="store_true", default=None, help="Prune unlinked channels from HDHR guide/m3u")
@@ -488,6 +582,8 @@ def main() -> int:
         hdhr_non_latin_title_fallback=preset["title_fallback"],
         hdhr_lineup_shape=preset.get("lineup_shape", ""),
         hdhr_lineup_region_profile=preset.get("lineup_region_profile", ""),
+        hdhr_total_channels=args.hdhr_total_channels,
+        hdhr_plex_host=args.hdhr_plex_host,
     )
     manifest = build_singlepod_manifest(sup, hdhr, image)
     tsv = build_cutover_tsv(sup)
@@ -496,7 +592,16 @@ def main() -> int:
     (root / args.out_yaml).write_text(yaml.safe_dump_all(manifest, sort_keys=False))
     (root / args.out_tsv).write_text(tsv)
 
+    hdhr_shards = [i for i in sup["instances"] if i["name"].startswith("hdhr-main")]
     print(f"HDHR preset: {preset_name} (timezone/country/postal used locally; not echoed)")
+    if args.hdhr_total_channels > 0:
+        print(
+            f"HDHR shards: {len(hdhr_shards)} instance(s) "
+            f"(total={args.hdhr_total_channels} channels, cap={hdhr_lineup_max}, "
+            f"covering {len(hdhr_shards) * hdhr_lineup_max} slots)"
+        )
+    else:
+        print(f"HDHR shards: {len(hdhr_shards)} instance(s) (pass --hdhr-total-channels=N to auto-scale)")
     if category_counts:
         overflowed = [s for s in category_shards if s["name"] != s["base"]]
         print(f"Category shards: {len(category_shards)} instances from {len(CATEGORIES)} bases (overflow shards={len(overflowed)})")

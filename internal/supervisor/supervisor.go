@@ -21,14 +21,20 @@ type Config struct {
 	Restart      bool           `json:"restart"`
 	RestartDelay DurationString `json:"restartDelay"`
 	FailFast     bool           `json:"failFast"`
+	// EnvFiles lists paths to shell-export-style env files (e.g. written by the Bao/Vault agent).
+	// Each file is parsed for "export KEY=VALUE" or "KEY=VALUE" lines and the vars are set into
+	// the supervisor's own process environment before any child instances are started, so all
+	// children inherit them automatically. Files that do not exist are silently skipped.
+	EnvFiles []string `json:"envFiles"`
 }
 
 type Instance struct {
-	Name     string            `json:"name"`
-	Args     []string          `json:"args"`
-	Env      map[string]string `json:"env"`
-	Disabled bool              `json:"disabled"`
-	WorkDir  string            `json:"workDir"`
+	Name       string            `json:"name"`
+	Args       []string          `json:"args"`
+	Env        map[string]string `json:"env"`
+	Disabled   bool              `json:"disabled"`
+	WorkDir    string            `json:"workDir"`
+	StartDelay DurationString    `json:"startDelay"` // optional per-instance startup delay
 }
 
 type DurationString time.Duration
@@ -116,6 +122,13 @@ func Run(ctx context.Context, configPath string) error {
 	}
 	exe, _ = filepath.EvalSymlinks(exe)
 
+	// Load env files before starting any child (e.g. Bao/Vault agent-injected secrets).
+	for _, ef := range cfg.EnvFiles {
+		if err := loadEnvFile(ef); err != nil {
+			log.Printf("supervisor: env file %s: %v", ef, err)
+		}
+	}
+
 	restartDelay := cfg.RestartDelay.Duration(2 * time.Second)
 	failFast := cfg.FailFast
 	if !cfg.Restart && !cfg.FailFast {
@@ -180,6 +193,14 @@ func Run(ctx context.Context, configPath string) error {
 }
 
 func runInstanceLoop(ctx context.Context, exe string, inst Instance, restart bool, restartDelay time.Duration) error {
+	if d := inst.StartDelay.Duration(0); d > 0 {
+		log.Printf("supervisor[%s]: delaying start by %s", inst.Name, d)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(d):
+		}
+	}
 	for {
 		err := runInstanceOnce(ctx, exe, inst)
 		if !restart || ctx.Err() != nil {
@@ -359,4 +380,45 @@ func shouldDropChildInheritedEnv(key string) bool {
 	default:
 		return false
 	}
+}
+
+// loadEnvFile parses a shell-export-style file ("export KEY=VALUE" or "KEY=VALUE" lines)
+// and sets each variable into the current process environment. Lines starting with '#'
+// and blank lines are ignored. Files that do not exist are silently skipped.
+func loadEnvFile(path string) error {
+	f, err := os.Open(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	loaded := 0
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "export ")
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		k = strings.TrimSpace(k)
+		v = strings.TrimSpace(v)
+		if k == "" {
+			continue
+		}
+		if err := os.Setenv(k, v); err != nil {
+			return fmt.Errorf("set %s: %w", k, err)
+		}
+		loaded++
+	}
+	if err := sc.Err(); err != nil {
+		return err
+	}
+	log.Printf("supervisor: loaded %d env vars from %s", loaded, path)
+	return nil
 }

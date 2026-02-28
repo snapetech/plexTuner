@@ -31,6 +31,11 @@ import (
 	"github.com/plextuner/plex-tuner/internal/safeurl"
 )
 
+// errCFBlock is returned by fetchAndWriteSegment when FetchCFReject is true and a segment
+// is redirected to the Cloudflare abuse page (cloudflare-terms-of-service-abuse.com).
+// The HLS relay loop treats this as a fatal error that aborts the entire stream immediately.
+var errCFBlock = errors.New("cloudflare-abuse-block")
+
 // Gateway proxies live stream requests to provider URLs with optional auth.
 // Limit concurrent streams to TunerCount (tuner semantics).
 type Gateway struct {
@@ -44,6 +49,7 @@ type Gateway struct {
 	DefaultProfile      string
 	ProfileOverrides    map[string]string
 	Client              *http.Client
+	FetchCFReject       bool // abort HLS stream on segment redirected to CF abuse page
 	PlexPMSURL          string
 	PlexPMSToken        string
 	PlexClientAdapt     bool
@@ -2645,6 +2651,11 @@ func (g *Gateway) relayHLSAsTS(
 					}
 				}
 				if err != nil {
+					if errors.Is(err, errCFBlock) {
+						log.Printf("gateway:%s channel=%q id=%s CF-blocked segment rejected; aborting stream url=%s",
+							reqField, channelName, channelID, safeurl.RedactURL(segURL))
+						return err
+					}
 					if isClientDisconnectWriteError(err) {
 						if n > 0 {
 							sentBytes += n
@@ -2785,6 +2796,9 @@ func (g *Gateway) fetchAndWriteSegment(
 	req.Header.Set("User-Agent", "PlexTuner/1.0")
 	resp, err := client.Do(req)
 	if err != nil {
+		if g.FetchCFReject && strings.Contains(err.Error(), "cloudflare-terms-of-service-abuse.com") {
+			return 0, errCFBlock
+		}
 		return 0, err
 	}
 	defer resp.Body.Close()

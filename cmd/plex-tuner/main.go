@@ -126,24 +126,39 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 		if lastErr != nil {
 			return res, fmt.Errorf("parse M3U: %w", lastErr)
 		}
-	} else if cfg.ProviderUser != "" && cfg.ProviderPass != "" {
-		baseURLs := cfg.ProviderURLs()
-		if len(baseURLs) == 0 {
-			return res, fmt.Errorf("need -m3u URL or set PLEX_TUNER_PROVIDER_URL(S) in .env")
-		}
+	} else if entries := cfg.ProviderEntries(); len(entries) > 0 {
+		// Multi-provider path: each entry may have different credentials.
+		// Probe all entries (across all providers), rank best-first, use winner for indexing.
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
-		ranked := provider.RankedPlayerAPI(ctx, baseURLs, cfg.ProviderUser, cfg.ProviderPass, nil)
+		probeOpts := provider.ProbeOptions{
+			BlockCloudflare: cfg.BlockCFProviders,
+			Logger:          log.Printf,
+		}
+		provEntries := make([]provider.Entry, len(entries))
+		for i, e := range entries {
+			provEntries[i] = provider.Entry{BaseURL: e.BaseURL, User: e.User, Pass: e.Pass}
+		}
+		ranked := provider.RankedEntries(ctx, provEntries, nil, probeOpts)
+		if cfg.BlockCFProviders && len(ranked) == 0 {
+			return res, fmt.Errorf("no usable provider URL: all candidates are Cloudflare-proxied and PLEX_TUNER_BLOCK_CF_PROVIDERS=true")
+		}
 		var fetchErr error
 		if len(ranked) > 0 {
-			res.APIBase = ranked[0]
+			best := ranked[0]
+			res.APIBase = best.Entry.BaseURL
+			// Collect all OK base URLs (same-cred entries first, then cross-provider) for stream failover.
+			allBases := make([]string, 0, len(ranked))
+			for _, er := range ranked {
+				allBases = append(allBases, er.Entry.BaseURL)
+			}
 			log.Printf("Ranked %d provider(s): using best %s (2nd/3rd used as stream backups)", len(ranked), res.APIBase)
 			res.Movies, res.Series, res.Live, fetchErr = indexer.IndexFromPlayerAPI(
-				res.APIBase, cfg.ProviderUser, cfg.ProviderPass, "m3u8", cfg.LiveOnly, baseURLs, nil,
+				best.Entry.BaseURL, best.Entry.User, best.Entry.Pass, "m3u8", cfg.LiveOnly, allBases, nil,
 			)
 			if fetchErr == nil {
 				for i := range res.Live {
-					urls := streamURLsFromRankedBases(res.Live[i].StreamURL, ranked)
+					urls := streamURLsFromRankedBases(res.Live[i].StreamURL, allBases)
 					if len(urls) > 0 {
 						res.Live[i].StreamURLs = urls
 						if res.Live[i].StreamURL == "" {
@@ -153,19 +168,21 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 				}
 			}
 		}
-		// Fall back to get.php when no OK player_api host or when player_api indexing failed.
+		// Fall back to get.php on any entry when player_api fails.
 		if fetchErr != nil || res.APIBase == "" {
-			res.APIBase = "" // clear in case we're falling back after a partial player_api attempt
+			res.APIBase = ""
 			var fallbackErr error
-			for _, u := range cfg.M3UURLsOrBuild() {
-				res.Movies, res.Series, res.Live, fallbackErr = indexer.ParseM3U(u, nil)
+			for _, e := range entries {
+				base := strings.TrimSuffix(e.BaseURL, "/")
+				m3uURL := base + "/get.php?username=" + url.QueryEscape(e.User) + "&password=" + url.QueryEscape(e.Pass) + "&type=m3u_plus&output=ts"
+				res.Movies, res.Series, res.Live, fallbackErr = indexer.ParseM3U(m3uURL, nil)
 				if fallbackErr == nil {
-					log.Printf("Using get.php from %s", u)
+					log.Printf("Using get.php from %s", base)
 					break
 				}
 			}
 			if fallbackErr != nil {
-				return res, fmt.Errorf("no player_api OK and no get.php OK on any host")
+				return res, fmt.Errorf("no player_api OK and no get.php OK on any provider")
 			}
 		}
 	} else {
@@ -412,6 +429,7 @@ func main() {
 			XMLTVTimeout:        cfg.XMLTVTimeout,
 			XMLTVCacheTTL:       cfg.XMLTVCacheTTL,
 			EpgPruneUnlinked:    cfg.EpgPruneUnlinked,
+			FetchCFReject:       cfg.FetchCFReject,
 		}
 		srv.UpdateChannels(live)
 		if cfg.XMLTVURL != "" {
@@ -563,6 +581,7 @@ func main() {
 			XMLTVTimeout:        cfg.XMLTVTimeout,
 			XMLTVCacheTTL:       cfg.XMLTVCacheTTL,
 			EpgPruneUnlinked:    cfg.EpgPruneUnlinked,
+			FetchCFReject:       cfg.FetchCFReject,
 		}
 		srv.UpdateChannels(live)
 		if cfg.XMLTVURL != "" {
@@ -643,50 +662,57 @@ func main() {
 			}
 
 			if !apiRegistrationDone {
-				if err := plex.RegisterTuner(*runRegisterPlex, baseURL); err != nil {
-					log.Printf("Register Plex failed: %v", err)
+				if *runRegisterPlex == "api" {
+					// "api" is a mode selector, not a filesystem path. If API registration
+					// failed above, skip the file-based fallback to avoid constructing the
+					// bogus path "api/Plug-in Support/Databases/..." and emitting a warning.
+					log.Printf("[PLEX-REG] API registration failed; skipping file-based fallback (-register-plex=api is not a filesystem path)")
 				} else {
-					log.Printf("Plex DB updated at %s (DVR + XMLTV -> %s)", *runRegisterPlex, baseURL)
-				}
-				lineupChannels := make([]plex.LineupChannel, len(live))
-				for i := range live {
-					ch := &live[i]
-					channelID := ch.ChannelID
-					if channelID == "" {
-						channelID = strconv.Itoa(i)
-					}
-					lineupChannels[i] = plex.LineupChannel{
-						GuideNumber: ch.GuideNumber,
-						GuideName:   ch.GuideName,
-						URL:         baseURL + "/stream/" + channelID,
-					}
-				}
-				if err := plex.SyncLineupToPlex(*runRegisterPlex, lineupChannels); err != nil {
-					if err == plex.ErrLineupSchemaUnknown {
-						log.Printf("Lineup sync skipped: %v (full lineup still served over HTTP; see docs/adr/0001-zero-touch-plex-lineup.md)", err)
+					if err := plex.RegisterTuner(*runRegisterPlex, baseURL); err != nil {
+						log.Printf("Register Plex failed: %v", err)
 					} else {
-						log.Printf("Lineup sync failed: %v", err)
+						log.Printf("Plex DB updated at %s (DVR + XMLTV -> %s)", *runRegisterPlex, baseURL)
 					}
-				} else {
-					log.Printf("Lineup synced to Plex: %d channels (no wizard needed)", len(lineupChannels))
-				}
+					lineupChannels := make([]plex.LineupChannel, len(live))
+					for i := range live {
+						ch := &live[i]
+						channelID := ch.ChannelID
+						if channelID == "" {
+							channelID = strconv.Itoa(i)
+						}
+						lineupChannels[i] = plex.LineupChannel{
+							GuideNumber: ch.GuideNumber,
+							GuideName:   ch.GuideName,
+							URL:         baseURL + "/stream/" + channelID,
+						}
+					}
+					if err := plex.SyncLineupToPlex(*runRegisterPlex, lineupChannels); err != nil {
+						if err == plex.ErrLineupSchemaUnknown {
+							log.Printf("Lineup sync skipped: %v (full lineup still served over HTTP; see docs/adr/0001-zero-touch-plex-lineup.md)", err)
+						} else {
+							log.Printf("Lineup sync failed: %v", err)
+						}
+					} else {
+						log.Printf("Lineup synced to Plex: %d channels (no wizard needed)", len(lineupChannels))
+					}
 
-				dvrUUID := os.Getenv("PLEX_TUNER_DVR_UUID")
-				if dvrUUID == "" {
-					dvrUUID = "plextuner-" + cfg.DeviceID
-				}
-				epgChannels := make([]plex.EPGChannel, len(live))
-				for i := range live {
-					ch := &live[i]
-					epgChannels[i] = plex.EPGChannel{
-						GuideNumber: ch.GuideNumber,
-						GuideName:   ch.GuideName,
+					dvrUUID := os.Getenv("PLEX_TUNER_DVR_UUID")
+					if dvrUUID == "" {
+						dvrUUID = "plextuner-" + cfg.DeviceID
 					}
-				}
-				if err := plex.SyncEPGToPlex(*runRegisterPlex, dvrUUID, epgChannels); err != nil {
-					log.Printf("EPG sync warning: %v (channels may not appear in guide without wizard)", err)
-				} else {
-					log.Printf("EPG synced to Plex: %d channels", len(epgChannels))
+					epgChannels := make([]plex.EPGChannel, len(live))
+					for i := range live {
+						ch := &live[i]
+						epgChannels[i] = plex.EPGChannel{
+							GuideNumber: ch.GuideNumber,
+							GuideName:   ch.GuideName,
+						}
+					}
+					if err := plex.SyncEPGToPlex(*runRegisterPlex, dvrUUID, epgChannels); err != nil {
+						log.Printf("EPG sync warning: %v (channels may not appear in guide without wizard)", err)
+					} else {
+						log.Printf("EPG synced to Plex: %d channels", len(epgChannels))
+					}
 				}
 			}
 			if *runRegisterOnly {

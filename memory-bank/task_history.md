@@ -1167,3 +1167,104 @@ Follow-up:
 
 Verification:
 - `go test ./internal/plex ./cmd/plex-tuner -run '^$'`
+
+---
+
+## 2026-02-27: Resolve plextuner-supervisor EPG/DVR connectivity (firewall root cause)
+
+**Goal:** Investigate why PlexTuner was not providing an EPG to Plex.home. Route cause and fix the network connectivity between the Plex pod (kspls0) and the plextuner-supervisor pod (kspld0).
+
+**Summary:**
+- The plextuner-supervisor pod was running correctly and serving all 15 tuner instances (13 category DVRs + 2 HDHR instances).
+- All 15 DVRs were already registered in Plex via the in-app `FullRegisterPlex` path.
+- Root cause was a dual-nftables-table problem on kspld0: `table inet host-firewall` (priority -400) had `ip saddr 192.168.50.85 accept` at the top, but `table inet filter` (priority 0, in `/etc/nftables.conf`) had policy drop with no accept rule for ports 5004/5101-5126. In nftables, all base chains at the same hook run independently in priority order—an accept from the lower-priority chain does NOT stop the higher-priority chain from dropping the packet.
+- Traced using iptables RAW PREROUTING LOG (confirmed SYN arrived at kspld0), mangle INPUT LOG (confirmed packet reached mangle INPUT), then identified it was not reaching filter INPUT (the `inet filter` chain at priority 0 was the culprit).
+
+**Fix applied (persistent):**
+- Added `ip saddr 192.168.50.0/24 tcp dport { 5004, 5006, 5101-5126 } accept comment "allow plextuner ports from LAN"` to `/etc/nftables.conf` `inet filter input` chain on kspld0. Backup at `/etc/nftables.conf.bak-plextuner-*`.
+- Also confirmed prior session fixes remain: `kspls0` `/etc/nftables.conf` forward chain allows `ip daddr 192.168.50.148 tcp dport { 5004, 5006, 5101-5126 } accept`.
+
+**Verification:**
+- Direct TCP test: `bash -c 'echo > /dev/tcp/192.168.50.148/5004'` from kspls0 → exit=0 (previously EHOSTUNREACH)
+- `curl http://192.168.50.148:5004/discover` from kspls0 → `404 page not found` (connected, route exists)
+- `curl http://plextuner-bcastus.plex.svc:5004/device.xml` from Plex pod → valid HDHR XML response
+- `curl http://plextuner-bcastus.plex.svc:5004/guide.xml` from Plex pod → valid XMLTV EPG with channel data
+- `GET /livetv/dvrs` Plex API → 15 DVRs registered, all pointing to `plextuner-*.plex.svc:5004`
+
+**Opportunities filed:**
+- None new; dual-table pattern already in recurring_loops.md (updated with plextuner-specific trace path).
+
+---
+
+## 2026-02-27/28: Fix CF stream rejection, EPG path bug, oracle-supervisor BaseURL, k8s manifest
+
+**Goal:** Investigate why IPTV feeds were not working in-cluster; identify root causes; fix in source and deploy.
+
+**Root causes found (in-cluster log investigation):**
+
+1. **Cloudflare CDN blocking .ts segments — `PLEX_TUNER_FETCH_CF_REJECT` not implemented:** `PLEX_TUNER_FETCH_CF_REJECT=true` was set on the supervisor Deployment but the binary ignored it (no code). When CF blocks a stream, it redirects each `.ts` segment to `cloudflare-terms-of-service-abuse.com`, producing 0-byte segments. The stream relays blank video silently for ~12 seconds then drops with `hls-relay ended no-new-segments`.
+
+2. **Oracle-supervisor all 6 hdhrcap instances advertising `localhost:5004` as BaseURL:** The ConfigMap for `plextuner-oracle-supervisor` had no `PLEX_TUNER_BASE_URL` per instance. All instances fell back to the default `http://localhost:5004`, which is unreachable from Plex's pod. No oracle channels were visible in Plex. Also: no `restart/restartDelay/failFast` keys in the ConfigMap (supervisor treated children as no-restart).
+
+3. **EPG path warning on every restart for all 13 category tuners:** When `FullRegisterPlex` fails (Plex returns "device is in use"), `apiRegistrationDone` stays false. The code then called `plex.SyncEPGToPlex(*runRegisterPlex, ...)` with `*runRegisterPlex="api"`, constructing the bogus filesystem path `api/Plug-in Support/Databases/tv.plex.providers.epg.xmltv-plextuner-<name>.db`. This produced `EPG sync warning: EPG database not found: api/...` on every startup for all 13 children.
+
+4. **`docker build` does not update k3s containerd image store:** After the code fix, `docker build -t plex-tuner:latest .` was run and `kubectl rollout restart` was issued, but the pods kept loading the old image. k3s/containerd has a separate image store from Docker. Without `docker save | k3s ctr images import -`, `imagePullPolicy: IfNotPresent` uses the old containerd-cached image.
+
+**Immediate live fixes (same session, before code changes):**
+- Patched supervisor Deployment: set `PLEX_TUNER_FETCH_CF_REJECT` from `false` → `true` via `kubectl patch`.
+- Patched oracle-supervisor ConfigMap: added `PLEX_TUNER_BASE_URL` per instance (`:5201`–`:5206`) plus `restart/restartDelay/failFast` via Python patch script.
+
+**Code changes (all in working tree, not yet committed):**
+- `internal/config/config.go`: added `FetchCFReject bool` + `getEnvBool("PLEX_TUNER_FETCH_CF_REJECT", false)`.
+- `internal/tuner/gateway.go`: added `errCFBlock` sentinel error; `FetchCFReject bool` field on `Gateway`; CF domain detection in `fetchAndWriteSegment`; abort path in `relayHLSAsTS` segment loop.
+- `internal/tuner/server.go`: added `FetchCFReject bool` to `Server` struct, wired to `Gateway{}`.
+- `cmd/plex-tuner/main.go`: wired `cfg.FetchCFReject` to both `Server{}` literals (serve + run commands); added guard `if *runRegisterPlex == "api"` in the `!apiRegistrationDone` block to skip file-based EPG/lineup fallback.
+- `k8s/plextuner-supervisor-singlepod.example.yaml`: added `PLEX_TUNER_FETCH_CF_REJECT: "true"` env entry.
+- `scripts/generate-k3s-supervisor-manifests.py`: added `PLEX_TUNER_FETCH_CF_REJECT: "true"` to `build_singlepod_manifest()` env list.
+- `k8s/plextuner-oracle-supervisor.yaml` (new file): ConfigMap + Deployment + Service for oracle-supervisor pod with all 6 hdhrcap instances and correct per-instance `PLEX_TUNER_BASE_URL`.
+- `Dockerfile`: added `COPY vendor/ vendor/` + `-mod=vendor` build flag (required because docker build environment has no internet access).
+
+**Deploy:**
+```bash
+go mod vendor
+docker build --network=host -t plex-tuner:latest .
+docker save plex-tuner:latest | sudo k3s ctr images import -
+kubectl apply -f k8s/plextuner-oracle-supervisor.yaml
+kubectl rollout restart deployment/plextuner-supervisor deployment/plextuner-oracle-supervisor -n plex
+```
+
+**Verification (post-deploy):**
+- Zero `EPG database not found: api/...` errors in supervisor logs; all 13 category tuners log `[PLEX-REG] API registration failed; skipping file-based fallback` instead.
+- `grep -ac "cloudflare-abuse-block" /usr/local/bin/plex-tuner` in pod → 1 (CF reject implemented).
+- `grep -ac "skipping file-based" /usr/local/bin/plex-tuner` in pod → 1 (EPG guard implemented).
+- All 13 category DVR instances listening, serving channels, responding 200 to kube-probe `/discover.json`.
+- Oracle-supervisor 6 hdhrcap instances listing correct BaseURLs (`plextuner-oracle-hdhr.plex.svc:520X`), all passing readiness probes.
+- Plex DVR list (`GET /livetv/dvrs`): all 13 category DVRs registered with correct guide.xml URLs: `lineup://tv.plex.providers.epg.xmltv/http://plextuner-<name>.plex.svc:5004/guide.xml#plextuner-<name>`.
+
+**Notes:**
+- "Plex API registration failed: create DVR: no DVR in response" on every restart is **benign** — Plex returns HTTP 200 with `status="-1"` "device is in use with an existing DVR" body, which the code correctly treats as a non-fatal miss. DVRs are already registered from a prior run.
+- The "falling back to DB registration" string in that log message is a misleading legacy string — it is immediately superseded by the "skipping file-based fallback" guard for `api` mode.
+- SSDP `:1900` bind errors in oracle-supervisor are expected — multiple instances in one pod compete for the UDP port; all but the first fail to bind, which is harmless since they don't need SSDP for k8s routing.
+
+**Opportunities filed:**
+- Improve `CreateDVRViaAPI` to detect Plex's `status="-1"` "device is in use" response and treat it as a success-with-existing-DVR, avoiding the misleading error log on every restart.
+
+---
+
+- Date: 2026-02-28
+  Title: Postvalidate CDN fix, DVR cleanup, credential hygiene, VODFS remount + VOD library re-registration
+  Summary:
+    - Reduced `POSTVALIDATE_WORKERS` from 12 to 3 and added per-probe jitter (`POSTVALIDATE_PROBE_JITTER_MAX_S=2.0`) in `k3s/plex/iptv-m3u-server-split.yaml` and `k3s/plex/iptv-m3u-postvalidate-configmap.yaml` to prevent CDN rate-limit false-fails.
+    - Removed stale oracle-era HDHR DVRs 247 (`plextunerHDHR479`) and 250 (`plextunerHDHR479B`) from Plex via `plex-epg-oracle-cleanup`. The 13 category DVRs (218..242) preserved.
+    - Cleaned `k8s/plextuner-hdhr-test.yaml`: removed deleted `plex-iptv-creds` Secret references, added OpenBao/deploy-script credential guidance comments.
+    - Fixed `scripts/verify-steps.sh` format check to exclude `vendor/` (was falsely failing on third-party Go files).
+    - Restarted all 11 VODFS FUSE mount processes on kspls0 (all were dead after prior Plex pod restart). Restarted Plex pod (no active sessions), re-registered all 20 VOD/lane Plex library sections via plex-vod-register from inside the new pod.
+    - Documented FUSE mount propagation root cause in `memory-bank/known_issues.md`: hostPath FUSE mounts started after pod init are invisible inside the container without `mountPropagation: HostToContainer`.
+  Verification:
+    - `scripts/verify` — all steps OK (format excl. vendor, vet, tests, build).
+  Notes:
+    - User direction on postvalidate: reduce to 3 workers first; reduce to 1 if still failing.
+    - VODFS remount is runtime-only — not reflected in base deployment YAMLs (no `mountPropagation` on Plex hostPath volumes yet). Filed as next follow-up.
+  Opportunities filed:
+    - Add `mountPropagation: HostToContainer` to Plex deployment YAML VODFS hostPath volume mounts to prevent empty-mount-after-restart.
+    - Add systemd services or a node-startup script on kspls0 for VODFS lane processes to survive host reboots.

@@ -48,6 +48,7 @@ type Server struct {
 	XMLTVTimeout        time.Duration
 	XMLTVCacheTTL       time.Duration // 0 = use default 10m
 	EpgPruneUnlinked    bool          // when true, guide.xml and /live.m3u only include channels with tvg-id
+	FetchCFReject       bool          // abort HLS stream if segment redirected to CF abuse page (passed to Gateway)
 
 	// health state updated by UpdateChannels; read by /healthz.
 	healthMu       sync.RWMutex
@@ -617,6 +618,7 @@ func (s *Server) Run(ctx context.Context) error {
 		TranscodeOverrides:  txOverrides,
 		DefaultProfile:      defaultProfile,
 		ProfileOverrides:    overrides,
+		FetchCFReject:       s.FetchCFReject,
 		PlexPMSURL:          strings.TrimSpace(os.Getenv("PLEX_TUNER_PMS_URL")),
 		PlexPMSToken:        strings.TrimSpace(os.Getenv("PLEX_TUNER_PMS_TOKEN")),
 		PlexClientAdapt:     strings.EqualFold(strings.TrimSpace(os.Getenv("PLEX_TUNER_CLIENT_ADAPT")), "1") || strings.EqualFold(strings.TrimSpace(os.Getenv("PLEX_TUNER_CLIENT_ADAPT")), "true") || strings.EqualFold(strings.TrimSpace(os.Getenv("PLEX_TUNER_CLIENT_ADAPT")), "yes"),

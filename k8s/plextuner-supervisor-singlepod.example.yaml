@@ -26,20 +26,50 @@ spec:
       labels:
         app: plextuner-supervisor
     spec:
+      # Pin to the node where the image is present. Change to match your environment.
       nodeSelector:
-        media: plex
+        kubernetes.io/hostname: kspld0
+      tolerations:
+        # Tolerate k3s agent flaps on the pinned node (unreachable/not-ready taints).
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+          effect: NoSchedule
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+          effect: NoExecute
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoSchedule
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoExecute
       # Required for HDHR LAN broadcast discovery (UDP/TCP 65001) in most k8s setups.
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       containers:
         - name: plextuner
-          image: plex-tuner:hdhr-test
+          image: plex-tuner:latest
           imagePullPolicy: IfNotPresent
           args: ["supervise", "-config", "/config/supervisor.json"]
           env:
             # Common inherited envs for all child instances (per-child JSON envs override these).
             - name: TZ
               value: America/Chicago
+            # Abort HLS streams immediately when a segment is CF-blocked (redirected to
+            # cloudflare-terms-of-service-abuse.com) instead of stalling 12s then dropping.
+            - name: PLEX_TUNER_FETCH_CF_REJECT
+              value: "true"
+            # PLEX_HOST and PLEX_TOKEN are inherited by child instances that need to perform
+            # Plex API registration (those with -mode=full -register-plex=api in their args).
+            # Note: PLEX_TUNER_PMS_URL and PLEX_TUNER_PMS_TOKEN are explicitly filtered by
+            # the supervisor's shouldDropChildInheritedEnv; use PLEX_HOST/PLEX_TOKEN instead.
+            - name: PLEX_HOST
+              value: "192.168.50.85:32400"
+            - name: PLEX_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: plex-token
+                  key: token
             - name: PLEX_TUNER_PMS_URL
               value: http://plex.plex.svc:32400
             - name: PLEX_TUNER_PMS_TOKEN
@@ -81,26 +111,41 @@ spec:
               mountPath: /config
             - name: data
               mountPath: /data
+          livenessProbe:
+            httpGet:
+              path: /discover.json
+              port: 5004
+            # 600s initial delay: hdhr-main must finish initial catalog fetch before liveness fires.
+            # With 28 children and 503-heavy upstream, first startup can take 5-15 minutes.
+            initialDelaySeconds: 600
+            periodSeconds: 30
+            failureThreshold: 10
           readinessProbe:
             httpGet:
               path: /discover.json
               port: 5004
-            initialDelaySeconds: 30
+            initialDelaySeconds: 120
             periodSeconds: 10
-            failureThreshold: 12
+            failureThreshold: 60
           resources:
             requests:
               cpu: 250m
               memory: 512Mi
             limits:
-              cpu: "2"
-              memory: 2Gi
+              cpu: "4"
+              # 28 child instances performing concurrent HTTP category fetches need headroom.
+              # OOM at 1-2Gi; 8Gi comfortably handles all children during initial catalog build.
+              memory: 8Gi
       volumes:
         - name: supervisor-config
           configMap:
             name: plextuner-supervisor-config
         - name: data
-          emptyDir: {}
+          # hostPath so catalogs survive pod restarts (avoids full re-fetch on every restart).
+          # Change path to match your node's data directory.
+          hostPath:
+            path: /mnt/datapool_lvm_media/plextuner-supervisor-data
+            type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: Service
@@ -255,3 +300,14 @@ spec:
     app: plextuner-supervisor
   ports:
     - { name: http, port: 5004, targetPort: 5113, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plextuner-hdhr-test2
+  namespace: plex
+spec:
+  selector:
+    app: plextuner-supervisor
+  ports:
+    - { name: http, port: 5004, targetPort: 5006, protocol: TCP }

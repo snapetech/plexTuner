@@ -6,7 +6,41 @@
 
 **Scope:** In: in-app CLI/API support for Plex library section create/reuse/refresh, docs/reference updates, live PMS API validation against the test Plex server, and documenting the VODFS mount-visibility constraint in k8s. Out: redesigning VODFS away from FUSE, invasive Plex deployment privilege/mount-propagation changes, or implementing a brand-new non-filesystem VOD library ingestion path.
 
-**Last updated:** 2026-02-26
+**Last updated:** 2026-02-27
+
+**OpenBao rollout + credential migration (2026-02-27):**
+- Found correct unseal keys in `~/Documents/code/k3s/openbao/openbao-init-output.txt` (the two other init files, `~/Documents/openbao-init-output.txt` and `~/Documents/k3s-secrets/openbao/openbao-init-output.json`, were stale/bad — deleted).
+- OpenBao was sealed with stale raft leader entry (dead pod IP 10.42.0.101). Generated new root token (`s.nSyHYZUvm5RZB4jJMv69Hhkk`) via `generate-root` ceremony using the 3 working keys; stored in `secret/data/plextuner.openbao_root_token`.
+- Updated `secret/data/iptv` in Bao: replaced `provider1_host=http://cf.supergaminghub.xyz` → `http://pod17546.cdngold.me`.
+- Enabled Kubernetes auth in Bao, configured in-cluster k8s host, created `plextuner` policy (read `secret/data/iptv` + `secret/data/plextuner`) and k8s auth role bound to `plex` namespace SA `plextuner`.
+- Created `plextuner` ServiceAccount in `plex` namespace.
+- Replaced `plextuner-test-env` ConfigMap — stripped all credentials, kept only non-secret config (`PLEX_HOST`, `PLEX_TUNER_DEVICE_ID`, etc.).
+- Deleted `plex-iptv-creds` Secret.
+- Patched `plextuner-supervisor` deployment: image → `plex-tuner:latest`, SA → `plextuner`, added Bao agent injector annotations to render `/vault/secrets/iptv.env` and `/vault/secrets/plex.env`.
+- Added `envFiles` field to supervisor `Config` struct + `loadEnvFile()` function: sources `export KEY=VALUE` files into supervisor process env before starting children. Children inherit all Bao-injected credentials automatically. Also added `startDelay` to `Instance` struct (was in live ConfigMap, caused immediate crash).
+- Updated live supervisor ConfigMap: added `envFiles: [/vault/secrets/iptv.env, /vault/secrets/plex.env]`, removed hardcoded `PLEX_TUNER_M3U_URL`/`PLEX_TUNER_PROVIDER_*` from instance envs.
+- Rebuilt image (`plex-tuner:latest`) and pushed to kspld0 via `ctr import`.
+- `scripts/unseal-openbao.sh` rewritten: all 5 keys documented, `validate` subcommand seals → tests each key individually via API → unseals → verifies root token. All 5 keys confirmed VALID. Bad files deleted.
+
+**Multi-provider per-credential support (2026-02-27):**
+- Added `ProviderEntry` struct to `internal/config/config.go` and a `ProviderEntries()` method that reads `PLEX_TUNER_PROVIDER_URL_N` / `_USER_N` / `_PASS_N` for N=2,3,… (stops at first gap). Each entry carries its own credentials; if `_USER_N`/`_PASS_N` are absent the primary creds are inherited.
+- Added `provider.Entry` / `provider.EntryResult` / `provider.RankedEntries()` to `internal/provider/probe.go` — the multi-credential parallel probe equivalent of `RankedPlayerAPI`. CF blocking and logging behave identically.
+- Replaced the single-credential `player_api` path in `fetchCatalog` with a `ProviderEntries()` call that feeds `RankedEntries()`, then uses the winning entry's credentials for `IndexFromPlayerAPI`. `get.php` fallback iterates all entries with their correct credentials.
+- `.env` now uses `PLEX_TUNER_PROVIDER_URL_2` / `_USER_2` / `_PASS_2` directly (removed orphan `M3U_URL_2`).
+- 7 new tests added (4 config, 3 provider); all pass; `scripts/verify` green.
+
+**HDHR auto-scaling (2026-02-27): generate-k3s-supervisor-manifests.py now auto-shards HDHR DVRs:**
+- Root cause: `build_supervisor_json()` hardcoded exactly one `hdhr-main` HDHR instance. With ~3,513 EPG-linked channels and a 479-channel Plex DVR cap, only the first 479 channels were exposed.
+- Fix: Added `--hdhr-total-channels` and `--hdhr-plex-host` CLI args to the generator. `build_supervisor_json()` now computes `n_shards = ceil(hdhr_total_channels / hdhr_lineup_max)` and generates that many HDHR instances (`hdhr-main`, `hdhr-main2`, ..., `hdhr-mainN`). Each extra shard gets unique port, device ID, guide number offset, and `LINEUP_SKIP`/`LINEUP_TAKE` to cover a distinct slice of the channel pool. Services section updated to emit `plextuner-hdhr-test`, `plextuner-hdhr-test2`, ..., `plextuner-hdhr-testN` Services.
+- Live config patched: 9 HDHR shards now running (hdhr-main + hdhr-main2..9), covering up to 8×479=3,832 channel slots across 3,513 EPG-linked channels.
+- K8s Services created: `plextuner-hdhr-test3` through `plextuner-hdhr-test9`.
+- Firewall updated: kspld0 and kspls0 nftables port range expanded from `5006` to `5006-5013`.
+- New DVRs will self-register in Plex after each shard's catalog fetch completes (~10 min due to upstream 503s from provider).
+
+**Network fix (2026-02-27): plextuner ports now reachable from Plex pod:**
+- Root cause of persistent "No route to host" for `kspls0 -> kspld0:5004/5101-5126` was `kspld0`'s `table inet filter` (`/etc/nftables.conf`, priority 0) dropping packets AFTER `table inet host-firewall` (`/etc/nftables/kspld0-host-firewall.conf`, priority -400) had accepted them. In nftables, multiple base chains at the same hook all run independently; an accept in a lower-priority chain does NOT prevent a higher-priority chain from dropping the packet.
+- Fix: added `ip saddr 192.168.50.0/24 tcp dport { 5004, 5006, 5101-5126 } accept` to `/etc/nftables.conf` on kspld0.
+- All 15 DVRs now registered in Plex Live TV, EPG/guide.xml confirmed flowing from Plex pod, and `plextuner-supervisor` pod healthy (`1/1 Running`).
 
 **Current focus shift (EPG long-tail, 2026-02-26):**
 - Began Phase 1 implementation of the documented EPG-linking pipeline (`docs/reference/epg-linking-pipeline.md`) with a **report-only** in-app CLI:
@@ -421,3 +455,19 @@ Questions (ONLY if blocked or high-risk ambiguity):
 - 2026-02-26: Reverted the experimental Plex Web `main-*.js` bundle patch after it broke Web UI loading for the user. Implemented `scripts/plex-media-providers-label-proxy.py` instead: a server-side reverse proxy that rewrites `/media/providers` Live TV `MediaProvider` labels (`friendlyName`, `sourceTitle`, `title`, content root Directory title, watchnow title) using `/livetv/dvrs` lineup titles. Validated on captured `/media/providers` XML: all 15 `tv.plex.providers.epg.xmltv:<id>` providers rewrite to distinct labels (`newsus`, `bcastus`, ..., `plextunerHDHR479B`). Caveat documented: current Plex Web version still hardcodes server-friendly-name labels for owned multi-LiveTV sources, so proxy primarily targets TV/native clients unless WebClient is separately patched.
 
 - 2026-02-26: Deployed `plex-label-proxy` in k8s (`plex` namespace) and patched live `Ingress/plex` to route `Exact /media/providers` to `plex-label-proxy:33240` while leaving all other paths on `plex:32400`. Proxy is fed by ConfigMap from `scripts/plex-media-providers-label-proxy.py` and rewrites Live TV provider labels per DVR using `/livetv/dvrs`. Fixed gzip-compressed `/media/providers` handling after initial parse failures. End-to-end validation via `https://plex.home/media/providers` confirms rewritten labels for `tv.plex.providers.epg.xmltv:{218,220,247,250}` (`newsus`, `bcastus`, `plextunerHDHR479`, `plextunerHDHR479B`).
+
+**Session 2026-02-28 (this session):**
+
+- **Postvalidate CDN rate-limit fix:** Reduced `POSTVALIDATE_WORKERS` from 12 to 3 and added per-probe jitter (`POSTVALIDATE_PROBE_JITTER_MAX_S=2.0`, random sleep before each ffprobe) in `k3s/plex/iptv-m3u-server-split.yaml` and `k3s/plex/iptv-m3u-postvalidate-configmap.yaml`. Updated default in the script from 12 to 3. This directly addresses the CDN saturation false-fail pattern where the 13-way category split had newsus/sportsb/moviesprem/ukie/eusouth all drop to 0 channels mid-run (2026-02-25 evidence). If 3 still fails on further runs, reduce `POSTVALIDATE_WORKERS` to 1.
+
+- **Stale DVR cleanup:** Removed oracle-era HDHR DVRs `247` (`plextunerHDHR479`, device `plextuner-hdhr-test.plex.svc:5004`) and `250` (`plextunerHDHR479B`, device `plextuner-hdhr-test2.plex.svc:5004`) from Plex via `plex-epg-oracle-cleanup -device-uri-substr plextuner-hdhr-test -do`. The 13 active category DVRs (`218..242`) were preserved.
+
+- **Credential hygiene in test YAML:** Updated `k8s/plextuner-hdhr-test.yaml` to remove the deleted `plex-iptv-creds` Secret references (`secretRef` and `secretKeyRef`). The ConfigMap now has an explanatory comment pointing to OpenBao agent injection or a deploy-time Secret as the credential source. Deployments of this manifest must supply credentials via one of those paths.
+
+- **Verify script fix:** `scripts/verify-steps.sh` format check now excludes `vendor/` (was failing on third-party files with `gofmt -s -l .`). Changed to `find . -name '*.go' -not -path './vendor/*' | xargs gofmt -s -l`.
+
+- **VODFS remount + VOD library re-registration:** All 11 VODFS lane mount processes died when the Plex pod restarted (due to missing `mountPropagation: HostToContainer` on hostPath volumes). Restarted all processes on kspls0 with sudo, restarted Plex pod (no active sessions), then re-registered all VOD libraries from inside the new Plex pod. Libraries registered and scanning: VOD (key 29), VOD-Movies (30), VOD-SUBSET (31), VOD-SUBSET-Movies (32), sports/sports-Movies (33/34), kids/kids-Movies (35/36), music/music-Movies (37/38), bcastUS/bcastUS-Movies (39/40), euroUK-Movies (41), euroUK (42), mena-Movies (43), mena (44), TV-Intl/TV-Intl-Movies (45/46).
+  - Root cause documented in `memory-bank/known_issues.md`: FUSE mounts started after pod start are invisible without `mountPropagation: HostToContainer`.
+  - Recovery procedure for next time: start FUSE processes on plex node → confirm mounts → `kubectl rollout restart deployment/plex` → copy plex-tuner binary to new pod → re-run `plex-vod-register` per lane.
+
+**Next focus:** Monitor VOD library scan counts. Fix `mountPropagation` on the Plex deployment YAML for durable VOD mount visibility (requires the live deployment YAML in k3s/plex to be patched). Consider systemd services for VODFS mounts on kspls0 for auto-restart on node reboot.

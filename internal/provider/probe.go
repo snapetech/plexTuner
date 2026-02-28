@@ -11,6 +11,14 @@ import (
 	"time"
 )
 
+// Entry is a provider base URL with its own credentials.
+// Use RankedEntries when providers have different user/pass combinations.
+type Entry struct {
+	BaseURL string
+	User    string
+	Pass    string
+}
+
 // Result is the outcome of probing one M3U URL.
 type Result struct {
 	URL         string
@@ -140,11 +148,29 @@ func ProbePlayerAPI(ctx context.Context, baseURL, user, pass string, client *htt
 		return Result{URL: url, Status: StatusError, LatencyMs: latency}
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusTooManyRequests {
-		return Result{URL: baseURL, Status: StatusRateLimited, StatusCode: resp.StatusCode, LatencyMs: latency}
+	code := resp.StatusCode
+	if code == http.StatusTooManyRequests {
+		return Result{URL: baseURL, Status: StatusRateLimited, StatusCode: code, LatencyMs: latency}
 	}
-	if resp.StatusCode != http.StatusOK {
-		return Result{URL: url, Status: StatusBadStatus, StatusCode: resp.StatusCode, LatencyMs: latency}
+	// Cloudflare detection: same logic as ProbeOne — check Server header and body signals.
+	server := strings.ToLower(strings.TrimSpace(resp.Header.Get("Server")))
+	isCFServer := server == "cloudflare"
+	if isCFServer || code == 520 || code == 521 || code == 524 {
+		preview := make([]byte, 512)
+		n, _ := resp.Body.Read(preview)
+		previewStr := strings.ToLower(string(preview[:n]))
+		bodyHasCFChallenge := strings.Contains(previewStr, "checking your browser") ||
+			strings.Contains(previewStr, "cf-bypass") ||
+			strings.Contains(previewStr, "ray id")
+		if isCFServer && code != http.StatusOK {
+			return Result{URL: baseURL, Status: StatusCloudflare, StatusCode: code, LatencyMs: latency, BodyPreview: previewStr}
+		}
+		if bodyHasCFChallenge {
+			return Result{URL: baseURL, Status: StatusCloudflare, StatusCode: code, LatencyMs: latency, BodyPreview: previewStr}
+		}
+	}
+	if code != http.StatusOK {
+		return Result{URL: url, Status: StatusBadStatus, StatusCode: code, LatencyMs: latency}
 	}
 	var raw map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
@@ -157,8 +183,8 @@ func ProbePlayerAPI(ctx context.Context, baseURL, user, pass string, client *htt
 }
 
 // FirstWorkingPlayerAPI tries each base URL with player_api.php; returns the first base URL that returns OK.
-func FirstWorkingPlayerAPI(ctx context.Context, baseURLs []string, user, pass string, client *http.Client) string {
-	ranked := RankedPlayerAPI(ctx, baseURLs, user, pass, client)
+func FirstWorkingPlayerAPI(ctx context.Context, baseURLs []string, user, pass string, client *http.Client, opts ...ProbeOptions) string {
+	ranked := RankedPlayerAPI(ctx, baseURLs, user, pass, client, opts...)
 	if len(ranked) == 0 {
 		return ""
 	}
@@ -168,10 +194,117 @@ func FirstWorkingPlayerAPI(ctx context.Context, baseURLs []string, user, pass st
 // maxConcurrentProbes limits parallel player_api probes to avoid hammering many hosts at once.
 const maxConcurrentProbes = 10
 
+// ProbeOptions controls optional probe behaviour.
+type ProbeOptions struct {
+	// BlockCloudflare rejects any URL whose probe result is StatusCloudflare.
+	// When true, CF-proxied URLs are logged as warnings and excluded from the
+	// returned ranked list. If every candidate URL is CF-proxied the call returns
+	// an empty slice and callers should treat this as a fatal ingest error.
+	BlockCloudflare bool
+	// Logger is called with formatted warning/alert strings when BlockCloudflare is
+	// set and a CF URL is detected. Defaults to a no-op if nil.
+	Logger func(format string, args ...any)
+}
+
+// ErrAllCloudflare is returned (via the Logger) when BlockCloudflare is set and
+// every candidate URL resolves to a Cloudflare-proxied host with no non-CF fallback.
+const ErrAllCloudflare = "ALERT: all provider URLs are Cloudflare-proxied and PLEX_TUNER_BLOCK_CF_PROVIDERS is set — ingest blocked; add a non-CF provider URL"
+
+// EntryResult pairs a probe Result with the Entry that produced it so callers can
+// retrieve the correct credentials for the winning host.
+type EntryResult struct {
+	Entry  Entry
+	Result Result
+}
+
+// RankedEntries probes every Entry (each with its own user/pass) and returns them
+// best-first (OK by latency, then non-OK). It is the multi-credential equivalent of
+// RankedPlayerAPI. BlockCloudflare and logging behave identically to RankedPlayerAPI.
+func RankedEntries(ctx context.Context, entries []Entry, client *http.Client, opts ...ProbeOptions) []EntryResult {
+	opt := ProbeOptions{}
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+	logf := opt.Logger
+	if logf == nil {
+		logf = func(string, ...any) {}
+	}
+
+	var clean []Entry
+	for _, e := range entries {
+		e.BaseURL = strings.TrimSpace(strings.TrimSuffix(e.BaseURL, "/"))
+		if e.BaseURL != "" {
+			clean = append(clean, e)
+		}
+	}
+	if len(clean) == 0 {
+		return nil
+	}
+
+	results := make([]EntryResult, len(clean))
+	sem := make(chan struct{}, maxConcurrentProbes)
+	var wg sync.WaitGroup
+	for i, e := range clean {
+		i, e := i, e
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			results[i] = EntryResult{Entry: e, Result: ProbePlayerAPI(ctx, e.BaseURL, e.User, e.Pass, client)}
+		}()
+	}
+	wg.Wait()
+
+	sort.Slice(results, func(i, j int) bool {
+		okI := results[i].Result.Status == StatusOK
+		okJ := results[j].Result.Status == StatusOK
+		if okI != okJ {
+			return okI
+		}
+		if okI {
+			return results[i].Result.LatencyMs < results[j].Result.LatencyMs
+		}
+		return results[i].Entry.BaseURL < results[j].Entry.BaseURL
+	})
+
+	out := make([]EntryResult, 0, len(results))
+	cfBlocked := 0
+	for _, er := range results {
+		if opt.BlockCloudflare && er.Result.Status == StatusCloudflare {
+			logf("WARNING: provider URL %s is Cloudflare-proxied (status=%d) — skipping (PLEX_TUNER_BLOCK_CF_PROVIDERS=true)",
+				er.Entry.BaseURL, er.Result.StatusCode)
+			cfBlocked++
+			continue
+		}
+		if er.Result.Status != StatusOK {
+			continue
+		}
+		out = append(out, er)
+	}
+	if opt.BlockCloudflare && cfBlocked > 0 && len(out) == 0 {
+		logf("%s", ErrAllCloudflare)
+	}
+	return out
+}
+
 // RankedPlayerAPI probes every base URL (one request per host), sorts by OK then latency, and returns
 // base URLs best-first. Non-abusive: one GET per host, same timeout as single probe; concurrency capped.
 // Use the first for indexing; store all in channel StreamURLs so the gateway can try 2nd/3rd on failure.
-func RankedPlayerAPI(ctx context.Context, baseURLs []string, user, pass string, client *http.Client) []string {
+//
+// When opts.BlockCloudflare is true, any URL whose probe returns StatusCloudflare is logged as a warning
+// and excluded from the result. If no non-CF URL is available, the result is empty and opts.Logger
+// receives ErrAllCloudflare.
+func RankedPlayerAPI(ctx context.Context, baseURLs []string, user, pass string, client *http.Client, opts ...ProbeOptions) []string {
+	opt := ProbeOptions{}
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+	logf := opt.Logger
+	if logf == nil {
+		logf = func(string, ...any) {}
+	}
+
 	var clean []string
 	for _, b := range baseURLs {
 		b = strings.TrimSpace(strings.TrimSuffix(b, "/"))
@@ -210,8 +343,16 @@ func RankedPlayerAPI(ctx context.Context, baseURLs []string, user, pass string, 
 	})
 
 	// Return only OK bases so index/run never use a host that failed probe.
+	// When BlockCloudflare is set, also exclude CF-proxied hosts and alert.
 	out := make([]string, 0, len(results))
+	cfBlocked := 0
 	for _, r := range results {
+		if opt.BlockCloudflare && r.Status == StatusCloudflare {
+			logf("WARNING: provider URL %s is Cloudflare-proxied (status=%d) — skipping (PLEX_TUNER_BLOCK_CF_PROVIDERS=true)",
+				providerBaseFromURL(r.URL), r.StatusCode)
+			cfBlocked++
+			continue
+		}
 		if r.Status != StatusOK {
 			continue
 		}
@@ -219,6 +360,9 @@ func RankedPlayerAPI(ctx context.Context, baseURLs []string, user, pass string, 
 		if base != "" {
 			out = append(out, base)
 		}
+	}
+	if opt.BlockCloudflare && cfBlocked > 0 && len(out) == 0 {
+		logf("%s", ErrAllCloudflare)
 	}
 	return out
 }

@@ -284,12 +284,14 @@
 - Agents see the host-firewall file and assume persistence is already configured, then reapply temporary `nft insert rule ...` fixes that disappear on reboot/reload.
 
 **What works**
-- Persist the LAN Plex/NFS allows in **`/etc/nftables.conf`** (the boot-loaded file that defines `table inet filter`), not just in `/etc/nftables/<plex-node>-host-firewall.conf`.
+- Persist the LAN allows in **`/etc/nftables.conf`** (the boot-loaded file that defines `table inet filter`), not just in `/etc/nftables/<plex-node>-host-firewall.conf`.
 - For immediate runtime recovery, add the same rules directly to `inet filter input` with `nft insert rule ...` (temporary) and then patch `/etc/nftables.conf` (durable).
 - Verify from `<work-node>` with `rpcinfo -p <plex-host-ip>`, `showmount -e <plex-host-ip>`, and `curl`/TCP checks.
+- **2026-02-27 (plextuner ports):** Traced again for ports `5004/5006/5101-5126` using `iptables -t raw -I PREROUTING -j LOG` to confirm the packet arrived at kspld0, `nft list tables` to find the two tables, and verified the `inet filter` chain dropped it. Fixed by adding `ip saddr 192.168.50.0/24 tcp dport { 5004, 5006, 5101-5126 } accept` to `/etc/nftables.conf`.
+- **Diagnosis shortcut:** When "No route to host" from kspls0 to kspld0 persists after adding rules to `host-firewall.conf`, run `sudo nft list tables` on kspld0 and check for `table inet filter` separately from `table inet host-firewall`—both need the allow rule.
 
 **Where it's documented**
-- `memory-bank/known_issues.md` (`<plex-node>` read-only-root outage + temporary Plex endpoint workaround)
+- `memory-bank/known_issues.md` (`kspld0` dual nftables chains entry + `<plex-node>` read-only-root outage)
 - `memory-bank/task_history.md` (reboot + firewall persistence follow-up on 2026-02-24)
 
 ### Loop: Direct DVR probe sessions get blamed for Plex/WebSafe packaging regressions when the direct services are simply orphaned

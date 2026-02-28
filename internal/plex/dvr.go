@@ -40,7 +40,9 @@ type DVRInfo struct {
 	Key         int
 	UUID        string
 	LineupTitle string
-	DeviceKey   string
+	LineupURL   string   // Dvr.lineup attr value, e.g. "lineup://tv.plex.providers.epg.xmltv/http://host/guide.xml#name"
+	DeviceKey   string   // numeric key of the first Device child (e.g. "179"); used for device lookups
+	DeviceUUIDs []string // UUIDs of Device children, e.g. ["device://tv.plex.grabbers.hdhomerun/newsus"]
 }
 
 func RegisterTunerViaAPI(cfg PlexAPIConfig) (*DeviceInfo, error) {
@@ -115,6 +117,8 @@ func RegisterTunerViaAPI(cfg PlexAPIConfig) (*DeviceInfo, error) {
 }
 
 type MediaContainer struct {
+	Message        string           `xml:"message,attr"` // set on Plex API error responses, e.g. "The device is in use with an existing DVR"
+	Status         string           `xml:"status,attr"`  // "-1" on Plex API errors
 	Device         []Device         `xml:"Device"`
 	Dvr            []Dvr            `xml:"Dvr"`
 	Channel        []Channel        `xml:"Channel"`
@@ -136,68 +140,117 @@ type Dvr struct {
 	UUID          string   `xml:"uuid,attr"`
 	Title         string   `xml:"title,attr"`
 	LineupTitle   string   `xml:"lineupTitle,attr"`
+	Lineup        string   `xml:"lineup,attr"` // decoded lineup URL, e.g. "lineup://tv.plex.providers.epg.xmltv/http://host/guide.xml#name"
 	EPGIdentifier string   `xml:"epgIdentifier,attr"`
-	DeviceKey     string   `xml:"deviceKey,attr"`
-	Lineups       []Lineup `xml:"Lineup"`
+	Devices       []Device `xml:"Device"`
 }
 
 type Lineup struct {
 	ID string `xml:"id,attr"`
 }
 
+// CreateDVRViaAPI creates a Plex DVR for deviceInfo, or reuses the existing one if the
+// guide URL already matches. If a DVR exists for the device but points to a different
+// guide URL (stale registration), it is deleted and recreated. This makes the function
+// idempotent across restarts and safe across BaseURL changes.
 func CreateDVRViaAPI(cfg PlexAPIConfig, deviceInfo *DeviceInfo) (dvrKey int, dvrUUID string, lineupIDs []string, err error) {
-	xmltvURL := cfg.BaseURL + "/guide.xml"
-	xmltvEncoded := url.QueryEscape(xmltvURL)
+	desiredGuideURL := cfg.BaseURL + "/guide.xml"
+	xmltvEncoded := url.QueryEscape(desiredGuideURL)
 	lineup := fmt.Sprintf("lineup://tv.plex.providers.epg.xmltv/%s#%s", xmltvEncoded, url.QueryEscape(cfg.FriendlyName))
 
 	dvrURL := fmt.Sprintf("http://%s/livetv/dvrs?language=eng&device=%s&lineup=%s",
 		cfg.PlexHost, url.QueryEscape(deviceInfo.UUID), url.QueryEscape(lineup))
 
-	fmt.Printf("[PLEX-REG] Creating DVR: url=%s\n", dvrURL)
-
-	req, err := http.NewRequest("POST", dvrURL, nil)
-	if err != nil {
-		return 0, "", nil, err
-	}
-	req.Header.Set("X-Plex-Token", cfg.PlexToken)
-
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, "", nil, fmt.Errorf("create DVR request failed: %w", err)
+
+	for attempt := 0; attempt < 2; attempt++ {
+		fmt.Printf("[PLEX-REG] Creating DVR (attempt %d): url=%s\n", attempt+1, dvrURL)
+
+		req, err := http.NewRequest("POST", dvrURL, nil)
+		if err != nil {
+			return 0, "", nil, err
+		}
+		req.Header.Set("X-Plex-Token", cfg.PlexToken)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return 0, "", nil, fmt.Errorf("create DVR request failed: %w", err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		bodyStr := string(body)
+		if len(bodyStr) > 500 {
+			bodyStr = bodyStr[:500]
+		}
+		fmt.Printf("[PLEX-REG] Create DVR response: status=%d body_len=%d body=%s\n", resp.StatusCode, len(body), bodyStr)
+
+		if resp.StatusCode != 200 {
+			return 0, "", nil, fmt.Errorf("create DVR returned %d: %s", resp.StatusCode, string(body))
+		}
+
+		var mc MediaContainer
+		if err := xml.Unmarshal(body, &mc); err != nil {
+			return 0, "", nil, fmt.Errorf("parse DVR response: %w", err)
+		}
+
+		if len(mc.Dvr) > 0 {
+			dvr := mc.Dvr[0]
+			key, _ := strconv.Atoi(dvr.Key)
+			// Dvr.Lineup is the decoded lineup URL; wrap in a slice for GetChannelMap compatibility.
+			ids := []string{dvr.Lineup}
+			fmt.Printf("[PLEX-REG] DVR created: key=%d uuid=%s lineup=%s\n", key, dvr.UUID, dvr.Lineup)
+			return key, dvr.UUID, ids, nil
+		}
+
+		// Plex refused to create — only attempt recovery on first pass.
+		if attempt > 0 || !strings.Contains(mc.Message, "device is in use") {
+			return 0, "", nil, fmt.Errorf("no DVR in response")
+		}
+
+		// "device is in use with an existing DVR": look up all DVRs and find the one
+		// belonging to our device by matching Device.UUID. Then compare its lineup URL
+		// against the guide URL we want to register. If they match, the current
+		// registration is already correct — return the existing DVR and proceed to
+		// guide reload + channel activation. If they differ (e.g. BaseURL changed),
+		// delete the stale DVR and retry creation on the next loop iteration.
+		existing, lErr := ListDVRsAPI(cfg.PlexHost, cfg.PlexToken)
+		if lErr != nil {
+			return 0, "", nil, fmt.Errorf("DVR exists (device in use) but listing failed: %w", lErr)
+		}
+
+		matched := false
+		for _, d := range existing {
+			// Find the DVR that owns our device by UUID.
+			ownsDevice := false
+			for _, uuid := range d.DeviceUUIDs {
+				if uuid == deviceInfo.UUID {
+					ownsDevice = true
+					break
+				}
+			}
+			if !ownsDevice {
+				continue
+			}
+			matched = true
+			// Compare: does the registered lineup URL contain our desired guide URL?
+			if strings.Contains(d.LineupURL, desiredGuideURL) {
+				fmt.Printf("[PLEX-REG] DVR already registered with matching guide URL (key=%d) — reusing\n", d.Key)
+				return d.Key, d.UUID, []string{d.LineupURL}, nil
+			}
+			// Guide URL mismatch — delete stale DVR and retry creation.
+			fmt.Printf("[PLEX-REG] DVR guide URL mismatch (key=%d, registered=%q, desired=%q) — deleting stale DVR\n",
+				d.Key, d.LineupURL, desiredGuideURL)
+			if dErr := DeleteDVRAPI(cfg.PlexHost, cfg.PlexToken, d.Key); dErr != nil {
+				return 0, "", nil, fmt.Errorf("delete stale DVR %d: %w", d.Key, dErr)
+			}
+			break // proceed to retry on next iteration
+		}
+		if !matched {
+			return 0, "", nil, fmt.Errorf("device in use but no DVR found for device UUID %s", deviceInfo.UUID)
+		}
 	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-	bodyStr := string(body)
-	if len(bodyStr) > 500 {
-		bodyStr = bodyStr[:500]
-	}
-	fmt.Printf("[PLEX-REG] Create DVR response: status=%d body_len=%d body=%s\n", resp.StatusCode, len(body), bodyStr)
-
-	if resp.StatusCode != 200 {
-		return 0, "", nil, fmt.Errorf("create DVR returned %d: %s", resp.StatusCode, string(body))
-	}
-
-	var mc MediaContainer
-	if err := xml.Unmarshal(body, &mc); err != nil {
-		return 0, "", nil, fmt.Errorf("parse DVR response: %w", err)
-	}
-
-	if len(mc.Dvr) == 0 {
-		return 0, "", nil, fmt.Errorf("no DVR in response")
-	}
-
-	dvr := mc.Dvr[0]
-	key, _ := strconv.Atoi(dvr.Key)
-
-	lineupIDs = make([]string, 0)
-	for _, lu := range dvr.Lineups {
-		lineupIDs = append(lineupIDs, lu.ID)
-	}
-
-	fmt.Printf("[PLEX-REG] Created DVR: key=%d uuid=%s lineupIDs=%v\n", key, dvr.UUID, lineupIDs)
-	return key, dvr.UUID, lineupIDs, nil
+	return 0, "", nil, fmt.Errorf("no DVR in response after retry")
 }
 
 func ReloadGuideAPI(plexHost, token string, dvrKey int) error {
@@ -333,11 +386,21 @@ func ListDVRsAPI(plexHost, token string) ([]DVRInfo, error) {
 		if title == "" {
 			title = strings.TrimSpace(d.Title)
 		}
+		uuids := make([]string, 0, len(d.Devices))
+		devKey := ""
+		for _, dev := range d.Devices {
+			uuids = append(uuids, strings.TrimSpace(dev.UUID))
+			if devKey == "" {
+				devKey = strings.TrimSpace(dev.Key)
+			}
+		}
 		out = append(out, DVRInfo{
 			Key:         k,
 			UUID:        strings.TrimSpace(d.UUID),
 			LineupTitle: title,
-			DeviceKey:   strings.TrimSpace(d.DeviceKey),
+			LineupURL:   strings.TrimSpace(d.Lineup),
+			DeviceKey:   devKey,
+			DeviceUUIDs: uuids,
 		})
 	}
 	return out, nil

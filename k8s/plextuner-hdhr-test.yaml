@@ -3,8 +3,14 @@ kind: ConfigMap
 metadata:
   name: plextuner-test-env
   namespace: plex
-# Secrets (PLEX_TUNER_PROVIDER_USER/PASS/URL, PLEX_TUNER_M3U_URL, PLEX_TOKEN)
-# come from the 'plex-iptv-creds' Secret — created by deploy-hdhr-one-shot.sh.
+# Non-secret config only. Credentials (PLEX_TUNER_PROVIDER_USER/PASS/URL,
+# PLEX_TUNER_M3U_URL, PLEX_TOKEN) must come from one of:
+#   a) OpenBao agent injection: annotate the pod with vault.hashicorp.com/agent-inject
+#      and list secret files in supervisor.json "envFiles" — see plextuner-supervisor
+#      deployment for the reference pattern.
+#   b) A deploy-time Secret created by your deploy script (NOT committed here).
+#      Reference it as secretRef in the pod spec below. Do not hard-code values
+#      in this file.
 data:
   PLEX_TUNER_LIVE_ONLY: "true"
   PLEX_TUNER_LIVE_EPG_ONLY: "true"
@@ -94,14 +100,13 @@ spec:
         envFrom:
         - configMapRef:
             name: plextuner-test-env
-        - secretRef:
-            name: plex-iptv-creds
+        # Add a secretRef here for your credentials Secret, e.g.:
+        #   - secretRef:
+        #       name: plextuner-creds   # must contain PLEX_TUNER_M3U_URL, PLEX_TOKEN, etc.
+        # Or use OpenBao agent injection (see plextuner-supervisor deployment).
         env:
         - name: PLEX_TUNER_PMS_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: plex-iptv-creds
-              key: PLEX_TOKEN
+          value: ""   # Set via your credentials Secret or OpenBao injection (PLEX_TOKEN)
         volumeMounts:
         - name: catalog
           mountPath: /data
