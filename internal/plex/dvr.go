@@ -51,12 +51,25 @@ func RegisterTunerViaAPI(cfg PlexAPIConfig) (*DeviceInfo, error) {
 		baseURL = "http://" + baseURL
 	}
 	deviceURI := baseURL
+
+	// Plex's /media/grabbers/devices/discover endpoint accepts a uri= param intending
+	// to trigger a probe of the new device and return it in the response. In practice,
+	// Endpoint ordering rationale:
+	//   1. /media/grabbers/tv.plex.grabbers.hdhomerun/devices — probes the given uri= and
+	//      returns only that device if found. Works correctly on 1.43.x.
+	//   2. /media/grabbers/devices/discover — on 1.43.x this endpoint ignores the uri=
+	//      param and returns the full list of already-registered devices, so a new device
+	//      never appears in the response. Kept as fallback for older/future builds where
+	//      it may behave differently.
+	//   3. /media/grabbers/devices — generic fallback.
+	//
+	// After trying all paths, if no device is found in any response we fall back to
+	// synthesising the device UUID from DeviceID (last resort; see below).
 	client := &http.Client{Timeout: 30 * time.Second}
 	var body []byte
-	var lastErr error
 	devicePaths := []string{
-		"/media/grabbers/devices/discover", // newer Plex builds
-		"/media/grabbers/tv.plex.grabbers.hdhomerun/devices",
+		"/media/grabbers/tv.plex.grabbers.hdhomerun/devices", // probes the uri= correctly
+		"/media/grabbers/devices/discover",                   // may ignore uri=; kept for compat
 		"/media/grabbers/devices",
 	}
 	for i, p := range devicePaths {
@@ -69,7 +82,7 @@ func RegisterTunerViaAPI(cfg PlexAPIConfig) (*DeviceInfo, error) {
 
 		resp, err := client.Do(req)
 		if err != nil {
-			lastErr = fmt.Errorf("register device request failed via %s: %w", p, err)
+			fmt.Printf("[PLEX-REG] Register device request failed via %s: %v\n", p, err)
 			continue
 		}
 		body, _ = io.ReadAll(resp.Body)
@@ -77,43 +90,45 @@ func RegisterTunerViaAPI(cfg PlexAPIConfig) (*DeviceInfo, error) {
 		fmt.Printf("[PLEX-REG] Register device response (%s): status=%d body_len=%d\n", p, resp.StatusCode, len(body))
 
 		if resp.StatusCode == 404 && i < len(devicePaths)-1 {
-			// Plex API path changed across versions; try the generic devices endpoint.
-			lastErr = fmt.Errorf("register device endpoint %s returned 404", p)
+			fmt.Printf("[PLEX-REG] endpoint %s returned 404; trying next\n", p)
 			continue
 		}
 		if resp.StatusCode != 200 {
 			return nil, fmt.Errorf("register device via %s returned %d: %s", p, resp.StatusCode, string(body))
 		}
-		lastErr = nil
-		break
-	}
-	if lastErr != nil {
-		return nil, lastErr
-	}
-
-	var mc MediaContainer
-	if err := xml.Unmarshal(body, &mc); err != nil {
-		return nil, fmt.Errorf("parse response: %w", err)
-	}
-
-	for _, dev := range mc.Device {
-		if dev.URI == deviceURI {
-			fmt.Printf("[PLEX-REG] Found device: key=%s uuid=%s uri=%s\n", dev.Key, dev.UUID, dev.URI)
-			return &DeviceInfo{Key: dev.Key, UUID: dev.UUID, URI: dev.URI}, nil
+		// Parse this response and check for the device before trying the next path.
+		// The /discover endpoint returns all devices (ignoring uri=), so we parse it but
+		// still fall through if our device isn't in the list.
+		var mc MediaContainer
+		if xmlErr := xml.Unmarshal(body, &mc); xmlErr == nil {
+			for _, dev := range mc.Device {
+				if dev.URI == deviceURI {
+					fmt.Printf("[PLEX-REG] Found device via %s: key=%s uuid=%s uri=%s\n", p, dev.Key, dev.UUID, dev.URI)
+					return &DeviceInfo{Key: dev.Key, UUID: dev.UUID, URI: dev.URI}, nil
+				}
+			}
+			for _, dev := range mc.Device {
+				if strings.EqualFold(strings.TrimSpace(dev.DeviceID), strings.TrimSpace(cfg.DeviceID)) {
+					fmt.Printf("[PLEX-REG] Found device by deviceId via %s: key=%s uuid=%s\n", p, dev.Key, dev.UUID)
+					return &DeviceInfo{Key: dev.Key, UUID: dev.UUID, URI: dev.URI}, nil
+				}
+			}
 		}
+		// Device not in this response; try the next path.
+		fmt.Printf("[PLEX-REG] device not found in response from %s; trying next\n", p)
 	}
-	// Newer Plex registration/discovery flows may normalize the URI they store from
-	// the device's advertised discover.json BaseURL (which can differ from the URL we
-	// probed). Fall back to matching the unique deviceId if present.
-	for _, dev := range mc.Device {
-		if strings.EqualFold(strings.TrimSpace(dev.Name), strings.TrimSpace(cfg.DeviceID)) ||
-			strings.EqualFold(strings.TrimSpace(dev.DeviceID), strings.TrimSpace(cfg.DeviceID)) {
-			fmt.Printf("[PLEX-REG] Found device by name/deviceId fallback: key=%s uuid=%s uri=%s name=%s deviceId=%s\n", dev.Key, dev.UUID, dev.URI, dev.Name, dev.DeviceID)
-			return &DeviceInfo{Key: dev.Key, UUID: dev.UUID, URI: dev.URI}, nil
-		}
+	// All paths exhausted without finding the device. Last resort: synthesise the device
+	// UUID from DeviceID using Plex's well-known HDHR URI scheme. Note that a synthesised
+	// UUID only works for DVR creation if Plex has already registered the device in its
+	// internal database (e.g. via the grabbers endpoint above). If the endpoint probe
+	// failed entirely, DVR creation will return "The device does not exist".
+	if cfg.DeviceID != "" {
+		synthUUID := "device://tv.plex.grabbers.hdhomerun/" + cfg.DeviceID
+		fmt.Printf("[PLEX-REG] Device not found via any endpoint; using synthesised UUID: %s\n", synthUUID)
+		return &DeviceInfo{Key: "", UUID: synthUUID, URI: deviceURI}, nil
 	}
 
-	return nil, fmt.Errorf("device not found in response")
+	return nil, fmt.Errorf("device not found in any Plex grabbers response and no DeviceID configured to synthesise UUID")
 }
 
 type MediaContainer struct {
