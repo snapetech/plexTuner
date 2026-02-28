@@ -3,10 +3,12 @@
 package plex
 
 import (
+	"context"
 	"database/sql"
 	"encoding/xml"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -536,7 +538,11 @@ type ChannelInfo struct {
 	GuideName   string
 }
 
-func FullRegisterPlex(baseURL, plexHost, plexToken, friendlyName, deviceID string, channels []ChannelInfo) error {
+// FullRegisterPlex registers this tuner with Plex via the API. It returns the device UUID
+// (e.g. "device://tv.plex.grabbers.hdhomerun/newsus"), the DVR key, and any error.
+// The device UUID is stable across restarts and can be used by DVRWatchdog to identify
+// this instance's DVR in the Plex device list.
+func FullRegisterPlex(baseURL, plexHost, plexToken, friendlyName, deviceID string, channels []ChannelInfo) (deviceUUID string, dvrKey int, err error) {
 	cfg := PlexAPIConfig{
 		BaseURL:      baseURL,
 		PlexHost:     plexHost,
@@ -556,19 +562,19 @@ func FullRegisterPlex(baseURL, plexHost, plexToken, friendlyName, deviceID strin
 	fmt.Printf("[PLEX-REG] Step 1: Register HDHR device...\n")
 	deviceInfo, err := RegisterTunerViaAPI(cfg)
 	if err != nil {
-		return fmt.Errorf("register device: %w", err)
+		return "", 0, fmt.Errorf("register device: %w", err)
 	}
 	fmt.Printf("[PLEX-REG] Device registered: key=%s uuid=%s\n", deviceInfo.Key, deviceInfo.UUID)
 
 	fmt.Printf("[PLEX-REG] Step 2: Create DVR...\n")
-	dvrKey, dvrUUID, lineupIDs, err := CreateDVRViaAPI(cfg, deviceInfo)
+	dvrKeyOut, dvrUUID, lineupIDs, err := CreateDVRViaAPI(cfg, deviceInfo)
 	if err != nil {
-		return fmt.Errorf("create DVR: %w", err)
+		return "", 0, fmt.Errorf("create DVR: %w", err)
 	}
-	fmt.Printf("[PLEX-REG] DVR created: key=%d uuid=%s\n", dvrKey, dvrUUID)
+	fmt.Printf("[PLEX-REG] DVR created: key=%d uuid=%s\n", dvrKeyOut, dvrUUID)
 
 	fmt.Printf("[PLEX-REG] Step 3: Reload guide...\n")
-	if err := ReloadGuideAPI(plexHost, plexToken, dvrKey); err != nil {
+	if err := ReloadGuideAPI(plexHost, plexToken, dvrKeyOut); err != nil {
 		fmt.Printf("[PLEX-REG] Warning: reload guide failed: %v\n", err)
 	}
 
@@ -578,7 +584,7 @@ func FullRegisterPlex(baseURL, plexHost, plexToken, friendlyName, deviceID strin
 	fmt.Printf("[PLEX-REG] Step 5: Get channel mappings...\n")
 	chMappings, err := GetChannelMap(plexHost, plexToken, deviceInfo.UUID, lineupIDs)
 	if err != nil {
-		return fmt.Errorf("get channel map: %w", err)
+		return "", 0, fmt.Errorf("get channel map: %w", err)
 	}
 	fmt.Printf("[PLEX-REG] Found %d channel mappings\n", len(chMappings))
 
@@ -586,7 +592,7 @@ func FullRegisterPlex(baseURL, plexHost, plexToken, friendlyName, deviceID strin
 		fmt.Printf("[PLEX-REG] Step 6: Activate channels...\n")
 		activated, err := ActivateChannelsAPI(cfg, deviceInfo.Key, chMappings)
 		if err != nil {
-			return fmt.Errorf("activate channels: %w", err)
+			return "", 0, fmt.Errorf("activate channels: %w", err)
 		}
 		fmt.Printf("[PLEX-REG] Activated %d channels\n", activated)
 	} else {
@@ -594,7 +600,73 @@ func FullRegisterPlex(baseURL, plexHost, plexToken, friendlyName, deviceID strin
 	}
 
 	fmt.Printf("[PLEX-REG] === Plex DVR setup complete! ===\n")
-	return nil
+	return deviceInfo.UUID, dvrKeyOut, nil
+}
+
+// DVRWatchdog periodically verifies that this tuner's DVR registration is present and
+// correct in Plex, and re-registers if it has gone missing or the guide URL has changed.
+//
+// It identifies "our" DVR by matching deviceUUID against the DVR's Device.UUID list.
+// guideURL is the expected guide URL (baseURL + "/guide.xml"). interval is the check
+// cadence (recommended: 5 minutes). The watchdog runs until ctx is cancelled.
+//
+// Re-registration calls FullRegisterPlex, which is idempotent — if the DVR already
+// exists with the correct guide URL it is reused, not duplicated.
+func DVRWatchdog(ctx context.Context, cfg PlexAPIConfig, deviceUUID, guideURL string, interval time.Duration, channels []ChannelInfo) {
+	if interval <= 0 {
+		interval = 5 * time.Minute
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	check := func() {
+		dvrs, err := ListDVRsAPI(cfg.PlexHost, cfg.PlexToken)
+		if err != nil {
+			log.Printf("[dvr-watchdog] list dvrs failed: %v", err)
+			return
+		}
+		for _, d := range dvrs {
+			for _, uuid := range d.DeviceUUIDs {
+				if uuid == deviceUUID {
+					// The lineup URL stored by Plex percent-encodes the embedded guide URL,
+					// so we check both the raw and encoded forms.
+					encodedGuideURL := url.QueryEscape(guideURL)
+					guideMatch := strings.Contains(d.LineupURL, guideURL) ||
+						strings.Contains(d.LineupURL, encodedGuideURL)
+					if guideMatch {
+						log.Printf("[dvr-watchdog] ok dvr=%d lineupTitle=%q", d.Key, d.LineupTitle)
+					} else {
+						log.Printf("[dvr-watchdog] guide URL mismatch (dvr=%d registered=%q expected=%q) — re-registering",
+							d.Key, d.LineupURL, guideURL)
+						_, _, rerr := FullRegisterPlex(cfg.BaseURL, cfg.PlexHost, cfg.PlexToken, cfg.FriendlyName, cfg.DeviceID, channels)
+						if rerr != nil {
+							log.Printf("[dvr-watchdog] re-registration failed: %v", rerr)
+						} else {
+							log.Printf("[dvr-watchdog] re-registration complete")
+						}
+					}
+					return
+				}
+			}
+		}
+		// DVR not found — our registration was removed from Plex.
+		log.Printf("[dvr-watchdog] dvr missing for device %s — re-registering", deviceUUID)
+		_, _, rerr := FullRegisterPlex(cfg.BaseURL, cfg.PlexHost, cfg.PlexToken, cfg.FriendlyName, cfg.DeviceID, channels)
+		if rerr != nil {
+			log.Printf("[dvr-watchdog] re-registration failed: %v", rerr)
+		} else {
+			log.Printf("[dvr-watchdog] re-registration complete")
+		}
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			check()
+		}
+	}
 }
 
 func RegisterTuner(plexDataDir, baseURL string) error {

@@ -269,6 +269,7 @@ func main() {
 	runSkipHealth := runCmd.Bool("skip-health", false, "Skip provider health check at startup")
 	runRegisterPlex := runCmd.String("register-plex", "", "If set, update Plex DB at this path (stop Plex first, backup DB) so DVR/XMLTV point to this tuner")
 	runRegisterOnly := runCmd.Bool("register-only", false, "If set with -register-plex and -mode=full: write Plex DB and exit without starting the tuner server (for one-shot jobs)")
+	runRegisterInterval := runCmd.Duration("register-plex-interval", 5*time.Minute, "How often to verify and repair DVR registration while running (0 = disable watchdog; default 5m)")
 	runMode := runCmd.String("mode", "", "Flow: easy = HDHR + wizard, lineup capped at 479 (strip from end); full = DVR builder, max feeds, use -register-plex for zero-touch")
 
 	probeCmd := flag.NewFlagSet("probe", flag.ExitOnError)
@@ -643,21 +644,24 @@ func main() {
 				*runRegisterPlex, *runMode, plexHost, plexToken != "")
 
 			apiRegistrationDone := false
+			var registeredDeviceUUID string // set on successful API registration; used by DVR watchdog
+			channelInfo := make([]plex.ChannelInfo, len(live))
+			for i := range live {
+				ch := &live[i]
+				channelInfo[i] = plex.ChannelInfo{
+					GuideNumber: ch.GuideNumber,
+					GuideName:   ch.GuideName,
+				}
+			}
 			if plexHost != "" && plexToken != "" {
 				log.Printf("[PLEX-REG] Attempting Plex API registration...")
-				channelInfo := make([]plex.ChannelInfo, len(live))
-				for i := range live {
-					ch := &live[i]
-					channelInfo[i] = plex.ChannelInfo{
-						GuideNumber: ch.GuideNumber,
-						GuideName:   ch.GuideName,
-					}
-				}
-				if err := plex.FullRegisterPlex(baseURL, plexHost, plexToken, cfg.FriendlyName, cfg.DeviceID, channelInfo); err != nil {
-					log.Printf("Plex API registration failed: %v (falling back to DB registration)", err)
+				devUUID, _, regErr := plex.FullRegisterPlex(baseURL, plexHost, plexToken, cfg.FriendlyName, cfg.DeviceID, channelInfo)
+				if regErr != nil {
+					log.Printf("Plex API registration failed: %v (falling back to DB registration)", regErr)
 				} else {
 					log.Printf("Plex registered via API")
 					apiRegistrationDone = true
+					registeredDeviceUUID = devUUID
 				}
 			}
 
@@ -718,6 +722,25 @@ func main() {
 			if *runRegisterOnly {
 				log.Printf("Register-only mode: Plex DB updated, exiting without serving.")
 				return
+			}
+
+			// Start DVR watchdog: periodically verify our DVR registration is still present
+			// and correct in Plex, re-registering if it has gone missing or the guide URL
+			// changed. Only runs when API registration succeeded and an interval is set.
+			if apiRegistrationDone && registeredDeviceUUID != "" && *runRegisterInterval > 0 {
+				plexHostLocal := plexHost
+				plexTokenLocal := plexToken
+				watchdogCfg := plex.PlexAPIConfig{
+					BaseURL:      baseURL,
+					PlexHost:     plexHostLocal,
+					PlexToken:    plexTokenLocal,
+					FriendlyName: cfg.FriendlyName,
+					DeviceID:     cfg.DeviceID,
+				}
+				guideURL := baseURL + "/guide.xml"
+				channelInfoCopy := channelInfo // capture for goroutine
+				log.Printf("[dvr-watchdog] starting: device=%s interval=%v", registeredDeviceUUID, *runRegisterInterval)
+				go plex.DVRWatchdog(runCtx, watchdogCfg, registeredDeviceUUID, guideURL, *runRegisterInterval, channelInfoCopy)
 			}
 		} else {
 			fmt.Fprintf(os.Stderr, "\n--- Plex one-time setup ---\n")
