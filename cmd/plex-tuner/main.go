@@ -38,6 +38,164 @@ import (
 	"github.com/plextuner/plex-tuner/internal/vodfs"
 )
 
+// hostMatchesAny reports whether rawURL's hostname equals or is a subdomain of any entry in hosts.
+// hosts entries are already lowercased (as produced by config.getEnvHosts).
+func hostMatchesAny(rawURL string, hosts []string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	h := strings.ToLower(u.Hostname())
+	for _, blocked := range hosts {
+		if h == blocked || strings.HasSuffix(h, "."+blocked) {
+			return true
+		}
+	}
+	return false
+}
+
+// stripStreamHosts removes stream URLs whose hostname matches any blocked host.
+// Channels with no remaining URLs are dropped entirely.
+func stripStreamHosts(live []catalog.LiveChannel, hosts []string) []catalog.LiveChannel {
+	if len(hosts) == 0 {
+		return live
+	}
+	out := make([]catalog.LiveChannel, 0, len(live))
+	dropped := 0
+	for _, ch := range live {
+		filtered := ch.StreamURLs[:0:0]
+		for _, u := range ch.StreamURLs {
+			if !hostMatchesAny(u, hosts) {
+				filtered = append(filtered, u)
+			}
+		}
+		if len(filtered) == 0 {
+			dropped++
+			continue
+		}
+		ch.StreamURLs = filtered
+		ch.StreamURL = filtered[0]
+		out = append(out, ch)
+	}
+	if dropped > 0 {
+		log.Printf("StripStreamHosts: dropped %d channels (only blocked hosts); %d remain", dropped, len(out))
+	}
+	return out
+}
+
+// dedupeByTVGID merges LiveChannel entries that share the same TVGID into a single entry,
+// combining their StreamURLs lists. Channels without a TVGID pass through unchanged.
+// URLs from all duplicates are merged in the order they appear; if cfHosts (StripStreamHosts)
+// is non-empty, non-CF URLs are sorted before CF ones so the gateway tries working streams first.
+// The channel metadata (name, guide number, artwork) is kept from the first-seen entry.
+// This handles M3Us where the same channel appears once per CDN host as separate EXTINF entries.
+func dedupeByTVGID(live []catalog.LiveChannel, cfHosts []string) []catalog.LiveChannel {
+	if len(live) == 0 {
+		return live
+	}
+	type entry struct {
+		idx  int // position in out slice
+		seen map[string]struct{}
+	}
+	byTVGID := make(map[string]*entry, len(live))
+	out := make([]catalog.LiveChannel, 0, len(live))
+	merged := 0
+	for _, ch := range live {
+		if ch.TVGID == "" {
+			out = append(out, ch)
+			continue
+		}
+		e, exists := byTVGID[ch.TVGID]
+		if !exists {
+			seen := make(map[string]struct{}, len(ch.StreamURLs))
+			for _, u := range ch.StreamURLs {
+				seen[u] = struct{}{}
+			}
+			byTVGID[ch.TVGID] = &entry{idx: len(out), seen: seen}
+			out = append(out, ch)
+			continue
+		}
+		// Merge StreamURLs from duplicate into existing entry.
+		for _, u := range ch.StreamURLs {
+			if _, ok := e.seen[u]; !ok {
+				out[e.idx].StreamURLs = append(out[e.idx].StreamURLs, u)
+				e.seen[u] = struct{}{}
+			}
+		}
+		merged++
+	}
+	if merged > 0 {
+		log.Printf("dedupeByTVGID: merged %d duplicate tvg-id entries into %d channels", merged, len(out))
+	}
+	// If CF hosts are known, sort each channel's URLs: non-CF first, CF last.
+	// This ensures the gateway tries working streams before blocked CDN entries.
+	if len(cfHosts) > 0 {
+		for i := range out {
+			nonCF := out[i].StreamURLs[:0:0]
+			cfURLs := out[i].StreamURLs[:0:0]
+			for _, u := range out[i].StreamURLs {
+				if hostMatchesAny(u, cfHosts) {
+					cfURLs = append(cfURLs, u)
+				} else {
+					nonCF = append(nonCF, u)
+				}
+			}
+			out[i].StreamURLs = append(nonCF, cfURLs...)
+			if len(out[i].StreamURLs) > 0 {
+				out[i].StreamURL = out[i].StreamURLs[0]
+			}
+		}
+	}
+	return out
+}
+
+// enrichM3UWithProviderBases probes any configured PLEX_TUNER_PROVIDER_URL(S) and appends
+// API-base fallback URLs to each channel's StreamURLs. Called after M3U parse so channels
+// loaded from M3U also get provider-base alternatives for gateway failover.
+// No-ops if no provider entries are configured or probing returns no ranked results.
+func enrichM3UWithProviderBases(cfg *config.Config, live []catalog.LiveChannel) {
+	if len(live) == 0 {
+		return
+	}
+	entries := cfg.ProviderEntries()
+	if len(entries) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	probeOpts := provider.ProbeOptions{
+		BlockCloudflare: cfg.BlockCFProviders,
+		Logger:          log.Printf,
+	}
+	provEntries := make([]provider.Entry, len(entries))
+	for i, e := range entries {
+		provEntries[i] = provider.Entry{BaseURL: e.BaseURL, User: e.User, Pass: e.Pass}
+	}
+	ranked := provider.RankedEntries(ctx, provEntries, nil, probeOpts)
+	if len(ranked) == 0 {
+		log.Printf("enrichM3UWithProviderBases: no reachable provider bases; stream failover unavailable")
+		return
+	}
+	allBases := make([]string, 0, len(ranked))
+	for _, er := range ranked {
+		allBases = append(allBases, er.Entry.BaseURL)
+	}
+	log.Printf("enrichM3UWithProviderBases: adding %d provider base(s) as stream fallback for %d channels", len(allBases), len(live))
+	for i := range live {
+		backups := streamURLsFromRankedBases(live[i].StreamURL, allBases)
+		existing := make(map[string]struct{}, len(live[i].StreamURLs))
+		for _, u := range live[i].StreamURLs {
+			existing[u] = struct{}{}
+		}
+		for _, u := range backups {
+			if _, seen := existing[u]; !seen {
+				live[i].StreamURLs = append(live[i].StreamURLs, u)
+				existing[u] = struct{}{}
+			}
+		}
+	}
+}
+
 // streamURLsFromRankedBases returns a slice of full stream URLs by combining each ranked base with the path from streamURL.
 // So if streamURL is "http://best.com/live/user/pass/1.m3u8" and ranked is [best, 2nd, 3rd], returns [best+path, 2nd+path, 3rd+path].
 // Gateway will try them in order; when best fails it uses 2nd, then 3rd.
@@ -111,6 +269,8 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 			return res, fmt.Errorf("parse M3U: %w", err)
 		}
 		res.Movies, res.Series, res.Live = movies, series, live
+		res.Live = dedupeByTVGID(res.Live, cfg.StripStreamHosts)
+		enrichM3UWithProviderBases(cfg, res.Live)
 	} else if m3uURLs := cfg.M3UURLsOrBuild(); len(m3uURLs) > 0 {
 		var lastErr error
 		for _, u := range m3uURLs {
@@ -126,6 +286,8 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 		if lastErr != nil {
 			return res, fmt.Errorf("parse M3U: %w", lastErr)
 		}
+		res.Live = dedupeByTVGID(res.Live, cfg.StripStreamHosts)
+		enrichM3UWithProviderBases(cfg, res.Live)
 	} else if entries := cfg.ProviderEntries(); len(entries) > 0 {
 		// Multi-provider path: each entry may have different credentials.
 		// Probe all entries (across all providers), rank best-first, use winner for indexing.
@@ -192,6 +354,10 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 	// Enrich and sort VOD content deterministically so downstream VODFS and future
 	// catch-up/category library splits do not depend on provider ordering.
 	res.Movies, res.Series = catalog.ApplyVODTaxonomy(res.Movies, res.Series)
+
+	// Strip catalog-time blocked stream hosts (e.g. CF CDN hostnames) before any other filter.
+	// Channels whose every URL is on a blocked host are dropped entirely.
+	res.Live = stripStreamHosts(res.Live, cfg.StripStreamHosts)
 
 	// Apply configured live-channel filters (applied consistently on every fetch path).
 	if cfg.LiveEPGOnly {

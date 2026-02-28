@@ -61,6 +61,12 @@ type Config struct {
 	// the Cloudflare abuse page (cloudflare-terms-of-service-abuse.com).
 	// Prevents the 12-second stall timeout that results in 0-byte streams from CF-blocked CDNs.
 	FetchCFReject bool
+	// StripStreamHosts is a comma-separated list of hostnames (e.g. "cdngold.me,othercf.net")
+	// whose stream URLs are removed from the catalog at index time.
+	// A channel whose every StreamURL matches a blocked host is dropped entirely.
+	// Suffix-matching: "cdngold.me" also matches "pod17546.cdngold.me".
+	// Enable with PLEX_TUNER_STRIP_STREAM_HOSTS=cdngold.me
+	StripStreamHosts []string
 
 	// Stream smoketest: when true, at index time probe each channel's primary URL and drop failures.
 	SmoketestEnabled     bool
@@ -109,6 +115,7 @@ func Load() *Config {
 		EpgPruneUnlinked:     getEnvBool("PLEX_TUNER_EPG_PRUNE_UNLINKED", false),
 		BlockCFProviders:     getEnvBool("PLEX_TUNER_BLOCK_CF_PROVIDERS", false),
 		FetchCFReject:        getEnvBool("PLEX_TUNER_FETCH_CF_REJECT", false),
+		StripStreamHosts:     getEnvHosts("PLEX_TUNER_STRIP_STREAM_HOSTS"),
 		SmoketestEnabled:     getEnvBool("PLEX_TUNER_SMOKETEST_ENABLED", false),
 		SmoketestTimeout:     getEnvDuration("PLEX_TUNER_SMOKETEST_TIMEOUT", 8*time.Second),
 		SmoketestConcurrency: getEnvInt("PLEX_TUNER_SMOKETEST_CONCURRENCY", 10),
@@ -361,4 +368,22 @@ func getEnvUint32(key string, defaultVal uint32) uint32 {
 		return defaultVal
 	}
 	return uint32(n)
+}
+
+// getEnvHosts parses a comma-separated list of hostnames from an env var.
+// Values are lowercased and empty entries are dropped.
+func getEnvHosts(key string) []string {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return nil
+	}
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.ToLower(strings.TrimSpace(p))
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
