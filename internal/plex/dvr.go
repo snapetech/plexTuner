@@ -738,14 +738,18 @@ func DVRWatchdog(ctx context.Context, cfg PlexAPIConfig, deviceUUID, guideURL st
 				}
 
 				// Guide URL is correct. Check channel activation: fetch the DVR XML and
-				// count enabled ChannelMappings. If 0, the guide hasn't been indexed yet
-				// (or channels were wiped by a re-registration race) — activate now.
+				// count enabled ChannelMappings. If fewer than 90% of expected channels are
+				// active (including the 0-channel case), activate now. This catches both the
+				// "guide not indexed yet" case and partial activation from a racing re-reg.
 				enabledCount := dvrEnabledChannelCount(cfg.PlexHost, cfg.PlexToken, d.Key)
-				if enabledCount == 0 {
-					log.Printf("[dvr-watchdog] dvr=%d guide ok but 0 channels activated — activating now", d.Key)
+				expectedCount := len(channels)
+				threshold := int(float64(expectedCount) * 0.9)
+				if expectedCount > 0 && enabledCount < threshold {
+					log.Printf("[dvr-watchdog] dvr=%d guide ok but only %d/%d channels activated (threshold=%d) — activating now",
+						d.Key, enabledCount, expectedCount, threshold)
 					activateChannels(d.DeviceKey, []string{d.LineupURL})
 				} else {
-					log.Printf("[dvr-watchdog] ok dvr=%d lineupTitle=%q enabled_channels=%d", d.Key, d.LineupTitle, enabledCount)
+					log.Printf("[dvr-watchdog] ok dvr=%d lineupTitle=%q enabled=%d/%d", d.Key, d.LineupTitle, enabledCount, expectedCount)
 				}
 				return
 			}
