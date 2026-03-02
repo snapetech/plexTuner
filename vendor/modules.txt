@@ -4,13 +4,17 @@ github.com/dustin/go-humanize
 # github.com/google/uuid v1.6.0
 ## explicit
 github.com/google/uuid
-# github.com/hanwen/go-fuse/v2 v2.5.0
-## explicit; go 1.13
+# github.com/hanwen/go-fuse/v2 v2.9.0
+## explicit; go 1.17
 github.com/hanwen/go-fuse/v2/fs
 github.com/hanwen/go-fuse/v2/fuse
 github.com/hanwen/go-fuse/v2/internal
+github.com/hanwen/go-fuse/v2/internal/fallocate
+github.com/hanwen/go-fuse/v2/internal/ioctl
+github.com/hanwen/go-fuse/v2/internal/openat
 github.com/hanwen/go-fuse/v2/internal/renameat
 github.com/hanwen/go-fuse/v2/internal/utimens
+github.com/hanwen/go-fuse/v2/internal/xattr
 github.com/hanwen/go-fuse/v2/splice
 # github.com/mattn/go-isatty v0.0.20
 ## explicit; go 1.15

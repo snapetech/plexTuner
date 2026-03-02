@@ -13,6 +13,10 @@ import (
 	"syscall"
 )
 
+func getMaxWrite() int {
+	return 1 << 20
+}
+
 func unixgramSocketpair() (l, r *os.File, err error) {
 	fd, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
 	if err != nil {
@@ -67,7 +71,12 @@ func mount(mountPoint string, opts *MountOptions, ready chan<- error) (fd int, e
 	}
 
 	go func() {
-		// wait inside a goroutine or otherwise it would block forever for unknown reasons
+		// On macos, mount_osxfuse is not just a suid
+		// wrapper. It interacts with the FS setup, and will
+		// not exit until the filesystem has successfully
+		// responded to INIT and STATFS. This means we can
+		// only wait on the mount_osxfuse process after the
+		// server has fully started
 		if err := cmd.Wait(); err != nil {
 			err = fmt.Errorf("mount_osxfusefs failed: %v. Stderr: %s, Stdout: %s",
 				err, errOut.String(), out.String())

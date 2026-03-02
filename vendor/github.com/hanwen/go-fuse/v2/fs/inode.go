@@ -69,6 +69,11 @@ type Inode struct {
 	// protected by bridge.mu
 	openFiles []uint32
 
+	// backing files, protected by bridge.mu
+	backingIDRefcount int
+	backingID         int32
+	backingFd         int
+
 	// mu protects the following mutable fields. When locking
 	// multiple Inodes, locks must be acquired using
 	// lockNodes/unlockNodes
@@ -165,12 +170,17 @@ func modeStr(m uint32) string {
 	}[m]
 }
 
+func (a StableAttr) String() string {
+	return fmt.Sprintf("i%d g%d (%s)",
+		a.Ino, a.Gen, modeStr(a.Mode))
+}
+
 // debugString is used for debugging. Racy.
 func (n *Inode) String() string {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
-	return fmt.Sprintf("i%d (%s): %s", n.stableAttr.Ino, modeStr(n.stableAttr.Mode), n.children.String())
+	return fmt.Sprintf("%s: %s", n.stableAttr.String(), n.children.String())
 }
 
 // sortNodes rearranges inode group in consistent order.
@@ -252,6 +262,12 @@ func unlockNodes(ns ...*Inode) {
 // inode.  This can be used for background cleanup tasks, since the
 // kernel has no way of reviving forgotten nodes by its own
 // initiative.
+//
+// Bugs: Forgotten() may momentarily return true in the window between
+// creation (NewInode) and adding the node into the tree, which
+// happens after Lookup/Mkdir/etc. return.
+//
+// Deprecated: use NodeOnForgetter instead.
 func (n *Inode) Forgotten() bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -350,23 +366,58 @@ func (n *Inode) ForgetPersistent() {
 // should be standard mode argument (eg. S_IFDIR). The inode number in
 // id.Ino argument is used to implement hard-links.  If it is given,
 // and another node with the same ID is known, the new inode may be
-// ignored, and the old one used instead.
+// ignored, and the old one used instead. If the parent inode
+// implements NodeWrapChilder, the returned Inode will have a
+// different InodeEmbedder from the one passed in.
 func (n *Inode) NewInode(ctx context.Context, node InodeEmbedder, id StableAttr) *Inode {
 	return n.newInode(ctx, node, id, false)
 }
 
 func (n *Inode) newInode(ctx context.Context, ops InodeEmbedder, id StableAttr, persistent bool) *Inode {
+	if wc, ok := n.ops.(NodeWrapChilder); ok {
+		ops = wc.WrapChild(ctx, ops)
+	}
 	return n.bridge.newInode(ctx, ops, id, persistent)
 }
 
 // removeRef decreases references. Returns if this operation caused
 // the node to be forgotten (for kernel references), and whether it is
 // live (ie. was not dropped from the tree)
-func (n *Inode) removeRef(nlookup uint64, dropPersistence bool) (forgotten bool, live bool) {
+func (n *Inode) removeRef(nlookup uint64, dropPersistence bool) (hasLookups, isPersistent, hasChildren bool) {
+	var beforeLookups, beforePersistence, beforeChildren bool
+	var unusedParents []*Inode
+	beforeLookups, hasLookups, beforePersistence, isPersistent, beforeChildren, hasChildren, unusedParents = n.removeRefInner(nlookup, dropPersistence, unusedParents)
+
+	if !hasLookups && !isPersistent && !hasChildren && (beforeChildren || beforeLookups || beforePersistence) {
+		if nf, ok := n.ops.(NodeOnForgetter); ok {
+			nf.OnForget()
+		}
+	}
+
+	for len(unusedParents) > 0 {
+		l := len(unusedParents)
+		p := unusedParents[l-1]
+		unusedParents = unusedParents[:l-1]
+		_, _, _, _, _, _, unusedParents = p.removeRefInner(0, false, unusedParents)
+
+		if nf, ok := p.ops.(NodeOnForgetter); ok {
+			nf.OnForget()
+		}
+	}
+
+	return
+}
+
+func (n *Inode) removeRefInner(nlookup uint64, dropPersistence bool, inputUnusedParents []*Inode) (beforeLookups, hasLookups, beforePersistent, isPersistent, beforeChildren, hasChildren bool, unusedParents []*Inode) {
 	var lockme []*Inode
 	var parents []parentData
 
+	unusedParents = inputUnusedParents
+
 	n.mu.Lock()
+	beforeLookups = n.lookupCount > 0
+	beforePersistent = n.persistent
+	beforeChildren = n.children.len() > 0
 	if nlookup > 0 && dropPersistence {
 		log.Panic("only one allowed")
 	} else if nlookup > n.lookupCount {
@@ -381,7 +432,6 @@ func (n *Inode) removeRef(nlookup uint64, dropPersistence bool) (forgotten bool,
 
 	n.bridge.mu.Lock()
 	if n.lookupCount == 0 {
-		forgotten = true
 		// Dropping the node from stableAttrs guarantees that no new references to this node are
 		// handed out to the kernel, hence we can also safely delete it from kernelNodeIds.
 		delete(n.bridge.stableAttrs, n.stableAttr)
@@ -394,15 +444,17 @@ retry:
 		lockme = append(lockme[:0], n)
 		parents = parents[:0]
 		nChange := n.changeCounter
-		live = n.lookupCount > 0 || n.children.len() > 0 || n.persistent
+		hasLookups = n.lookupCount > 0
+		hasChildren = n.children.len() > 0
+		isPersistent = n.persistent
 		for _, p := range n.parents.all() {
 			parents = append(parents, p)
 			lockme = append(lockme, p.parent)
 		}
 		n.mu.Unlock()
 
-		if live {
-			return forgotten, live
+		if hasLookups || hasChildren || isPersistent {
+			return
 		}
 
 		lockNodes(lockme...)
@@ -414,11 +466,16 @@ retry:
 		}
 
 		for _, p := range parents {
-			if p.parent.children.get(p.name) != n {
+			parentNode := p.parent
+			if parentNode.children.get(p.name) != n {
 				// another node has replaced us already
 				continue
 			}
-			p.parent.children.del(p.parent, p.name)
+			parentNode.children.del(p.parent, p.name)
+
+			if parentNode.children.len() == 0 && parentNode.lookupCount == 0 && !parentNode.persistent {
+				unusedParents = append(unusedParents, parentNode)
+			}
 		}
 
 		if n.lookupCount != 0 {
@@ -429,12 +486,7 @@ retry:
 		break
 	}
 
-	for _, p := range lockme {
-		if p != n {
-			p.removeRef(0, false)
-		}
-	}
-	return forgotten, false
+	return
 }
 
 // GetChild returns a child node with the given name, or nil if the
@@ -570,8 +622,8 @@ retry:
 	}
 
 	if !live {
-		_, live := n.removeRef(0, false)
-		return true, live
+		hasLookups, isPersistent, hasChildren := n.removeRef(0, false)
+		return true, (hasLookups || isPersistent || hasChildren)
 	}
 
 	return true, true
