@@ -1,38 +1,38 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: plextuner-test-env
+  name: iptvtunerr-test-env
   namespace: plex
-# Non-secret config only. Credentials (PLEX_TUNER_PROVIDER_USER/PASS/URL,
-# PLEX_TUNER_M3U_URL, PLEX_TOKEN) must come from one of:
+# Non-secret config only. Credentials (IPTV_TUNERR_PROVIDER_USER/PASS/URL,
+# IPTV_TUNERR_M3U_URL, PLEX_TOKEN) must come from one of:
 #   a) OpenBao agent injection: annotate the pod with vault.hashicorp.com/agent-inject
-#      and list secret files in supervisor.json "envFiles" — see plextuner-supervisor
+#      and list secret files in supervisor.json "envFiles" — see iptvtunerr-supervisor
 #      deployment for the reference pattern.
 #   b) A deploy-time Secret created by your deploy script (NOT committed here).
 #      Reference it as secretRef in the pod spec below. Do not hard-code values
 #      in this file.
 data:
-  PLEX_TUNER_LIVE_ONLY: "true"
-  PLEX_TUNER_LIVE_EPG_ONLY: "true"
-  PLEX_TUNER_DEVICE_ID: "hdhrbcast"
-  PLEX_TUNER_FRIENDLY_NAME: "plexTuner-bcastUS"
+  IPTV_TUNERR_LIVE_ONLY: "true"
+  IPTV_TUNERR_LIVE_EPG_ONLY: "true"
+  IPTV_TUNERR_DEVICE_ID: "hdhrbcast"
+  IPTV_TUNERR_FRIENDLY_NAME: "iptvTunerr-bcastUS"
   PLEX_HOST: "127.0.0.1:32400"
   # Built-in Plex session reaper (optional but recommended for lingering Live TV sessions).
-  # Disable by setting PLEX_TUNER_PLEX_SESSION_REAPER to "false".
-  PLEX_TUNER_PMS_URL: "http://plex:32400"
+  # Disable by setting IPTV_TUNERR_PLEX_SESSION_REAPER to "false".
+  IPTV_TUNERR_PMS_URL: "http://plex:32400"
   # Strip Cloudflare CDN stream hosts so tuner never uses them (403 / unable to tune).
-  PLEX_TUNER_STRIP_STREAM_HOSTS: "cf.like-cdn.com,like-cdn.com"
-  PLEX_TUNER_PLEX_SESSION_REAPER: "true"
-  PLEX_TUNER_PLEX_SESSION_REAPER_POLL_S: "2"
-  PLEX_TUNER_PLEX_SESSION_REAPER_IDLE_S: "15"
-  PLEX_TUNER_PLEX_SESSION_REAPER_RENEW_LEASE_S: "20"
-  PLEX_TUNER_PLEX_SESSION_REAPER_HARD_LEASE_S: "1800"
-  PLEX_TUNER_PLEX_SESSION_REAPER_SSE: "true"
+  IPTV_TUNERR_STRIP_STREAM_HOSTS: "cf.like-cdn.com,like-cdn.com"
+  IPTV_TUNERR_PLEX_SESSION_REAPER: "true"
+  IPTV_TUNERR_PLEX_SESSION_REAPER_POLL_S: "2"
+  IPTV_TUNERR_PLEX_SESSION_REAPER_IDLE_S: "15"
+  IPTV_TUNERR_PLEX_SESSION_REAPER_RENEW_LEASE_S: "20"
+  IPTV_TUNERR_PLEX_SESSION_REAPER_HARD_LEASE_S: "1800"
+  IPTV_TUNERR_PLEX_SESSION_REAPER_SSE: "true"
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: plextuner-test-catalog
+  name: iptvtunerr-test-catalog
   namespace: plex
 data:
   catalog.json: |
@@ -65,17 +65,17 @@ data:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: plextuner-hdhr-test
+  name: iptvtunerr-hdhr-test
   namespace: plex
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: plextuner-hdhr-test
+      app: iptvtunerr-hdhr-test
   template:
     metadata:
       labels:
-        app: plextuner-hdhr-test
+        app: iptvtunerr-hdhr-test
     spec:
       # Optional: pin to a node where Plex data lives (for -register-plex hostPath). Uncomment and set your node name.
       # nodeSelector:
@@ -93,21 +93,21 @@ spec:
           - name: ndots
             value: "2"
       containers:
-      - name: plextuner
-        image: plex-tuner:hdhr-test
+      - name: iptvtunerr
+        image: iptv-tunerr:hdhr-test
         imagePullPolicy: Never
         ports:
         - containerPort: 5004
           name: hdhr
         envFrom:
         - configMapRef:
-            name: plextuner-test-env
+            name: iptvtunerr-test-env
         # Add a secretRef here for your credentials Secret, e.g.:
         #   - secretRef:
-        #       name: plextuner-creds   # must contain PLEX_TUNER_M3U_URL, PLEX_TOKEN, etc.
-        # Or use OpenBao agent injection (see plextuner-supervisor deployment).
+        #       name: iptvtunerr-creds   # must contain IPTV_TUNERR_M3U_URL, PLEX_TOKEN, etc.
+        # Or use OpenBao agent injection (see iptvtunerr-supervisor deployment).
         env:
-        - name: PLEX_TUNER_PMS_TOKEN
+        - name: IPTV_TUNERR_PMS_TOKEN
           value: ""   # Set via your credentials Secret or OpenBao injection (PLEX_TOKEN)
         volumeMounts:
         - name: catalog
@@ -118,7 +118,7 @@ spec:
         - run
         - -catalog=/data/catalog.json
         - -addr=:5004
-        - -base-url=http://plextuner-hdhr.plex.home
+        - -base-url=http://iptvtunerr-hdhr.plex.home
         - -register-plex=/config/Library/Application Support/Plex Media Server
         - -mode=full
         readinessProbe:
@@ -146,12 +146,12 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: plextuner-hdhr-test
+  name: iptvtunerr-hdhr-test
   namespace: plex
 spec:
   type: NodePort
   selector:
-    app: plextuner-hdhr-test
+    app: iptvtunerr-hdhr-test
   ports:
   - port: 5004
     targetPort: 5004
@@ -161,18 +161,18 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: plextuner-hdhr
+  name: iptvtunerr-hdhr
   namespace: plex
 spec:
   ingressClassName: traefik
   rules:
-  - host: plextuner-hdhr.plex.home
+  - host: iptvtunerr-hdhr.plex.home
     http:
       paths:
       - path: /
         pathType: Prefix
         backend:
           service:
-            name: plextuner-hdhr-test
+            name: iptvtunerr-hdhr-test
             port:
               number: 5004

@@ -14,7 +14,7 @@ This is focused on practical operation/testing. For tester bundles and superviso
 
 ## Commands
 
-## `plex-tuner run`
+## `iptv-tunerr run`
 
 One-shot workflow:
 - refresh catalog (unless skipped)
@@ -37,7 +37,7 @@ Use for:
 - systemd/Docker runtime
 - most single-binary deployments
 
-## `plex-tuner serve`
+## `iptv-tunerr serve`
 
 Serve tuner endpoints from an existing catalog.
 
@@ -53,7 +53,7 @@ Use for:
 - split workflows (external indexing)
 - local endpoint tests
 
-## `plex-tuner index`
+## `iptv-tunerr index`
 
 Fetch provider M3U/API and write catalog JSON.
 
@@ -65,7 +65,7 @@ Use for:
 - scheduled indexing
 - catalog debugging without starting the server
 
-## `plex-tuner mount`
+## `iptv-tunerr mount`
 
 Mount VODFS from the catalog.
 
@@ -77,7 +77,7 @@ Common flags:
 Notes:
 - Linux-only (`FUSE`)
 
-## `plex-tuner plex-vod-register`
+## `iptv-tunerr plex-vod-register`
 
 Create or reuse Plex libraries for a mounted VODFS tree.
 
@@ -95,9 +95,9 @@ Common flags:
 - `-refresh`
 
 Env fallbacks:
-- `PLEX_TUNER_PMS_URL` (or `PLEX_HOST` -> `http://<host>:32400`)
-- `PLEX_TUNER_PMS_TOKEN` (or `PLEX_TOKEN`)
-- `PLEX_TUNER_MOUNT`
+- `IPTV_TUNERR_PMS_URL` (or `PLEX_HOST` -> `http://<host>:32400`)
+- `IPTV_TUNERR_PMS_TOKEN` (or `PLEX_TOKEN`)
+- `IPTV_TUNERR_MOUNT`
 
 Notes:
 - Requires the VODFS mount path to be visible to the Plex server host/container.
@@ -105,7 +105,7 @@ Notes:
 - If the same section name exists with a different path/type, the command returns an error instead of mutating it.
 - By default, applies a per-library VOD-safe Plex preset to disable expensive analysis jobs (credits, intro/chapter/preview thumbnails, ad/voice analysis) on these virtual catch-up libraries only.
 
-## `plex-tuner vod-split`
+## `iptv-tunerr vod-split`
 
 Split a VOD catalog into multiple category/region lane catalogs for separate
 VODFS mounts/libraries.
@@ -135,7 +135,7 @@ Use for:
 - reduced scan scope / faster targeted rescans
 - operational isolation of high-churn catch-up lanes
 
-## `plex-tuner epg-link-report`
+## `iptv-tunerr epg-link-report`
 
 Generate a deterministic EPG-link coverage report for `live_channels` in a
 catalog against an XMLTV source. This is the Phase 1 workflow for improving the
@@ -169,7 +169,7 @@ Use for:
 - generating a review queue for the unlinked tail
 - iterating alias mappings safely (report-only, no runtime mutation)
 
-## `plex-tuner probe`
+## `iptv-tunerr probe`
 
 Probe provider URLs and print ranked results (best host first).
 
@@ -180,7 +180,7 @@ Use for:
 - provider host failover validation
 - diagnosing Cloudflare/proxy failures
 
-## `plex-tuner plex-epg-oracle`
+## `iptv-tunerr plex-epg-oracle`
 
 Probe Plex's wizard-equivalent HDHR registration/guide/channelmap flow across one
 or more tuner base URLs and report what Plex maps.
@@ -202,7 +202,7 @@ Notes:
 - Best used in a lab/test Plex instance.
 - Intended to harvest mapping outcomes, not as a runtime dependency.
 
-## `plex-tuner plex-epg-oracle-cleanup`
+## `iptv-tunerr plex-epg-oracle-cleanup`
 
 Clean up DVR/device rows created during oracle experiments.
 
@@ -217,13 +217,13 @@ Common flags:
 
 Typical flow:
 1. Dry-run inspect:
-   - `plex-tuner plex-epg-oracle-cleanup -plex-url ... -token ...`
+   - `iptv-tunerr plex-epg-oracle-cleanup -plex-url ... -token ...`
 2. Apply cleanup:
-   - `plex-tuner plex-epg-oracle-cleanup -plex-url ... -token ... -do`
+   - `iptv-tunerr plex-epg-oracle-cleanup -plex-url ... -token ... -do`
 
-## `plex-tuner supervise`
+## `iptv-tunerr supervise`
 
-Run multiple child `plex-tuner` instances from one JSON config.
+Run multiple child `iptv-tunerr` instances from one JSON config.
 
 Common flags:
 - `-config`
@@ -236,87 +236,87 @@ Use for:
 
 ## Provider / input
 
-- `PLEX_TUNER_PROVIDER_URL`
-- `PLEX_TUNER_PROVIDER_URLS`
-- `PLEX_TUNER_PROVIDER_USER`
-- `PLEX_TUNER_PROVIDER_PASS`
-- `PLEX_TUNER_SUBSCRIPTION_FILE`
-- `PLEX_TUNER_M3U_URL`
+- `IPTV_TUNERR_PROVIDER_URL`
+- `IPTV_TUNERR_PROVIDER_URLS`
+- `IPTV_TUNERR_PROVIDER_USER`
+- `IPTV_TUNERR_PROVIDER_PASS`
+- `IPTV_TUNERR_SUBSCRIPTION_FILE`
+- `IPTV_TUNERR_M3U_URL`
 
 ## Paths
 
-- `PLEX_TUNER_CATALOG`
-- `PLEX_TUNER_MOUNT`
-- `PLEX_TUNER_CACHE`
+- `IPTV_TUNERR_CATALOG`
+- `IPTV_TUNERR_MOUNT`
+- `IPTV_TUNERR_CACHE`
 
 ## Tuner identity / lineup
 
-- `PLEX_TUNER_BASE_URL`
-- `PLEX_TUNER_DEVICE_ID`
-- `PLEX_TUNER_FRIENDLY_NAME`
-- `PLEX_TUNER_TUNER_COUNT`
-- `PLEX_TUNER_LINEUP_MAX_CHANNELS`
-- `PLEX_TUNER_GUIDE_NUMBER_OFFSET`
+- `IPTV_TUNERR_BASE_URL`
+- `IPTV_TUNERR_DEVICE_ID`
+- `IPTV_TUNERR_FRIENDLY_NAME`
+- `IPTV_TUNERR_TUNER_COUNT`
+- `IPTV_TUNERR_LINEUP_MAX_CHANNELS`
+- `IPTV_TUNERR_GUIDE_NUMBER_OFFSET`
 
-`PLEX_TUNER_GUIDE_NUMBER_OFFSET`:
+`IPTV_TUNERR_GUIDE_NUMBER_OFFSET`:
 - adds a per-instance channel/guide ID offset
 - useful for many DVRs in Plex to avoid guide cache collisions
 
 ## Stream behavior
 
-- `PLEX_TUNER_STREAM_TRANSCODE` (`off|on|auto`)
-- `PLEX_TUNER_STREAM_BUFFER_BYTES` (`0|auto|<bytes>`)
-- `PLEX_TUNER_FFMPEG_PATH`
-- `PLEX_TUNER_FFMPEG_HLS_RECONNECT` (advanced ffmpeg/HLS behavior)
-- `PLEX_TUNER_CLIENT_ADAPT` — when true, resolve Plex client from session and force websafe (transcode+plexsafe) for web/browser clients and for internal fetcher (Lavf/PMS) so Chrome and Firefox both get compatible audio.
-- `PLEX_TUNER_FORCE_WEBSAFE` — when true, always transcode with plexsafe (MP3) regardless of client; use if Chrome has no audio after a Plex/server update and client detection misclassifies.
-- `PLEX_TUNER_STRIP_STREAM_HOSTS` — comma-separated hostnames (e.g. `cf.like-cdn.com,like-cdn.com`) whose stream URLs are removed at catalog build; channels with only those hosts are dropped so the tuner never uses CF-blocked endpoints.
+- `IPTV_TUNERR_STREAM_TRANSCODE` (`off|on|auto`)
+- `IPTV_TUNERR_STREAM_BUFFER_BYTES` (`0|auto|<bytes>`)
+- `IPTV_TUNERR_FFMPEG_PATH`
+- `IPTV_TUNERR_FFMPEG_HLS_RECONNECT` (advanced ffmpeg/HLS behavior)
+- `IPTV_TUNERR_CLIENT_ADAPT` — when true, resolve Plex client from session and force websafe (transcode+plexsafe) for web/browser clients and for internal fetcher (Lavf/PMS) so Chrome and Firefox both get compatible audio.
+- `IPTV_TUNERR_FORCE_WEBSAFE` — when true, always transcode with plexsafe (MP3) regardless of client; use if Chrome has no audio after a Plex/server update and client detection misclassifies.
+- `IPTV_TUNERR_STRIP_STREAM_HOSTS` — comma-separated hostnames (e.g. `cf.like-cdn.com,like-cdn.com`) whose stream URLs are removed at catalog build; channels with only those hosts are dropped so the tuner never uses CF-blocked endpoints.
 
 ## Guide / XMLTV
 
-- `PLEX_TUNER_XMLTV_URL`
-- `PLEX_TUNER_XMLTV_TIMEOUT`
-- `PLEX_TUNER_XMLTV_CACHE_TTL`
-- `PLEX_TUNER_LIVE_EPG_ONLY`
-- `PLEX_TUNER_EPG_PRUNE_UNLINKED`
+- `IPTV_TUNERR_XMLTV_URL`
+- `IPTV_TUNERR_XMLTV_TIMEOUT`
+- `IPTV_TUNERR_XMLTV_CACHE_TTL`
+- `IPTV_TUNERR_LIVE_EPG_ONLY`
+- `IPTV_TUNERR_EPG_PRUNE_UNLINKED`
 
 XMLTV language normalization:
-- `PLEX_TUNER_XMLTV_PREFER_LANGS`
-- `PLEX_TUNER_XMLTV_PREFER_LATIN`
-- `PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK`
+- `IPTV_TUNERR_XMLTV_PREFER_LANGS`
+- `IPTV_TUNERR_XMLTV_PREFER_LATIN`
+- `IPTV_TUNERR_XMLTV_NON_LATIN_TITLE_FALLBACK`
 
 ## HDHR network mode
 
-- `PLEX_TUNER_HDHR_NETWORK_MODE`
-- `PLEX_TUNER_HDHR_DEVICE_ID`
-- `PLEX_TUNER_HDHR_TUNER_COUNT`
-- `PLEX_TUNER_HDHR_FRIENDLY_NAME`
-- `PLEX_TUNER_HDHR_SCAN_POSSIBLE`
-- `PLEX_TUNER_HDHR_MANUFACTURER`
-- `PLEX_TUNER_HDHR_MODEL_NUMBER`
-- `PLEX_TUNER_HDHR_FIRMWARE_NAME`
-- `PLEX_TUNER_HDHR_FIRMWARE_VERSION`
-- `PLEX_TUNER_HDHR_DEVICE_AUTH`
+- `IPTV_TUNERR_HDHR_NETWORK_MODE`
+- `IPTV_TUNERR_HDHR_DEVICE_ID`
+- `IPTV_TUNERR_HDHR_TUNER_COUNT`
+- `IPTV_TUNERR_HDHR_FRIENDLY_NAME`
+- `IPTV_TUNERR_HDHR_SCAN_POSSIBLE`
+- `IPTV_TUNERR_HDHR_MANUFACTURER`
+- `IPTV_TUNERR_HDHR_MODEL_NUMBER`
+- `IPTV_TUNERR_HDHR_FIRMWARE_NAME`
+- `IPTV_TUNERR_HDHR_FIRMWARE_VERSION`
+- `IPTV_TUNERR_HDHR_DEVICE_AUTH`
 
 ## Plex session reaper (built-in)
 
 Required:
-- `PLEX_TUNER_PMS_URL`
-- `PLEX_TUNER_PMS_TOKEN`
+- `IPTV_TUNERR_PMS_URL`
+- `IPTV_TUNERR_PMS_TOKEN`
 
 Enable/tune:
-- `PLEX_TUNER_PLEX_SESSION_REAPER`
-- `PLEX_TUNER_PLEX_SESSION_REAPER_POLL_S`
-- `PLEX_TUNER_PLEX_SESSION_REAPER_IDLE_S`
-- `PLEX_TUNER_PLEX_SESSION_REAPER_RENEW_LEASE_S`
-- `PLEX_TUNER_PLEX_SESSION_REAPER_HARD_LEASE_S`
-- `PLEX_TUNER_PLEX_SESSION_REAPER_SSE`
+- `IPTV_TUNERR_PLEX_SESSION_REAPER`
+- `IPTV_TUNERR_PLEX_SESSION_REAPER_POLL_S`
+- `IPTV_TUNERR_PLEX_SESSION_REAPER_IDLE_S`
+- `IPTV_TUNERR_PLEX_SESSION_REAPER_RENEW_LEASE_S`
+- `IPTV_TUNERR_PLEX_SESSION_REAPER_HARD_LEASE_S`
+- `IPTV_TUNERR_PLEX_SESSION_REAPER_SSE`
 
 ## HDHR wizard-lane shaping (optional)
 
-- `PLEX_TUNER_LINEUP_DROP_MUSIC`
-- `PLEX_TUNER_LINEUP_SHAPE`
-- `PLEX_TUNER_LINEUP_REGION_PROFILE`
+- `IPTV_TUNERR_LINEUP_DROP_MUSIC`
+- `IPTV_TUNERR_LINEUP_SHAPE`
+- `IPTV_TUNERR_LINEUP_REGION_PROFILE`
 
 Typical use:
 - broad feed HDHR lane capped to `479`

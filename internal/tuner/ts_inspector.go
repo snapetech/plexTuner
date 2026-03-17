@@ -20,14 +20,14 @@ type tsInspectOptions struct {
 }
 
 func tsInspectOptionsFromEnv() tsInspectOptions {
-	maxPackets := getenvInt("PLEX_TUNER_TS_INSPECT_MAX_PACKETS", 12000)
+	maxPackets := getenvInt("IPTV_TUNERR_TS_INSPECT_MAX_PACKETS", 12000)
 	if maxPackets <= 0 {
 		maxPackets = 12000
 	}
 	return tsInspectOptions{
-		Enabled:      getenvBool("PLEX_TUNER_TS_INSPECT", false),
+		Enabled:      getenvBool("IPTV_TUNERR_TS_INSPECT", false),
 		MaxPackets:   maxPackets,
-		ChannelMatch: strings.ToLower(strings.TrimSpace(os.Getenv("PLEX_TUNER_TS_INSPECT_CHANNEL"))),
+		ChannelMatch: strings.ToLower(strings.TrimSpace(os.Getenv("IPTV_TUNERR_TS_INSPECT_CHANNEL"))),
 	}
 }
 

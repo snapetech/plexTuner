@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/plextuner/plex-tuner/internal/catalog"
-	"github.com/plextuner/plex-tuner/internal/httpclient"
+	"github.com/iptvtunerr/iptv-tunerr/internal/catalog"
+	"github.com/iptvtunerr/iptv-tunerr/internal/httpclient"
 )
 
 // IndexFromPlayerAPI indexes live (and optionally VOD/series) from Xtream player_api.
@@ -58,7 +58,7 @@ func doGetWithRetry(ctx context.Context, client *http.Client, u string) (*http.R
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "PlexTuner/1.0")
+	req.Header.Set("User-Agent", "IptvTunerr/1.0")
 	return httpclient.DoWithRetry(ctx, client, req, httpclient.DefaultRetryPolicy)
 }
 
@@ -103,7 +103,7 @@ func validateStreamBase(ctx context.Context, base string, client *http.Client) b
 	if err != nil {
 		return false
 	}
-	req.Header.Set("User-Agent", "PlexTuner/1.0")
+	req.Header.Set("User-Agent", "IptvTunerr/1.0")
 	resp, err := client.Do(req)
 	if err != nil {
 		return false

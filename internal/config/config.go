@@ -13,8 +13,8 @@ import (
 )
 
 // ProviderEntry is a single Xtream/M3U provider with its own base URL and credentials.
-// Provider 1 is loaded from PLEX_TUNER_PROVIDER_URL / _USER / _PASS.
-// Providers 2+ are loaded from PLEX_TUNER_PROVIDER_URL_2, _USER_2, _PASS_2, etc.
+// Provider 1 is loaded from IPTV_TUNERR_PROVIDER_URL / _USER / _PASS.
+// Providers 2+ are loaded from IPTV_TUNERR_PROVIDER_URL_2, _USER_2, _PASS_2, etc.
 // All entries are available via Config.ProviderEntries().
 type ProviderEntry struct {
 	BaseURL string
@@ -33,8 +33,8 @@ type Config struct {
 
 	// Paths
 	MountPoint      string // e.g. /mnt/vodfs
-	CacheDir        string // e.g. /var/cache/plextuner
-	CatalogPath     string // e.g. /var/lib/plextuner/catalog.json
+	CacheDir        string // e.g. /var/cache/iptvtunerr
+	CatalogPath     string // e.g. /var/lib/iptvtunerr/catalog.json
 	VODFSAllowOther bool   // Linux only: mount VODFS with FUSE allow_other (needed for some Plex/k8s hostPath setups)
 
 	// Live tuner
@@ -55,7 +55,7 @@ type Config struct {
 	EpgPruneUnlinked bool
 	// Provider ingest policy: when true, reject any provider URL that is Cloudflare-proxied.
 	// The ranker will skip CF URLs and try alternates; if all URLs are CF-proxied, ingest is
-	// blocked with an alert log. Off by default. Enable with PLEX_TUNER_BLOCK_CF_PROVIDERS=true.
+	// blocked with an alert log. Off by default. Enable with IPTV_TUNERR_BLOCK_CF_PROVIDERS=true.
 	BlockCFProviders bool
 	// when true, abort an HLS stream immediately if a segment fetch is redirected to
 	// the Cloudflare abuse page (cloudflare-terms-of-service-abuse.com).
@@ -65,7 +65,7 @@ type Config struct {
 	// whose stream URLs are removed from the catalog at index time.
 	// A channel whose every StreamURL matches a blocked host is dropped entirely.
 	// Suffix-matching: "cdngold.me" also matches "pod17546.cdngold.me".
-	// Enable with PLEX_TUNER_STRIP_STREAM_HOSTS=cdngold.me
+	// Enable with IPTV_TUNERR_STRIP_STREAM_HOSTS=cdngold.me
 	StripStreamHosts []string
 
 	// Stream smoketest: when true, at index time probe each channel's primary URL and drop failures.
@@ -86,50 +86,62 @@ type Config struct {
 	HDHRDiscoverPort int
 	HDHRControlPort  int
 	HDHRFriendlyName string
+
+	// Emby registration: IPTV_TUNERR_EMBY_HOST / IPTV_TUNERR_EMBY_TOKEN
+	EmbyHost  string
+	EmbyToken string
+
+	// Jellyfin registration: IPTV_TUNERR_JELLYFIN_HOST / IPTV_TUNERR_JELLYFIN_TOKEN
+	JellyfinHost  string
+	JellyfinToken string
 }
 
 // Load reads config from environment. Call LoadEnvFile(".env") before Load() to use a .env file.
-// If ProviderUser or ProviderPass are empty, Load tries PLEX_TUNER_SUBSCRIPTION_FILE (or default path) with "Username:" / "Password:" lines.
+// If ProviderUser or ProviderPass are empty, Load tries IPTV_TUNERR_SUBSCRIPTION_FILE (or default path) with "Username:" / "Password:" lines.
 func Load() *Config {
 	c := &Config{
-		ProviderBaseURL:      getEnvURL("PLEX_TUNER_PROVIDER_URL"),
-		ProviderUser:         os.Getenv("PLEX_TUNER_PROVIDER_USER"),
-		ProviderPass:         os.Getenv("PLEX_TUNER_PROVIDER_PASS"),
-		M3UURL:               getEnvURL("PLEX_TUNER_M3U_URL"),
-		MountPoint:           getEnv("PLEX_TUNER_MOUNT", "/mnt/vodfs"),
-		CacheDir:             getEnv("PLEX_TUNER_CACHE", "/var/cache/plextuner"),
-		CatalogPath:          getEnv("PLEX_TUNER_CATALOG", "./catalog.json"),
-		VODFSAllowOther:      getEnvBool("PLEX_TUNER_VODFS_ALLOW_OTHER", false),
-		TunerCount:           getEnvInt("PLEX_TUNER_TUNER_COUNT", 2),
-		LineupMaxChannels:    getEnvInt("PLEX_TUNER_LINEUP_MAX_CHANNELS", 480),
-		GuideNumberOffset:    getEnvInt("PLEX_TUNER_GUIDE_NUMBER_OFFSET", 0),
-		BaseURL:              os.Getenv("PLEX_TUNER_BASE_URL"),
-		DeviceID:             getEnv("PLEX_TUNER_DEVICE_ID", "plextuner01"),
-		FriendlyName:         os.Getenv("PLEX_TUNER_FRIENDLY_NAME"),
-		StreamBufferBytes:    getEnvIntOrAuto("PLEX_TUNER_STREAM_BUFFER_BYTES", -1),
-		StreamTranscodeMode:  getEnvTranscodeMode("PLEX_TUNER_STREAM_TRANSCODE", "off"),
-		XMLTVURL:             getEnvURL("PLEX_TUNER_XMLTV_URL"),
-		XMLTVTimeout:         getEnvDuration("PLEX_TUNER_XMLTV_TIMEOUT", 45*time.Second),
-		LiveEPGOnly:          getEnvBool("PLEX_TUNER_LIVE_EPG_ONLY", false),
-		LiveOnly:             getEnvBool("PLEX_TUNER_LIVE_ONLY", false),
-		EpgPruneUnlinked:     getEnvBool("PLEX_TUNER_EPG_PRUNE_UNLINKED", false),
-		BlockCFProviders:     getEnvBool("PLEX_TUNER_BLOCK_CF_PROVIDERS", false),
-		FetchCFReject:        getEnvBool("PLEX_TUNER_FETCH_CF_REJECT", false),
-		StripStreamHosts:     getEnvHosts("PLEX_TUNER_STRIP_STREAM_HOSTS"),
-		SmoketestEnabled:     getEnvBool("PLEX_TUNER_SMOKETEST_ENABLED", false),
-		SmoketestTimeout:     getEnvDuration("PLEX_TUNER_SMOKETEST_TIMEOUT", 8*time.Second),
-		SmoketestConcurrency: getEnvInt("PLEX_TUNER_SMOKETEST_CONCURRENCY", 10),
-		SmoketestMaxChannels: getEnvInt("PLEX_TUNER_SMOKETEST_MAX_CHANNELS", 0),
-		SmoketestMaxDuration: getEnvDuration("PLEX_TUNER_SMOKETEST_MAX_DURATION", 5*time.Minute),
-		SmoketestCacheFile:   os.Getenv("PLEX_TUNER_SMOKETEST_CACHE_FILE"),
-		SmoketestCacheTTL:    getEnvDuration("PLEX_TUNER_SMOKETEST_CACHE_TTL", 4*time.Hour),
-		XMLTVCacheTTL:        getEnvDuration("PLEX_TUNER_XMLTV_CACHE_TTL", 10*time.Minute),
-		HDHREnabled:          getEnvBool("PLEX_TUNER_HDHR_NETWORK_MODE", false),
-		HDHRDeviceID:         getEnvUint32("PLEX_TUNER_HDHR_DEVICE_ID", 0x12345678),
-		HDHRTunerCount:       getEnvInt("PLEX_TUNER_HDHR_TUNER_COUNT", 2),
-		HDHRDiscoverPort:     getEnvInt("PLEX_TUNER_HDHR_DISCOVER_PORT", 65001),
-		HDHRControlPort:      getEnvInt("PLEX_TUNER_HDHR_CONTROL_PORT", 65001),
-		HDHRFriendlyName:     os.Getenv("PLEX_TUNER_HDHR_FRIENDLY_NAME"),
+		ProviderBaseURL:      getEnvURL("IPTV_TUNERR_PROVIDER_URL"),
+		ProviderUser:         os.Getenv("IPTV_TUNERR_PROVIDER_USER"),
+		ProviderPass:         os.Getenv("IPTV_TUNERR_PROVIDER_PASS"),
+		M3UURL:               getEnvURL("IPTV_TUNERR_M3U_URL"),
+		MountPoint:           getEnv("IPTV_TUNERR_MOUNT", "/mnt/vodfs"),
+		CacheDir:             getEnv("IPTV_TUNERR_CACHE", "/var/cache/iptvtunerr"),
+		CatalogPath:          getEnv("IPTV_TUNERR_CATALOG", "./catalog.json"),
+		VODFSAllowOther:      getEnvBool("IPTV_TUNERR_VODFS_ALLOW_OTHER", false),
+		TunerCount:           getEnvInt("IPTV_TUNERR_TUNER_COUNT", 2),
+		LineupMaxChannels:    getEnvInt("IPTV_TUNERR_LINEUP_MAX_CHANNELS", 480),
+		GuideNumberOffset:    getEnvInt("IPTV_TUNERR_GUIDE_NUMBER_OFFSET", 0),
+		BaseURL:              os.Getenv("IPTV_TUNERR_BASE_URL"),
+		DeviceID:             getEnv("IPTV_TUNERR_DEVICE_ID", "iptvtunerr01"),
+		FriendlyName:         os.Getenv("IPTV_TUNERR_FRIENDLY_NAME"),
+		StreamBufferBytes:    getEnvIntOrAuto("IPTV_TUNERR_STREAM_BUFFER_BYTES", -1),
+		StreamTranscodeMode:  getEnvTranscodeMode("IPTV_TUNERR_STREAM_TRANSCODE", "off"),
+		XMLTVURL:             getEnvURL("IPTV_TUNERR_XMLTV_URL"),
+		XMLTVTimeout:         getEnvDuration("IPTV_TUNERR_XMLTV_TIMEOUT", 45*time.Second),
+		LiveEPGOnly:          getEnvBool("IPTV_TUNERR_LIVE_EPG_ONLY", false),
+		LiveOnly:             getEnvBool("IPTV_TUNERR_LIVE_ONLY", false),
+		EpgPruneUnlinked:     getEnvBool("IPTV_TUNERR_EPG_PRUNE_UNLINKED", false),
+		BlockCFProviders:     getEnvBool("IPTV_TUNERR_BLOCK_CF_PROVIDERS", false),
+		FetchCFReject:        getEnvBool("IPTV_TUNERR_FETCH_CF_REJECT", false),
+		StripStreamHosts:     getEnvHosts("IPTV_TUNERR_STRIP_STREAM_HOSTS"),
+		SmoketestEnabled:     getEnvBool("IPTV_TUNERR_SMOKETEST_ENABLED", false),
+		SmoketestTimeout:     getEnvDuration("IPTV_TUNERR_SMOKETEST_TIMEOUT", 8*time.Second),
+		SmoketestConcurrency: getEnvInt("IPTV_TUNERR_SMOKETEST_CONCURRENCY", 10),
+		SmoketestMaxChannels: getEnvInt("IPTV_TUNERR_SMOKETEST_MAX_CHANNELS", 0),
+		SmoketestMaxDuration: getEnvDuration("IPTV_TUNERR_SMOKETEST_MAX_DURATION", 5*time.Minute),
+		SmoketestCacheFile:   os.Getenv("IPTV_TUNERR_SMOKETEST_CACHE_FILE"),
+		SmoketestCacheTTL:    getEnvDuration("IPTV_TUNERR_SMOKETEST_CACHE_TTL", 4*time.Hour),
+		XMLTVCacheTTL:        getEnvDuration("IPTV_TUNERR_XMLTV_CACHE_TTL", 10*time.Minute),
+		HDHREnabled:          getEnvBool("IPTV_TUNERR_HDHR_NETWORK_MODE", false),
+		HDHRDeviceID:         getEnvUint32("IPTV_TUNERR_HDHR_DEVICE_ID", 0x12345678),
+		HDHRTunerCount:       getEnvInt("IPTV_TUNERR_HDHR_TUNER_COUNT", 2),
+		HDHRDiscoverPort:     getEnvInt("IPTV_TUNERR_HDHR_DISCOVER_PORT", 65001),
+		HDHRControlPort:      getEnvInt("IPTV_TUNERR_HDHR_CONTROL_PORT", 65001),
+		HDHRFriendlyName:     os.Getenv("IPTV_TUNERR_HDHR_FRIENDLY_NAME"),
+		EmbyHost:             getEnvURL("IPTV_TUNERR_EMBY_HOST"),
+		EmbyToken:            os.Getenv("IPTV_TUNERR_EMBY_TOKEN"),
+		JellyfinHost:         getEnvURL("IPTV_TUNERR_JELLYFIN_HOST"),
+		JellyfinToken:        os.Getenv("IPTV_TUNERR_JELLYFIN_TOKEN"),
 	}
 	if c.TunerCount <= 0 {
 		c.TunerCount = 2
@@ -145,7 +157,7 @@ func Load() *Config {
 	}
 	// Subscription file fallback (same pattern as k3s update-iptv-m3u.sh / iptv.subscription.2026.txt)
 	if c.ProviderUser == "" || c.ProviderPass == "" {
-		if user, pass, err := readSubscriptionFile(getEnv("PLEX_TUNER_SUBSCRIPTION_FILE", "")); err == nil {
+		if user, pass, err := readSubscriptionFile(getEnv("IPTV_TUNERR_SUBSCRIPTION_FILE", "")); err == nil {
 			if c.ProviderUser == "" {
 				c.ProviderUser = user
 			}
@@ -217,8 +229,8 @@ func (c *Config) M3UURLOrBuild() string {
 	return ""
 }
 
-// M3UURLsOrBuild returns a list of M3U URLs to probe: single PLEX_TUNER_M3U_URL if set,
-// otherwise one URL per PLEX_TUNER_PROVIDER_URLS (or single ProviderBaseURL) with get.php.
+// M3UURLsOrBuild returns a list of M3U URLs to probe: single IPTV_TUNERR_M3U_URL if set,
+// otherwise one URL per IPTV_TUNERR_PROVIDER_URLS (or single ProviderBaseURL) with get.php.
 func (c *Config) M3UURLsOrBuild() []string {
 	if c.M3UURL != "" {
 		return []string{c.M3UURL}
@@ -239,10 +251,10 @@ func (c *Config) M3UURLsOrBuild() []string {
 	return out
 }
 
-// ProviderURLs returns all base URLs to try (PLEX_TUNER_PROVIDER_URLS comma-separated, or single PLEX_TUNER_PROVIDER_URL).
+// ProviderURLs returns all base URLs to try (IPTV_TUNERR_PROVIDER_URLS comma-separated, or single IPTV_TUNERR_PROVIDER_URL).
 // Requires explicit URL(s); no default host list.
 func (c *Config) ProviderURLs() []string {
-	s := os.Getenv("PLEX_TUNER_PROVIDER_URLS")
+	s := os.Getenv("IPTV_TUNERR_PROVIDER_URLS")
 	if s != "" {
 		parts := strings.Split(s, ",")
 		out := make([]string, 0, len(parts))
@@ -263,26 +275,26 @@ func (c *Config) ProviderURLs() []string {
 }
 
 // ProviderEntries returns all configured providers in priority order.
-// Provider 1 comes from PLEX_TUNER_PROVIDER_URL(S) / _USER / _PASS (already loaded into Config fields).
-// Providers 2..N come from PLEX_TUNER_PROVIDER_URL_2/_USER_2/_PASS_2, _URL_3/_USER_3/_PASS_3, etc.
+// Provider 1 comes from IPTV_TUNERR_PROVIDER_URL(S) / _USER / _PASS (already loaded into Config fields).
+// Providers 2..N come from IPTV_TUNERR_PROVIDER_URL_2/_USER_2/_PASS_2, _URL_3/_USER_3/_PASS_3, etc.
 // Scanning stops at the first missing _URL_N. Entries with no BaseURL are skipped.
 func (c *Config) ProviderEntries() []ProviderEntry {
 	var out []ProviderEntry
-	// Entry 1: from the primary fields (PLEX_TUNER_PROVIDER_URL(S) already handled by ProviderURLs).
+	// Entry 1: from the primary fields (IPTV_TUNERR_PROVIDER_URL(S) already handled by ProviderURLs).
 	for _, base := range c.ProviderURLs() {
 		if base != "" {
 			out = append(out, ProviderEntry{BaseURL: base, User: c.ProviderUser, Pass: c.ProviderPass})
 		}
 	}
-	// Entries 2..N: PLEX_TUNER_PROVIDER_URL_N / _USER_N / _PASS_N
+	// Entries 2..N: IPTV_TUNERR_PROVIDER_URL_N / _USER_N / _PASS_N
 	for n := 2; ; n++ {
 		suffix := fmt.Sprintf("_%d", n)
-		base := getEnvURL("PLEX_TUNER_PROVIDER_URL" + suffix)
+		base := getEnvURL("IPTV_TUNERR_PROVIDER_URL" + suffix)
 		if base == "" {
 			break
 		}
-		user := os.Getenv("PLEX_TUNER_PROVIDER_USER" + suffix)
-		pass := os.Getenv("PLEX_TUNER_PROVIDER_PASS" + suffix)
+		user := os.Getenv("IPTV_TUNERR_PROVIDER_USER" + suffix)
+		pass := os.Getenv("IPTV_TUNERR_PROVIDER_PASS" + suffix)
 		// Fall back to primary creds if per-entry creds are not set.
 		if user == "" {
 			user = c.ProviderUser
@@ -323,7 +335,7 @@ func getEnvIntOrAuto(key string, defaultVal int) int {
 	return defaultVal
 }
 
-// getEnvTranscodeMode returns "off", "on", "auto", or "auto_cached" from PLEX_TUNER_STREAM_TRANSCODE.
+// getEnvTranscodeMode returns "off", "on", "auto", or "auto_cached" from IPTV_TUNERR_STREAM_TRANSCODE.
 func getEnvTranscodeMode(key string, defaultVal string) string {
 	v := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
 	if v == "auto" {

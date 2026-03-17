@@ -7,7 +7,7 @@ tags: [testing, handoff, checklist, release]
 
 # Tester handoff checklist
 
-Use this when sending Plex Tuner test builds to other testers.
+Use this when sending IPTV Tunerr test builds to other testers.
 
 ## Build and stage tester bundle
 
@@ -35,8 +35,8 @@ ls dist/test-releases/<version>/packages/SHA256SUMS.txt
 - `docs/testing-and-supervisor-config.md`
 
 4. Confirm examples are included
-- `examples/plextuner-supervisor-multi.example.json`
-- `examples/plextuner-supervisor-singlepod.example.yaml`
+- `examples/iptvtunerr-supervisor-multi.example.json`
+- `examples/iptvtunerr-supervisor-singlepod.example.yaml`
 
 ## If using a tag-based release (recommended)
 
@@ -75,14 +75,14 @@ Tell testers to validate:
 1. `serve` smoke
 
 ```bash
-./plex-tuner serve -addr :5004 -catalog ./catalog.json
+./iptv-tunerr serve -addr :5004 -catalog ./catalog.json
 curl -s http://127.0.0.1:5004/discover.json
 ```
 
 2. `supervise` smoke (small config)
 
 ```bash
-./plex-tuner supervise -config ./supervisor.json
+./iptv-tunerr supervise -config ./supervisor.json
 curl -s http://127.0.0.1:5101/lineup.json
 ```
 

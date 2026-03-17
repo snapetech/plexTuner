@@ -1,6 +1,6 @@
-# Plex Tuner
+# IPTV Tunerr
 
-Plex Tuner bridges IPTV feeds into Plex Live TV & DVR.
+IPTV Tunerr bridges IPTV feeds into Plex Live TV & DVR.
 
 It supports two major integration modes with Plex:
 - **HDHR mode**: act like an HDHomeRun tuner (`discover.json`, `lineup.json`, `guide.xml`, `/stream/...`) so Plex can use the normal Live TV wizard.
@@ -10,7 +10,7 @@ It also supports running many virtual tuners from one process (`supervise`) and 
 
 No web UI. Configuration is CLI + env vars.
 
-Source: <https://github.com/snapetech/plexTuner>
+Source: <https://github.com/snapetech/iptvTunerr>
 
 ## What This App Does
 
@@ -26,9 +26,9 @@ Source: <https://github.com/snapetech/plexTuner>
 
 ## 1. HDHR Functions (Wizard-Compatible)
 
-Use this when you want Plex to discover/add Plex Tuner as if it were an HDHomeRun tuner.
+Use this when you want Plex to discover/add IPTV Tunerr as if it were an HDHomeRun tuner.
 
-Plex Tuner provides:
+IPTV Tunerr provides:
 - `GET /discover.json`
 - `GET /lineup.json`
 - `GET /lineup_status.json`
@@ -74,7 +74,7 @@ Reference (authoritative for Plex-side manipulation details):
 - **XMLTV normalization**: language/script preference options (optional)
 - **Multi-DVR safety**: per-instance guide number offsets (avoid Plex guide collisions)
 - **Built-in Plex stale-session reaper**: optional background worker (poll + SSE + lease)
-- **Supervisor mode**: many child tuner instances from one JSON config (`plex-tuner supervise`)
+- **Supervisor mode**: many child tuner instances from one JSON config (`iptv-tunerr supervise`)
 - **VODFS (optional)**: Linux-only FUSE mount for VOD catalog browsing
 
 Feature reference:
@@ -84,12 +84,12 @@ Feature reference:
 
 ## 1. Single Tuner (Simple)
 
-Run one Plex Tuner instance for a single HDHR-style tuner endpoint.
+Run one IPTV Tunerr instance for a single HDHR-style tuner endpoint.
 
 ```bash
-plex-tuner run
+iptv-tunerr run
 # or
-plex-tuner serve -addr :5004
+iptv-tunerr serve -addr :5004
 ```
 
 ## 2. Multi-Instance Supervisor (Single App / Single Container)
@@ -97,32 +97,32 @@ plex-tuner serve -addr :5004
 Run many virtual tuners (for example category DVR children + one HDHR wizard child) from one process:
 
 ```bash
-plex-tuner supervise -config /path/to/supervisor.json
+iptv-tunerr supervise -config /path/to/supervisor.json
 ```
 
 Examples:
-- [`k8s/plextuner-supervisor-multi.example.json`](k8s/plextuner-supervisor-multi.example.json)
-- [`k8s/plextuner-supervisor-singlepod.example.yaml`](k8s/plextuner-supervisor-singlepod.example.yaml)
+- [`k8s/iptvtunerr-supervisor-multi.example.json`](k8s/iptvtunerr-supervisor-multi.example.json)
+- [`k8s/iptvtunerr-supervisor-singlepod.example.yaml`](k8s/iptvtunerr-supervisor-singlepod.example.yaml)
 
 ## Quick Start (HDHR / Wizard Path)
 
 1. Build
 
 ```bash
-go build -o plex-tuner ./cmd/plex-tuner
+go build -o iptv-tunerr ./cmd/iptv-tunerr
 ```
 
 2. Configure (`.env`)
 
 Set at least:
-- `PLEX_TUNER_PROVIDER_USER` / `PLEX_TUNER_PROVIDER_PASS` (or subscription file)
-- `PLEX_TUNER_PROVIDER_URL` or `PLEX_TUNER_PROVIDER_URLS`
-- `PLEX_TUNER_BASE_URL=http://<host>:5004`
+- `IPTV_TUNERR_PROVIDER_USER` / `IPTV_TUNERR_PROVIDER_PASS` (or subscription file)
+- `IPTV_TUNERR_PROVIDER_URL` or `IPTV_TUNERR_PROVIDER_URLS`
+- `IPTV_TUNERR_BASE_URL=http://<host>:5004`
 
 3. Run
 
 ```bash
-./plex-tuner run
+./iptv-tunerr run
 ```
 
 4. Add in Plex (wizard)
@@ -183,7 +183,7 @@ Supported:
 VOD library injection is not the same as Live TV DVR injection.
 
 Current supported flow:
-1. mount VODFS (`plex-tuner mount`) on a path the Plex server can see
+1. mount VODFS (`iptv-tunerr mount`) on a path the Plex server can see
 2. register libraries via `plex-vod-register`
 
 By default, `plex-vod-register` creates/reuses:
@@ -197,9 +197,9 @@ Optional one-sided registration:
 Example:
 
 ```bash
-plex-tuner mount -catalog ./catalog.json -mount /srv/plextuner-vodfs
-plex-tuner plex-vod-register \
-  -mount /srv/plextuner-vodfs \
+iptv-tunerr mount -catalog ./catalog.json -mount /srv/iptvtunerr-vodfs
+iptv-tunerr plex-vod-register \
+  -mount /srv/iptvtunerr-vodfs \
   -plex-url http://127.0.0.1:32400 \
   -token "$PLEX_TOKEN"
 ```
@@ -215,10 +215,10 @@ Windows builds include the HDHR network-mode code path, but native Windows valid
 ## Recent Advanced Features / Ops Notes
 
 - **EPG long-tail tooling (Phase 1):**
-  - `plex-tuner epg-link-report` compares `catalog.json` live channels vs XMLTV and reports deterministic matches (`tvg-id`, alias exact, normalized-name exact unique)
+  - `iptv-tunerr epg-link-report` compares `catalog.json` live channels vs XMLTV and reports deterministic matches (`tvg-id`, alias exact, normalized-name exact unique)
   - intended for safely improving the large unlinked-channel tail before auto-applying matches
 - **Injected DVR overflow buckets:**
-  - runtime lineup sharding envs `PLEX_TUNER_LINEUP_SKIP` / `PLEX_TUNER_LINEUP_TAKE`
+  - runtime lineup sharding envs `IPTV_TUNERR_LINEUP_SKIP` / `IPTV_TUNERR_LINEUP_TAKE`
   - supervisor manifest generator can auto-create `category2/category3/...` children from confirmed linked counts (`--category-counts-json`)
 - **Live TV provider label proxy tooling (experimental/client-dependent):**
   - server-side `/media/providers` and provider-endpoint rewrite proxy is available for per-source labels in clients that honor provider metadata
@@ -243,13 +243,13 @@ Docs:
 
 ## Troubleshooting / Runbooks
 
-- [`docs/runbooks/plextuner-troubleshooting.md`](docs/runbooks/plextuner-troubleshooting.md)
+- [`docs/runbooks/iptvtunerr-troubleshooting.md`](docs/runbooks/iptvtunerr-troubleshooting.md)
 - [`docs/runbooks/plex-hidden-live-grab-recovery.md`](docs/runbooks/plex-hidden-live-grab-recovery.md)
 - [`docs/runbooks/plex-in-cluster.md`](docs/runbooks/plex-in-cluster.md)
 
 ## Repo Layout (High-Value Paths)
 
-- `cmd/plex-tuner/` — CLI entrypoint
+- `cmd/iptv-tunerr/` — CLI entrypoint
 - `internal/tuner/` — HDHR endpoints, XMLTV, streaming gateway, Plex reaper
 - `internal/supervisor/` — multi-instance supervisor runtime
 - `internal/plex/` — Plex registration helpers (API/DB-assisted flows)

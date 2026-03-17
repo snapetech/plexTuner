@@ -1,4 +1,4 @@
-module github.com/plextuner/plex-tuner
+module github.com/iptvtunerr/iptv-tunerr
 
 go 1.24.0
 

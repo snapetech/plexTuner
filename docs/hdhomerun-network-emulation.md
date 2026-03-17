@@ -113,7 +113,7 @@ type Device struct {
     DeviceID     uint32   // e.g., 0x12345678
     TunerCount   int      // e.g., 2
     DeviceType   uint32   // 0x00000001 = tuner
-    FriendlyName string   // e.g., "PlexTuner"
+    FriendlyName string   // e.g., "IptvTunerr"
     BaseURL      string   // http://192.168.1.x:5004
     LineupURL    string   // http://192.168.1.x:5004/lineup.json
 }
@@ -123,14 +123,14 @@ type Device struct {
 
 ```bash
 # Enable HDHomeRun network mode (disables HTTP tuner)
-PLEX_TUNER_HDHR_NETWORK_MODE=true
+IPTV_TUNERR_HDHR_NETWORK_MODE=true
 
 # Device ID (auto-generated if not set)
-PLEX_TUNER_HDHR_DEVICE_ID=12345678
+IPTV_TUNERR_HDHR_DEVICE_ID=12345678
 
 # Ports (defaults shown)
-PLEX_TUNER_HDHR_DISCOVER_PORT=65001
-PLEX_TUNER_HDHR_CONTROL_PORT=65001
+IPTV_TUNERR_HDHR_DISCOVER_PORT=65001
+IPTV_TUNERR_HDHR_CONTROL_PORT=65001
 ```
 
 ## Properties to Support

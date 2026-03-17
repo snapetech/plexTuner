@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Deploy Plex Tuner HDHR to the cluster: build image, load (kind/k3d), apply, wait.
+# Deploy IPTV Tunerr HDHR to the cluster: build image, load (kind/k3d), apply, wait.
 # Usage: from repo root, ./k8s/deploy.sh [--no-build] [--no-load] [--static]
-# Optional env: MANIFEST=/path/to/manifest.yaml (defaults to k8s/plextuner-hdhr-test.yaml)
+# Optional env: MANIFEST=/path/to/manifest.yaml (defaults to k8s/iptvtunerr-hdhr-test.yaml)
 # Requires: docker, kubectl, cluster with plex namespace and (optionally) Ingress.
 
 set -e
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
-IMAGE="${IMAGE:-plex-tuner:hdhr-test}"
+IMAGE="${IMAGE:-iptv-tunerr:hdhr-test}"
 NAMESPACE="${NAMESPACE:-plex}"
-MANIFEST="${MANIFEST:-k8s/plextuner-hdhr-test.yaml}"
+MANIFEST="${MANIFEST:-k8s/iptvtunerr-hdhr-test.yaml}"
 
 do_build=1
 do_load=1
@@ -27,7 +27,7 @@ echo "[deploy] Image: $IMAGE  Namespace: $NAMESPACE"
 if [ "$do_build" -eq 1 ]; then
   if [ "$use_static" -eq 1 ]; then
     echo "[deploy] Building binary and image (Dockerfile.static.scratch, no network in Docker) ..."
-    CGO_ENABLED=0 go build -o plex-tuner ./cmd/plex-tuner || exit 1
+    CGO_ENABLED=0 go build -o iptv-tunerr ./cmd/iptv-tunerr || exit 1
     docker build -f Dockerfile.static.scratch -t "$IMAGE" .
   else
     echo "[deploy] Building Docker image ..."
@@ -54,20 +54,20 @@ kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -
 echo "[deploy] Applying $MANIFEST ..."
 kubectl apply -f "$MANIFEST"
 
-echo "[deploy] Waiting for deployment plextuner-hdhr-test ..."
-kubectl -n "$NAMESPACE" rollout status deployment/plextuner-hdhr-test --timeout=300s
+echo "[deploy] Waiting for deployment iptvtunerr-hdhr-test ..."
+kubectl -n "$NAMESPACE" rollout status deployment/iptvtunerr-hdhr-test --timeout=300s
 
 echo ""
-echo "--- Plex Tuner HDHR is up ---"
-echo "  Pods:   kubectl -n $NAMESPACE get pods -l app=plextuner-hdhr-test"
-echo "  Logs:   kubectl -n $NAMESPACE logs -l app=plextuner-hdhr-test -f"
+echo "--- IPTV Tunerr HDHR is up ---"
+echo "  Pods:   kubectl -n $NAMESPACE get pods -l app=iptvtunerr-hdhr-test"
+echo "  Logs:   kubectl -n $NAMESPACE logs -l app=iptvtunerr-hdhr-test -f"
 echo ""
-echo "  If using Ingress (plextuner-hdhr.plex.home):"
-echo "    curl -s -o /dev/null -w '%{http_code}' http://plextuner-hdhr.plex.home/discover.json   # expect 200"
+echo "  If using Ingress (iptvtunerr-hdhr.plex.home):"
+echo "    curl -s -o /dev/null -w '%{http_code}' http://iptvtunerr-hdhr.plex.home/discover.json   # expect 200"
 echo "  NodePort fallback: <node-ip>:30004"
 echo "    curl -s http://<node-ip>:30004/discover.json"
 echo ""
 echo "  Plex: Settings → Live TV & DVR → Set up"
-echo "    Device/Base URL: http://plextuner-hdhr.plex.home"
-echo "    XMLTV guide URL: http://plextuner-hdhr.plex.home/guide.xml"
+echo "    Device/Base URL: http://iptvtunerr-hdhr.plex.home"
+echo "    XMLTV guide URL: http://iptvtunerr-hdhr.plex.home/guide.xml"
 echo ""

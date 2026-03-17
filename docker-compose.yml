@@ -1,12 +1,12 @@
-# Plex Tuner — run without Kubernetes.
-# 1. Copy .env.example to .env and set provider credentials + PLEX_TUNER_BASE_URL (e.g. http://YOUR_HOST_IP:5004).
+# IPTV Tunerr — run without Kubernetes.
+# 1. Copy .env.example to .env and set provider credentials + IPTV_TUNERR_BASE_URL (e.g. http://YOUR_HOST_IP:5004).
 # 2. docker compose up -d
 # 3. Verify: curl -s -o /dev/null -w "%{http_code}" http://localhost:5004/discover.json  # expect 200
 
 services:
-  plextuner:
+  iptvtunerr:
     build: .
-    image: plex-tuner:local
+    image: iptv-tunerr:local
     ports:
       - "5004:5004"
     env_file: .env

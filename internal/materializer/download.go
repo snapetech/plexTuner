@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/plextuner/plex-tuner/internal/safeurl"
+	"github.com/iptvtunerr/iptv-tunerr/internal/safeurl"
 )
 
 const chunkSize = 1024 * 1024 // 1 MiB per range request

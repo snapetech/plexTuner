@@ -373,9 +373,9 @@ func filterChildBaseEnv(base []string) []string {
 
 func shouldDropChildInheritedEnv(key string) bool {
 	switch {
-	case strings.HasPrefix(key, "PLEX_TUNER_PLEX_SESSION_REAPER"):
+	case strings.HasPrefix(key, "IPTV_TUNERR_PLEX_SESSION_REAPER"):
 		return true
-	case key == "PLEX_TUNER_PMS_URL", key == "PLEX_TUNER_PMS_TOKEN":
+	case key == "IPTV_TUNERR_PMS_URL", key == "IPTV_TUNERR_PMS_TOKEN":
 		return true
 	default:
 		return false

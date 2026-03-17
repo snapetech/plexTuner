@@ -11,7 +11,7 @@ import (
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
-	"github.com/plextuner/plex-tuner/internal/catalog"
+	"github.com/iptvtunerr/iptv-tunerr/internal/catalog"
 )
 
 // TVDirNode lists show folders.

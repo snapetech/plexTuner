@@ -4,9 +4,9 @@ Generate a cutover mapping for injected category DVRs when migrating to the
 single-pod supervisor deployment.
 
 By default this assumes the current 13-pod category scheme uses:
-  http://plextuner-<category>.plex.svc:5004
+  http://iptvtunerr-<category>.plex.svc:5004
 
-and compares that to the per-child PLEX_TUNER_BASE_URL values in the supervisor
+and compares that to the per-child IPTV_TUNERR_BASE_URL values in the supervisor
 JSON config (excluding the HDHR child).
 """
 from __future__ import annotations
@@ -26,12 +26,12 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--config",
-        default="k8s/plextuner-supervisor-multi.example.json",
+        default="k8s/iptvtunerr-supervisor-multi.example.json",
         help="Supervisor JSON config",
     )
     ap.add_argument(
         "--old-uri-template",
-        default="http://plextuner-{category}.plex.svc:5004",
+        default="http://iptvtunerr-{category}.plex.svc:5004",
         help="Template for pre-supervisor injected DVR URIs",
     )
     ap.add_argument(
@@ -48,7 +48,7 @@ def main() -> int:
         if not name or name == "hdhr-main":
             continue
         env = inst.get("env") or {}
-        new_uri = (env.get("PLEX_TUNER_BASE_URL") or "").strip()
+        new_uri = (env.get("IPTV_TUNERR_BASE_URL") or "").strip()
         if not new_uri:
             continue
         old_uri = args.old_uri_template.format(category=name)
@@ -58,8 +58,8 @@ def main() -> int:
                 old_uri,
                 new_uri,
                 "no" if old_uri == new_uri else "yes",
-                (env.get("PLEX_TUNER_DEVICE_ID") or "").strip(),
-                (env.get("PLEX_TUNER_FRIENDLY_NAME") or "").strip(),
+                (env.get("IPTV_TUNERR_DEVICE_ID") or "").strip(),
+                (env.get("IPTV_TUNERR_FRIENDLY_NAME") or "").strip(),
             )
         )
 

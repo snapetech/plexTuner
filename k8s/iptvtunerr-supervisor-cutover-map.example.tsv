@@ -1,0 +1,14 @@
+# category	old_uri	new_uri	uri_changed	device_id	friendly_name
+bcastus	http://iptvtunerr-bcastus.plex.svc:5004	http://iptvtunerr-bcastus.plex.svc:5004	no	bcastus	bcastus
+newsus	http://iptvtunerr-newsus.plex.svc:5004	http://iptvtunerr-newsus.plex.svc:5004	no	newsus	newsus
+sportsa	http://iptvtunerr-sportsa.plex.svc:5004	http://iptvtunerr-sportsa.plex.svc:5004	no	sportsa	sportsa
+sportsb	http://iptvtunerr-sportsb.plex.svc:5004	http://iptvtunerr-sportsb.plex.svc:5004	no	sportsb	sportsb
+moviesprem	http://iptvtunerr-moviesprem.plex.svc:5004	http://iptvtunerr-moviesprem.plex.svc:5004	no	moviesprem	moviesprem
+generalent	http://iptvtunerr-generalent.plex.svc:5004	http://iptvtunerr-generalent.plex.svc:5004	no	generalent	generalent
+docsfam	http://iptvtunerr-docsfam.plex.svc:5004	http://iptvtunerr-docsfam.plex.svc:5004	no	docsfam	docsfam
+ukie	http://iptvtunerr-ukie.plex.svc:5004	http://iptvtunerr-ukie.plex.svc:5004	no	ukie	ukie
+eunordics	http://iptvtunerr-eunordics.plex.svc:5004	http://iptvtunerr-eunordics.plex.svc:5004	no	eunordics	eunordics
+eusouth	http://iptvtunerr-eusouth.plex.svc:5004	http://iptvtunerr-eusouth.plex.svc:5004	no	eusouth	eusouth
+eueast	http://iptvtunerr-eueast.plex.svc:5004	http://iptvtunerr-eueast.plex.svc:5004	no	eueast	eueast
+latin	http://iptvtunerr-latin.plex.svc:5004	http://iptvtunerr-latin.plex.svc:5004	no	latin	latin
+otherworld	http://iptvtunerr-otherworld.plex.svc:5004	http://iptvtunerr-otherworld.plex.svc:5004	no	otherworld	otherworld

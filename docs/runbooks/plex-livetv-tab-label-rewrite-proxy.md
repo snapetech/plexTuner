@@ -21,7 +21,7 @@ Plex can emit all Live TV providers with the same:
 
 This makes guide/source tabs indistinguishable even when the underlying DVRs are distinct.
 
-Plex Tuner can create distinct DVRs and guides, but Plex UI labels may still collapse.
+IPTV Tunerr can create distinct DVRs and guides, but Plex UI labels may still collapse.
 
 ## What the proxy rewrites
 
@@ -35,8 +35,8 @@ For `/media/providers` XML responses, it rewrites per-LiveTV `MediaProvider` ent
 Labels are derived from Plex `/livetv/dvrs` lineup titles.
 
 Examples:
-- `plextuner-newsus` -> `newsus`
-- `plextunerHDHR479` -> `plextunerHDHR479`
+- `iptvtunerr-newsus` -> `newsus`
+- `iptvtunerrHDHR479` -> `iptvtunerrHDHR479`
 
 ## Tool
 

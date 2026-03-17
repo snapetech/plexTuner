@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/plextuner/plex-tuner/internal/catalog"
+	"github.com/iptvtunerr/iptv-tunerr/internal/catalog"
 )
 
 // LineupItem is one channel in the HDHomeRun-style lineup.json.

@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/plextuner/plex-tuner/internal/catalog"
-	"github.com/plextuner/plex-tuner/internal/httpclient"
-	"github.com/plextuner/plex-tuner/internal/safeurl"
+	"github.com/iptvtunerr/iptv-tunerr/internal/catalog"
+	"github.com/iptvtunerr/iptv-tunerr/internal/httpclient"
+	"github.com/iptvtunerr/iptv-tunerr/internal/safeurl"
 )
 
 // ParseM3U fetches the M3U URL and parses it into live channels. Movies and series
@@ -23,7 +23,7 @@ func ParseM3U(m3uURL string, client *http.Client) (movies []catalog.Movie, serie
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	req.Header.Set("User-Agent", "PlexTuner/1.0")
+	req.Header.Set("User-Agent", "IptvTunerr/1.0")
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, nil, nil, err

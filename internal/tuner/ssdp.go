@@ -28,10 +28,10 @@ func (s *SSDP) Run(ctx context.Context) error {
 	log.Printf("SSDP listening on :1900")
 
 	if s.FriendlyName == "" {
-		s.FriendlyName = "Plex Tuner"
+		s.FriendlyName = "IPTV Tunerr"
 	}
 	if s.DeviceID == "" {
-		s.DeviceID = "plextuner01"
+		s.DeviceID = "iptvtunerr01"
 	}
 	if s.DeviceXMLURL == "" && s.BaseURL != "" {
 		s.DeviceXMLURL = joinDeviceXMLURL(s.BaseURL)
@@ -93,7 +93,7 @@ func StartSSDP(ctx context.Context, httpAddr, baseURL, deviceID string) error {
 	ssdp := &SSDP{
 		BaseURL:      baseURL,
 		DeviceID:     deviceID,
-		FriendlyName: "Plex Tuner",
+		FriendlyName: "IPTV Tunerr",
 		DeviceXMLURL: deviceXMLURL,
 		HTTPAddr:     httpAddr,
 	}

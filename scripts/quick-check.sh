@@ -4,6 +4,6 @@
 
 set -e
 cd "$(dirname "$0")/.."
-echo "[plex-tuner quick-check] ==> go test -count=1 ./..."
+echo "[iptv-tunerr quick-check] ==> go test -count=1 ./..."
 go test -count=1 ./...
-echo "[plex-tuner quick-check] ==> tests OK"
+echo "[iptv-tunerr quick-check] ==> tests OK"

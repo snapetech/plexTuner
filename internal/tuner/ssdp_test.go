@@ -65,7 +65,7 @@ func TestServer_deviceXML(t *testing.T) {
 		t.Fatalf("content-type: %q", got)
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "<friendlyName>Plex Tuner</friendlyName>") {
+	if !strings.Contains(body, "<friendlyName>IPTV Tunerr</friendlyName>") {
 		t.Fatalf("missing friendly name: %q", body)
 	}
 	if !strings.Contains(body, "<UDN>uuid:abc123</UDN>") {

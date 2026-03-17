@@ -5,7 +5,7 @@ status: stable
 tags: [features, reference]
 ---
 
-# Plex Tuner — Feature list
+# IPTV Tunerr — Feature list
 
 Canonical feature list for the current app.
 
@@ -73,11 +73,11 @@ See also:
 
 | Feature | Description |
 |---------|-------------|
-| **Wizard-safe cap** | `PLEX_TUNER_LINEUP_MAX_CHANNELS` support (commonly `479`) for Plex wizard stability. |
+| **Wizard-safe cap** | `IPTV_TUNERR_LINEUP_MAX_CHANNELS` support (commonly `479`) for Plex wizard stability. |
 | **Music/radio drop heuristic** | Optional pre-cap lineup filtering by name heuristic. |
 | **Regex exclusions** | Optional pre-cap channel exclusion regex. |
-| **Region/profile shaping** | Pre-cap channel ordering (`PLEX_TUNER_LINEUP_SHAPE`, `PLEX_TUNER_LINEUP_REGION_PROFILE`) to improve provider matching behavior. |
-| **Lineup sharding (overflow buckets)** | Post-filter/pre-cap slicing with `PLEX_TUNER_LINEUP_SKIP` / `PLEX_TUNER_LINEUP_TAKE` for `category2/category3/...` injected DVR overflow children. |
+| **Region/profile shaping** | Pre-cap channel ordering (`IPTV_TUNERR_LINEUP_SHAPE`, `IPTV_TUNERR_LINEUP_REGION_PROFILE`) to improve provider matching behavior. |
+| **Lineup sharding (overflow buckets)** | Post-filter/pre-cap slicing with `IPTV_TUNERR_LINEUP_SKIP` / `IPTV_TUNERR_LINEUP_TAKE` for `category2/category3/...` injected DVR overflow children. |
 
 ## 7. Plex integration workflows
 
@@ -96,7 +96,7 @@ Reference:
 
 | Feature | Description |
 |---------|-------------|
-| **`supervise` command** | Starts multiple child `plex-tuner` instances from one JSON config. |
+| **`supervise` command** | Starts multiple child `iptv-tunerr` instances from one JSON config. |
 | **Child env/args isolation** | Each child gets its own args/env/workdir while sharing one binary/container. |
 | **Restart/fail-fast controls** | Supervisor-level restart and fail-fast behavior. |
 | **Category + HDHR split** | Supports many injected DVR children plus one (or more) HDHR wizard children in parallel. |

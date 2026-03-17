@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/plextuner/plex-tuner/internal/catalog"
+	"github.com/iptvtunerr/iptv-tunerr/internal/catalog"
 )
 
 func TestGateway_stream_backwardCompat(t *testing.T) {

@@ -16,7 +16,7 @@ func TestLoadConfigAndMergeEnv(t *testing.T) {
     {
       "name": "newsus",
       "args": ["run","-mode=easy","-addr=:5004","-catalog=/data/newsus/catalog.json"],
-      "env": {"PLEX_TUNER_BASE_URL":"http://plextuner-newsus:5004","TZ":"UTC"}
+      "env": {"IPTV_TUNERR_BASE_URL":"http://iptvtunerr-newsus:5004","TZ":"UTC"}
     }
   ]
 }`), 0o644); err != nil {
@@ -59,14 +59,14 @@ func TestLoadConfigRejectsDuplicateNames(t *testing.T) {
 func TestMergedEnvStripsParentPlexReaperEnvForChildren(t *testing.T) {
 	base := []string{
 		"A=1",
-		"PLEX_TUNER_PLEX_SESSION_REAPER=1",
-		"PLEX_TUNER_PLEX_SESSION_REAPER_IDLE_S=15",
-		"PLEX_TUNER_PMS_URL=http://plex:32400",
-		"PLEX_TUNER_PMS_TOKEN=secret",
+		"IPTV_TUNERR_PLEX_SESSION_REAPER=1",
+		"IPTV_TUNERR_PLEX_SESSION_REAPER_IDLE_S=15",
+		"IPTV_TUNERR_PMS_URL=http://plex:32400",
+		"IPTV_TUNERR_PMS_TOKEN=secret",
 		"TZ=UTC",
 	}
 	out := mergedEnv(base, map[string]string{
-		"PLEX_TUNER_BASE_URL": "http://child:5004",
+		"IPTV_TUNERR_BASE_URL": "http://child:5004",
 		"TZ":                  "America/Regina",
 	})
 	got := map[string]string{}
@@ -76,13 +76,13 @@ func TestMergedEnvStripsParentPlexReaperEnvForChildren(t *testing.T) {
 			got[k] = v
 		}
 	}
-	if _, ok := got["PLEX_TUNER_PLEX_SESSION_REAPER"]; ok {
+	if _, ok := got["IPTV_TUNERR_PLEX_SESSION_REAPER"]; ok {
 		t.Fatalf("reaper env should not be inherited by children: %+v", got)
 	}
-	if _, ok := got["PLEX_TUNER_PMS_URL"]; ok {
+	if _, ok := got["IPTV_TUNERR_PMS_URL"]; ok {
 		t.Fatalf("pms url should not be inherited by children: %+v", got)
 	}
-	if got["A"] != "1" || got["PLEX_TUNER_BASE_URL"] != "http://child:5004" || got["TZ"] != "America/Regina" {
+	if got["A"] != "1" || got["IPTV_TUNERR_BASE_URL"] != "http://child:5004" || got["TZ"] != "America/Regina" {
 		t.Fatalf("unexpected merged env: %+v", got)
 	}
 }

@@ -156,8 +156,8 @@ func buildPMTPacket(cc uint8) [188]byte {
 //
 // Controlled by:
 //
-//	PLEX_TUNER_WEBSAFE_PROGRAM_KEEPALIVE=true     enable (default: false)
-//	PLEX_TUNER_WEBSAFE_PROGRAM_KEEPALIVE_MS=500   interval in ms (default: 500)
+//	IPTV_TUNERR_WEBSAFE_PROGRAM_KEEPALIVE=true     enable (default: false)
+//	IPTV_TUNERR_WEBSAFE_PROGRAM_KEEPALIVE_MS=500   interval in ms (default: 500)
 //
 // Returns a stop function (idempotent; blocks until the goroutine exits).
 func startPATMPTKeepalive(

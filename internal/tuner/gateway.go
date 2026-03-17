@@ -26,9 +26,9 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/plextuner/plex-tuner/internal/catalog"
-	"github.com/plextuner/plex-tuner/internal/httpclient"
-	"github.com/plextuner/plex-tuner/internal/safeurl"
+	"github.com/iptvtunerr/iptv-tunerr/internal/catalog"
+	"github.com/iptvtunerr/iptv-tunerr/internal/httpclient"
+	"github.com/iptvtunerr/iptv-tunerr/internal/safeurl"
 )
 
 // errCFBlock is returned by fetchAndWriteSegment when FetchCFReject is true and a segment
@@ -111,7 +111,7 @@ func getenvBool(key string, def bool) bool {
 
 func mpegTSFlagsWithOptionalInitialDiscontinuity() string {
 	flags := []string{"resend_headers", "pat_pmt_at_frames"}
-	if getenvBool("PLEX_TUNER_MPEGTS_INITIAL_DISCONTINUITY", true) {
+	if getenvBool("IPTV_TUNERR_MPEGTS_INITIAL_DISCONTINUITY", true) {
 		flags = append(flags, "initial_discontinuity")
 	}
 	return "+" + strings.Join(flags, "+")
@@ -153,13 +153,13 @@ func getenvInt64(key string, def int64) int64 {
 }
 
 func streamDebugOptionsFromEnv() streamDebugOptions {
-	teeBytes := getenvInt64("PLEX_TUNER_DEBUG_TEE_BYTES", 0)
-	teeDir := strings.TrimSpace(os.Getenv("PLEX_TUNER_DEBUG_TEE_DIR"))
+	teeBytes := getenvInt64("IPTV_TUNERR_DEBUG_TEE_BYTES", 0)
+	teeDir := strings.TrimSpace(os.Getenv("IPTV_TUNERR_DEBUG_TEE_DIR"))
 	if teeDir == "" {
-		teeDir = "/tmp/plextuner-debug-tee"
+		teeDir = "/tmp/iptvtunerr-debug-tee"
 	}
 	return streamDebugOptions{
-		HTTPHeaders: getenvBool("PLEX_TUNER_DEBUG_HTTP_HEADERS", false),
+		HTTPHeaders: getenvBool("IPTV_TUNERR_DEBUG_HTTP_HEADERS", false),
 		TeeBytes:    teeBytes,
 		TeeDir:      teeDir,
 	}
@@ -527,7 +527,7 @@ func min(a, b int) int {
 }
 
 func resolveFFmpegPath() (string, error) {
-	if v := strings.TrimSpace(os.Getenv("PLEX_TUNER_FFMPEG_PATH")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_FFMPEG_PATH")); v != "" {
 		return exec.LookPath(v)
 	}
 	return exec.LookPath("ffmpeg")
@@ -821,7 +821,7 @@ func (g *Gateway) resolvePlexClient(ctx context.Context, hints plexForwardedHint
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "PlexTuner/1.0")
+	req.Header.Set("User-Agent", "IptvTunerr/1.0")
 	client := g.Client
 	if client == nil {
 		client = httpclient.ForStreaming()
@@ -940,7 +940,7 @@ func (g *Gateway) requestAdaptation(ctx context.Context, r *http.Request, channe
 	}
 	// Force websafe so both Chrome and Firefox get browser-safe audio (e.g. MP3); use when
 	// client detection is wrong or after Plex/server updates change how sessions are reported.
-	if getenvBool("PLEX_TUNER_FORCE_WEBSAFE", false) {
+	if getenvBool("IPTV_TUNERR_FORCE_WEBSAFE", false) {
 		return true, true, profilePlexSafe, "force-websafe"
 	}
 	if !g.PlexClientAdapt {
@@ -1188,14 +1188,14 @@ func normalizeProfileName(v string) string {
 }
 
 func defaultProfileFromEnv() string {
-	p := strings.TrimSpace(os.Getenv("PLEX_TUNER_PROFILE"))
+	p := strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROFILE"))
 	if p != "" {
 		return normalizeProfileName(p)
 	}
 	// Back-compat for the old boolean.
-	if strings.EqualFold(os.Getenv("PLEX_TUNER_PLEX_SAFE"), "1") ||
-		strings.EqualFold(os.Getenv("PLEX_TUNER_PLEX_SAFE"), "true") ||
-		strings.EqualFold(os.Getenv("PLEX_TUNER_PLEX_SAFE"), "yes") {
+	if strings.EqualFold(os.Getenv("IPTV_TUNERR_PLEX_SAFE"), "1") ||
+		strings.EqualFold(os.Getenv("IPTV_TUNERR_PLEX_SAFE"), "true") ||
+		strings.EqualFold(os.Getenv("IPTV_TUNERR_PLEX_SAFE"), "yes") {
 		return profilePlexSafe
 	}
 	return profileDefault
@@ -1355,7 +1355,7 @@ func (g *Gateway) needTranscode(ctx context.Context, streamURL string) (bool, er
 	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
 	defer cancel()
 	probe := func(sel string) (string, error) {
-		args := []string{"-v", "error", "-nostdin", "-rw_timeout", "5000000", "-user_agent", "PlexTuner/1.0"}
+		args := []string{"-v", "error", "-nostdin", "-rw_timeout", "5000000", "-user_agent", "IptvTunerr/1.0"}
 		if g.ProviderUser != "" || g.ProviderPass != "" {
 			auth := base64.StdEncoding.EncodeToString([]byte(g.ProviderUser + ":" + g.ProviderPass))
 			args = append(args, "-headers", "Authorization: Basic "+auth+"\r\n")
@@ -1515,7 +1515,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if g.ProviderUser != "" || g.ProviderPass != "" {
 			req.SetBasicAuth(g.ProviderUser, g.ProviderPass)
 		}
-		req.Header.Set("User-Agent", "PlexTuner/1.0")
+		req.Header.Set("User-Agent", "IptvTunerr/1.0")
 
 		client := g.Client
 		if client == nil {
@@ -1587,9 +1587,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					log.Printf("gateway: channel=%q id=%s ffmpeg-%s failed (falling back to go relay): %v",
 						channel.GuideName, channelID, mode, err)
 				}
-			} else if strings.TrimSpace(os.Getenv("PLEX_TUNER_FFMPEG_PATH")) != "" {
+			} else if strings.TrimSpace(os.Getenv("IPTV_TUNERR_FFMPEG_PATH")) != "" {
 				log.Printf("gateway: channel=%q id=%s ffmpeg unavailable path=%q err=%v",
-					channel.GuideName, channelID, os.Getenv("PLEX_TUNER_FFMPEG_PATH"), ffmpegErr)
+					channel.GuideName, channelID, os.Getenv("IPTV_TUNERR_FFMPEG_PATH"), ffmpegErr)
 			} else if transcode {
 				log.Printf("gateway: channel=%q id=%s ffmpeg unavailable transcode-requested=true err=%v (falling back to go relay; web clients may get incompatible audio/video codecs)", channel.GuideName, channelID, ffmpegErr)
 			}
@@ -1890,17 +1890,17 @@ func (g *Gateway) relayHLSWithFFmpeg(
 
 	// HLS inputs are more sensitive to over-aggressive probing/low-latency flags than raw TS.
 	// Default to safer probing and allow env overrides when chasing startup races.
-	hlsAnalyzeDurationUs := getenvInt("PLEX_TUNER_FFMPEG_HLS_ANALYZEDURATION_US", 5000000)
-	hlsProbeSize := getenvInt("PLEX_TUNER_FFMPEG_HLS_PROBESIZE", 5000000)
-	hlsRWTimeoutUs := getenvInt("PLEX_TUNER_FFMPEG_HLS_RW_TIMEOUT_US", 15000000)
-	hlsLiveStartIndex := getenvInt("PLEX_TUNER_FFMPEG_HLS_LIVE_START_INDEX", -3)
-	hlsUseNoBuffer := getenvBool("PLEX_TUNER_FFMPEG_HLS_NOBUFFER", false)
+	hlsAnalyzeDurationUs := getenvInt("IPTV_TUNERR_FFMPEG_HLS_ANALYZEDURATION_US", 5000000)
+	hlsProbeSize := getenvInt("IPTV_TUNERR_FFMPEG_HLS_PROBESIZE", 5000000)
+	hlsRWTimeoutUs := getenvInt("IPTV_TUNERR_FFMPEG_HLS_RW_TIMEOUT_US", 15000000)
+	hlsLiveStartIndex := getenvInt("IPTV_TUNERR_FFMPEG_HLS_LIVE_START_INDEX", -3)
+	hlsUseNoBuffer := getenvBool("IPTV_TUNERR_FFMPEG_HLS_NOBUFFER", false)
 	// Let ffmpeg's HLS demuxer manage live playlist refreshes by default.
 	// Generic HTTP reconnect flags (especially reconnect-at-EOF) can cause
 	// live .m3u8 inputs to loop on playlist EOF and never start segment reads.
-	hlsReconnect := getenvBool("PLEX_TUNER_FFMPEG_HLS_RECONNECT", false)
-	hlsRealtime := getenvBool("PLEX_TUNER_FFMPEG_HLS_REALTIME", false)
-	hlsLogLevel := strings.TrimSpace(os.Getenv("PLEX_TUNER_FFMPEG_HLS_LOGLEVEL"))
+	hlsReconnect := getenvBool("IPTV_TUNERR_FFMPEG_HLS_RECONNECT", false)
+	hlsRealtime := getenvBool("IPTV_TUNERR_FFMPEG_HLS_REALTIME", false)
+	hlsLogLevel := strings.TrimSpace(os.Getenv("IPTV_TUNERR_FFMPEG_HLS_LOGLEVEL"))
 	if hlsLogLevel == "" {
 		hlsLogLevel = "error"
 	}
@@ -1916,7 +1916,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 		"-analyzeduration", strconv.Itoa(hlsAnalyzeDurationUs),
 		"-probesize", strconv.Itoa(hlsProbeSize),
 		"-rw_timeout", strconv.Itoa(hlsRWTimeoutUs),
-		"-user_agent", "PlexTuner/1.0",
+		"-user_agent", "IptvTunerr/1.0",
 	}
 	if hlsReconnect {
 		args = append(args,
@@ -1965,21 +1965,21 @@ func (g *Gateway) relayHLSWithFFmpeg(
 		reqField, channelName, channelID, modeLabel, hlsAnalyzeDurationUs, hlsProbeSize, hlsRWTimeoutUs, hlsLiveStartIndex, hlsUseNoBuffer, hlsReconnect, hlsRealtime, hlsLogLevel)
 	// In web-safe transcode modes, hold back the first bytes (and optionally prepend a short
 	// deterministic H264/AAC TS bootstrap) so Plex's live DASH packager gets a clean start.
-	startupMin := getenvInt("PLEX_TUNER_WEBSAFE_STARTUP_MIN_BYTES", 65536)
-	startupMax := getenvInt("PLEX_TUNER_WEBSAFE_STARTUP_MAX_BYTES", 786432)
-	startupTimeoutMs := getenvInt("PLEX_TUNER_WEBSAFE_STARTUP_TIMEOUT_MS", 12000)
-	enableBootstrap := transcode && getenvBool("PLEX_TUNER_WEBSAFE_BOOTSTRAP", true)
-	enableTimeoutBootstrap := getenvBool("PLEX_TUNER_WEBSAFE_TIMEOUT_BOOTSTRAP", true)
-	continueOnStartupTimeout := transcode && getenvBool("PLEX_TUNER_WEBSAFE_TIMEOUT_CONTINUE_FFMPEG", false)
-	bootstrapSec := getenvFloat("PLEX_TUNER_WEBSAFE_BOOTSTRAP_SECONDS", 1.5)
-	requireGoodStart := transcode && getenvBool("PLEX_TUNER_WEBSAFE_REQUIRE_GOOD_START", true)
-	enableNullTSKeepalive := transcode && getenvBool("PLEX_TUNER_WEBSAFE_NULL_TS_KEEPALIVE", false)
-	nullTSKeepaliveMs := getenvInt("PLEX_TUNER_WEBSAFE_NULL_TS_KEEPALIVE_MS", 100)
-	nullTSKeepalivePackets := getenvInt("PLEX_TUNER_WEBSAFE_NULL_TS_KEEPALIVE_PACKETS", 1)
+	startupMin := getenvInt("IPTV_TUNERR_WEBSAFE_STARTUP_MIN_BYTES", 65536)
+	startupMax := getenvInt("IPTV_TUNERR_WEBSAFE_STARTUP_MAX_BYTES", 786432)
+	startupTimeoutMs := getenvInt("IPTV_TUNERR_WEBSAFE_STARTUP_TIMEOUT_MS", 12000)
+	enableBootstrap := transcode && getenvBool("IPTV_TUNERR_WEBSAFE_BOOTSTRAP", true)
+	enableTimeoutBootstrap := getenvBool("IPTV_TUNERR_WEBSAFE_TIMEOUT_BOOTSTRAP", true)
+	continueOnStartupTimeout := transcode && getenvBool("IPTV_TUNERR_WEBSAFE_TIMEOUT_CONTINUE_FFMPEG", false)
+	bootstrapSec := getenvFloat("IPTV_TUNERR_WEBSAFE_BOOTSTRAP_SECONDS", 1.5)
+	requireGoodStart := transcode && getenvBool("IPTV_TUNERR_WEBSAFE_REQUIRE_GOOD_START", true)
+	enableNullTSKeepalive := transcode && getenvBool("IPTV_TUNERR_WEBSAFE_NULL_TS_KEEPALIVE", false)
+	nullTSKeepaliveMs := getenvInt("IPTV_TUNERR_WEBSAFE_NULL_TS_KEEPALIVE_MS", 100)
+	nullTSKeepalivePackets := getenvInt("IPTV_TUNERR_WEBSAFE_NULL_TS_KEEPALIVE_PACKETS", 1)
 	// PAT+PMT keepalive: sends real program-structure packets (not just null PIDs) so
 	// Plex's DASH packager can instantiate its consumer before the first IDR arrives.
-	enableProgramKeepalive := transcode && getenvBool("PLEX_TUNER_WEBSAFE_PROGRAM_KEEPALIVE", false)
-	programKeepaliveMs := getenvInt("PLEX_TUNER_WEBSAFE_PROGRAM_KEEPALIVE_MS", 500)
+	enableProgramKeepalive := transcode && getenvBool("IPTV_TUNERR_WEBSAFE_PROGRAM_KEEPALIVE", false)
+	programKeepaliveMs := getenvInt("IPTV_TUNERR_WEBSAFE_PROGRAM_KEEPALIVE_MS", 500)
 	// Do not run both keepalives concurrently against the same ResponseWriter: parallel
 	// writes can interleave/chunk-corrupt HTTP output and manifest as short writes.
 	if enableProgramKeepalive && enableNullTSKeepalive {
@@ -2173,7 +2173,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 		if err := writeBootstrapTS(r.Context(), ffmpegPath, bodyOut, channelName, channelID, bootstrapSec, profile); err != nil {
 			log.Printf("gateway:%s channel=%q id=%s bootstrap failed: %v", reqField, channelName, channelID, err)
 		}
-		if joinDelayMs := getenvInt("PLEX_TUNER_WEBSAFE_JOIN_DELAY_MS", 0); joinDelayMs > 0 {
+		if joinDelayMs := getenvInt("IPTV_TUNERR_WEBSAFE_JOIN_DELAY_MS", 0); joinDelayMs > 0 {
 			if joinDelayMs > 5000 {
 				joinDelayMs = 5000
 			}
@@ -2372,12 +2372,12 @@ func (g *Gateway) startHLSRelayFFmpegStdinNormalizer(
 	if transcode {
 		modeLabel = "hls-relay-ffmpeg-stdin-transcode"
 	}
-	stdinAnalyzeDurationUs := getenvInt("PLEX_TUNER_FFMPEG_STDIN_ANALYZEDURATION_US", 3000000)
-	stdinProbeSize := getenvInt("PLEX_TUNER_FFMPEG_STDIN_PROBESIZE", 3000000)
-	stdinUseNoBuffer := getenvBool("PLEX_TUNER_FFMPEG_STDIN_NOBUFFER", false)
-	stdinLogLevel := strings.TrimSpace(os.Getenv("PLEX_TUNER_FFMPEG_STDIN_LOGLEVEL"))
+	stdinAnalyzeDurationUs := getenvInt("IPTV_TUNERR_FFMPEG_STDIN_ANALYZEDURATION_US", 3000000)
+	stdinProbeSize := getenvInt("IPTV_TUNERR_FFMPEG_STDIN_PROBESIZE", 3000000)
+	stdinUseNoBuffer := getenvBool("IPTV_TUNERR_FFMPEG_STDIN_NOBUFFER", false)
+	stdinLogLevel := strings.TrimSpace(os.Getenv("IPTV_TUNERR_FFMPEG_STDIN_LOGLEVEL"))
 	if stdinLogLevel == "" {
-		stdinLogLevel = strings.TrimSpace(os.Getenv("PLEX_TUNER_FFMPEG_HLS_LOGLEVEL"))
+		stdinLogLevel = strings.TrimSpace(os.Getenv("IPTV_TUNERR_FFMPEG_HLS_LOGLEVEL"))
 	}
 	if stdinLogLevel == "" {
 		stdinLogLevel = "error"
@@ -2623,7 +2623,7 @@ func (g *Gateway) relayHLSAsTS(
 	currentPlaylist := initialPlaylist
 	relayLogLabel := "hls-relay"
 
-	enableFFmpegStdinNormalize := getenvBool("PLEX_TUNER_HLS_RELAY_FFMPEG_STDIN_NORMALIZE", false)
+	enableFFmpegStdinNormalize := getenvBool("IPTV_TUNERR_HLS_RELAY_FFMPEG_STDIN_NORMALIZE", false)
 	var normalizer *hlsRelayFFmpegStdinNormalizer
 	if enableFFmpegStdinNormalize {
 		if ffmpegPath, ffmpegErr := resolveFFmpegPath(); ffmpegErr == nil {
@@ -2650,9 +2650,9 @@ func (g *Gateway) relayHLSAsTS(
 				log.Printf("gateway:%s channel=%q id=%s hls-relay-ffmpeg-stdin enabled transcode=%t profile=%s",
 					reqField, channelName, channelID, transcode, profile)
 			}
-		} else if strings.TrimSpace(os.Getenv("PLEX_TUNER_FFMPEG_PATH")) != "" {
+		} else if strings.TrimSpace(os.Getenv("IPTV_TUNERR_FFMPEG_PATH")) != "" {
 			log.Printf("gateway:%s channel=%q id=%s hls-relay-ffmpeg-stdin ffmpeg unavailable path=%q err=%v",
-				reqField, channelName, channelID, os.Getenv("PLEX_TUNER_FFMPEG_PATH"), ffmpegErr)
+				reqField, channelName, channelID, os.Getenv("IPTV_TUNERR_FFMPEG_PATH"), ffmpegErr)
 		} else if transcode {
 			log.Printf("gateway:%s channel=%q id=%s hls-relay-ffmpeg-stdin ffmpeg unavailable transcode-requested=true err=%v", reqField, channelName, channelID, ffmpegErr)
 		}
@@ -2851,7 +2851,7 @@ func (g *Gateway) fetchAndRewritePlaylist(r *http.Request, client *http.Client, 
 	if g.ProviderUser != "" || g.ProviderPass != "" {
 		req.SetBasicAuth(g.ProviderUser, g.ProviderPass)
 	}
-	req.Header.Set("User-Agent", "PlexTuner/1.0")
+	req.Header.Set("User-Agent", "IptvTunerr/1.0")
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -2885,7 +2885,7 @@ func (g *Gateway) fetchAndWriteSegment(
 	if g.ProviderUser != "" || g.ProviderPass != "" {
 		req.SetBasicAuth(g.ProviderUser, g.ProviderPass)
 	}
-	req.Header.Set("User-Agent", "PlexTuner/1.0")
+	req.Header.Set("User-Agent", "IptvTunerr/1.0")
 	resp, err := client.Do(req)
 	if err != nil {
 		if g.FetchCFReject && strings.Contains(err.Error(), "cloudflare-terms-of-service-abuse.com") {

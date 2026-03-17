@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Generate PlexTuner per-channel transcode/profile overrides from ffprobe criteria.
+"""Generate IptvTunerr per-channel transcode/profile overrides from ffprobe criteria.
 
 This is an offline/helper tool that reuses the existing runtime override hooks:
-  - PLEX_TUNER_PROFILE_OVERRIDES_FILE
-  - PLEX_TUNER_TRANSCODE_OVERRIDES_FILE
+  - IPTV_TUNERR_PROFILE_OVERRIDES_FILE
+  - IPTV_TUNERR_TRANSCODE_OVERRIDES_FILE
 
-It probes channel stream URLs (typically PlexTuner /lineup.json entries) and emits
+It probes channel stream URLs (typically IptvTunerr /lineup.json entries) and emits
 JSON maps for channels that match criteria likely to cause Plex Web trouble
 (interlaced video, >30fps, HE-AAC, unsupported codecs, high bitrate, etc.).
 """
@@ -195,7 +195,7 @@ def classify_probe(data: dict[str, Any], bitrate_threshold: int) -> tuple[dict[s
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--lineup-json", required=True, help="Path or URL to HDHR/PlexTuner lineup.json")
+    ap.add_argument("--lineup-json", required=True, help="Path or URL to HDHR/IptvTunerr lineup.json")
     ap.add_argument("--base-url", default="", help="Base URL for relative lineup URLs")
     ap.add_argument(
         "--replace-url-prefix",

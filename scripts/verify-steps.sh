@@ -6,8 +6,8 @@ set -e
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
 
-err() { echo "[plex-tuner verify] ERROR: $*" >&2; exit 1; }
-step() { echo "[plex-tuner verify] ==> $*"; }
+err() { echo "[iptv-tunerr verify] ERROR: $*" >&2; exit 1; }
+step() { echo "[iptv-tunerr verify] ==> $*"; }
 
 # --- Format (fail if any file needs formatting; vendor/ is excluded) ---
 step "format (gofmt -s -l)"
@@ -34,9 +34,9 @@ if ! go test -count=1 ./...; then
 fi
 
 # --- Build ---
-step "build (go build ./cmd/plex-tuner)"
-if ! go build -o /dev/null ./cmd/plex-tuner; then
+step "build (go build ./cmd/iptv-tunerr)"
+if ! go build -o /dev/null ./cmd/iptv-tunerr; then
   err "build failed"
 fi
 
-echo "[plex-tuner verify] ==> all steps OK"
+echo "[iptv-tunerr verify] ==> all steps OK"

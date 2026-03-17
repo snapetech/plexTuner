@@ -14,7 +14,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/plextuner/plex-tuner/internal/catalog"
+	"github.com/iptvtunerr/iptv-tunerr/internal/catalog"
 )
 
 // XMLTV serves /guide.xml. By default it emits a minimal placeholder XMLTV.
@@ -132,7 +132,7 @@ func (x *XMLTV) fetchExternalXMLTV(channels []catalog.LiveChannel) ([]byte, erro
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "PlexTuner/1.0")
+	req.Header.Set("User-Agent", "IptvTunerr/1.0")
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -156,7 +156,7 @@ func (x *XMLTV) servePlaceholderXMLTV(w http.ResponseWriter, channels []catalog.
 
 	tv := &xmlTVRoot{
 		XMLName: xml.Name{Local: "tv"},
-		Source:  "Plex Tuner",
+		Source:  "IPTV Tunerr",
 	}
 	for _, c := range channels {
 		tv.Channels = append(tv.Channels, xmlChannel{
@@ -241,7 +241,7 @@ func writeRemappedXMLTVWithPolicy(dst io.Writer, src io.Reader, channels []catal
 			}
 			root := t
 			if !hasXMLAttr(root.Attr, "source-info-name") {
-				root.Attr = append(root.Attr, xml.Attr{Name: xml.Name{Local: "source-info-name"}, Value: "Plex Tuner (external XMLTV remap)"})
+				root.Attr = append(root.Attr, xml.Attr{Name: xml.Name{Local: "source-info-name"}, Value: "IPTV Tunerr (external XMLTV remap)"})
 			}
 			if err := enc.EncodeToken(root); err != nil {
 				return err
@@ -369,7 +369,7 @@ type xmlValue struct {
 
 func loadXMLTVTextPolicyFromEnv() xmltvTextPolicy {
 	var p xmltvTextPolicy
-	if s := strings.TrimSpace(os.Getenv("PLEX_TUNER_XMLTV_PREFER_LANGS")); s != "" {
+	if s := strings.TrimSpace(os.Getenv("IPTV_TUNERR_XMLTV_PREFER_LANGS")); s != "" {
 		for _, part := range strings.Split(s, ",") {
 			v := strings.ToLower(strings.TrimSpace(part))
 			if v != "" {
@@ -377,8 +377,8 @@ func loadXMLTVTextPolicyFromEnv() xmltvTextPolicy {
 			}
 		}
 	}
-	p.PreferLatin = envBool("PLEX_TUNER_XMLTV_PREFER_LATIN", false)
-	p.NonLatinTitleFallback = strings.ToLower(strings.TrimSpace(os.Getenv("PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK")))
+	p.PreferLatin = envBool("IPTV_TUNERR_XMLTV_PREFER_LATIN", false)
+	p.NonLatinTitleFallback = strings.ToLower(strings.TrimSpace(os.Getenv("IPTV_TUNERR_XMLTV_NON_LATIN_TITLE_FALLBACK")))
 	return p
 }
 

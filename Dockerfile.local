@@ -1,5 +1,5 @@
 FROM busybox:latest
-COPY plex-tuner /usr/local/bin/plex-tuner
+COPY iptv-tunerr /usr/local/bin/iptv-tunerr
 EXPOSE 5004
-ENTRYPOINT ["plex-tuner"]
+ENTRYPOINT ["iptv-tunerr"]
 CMD ["run", "-addr", ":5004"]

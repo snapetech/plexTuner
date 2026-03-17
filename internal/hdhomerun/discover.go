@@ -145,12 +145,12 @@ func CreateDefaultDevice(deviceID uint32, tunerCount int, baseURL string) *Devic
 	}
 
 	// Try to get friendly name from environment, fallback to default
-	friendlyName := os.Getenv("PLEX_TUNER_HDHR_FRIENDLY_NAME")
+	friendlyName := os.Getenv("IPTV_TUNERR_HDHR_FRIENDLY_NAME")
 	if friendlyName == "" {
-		friendlyName = os.Getenv("PLEX_TUNER_FRIENDLY_NAME")
+		friendlyName = os.Getenv("IPTV_TUNERR_FRIENDLY_NAME")
 	}
 	if friendlyName == "" {
-		friendlyName = "PlexTuner-HDHR"
+		friendlyName = "IptvTunerr-HDHR"
 	}
 
 	return &Device{

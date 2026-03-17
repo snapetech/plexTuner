@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build cross-platform test bundles for plex-tuner (CLI + supervisor examples).
+# Build cross-platform test bundles for iptv-tunerr (CLI + supervisor examples).
 #
 # Output:
 #   dist/test-packages/<version>/
-#     plex-tuner_<version>_source.zip
-#     plex-tuner_<version>_<os>_<arch>.zip
+#     iptv-tunerr_<version>_source.zip
+#     iptv-tunerr_<version>_<os>_<arch>.zip
 #     SHA256SUMS.txt
 #
 # Usage:
@@ -62,7 +62,7 @@ STAGE_ROOT="$DIST_DIR/.stage"
 rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR" "$STAGE_ROOT"
 
-echo "Building plex-tuner test packages"
+echo "Building iptv-tunerr test packages"
 echo "  version: $VERSION"
 echo "  out:     $DIST_DIR"
 
@@ -72,7 +72,7 @@ pkg_name() {
   if [[ "$arch" == "arm" && -n "$arm" ]]; then
     suffix="armv${arm}"
   fi
-  printf 'plex-tuner_%s_%s_%s' "$VERSION" "$os" "$suffix"
+  printf 'iptv-tunerr_%s_%s_%s' "$VERSION" "$os" "$suffix"
 }
 
 copy_bundle_files() {
@@ -82,17 +82,17 @@ copy_bundle_files() {
   cp docs/how-to/run-without-kubernetes.md "$target_dir/docs/how-to/"
   cp docs/how-to/package-test-builds.md "$target_dir/docs/how-to/"
   cp docs/reference/testing-and-supervisor-config.md "$target_dir/docs/reference/"
-  cp k8s/plextuner-supervisor-multi.example.json "$target_dir/k8s/"
-  cp k8s/plextuner-supervisor-singlepod.example.yaml "$target_dir/k8s/"
+  cp k8s/iptvtunerr-supervisor-multi.example.json "$target_dir/k8s/"
+  cp k8s/iptvtunerr-supervisor-singlepod.example.yaml "$target_dir/k8s/"
   cp scripts/plex-live-session-drain.py "$target_dir/scripts/"
 }
 
 build_source_zip() {
   local out="$1"
-  git archive --format=zip --output "$out" --prefix="plex-tuner_${VERSION}_source/" HEAD
+  git archive --format=zip --output "$out" --prefix="iptv-tunerr_${VERSION}_source/" HEAD
 }
 
-build_source_zip "$DIST_DIR/plex-tuner_${VERSION}_source.zip"
+build_source_zip "$DIST_DIR/iptv-tunerr_${VERSION}_source.zip"
 
 for spec in "${PLATFORMS_ARR[@]}"; do
   IFS='/' read -r GOOS GOARCH GOARM_REST <<<"$spec"
@@ -109,9 +109,9 @@ for spec in "${PLATFORMS_ARR[@]}"; do
   rm -rf "$stage_dir"
   mkdir -p "$stage_dir"
 
-  bin_name="plex-tuner"
+  bin_name="iptv-tunerr"
   if [[ "$GOOS" == "windows" ]]; then
-    bin_name="plex-tuner.exe"
+    bin_name="iptv-tunerr.exe"
   fi
 
   echo "  -> $spec"
@@ -124,7 +124,7 @@ for spec in "${PLATFORMS_ARR[@]}"; do
       -trimpath \
       -ldflags="-s -w" \
       -o "$stage_dir/$bin_name" \
-      ./cmd/plex-tuner
+      ./cmd/iptv-tunerr
 
   copy_bundle_files "$stage_dir"
 

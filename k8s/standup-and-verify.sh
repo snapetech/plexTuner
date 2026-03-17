@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Stand up Plex Tuner HDHR in the cluster and verify endpoints (discover, lineup).
+# Stand up IPTV Tunerr HDHR in the cluster and verify endpoints (discover, lineup).
 # Run from repo root on a host with kubectl and (optional) Docker. Exits 0 only if tuner is up and returning 200.
 #
 # Prerequisites: Plex (see docs/runbooks/plex-in-cluster.md if missing) and a real M3U URL in the manifest/secret.
-# Optional: TUNER_BASE_URL=http://plextuner-hdhr.plex.home  (default) or http://<node-ip>:30004 for NodePort.
+# Optional: TUNER_BASE_URL=http://iptvtunerr-hdhr.plex.home  (default) or http://<node-ip>:30004 for NodePort.
 # If kubectl requires root: sudo ./k8s/standup-and-verify.sh
 
 set -e
@@ -15,14 +15,14 @@ if ! kubectl cluster-info &>/dev/null; then
   exit 1
 fi
 
-echo "[standup] Deploying Plex Tuner HDHR ..."
+echo "[standup] Deploying IPTV Tunerr HDHR ..."
 ./k8s/deploy.sh "$@"
 
 # Prefer Ingress hostname; fallback NodePort if TUNER_BASE_URL not set and we have a node
-BASE="${TUNER_BASE_URL:-http://plextuner-hdhr.plex.home}"
-if [[ "$BASE" == "http://plextuner-hdhr.plex.home" ]]; then
+BASE="${TUNER_BASE_URL:-http://iptvtunerr-hdhr.plex.home}"
+if [[ "$BASE" == "http://iptvtunerr-hdhr.plex.home" ]]; then
   # If user only has NodePort, they must set TUNER_BASE_URL=http://<node-ip>:30004
-  NODE_IP=$(kubectl -n plex get svc plextuner-hdhr-test -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)
+  NODE_IP=$(kubectl -n plex get svc iptvtunerr-hdhr-test -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)
   if [[ -z "$NODE_IP" ]]; then
     NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || true)
   fi

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Live race diagnostics harness for PlexTuner / Plex Live TV startup issues.
-# Runs a synthetic HLS source, an optional replay HLS source, plex-tuner serve,
+# Live race diagnostics harness for IptvTunerr / Plex Live TV startup issues.
+# Runs a synthetic HLS source, an optional replay HLS source, iptv-tunerr serve,
 # concurrent client probes, and (optionally) tcpdump / PMS log snapshots.
 #
 # Goal: collect evidence for these hypotheses in one run:
@@ -21,7 +21,7 @@ WORK_DIR="$OUT_DIR/work"
 SYN_DIR="$WORK_DIR/synth"
 REPLAY_DIR="$WORK_DIR/replay"
 CATALOG="$WORK_DIR/diag-catalog.json"
-PLEX_LOG="$OUT_DIR/plex-tuner.log"
+PLEX_LOG="$OUT_DIR/iptv-tunerr.log"
 SYN_LOG="$OUT_DIR/synth-ffmpeg.log"
 REPLAY_LOG="$OUT_DIR/replay-ffmpeg.log"
 CURL_LOG="$OUT_DIR/curl.log"
@@ -49,22 +49,22 @@ STATIC_HLS_FROM_TS="${STATIC_HLS_FROM_TS:-false}"
 STATIC_HLS_EXTINF="${STATIC_HLS_EXTINF:-8.0}"
 STATIC_HLS_REPEAT="${STATIC_HLS_REPEAT:-20}"
 KEEP_WORKDIR="${KEEP_WORKDIR:-false}"
-HARNESS_FFMPEG_BIN="${HARNESS_FFMPEG_BIN:-${PLEX_TUNER_FFMPEG_PATH:-ffmpeg}}"
+HARNESS_FFMPEG_BIN="${HARNESS_FFMPEG_BIN:-${IPTV_TUNERR_FFMPEG_PATH:-ffmpeg}}"
 
-# Harness knobs for plex-tuner (race-focused defaults)
-export PLEX_TUNER_STREAM_BUFFER_BYTES="${PLEX_TUNER_STREAM_BUFFER_BYTES:-0}"
-export PLEX_TUNER_STREAM_TRANSCODE="${PLEX_TUNER_STREAM_TRANSCODE:-on}"
-export PLEX_TUNER_WEBSAFE_BOOTSTRAP="${PLEX_TUNER_WEBSAFE_BOOTSTRAP:-true}"
-export PLEX_TUNER_WEBSAFE_BOOTSTRAP_ALL="${PLEX_TUNER_WEBSAFE_BOOTSTRAP_ALL:-true}"
-export PLEX_TUNER_WEBSAFE_BOOTSTRAP_SECONDS="${PLEX_TUNER_WEBSAFE_BOOTSTRAP_SECONDS:-0.35}"
-export PLEX_TUNER_WEBSAFE_STARTUP_MIN_BYTES="${PLEX_TUNER_WEBSAFE_STARTUP_MIN_BYTES:-65536}"
-export PLEX_TUNER_WEBSAFE_STARTUP_MAX_BYTES="${PLEX_TUNER_WEBSAFE_STARTUP_MAX_BYTES:-524288}"
-export PLEX_TUNER_WEBSAFE_STARTUP_TIMEOUT_MS="${PLEX_TUNER_WEBSAFE_STARTUP_TIMEOUT_MS:-30000}"
-export PLEX_TUNER_WEBSAFE_REQUIRE_GOOD_START="${PLEX_TUNER_WEBSAFE_REQUIRE_GOOD_START:-false}"
-export PLEX_TUNER_WEBSAFE_NULL_TS_KEEPALIVE="${PLEX_TUNER_WEBSAFE_NULL_TS_KEEPALIVE:-true}"
-export PLEX_TUNER_WEBSAFE_NULL_TS_KEEPALIVE_MS="${PLEX_TUNER_WEBSAFE_NULL_TS_KEEPALIVE_MS:-100}"
-export PLEX_TUNER_WEBSAFE_NULL_TS_KEEPALIVE_PACKETS="${PLEX_TUNER_WEBSAFE_NULL_TS_KEEPALIVE_PACKETS:-1}"
-export PLEX_TUNER_TUNER_COUNT="${PLEX_TUNER_TUNER_COUNT:-16}"
+# Harness knobs for iptv-tunerr (race-focused defaults)
+export IPTV_TUNERR_STREAM_BUFFER_BYTES="${IPTV_TUNERR_STREAM_BUFFER_BYTES:-0}"
+export IPTV_TUNERR_STREAM_TRANSCODE="${IPTV_TUNERR_STREAM_TRANSCODE:-on}"
+export IPTV_TUNERR_WEBSAFE_BOOTSTRAP="${IPTV_TUNERR_WEBSAFE_BOOTSTRAP:-true}"
+export IPTV_TUNERR_WEBSAFE_BOOTSTRAP_ALL="${IPTV_TUNERR_WEBSAFE_BOOTSTRAP_ALL:-true}"
+export IPTV_TUNERR_WEBSAFE_BOOTSTRAP_SECONDS="${IPTV_TUNERR_WEBSAFE_BOOTSTRAP_SECONDS:-0.35}"
+export IPTV_TUNERR_WEBSAFE_STARTUP_MIN_BYTES="${IPTV_TUNERR_WEBSAFE_STARTUP_MIN_BYTES:-65536}"
+export IPTV_TUNERR_WEBSAFE_STARTUP_MAX_BYTES="${IPTV_TUNERR_WEBSAFE_STARTUP_MAX_BYTES:-524288}"
+export IPTV_TUNERR_WEBSAFE_STARTUP_TIMEOUT_MS="${IPTV_TUNERR_WEBSAFE_STARTUP_TIMEOUT_MS:-30000}"
+export IPTV_TUNERR_WEBSAFE_REQUIRE_GOOD_START="${IPTV_TUNERR_WEBSAFE_REQUIRE_GOOD_START:-false}"
+export IPTV_TUNERR_WEBSAFE_NULL_TS_KEEPALIVE="${IPTV_TUNERR_WEBSAFE_NULL_TS_KEEPALIVE:-true}"
+export IPTV_TUNERR_WEBSAFE_NULL_TS_KEEPALIVE_MS="${IPTV_TUNERR_WEBSAFE_NULL_TS_KEEPALIVE_MS:-100}"
+export IPTV_TUNERR_WEBSAFE_NULL_TS_KEEPALIVE_PACKETS="${IPTV_TUNERR_WEBSAFE_NULL_TS_KEEPALIVE_PACKETS:-1}"
+export IPTV_TUNERR_TUNER_COUNT="${IPTV_TUNERR_TUNER_COUNT:-16}"
 
 PIDS=()
 CLIENT_PIDS=()
@@ -378,7 +378,7 @@ detect_pms_log_dir() {
 }
 
 start_plex_tuner() {
-  log "Starting plex-tuner serve on $TUNER_ADDR using generated diag catalog"
+  log "Starting iptv-tunerr serve on $TUNER_ADDR using generated diag catalog"
   (
     cd "$ROOT"
     # The app itself loads .env on startup. Temporarily hide it so harness env overrides win.
@@ -388,8 +388,8 @@ start_plex_tuner() {
       mv -f .env "$env_bak"
       trap '[[ -n "$env_bak" && -f "$env_bak" ]] && mv -f "$env_bak" .env' EXIT
     fi
-    PLEX_TUNER_BASE_URL="${PLEX_TUNER_BASE_URL:-$TUNER_BASE_URL}" \
-    go run ./cmd/plex-tuner serve -catalog "$CATALOG" -addr "$TUNER_ADDR" -base-url "$TUNER_BASE_URL"
+    IPTV_TUNERR_BASE_URL="${IPTV_TUNERR_BASE_URL:-$TUNER_BASE_URL}" \
+    go run ./cmd/iptv-tunerr serve -catalog "$CATALOG" -addr "$TUNER_ADDR" -base-url "$TUNER_BASE_URL"
   ) >"$PLEX_LOG" 2>&1 &
   PIDS+=("$!")
 }
@@ -454,7 +454,7 @@ write_summary() {
     echo "  5) Concurrent request probes      -> $CURL_LOG + req IDs in plex log"
     echo
     echo "Key files:"
-    echo "  plex-tuner log: $PLEX_LOG"
+    echo "  iptv-tunerr log: $PLEX_LOG"
     echo "  synth ffmpeg log: $SYN_LOG"
     echo "  replay ffmpeg log: $REPLAY_LOG"
     echo "  curl log: $CURL_LOG"
@@ -493,7 +493,7 @@ main() {
   start_tcpdump
   snapshot_pms_logs
   start_plex_tuner
-  wait_for_tuner || die "plex-tuner did not start on $TUNER_BASE_URL"
+  wait_for_tuner || die "iptv-tunerr did not start on $TUNER_BASE_URL"
 
   run_concurrent_clients
 

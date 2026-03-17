@@ -155,7 +155,7 @@ def build_supervisor_json(
     hdhr_lineup_region_profile: str,
     hdhr_total_channels: int = 0,
     hdhr_plex_host: str = "",
-    hdhr_svc_base_url_template: str = "http://plextuner-hdhr-test{svc_suffix}.plex.svc:5004",
+    hdhr_svc_base_url_template: str = "http://iptvtunerr-hdhr-test{svc_suffix}.plex.svc:5004",
 ) -> dict[str, Any]:
     by_name = {d["metadata"]["name"]: d for d in multi_deploys}
     instances: list[dict[str, Any]] = []
@@ -168,7 +168,7 @@ def build_supervisor_json(
     # all EPG-linked channels: n_shards = ceil(hdhr_total_channels / hdhr_lineup_max).
     # Minimum is always 1 shard (hdhr-main). Extra shards are named hdhr-main2, hdhr-main3, ...
     hdhr_container = hdhr_deploy["spec"]["template"]["spec"]["containers"][0]
-    hdhr_base = "http://plextuner-hdhr.plex.home"
+    hdhr_base = "http://iptvtunerr-hdhr.plex.home"
     for a in hdhr_container.get("args", []):
         if isinstance(a, str) and a.startswith("-base-url="):
             hdhr_base = a.split("=", 1)[1]
@@ -188,28 +188,28 @@ def build_supervisor_json(
     strip_stream_hosts = "cf.like-cdn.com,like-cdn.com"
 
     hdhr_common_env = {
-        "PLEX_TUNER_HDHR_MANUFACTURER": "Silicondust",
-        "PLEX_TUNER_HDHR_MODEL_NUMBER": "HDHR5-2US",
-        "PLEX_TUNER_HDHR_FIRMWARE_NAME": "hdhomerun5_atsc",
-        "PLEX_TUNER_HDHR_FIRMWARE_VERSION": "20240101",
-        "PLEX_TUNER_M3U_URL": hdhr_m3u_url,
-        "PLEX_TUNER_XMLTV_URL": hdhr_xmltv_url,
-        "PLEX_TUNER_LIVE_EPG_ONLY": "true" if hdhr_live_epg_only else "false",
-        "PLEX_TUNER_EPG_PRUNE_UNLINKED": "true" if hdhr_epg_prune else "false",
-        "PLEX_TUNER_LINEUP_DROP_MUSIC": "true",
-        "PLEX_TUNER_LINEUP_SHAPE": hdhr_lineup_shape,
-        "PLEX_TUNER_LINEUP_REGION_PROFILE": hdhr_lineup_region_profile,
-        "PLEX_TUNER_STREAM_TRANSCODE": hdhr_stream_transcode,
-        "PLEX_TUNER_STREAM_BUFFER_BYTES": "-1",
-        "PLEX_TUNER_XMLTV_PREFER_LANGS": hdhr_prefer_langs,
-        "PLEX_TUNER_XMLTV_PREFER_LATIN": "true" if hdhr_prefer_latin else "false",
-        "PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK": hdhr_non_latin_title_fallback,
-        "PLEX_TUNER_SKIP_HEALTH": "true",
-        "PLEX_TUNER_FETCH_CATEGORY_CONCURRENCY": "2",
-        "PLEX_TUNER_GRACENOTE_DB": "/plextuner-data/gracenote.json",
-        "PLEX_TUNER_IPTVORG_DB": "/plextuner-data/iptvorg.json",
-        "PLEX_TUNER_DVB_DB": "/plextuner-data/dvbdb.json",
-        "PLEX_TUNER_STRIP_STREAM_HOSTS": strip_stream_hosts,
+        "IPTV_TUNERR_HDHR_MANUFACTURER": "Silicondust",
+        "IPTV_TUNERR_HDHR_MODEL_NUMBER": "HDHR5-2US",
+        "IPTV_TUNERR_HDHR_FIRMWARE_NAME": "hdhomerun5_atsc",
+        "IPTV_TUNERR_HDHR_FIRMWARE_VERSION": "20240101",
+        "IPTV_TUNERR_M3U_URL": hdhr_m3u_url,
+        "IPTV_TUNERR_XMLTV_URL": hdhr_xmltv_url,
+        "IPTV_TUNERR_LIVE_EPG_ONLY": "true" if hdhr_live_epg_only else "false",
+        "IPTV_TUNERR_EPG_PRUNE_UNLINKED": "true" if hdhr_epg_prune else "false",
+        "IPTV_TUNERR_LINEUP_DROP_MUSIC": "true",
+        "IPTV_TUNERR_LINEUP_SHAPE": hdhr_lineup_shape,
+        "IPTV_TUNERR_LINEUP_REGION_PROFILE": hdhr_lineup_region_profile,
+        "IPTV_TUNERR_STREAM_TRANSCODE": hdhr_stream_transcode,
+        "IPTV_TUNERR_STREAM_BUFFER_BYTES": "-1",
+        "IPTV_TUNERR_XMLTV_PREFER_LANGS": hdhr_prefer_langs,
+        "IPTV_TUNERR_XMLTV_PREFER_LATIN": "true" if hdhr_prefer_latin else "false",
+        "IPTV_TUNERR_XMLTV_NON_LATIN_TITLE_FALLBACK": hdhr_non_latin_title_fallback,
+        "IPTV_TUNERR_SKIP_HEALTH": "true",
+        "IPTV_TUNERR_FETCH_CATEGORY_CONCURRENCY": "2",
+        "IPTV_TUNERR_GRACENOTE_DB": "/iptvtunerr-data/gracenote.json",
+        "IPTV_TUNERR_IPTVORG_DB": "/iptvtunerr-data/iptvorg.json",
+        "IPTV_TUNERR_DVB_DB": "/iptvtunerr-data/dvbdb.json",
+        "IPTV_TUNERR_STRIP_STREAM_HOSTS": strip_stream_hosts,
     }
 
     for shard_idx in range(n_shards):
@@ -221,14 +221,14 @@ def build_supervisor_json(
             port = 5004
             addr = ":5004"
             device_id = "hdhr"
-            device_auth = "plextuner"
+            device_auth = "iptvtunerr"
             guide_offset = 0
             base_url = hdhr_base
         else:
             port = hdhr_extra_base_port + (shard_idx - 1)
             addr = f":{port}"
             device_id = f"hdhrbcast{shard_idx + 1}"
-            device_auth = f"plextuner{shard_idx + 1}"
+            device_auth = f"iptvtunerr{shard_idx + 1}"
             guide_offset = shard_idx * 100000
             svc_suffix = str(shard_idx + 1)
             base_url = hdhr_svc_base_url_template.format(svc_suffix=svc_suffix)
@@ -236,26 +236,26 @@ def build_supervisor_json(
         catalog_path = f"/data/{name}/catalog.json"
         env: dict[str, Any] = dict(hdhr_common_env)
         env.update({
-            "PLEX_TUNER_HDHR_NETWORK_MODE": "true" if is_primary else "false",
-            "PLEX_TUNER_SSDP_DISABLED": "false" if is_primary else "true",
-            "PLEX_TUNER_HDHR_SCAN_POSSIBLE": "true",
-            "PLEX_TUNER_FRIENDLY_NAME": name if is_primary else f"hdhr{shard_idx + 1}",
-            "PLEX_TUNER_HDHR_FRIENDLY_NAME": name if is_primary else f"hdhr{shard_idx + 1}",
-            "PLEX_TUNER_HDHR_DEVICE_AUTH": device_auth,
-            "PLEX_TUNER_LINEUP_MAX_CHANNELS": str(cap),
-            "PLEX_TUNER_GUIDE_NUMBER_OFFSET": str(guide_offset),
+            "IPTV_TUNERR_HDHR_NETWORK_MODE": "true" if is_primary else "false",
+            "IPTV_TUNERR_SSDP_DISABLED": "false" if is_primary else "true",
+            "IPTV_TUNERR_HDHR_SCAN_POSSIBLE": "true",
+            "IPTV_TUNERR_FRIENDLY_NAME": name if is_primary else f"hdhr{shard_idx + 1}",
+            "IPTV_TUNERR_HDHR_FRIENDLY_NAME": name if is_primary else f"hdhr{shard_idx + 1}",
+            "IPTV_TUNERR_HDHR_DEVICE_AUTH": device_auth,
+            "IPTV_TUNERR_LINEUP_MAX_CHANNELS": str(cap),
+            "IPTV_TUNERR_GUIDE_NUMBER_OFFSET": str(guide_offset),
         })
         if not is_primary:
-            env["PLEX_TUNER_DEVICE_ID"] = device_id
+            env["IPTV_TUNERR_DEVICE_ID"] = device_id
             if hdhr_plex_host:
                 env["PLEX_HOST"] = hdhr_plex_host
         if n_shards > 1 and not is_primary:
-            env["PLEX_TUNER_LINEUP_SKIP"] = str(shard_idx * cap)
-            env["PLEX_TUNER_LINEUP_TAKE"] = str(cap)
+            env["IPTV_TUNERR_LINEUP_SKIP"] = str(shard_idx * cap)
+            env["IPTV_TUNERR_LINEUP_TAKE"] = str(cap)
         elif n_shards > 1 and is_primary:
             # Primary shard also takes only the first slice when sharding is active.
-            env["PLEX_TUNER_LINEUP_SKIP"] = "0"
-            env["PLEX_TUNER_LINEUP_TAKE"] = str(cap)
+            env["IPTV_TUNERR_LINEUP_SKIP"] = "0"
+            env["IPTV_TUNERR_LINEUP_TAKE"] = str(cap)
 
         args = [
             "run",
@@ -278,7 +278,7 @@ def build_supervisor_json(
     for idx, shard in enumerate(category_shards):
         cat = shard["name"]
         base_cat = shard["base"]
-        dep_name = f"plextuner-{base_cat}"
+        dep_name = f"iptvtunerr-{base_cat}"
         dep = by_name[dep_name]
         c = dep["spec"]["template"]["spec"]["containers"][0]
         env_map = env_list_to_map(c.get("env", []))
@@ -287,44 +287,44 @@ def build_supervisor_json(
         child_env = {}
         # Preserve category-specific settings, omit common reaper/token settings provided by parent env.
         for k in [
-            "PLEX_TUNER_M3U_URL",
-            "PLEX_TUNER_XMLTV_URL",
-            "PLEX_TUNER_LIVE_EPG_ONLY",
-            "PLEX_TUNER_EPG_PRUNE_UNLINKED",
-            "PLEX_TUNER_STREAM_TRANSCODE",
-            "PLEX_TUNER_STREAM_BUFFER_BYTES",
-            "PLEX_TUNER_LINEUP_MAX_CHANNELS",
-            "PLEX_TUNER_GUIDE_NUMBER_OFFSET",
+            "IPTV_TUNERR_M3U_URL",
+            "IPTV_TUNERR_XMLTV_URL",
+            "IPTV_TUNERR_LIVE_EPG_ONLY",
+            "IPTV_TUNERR_EPG_PRUNE_UNLINKED",
+            "IPTV_TUNERR_STREAM_TRANSCODE",
+            "IPTV_TUNERR_STREAM_BUFFER_BYTES",
+            "IPTV_TUNERR_LINEUP_MAX_CHANNELS",
+            "IPTV_TUNERR_GUIDE_NUMBER_OFFSET",
             "TZ",
         ]:
             if k in env_map:
                 child_env[k] = env_map[k]
         # Identity signal for Plex DVR tab/title.
-        child_env["PLEX_TUNER_DEVICE_ID"] = cat
-        child_env["PLEX_TUNER_FRIENDLY_NAME"] = cat
+        child_env["IPTV_TUNERR_DEVICE_ID"] = cat
+        child_env["IPTV_TUNERR_FRIENDLY_NAME"] = cat
         # Preserve old injected DVR URI shape so Plex reinjection is unnecessary.
-        child_env["PLEX_TUNER_BASE_URL"] = f"http://plextuner-{cat}.plex.svc:5004"
-        child_env["PLEX_TUNER_SSDP_DISABLED"] = "true"
+        child_env["IPTV_TUNERR_BASE_URL"] = f"http://iptvtunerr-{cat}.plex.svc:5004"
+        child_env["IPTV_TUNERR_SSDP_DISABLED"] = "true"
         # Keep injected DVRs working, but make category tuners less attractive in Plex's HDHR wizard.
-        child_env["PLEX_TUNER_HDHR_SCAN_POSSIBLE"] = "false"
+        child_env["IPTV_TUNERR_HDHR_SCAN_POSSIBLE"] = "false"
         # In-app XMLTV guide text normalization (can be removed if undesired).
-        child_env["PLEX_TUNER_XMLTV_PREFER_LANGS"] = "en,eng"
-        child_env["PLEX_TUNER_XMLTV_PREFER_LATIN"] = "true"
-        child_env["PLEX_TUNER_XMLTV_NON_LATIN_TITLE_FALLBACK"] = "channel"
-        child_env["PLEX_TUNER_STRIP_STREAM_HOSTS"] = "cf.like-cdn.com,like-cdn.com"
+        child_env["IPTV_TUNERR_XMLTV_PREFER_LANGS"] = "en,eng"
+        child_env["IPTV_TUNERR_XMLTV_PREFER_LATIN"] = "true"
+        child_env["IPTV_TUNERR_XMLTV_NON_LATIN_TITLE_FALLBACK"] = "channel"
+        child_env["IPTV_TUNERR_STRIP_STREAM_HOSTS"] = "cf.like-cdn.com,like-cdn.com"
         if int(shard.get("skip", 0)) > 0:
-            child_env["PLEX_TUNER_LINEUP_SKIP"] = str(int(shard["skip"]))
+            child_env["IPTV_TUNERR_LINEUP_SKIP"] = str(int(shard["skip"]))
         if int(shard.get("take", 0)) > 0:
-            child_env["PLEX_TUNER_LINEUP_TAKE"] = str(int(shard["take"]))
+            child_env["IPTV_TUNERR_LINEUP_TAKE"] = str(int(shard["take"]))
         # Prevent guide-number collisions across overflow shards when a base category
         # already has a guide offset configured.
         if int(shard.get("shard_index", 0)) > 0:
             base_off = 0
             try:
-                base_off = int(child_env.get("PLEX_TUNER_GUIDE_NUMBER_OFFSET", "0"))
+                base_off = int(child_env.get("IPTV_TUNERR_GUIDE_NUMBER_OFFSET", "0"))
             except ValueError:
                 base_off = 0
-            child_env["PLEX_TUNER_GUIDE_NUMBER_OFFSET"] = str(base_off + (int(shard["shard_index"]) * 100000))
+            child_env["IPTV_TUNERR_GUIDE_NUMBER_OFFSET"] = str(base_off + (int(shard["shard_index"]) * 100000))
 
         instances.append(
             {
@@ -354,7 +354,7 @@ def build_singlepod_manifest(
     configmap = {
         "apiVersion": "v1",
         "kind": "ConfigMap",
-        "metadata": {"name": "plextuner-supervisor-config", "namespace": "plex"},
+        "metadata": {"name": "iptvtunerr-supervisor-config", "namespace": "plex"},
         "data": {"supervisor.json": json.dumps(supervisor_cfg, indent=2)},
     }
 
@@ -362,13 +362,13 @@ def build_singlepod_manifest(
     dep = {
         "apiVersion": "apps/v1",
         "kind": "Deployment",
-        "metadata": {"name": "plextuner-supervisor", "namespace": "plex", "labels": {"app": "plextuner-supervisor"}},
+        "metadata": {"name": "iptvtunerr-supervisor", "namespace": "plex", "labels": {"app": "iptvtunerr-supervisor"}},
         "spec": {
             "replicas": 1,
             "strategy": {"type": "Recreate"},
-            "selector": {"matchLabels": {"app": "plextuner-supervisor"}},
+            "selector": {"matchLabels": {"app": "iptvtunerr-supervisor"}},
             "template": {
-                "metadata": {"labels": {"app": "plextuner-supervisor"}},
+                "metadata": {"labels": {"app": "iptvtunerr-supervisor"}},
                 "spec": {
                     "nodeSelector": copy.deepcopy(hdhr_tmpl.get("nodeSelector", {"media": "plex"})),
                     "hostNetwork": True,
@@ -376,30 +376,30 @@ def build_singlepod_manifest(
                     "dnsConfig": copy.deepcopy(hdhr_tmpl.get("dnsConfig", {})),
                     "containers": [
                         {
-                            "name": "plextuner",
+                            "name": "iptvtunerr",
                             "image": image,
                             "imagePullPolicy": hdhr_container.get("imagePullPolicy", "IfNotPresent"),
                             "args": ["supervise", "-config", "/config/supervisor.json"],
                             "envFrom": copy.deepcopy(hdhr_container.get("envFrom", [])),
                             "env": [
                                 {
-                                    "name": "PLEX_TUNER_PMS_TOKEN",
+                                    "name": "IPTV_TUNERR_PMS_TOKEN",
                                     "valueFrom": {
                                         "secretKeyRef": {"name": "plex-token", "key": "token"}
                                     },
                                 },
-                                {"name": "PLEX_TUNER_PMS_URL", "value": "http://plex.plex.svc:32400"},
-                                {"name": "PLEX_TUNER_PLEX_SESSION_REAPER", "value": "true"},
-                                {"name": "PLEX_TUNER_PLEX_SESSION_REAPER_POLL_S", "value": "2"},
-                                {"name": "PLEX_TUNER_PLEX_SESSION_REAPER_IDLE_S", "value": "15"},
-                                {"name": "PLEX_TUNER_PLEX_SESSION_REAPER_RENEW_LEASE_S", "value": "20"},
-                                {"name": "PLEX_TUNER_PLEX_SESSION_REAPER_HARD_LEASE_S", "value": "1800"},
-                                {"name": "PLEX_TUNER_PLEX_SESSION_REAPER_SSE", "value": "true"},
+                                {"name": "IPTV_TUNERR_PMS_URL", "value": "http://plex.plex.svc:32400"},
+                                {"name": "IPTV_TUNERR_PLEX_SESSION_REAPER", "value": "true"},
+                                {"name": "IPTV_TUNERR_PLEX_SESSION_REAPER_POLL_S", "value": "2"},
+                                {"name": "IPTV_TUNERR_PLEX_SESSION_REAPER_IDLE_S", "value": "15"},
+                                {"name": "IPTV_TUNERR_PLEX_SESSION_REAPER_RENEW_LEASE_S", "value": "20"},
+                                {"name": "IPTV_TUNERR_PLEX_SESSION_REAPER_HARD_LEASE_S", "value": "1800"},
+                                {"name": "IPTV_TUNERR_PLEX_SESSION_REAPER_SSE", "value": "true"},
                                 # Abort HLS streams immediately on CF-blocked segment fetches
                                 # instead of stalling 12s and delivering 0 bytes.
-                                {"name": "PLEX_TUNER_FETCH_CF_REJECT", "value": "true"},
+                                {"name": "IPTV_TUNERR_FETCH_CF_REJECT", "value": "true"},
                                 # Strip CF CDN stream hosts at catalog build so tuner never uses them.
-                                {"name": "PLEX_TUNER_STRIP_STREAM_HOSTS", "value": "cf.like-cdn.com,like-cdn.com"},
+                                {"name": "IPTV_TUNERR_STRIP_STREAM_HOSTS", "value": "cf.like-cdn.com,like-cdn.com"},
                             ],
                             "ports": [],
                             "volumeMounts": [
@@ -422,7 +422,7 @@ def build_singlepod_manifest(
                         }
                     ],
                     "volumes": [
-                        {"name": "supervisor-config", "configMap": {"name": "plextuner-supervisor-config"}},
+                        {"name": "supervisor-config", "configMap": {"name": "iptvtunerr-supervisor-config"}},
                         {"name": "data", "emptyDir": {}},
                     ],
                 },
@@ -449,21 +449,21 @@ def build_singlepod_manifest(
     dep["spec"]["template"]["spec"]["containers"][0]["ports"] = ports
 
     # Services:
-    # - plextuner-hdhr-test  -> shard 0 (hdhr-main, port 5004), keeps the legacy service name
-    # - plextuner-hdhr-test2, plextuner-hdhr-test3, ... -> extra HDHR shards
-    # - plextuner-<cat>      -> one per category instance
+    # - iptvtunerr-hdhr-test  -> shard 0 (hdhr-main, port 5004), keeps the legacy service name
+    # - iptvtunerr-hdhr-test2, iptvtunerr-hdhr-test3, ... -> extra HDHR shards
+    # - iptvtunerr-<cat>      -> one per category instance
     services: list[dict[str, Any]] = []
     for shard in hdhr_shards:
         target = int(parse_addr(shard["args"]))
         shard_idx = hdhr_shards.index(shard)
-        svc_name = "plextuner-hdhr-test" if shard_idx == 0 else f"plextuner-hdhr-test{shard_idx + 1}"
+        svc_name = "iptvtunerr-hdhr-test" if shard_idx == 0 else f"iptvtunerr-hdhr-test{shard_idx + 1}"
         services.append(
             {
                 "apiVersion": "v1",
                 "kind": "Service",
                 "metadata": {"name": svc_name, "namespace": "plex"},
                 "spec": {
-                    "selector": {"app": "plextuner-supervisor"},
+                    "selector": {"app": "iptvtunerr-supervisor"},
                     "ports": [{"name": "http", "port": 5004, "targetPort": target, "protocol": "TCP"}],
                 },
             }
@@ -475,9 +475,9 @@ def build_singlepod_manifest(
             {
                 "apiVersion": "v1",
                 "kind": "Service",
-                "metadata": {"name": f"plextuner-{cat}", "namespace": "plex"},
+                "metadata": {"name": f"iptvtunerr-{cat}", "namespace": "plex"},
                 "spec": {
-                    "selector": {"app": "plextuner-supervisor"},
+                    "selector": {"app": "iptvtunerr-supervisor"},
                     "ports": [{"name": "http", "port": 5004, "targetPort": target, "protocol": "TCP"}],
                 },
             }
@@ -490,8 +490,8 @@ def build_cutover_tsv(supervisor_cfg: dict[str, Any]) -> str:
     for inst in sorted((i for i in supervisor_cfg["instances"] if i["name"] != "hdhr-main"), key=lambda x: x["name"]):
         cat = inst["name"]
         env = inst["env"]
-        old_uri = f"http://plextuner-{cat}.plex.svc:5004"
-        new_uri = env.get("PLEX_TUNER_BASE_URL", "")
+        old_uri = f"http://iptvtunerr-{cat}.plex.svc:5004"
+        new_uri = env.get("IPTV_TUNERR_BASE_URL", "")
         lines.append(
             "\t".join(
                 [
@@ -499,8 +499,8 @@ def build_cutover_tsv(supervisor_cfg: dict[str, Any]) -> str:
                     old_uri,
                     new_uri,
                     "no" if old_uri == new_uri else "yes",
-                    env.get("PLEX_TUNER_DEVICE_ID", ""),
-                    env.get("PLEX_TUNER_FRIENDLY_NAME", ""),
+                    env.get("IPTV_TUNERR_DEVICE_ID", ""),
+                    env.get("IPTV_TUNERR_FRIENDLY_NAME", ""),
                 ]
             )
         )
@@ -510,9 +510,9 @@ def build_cutover_tsv(supervisor_cfg: dict[str, Any]) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--k3s-plex-dir", default="../k3s/plex")
-    ap.add_argument("--out-json", default="plextuner-supervisor-multi.generated.json")
-    ap.add_argument("--out-yaml", default="plextuner-supervisor-singlepod.generated.yaml")
-    ap.add_argument("--out-tsv", default="plextuner-supervisor-cutover-map.generated.tsv")
+    ap.add_argument("--out-json", default="iptvtunerr-supervisor-multi.generated.json")
+    ap.add_argument("--out-yaml", default="iptvtunerr-supervisor-singlepod.generated.yaml")
+    ap.add_argument("--out-tsv", default="iptvtunerr-supervisor-cutover-map.generated.tsv")
     ap.add_argument("--country", default="", help="Country hint for HDHR wizard profile selection (e.g. CA, US)")
     ap.add_argument("--postal-code", default="", help="Postal/ZIP hint for HDHR wizard profile selection (used locally only; not logged)")
     ap.add_argument("--timezone", default="", help="Timezone hint (e.g. Area/City) for HDHR wizard profile selection; used locally only and not logged")
@@ -553,8 +553,8 @@ def main() -> int:
     args = ap.parse_args()
 
     root = Path(args.k3s_plex_dir)
-    multi = load_yaml_docs(root / "plextuner-deployments-multi.yaml")
-    hdhr = load_yaml_docs(root / "plextuner-hdhr-test-deployment.yaml")[0]
+    multi = load_yaml_docs(root / "iptvtunerr-deployments-multi.yaml")
+    hdhr = load_yaml_docs(root / "iptvtunerr-hdhr-test-deployment.yaml")[0]
     image = hdhr["spec"]["template"]["spec"]["containers"][0]["image"]
 
     category_counts: dict[str, int] = {}

@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/plextuner/plex-tuner/internal/catalog"
+	"github.com/iptvtunerr/iptv-tunerr/internal/catalog"
 )
 
 func TestServer_healthz(t *testing.T) {
@@ -114,8 +114,8 @@ func TestUpdateChannels_appliesGuideNumberOffset(t *testing.T) {
 }
 
 func TestApplyLineupPreCapFilters_dropMusicHeuristic(t *testing.T) {
-	t.Setenv("PLEX_TUNER_LINEUP_DROP_MUSIC", "true")
-	t.Setenv("PLEX_TUNER_LINEUP_EXCLUDE_REGEX", "")
+	t.Setenv("IPTV_TUNERR_LINEUP_DROP_MUSIC", "true")
+	t.Setenv("IPTV_TUNERR_LINEUP_EXCLUDE_REGEX", "")
 	in := []catalog.LiveChannel{
 		{GuideName: "CBC Toronto"},
 		{GuideName: "Stingray Hits"},
@@ -132,8 +132,8 @@ func TestApplyLineupPreCapFilters_dropMusicHeuristic(t *testing.T) {
 }
 
 func TestApplyLineupPreCapFilters_regex(t *testing.T) {
-	t.Setenv("PLEX_TUNER_LINEUP_DROP_MUSIC", "false")
-	t.Setenv("PLEX_TUNER_LINEUP_EXCLUDE_REGEX", "shopping|adult")
+	t.Setenv("IPTV_TUNERR_LINEUP_DROP_MUSIC", "false")
+	t.Setenv("IPTV_TUNERR_LINEUP_EXCLUDE_REGEX", "shopping|adult")
 	in := []catalog.LiveChannel{
 		{GuideName: "News"},
 		{GuideName: "Shopping Channel"},
@@ -150,10 +150,10 @@ func TestApplyLineupPreCapFilters_regex(t *testing.T) {
 }
 
 func TestApplyLineupPreCapFilters_shapeNAENReordersBeforeCap(t *testing.T) {
-	t.Setenv("PLEX_TUNER_LINEUP_DROP_MUSIC", "false")
-	t.Setenv("PLEX_TUNER_LINEUP_EXCLUDE_REGEX", "")
-	t.Setenv("PLEX_TUNER_LINEUP_SHAPE", "na_en")
-	t.Setenv("PLEX_TUNER_LINEUP_REGION_PROFILE", "ca_west")
+	t.Setenv("IPTV_TUNERR_LINEUP_DROP_MUSIC", "false")
+	t.Setenv("IPTV_TUNERR_LINEUP_EXCLUDE_REGEX", "")
+	t.Setenv("IPTV_TUNERR_LINEUP_SHAPE", "na_en")
+	t.Setenv("IPTV_TUNERR_LINEUP_REGION_PROFILE", "ca_west")
 
 	in := []catalog.LiveChannel{
 		{GuideName: "Random Foreign", TVGID: "foreign.example", GuideNumber: "1800"},
@@ -193,11 +193,11 @@ func TestApplyLineupPreCapFilters_shapeNAENReordersBeforeCap(t *testing.T) {
 }
 
 func TestApplyLineupPreCapFilters_shardSkipTake(t *testing.T) {
-	t.Setenv("PLEX_TUNER_LINEUP_DROP_MUSIC", "false")
-	t.Setenv("PLEX_TUNER_LINEUP_EXCLUDE_REGEX", "")
-	t.Setenv("PLEX_TUNER_LINEUP_SHAPE", "")
-	t.Setenv("PLEX_TUNER_LINEUP_SKIP", "2")
-	t.Setenv("PLEX_TUNER_LINEUP_TAKE", "3")
+	t.Setenv("IPTV_TUNERR_LINEUP_DROP_MUSIC", "false")
+	t.Setenv("IPTV_TUNERR_LINEUP_EXCLUDE_REGEX", "")
+	t.Setenv("IPTV_TUNERR_LINEUP_SHAPE", "")
+	t.Setenv("IPTV_TUNERR_LINEUP_SKIP", "2")
+	t.Setenv("IPTV_TUNERR_LINEUP_TAKE", "3")
 	in := []catalog.LiveChannel{
 		{GuideName: "A"}, {GuideName: "B"}, {GuideName: "C"}, {GuideName: "D"}, {GuideName: "E"}, {GuideName: "F"},
 	}
@@ -211,11 +211,11 @@ func TestApplyLineupPreCapFilters_shardSkipTake(t *testing.T) {
 }
 
 func TestUpdateChannels_shardThenCap(t *testing.T) {
-	t.Setenv("PLEX_TUNER_LINEUP_DROP_MUSIC", "false")
-	t.Setenv("PLEX_TUNER_LINEUP_EXCLUDE_REGEX", "")
-	t.Setenv("PLEX_TUNER_LINEUP_SHAPE", "")
-	t.Setenv("PLEX_TUNER_LINEUP_SKIP", "4")
-	t.Setenv("PLEX_TUNER_LINEUP_TAKE", "10")
+	t.Setenv("IPTV_TUNERR_LINEUP_DROP_MUSIC", "false")
+	t.Setenv("IPTV_TUNERR_LINEUP_EXCLUDE_REGEX", "")
+	t.Setenv("IPTV_TUNERR_LINEUP_SHAPE", "")
+	t.Setenv("IPTV_TUNERR_LINEUP_SKIP", "4")
+	t.Setenv("IPTV_TUNERR_LINEUP_TAKE", "10")
 	in := make([]catalog.LiveChannel, 20)
 	for i := range in {
 		in[i] = catalog.LiveChannel{GuideName: string(rune('A' + i))}

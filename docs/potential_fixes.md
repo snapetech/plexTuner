@@ -182,7 +182,7 @@ defer timer.ObserveDuration()
 
 **Configuration**:
 ```bash
-PLEX_TUNER_STARTUP_LIVE_OFFSET_SECONDS=3
+IPTV_TUNERR_STARTUP_LIVE_OFFSET_SECONDS=3
 ```
 
 **Trade-offs**:
@@ -333,6 +333,6 @@ The PAT+PMT keepalive feature (already implemented) is theoretically the most pr
 
 ## References
 
-- [`docs/runbooks/plextuner-troubleshooting.md`](docs/runbooks/plextuner-troubleshooting.md) - Full troubleshooting guide
+- [`docs/runbooks/iptvtunerr-troubleshooting.md`](docs/runbooks/iptvtunerr-troubleshooting.md) - Full troubleshooting guide
 - [`internal/tuner/gateway.go`](internal/tuner/gateway.go:1724-1737) - Current startup parameters
 - [.env.example](.env.example) - All configuration options

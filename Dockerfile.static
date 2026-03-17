@@ -1,7 +1,7 @@
 # Use when binary is pre-built (avoids go mod download in container).
-# Build: go build -o plex-tuner ./cmd/plex-tuner && docker build -f Dockerfile.static -t plex-tuner:hdhr-test .
+# Build: go build -o iptv-tunerr ./cmd/iptv-tunerr && docker build -f Dockerfile.static -t iptv-tunerr:hdhr-test .
 FROM debian:stable-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg && rm -rf /var/lib/apt/lists/*
-COPY plex-tuner /usr/local/bin/plex-tuner
+COPY iptv-tunerr /usr/local/bin/iptv-tunerr
 EXPOSE 5004
-ENTRYPOINT ["plex-tuner"]
+ENTRYPOINT ["iptv-tunerr"]

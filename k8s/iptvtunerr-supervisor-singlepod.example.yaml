@@ -1,30 +1,30 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: plextuner-supervisor-config
+  name: iptvtunerr-supervisor-config
   namespace: plex
 data:
   supervisor.json: |
-    REPLACE_WITH_k8s/plextuner-supervisor-multi.example.json
+    REPLACE_WITH_k8s/iptvtunerr-supervisor-multi.example.json
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: plextuner-supervisor
+  name: iptvtunerr-supervisor
   namespace: plex
   labels:
-    app: plextuner-supervisor
+    app: iptvtunerr-supervisor
 spec:
   replicas: 1
   strategy:
     type: Recreate
   selector:
     matchLabels:
-      app: plextuner-supervisor
+      app: iptvtunerr-supervisor
   template:
     metadata:
       labels:
-        app: plextuner-supervisor
+        app: iptvtunerr-supervisor
     spec:
       # Pin to the node where the image is present. Change to match your environment.
       nodeSelector:
@@ -47,8 +47,8 @@ spec:
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       containers:
-        - name: plextuner
-          image: plex-tuner:latest
+        - name: iptvtunerr
+          image: iptv-tunerr:latest
           imagePullPolicy: IfNotPresent
           args: ["supervise", "-config", "/config/supervisor.json"]
           env:
@@ -57,11 +57,11 @@ spec:
               value: America/Chicago
             # Abort HLS streams immediately when a segment is CF-blocked (redirected to
             # cloudflare-terms-of-service-abuse.com) instead of stalling 12s then dropping.
-            - name: PLEX_TUNER_FETCH_CF_REJECT
+            - name: IPTV_TUNERR_FETCH_CF_REJECT
               value: "true"
             # PLEX_HOST and PLEX_TOKEN are inherited by child instances that need to perform
             # Plex API registration (those with -mode=full -register-plex=api in their args).
-            # Note: PLEX_TUNER_PMS_URL and PLEX_TUNER_PMS_TOKEN are explicitly filtered by
+            # Note: IPTV_TUNERR_PMS_URL and IPTV_TUNERR_PMS_TOKEN are explicitly filtered by
             # the supervisor's shouldDropChildInheritedEnv; use PLEX_HOST/PLEX_TOKEN instead.
             - name: PLEX_HOST
               value: "192.168.50.85:32400"
@@ -70,24 +70,24 @@ spec:
                 secretKeyRef:
                   name: plex-token
                   key: token
-            - name: PLEX_TUNER_PMS_URL
+            - name: IPTV_TUNERR_PMS_URL
               value: http://plex.plex.svc:32400
-            - name: PLEX_TUNER_PMS_TOKEN
+            - name: IPTV_TUNERR_PMS_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: plex-token
                   key: token
-            - name: PLEX_TUNER_PLEX_SESSION_REAPER
+            - name: IPTV_TUNERR_PLEX_SESSION_REAPER
               value: "true"
-            - name: PLEX_TUNER_PLEX_SESSION_REAPER_POLL_S
+            - name: IPTV_TUNERR_PLEX_SESSION_REAPER_POLL_S
               value: "2"
-            - name: PLEX_TUNER_PLEX_SESSION_REAPER_IDLE_S
+            - name: IPTV_TUNERR_PLEX_SESSION_REAPER_IDLE_S
               value: "15"
-            - name: PLEX_TUNER_PLEX_SESSION_REAPER_RENEW_LEASE_S
+            - name: IPTV_TUNERR_PLEX_SESSION_REAPER_RENEW_LEASE_S
               value: "20"
-            - name: PLEX_TUNER_PLEX_SESSION_REAPER_HARD_LEASE_S
+            - name: IPTV_TUNERR_PLEX_SESSION_REAPER_HARD_LEASE_S
               value: "1800"
-            - name: PLEX_TUNER_PLEX_SESSION_REAPER_SSE
+            - name: IPTV_TUNERR_PLEX_SESSION_REAPER_SSE
               value: "true"
           ports:
             - { name: hdhr-http, containerPort: 5004, protocol: TCP }
@@ -139,175 +139,175 @@ spec:
       volumes:
         - name: supervisor-config
           configMap:
-            name: plextuner-supervisor-config
+            name: iptvtunerr-supervisor-config
         - name: data
           # hostPath so catalogs survive pod restarts (avoids full re-fetch on every restart).
           # Change path to match your node's data directory.
           hostPath:
-            path: /mnt/datapool_lvm_media/plextuner-supervisor-data
+            path: /mnt/datapool_lvm_media/iptvtunerr-supervisor-data
             type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: plextuner-hdhr
+  name: iptvtunerr-hdhr
   namespace: plex
 spec:
   selector:
-    app: plextuner-supervisor
+    app: iptvtunerr-supervisor
   ports:
     - { name: http, port: 5004, targetPort: 5004, protocol: TCP }
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: plextuner-bcastus
+  name: iptvtunerr-bcastus
   namespace: plex
 spec:
   selector:
-    app: plextuner-supervisor
+    app: iptvtunerr-supervisor
   ports:
     - { name: http, port: 5004, targetPort: 5101, protocol: TCP }
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: plextuner-newsus
+  name: iptvtunerr-newsus
   namespace: plex
 spec:
   selector:
-    app: plextuner-supervisor
+    app: iptvtunerr-supervisor
   ports:
     - { name: http, port: 5004, targetPort: 5102, protocol: TCP }
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: plextuner-sportsa
+  name: iptvtunerr-sportsa
   namespace: plex
 spec:
   selector:
-    app: plextuner-supervisor
+    app: iptvtunerr-supervisor
   ports:
     - { name: http, port: 5004, targetPort: 5103, protocol: TCP }
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: plextuner-sportsb
+  name: iptvtunerr-sportsb
   namespace: plex
 spec:
   selector:
-    app: plextuner-supervisor
+    app: iptvtunerr-supervisor
   ports:
     - { name: http, port: 5004, targetPort: 5104, protocol: TCP }
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: plextuner-moviesprem
+  name: iptvtunerr-moviesprem
   namespace: plex
 spec:
   selector:
-    app: plextuner-supervisor
+    app: iptvtunerr-supervisor
   ports:
     - { name: http, port: 5004, targetPort: 5105, protocol: TCP }
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: plextuner-generalent
+  name: iptvtunerr-generalent
   namespace: plex
 spec:
   selector:
-    app: plextuner-supervisor
+    app: iptvtunerr-supervisor
   ports:
     - { name: http, port: 5004, targetPort: 5106, protocol: TCP }
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: plextuner-docsfam
+  name: iptvtunerr-docsfam
   namespace: plex
 spec:
   selector:
-    app: plextuner-supervisor
+    app: iptvtunerr-supervisor
   ports:
     - { name: http, port: 5004, targetPort: 5107, protocol: TCP }
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: plextuner-ukie
+  name: iptvtunerr-ukie
   namespace: plex
 spec:
   selector:
-    app: plextuner-supervisor
+    app: iptvtunerr-supervisor
   ports:
     - { name: http, port: 5004, targetPort: 5108, protocol: TCP }
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: plextuner-eunordics
+  name: iptvtunerr-eunordics
   namespace: plex
 spec:
   selector:
-    app: plextuner-supervisor
+    app: iptvtunerr-supervisor
   ports:
     - { name: http, port: 5004, targetPort: 5109, protocol: TCP }
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: plextuner-eusouth
+  name: iptvtunerr-eusouth
   namespace: plex
 spec:
   selector:
-    app: plextuner-supervisor
+    app: iptvtunerr-supervisor
   ports:
     - { name: http, port: 5004, targetPort: 5110, protocol: TCP }
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: plextuner-eueast
+  name: iptvtunerr-eueast
   namespace: plex
 spec:
   selector:
-    app: plextuner-supervisor
+    app: iptvtunerr-supervisor
   ports:
     - { name: http, port: 5004, targetPort: 5111, protocol: TCP }
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: plextuner-latin
+  name: iptvtunerr-latin
   namespace: plex
 spec:
   selector:
-    app: plextuner-supervisor
+    app: iptvtunerr-supervisor
   ports:
     - { name: http, port: 5004, targetPort: 5112, protocol: TCP }
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: plextuner-otherworld
+  name: iptvtunerr-otherworld
   namespace: plex
 spec:
   selector:
-    app: plextuner-supervisor
+    app: iptvtunerr-supervisor
   ports:
     - { name: http, port: 5004, targetPort: 5113, protocol: TCP }
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: plextuner-hdhr-test2
+  name: iptvtunerr-hdhr-test2
   namespace: plex
 spec:
   selector:
-    app: plextuner-supervisor
+    app: iptvtunerr-supervisor
   ports:
     - { name: http, port: 5004, targetPort: 5006, protocol: TCP }

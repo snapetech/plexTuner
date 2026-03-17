@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/plextuner/plex-tuner/internal/catalog"
-	"github.com/plextuner/plex-tuner/internal/httpclient"
-	"github.com/plextuner/plex-tuner/internal/safeurl"
+	"github.com/iptvtunerr/iptv-tunerr/internal/catalog"
+	"github.com/iptvtunerr/iptv-tunerr/internal/httpclient"
+	"github.com/iptvtunerr/iptv-tunerr/internal/safeurl"
 )
 
 // FilterLiveBySmoketest probes each channel's primary stream URL and returns only
@@ -136,7 +136,7 @@ func probeStream(ctx context.Context, streamURL string, client *http.Client, tim
 	if err != nil {
 		return false
 	}
-	req.Header.Set("User-Agent", "PlexTuner/1.0")
+	req.Header.Set("User-Agent", "IptvTunerr/1.0")
 	isHLS := strings.HasSuffix(strings.ToLower(streamURL), ".m3u8")
 	if !isHLS {
 		// Non-HLS: request first 4K only to avoid full-stream bandwidth

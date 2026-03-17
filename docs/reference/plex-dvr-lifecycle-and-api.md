@@ -7,7 +7,7 @@ tags: [reference, plex, dvr, livetv, api, wizard]
 
 # Plex DVR lifecycle and API operations
 
-Reference for Plex-side Live TV / DVR manipulation used by Plex Tuner testing and recovery workflows.
+Reference for Plex-side Live TV / DVR manipulation used by IPTV Tunerr testing and recovery workflows.
 
 This doc covers:
 - HDHR wizard-equivalent API flow (create DVR from tuner)
@@ -16,7 +16,7 @@ This doc covers:
 - guide refresh and channelmap activation
 - common Plex metadata/cache gotchas that make UI behavior look wrong
 
-This is intentionally focused on Plex behavior around Plex Tuner, not general Plex administration.
+This is intentionally focused on Plex behavior around IPTV Tunerr, not general Plex administration.
 
 ## Mental model (important)
 
@@ -41,9 +41,9 @@ Per-tab label caveat:
 
 ### 1. HDHR wizard path (UI or wizard-equivalent API)
 
-Use when you want Plex to treat Plex Tuner like a discovered HDHomeRun device and perform normal Live TV setup behavior.
+Use when you want Plex to treat IPTV Tunerr like a discovered HDHomeRun device and perform normal Live TV setup behavior.
 
-Typical Plex Tuner endpoints:
+Typical IPTV Tunerr endpoints:
 - `GET /discover.json`
 - `GET /lineup_status.json`
 - `GET /lineup.json`
@@ -59,12 +59,12 @@ Notes:
 Use when you want to bypass the wizard and create/update DVRs directly (for example 13-category injected DVR setup).
 
 In this repo that is done by:
-- `plex-tuner` API registration path (`-register-plex`)
+- `iptv-tunerr` API registration path (`-register-plex`)
 - helper scripts / k8s jobs (category activation, guide reloads, channelmap save)
 
 Notes:
 - This is how multi-category DVR fleets are created quickly.
-- It is ideal for testing Plex Tuner behavior independent of Plex wizard/provider matching.
+- It is ideal for testing IPTV Tunerr behavior independent of Plex wizard/provider matching.
 
 ## HDHR wizard-equivalent API flow (what "wizard inject" really means)
 
@@ -96,12 +96,12 @@ Important:
 
 ## Injected DVR lifecycle (category DVRs)
 
-Recommended for category-based Plex Tuner testing:
+Recommended for category-based IPTV Tunerr testing:
 
 1. Start per-category tuners (or supervisor children) with distinct:
-- `PLEX_TUNER_DEVICE_ID`
-- `PLEX_TUNER_FRIENDLY_NAME`
-- `PLEX_TUNER_GUIDE_NUMBER_OFFSET` (prevents cross-DVR guide collisions in Plex clients)
+- `IPTV_TUNERR_DEVICE_ID`
+- `IPTV_TUNERR_FRIENDLY_NAME`
+- `IPTV_TUNERR_GUIDE_NUMBER_OFFSET` (prevents cross-DVR guide collisions in Plex clients)
 
 2. Register/create DVR rows in Plex for each category tuner
 

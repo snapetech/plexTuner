@@ -116,10 +116,10 @@ docker-compose.override.yml
 compose.override.yml
 
 # =========================
-# Plex Tuner runtime / build
+# IPTV Tunerr runtime / build
 # =========================
 catalog.json
-/plex-tuner
+/iptv-tunerr
 
 # =========================
 # Secrets — never commit these

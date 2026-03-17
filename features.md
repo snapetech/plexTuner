@@ -1,4 +1,4 @@
-# Plex Tuner — Features
+# IPTV Tunerr — Features
 
 Short feature overview. Canonical list: [`docs/features.md`](docs/features.md).
 
@@ -7,11 +7,11 @@ Short feature overview. Canonical list: [`docs/features.md`](docs/features.md).
 - **HDHomeRun-compatible tuner** for Plex Live TV & DVR (`discover.json`, `lineup.json`, `guide.xml`, `/stream/...`)
 - **IPTV indexing** from M3U and Xtream `player_api`
 - **Provider failover** with multi-host probing and ranked backup stream URLs
-- **Supervisor mode** (`plex-tuner supervise`) to run many virtual tuners in one app/container
+- **Supervisor mode** (`iptv-tunerr supervise`) to run many virtual tuners in one app/container
 - **Multi-DVR Plex support** (category/injected DVR fleets + HDHR wizard lane in parallel)
 - **XMLTV remap + normalization** (English/Latin preference options)
 - **Lineup shaping + wizard-safe caps** (for HDHR/provider matching workflows)
-- **Injected DVR overflow sharding** (`PLEX_TUNER_LINEUP_SKIP/TAKE`, generator support for `category2/category3/...`)
+- **Injected DVR overflow sharding** (`IPTV_TUNERR_LINEUP_SKIP/TAKE`, generator support for `category2/category3/...`)
 - **Built-in Plex stale-session reaper** (optional)
 - **Optional VODFS mount** (`mount`, Linux only)
 - **VOD Plex library registration** (`plex-vod-register`, including `--shows-only` / `--movies-only`)

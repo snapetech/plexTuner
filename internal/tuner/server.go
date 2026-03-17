@@ -16,8 +16,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/plextuner/plex-tuner/internal/catalog"
-	"github.com/plextuner/plex-tuner/internal/httpclient"
+	"github.com/iptvtunerr/iptv-tunerr/internal/catalog"
+	"github.com/iptvtunerr/iptv-tunerr/internal/httpclient"
 )
 
 // PlexDVRMaxChannels is Plex's per-tuner channel limit when using the wizard; exceeding it causes "failed to save channel lineup".
@@ -37,8 +37,8 @@ type Server struct {
 	TunerCount          int
 	LineupMaxChannels   int    // max channels in lineup/guide (default PlexDVRMaxChannels); 0 = use PlexDVRMaxChannels
 	GuideNumberOffset   int    // add offset to exposed GuideNumber values to avoid cross-DVR collisions in Plex clients
-	DeviceID            string // HDHomeRun discover.json; set from PLEX_TUNER_DEVICE_ID
-	FriendlyName        string // HDHomeRun discover.json; set from PLEX_TUNER_FRIENDLY_NAME
+	DeviceID            string // HDHomeRun discover.json; set from IPTV_TUNERR_DEVICE_ID
+	FriendlyName        string // HDHomeRun discover.json; set from IPTV_TUNERR_FRIENDLY_NAME
 	StreamBufferBytes   int    // 0 = no buffer; -1 = auto; e.g. 2097152 for 2 MiB
 	StreamTranscodeMode string // "off" | "on" | "auto"
 	Channels            []catalog.LiveChannel
@@ -129,7 +129,7 @@ func applyLineupPreCapFilters(live []catalog.LiveChannel) []catalog.LiveChannel 
 	}
 	before := len(live)
 	out := live
-	if envBool("PLEX_TUNER_LINEUP_DROP_MUSIC", false) {
+	if envBool("IPTV_TUNERR_LINEUP_DROP_MUSIC", false) {
 		filtered := make([]catalog.LiveChannel, 0, len(out))
 		dropped := 0
 		for _, ch := range out {
@@ -144,7 +144,7 @@ func applyLineupPreCapFilters(live []catalog.LiveChannel) []catalog.LiveChannel 
 			out = filtered
 		}
 	}
-	if want := normalizeLineupLangFilter(strings.TrimSpace(os.Getenv("PLEX_TUNER_LINEUP_LANGUAGE"))); want != "" && want != "all" {
+	if want := normalizeLineupLangFilter(strings.TrimSpace(os.Getenv("IPTV_TUNERR_LINEUP_LANGUAGE"))); want != "" && want != "all" {
 		filtered := make([]catalog.LiveChannel, 0, len(out))
 		dropped := 0
 		for _, ch := range out {
@@ -157,7 +157,7 @@ func applyLineupPreCapFilters(live []catalog.LiveChannel) []catalog.LiveChannel 
 		log.Printf("Lineup pre-cap filter: language=%s kept=%d dropped=%d", want, len(filtered), dropped)
 		out = filtered
 	}
-	if pat := strings.TrimSpace(os.Getenv("PLEX_TUNER_LINEUP_EXCLUDE_REGEX")); pat != "" {
+	if pat := strings.TrimSpace(os.Getenv("IPTV_TUNERR_LINEUP_EXCLUDE_REGEX")); pat != "" {
 		re, err := regexp.Compile("(?i)" + pat)
 		if err != nil {
 			log.Printf("Lineup pre-cap exclude regex ignored (compile failed): %v", err)
@@ -173,7 +173,7 @@ func applyLineupPreCapFilters(live []catalog.LiveChannel) []catalog.LiveChannel 
 				filtered = append(filtered, ch)
 			}
 			if dropped > 0 {
-				log.Printf("Lineup pre-cap filter: dropped %d channels by PLEX_TUNER_LINEUP_EXCLUDE_REGEX (remaining %d)", dropped, len(filtered))
+				log.Printf("Lineup pre-cap filter: dropped %d channels by IPTV_TUNERR_LINEUP_EXCLUDE_REGEX (remaining %d)", dropped, len(filtered))
 				out = filtered
 			}
 		}
@@ -298,8 +298,8 @@ func applyLineupShard(live []catalog.LiveChannel) []catalog.LiveChannel {
 	if len(live) == 0 {
 		return live
 	}
-	skip := envInt("PLEX_TUNER_LINEUP_SKIP", 0)
-	take := envInt("PLEX_TUNER_LINEUP_TAKE", 0)
+	skip := envInt("IPTV_TUNERR_LINEUP_SKIP", 0)
+	take := envInt("IPTV_TUNERR_LINEUP_TAKE", 0)
 	if skip < 0 {
 		skip = 0
 	}
@@ -321,11 +321,11 @@ func applyLineupShard(live []catalog.LiveChannel) []catalog.LiveChannel {
 }
 
 func applyLineupWizardShape(live []catalog.LiveChannel) []catalog.LiveChannel {
-	shape := strings.ToLower(strings.TrimSpace(os.Getenv("PLEX_TUNER_LINEUP_SHAPE")))
+	shape := strings.ToLower(strings.TrimSpace(os.Getenv("IPTV_TUNERR_LINEUP_SHAPE")))
 	if shape == "" || shape == "off" || shape == "none" {
 		return live
 	}
-	region := strings.ToLower(strings.TrimSpace(os.Getenv("PLEX_TUNER_LINEUP_REGION_PROFILE")))
+	region := strings.ToLower(strings.TrimSpace(os.Getenv("IPTV_TUNERR_LINEUP_REGION_PROFILE")))
 	type scored struct {
 		ch    catalog.LiveChannel
 		score int
@@ -586,7 +586,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	s.hdhr = hdhr
 	defaultProfile := defaultProfileFromEnv()
-	overridePath := os.Getenv("PLEX_TUNER_PROFILE_OVERRIDES_FILE")
+	overridePath := os.Getenv("IPTV_TUNERR_PROFILE_OVERRIDES_FILE")
 	overrides, err := loadProfileOverridesFile(overridePath)
 	if err != nil {
 		log.Printf("Profile overrides disabled: load %q failed: %v", overridePath, err)
@@ -595,7 +595,7 @@ func (s *Server) Run(ctx context.Context) error {
 	} else {
 		log.Printf("Profile overrides: none (default=%s)", defaultProfile)
 	}
-	txOverridePath := os.Getenv("PLEX_TUNER_TRANSCODE_OVERRIDES_FILE")
+	txOverridePath := os.Getenv("IPTV_TUNERR_TRANSCODE_OVERRIDES_FILE")
 	txOverrides, txErr := loadTranscodeOverridesFile(txOverridePath)
 	if txErr != nil {
 		log.Printf("Transcode overrides disabled: load %q failed: %v", txOverridePath, txErr)
@@ -606,7 +606,7 @@ func (s *Server) Run(ctx context.Context) error {
 	if streamMode == "" {
 		// Fallback to process env so runtime overrides still work even if a caller
 		// didn't thread config through correctly.
-		streamMode = strings.TrimSpace(os.Getenv("PLEX_TUNER_STREAM_TRANSCODE"))
+		streamMode = strings.TrimSpace(os.Getenv("IPTV_TUNERR_STREAM_TRANSCODE"))
 	}
 	gateway := &Gateway{
 		Channels:            s.Channels,
@@ -619,9 +619,9 @@ func (s *Server) Run(ctx context.Context) error {
 		DefaultProfile:      defaultProfile,
 		ProfileOverrides:    overrides,
 		FetchCFReject:       s.FetchCFReject,
-		PlexPMSURL:          strings.TrimSpace(os.Getenv("PLEX_TUNER_PMS_URL")),
-		PlexPMSToken:        strings.TrimSpace(os.Getenv("PLEX_TUNER_PMS_TOKEN")),
-		PlexClientAdapt:     strings.EqualFold(strings.TrimSpace(os.Getenv("PLEX_TUNER_CLIENT_ADAPT")), "1") || strings.EqualFold(strings.TrimSpace(os.Getenv("PLEX_TUNER_CLIENT_ADAPT")), "true") || strings.EqualFold(strings.TrimSpace(os.Getenv("PLEX_TUNER_CLIENT_ADAPT")), "yes"),
+		PlexPMSURL:          strings.TrimSpace(os.Getenv("IPTV_TUNERR_PMS_URL")),
+		PlexPMSToken:        strings.TrimSpace(os.Getenv("IPTV_TUNERR_PMS_TOKEN")),
+		PlexClientAdapt:     strings.EqualFold(strings.TrimSpace(os.Getenv("IPTV_TUNERR_CLIENT_ADAPT")), "1") || strings.EqualFold(strings.TrimSpace(os.Getenv("IPTV_TUNERR_CLIENT_ADAPT")), "true") || strings.EqualFold(strings.TrimSpace(os.Getenv("IPTV_TUNERR_CLIENT_ADAPT")), "yes"),
 	}
 	log.Printf("Gateway stream mode: transcode=%q buffer_bytes=%d", gateway.StreamTranscodeMode, gateway.StreamBufferBytes)
 	if gateway.PlexClientAdapt {
@@ -648,8 +648,8 @@ func (s *Server) Run(ctx context.Context) error {
 		addr = ":5004"
 	}
 
-	if envBool("PLEX_TUNER_SSDP_DISABLED", false) {
-		log.Printf("SSDP disabled via PLEX_TUNER_SSDP_DISABLED")
+	if envBool("IPTV_TUNERR_SSDP_DISABLED", false) {
+		log.Printf("SSDP disabled via IPTV_TUNERR_SSDP_DISABLED")
 	} else {
 		StartSSDP(ctx, addr, s.BaseURL, s.DeviceID)
 	}
@@ -764,16 +764,16 @@ func (s *Server) serveDeviceXML() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		deviceID := s.DeviceID
 		if deviceID == "" {
-			deviceID = "plextuner01"
+			deviceID = "iptvtunerr01"
 		}
-		friendlyName := "Plex Tuner"
+		friendlyName := "IPTV Tunerr"
 		deviceXML := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <root xmlns="urn:schemas-upnp-org:device-1-0">
   <device>
     <deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>
     <friendlyName>%s</friendlyName>
-    <manufacturer>Plex Tuner</manufacturer>
-    <modelName>Plex Tuner</modelName>
+    <manufacturer>IPTV Tunerr</manufacturer>
+    <modelName>IPTV Tunerr</modelName>
     <UDN>uuid:%s</UDN>
   </device>
 </root>`, friendlyName, deviceID)

@@ -16,7 +16,7 @@ This is the supported VOD path today. It is separate from Live TV DVR injection.
 ## Preconditions
 
 - Linux host (VODFS is Linux/FUSE only)
-- `plex-tuner` binary
+- `iptv-tunerr` binary
 - catalog JSON with VOD entries (`movies`, `series`)
 - Plex token and URL (for `plex-vod-register`)
 - `ffmpeg` installed if you want actual VOD playback from VODFS (`-cache` mode materializes on demand)
@@ -26,17 +26,17 @@ This is the supported VOD path today. It is separate from Live TV DVR injection.
 1. Mount VODFS
 
 ```bash
-plex-tuner mount \
+iptv-tunerr mount \
   -catalog ./catalog.json \
-  -mount /srv/plextuner-vodfs \
-  -cache /srv/plextuner-vodfs-cache
+  -mount /srv/iptvtunerr-vodfs \
+  -cache /srv/iptvtunerr-vodfs-cache
 ```
 
 2. Register Plex libraries
 
 ```bash
-plex-tuner plex-vod-register \
-  -mount /srv/plextuner-vodfs \
+iptv-tunerr plex-vod-register \
+  -mount /srv/iptvtunerr-vodfs \
   -plex-url http://127.0.0.1:32400 \
   -token "$PLEX_TOKEN"
 ```
@@ -53,7 +53,7 @@ Plex only exposes some of these toggles per library (varies by server version/li
 
 3. Verify in Plex
 - Libraries `VOD` and `VOD-Movies` exist
-- paths point to `/srv/plextuner-vodfs/TV` and `/srv/plextuner-vodfs/Movies`
+- paths point to `/srv/iptvtunerr-vodfs/TV` and `/srv/iptvtunerr-vodfs/Movies`
 
 ## Important: `-cache` vs no cache
 
@@ -67,13 +67,13 @@ For real testing in Plex, use `-cache`.
 If Plex runs as a different user/process/runtime than the process that mounted VODFS (common in Docker/k8s), use:
 
 ```bash
-plex-tuner mount ... -allow-other
+iptv-tunerr mount ... -allow-other
 ```
 
 Equivalent env:
 
 ```bash
-PLEX_TUNER_VODFS_ALLOW_OTHER=1
+IPTV_TUNERR_VODFS_ALLOW_OTHER=1
 ```
 
 This usually also requires enabling `user_allow_other` in `/etc/fuse.conf` on the mount host:
@@ -110,21 +110,21 @@ FUSE mounts are mount-namespace local. A helper pod mount is not automatically v
 On the Plex node host:
 
 ```bash
-plex-tuner mount \
-  -catalog /srv/plextuner-vodfs-run/catalog.json \
-  -mount /srv/plextuner-vodfs \
-  -cache /srv/plextuner-vodfs-cache \
+iptv-tunerr mount \
+  -catalog /srv/iptvtunerr-vodfs-run/catalog.json \
+  -mount /srv/iptvtunerr-vodfs \
+  -cache /srv/iptvtunerr-vodfs-cache \
   -allow-other
 ```
 
 Plex Deployment hostPath mount (example):
-- host path: `/srv/plextuner-vodfs`
+- host path: `/srv/iptvtunerr-vodfs`
 - in-pod path: `/media/iptv-vodfs`
 
 Then inside the Plex pod (or from a host that can reach PMS and the in-pod path is mounted):
 
 ```bash
-plex-tuner plex-vod-register \
+iptv-tunerr plex-vod-register \
   -mount /media/iptv-vodfs \
   -plex-url http://127.0.0.1:32400 \
   -token "$PLEX_TOKEN" \
@@ -161,7 +161,7 @@ Use `plex-vod-register` (current versions) to create/reuse the libraries; it app
 If the libraries already exist and were created before this behavior:
 
 ```bash
-plex-tuner plex-vod-register \
+iptv-tunerr plex-vod-register \
   -mount /media/iptv-vodfs \
   -plex-url http://127.0.0.1:32400 \
   -token "$PLEX_TOKEN" \
@@ -197,14 +197,14 @@ This reduces Plex scan scope and lets you refresh narrower libraries.
 Example:
 
 ```bash
-plex-tuner vod-split \
-  -catalog /srv/plextuner-vodfs-run/catalog.json \
-  -out-dir /srv/plextuner-vodfs-lanes
+iptv-tunerr vod-split \
+  -catalog /srv/iptvtunerr-vodfs-run/catalog.json \
+  -out-dir /srv/iptvtunerr-vodfs-lanes
 ```
 
 Output:
-- per-lane catalog files (for example `/srv/plextuner-vodfs-lanes/sports.json`)
-- manifest: `/srv/plextuner-vodfs-lanes/manifest.json`
+- per-lane catalog files (for example `/srv/iptvtunerr-vodfs-lanes/sports.json`)
+- manifest: `/srv/iptvtunerr-vodfs-lanes/manifest.json`
 
 Then mount each lane with a separate VODFS instance (same binary, different
 `-catalog`, `-mount`, and optionally `-cache`) and register Plex libraries for
@@ -232,7 +232,7 @@ Note:
 Example (movie-only lane):
 
 ```bash
-plex-tuner plex-vod-register \
+iptv-tunerr plex-vod-register \
   -mount /media/iptv-vodfs-euroUKMovies \
   -plex-url http://127.0.0.1:32400 \
   -token "$PLEX_TOKEN" \
@@ -257,7 +257,7 @@ What it does:
 
 After cutover:
 1. rescan the Plex TV VOD library (or rerun `plex-vod-register -refresh=true`)
-2. optionally run `plex-tuner vod-split` on the repaired catalog for category lanes
+2. optionally run `iptv-tunerr vod-split` on the repaired catalog for category lanes
 
 ## See also
 

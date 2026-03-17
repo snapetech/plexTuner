@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/plextuner/plex-tuner/internal/catalog"
+	"github.com/iptvtunerr/iptv-tunerr/internal/catalog"
 )
 
 func TestSmoketestCache_roundtrip(t *testing.T) {

@@ -9,7 +9,7 @@ tags: [runbooks, ops, plex, kubernetes, cluster]
 
 This runbook answers: **Is Plex running in the cluster?** If not, **why is it missing, where did it go, and how do we get it back?**
 
-See also: [Runbooks index](index.md), [k8s/README.md](../../k8s/README.md) (HDHR tuner deploy), [plextuner-troubleshooting](plextuner-troubleshooting.md).
+See also: [Runbooks index](index.md), [k8s/README.md](../../k8s/README.md) (HDHR tuner deploy), [iptvtunerr-troubleshooting](iptvtunerr-troubleshooting.md).
 
 ---
 
@@ -30,7 +30,7 @@ If you see a Plex Media Server deployment or pod in `plex` (or another namespace
 
 **What this repo expects**
 
-- **Namespace:** `plex` (same namespace as Plex Tuner HDHR).
+- **Namespace:** `plex` (same namespace as IPTV Tunerr HDHR).
 - **Plex data path for -register-plex:** The HDHR tuner manifest uses `-register-plex=/var/lib/plex` with a hostPath to `/var/lib/plex`. For that to work, the tuner pod must run on the node where that path exists (use the Deployment’s `nodeSelector` in the manifest to pin that node). So either:
   - Plex runs on that node and uses `/var/lib/plex` (or a symlink) as its data directory, or
   - You run Plex in-cluster and the hostPath is used to share Plex’s DB directory into the tuner pod so it can write DVR/XMLTV URLs.
@@ -42,13 +42,13 @@ If you see a Plex Media Server deployment or pod in `plex` (or another namespace
 
 **This repo does not deploy Plex Media Server.** It only deploys:
 
-- Plex Tuner (HDHR) in `k8s/plextuner-hdhr-test.yaml` (namespace `plex`).
-- Optional reference to a sibling stack: `k8s/deploy-hdhr-one-shot.sh` mentions `../k3s/plex/scripts/create-iptv-secret.sh` — i.e. a **separate** `k3s` tree (sibling to plexTuner) that may contain Plex, Threadfin, and related assets.
+- IPTV Tunerr (HDHR) in `k8s/iptvtunerr-hdhr-test.yaml` (namespace `plex`).
+- Optional reference to a sibling stack: `k8s/deploy-hdhr-one-shot.sh` mentions `../k3s/plex/scripts/create-iptv-secret.sh` — i.e. a **separate** `k3s` tree (sibling to iptvTunerr) that may contain Plex, Threadfin, and related assets.
 
 **History (why it’s not here)**
 
-- Git history: *“Strip to generic agentic Go template: remove plex-tuner, k3s, all project examples.”* So at some point the template (or this repo) was stripped and **k3s / Plex deployment was removed** from this codebase.
-- Plex and the broader “k3s IPTV” stack (Threadfin, M3U server, Plex EPG) are **not** part of the plexTuner repo. They are expected from:
+- Git history: *“Strip to generic agentic Go template: remove iptv-tunerr, k3s, all project examples.”* So at some point the template (or this repo) was stripped and **k3s / Plex deployment was removed** from this codebase.
+- Plex and the broader “k3s IPTV” stack (Threadfin, M3U server, Plex EPG) are **not** part of the iptvTunerr repo. They are expected from:
   - A sibling or separate repo (e.g. `k3s`, `plex`, or a private ops repo), or
   - A one-off or manual deploy (Helm, YAML, or node install).
 
@@ -61,10 +61,10 @@ So **Plex is missing from the cluster** if nothing in your environment deploys i
 | Location | Meaning |
 |----------|--------|
 | **Sibling `k3s` directory** | Scripts reference `../k3s/plex/scripts/`. If you have a repo or folder like `$REPO_PARENT/k3s` or `$REPO_PARENT/k3s` with a `plex` subdir, Plex (and Threadfin) may be defined there. |
-| **Another repo / private config** | Plex and Threadfin may be in a different Git repo or server config that isn’t plexTuner. |
+| **Another repo / private config** | Plex and Threadfin may be in a different Git repo or server config that isn’t iptvTunerr. |
 | **Never deployed in cluster** | Plex might always have run on a single node (e.g. bare metal) with data at `/var/lib/plex`; the cluster only runs the tuner and expects that path via hostPath. |
 
-**Quick check:** From the parent of plexTuner, see if `k3s` exists and contains Plex manifests or scripts:
+**Quick check:** From the parent of iptvTunerr, see if `k3s` exists and contains Plex manifests or scripts:
 
 ```bash
 ls -la "$(dirname "$(pwd)")/k3s/plex" 2>/dev/null || echo "No sibling k3s/plex found"
@@ -110,7 +110,7 @@ If Plex runs bare metal on a node that’s also in the cluster:
 
 1. **Plex is running:** `kubectl -n plex get pods` (or on-node process) shows Plex.
 2. **Plex is reachable:** From a client, open your Plex URL and log in.
-3. **Tuner can write to Plex DB (optional):** If using `-register-plex`, ensure Plex is stopped when the tuner runs RegisterTuner (see [internal/plex/dvr.go](../../internal/plex/dvr.go)); then start Plex. Or add the tuner manually in Plex: **Settings → Live TV & DVR → Set up** with Base URL `http://plextuner-hdhr.plex.home` and guide `http://plextuner-hdhr.plex.home/guide.xml`.
+3. **Tuner can write to Plex DB (optional):** If using `-register-plex`, ensure Plex is stopped when the tuner runs RegisterTuner (see [internal/plex/dvr.go](../../internal/plex/dvr.go)); then start Plex. Or add the tuner manually in Plex: **Settings → Live TV & DVR → Set up** with Base URL `http://iptvtunerr-hdhr.plex.home` and guide `http://iptvtunerr-hdhr.plex.home/guide.xml`.
 
 ---
 

@@ -99,8 +99,8 @@
 ### Loop: Plex DVR exists but silently points at the wrong tuner URI after restarts/re-registration
 
 **Symptom**
-- Plex shows the direct `plextunerTrial` DVR as present, but channel activation returns no mappings (`No valid ChannelMapping entries found`) and playback tests fail or never reach the tuner.
-- `DVR 135` detail shows a device URI like `http://127.0.0.1:5004` even though the tuner actually runs at `http://plextuner-trial.plex.svc:5004`.
+- Plex shows the direct `iptvtunerrTrial` DVR as present, but channel activation returns no mappings (`No valid ChannelMapping entries found`) and playback tests fail or never reach the tuner.
+- `DVR 135` detail shows a device URI like `http://127.0.0.1:5004` even though the tuner actually runs at `http://iptvtunerr-trial.plex.svc:5004`.
 
 **Why it's tricky**
 - The DVR and device both look "alive" in Plex APIs, so it is easy to assume the problem is guide data or tuner code.
@@ -109,7 +109,7 @@
 
 **What works**
 - Inspect `/livetv/dvrs/<id>` and verify the HDHomeRun device URI matches the actual reachable service URI.
-- If wrong, re-register the same device endpoint with the correct `uri` (`/media/grabbers/tv.plex.grabbers.hdhomerun/devices?uri=plextuner-trial.plex.svc:5004`), then run:
+- If wrong, re-register the same device endpoint with the correct `uri` (`/media/grabbers/tv.plex.grabbers.hdhomerun/devices?uri=iptvtunerr-trial.plex.svc:5004`), then run:
   1. `reloadGuide` for the DVR
   2. `plex-activate-dvr-lineups.py --dvr <id>`
 - This updates the existing device URI in place and restores mappings without restarting Plex.
@@ -121,7 +121,7 @@
 ### Loop: Plex Web probe reuses hidden Live TV `CaptureBuffer` state, so tuner changes are not actually exercised
 
 **Symptom**
-- Re-running `plex-web-livetv-probe.py` on the same channel keeps returning the same `TranscodeSession` key in `start.mpd` debug XML, while PlexTuner shows no new `/stream/...` request for that probe.
+- Re-running `plex-web-livetv-probe.py` on the same channel keeps returning the same `TranscodeSession` key in `start.mpd` debug XML, while IptvTunerr shows no new `/stream/...` request for that probe.
 - Probe output still fails `startmpd1_0`, making it look like the latest tuner change had no effect.
 
 **Why it's tricky**
@@ -129,7 +129,7 @@
 - `/status/sessions` and `/transcode/sessions` may both return empty, and `universal/stop?session=<id>` can return `404` for the hidden session IDs, so standard cleanup paths look "successful" even when Plex is still reusing an old capture/transcode path.
 
 **What works**
-- Confirm freshness by checking PlexTuner logs for a new `/stream/<channel>` request and new request ID (`req=r...`) during each probe.
+- Confirm freshness by checking IptvTunerr logs for a new `/stream/<channel>` request and new request ID (`req=r...`) during each probe.
 - Prefer a channel that has not been probed recently (or change the Plex-visible channel identity) when validating tuner runtime changes.
 - Treat repeated `start.mpd` failures with the same `TranscodeSession` key and no new tuner `/stream` log as stale-probe evidence, not a valid regression signal.
 
@@ -141,36 +141,36 @@
 ### Loop: WebSafe profile experiments are silently overridden by client adaptation (`unknown-client-websafe`)
 
 **Symptom**
-- You restart WebSafe with `PLEX_TUNER_PROFILE=<test-profile>` (for example `pmsxcode`) and expect that output profile in probe runs, but PlexTuner logs still show `profile=plexsafe` (or another adapted profile).
+- You restart WebSafe with `IPTV_TUNERR_PROFILE=<test-profile>` (for example `pmsxcode`) and expect that output profile in probe runs, but IptvTunerr logs still show `profile=plexsafe` (or another adapted profile).
 - Probe results look unchanged, so it seems like the profile change had no effect.
 
 **Why it's tricky**
-- Plex live requests often arrive at PlexTuner with weak/empty forwarded client hints (`plex-hints none`), which triggers the safe adaptation rule for unknown clients.
-- `PLEX_TUNER_CLIENT_ADAPT=true` can override the default profile selection, so changing `PLEX_TUNER_PROFILE` alone is not a valid A/B test.
+- Plex live requests often arrive at IptvTunerr with weak/empty forwarded client hints (`plex-hints none`), which triggers the safe adaptation rule for unknown clients.
+- `IPTV_TUNERR_CLIENT_ADAPT=true` can override the default profile selection, so changing `IPTV_TUNERR_PROFILE` alone is not a valid A/B test.
 
 **What works**
-- For profile-isolation tests, disable adaptation temporarily (`PLEX_TUNER_CLIENT_ADAPT=false`) before probing.
-- Confirm the effective profile from PlexTuner logs (`ffmpeg-transcode profile=...`) on the specific probe request, not just startup logs.
+- For profile-isolation tests, disable adaptation temporarily (`IPTV_TUNERR_CLIENT_ADAPT=false`) before probing.
+- Confirm the effective profile from IptvTunerr logs (`ffmpeg-transcode profile=...`) on the specific probe request, not just startup logs.
 - Restore the normal runtime (`client_adapt=true`) after the experiment so you do not leave WebSafe in an unintended compatibility mode.
 
 **Where it's documented**
 - `memory-bank/current_task.md` (2026-02-24 live triage notes)
 - `internal/tuner/gateway.go` (client adaptation + profile selection path)
 
-### Loop: Falling back to Threadfin during PlexTuner playback triage hides whether the app path is actually fixed
+### Loop: Falling back to Threadfin during IptvTunerr playback triage hides whether the app path is actually fixed
 
 **Symptom**
-- Agents restore or test Plex DVR delivery using Threadfin-backed lineups/devices (or mixed Threadfin lineup + PlexTuner device) while the user is specifically asking for PlexTuner-only validation.
-- Results become ambiguous: a "working" setup may prove Plex + Threadfin, not PlexTuner end-to-end.
+- Agents restore or test Plex DVR delivery using Threadfin-backed lineups/devices (or mixed Threadfin lineup + IptvTunerr device) while the user is specifically asking for IptvTunerr-only validation.
+- Results become ambiguous: a "working" setup may prove Plex + Threadfin, not IptvTunerr end-to-end.
 
 **Why it's tricky**
 - Threadfin is a familiar known-good control path and can unblock lineup/guide issues quickly, so it is tempting as a troubleshooting shortcut.
-- Mixed-mode DVRs (PlexTuner device + Threadfin lineup) can partially work and look "close enough" while violating the user's stated goal.
+- Mixed-mode DVRs (IptvTunerr device + Threadfin lineup) can partially work and look "close enough" while violating the user's stated goal.
 
 **What works**
-- In this repo/testing lane, keep both the **device URI** and **lineup/guide URL** on PlexTuner (`http://plextuner-*.plex.svc:5004` and `/guide.xml`) unless the user explicitly requests a comparison/control test.
+- In this repo/testing lane, keep both the **device URI** and **lineup/guide URL** on IptvTunerr (`http://iptvtunerr-*.plex.svc:5004` and `/guide.xml`) unless the user explicitly requests a comparison/control test.
 - If Threadfin is mentioned only for external-stack context (legacy secret names, historical notes, comparison docs), label it as context and avoid using it in active validation steps.
-- For injected DVRs, verify purity by inspecting `/livetv/dvrs/<id>` and confirming both `lineupTitle` and nested `Device uri` point to `plextuner-*`.
+- For injected DVRs, verify purity by inspecting `/livetv/dvrs/<id>` and confirming both `lineupTitle` and nested `Device uri` point to `iptvtunerr-*`.
 
 **Where it's documented**
 - `memory-bank/current_task.md` (2026-02-25 pure-app 13-DVR pivot + validation)
@@ -211,26 +211,26 @@
 
 **What works**
 - Reproduce once with a manual ffmpeg run inside the pod to confirm the EOF/reconnect loop.
-- Disable generic HLS ffmpeg reconnect flags (`PLEX_TUNER_FFMPEG_HLS_RECONNECT=false`); let ffmpeg's HLS demuxer handle playlist refresh.
-- Confirm in PlexTuner logs that the ffmpeg path now reports `reconnect=false` and reaches `startup-gate-ready` / `first-bytes`.
+- Disable generic HLS ffmpeg reconnect flags (`IPTV_TUNERR_FFMPEG_HLS_RECONNECT=false`); let ffmpeg's HLS demuxer handle playlist refresh.
+- Confirm in IptvTunerr logs that the ffmpeg path now reports `reconnect=false` and reaches `startup-gate-ready` / `first-bytes`.
 
 **Where it's documented**
 - `memory-bank/known_issues.md` (WebSafe ffmpeg startup gate + HLS reconnect follow-up)
-- `internal/tuner/gateway.go` (`PLEX_TUNER_FFMPEG_HLS_RECONNECT` default for HLS ffmpeg path)
+- `internal/tuner/gateway.go` (`IPTV_TUNERR_FFMPEG_HLS_RECONNECT` default for HLS ffmpeg path)
 
 ### Loop: "WebSafe" probes are interpreted as ffmpeg-transcode tests even when the helper pod has no ffmpeg binary
 
 **Symptom**
-- WebSafe (`PLEX_TUNER_STREAM_TRANSCODE=true`) appears to be under test, but logs only show `hls-relay ...` lines and Plex Web still fails `startmpd1_0`.
+- WebSafe (`IPTV_TUNERR_STREAM_TRANSCODE=true`) appears to be under test, but logs only show `hls-relay ...` lines and Plex Web still fails `startmpd1_0`.
 - Agents keep changing profiles/HLS settings while assuming ffmpeg-transcoded output is being exercised.
 
 **Why it's tricky**
-- The ad hoc `plextuner-build` helper pod can be recreated from a minimal image without `ffmpeg`.
-- PlexTuner silently falls back to the Go HLS relay when `ffmpeg` is unavailable (unless a failing `PLEX_TUNER_FFMPEG_PATH` is explicitly set and logged), so WebSafe still streams bytes and tune requests succeed.
+- The ad hoc `iptvtunerr-build` helper pod can be recreated from a minimal image without `ffmpeg`.
+- IptvTunerr silently falls back to the Go HLS relay when `ffmpeg` is unavailable (unless a failing `IPTV_TUNERR_FFMPEG_PATH` is explicitly set and logged), so WebSafe still streams bytes and tune requests succeed.
 
 **What works**
 - Before WebSafe profile/startup-gate experiments, verify ffmpeg presence inside the active runtime (`command -v ffmpeg`) and confirm per-request logs contain `ffmpeg-transcode` / `ffmpeg-remux`.
-- In the helper pod, install ffmpeg (`apt-get install -y ffmpeg`) or provide a compatible binary, then restart only the WebSafe `serve` process with `PLEX_TUNER_FFMPEG_PATH=/usr/bin/ffmpeg`.
+- In the helper pod, install ffmpeg (`apt-get install -y ffmpeg`) or provide a compatible binary, then restart only the WebSafe `serve` process with `IPTV_TUNERR_FFMPEG_PATH=/usr/bin/ffmpeg`.
 - Treat `hls-mode transcode=true` without `ffmpeg-*` request logs as a degraded raw-relay run, not a valid WebSafe ffmpeg result.
 
 **Where it's documented**
@@ -265,7 +265,7 @@
 
 **What works**
 - Keep bootstrap audio aligned with the active output profile (MP3 for `plexsafe`, MP2 for `pmsxcode`, no audio for `videoonly`, AAC for AAC profiles), or disable bootstrap during A/B tests.
-- Confirm Plex-side impact from PMS logs (`progress/streamDetail` codec and absence/presence of `AAC bitstream not in ADTS...`) instead of relying only on PlexTuner startup logs.
+- Confirm Plex-side impact from PMS logs (`progress/streamDetail` codec and absence/presence of `AAC bitstream not in ADTS...`) instead of relying only on IptvTunerr startup logs.
 
 **Where it's documented**
 - `memory-bank/known_issues.md` (WebSafe bootstrap/profile mismatch entry)
@@ -287,7 +287,7 @@
 - Persist the LAN allows in **`/etc/nftables.conf`** (the boot-loaded file that defines `table inet filter`), not just in `/etc/nftables/<plex-node>-host-firewall.conf`.
 - For immediate runtime recovery, add the same rules directly to `inet filter input` with `nft insert rule ...` (temporary) and then patch `/etc/nftables.conf` (durable).
 - Verify from `<work-node>` with `rpcinfo -p <plex-host-ip>`, `showmount -e <plex-host-ip>`, and `curl`/TCP checks.
-- **2026-02-27 (plextuner ports):** Traced again for ports `5004/5006/5101-5126` using `iptables -t raw -I PREROUTING -j LOG` to confirm the packet arrived at kspld0, `nft list tables` to find the two tables, and verified the `inet filter` chain dropped it. Fixed by adding `ip saddr 192.168.50.0/24 tcp dport { 5004, 5006, 5101-5126 } accept` to `/etc/nftables.conf`.
+- **2026-02-27 (iptvtunerr ports):** Traced again for ports `5004/5006/5101-5126` using `iptables -t raw -I PREROUTING -j LOG` to confirm the packet arrived at kspld0, `nft list tables` to find the two tables, and verified the `inet filter` chain dropped it. Fixed by adding `ip saddr 192.168.50.0/24 tcp dport { 5004, 5006, 5101-5126 } accept` to `/etc/nftables.conf`.
 - **Diagnosis shortcut:** When "No route to host" from kspls0 to kspld0 persists after adding rules to `host-firewall.conf`, run `sudo nft list tables` on kspld0 and check for `table inet filter` separately from `table inet host-firewall`—both need the allow rule.
 
 **Where it's documented**
@@ -301,16 +301,16 @@
 - Plex `/livetv/dvrs` still shows the DVRs as configured, so it looks like a tuning/packaging regression instead of a service/backend outage.
 
 **Why it's tricky**
-- `plextuner-trial` / `plextuner-websafe` service objects can remain present for days even when their selected backend (`app=plextuner-build`) no longer exists, so a quick `kubectl get svc` looks "fine".
-- Plex device URIs can drift independently of lineup URLs (for example to `plextuner-otherworld`), which creates mixed signals: the DVR lineup points to direct services, but the HDHomeRun device points elsewhere.
-- This can happen after prior runtime-only experiments because `plextuner-build` was ad hoc, not a durable managed deployment.
+- `iptvtunerr-trial` / `iptvtunerr-websafe` service objects can remain present for days even when their selected backend (`app=iptvtunerr-build`) no longer exists, so a quick `kubectl get svc` looks "fine".
+- Plex device URIs can drift independently of lineup URLs (for example to `iptvtunerr-otherworld`), which creates mixed signals: the DVR lineup points to direct services, but the HDHomeRun device points elsewhere.
+- This can happen after prior runtime-only experiments because `iptvtunerr-build` was ad hoc, not a durable managed deployment.
 
 **What works**
 - Before any Plex Web or packager probe, always run this triage in order:
-  1. `kubectl -n plex get endpoints plextuner-trial plextuner-websafe` (must not be `<none>`)
+  1. `kubectl -n plex get endpoints iptvtunerr-trial iptvtunerr-websafe` (must not be `<none>`)
   2. `curl /livetv/dvrs/<id>` and inspect nested `<Device ... uri=...>` for `135` and `138`
-  3. Confirm actual tuner traffic in `/tmp/plextuner-{trial,websafe}.log` (new `PlexMediaServer` requests)
-- If endpoints are missing, restore `app=plextuner-build` backend first.
+  3. Confirm actual tuner traffic in `/tmp/iptvtunerr-{trial,websafe}.log` (new `PlexMediaServer` requests)
+- If endpoints are missing, restore `app=iptvtunerr-build` backend first.
 - If URIs drifted, repair them with in-place re-registration (`/media/grabbers/tv.plex.grabbers.hdhomerun/devices?uri=...`) before interpreting probe failures.
 
 **Where it's documented**
@@ -336,10 +336,10 @@
 - `memory-bank/current_task.md` (2026-02-26 helper AB4 long-wait no-decision findings)
 - `memory-bank/known_issues.md` (Plex internal Live TV manifest / duration-timeout follow-ups)
 
-### Loop: Agents blame PlexTuner TS/HLS formatting when PMS is actually rejecting its own first-stage `/manifest` callbacks
+### Loop: Agents blame IptvTunerr TS/HLS formatting when PMS is actually rejecting its own first-stage `/manifest` callbacks
 
 **Symptom**
-- Plex tunes successfully and PlexTuner streams bytes; PMS first-stage recorder writes `media-*.ts` files and sends `progress/streamDetail`.
+- Plex tunes successfully and IptvTunerr streams bytes; PMS first-stage recorder writes `media-*.ts` files and sends `progress/streamDetail`.
 - PMS still logs `buildLiveM3U8: no segment info available`, `/livetv/sessions/.../index.m3u8` returns `500`/empty, and Plex Web fails at `start.mpd`.
 - Repeated TS integrity checks look clean, which makes the investigation loop on subtle stream-format theories.
 
@@ -360,32 +360,32 @@
 ### Loop: Category deployments suddenly "lose" M3U env support after rebuilding images (looks like k8s env breakage but is an app regression)
 
 **Symptom**
-- Rebuilt category `plextuner-*` pods crashloop with:
-  - `Catalog refresh failed: need -m3u URL or set PLEX_TUNER_PROVIDER_USER and PLEX_TUNER_PROVIDER_PASS in .env`
-- Deployment YAML still clearly contains `PLEX_TUNER_M3U_URL` and `PLEX_TUNER_XMLTV_URL`.
+- Rebuilt category `iptvtunerr-*` pods crashloop with:
+  - `Catalog refresh failed: need -m3u URL or set IPTV_TUNERR_PROVIDER_USER and IPTV_TUNERR_PROVIDER_PASS in .env`
+- Deployment YAML still clearly contains `IPTV_TUNERR_M3U_URL` and `IPTV_TUNERR_XMLTV_URL`.
 
 **Why it's tricky**
 - It looks like a bad image build, wrong entrypoint, or Kubernetes env propagation problem.
 - The actual issue is code-path specific: `run -mode=easy` can regress if `fetchCatalog()` stops checking `cfg.M3UURLsOrBuild()` when `-m3u` is not passed explicitly.
 
 **What works**
-- Check `cmd/plex-tuner/main.go` `fetchCatalog()` before changing k8s manifests.
+- Check `cmd/iptv-tunerr/main.go` `fetchCatalog()` before changing k8s manifests.
 - Ensure the order is: explicit `-m3u` -> configured M3U URLs (`cfg.M3UURLsOrBuild()`) -> provider creds/player_api.
 - Rebuild/reimport image, then restart category deployments.
 
 **Where it's documented**
 - `memory-bank/known_issues.md` (easy-mode M3U env regression)
-- `cmd/plex-tuner/main.go`
+- `cmd/iptv-tunerr/main.go`
 
 ### Loop: Applying the full generated supervisor YAML silently rolls the deployment back to a generic local image tag
 
 **Symptom**
-- `plextuner-supervisor` starts crashlooping after a generated-manifest apply with:
+- `iptvtunerr-supervisor` starts crashlooping after a generated-manifest apply with:
   - `Unknown command "supervise"`
 - It looks like the supervisor JSON/config is wrong even though it was working moments earlier.
 
 **Why it's tricky**
-- The generated single-pod YAML intentionally uses a generic image tag (for example `plex-tuner:hdhr-test`) so it can be checked in and reused.
+- The generated single-pod YAML intentionally uses a generic image tag (for example `iptv-tunerr:hdhr-test`) so it can be checked in and reused.
 - Live k3s rollouts may be using a one-off locally imported tag that contains newer code (`supervise`, rollout fixes).
 - Applying the full generated YAML overwrites the deployment image field back to the generic tag, and with `imagePullPolicy: Never` the node may run an older cached image under that tag.
 
@@ -426,7 +426,7 @@
 
 **Symptom**
 - Guides/tabs become correct after a metadata/channel-ID fix, but channel clicks suddenly do nothing.
-- Probe `tune` requests hang ~35s and time out; PlexTuner sees no `/stream/...` request.
+- Probe `tune` requests hang ~35s and time out; IptvTunerr sees no `/stream/...` request.
 
 **Why it's tricky**
 - It happens right after a real server-side change (guide remap), so it looks like the remap broke playback.
@@ -436,7 +436,7 @@
 - Check Plex file logs for the tune request and look for:
   - `Subscription: There are <N> active grabs at the end.`
   - `Subscription: Waiting for media grab to start.`
-- If present, restart Plex before rolling back PlexTuner changes.
+- If present, restart Plex before rolling back IptvTunerr changes.
 - Re-test the exact same channel after restart; in the 2026-02-26 incident, `DVR 218 / channel 2001` returned to `tune 200` immediately post-restart.
 
 **Where it's documented**

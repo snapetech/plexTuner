@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Deploy Plex Tuner into your local cluster, connect to Plex at plex.home, populate Live TV.
+# Deploy IPTV Tunerr into your local cluster, connect to Plex at plex.home, populate Live TV.
 # Run from repo root. Uses .env for provider creds. Tuner will index at startup, then -register-plex into /var/lib/plex.
 #
 # Prereqs:
 #   - kubectl pointing at your local cluster (kind, k3d, etc.)
 #   - Plex Media Server in the cluster (or on a node) with data at /var/lib/plex on the node
-#   - DNS: plextuner-hdhr.plex.home → Ingress (or set TUNER_BASE_URL for NodePort)
-#   - If Plex runs on a specific node, set PLEX_NODE_NAME and uncomment nodeSelector in k8s/plextuner-hdhr-test.yaml
+#   - DNS: iptvtunerr-hdhr.plex.home → Ingress (or set TUNER_BASE_URL for NodePort)
+#   - If Plex runs on a specific node, set PLEX_NODE_NAME and uncomment nodeSelector in k8s/iptvtunerr-hdhr-test.yaml
 #
 # Usage:
 #   ./k8s/standup-local-cluster.sh [--static]
@@ -17,15 +17,15 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
 if [[ ! -f .env ]]; then
-  echo "[standup-local] ERROR: .env not found. Copy .env.example to .env and set PLEX_TUNER_PROVIDER_* (and PLEX_TUNER_BASE_URL if needed)." >&2
+  echo "[standup-local] ERROR: .env not found. Copy .env.example to .env and set IPTV_TUNERR_PROVIDER_* (and IPTV_TUNERR_BASE_URL if needed)." >&2
   exit 1
 fi
 
-echo "[standup-local] Deploying Plex Tuner to local cluster (base URL: plextuner-hdhr.plex.home, -register-plex to populate Plex Live TV) ..."
+echo "[standup-local] Deploying IPTV Tunerr to local cluster (base URL: iptvtunerr-hdhr.plex.home, -register-plex to populate Plex Live TV) ..."
 ./k8s/deploy-hdhr-one-shot.sh "$@"
 
 echo "[standup-local] Verifying tuner endpoints ..."
-BASE="${TUNER_BASE_URL:-http://plextuner-hdhr.plex.home}"
+BASE="${TUNER_BASE_URL:-http://iptvtunerr-hdhr.plex.home}"
 if curl -sS -o /dev/null -w "%{http_code}" "$BASE/discover.json" | grep -q 200; then
   echo "[standup-local] discover.json OK"
 else
@@ -38,9 +38,9 @@ else
 fi
 
 echo ""
-echo "--- Plex Tuner is up in the cluster ---"
+echo "--- IPTV Tunerr is up in the cluster ---"
 echo "  Tuner URL:  $BASE"
 echo "  Plex: open plex.home → Live TV should already be populated (we wrote to Plex DB at -register-plex=/var/lib/plex)."
-echo "  If Plex is on a specific node, ensure that node has /var/lib/plex and set nodeSelector in k8s/plextuner-hdhr-test.yaml to that node."
-echo "  Logs: kubectl -n plex logs -l app=plextuner-hdhr-test -f"
+echo "  If Plex is on a specific node, ensure that node has /var/lib/plex and set nodeSelector in k8s/iptvtunerr-hdhr-test.yaml to that node."
+echo "  Logs: kubectl -n plex logs -l app=iptvtunerr-hdhr-test -f"
 echo ""

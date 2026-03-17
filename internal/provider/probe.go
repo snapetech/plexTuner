@@ -138,7 +138,7 @@ func ProbePlayerAPI(ctx context.Context, baseURL, user, pass string, client *htt
 	if err != nil {
 		return Result{URL: url, Status: StatusError, LatencyMs: time.Since(start).Milliseconds()}
 	}
-	req.Header.Set("User-Agent", "PlexTuner/1.0")
+	req.Header.Set("User-Agent", "IptvTunerr/1.0")
 	resp, err := client.Do(req)
 	latency := time.Since(start).Milliseconds()
 	if err != nil {
@@ -208,7 +208,7 @@ type ProbeOptions struct {
 
 // ErrAllCloudflare is returned (via the Logger) when BlockCloudflare is set and
 // every candidate URL resolves to a Cloudflare-proxied host with no non-CF fallback.
-const ErrAllCloudflare = "ALERT: all provider URLs are Cloudflare-proxied and PLEX_TUNER_BLOCK_CF_PROVIDERS is set — ingest blocked; add a non-CF provider URL"
+const ErrAllCloudflare = "ALERT: all provider URLs are Cloudflare-proxied and IPTV_TUNERR_BLOCK_CF_PROVIDERS is set — ingest blocked; add a non-CF provider URL"
 
 // EntryResult pairs a probe Result with the Entry that produced it so callers can
 // retrieve the correct credentials for the winning host.
@@ -272,7 +272,7 @@ func RankedEntries(ctx context.Context, entries []Entry, client *http.Client, op
 	cfBlocked := 0
 	for _, er := range results {
 		if opt.BlockCloudflare && er.Result.Status == StatusCloudflare {
-			logf("WARNING: provider URL %s is Cloudflare-proxied (status=%d) — skipping (PLEX_TUNER_BLOCK_CF_PROVIDERS=true)",
+			logf("WARNING: provider URL %s is Cloudflare-proxied (status=%d) — skipping (IPTV_TUNERR_BLOCK_CF_PROVIDERS=true)",
 				er.Entry.BaseURL, er.Result.StatusCode)
 			cfBlocked++
 			continue
@@ -348,7 +348,7 @@ func RankedPlayerAPI(ctx context.Context, baseURLs []string, user, pass string, 
 	cfBlocked := 0
 	for _, r := range results {
 		if opt.BlockCloudflare && r.Status == StatusCloudflare {
-			logf("WARNING: provider URL %s is Cloudflare-proxied (status=%d) — skipping (PLEX_TUNER_BLOCK_CF_PROVIDERS=true)",
+			logf("WARNING: provider URL %s is Cloudflare-proxied (status=%d) — skipping (IPTV_TUNERR_BLOCK_CF_PROVIDERS=true)",
 				providerBaseFromURL(r.URL), r.StatusCode)
 			cfBlocked++
 			continue

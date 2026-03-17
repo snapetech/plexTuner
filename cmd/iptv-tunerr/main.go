@@ -1,4 +1,4 @@
-// Command plex-tuner: one-run Live TV/DVR (run), or index / mount / serve separately.
+// Command iptv-tunerr: one-run Live TV/DVR (run), or index / mount / serve separately.
 //
 //	run    One-run: refresh catalog, health check, then serve tuner. For systemd. Zero interaction after .env.
 //	index  Fetch M3U, parse, save catalog (movies + series + live channels)
@@ -24,18 +24,19 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/plextuner/plex-tuner/internal/catalog"
-	"github.com/plextuner/plex-tuner/internal/config"
-	"github.com/plextuner/plex-tuner/internal/epglink"
-	"github.com/plextuner/plex-tuner/internal/hdhomerun"
-	"github.com/plextuner/plex-tuner/internal/health"
-	"github.com/plextuner/plex-tuner/internal/indexer"
-	"github.com/plextuner/plex-tuner/internal/materializer"
-	"github.com/plextuner/plex-tuner/internal/plex"
-	"github.com/plextuner/plex-tuner/internal/provider"
-	"github.com/plextuner/plex-tuner/internal/supervisor"
-	"github.com/plextuner/plex-tuner/internal/tuner"
-	"github.com/plextuner/plex-tuner/internal/vodfs"
+	"github.com/iptvtunerr/iptv-tunerr/internal/catalog"
+	"github.com/iptvtunerr/iptv-tunerr/internal/config"
+	"github.com/iptvtunerr/iptv-tunerr/internal/emby"
+	"github.com/iptvtunerr/iptv-tunerr/internal/epglink"
+	"github.com/iptvtunerr/iptv-tunerr/internal/hdhomerun"
+	"github.com/iptvtunerr/iptv-tunerr/internal/health"
+	"github.com/iptvtunerr/iptv-tunerr/internal/indexer"
+	"github.com/iptvtunerr/iptv-tunerr/internal/materializer"
+	"github.com/iptvtunerr/iptv-tunerr/internal/plex"
+	"github.com/iptvtunerr/iptv-tunerr/internal/provider"
+	"github.com/iptvtunerr/iptv-tunerr/internal/supervisor"
+	"github.com/iptvtunerr/iptv-tunerr/internal/tuner"
+	"github.com/iptvtunerr/iptv-tunerr/internal/vodfs"
 )
 
 // hostMatchesAny reports whether rawURL's hostname equals or is a subdomain of any entry in hosts.
@@ -149,7 +150,7 @@ func dedupeByTVGID(live []catalog.LiveChannel, cfHosts []string) []catalog.LiveC
 	return out
 }
 
-// enrichM3UWithProviderBases probes any configured PLEX_TUNER_PROVIDER_URL(S) and appends
+// enrichM3UWithProviderBases probes any configured IPTV_TUNERR_PROVIDER_URL(S) and appends
 // API-base fallback URLs to each channel's StreamURLs. Called after M3U parse so channels
 // loaded from M3U also get provider-base alternatives for gateway failover.
 // No-ops if no provider entries are configured or probing returns no ranked results.
@@ -303,7 +304,7 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 		}
 		ranked := provider.RankedEntries(ctx, provEntries, nil, probeOpts)
 		if cfg.BlockCFProviders && len(ranked) == 0 {
-			return res, fmt.Errorf("no usable provider URL: all candidates are Cloudflare-proxied and PLEX_TUNER_BLOCK_CF_PROVIDERS=true")
+			return res, fmt.Errorf("no usable provider URL: all candidates are Cloudflare-proxied and IPTV_TUNERR_BLOCK_CF_PROVIDERS=true")
 		}
 		var fetchErr error
 		if len(ranked) > 0 {
@@ -348,7 +349,7 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 			}
 		}
 	} else {
-		return res, fmt.Errorf("need -m3u URL or set PLEX_TUNER_PROVIDER_USER and PLEX_TUNER_PROVIDER_PASS in .env")
+		return res, fmt.Errorf("need -m3u URL or set IPTV_TUNERR_PROVIDER_USER and IPTV_TUNERR_PROVIDER_PASS in .env")
 	}
 
 	// Enrich and sort VOD content deterministically so downstream VODFS and future
@@ -405,31 +406,31 @@ func catalogStats(live []catalog.LiveChannel) (epgLinked, withBackups int) {
 func main() {
 	_ = config.LoadEnvFile(".env")
 	log.SetFlags(log.LstdFlags)
-	log.SetPrefix("[plex-tuner] ")
+	log.SetPrefix("[iptv-tunerr] ")
 	indexCmd := flag.NewFlagSet("index", flag.ExitOnError)
-	m3uURL := indexCmd.String("m3u", "", "M3U URL (default: PLEX_TUNER_M3U_URL or PLEX_TUNER_PROVIDER_URL)")
-	catalogPathIndex := indexCmd.String("catalog", "", "Catalog JSON path (default: PLEX_TUNER_CATALOG)")
+	m3uURL := indexCmd.String("m3u", "", "M3U URL (default: IPTV_TUNERR_M3U_URL or IPTV_TUNERR_PROVIDER_URL)")
+	catalogPathIndex := indexCmd.String("catalog", "", "Catalog JSON path (default: IPTV_TUNERR_CATALOG)")
 
 	mountCmd := flag.NewFlagSet("mount", flag.ExitOnError)
-	mountPoint := mountCmd.String("mount", "", "Mount point (default: PLEX_TUNER_MOUNT)")
-	catalogPathMount := mountCmd.String("catalog", "", "Catalog JSON path (default: PLEX_TUNER_CATALOG)")
-	cacheDir := mountCmd.String("cache", "", "Cache dir for VOD (default: PLEX_TUNER_CACHE); if set, direct-file URLs are downloaded on demand")
+	mountPoint := mountCmd.String("mount", "", "Mount point (default: IPTV_TUNERR_MOUNT)")
+	catalogPathMount := mountCmd.String("catalog", "", "Catalog JSON path (default: IPTV_TUNERR_CATALOG)")
+	cacheDir := mountCmd.String("cache", "", "Cache dir for VOD (default: IPTV_TUNERR_CACHE); if set, direct-file URLs are downloaded on demand")
 	mountAllowOther := mountCmd.Bool("allow-other", false, "Linux/FUSE: mount with allow_other so other users/processes can access the VODFS mount (may require user_allow_other in /etc/fuse.conf)")
 
 	serveCmd := flag.NewFlagSet("serve", flag.ExitOnError)
-	catalogPathServe := serveCmd.String("catalog", "", "Catalog JSON path for live channels (default: PLEX_TUNER_CATALOG)")
+	catalogPathServe := serveCmd.String("catalog", "", "Catalog JSON path for live channels (default: IPTV_TUNERR_CATALOG)")
 	serveAddr := serveCmd.String("addr", ":5004", "Listen address")
 	serveBaseURL := serveCmd.String("base-url", "http://localhost:5004", "Base URL for discover/lineup (set to your host for Plex)")
-	serveDeviceID := serveCmd.String("device-id", "", "HDHR Device ID (default: PLEX_TUNER_DEVICE_ID)")
-	serveFriendlyName := serveCmd.String("friendly-name", "", "HDHR Friendly Name (default: PLEX_TUNER_FRIENDLY_NAME)")
-	serveMode := serveCmd.String("mode", "", "easy = lineup capped at 479 for Plex wizard; full = use PLEX_TUNER_LINEUP_MAX_CHANNELS or no cap")
+	serveDeviceID := serveCmd.String("device-id", "", "HDHR Device ID (default: IPTV_TUNERR_DEVICE_ID)")
+	serveFriendlyName := serveCmd.String("friendly-name", "", "HDHR Friendly Name (default: IPTV_TUNERR_FRIENDLY_NAME)")
+	serveMode := serveCmd.String("mode", "", "easy = lineup capped at 479 for Plex wizard; full = use IPTV_TUNERR_LINEUP_MAX_CHANNELS or no cap")
 
 	runCmd := flag.NewFlagSet("run", flag.ExitOnError)
-	runCatalog := runCmd.String("catalog", "", "Catalog path (default: PLEX_TUNER_CATALOG)")
+	runCatalog := runCmd.String("catalog", "", "Catalog path (default: IPTV_TUNERR_CATALOG)")
 	runAddr := runCmd.String("addr", ":5004", "Listen address")
 	runBaseURL := runCmd.String("base-url", "http://localhost:5004", "Base URL for Plex (use your host, e.g. http://192.168.1.10:5004)")
-	runDeviceID := runCmd.String("device-id", "", "HDHR Device ID (default: PLEX_TUNER_DEVICE_ID)")
-	runFriendlyName := runCmd.String("friendly-name", "", "HDHR Friendly Name (default: PLEX_TUNER_FRIENDLY_NAME)")
+	runDeviceID := runCmd.String("device-id", "", "HDHR Device ID (default: IPTV_TUNERR_DEVICE_ID)")
+	runFriendlyName := runCmd.String("friendly-name", "", "HDHR Friendly Name (default: IPTV_TUNERR_FRIENDLY_NAME)")
 	runRefresh := runCmd.Duration("refresh", 0, "Refresh catalog interval (e.g. 6h). 0 = only at startup")
 	runSkipIndex := runCmd.Bool("skip-index", false, "Skip catalog refresh at startup (use existing catalog)")
 	runSkipHealth := runCmd.Bool("skip-health", false, "Skip provider health check at startup")
@@ -437,39 +438,46 @@ func main() {
 	runRegisterOnly := runCmd.Bool("register-only", false, "If set with -register-plex and -mode=full: write Plex DB and exit without starting the tuner server (for one-shot jobs)")
 	runRegisterInterval := runCmd.Duration("register-plex-interval", 5*time.Minute, "How often to verify and repair DVR registration while running (0 = disable watchdog; default 5m)")
 	runMode := runCmd.String("mode", "", "Flow: easy = HDHR + wizard, lineup capped at 479 (strip from end); full = DVR builder, max feeds, use -register-plex for zero-touch")
+	// Emby / Jellyfin registration flags
+	runRegisterEmby          := runCmd.Bool("register-emby", false, "Register with Emby (requires IPTV_TUNERR_EMBY_HOST and IPTV_TUNERR_EMBY_TOKEN env vars)")
+	runRegisterJellyfin      := runCmd.Bool("register-jellyfin", false, "Register with Jellyfin (requires IPTV_TUNERR_JELLYFIN_HOST and IPTV_TUNERR_JELLYFIN_TOKEN env vars)")
+	runEmbyInterval          := runCmd.Duration("register-emby-interval", 5*time.Minute, "How often to verify Emby registration (0 = disable watchdog; default 5m)")
+	runJellyfinInterval      := runCmd.Duration("register-jellyfin-interval", 5*time.Minute, "How often to verify Jellyfin registration (0 = disable watchdog; default 5m)")
+	runEmbyStateFile         := runCmd.String("emby-state-file", "", "Path to persist Emby registration IDs for idempotent re-registration (e.g. /data/emby-state.json)")
+	runJellyfinStateFile     := runCmd.String("jellyfin-state-file", "", "Path to persist Jellyfin registration IDs for idempotent re-registration (e.g. /data/jellyfin-state.json)")
 
 	probeCmd := flag.NewFlagSet("probe", flag.ExitOnError)
-	probeURLs := probeCmd.String("urls", "", "Comma-separated base URLs to probe (default: from .env PLEX_TUNER_PROVIDER_URL or PLEX_TUNER_PROVIDER_URLS)")
+	probeURLs := probeCmd.String("urls", "", "Comma-separated base URLs to probe (default: from .env IPTV_TUNERR_PROVIDER_URL or IPTV_TUNERR_PROVIDER_URLS)")
 	probeTimeout := probeCmd.Duration("timeout", 60*time.Second, "Timeout per URL")
 
 	epgOracleCmd := flag.NewFlagSet("plex-epg-oracle", flag.ExitOnError)
-	epgOraclePlexURL := epgOracleCmd.String("plex-url", "", "Plex base URL (default: PLEX_TUNER_PMS_URL or http://PLEX_HOST:32400)")
-	epgOracleToken := epgOracleCmd.String("token", "", "Plex token (default: PLEX_TUNER_PMS_TOKEN or PLEX_TOKEN)")
+	epgOraclePlexURL := epgOracleCmd.String("plex-url", "", "Plex base URL (default: IPTV_TUNERR_PMS_URL or http://PLEX_HOST:32400)")
+	epgOracleToken := epgOracleCmd.String("token", "", "Plex token (default: IPTV_TUNERR_PMS_TOKEN or PLEX_TOKEN)")
 	epgOracleBaseURLs := epgOracleCmd.String("base-urls", "", "Comma-separated tuner base URLs to test (e.g. http://tuner1:5004,http://tuner2:5004)")
-	epgOracleBaseTemplate := epgOracleCmd.String("base-url-template", "", "Optional URL template containing {cap}; used with -caps (e.g. http://plextuner-hdhr-cap{cap}.plex.home)")
+	epgOracleBaseTemplate := epgOracleCmd.String("base-url-template", "", "Optional URL template containing {cap}; used with -caps (e.g. http://iptvtunerr-hdhr-cap{cap}.plex.home)")
 	epgOracleCaps := epgOracleCmd.String("caps", "", "Optional caps list for template expansion (e.g. 100,200,300,400,479,600)")
 	epgOracleOut := epgOracleCmd.String("out", "", "Optional JSON report output path")
 	epgOracleReload := epgOracleCmd.Bool("reload-guide", true, "Call reloadGuide before channelmap fetch")
 	epgOracleActivate := epgOracleCmd.Bool("activate", false, "Apply channelmap activation (default false; probe/report only)")
 
 	epgOracleCleanupCmd := flag.NewFlagSet("plex-epg-oracle-cleanup", flag.ExitOnError)
-	epgOracleCleanupPlexURL := epgOracleCleanupCmd.String("plex-url", "", "Plex base URL (default: PLEX_TUNER_PMS_URL or http://PLEX_HOST:32400)")
-	epgOracleCleanupToken := epgOracleCleanupCmd.String("token", "", "Plex token (default: PLEX_TUNER_PMS_TOKEN or PLEX_TOKEN)")
+	epgOracleCleanupPlexURL := epgOracleCleanupCmd.String("plex-url", "", "Plex base URL (default: IPTV_TUNERR_PMS_URL or http://PLEX_HOST:32400)")
+	epgOracleCleanupToken := epgOracleCleanupCmd.String("token", "", "Plex token (default: IPTV_TUNERR_PMS_TOKEN or PLEX_TOKEN)")
 	epgOracleCleanupPrefix := epgOracleCleanupCmd.String("lineup-prefix", "oracle-", "Delete DVRs whose lineupTitle/title starts with this prefix")
-	epgOracleCleanupDeviceURISubstr := epgOracleCleanupCmd.String("device-uri-substr", "", "Optional device URI substring filter (e.g. plextuner-hdhr)")
+	epgOracleCleanupDeviceURISubstr := epgOracleCleanupCmd.String("device-uri-substr", "", "Optional device URI substring filter (e.g. iptvtunerr-hdhr)")
 	epgOracleCleanupDo := epgOracleCleanupCmd.Bool("do", false, "Actually delete matches (default dry-run)")
 
 	superviseCmd := flag.NewFlagSet("supervise", flag.ExitOnError)
 	superviseConfig := superviseCmd.String("config", "", "JSON supervisor config (instances[] with args/env)")
 
 	vodSplitCmd := flag.NewFlagSet("vod-split", flag.ExitOnError)
-	vodSplitCatalog := vodSplitCmd.String("catalog", "", "Input catalog.json (default: PLEX_TUNER_CATALOG)")
+	vodSplitCatalog := vodSplitCmd.String("catalog", "", "Input catalog.json (default: IPTV_TUNERR_CATALOG)")
 	vodSplitOutDir := vodSplitCmd.String("out-dir", "", "Output directory for per-lane catalogs (required)")
 
 	vodRegisterCmd := flag.NewFlagSet("plex-vod-register", flag.ExitOnError)
-	vodMount := vodRegisterCmd.String("mount", "", "VODFS mount root (contains Movies/ and TV/; default: PLEX_TUNER_MOUNT)")
-	vodPlexURL := vodRegisterCmd.String("plex-url", "", "Plex base URL (default: PLEX_TUNER_PMS_URL or http://PLEX_HOST:32400)")
-	vodPlexToken := vodRegisterCmd.String("token", "", "Plex token (default: PLEX_TUNER_PMS_TOKEN or PLEX_TOKEN)")
+	vodMount := vodRegisterCmd.String("mount", "", "VODFS mount root (contains Movies/ and TV/; default: IPTV_TUNERR_MOUNT)")
+	vodPlexURL := vodRegisterCmd.String("plex-url", "", "Plex base URL (default: IPTV_TUNERR_PMS_URL or http://PLEX_HOST:32400)")
+	vodPlexToken := vodRegisterCmd.String("token", "", "Plex token (default: IPTV_TUNERR_PMS_TOKEN or PLEX_TOKEN)")
 	vodShowsName := vodRegisterCmd.String("shows-name", "VOD", "Plex TV library name")
 	vodMoviesName := vodRegisterCmd.String("movies-name", "VOD-Movies", "Plex Movie library name")
 	vodShowsOnly := vodRegisterCmd.Bool("shows-only", false, "Register only the TV library for this mount (skip Movies)")
@@ -478,7 +486,7 @@ func main() {
 	vodRefresh := vodRegisterCmd.Bool("refresh", true, "Trigger library refresh after create/reuse")
 
 	epgLinkReportCmd := flag.NewFlagSet("epg-link-report", flag.ExitOnError)
-	epgLinkCatalog := epgLinkReportCmd.String("catalog", "", "Input catalog.json (default: PLEX_TUNER_CATALOG)")
+	epgLinkCatalog := epgLinkReportCmd.String("catalog", "", "Input catalog.json (default: IPTV_TUNERR_CATALOG)")
 	epgLinkXMLTV := epgLinkReportCmd.String("xmltv", "", "XMLTV file path or http(s) URL (required)")
 	epgLinkAliases := epgLinkReportCmd.String("aliases", "", "Optional alias override JSON (name_to_xmltv_id map)")
 	epgLinkOut := epgLinkReportCmd.String("out", "", "Optional full JSON report output path")
@@ -493,7 +501,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  probe  Cycle through provider URLs, report OK / Cloudflare / fail (use -urls a,b,c to try specific hosts)\n")
 		fmt.Fprintf(os.Stderr, "  plex-epg-oracle  Probe Plex wizard-equivalent HDHR suggestions/channelmaps for one or more tuner base URLs\n")
 		fmt.Fprintf(os.Stderr, "  plex-epg-oracle-cleanup  Delete oracle-created DVR/device rows by prefix/URI filter (dry-run by default)\n")
-		fmt.Fprintf(os.Stderr, "  supervise  Start multiple child plex-tuner instances from one JSON config (single pod/container supervisor)\n")
+		fmt.Fprintf(os.Stderr, "  supervise  Start multiple child iptv-tunerr instances from one JSON config (single pod/container supervisor)\n")
 		fmt.Fprintf(os.Stderr, "  vod-split  Split VOD catalog into category/region lane catalogs for separate VODFS mounts/libraries\n")
 		fmt.Fprintf(os.Stderr, "  plex-vod-register  Create/reuse Plex libraries for VODFS (TV + Movies)\n")
 		fmt.Fprintf(os.Stderr, "  epg-link-report  Deterministic EPG match coverage report for live channels vs XMLTV\n")
@@ -871,9 +879,9 @@ func main() {
 						log.Printf("Lineup synced to Plex: %d channels (no wizard needed)", len(lineupChannels))
 					}
 
-					dvrUUID := os.Getenv("PLEX_TUNER_DVR_UUID")
+					dvrUUID := os.Getenv("IPTV_TUNERR_DVR_UUID")
 					if dvrUUID == "" {
-						dvrUUID = "plextuner-" + cfg.DeviceID
+						dvrUUID = "iptvtunerr-" + cfg.DeviceID
 					}
 					epgChannels := make([]plex.EPGChannel, len(live))
 					for i := range live {
@@ -921,6 +929,42 @@ func main() {
 			fmt.Fprintf(os.Stderr, "---\n\n")
 		}
 
+		// Optional: Emby and/or Jellyfin API registration.
+		// registerMediaServer registers with a single Emby-compatible server and
+		// starts a watchdog goroutine if an interval is configured.
+		registerMediaServer := func(serverType, host, token, stateFile string, interval time.Duration) {
+			if host == "" || token == "" {
+				envPrefix := strings.ToUpper(serverType)
+				missing := "IPTV_TUNERR_" + envPrefix + "_HOST"
+				if host != "" {
+					missing = "IPTV_TUNERR_" + envPrefix + "_TOKEN"
+				}
+				log.Printf("[%s-reg] Skipping: %s is not set", serverType, missing)
+				return
+			}
+			embyCfg := emby.Config{
+				Host:         host,
+				Token:        token,
+				TunerURL:     baseURL,
+				FriendlyName: cfg.FriendlyName,
+				TunerCount:   cfg.TunerCount,
+				ServerType:   serverType,
+			}
+			if err := emby.FullRegister(embyCfg, stateFile); err != nil {
+				log.Printf("[%s-reg] Registration failed: %v", serverType, err)
+			}
+			if interval > 0 {
+				log.Printf("[%s-watchdog] starting: interval=%v", serverType, interval)
+				go emby.DVRWatchdog(runCtx, embyCfg, stateFile, interval)
+			}
+		}
+		if *runRegisterEmby {
+			registerMediaServer("emby", cfg.EmbyHost, cfg.EmbyToken, *runEmbyStateFile, *runEmbyInterval)
+		}
+		if *runRegisterJellyfin {
+			registerMediaServer("jellyfin", cfg.JellyfinHost, cfg.JellyfinToken, *runJellyfinStateFile, *runJellyfinInterval)
+		}
+
 		if err := srv.Run(runCtx); err != nil {
 			log.Printf("Tuner failed: %v", err)
 			os.Exit(1)
@@ -940,12 +984,12 @@ func main() {
 			}
 		}
 		if len(baseURLs) == 0 {
-			log.Print("No URLs to probe. Set PLEX_TUNER_PROVIDER_URL(S) and USER, PASS in .env, or pass -urls=http://host1.com,http://host2.com")
+			log.Print("No URLs to probe. Set IPTV_TUNERR_PROVIDER_URL(S) and USER, PASS in .env, or pass -urls=http://host1.com,http://host2.com")
 			os.Exit(1)
 		}
 		user, pass := cfg.ProviderUser, cfg.ProviderPass
 		if user == "" || pass == "" {
-			log.Print("Set PLEX_TUNER_PROVIDER_USER and PLEX_TUNER_PROVIDER_PASS in .env")
+			log.Print("Set IPTV_TUNERR_PROVIDER_USER and IPTV_TUNERR_PROVIDER_PASS in .env")
 			os.Exit(1)
 		}
 		m3uURLs := make([]string, 0, len(baseURLs))
@@ -1016,7 +1060,7 @@ func main() {
 		_ = epgOracleCmd.Parse(os.Args[2:])
 		plexBaseURL := strings.TrimSpace(*epgOraclePlexURL)
 		if plexBaseURL == "" {
-			plexBaseURL = strings.TrimSpace(os.Getenv("PLEX_TUNER_PMS_URL"))
+			plexBaseURL = strings.TrimSpace(os.Getenv("IPTV_TUNERR_PMS_URL"))
 		}
 		if plexBaseURL == "" {
 			if host := strings.TrimSpace(os.Getenv("PLEX_HOST")); host != "" {
@@ -1025,13 +1069,13 @@ func main() {
 		}
 		plexToken := strings.TrimSpace(*epgOracleToken)
 		if plexToken == "" {
-			plexToken = strings.TrimSpace(os.Getenv("PLEX_TUNER_PMS_TOKEN"))
+			plexToken = strings.TrimSpace(os.Getenv("IPTV_TUNERR_PMS_TOKEN"))
 		}
 		if plexToken == "" {
 			plexToken = strings.TrimSpace(os.Getenv("PLEX_TOKEN"))
 		}
 		if plexBaseURL == "" || plexToken == "" {
-			log.Print("Need Plex API access: set -plex-url/-token or PLEX_TUNER_PMS_URL+PLEX_TUNER_PMS_TOKEN (or PLEX_HOST+PLEX_TOKEN)")
+			log.Print("Need Plex API access: set -plex-url/-token or IPTV_TUNERR_PMS_URL+IPTV_TUNERR_PMS_TOKEN (or PLEX_HOST+PLEX_TOKEN)")
 			os.Exit(1)
 		}
 		plexHost, err := hostPortFromBaseURL(plexBaseURL)
@@ -1130,7 +1174,7 @@ func main() {
 		_ = epgOracleCleanupCmd.Parse(os.Args[2:])
 		plexBaseURL := strings.TrimSpace(*epgOracleCleanupPlexURL)
 		if plexBaseURL == "" {
-			plexBaseURL = strings.TrimSpace(os.Getenv("PLEX_TUNER_PMS_URL"))
+			plexBaseURL = strings.TrimSpace(os.Getenv("IPTV_TUNERR_PMS_URL"))
 		}
 		if plexBaseURL == "" {
 			if host := strings.TrimSpace(os.Getenv("PLEX_HOST")); host != "" {
@@ -1139,13 +1183,13 @@ func main() {
 		}
 		plexToken := strings.TrimSpace(*epgOracleCleanupToken)
 		if plexToken == "" {
-			plexToken = strings.TrimSpace(os.Getenv("PLEX_TUNER_PMS_TOKEN"))
+			plexToken = strings.TrimSpace(os.Getenv("IPTV_TUNERR_PMS_TOKEN"))
 		}
 		if plexToken == "" {
 			plexToken = strings.TrimSpace(os.Getenv("PLEX_TOKEN"))
 		}
 		if plexBaseURL == "" || plexToken == "" {
-			log.Print("Need Plex API access: set -plex-url/-token or PLEX_TUNER_PMS_URL+PLEX_TUNER_PMS_TOKEN (or PLEX_HOST+PLEX_TOKEN)")
+			log.Print("Need Plex API access: set -plex-url/-token or IPTV_TUNERR_PMS_URL+IPTV_TUNERR_PMS_TOKEN (or PLEX_HOST+PLEX_TOKEN)")
 			os.Exit(1)
 		}
 		plexHost, err := hostPortFromBaseURL(plexBaseURL)
@@ -1309,7 +1353,7 @@ func main() {
 			mp = strings.TrimSpace(cfg.MountPoint)
 		}
 		if mp == "" {
-			log.Print("Set -mount or PLEX_TUNER_MOUNT to the VODFS mount root")
+			log.Print("Set -mount or IPTV_TUNERR_MOUNT to the VODFS mount root")
 			os.Exit(1)
 		}
 		moviesPath := filepath.Clean(filepath.Join(mp, "Movies"))
@@ -1331,7 +1375,7 @@ func main() {
 
 		plexBaseURL := strings.TrimSpace(*vodPlexURL)
 		if plexBaseURL == "" {
-			plexBaseURL = strings.TrimSpace(os.Getenv("PLEX_TUNER_PMS_URL"))
+			plexBaseURL = strings.TrimSpace(os.Getenv("IPTV_TUNERR_PMS_URL"))
 		}
 		if plexBaseURL == "" {
 			if host := strings.TrimSpace(os.Getenv("PLEX_HOST")); host != "" {
@@ -1340,13 +1384,13 @@ func main() {
 		}
 		plexToken := strings.TrimSpace(*vodPlexToken)
 		if plexToken == "" {
-			plexToken = strings.TrimSpace(os.Getenv("PLEX_TUNER_PMS_TOKEN"))
+			plexToken = strings.TrimSpace(os.Getenv("IPTV_TUNERR_PMS_TOKEN"))
 		}
 		if plexToken == "" {
 			plexToken = strings.TrimSpace(os.Getenv("PLEX_TOKEN"))
 		}
 		if plexBaseURL == "" || plexToken == "" {
-			log.Print("Need Plex API access: set -plex-url/-token or PLEX_TUNER_PMS_URL+PLEX_TUNER_PMS_TOKEN (or PLEX_HOST+PLEX_TOKEN)")
+			log.Print("Need Plex API access: set -plex-url/-token or IPTV_TUNERR_PMS_URL+IPTV_TUNERR_PMS_TOKEN (or PLEX_HOST+PLEX_TOKEN)")
 			os.Exit(1)
 		}
 
@@ -1469,7 +1513,7 @@ func openFileOrURL(ref string) (io.ReadCloser, error) {
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Set("User-Agent", "PlexTuner/1.0")
+		req.Header.Set("User-Agent", "IptvTunerr/1.0")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return nil, err

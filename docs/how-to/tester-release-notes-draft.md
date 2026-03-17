@@ -81,7 +81,7 @@ Please include:
 - Exact channel and approximate timestamp
 - Whether this was HDHR wizard lane or injected DVR lane
 - Relevant env/config snippets (redact secrets)
-- Logs if available (`plex-tuner` logs and Plex server logs)
+- Logs if available (`iptv-tunerr` logs and Plex server logs)
 
 See also:
 - [tester-handoff-checklist](tester-handoff-checklist.md)

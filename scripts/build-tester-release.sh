@@ -56,13 +56,13 @@ mkdir -p "$REL_DIR/packages" "$REL_DIR/examples" "$REL_DIR/docs"
 cp "$PKG_DIR"/SHA256SUMS.txt "$REL_DIR/packages/"
   cp "$PKG_DIR"/*.zip "$REL_DIR/packages/" 2>/dev/null || true
 
-cp k8s/plextuner-supervisor-multi.example.json "$REL_DIR/examples/"
-cp k8s/plextuner-supervisor-singlepod.example.yaml "$REL_DIR/examples/"
+cp k8s/iptvtunerr-supervisor-multi.example.json "$REL_DIR/examples/"
+cp k8s/iptvtunerr-supervisor-singlepod.example.yaml "$REL_DIR/examples/"
 cp docs/how-to/package-test-builds.md "$REL_DIR/docs/"
 cp docs/reference/testing-and-supervisor-config.md "$REL_DIR/docs/"
 
 cat >"$REL_DIR/TESTER-README.txt" <<EOF
-Plex Tuner tester bundle
+IPTV Tunerr tester bundle
 Version: $VERSION
 Commit:  $COMMIT
 Built:   $DATE_UTC
@@ -81,9 +81,9 @@ Platform-specific limits:
 
 Quick start (supervisor test):
   1. Extract a package for your platform from packages/
-  2. Copy examples/plextuner-supervisor-multi.example.json beside the binary
+  2. Copy examples/iptvtunerr-supervisor-multi.example.json beside the binary
   3. Edit child envs/URLs
-  4. Run: plex-tuner supervise -config ./plextuner-supervisor-multi.example.json
+  4. Run: iptv-tunerr supervise -config ./iptvtunerr-supervisor-multi.example.json
 
 Verify checksums:
   cd packages && sha256sum -c SHA256SUMS.txt
@@ -125,7 +125,7 @@ for p in sorted(packages_dir.iterdir()):
     if name.endswith("_source.zip"):
         os_name = "source"
         arch = "src"
-    elif len(parts) >= 4 and parts[0] == "plex-tuner":
+    elif len(parts) >= 4 and parts[0] == "iptv-tunerr":
         os_name = parts[-2]
         arch = parts[-1]
     packages.append({
@@ -138,7 +138,7 @@ for p in sorted(packages_dir.iterdir()):
     })
 
 manifest = {
-    "kind": "plex-tuner-tester-bundle",
+    "kind": "iptv-tunerr-tester-bundle",
     "version": version,
     "git_commit": commit,
     "built_at_utc": built_at,

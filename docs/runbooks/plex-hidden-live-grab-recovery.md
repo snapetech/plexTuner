@@ -9,14 +9,14 @@ tags: [plex, live-tv, recovery, runbook]
 
 Use this when Plex Live TV channel clicks do nothing (or `tune` hangs) even though:
 - guides look correct
-- PlexTuner endpoints are up
+- IptvTunerr endpoints are up
 - `/status/sessions` shows no active playback
 
 ## Symptom
 
 - Plex Web/TV click on a channel appears to do nothing
 - probe/client tune request hangs for ~30-35s
-- PlexTuner sees no `/stream/...` request
+- IptvTunerr sees no `/stream/...` request
 
 ## Root cause pattern (Plex-side)
 
@@ -73,12 +73,12 @@ sudo ./scripts/plex-hidden-grab-recover.sh --restart
 
 ## Notes
 
-- This is a Plex operational issue, not a PlexTuner feed-format issue.
+- This is a Plex operational issue, not a IptvTunerr feed-format issue.
 - It can show up after large guide/channel remap operations because Plex re-schedules many DVR subscriptions.
 
 See also
 --------
-- [plextuner-troubleshooting](plextuner-troubleshooting.md)
+- [iptvtunerr-troubleshooting](iptvtunerr-troubleshooting.md)
 - [package-test-builds](../how-to/package-test-builds.md)
 - [testing-and-supervisor-config](../reference/testing-and-supervisor-config.md)
 

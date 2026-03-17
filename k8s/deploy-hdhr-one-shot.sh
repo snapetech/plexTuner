@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
 # One-shot HDHR deploy wrapper: create 'plex-iptv-creds' Secret from env vars, then call k8s/deploy.sh.
-# In production, use external-secret-plextuner-iptv.yaml (OpenBao) instead — this is for local/dev.
+# In production, use external-secret-iptvtunerr-iptv.yaml (OpenBao) instead — this is for local/dev.
 # Usage:
-#   PLEX_TUNER_PROVIDER_USER=... PLEX_TUNER_PROVIDER_PASS=... PLEX_TUNER_PROVIDER_URL=... \
+#   IPTV_TUNERR_PROVIDER_USER=... IPTV_TUNERR_PROVIDER_PASS=... IPTV_TUNERR_PROVIDER_URL=... \
 #   PLEX_TOKEN=... ./k8s/deploy-hdhr-one-shot.sh [deploy.sh args]
 # Optional:
-#   PLEX_TUNER_M3U_URL=...   # if omitted, built from provider URL/user/pass
+#   IPTV_TUNERR_M3U_URL=...   # if omitted, built from provider URL/user/pass
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-MANIFEST="${MANIFEST:-k8s/plextuner-hdhr-test.yaml}"
+MANIFEST="${MANIFEST:-k8s/iptvtunerr-hdhr-test.yaml}"
 NAMESPACE="${NAMESPACE:-plex}"
 
-provider_user="${PLEX_TUNER_PROVIDER_USER:-}"
-provider_pass="${PLEX_TUNER_PROVIDER_PASS:-}"
-provider_url="${PLEX_TUNER_PROVIDER_URL:-}"
-m3u_url="${PLEX_TUNER_M3U_URL:-}"
+provider_user="${IPTV_TUNERR_PROVIDER_USER:-}"
+provider_pass="${IPTV_TUNERR_PROVIDER_PASS:-}"
+provider_url="${IPTV_TUNERR_PROVIDER_URL:-}"
+m3u_url="${IPTV_TUNERR_M3U_URL:-}"
 plex_token="${PLEX_TOKEN:-}"
 autoload_sources=1
 source_notes=()
@@ -26,11 +26,11 @@ source_notes=()
 usage() {
   cat <<'EOF'
 Usage:
-  PLEX_TUNER_PROVIDER_USER=... \
-  PLEX_TUNER_PROVIDER_PASS=... \
-  PLEX_TUNER_PROVIDER_URL=... \
+  IPTV_TUNERR_PROVIDER_USER=... \
+  IPTV_TUNERR_PROVIDER_PASS=... \
+  IPTV_TUNERR_PROVIDER_URL=... \
   PLEX_TOKEN=... \
-  [PLEX_TUNER_M3U_URL=...] \
+  [IPTV_TUNERR_M3U_URL=...] \
   ./k8s/deploy-hdhr-one-shot.sh [deploy.sh args]
 
 Flags (optional):
@@ -93,11 +93,11 @@ autoload_defaults() {
   load_env_file_if_present "$k3s_env_file"
   load_k3s_style_subscription_file "$k3s_sub_file"
 
-  # Map PLEX_TUNER_* env vars into locals if not already set via flags.
-  [[ -z "$provider_user" ]] && provider_user="${PLEX_TUNER_PROVIDER_USER:-}"
-  [[ -z "$provider_pass" ]] && provider_pass="${PLEX_TUNER_PROVIDER_PASS:-}"
-  [[ -z "$provider_url"  ]] && provider_url="${PLEX_TUNER_PROVIDER_URL:-}"
-  [[ -z "$m3u_url"       ]] && m3u_url="${PLEX_TUNER_M3U_URL:-}"
+  # Map IPTV_TUNERR_* env vars into locals if not already set via flags.
+  [[ -z "$provider_user" ]] && provider_user="${IPTV_TUNERR_PROVIDER_USER:-}"
+  [[ -z "$provider_pass" ]] && provider_pass="${IPTV_TUNERR_PROVIDER_PASS:-}"
+  [[ -z "$provider_url"  ]] && provider_url="${IPTV_TUNERR_PROVIDER_URL:-}"
+  [[ -z "$m3u_url"       ]] && m3u_url="${IPTV_TUNERR_M3U_URL:-}"
   [[ -z "$plex_token"    ]] && plex_token="${PLEX_TOKEN:-}"
 
   # Fall back to XTREAM_* conventions.
@@ -155,15 +155,15 @@ echo "[one-shot] Provider URL: $provider_url"
 echo "[one-shot] M3U URL: ${m3u_url%%\?*}?..."
 
 # Create/update the 'plex-iptv-creds' Secret from env vars.
-# In production, use external-secret-plextuner-iptv.yaml (OpenBao) — this is for local/dev.
+# In production, use external-secret-iptvtunerr-iptv.yaml (OpenBao) — this is for local/dev.
 echo "[one-shot] Creating/updating Secret plex-iptv-creds in namespace $NAMESPACE ..."
 kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 kubectl create secret generic plex-iptv-creds \
   --namespace="$NAMESPACE" \
-  --from-literal=PLEX_TUNER_PROVIDER_USER="$provider_user" \
-  --from-literal=PLEX_TUNER_PROVIDER_PASS="$provider_pass" \
-  --from-literal=PLEX_TUNER_PROVIDER_URL="$provider_url" \
-  --from-literal=PLEX_TUNER_M3U_URL="$m3u_url" \
+  --from-literal=IPTV_TUNERR_PROVIDER_USER="$provider_user" \
+  --from-literal=IPTV_TUNERR_PROVIDER_PASS="$provider_pass" \
+  --from-literal=IPTV_TUNERR_PROVIDER_URL="$provider_url" \
+  --from-literal=IPTV_TUNERR_M3U_URL="$m3u_url" \
   --from-literal=PLEX_TOKEN="$plex_token" \
   --dry-run=client -o yaml | kubectl apply -f -
 

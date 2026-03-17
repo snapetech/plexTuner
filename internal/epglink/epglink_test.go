@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/plextuner/plex-tuner/internal/catalog"
+	"github.com/iptvtunerr/iptv-tunerr/internal/catalog"
 )
 
 func TestNormalizeName(t *testing.T) {

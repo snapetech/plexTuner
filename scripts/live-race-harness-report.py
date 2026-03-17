@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 
-PLEX_PREFIX_RE = re.compile(r"^\[plex-tuner\]\s+\d{4}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2}\s+(.*)$")
+PLEX_PREFIX_RE = re.compile(r"^\[iptv-tunerr\]\s+\d{4}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2}\s+(.*)$")
 REQ_RE = re.compile(r"\breq=(r\d+)\b")
 BOOL_RE = {"true": True, "false": False}
 
@@ -447,7 +447,7 @@ def main() -> int:
         return 2
 
     parser = Parser()
-    parser.parse_plex_log(out_dir / "plex-tuner.log")
+    parser.parse_plex_log(out_dir / "iptv-tunerr.log")
     parser.parse_curl_log(out_dir / "curl.log")
     pms_dir = out_dir / "pms-logs"
     if pms_dir.is_dir():

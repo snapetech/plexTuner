@@ -10,8 +10,8 @@ tags: [packaging, testing, supervisor, release]
 Build portable test bundles for Linux, macOS, and Windows from this repo (no Docker required).
 
 This is for tester handoff and local validation of:
-- `plex-tuner run` / `serve`
-- `plex-tuner supervise -config ...` (single app / many DVR children)
+- `iptv-tunerr run` / `serve`
+- `iptv-tunerr supervise -config ...` (single app / many DVR children)
 
 Platform support (important):
 - Linux: core tuner paths + HDHR network mode + VODFS mount
@@ -125,23 +125,23 @@ Expected outputs after workflows finish:
 
 ## What is included in each bundle
 
-- `plex-tuner` binary (`plex-tuner.exe` on Windows)
+- `iptv-tunerr` binary (`iptv-tunerr.exe` on Windows)
 - `README.md`
 - `docs/how-to/run-without-kubernetes.md`
 - `docs/how-to/package-test-builds.md`
 - `docs/reference/testing-and-supervisor-config.md`
-- `k8s/plextuner-supervisor-multi.example.json`
-- `k8s/plextuner-supervisor-singlepod.example.yaml`
+- `k8s/iptvtunerr-supervisor-multi.example.json`
+- `k8s/iptvtunerr-supervisor-singlepod.example.yaml`
 - `scripts/plex-live-session-drain.py` (optional external helper)
 
 ## Test a packaged supervisor build
 
 1. Unpack the archive.
-2. Copy `k8s/plextuner-supervisor-multi.example.json` and adapt child envs.
+2. Copy `k8s/iptvtunerr-supervisor-multi.example.json` and adapt child envs.
 3. Run:
 
 ```bash
-./plex-tuner supervise -config ./plextuner-supervisor-multi.example.json
+./iptv-tunerr supervise -config ./iptvtunerr-supervisor-multi.example.json
 ```
 
 4. Verify sample child endpoints:

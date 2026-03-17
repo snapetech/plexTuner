@@ -9,9 +9,9 @@ import (
 
 func TestProviderEntries_singleProvider(t *testing.T) {
 	os.Clearenv()
-	os.Setenv("PLEX_TUNER_PROVIDER_URL", "http://host1")
-	os.Setenv("PLEX_TUNER_PROVIDER_USER", "u1")
-	os.Setenv("PLEX_TUNER_PROVIDER_PASS", "p1")
+	os.Setenv("IPTV_TUNERR_PROVIDER_URL", "http://host1")
+	os.Setenv("IPTV_TUNERR_PROVIDER_USER", "u1")
+	os.Setenv("IPTV_TUNERR_PROVIDER_PASS", "p1")
 	c := Load()
 	entries := c.ProviderEntries()
 	if len(entries) != 1 {
@@ -24,12 +24,12 @@ func TestProviderEntries_singleProvider(t *testing.T) {
 
 func TestProviderEntries_multiProvider(t *testing.T) {
 	os.Clearenv()
-	os.Setenv("PLEX_TUNER_PROVIDER_URL", "http://host1")
-	os.Setenv("PLEX_TUNER_PROVIDER_USER", "u1")
-	os.Setenv("PLEX_TUNER_PROVIDER_PASS", "p1")
-	os.Setenv("PLEX_TUNER_PROVIDER_URL_2", "http://host2")
-	os.Setenv("PLEX_TUNER_PROVIDER_USER_2", "u2")
-	os.Setenv("PLEX_TUNER_PROVIDER_PASS_2", "p2")
+	os.Setenv("IPTV_TUNERR_PROVIDER_URL", "http://host1")
+	os.Setenv("IPTV_TUNERR_PROVIDER_USER", "u1")
+	os.Setenv("IPTV_TUNERR_PROVIDER_PASS", "p1")
+	os.Setenv("IPTV_TUNERR_PROVIDER_URL_2", "http://host2")
+	os.Setenv("IPTV_TUNERR_PROVIDER_USER_2", "u2")
+	os.Setenv("IPTV_TUNERR_PROVIDER_PASS_2", "p2")
 	c := Load()
 	entries := c.ProviderEntries()
 	if len(entries) != 2 {
@@ -42,11 +42,11 @@ func TestProviderEntries_multiProvider(t *testing.T) {
 
 func TestProviderEntries_stopsAtGap(t *testing.T) {
 	os.Clearenv()
-	os.Setenv("PLEX_TUNER_PROVIDER_URL", "http://host1")
-	os.Setenv("PLEX_TUNER_PROVIDER_USER", "u1")
-	os.Setenv("PLEX_TUNER_PROVIDER_PASS", "p1")
+	os.Setenv("IPTV_TUNERR_PROVIDER_URL", "http://host1")
+	os.Setenv("IPTV_TUNERR_PROVIDER_USER", "u1")
+	os.Setenv("IPTV_TUNERR_PROVIDER_PASS", "p1")
 	// No _2, but has _3 — should NOT pick up _3 because we stop at first gap.
-	os.Setenv("PLEX_TUNER_PROVIDER_URL_3", "http://host3")
+	os.Setenv("IPTV_TUNERR_PROVIDER_URL_3", "http://host3")
 	c := Load()
 	entries := c.ProviderEntries()
 	if len(entries) != 1 {
@@ -56,10 +56,10 @@ func TestProviderEntries_stopsAtGap(t *testing.T) {
 
 func TestProviderEntries_fallsBackToPrimaryCredentials(t *testing.T) {
 	os.Clearenv()
-	os.Setenv("PLEX_TUNER_PROVIDER_URL", "http://host1")
-	os.Setenv("PLEX_TUNER_PROVIDER_USER", "shared")
-	os.Setenv("PLEX_TUNER_PROVIDER_PASS", "sharedpass")
-	os.Setenv("PLEX_TUNER_PROVIDER_URL_2", "http://host2")
+	os.Setenv("IPTV_TUNERR_PROVIDER_URL", "http://host1")
+	os.Setenv("IPTV_TUNERR_PROVIDER_USER", "shared")
+	os.Setenv("IPTV_TUNERR_PROVIDER_PASS", "sharedpass")
+	os.Setenv("IPTV_TUNERR_PROVIDER_URL_2", "http://host2")
 	// No _USER_2 / _PASS_2 — should inherit primary creds.
 	c := Load()
 	entries := c.ProviderEntries()
@@ -73,9 +73,9 @@ func TestProviderEntries_fallsBackToPrimaryCredentials(t *testing.T) {
 
 func TestM3UURLOrBuild(t *testing.T) {
 	os.Clearenv()
-	os.Setenv("PLEX_TUNER_PROVIDER_URL", "http://host")
-	os.Setenv("PLEX_TUNER_PROVIDER_USER", "u")
-	os.Setenv("PLEX_TUNER_PROVIDER_PASS", "p")
+	os.Setenv("IPTV_TUNERR_PROVIDER_URL", "http://host")
+	os.Setenv("IPTV_TUNERR_PROVIDER_USER", "u")
+	os.Setenv("IPTV_TUNERR_PROVIDER_PASS", "p")
 	c := Load()
 	got := c.M3UURLOrBuild()
 	want := "http://host/get.php?username=u&password=p&type=m3u_plus&output=ts"
@@ -86,8 +86,8 @@ func TestM3UURLOrBuild(t *testing.T) {
 
 func TestM3UURLOrBuild_preferM3UURL(t *testing.T) {
 	os.Clearenv()
-	os.Setenv("PLEX_TUNER_M3U_URL", "http://custom/m3u")
-	os.Setenv("PLEX_TUNER_PROVIDER_URL", "http://host")
+	os.Setenv("IPTV_TUNERR_M3U_URL", "http://custom/m3u")
+	os.Setenv("IPTV_TUNERR_PROVIDER_URL", "http://host")
 	c := Load()
 	got := c.M3UURLOrBuild()
 	if got != "http://custom/m3u" {
@@ -106,9 +106,9 @@ func TestM3UURLOrBuild_emptyWithoutCreds(t *testing.T) {
 
 func TestM3UURLsOrBuild_single(t *testing.T) {
 	os.Clearenv()
-	os.Setenv("PLEX_TUNER_PROVIDER_URL", "http://host")
-	os.Setenv("PLEX_TUNER_PROVIDER_USER", "u")
-	os.Setenv("PLEX_TUNER_PROVIDER_PASS", "p")
+	os.Setenv("IPTV_TUNERR_PROVIDER_URL", "http://host")
+	os.Setenv("IPTV_TUNERR_PROVIDER_USER", "u")
+	os.Setenv("IPTV_TUNERR_PROVIDER_PASS", "p")
 	c := Load()
 	urls := c.M3UURLsOrBuild()
 	if len(urls) != 1 {
@@ -122,9 +122,9 @@ func TestM3UURLsOrBuild_single(t *testing.T) {
 
 func TestM3UURLsOrBuild_multiple(t *testing.T) {
 	os.Clearenv()
-	os.Setenv("PLEX_TUNER_PROVIDER_URLS", "http://a.com, http://b.com ")
-	os.Setenv("PLEX_TUNER_PROVIDER_USER", "u")
-	os.Setenv("PLEX_TUNER_PROVIDER_PASS", "p")
+	os.Setenv("IPTV_TUNERR_PROVIDER_URLS", "http://a.com, http://b.com ")
+	os.Setenv("IPTV_TUNERR_PROVIDER_USER", "u")
+	os.Setenv("IPTV_TUNERR_PROVIDER_PASS", "p")
 	c := Load()
 	urls := c.M3UURLsOrBuild()
 	if len(urls) != 2 {
@@ -140,8 +140,8 @@ func TestM3UURLsOrBuild_multiple(t *testing.T) {
 
 func TestM3UURLsOrBuild_preferM3UURL(t *testing.T) {
 	os.Clearenv()
-	os.Setenv("PLEX_TUNER_M3U_URL", "http://custom/m3u")
-	os.Setenv("PLEX_TUNER_PROVIDER_URLS", "http://a.com,http://b.com")
+	os.Setenv("IPTV_TUNERR_M3U_URL", "http://custom/m3u")
+	os.Setenv("IPTV_TUNERR_PROVIDER_URLS", "http://a.com,http://b.com")
 	c := Load()
 	urls := c.M3UURLsOrBuild()
 	if len(urls) != 1 || urls[0] != "http://custom/m3u" {
@@ -151,14 +151,14 @@ func TestM3UURLsOrBuild_preferM3UURL(t *testing.T) {
 
 func TestProviderURLs(t *testing.T) {
 	os.Clearenv()
-	os.Setenv("PLEX_TUNER_PROVIDER_URLS", "http://x.com, http://y.com")
+	os.Setenv("IPTV_TUNERR_PROVIDER_URLS", "http://x.com, http://y.com")
 	c := Load()
 	got := c.ProviderURLs()
 	if len(got) != 2 || got[0] != "http://x.com" || got[1] != "http://y.com" {
 		t.Errorf("ProviderURLs() = %v", got)
 	}
 	os.Clearenv()
-	os.Setenv("PLEX_TUNER_PROVIDER_URL", "http://single")
+	os.Setenv("IPTV_TUNERR_PROVIDER_URL", "http://single")
 	c = Load()
 	got = c.ProviderURLs()
 	if len(got) != 1 || got[0] != "http://single" {
@@ -169,12 +169,12 @@ func TestProviderURLs(t *testing.T) {
 // When only user/pass are set (no URL env), ProviderURLs returns nil; explicit URL(s) required.
 func TestProviderURLs_emptyWhenUserPassOnly(t *testing.T) {
 	os.Clearenv()
-	os.Setenv("PLEX_TUNER_PROVIDER_USER", "u")
-	os.Setenv("PLEX_TUNER_PROVIDER_PASS", "p")
+	os.Setenv("IPTV_TUNERR_PROVIDER_USER", "u")
+	os.Setenv("IPTV_TUNERR_PROVIDER_PASS", "p")
 	c := Load()
 	got := c.ProviderURLs()
 	if got != nil {
-		t.Errorf("ProviderURLs() = %v, want nil (explicit PLEX_TUNER_PROVIDER_URL or URLS required)", got)
+		t.Errorf("ProviderURLs() = %v, want nil (explicit IPTV_TUNERR_PROVIDER_URL or URLS required)", got)
 	}
 }
 
@@ -184,17 +184,17 @@ func TestLiveEPGOnly(t *testing.T) {
 	if c.LiveEPGOnly {
 		t.Error("LiveEPGOnly should default false")
 	}
-	os.Setenv("PLEX_TUNER_LIVE_EPG_ONLY", "1")
+	os.Setenv("IPTV_TUNERR_LIVE_EPG_ONLY", "1")
 	c = Load()
 	if !c.LiveEPGOnly {
 		t.Error("LiveEPGOnly should be true for 1")
 	}
-	os.Setenv("PLEX_TUNER_LIVE_EPG_ONLY", "true")
+	os.Setenv("IPTV_TUNERR_LIVE_EPG_ONLY", "true")
 	c = Load()
 	if !c.LiveEPGOnly {
 		t.Error("LiveEPGOnly should be true for true")
 	}
-	os.Setenv("PLEX_TUNER_LIVE_EPG_ONLY", "no")
+	os.Setenv("IPTV_TUNERR_LIVE_EPG_ONLY", "no")
 	c = Load()
 	if c.LiveEPGOnly {
 		t.Error("LiveEPGOnly should be false for no")
@@ -207,7 +207,7 @@ func TestLiveOnly(t *testing.T) {
 	if c.LiveOnly {
 		t.Error("LiveOnly should default false")
 	}
-	os.Setenv("PLEX_TUNER_LIVE_ONLY", "1")
+	os.Setenv("IPTV_TUNERR_LIVE_ONLY", "1")
 	c = Load()
 	if !c.LiveOnly {
 		t.Error("LiveOnly should be true for 1")
@@ -222,7 +222,7 @@ func TestLoad_subscriptionFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.Clearenv()
-	os.Setenv("PLEX_TUNER_SUBSCRIPTION_FILE", path)
+	os.Setenv("IPTV_TUNERR_SUBSCRIPTION_FILE", path)
 	c := Load()
 	if c.ProviderUser != "myuser" || c.ProviderPass != "mypass" {
 		t.Errorf("Load from subscription file: user=%q pass=%q", c.ProviderUser, c.ProviderPass)
@@ -236,7 +236,7 @@ func TestLoad_subscriptionFile_missingPassword(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.Clearenv()
-	os.Setenv("PLEX_TUNER_SUBSCRIPTION_FILE", path)
+	os.Setenv("IPTV_TUNERR_SUBSCRIPTION_FILE", path)
 	c := Load()
 	if c.ProviderUser != "" || c.ProviderPass != "" {
 		t.Errorf("missing Password in file should leave creds empty; got user=%q pass=%q", c.ProviderUser, c.ProviderPass)
@@ -250,8 +250,8 @@ func TestLoad_subscriptionFile_envOverrides(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.Clearenv()
-	os.Setenv("PLEX_TUNER_SUBSCRIPTION_FILE", path)
-	os.Setenv("PLEX_TUNER_PROVIDER_USER", "envuser")
+	os.Setenv("IPTV_TUNERR_SUBSCRIPTION_FILE", path)
+	os.Setenv("IPTV_TUNERR_PROVIDER_USER", "envuser")
 	c := Load()
 	if c.ProviderUser != "envuser" {
 		t.Errorf("env user should override; got %q", c.ProviderUser)
@@ -267,7 +267,7 @@ func TestEpgPruneUnlinked(t *testing.T) {
 	if c.EpgPruneUnlinked {
 		t.Error("EpgPruneUnlinked should default false")
 	}
-	os.Setenv("PLEX_TUNER_EPG_PRUNE_UNLINKED", "1")
+	os.Setenv("IPTV_TUNERR_EPG_PRUNE_UNLINKED", "1")
 	c = Load()
 	if !c.EpgPruneUnlinked {
 		t.Error("EpgPruneUnlinked should be true for 1")
@@ -286,9 +286,9 @@ func TestSmoketestEnv(t *testing.T) {
 	if c.SmoketestConcurrency != 10 {
 		t.Errorf("SmoketestConcurrency default: got %d", c.SmoketestConcurrency)
 	}
-	os.Setenv("PLEX_TUNER_SMOKETEST_ENABLED", "true")
-	os.Setenv("PLEX_TUNER_SMOKETEST_TIMEOUT", "3s")
-	os.Setenv("PLEX_TUNER_SMOKETEST_CONCURRENCY", "4")
+	os.Setenv("IPTV_TUNERR_SMOKETEST_ENABLED", "true")
+	os.Setenv("IPTV_TUNERR_SMOKETEST_TIMEOUT", "3s")
+	os.Setenv("IPTV_TUNERR_SMOKETEST_CONCURRENCY", "4")
 	c = Load()
 	if !c.SmoketestEnabled {
 		t.Error("SmoketestEnabled should be true")
@@ -310,8 +310,8 @@ func TestXMLTVEnv(t *testing.T) {
 	if c.XMLTVTimeout != 45*time.Second {
 		t.Errorf("XMLTVTimeout default: got %v", c.XMLTVTimeout)
 	}
-	os.Setenv("PLEX_TUNER_XMLTV_URL", "http://example/xmltv.xml")
-	os.Setenv("PLEX_TUNER_XMLTV_TIMEOUT", "9s")
+	os.Setenv("IPTV_TUNERR_XMLTV_URL", "http://example/xmltv.xml")
+	os.Setenv("IPTV_TUNERR_XMLTV_TIMEOUT", "9s")
 	c = Load()
 	if c.XMLTVURL != "http://example/xmltv.xml" {
 		t.Errorf("XMLTVURL: got %q", c.XMLTVURL)
@@ -329,20 +329,20 @@ func TestStreamTranscodeMode(t *testing.T) {
 	}
 	for _, env := range []string{"true", "1", "yes", "on"} {
 		os.Clearenv()
-		os.Setenv("PLEX_TUNER_STREAM_TRANSCODE", env)
+		os.Setenv("IPTV_TUNERR_STREAM_TRANSCODE", env)
 		c = Load()
 		if c.StreamTranscodeMode != "on" {
 			t.Errorf("StreamTranscodeMode %q: got %q", env, c.StreamTranscodeMode)
 		}
 	}
 	os.Clearenv()
-	os.Setenv("PLEX_TUNER_STREAM_TRANSCODE", "auto")
+	os.Setenv("IPTV_TUNERR_STREAM_TRANSCODE", "auto")
 	c = Load()
 	if c.StreamTranscodeMode != "auto" {
 		t.Errorf("StreamTranscodeMode auto: got %q", c.StreamTranscodeMode)
 	}
 	for _, env := range []string{"false", "off"} {
-		os.Setenv("PLEX_TUNER_STREAM_TRANSCODE", env)
+		os.Setenv("IPTV_TUNERR_STREAM_TRANSCODE", env)
 		c = Load()
 		if c.StreamTranscodeMode != "off" {
 			t.Errorf("StreamTranscodeMode %s: got %q", env, c.StreamTranscodeMode)
@@ -371,12 +371,12 @@ func TestHDHRConfig(t *testing.T) {
 	}
 
 	// Explicit values
-	os.Setenv("PLEX_TUNER_HDHR_NETWORK_MODE", "true")
-	os.Setenv("PLEX_TUNER_HDHR_DEVICE_ID", "0xDEADBEEF")
-	os.Setenv("PLEX_TUNER_HDHR_TUNER_COUNT", "4")
-	os.Setenv("PLEX_TUNER_HDHR_DISCOVER_PORT", "65002")
-	os.Setenv("PLEX_TUNER_HDHR_CONTROL_PORT", "65003")
-	os.Setenv("PLEX_TUNER_HDHR_FRIENDLY_NAME", "MyTuner")
+	os.Setenv("IPTV_TUNERR_HDHR_NETWORK_MODE", "true")
+	os.Setenv("IPTV_TUNERR_HDHR_DEVICE_ID", "0xDEADBEEF")
+	os.Setenv("IPTV_TUNERR_HDHR_TUNER_COUNT", "4")
+	os.Setenv("IPTV_TUNERR_HDHR_DISCOVER_PORT", "65002")
+	os.Setenv("IPTV_TUNERR_HDHR_CONTROL_PORT", "65003")
+	os.Setenv("IPTV_TUNERR_HDHR_FRIENDLY_NAME", "MyTuner")
 	c = Load()
 	if !c.HDHREnabled {
 		t.Error("HDHREnabled should be true")
@@ -404,7 +404,7 @@ func TestXMLTVCacheTTL(t *testing.T) {
 	if c.XMLTVCacheTTL != 10*time.Minute {
 		t.Errorf("XMLTVCacheTTL default: got %v", c.XMLTVCacheTTL)
 	}
-	os.Setenv("PLEX_TUNER_XMLTV_CACHE_TTL", "5m")
+	os.Setenv("IPTV_TUNERR_XMLTV_CACHE_TTL", "5m")
 	c = Load()
 	if c.XMLTVCacheTTL != 5*time.Minute {
 		t.Errorf("XMLTVCacheTTL: got %v", c.XMLTVCacheTTL)
@@ -420,8 +420,8 @@ func TestSmoketestCacheConfig(t *testing.T) {
 	if c.SmoketestCacheTTL != 4*time.Hour {
 		t.Errorf("SmoketestCacheTTL default: got %v", c.SmoketestCacheTTL)
 	}
-	os.Setenv("PLEX_TUNER_SMOKETEST_CACHE_FILE", "/tmp/cache.json")
-	os.Setenv("PLEX_TUNER_SMOKETEST_CACHE_TTL", "2h")
+	os.Setenv("IPTV_TUNERR_SMOKETEST_CACHE_FILE", "/tmp/cache.json")
+	os.Setenv("IPTV_TUNERR_SMOKETEST_CACHE_TTL", "2h")
 	c = Load()
 	if c.SmoketestCacheFile != "/tmp/cache.json" {
 		t.Errorf("SmoketestCacheFile: got %q", c.SmoketestCacheFile)
@@ -437,17 +437,17 @@ func TestStreamBufferBytes_auto(t *testing.T) {
 	if c.StreamBufferBytes != -1 {
 		t.Errorf("StreamBufferBytes default (auto): got %d", c.StreamBufferBytes)
 	}
-	os.Setenv("PLEX_TUNER_STREAM_BUFFER_BYTES", "0")
+	os.Setenv("IPTV_TUNERR_STREAM_BUFFER_BYTES", "0")
 	c = Load()
 	if c.StreamBufferBytes != 0 {
 		t.Errorf("StreamBufferBytes 0: got %d", c.StreamBufferBytes)
 	}
-	os.Setenv("PLEX_TUNER_STREAM_BUFFER_BYTES", "auto")
+	os.Setenv("IPTV_TUNERR_STREAM_BUFFER_BYTES", "auto")
 	c = Load()
 	if c.StreamBufferBytes != -1 {
 		t.Errorf("StreamBufferBytes auto: got %d", c.StreamBufferBytes)
 	}
-	os.Setenv("PLEX_TUNER_STREAM_BUFFER_BYTES", "2097152")
+	os.Setenv("IPTV_TUNERR_STREAM_BUFFER_BYTES", "2097152")
 	c = Load()
 	if c.StreamBufferBytes != 2097152 {
 		t.Errorf("StreamBufferBytes 2097152: got %d", c.StreamBufferBytes)

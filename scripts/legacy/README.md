@@ -2,7 +2,7 @@
 
 These scripts are retained for historical/manual testing context only.
 
-They are not part of the supported Plex Tuner CLI surface, packaging flow, or CI verification path.
+They are not part of the supported IPTV Tunerr CLI surface, packaging flow, or CI verification path.
 
 Examples:
 - early HDHomeRun network mode smoke scripts
@@ -10,6 +10,6 @@ Examples:
 
 Prefer:
 - `scripts/verify`
-- `scripts/plextuner-local-test.sh`
+- `scripts/iptvtunerr-local-test.sh`
 - `scripts/build-test-packages.sh`
 - `scripts/build-tester-release.sh`

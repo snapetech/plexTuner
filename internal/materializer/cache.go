@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/plextuner/plex-tuner/internal/cache"
-	"github.com/plextuner/plex-tuner/internal/httpclient"
-	"github.com/plextuner/plex-tuner/internal/probe"
+	"github.com/iptvtunerr/iptv-tunerr/internal/cache"
+	"github.com/iptvtunerr/iptv-tunerr/internal/httpclient"
+	"github.com/iptvtunerr/iptv-tunerr/internal/probe"
 )
 
 // Cache materializes both direct-MP4 and HLS URLs to the cache (DirectFile + HLS via ffmpeg).

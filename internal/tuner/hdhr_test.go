@@ -6,15 +6,15 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/plextuner/plex-tuner/internal/catalog"
+	"github.com/iptvtunerr/iptv-tunerr/internal/catalog"
 )
 
 func TestHDHR_discover(t *testing.T) {
-	t.Setenv("PLEX_TUNER_HDHR_MANUFACTURER", "Silicondust")
-	t.Setenv("PLEX_TUNER_HDHR_MODEL_NUMBER", "HDHR5-2US")
-	t.Setenv("PLEX_TUNER_HDHR_FIRMWARE_NAME", "hdhomerun5_atsc")
-	t.Setenv("PLEX_TUNER_HDHR_FIRMWARE_VERSION", "20240101")
-	t.Setenv("PLEX_TUNER_HDHR_DEVICE_AUTH", "plextuner")
+	t.Setenv("IPTV_TUNERR_HDHR_MANUFACTURER", "Silicondust")
+	t.Setenv("IPTV_TUNERR_HDHR_MODEL_NUMBER", "HDHR5-2US")
+	t.Setenv("IPTV_TUNERR_HDHR_FIRMWARE_NAME", "hdhomerun5_atsc")
+	t.Setenv("IPTV_TUNERR_HDHR_FIRMWARE_VERSION", "20240101")
+	t.Setenv("IPTV_TUNERR_HDHR_DEVICE_AUTH", "iptvtunerr")
 	h := &HDHR{
 		BaseURL:    "http://test:5004",
 		TunerCount: 2,
@@ -36,7 +36,7 @@ func TestHDHR_discover(t *testing.T) {
 	if n, ok := out["TunerCount"].(float64); !ok || n != 2 {
 		t.Errorf("TunerCount: %v", out["TunerCount"])
 	}
-	if out["DeviceAuth"] != "plextuner" {
+	if out["DeviceAuth"] != "iptvtunerr" {
 		t.Errorf("DeviceAuth: %v", out["DeviceAuth"])
 	}
 	if out["ModelNumber"] == nil || out["FirmwareVersion"] == nil {
@@ -90,7 +90,7 @@ func TestHDHR_lineup_status(t *testing.T) {
 }
 
 func TestHDHR_lineup_status_scan_possible_false(t *testing.T) {
-	t.Setenv("PLEX_TUNER_HDHR_SCAN_POSSIBLE", "false")
+	t.Setenv("IPTV_TUNERR_HDHR_SCAN_POSSIBLE", "false")
 	h := &HDHR{}
 	req := httptest.NewRequest(http.MethodGet, "/lineup_status.json", nil)
 	w := httptest.NewRecorder()
@@ -122,7 +122,7 @@ func TestHDHR_discover_defaults(t *testing.T) {
 	if out["BaseURL"] != "http://localhost:5004" {
 		t.Errorf("expected default BaseURL, got: %v", out["BaseURL"])
 	}
-	if out["DeviceID"] != "plextuner01" {
+	if out["DeviceID"] != "iptvtunerr01" {
 		t.Errorf("expected default DeviceID, got: %v", out["DeviceID"])
 	}
 	if n, ok := out["TunerCount"].(float64); !ok || n != 2 {

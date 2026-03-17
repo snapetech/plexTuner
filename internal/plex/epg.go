@@ -57,7 +57,7 @@ func SyncEPGToPlex(plexDataDir string, dvrUUID string, channels []EPGChannel) er
 	} else {
 		libRow := map[string]interface{}{
 			"id":           1,
-			"name":         "PlexTuner",
+			"name":         "IptvTunerr",
 			"section_type": 8,
 			"language":     "en",
 			"agent":        fmt.Sprintf("tv.plex.providers.epg.xmltv:{\"key\": \"%s\"}", dvrUUID),

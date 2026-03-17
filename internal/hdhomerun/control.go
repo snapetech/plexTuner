@@ -159,7 +159,7 @@ func (s *ControlServer) getDiscoverJSON() string {
 	deviceIDStr := fmt.Sprintf("%08x", s.device.DeviceID)
 	return fmt.Sprintf(`{
 	"DeviceID": "%s",
-	"DeviceAuth": "plextuner",
+	"DeviceAuth": "iptvtunerr",
 	"FriendlyName": "%s",
 	"BaseURL": "%s",
 	"LineupURL": "%s/lineup.json",

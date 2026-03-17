@@ -16,10 +16,10 @@ Purpose:
 Defaults are aligned to the common k3s host-run layout used in testing.
 
 Options:
-  --run-dir PATH            Default: /srv/plextuner-vodfs-run
-  --binary PATH             Default: <run-dir>/plex-tuner-vodreg
-  --mount PATH              Default: /srv/plextuner-vodfs
-  --cache PATH              Default: /srv/plextuner-vodfs-cache
+  --run-dir PATH            Default: /srv/iptvtunerr-vodfs-run
+  --binary PATH             Default: <run-dir>/iptv-tunerr-vodreg
+  --mount PATH              Default: /srv/iptvtunerr-vodfs
+  --cache PATH              Default: /srv/iptvtunerr-vodfs-cache
   --catalog PATH            Default: <run-dir>/catalog.json
   --seriesfixed PATH        Default: <run-dir>/catalog.seriesfixed.json
   --progress PATH           Default: <run-dir>/catalog.seriesfixed.progress.json
@@ -35,9 +35,9 @@ Examples:
 EOF
 }
 
-RUN_DIR="/srv/plextuner-vodfs-run"
-MOUNT_POINT="/srv/plextuner-vodfs"
-CACHE_DIR="/srv/plextuner-vodfs-cache"
+RUN_DIR="/srv/iptvtunerr-vodfs-run"
+MOUNT_POINT="/srv/iptvtunerr-vodfs"
+CACHE_DIR="/srv/iptvtunerr-vodfs-cache"
 DO_RETRY=0
 DRY_RUN=0
 RETRY_WORKERS=4
@@ -63,7 +63,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-BINARY="${BINARY:-$RUN_DIR/plex-tuner-vodreg}"
+BINARY="${BINARY:-$RUN_DIR/iptv-tunerr-vodreg}"
 CATALOG_PATH="${CATALOG_PATH:-$RUN_DIR/catalog.json}"
 SERIESFIXED_PATH="${SERIESFIXED_PATH:-$RUN_DIR/catalog.seriesfixed.json}"
 PROGRESS_PATH="${PROGRESS_PATH:-$RUN_DIR/catalog.seriesfixed.progress.json}"

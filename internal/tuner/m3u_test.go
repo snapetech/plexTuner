@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/plextuner/plex-tuner/internal/catalog"
+	"github.com/iptvtunerr/iptv-tunerr/internal/catalog"
 )
 
 func TestM3UServe_urlTvg(t *testing.T) {

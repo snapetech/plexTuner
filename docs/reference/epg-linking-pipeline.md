@@ -10,7 +10,7 @@ tags: [reference, epg, xmltv, matching, channels, providers]
 Concrete plan for improving EPG coverage across large IPTV lineups, including the
 high-volume unlinked-channel tail.
 
-This is designed for Plex Tuner’s channel/guide workflows:
+This is designed for IPTV Tunerr’s channel/guide workflows:
 - better XMLTV matches for Live TV
 - safer rollout of low-confidence matches
 - support for multiple IPTV providers and multiple EPG sources
@@ -26,7 +26,7 @@ This is designed for Plex Tuner’s channel/guide workflows:
 ## Current implementation status (Phase 1)
 
 Implemented in-app (report-only, no runtime guide mutation):
-- `plex-tuner epg-link-report`
+- `iptv-tunerr epg-link-report`
   - parses XMLTV channel ids / display names
   - matches against catalog `live_channels`
   - deterministic tiers only:
@@ -188,7 +188,7 @@ This is powerful but expensive and error-prone for:
 ## Confidence policy
 
 ### High confidence
-- auto-apply to Plex Tuner guide linking
+- auto-apply to IPTV Tunerr guide linking
 - include in normal lineup
 
 Examples:
@@ -282,7 +282,7 @@ Don’t waste matching cycles on channels unlikely to benefit:
 - top-viewed unlinked channels
 - per-provider link coverage
 
-## Integration points in Plex Tuner (future work)
+## Integration points in IPTV Tunerr (future work)
 
 Potential insertion points:
 - indexer/catalog build stage (normalize + candidate generation)

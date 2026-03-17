@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Repair/backfill series seasons/episodes in an existing PlexTuner catalog.json.
+Repair/backfill series seasons/episodes in an existing IptvTunerr catalog.json.
 
 Use case:
 - Older catalogs can contain series rows with empty `seasons` because provider
@@ -47,7 +47,7 @@ def _derive_provider_from_catalog(catalog: dict[str, Any]) -> tuple[str, str, st
 
 
 def _load_json(url: str, timeout: int) -> Any:
-    req = urllib.request.Request(url, headers={"User-Agent": "PlexTuner/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "IptvTunerr/1.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8", "replace"))
 

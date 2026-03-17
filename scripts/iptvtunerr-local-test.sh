@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Local QA and smoke test for Plex Tuner (no Kubernetes).
-# Run from repo root: ./scripts/plextuner-local-test.sh [qa|serve|run|smoke|all]
+# Local QA and smoke test for IPTV Tunerr (no Kubernetes).
+# Run from repo root: ./scripts/iptvtunerr-local-test.sh [qa|serve|run|smoke|all]
 # See docs/how-to/run-without-kubernetes.md
 
 set -euo pipefail
@@ -8,9 +8,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 HOST_DEFAULT="$(hostname -s 2>/dev/null || hostname)"
-BASE_URL="${PLEX_TUNER_BASE_URL:-http://${HOST_DEFAULT}:5004}"
-ADDR="${PLEX_TUNER_ADDR:-:5004}"
-CATALOG_PATH="${PLEX_TUNER_CATALOG_PATH:-./catalog.json}"
+BASE_URL="${IPTV_TUNERR_BASE_URL:-http://${HOST_DEFAULT}:5004}"
+ADDR="${IPTV_TUNERR_ADDR:-:5004}"
+CATALOG_PATH="${IPTV_TUNERR_CATALOG_PATH:-./catalog.json}"
 WAIT_SECS="${WAIT_SECS:-20}"
 
 load_env() {
@@ -23,11 +23,11 @@ load_env() {
 }
 
 log() {
-  printf '[plex-tuner-test] %s\n' "$*"
+  printf '[iptv-tunerr-test] %s\n' "$*"
 }
 
 die() {
-  printf '[plex-tuner-test] ERROR: %s\n' "$*" >&2
+  printf '[iptv-tunerr-test] ERROR: %s\n' "$*" >&2
   exit 1
 }
 
@@ -39,14 +39,14 @@ Commands:
   qa          Run module download + tuner vet/tests
   serve       Start tuner using existing catalog (foreground)
   run         Start full run mode (foreground; needs provider creds/.env)
-  smoke       Smoke-check local endpoints at \$PLEX_TUNER_BASE_URL (default: ${BASE_URL})
+  smoke       Smoke-check local endpoints at \$IPTV_TUNERR_BASE_URL (default: ${BASE_URL})
   zero-touch  One-shot: run with -register-plex, sync lineup to Plex DB, then keep server up. Requires PLEX_DATA_DIR.
   all         Run qa, start serve/run in background, wait for readiness, smoke-check
 
 Env overrides:
-  PLEX_TUNER_BASE_URL     Default: ${BASE_URL}
-  PLEX_TUNER_ADDR        Default: ${ADDR}
-  PLEX_TUNER_CATALOG_PATH  Default: ${CATALOG_PATH}
+  IPTV_TUNERR_BASE_URL     Default: ${BASE_URL}
+  IPTV_TUNERR_ADDR        Default: ${ADDR}
+  IPTV_TUNERR_CATALOG_PATH  Default: ${CATALOG_PATH}
   PLEX_DATA_DIR          Plex Media Server data root (required for zero-touch; stop Plex first)
   WAIT_SECS              Default: ${WAIT_SECS}
 EOF
@@ -66,13 +66,13 @@ qa() {
 start_serve() {
   [[ -f "$CATALOG_PATH" ]] || die "catalog not found: $CATALOG_PATH"
   log "starting serve on $ADDR with base-url $BASE_URL (catalog=$CATALOG_PATH)"
-  exec go run ./cmd/plex-tuner serve -catalog "$CATALOG_PATH" -addr "$ADDR" -base-url "$BASE_URL"
+  exec go run ./cmd/iptv-tunerr serve -catalog "$CATALOG_PATH" -addr "$ADDR" -base-url "$BASE_URL"
 }
 
 start_run() {
   load_env
   log "starting run on $ADDR with base-url $BASE_URL"
-  exec go run ./cmd/plex-tuner run -addr "$ADDR" -base-url "$BASE_URL"
+  exec go run ./cmd/iptv-tunerr run -addr "$ADDR" -base-url "$BASE_URL"
 }
 
 smoke() {
@@ -88,7 +88,7 @@ smoke() {
   )
 
   for p in "${paths[@]}"; do
-    code="$(curl -sS -o /tmp/plextuner-smoke.out -w '%{http_code}' "${base}${p}" 2>/dev/null || true)"
+    code="$(curl -sS -o /tmp/iptvtunerr-smoke.out -w '%{http_code}' "${base}${p}" 2>/dev/null || true)"
     printf '%s %s\n' "$code" "$p"
   done
 
@@ -124,9 +124,9 @@ all() {
 
   log "starting ${mode} in background"
   if [[ "$mode" == "serve" ]]; then
-    go run ./cmd/plex-tuner serve -catalog "$CATALOG_PATH" -addr "$ADDR" -base-url "$BASE_URL" &
+    go run ./cmd/iptv-tunerr serve -catalog "$CATALOG_PATH" -addr "$ADDR" -base-url "$BASE_URL" &
   else
-    go run ./cmd/plex-tuner run -addr "$ADDR" -base-url "$BASE_URL" &
+    go run ./cmd/iptv-tunerr run -addr "$ADDR" -base-url "$BASE_URL" &
   fi
   local pid=$!
   trap 'kill "$pid" 2>/dev/null || true' EXIT
@@ -154,11 +154,11 @@ zero_touch() {
   local plex_dir="${PLEX_DATA_DIR:-}"
   [[ -n "$plex_dir" ]] || die "PLEX_DATA_DIR is required for zero-touch (path to Plex Media Server data root; stop Plex first)"
   [[ -d "$plex_dir" ]] || die "PLEX_DATA_DIR is not a directory: $plex_dir"
-  [[ -f "$CATALOG_PATH" ]] || die "catalog not found: $CATALOG_PATH (build one with 'run' first or set PLEX_TUNER_CATALOG_PATH)"
+  [[ -f "$CATALOG_PATH" ]] || die "catalog not found: $CATALOG_PATH (build one with 'run' first or set IPTV_TUNERR_CATALOG_PATH)"
 
   log "zero-touch: register tuner + sync lineup to Plex at $plex_dir (stop Plex first)"
   log "starting run with -register-plex (skip-index, catalog=$CATALOG_PATH)"
-  go run ./cmd/plex-tuner run -skip-index -catalog "$CATALOG_PATH" -addr "$ADDR" -base-url "$BASE_URL" -register-plex "$plex_dir" &
+  go run ./cmd/iptv-tunerr run -skip-index -catalog "$CATALOG_PATH" -addr "$ADDR" -base-url "$BASE_URL" -register-plex "$plex_dir" &
   local pid=$!
   trap 'kill "$pid" 2>/dev/null || true' EXIT
 

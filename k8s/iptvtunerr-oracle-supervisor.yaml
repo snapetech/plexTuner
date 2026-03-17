@@ -1,6 +1,6 @@
 # Oracle-cap tuner instances (hdhrcap100..hdhrcap600) are run by the main supervisor pod.
 # There is no separate oracle deployment. This file defines only the Service that routes
-# plextuner-oracle-hdhr.plex.svc:5201–5206 to the plextuner-supervisor pod.
+# iptvtunerr-oracle-hdhr.plex.svc:5201–5206 to the iptvtunerr-supervisor pod.
 #
 # To add oracle instances to a generated supervisor config, append the instances from
 # k8s/oracle-instances.json to the main config's instances array.
@@ -8,11 +8,11 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: plextuner-oracle-hdhr
+  name: iptvtunerr-oracle-hdhr
   namespace: plex
 spec:
   selector:
-    app: plextuner-supervisor
+    app: iptvtunerr-supervisor
   ports:
     - { name: p5201, port: 5201, targetPort: 5201, protocol: TCP }
     - { name: p5202, port: 5202, targetPort: 5202, protocol: TCP }

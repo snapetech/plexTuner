@@ -1,7 +1,7 @@
 # Fully offline: no RUN, no base image pull after first time. Use when Docker has no network.
 # HTTPS from inside the container may fail (no CA bundle). Prefer Dockerfile.static when you have network.
-# Build: go build -o plex-tuner ./cmd/plex-tuner && docker build -f Dockerfile.static.scratch -t plex-tuner:hdhr-test .
+# Build: go build -o iptv-tunerr ./cmd/iptv-tunerr && docker build -f Dockerfile.static.scratch -t iptv-tunerr:hdhr-test .
 FROM scratch
-COPY plex-tuner /plex-tuner
+COPY iptv-tunerr /iptv-tunerr
 EXPOSE 5004
-ENTRYPOINT ["/plex-tuner"]
+ENTRYPOINT ["/iptv-tunerr"]

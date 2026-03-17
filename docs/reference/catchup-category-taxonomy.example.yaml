@@ -1,5 +1,5 @@
 # Example taxonomy/rules file for a future near-live catch-up mode.
-# This is a planning artifact (not yet consumed by plex-tuner runtime).
+# This is a planning artifact (not yet consumed by iptv-tunerr runtime).
 #
 # Goals:
 # - Split very large hot libraries into smaller Plex sections (easier scans/ops)

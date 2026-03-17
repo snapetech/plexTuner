@@ -2,24 +2,24 @@
 
 First place to look before editing. Keeps agents from thrashing.
 
-**This folder is the Plex Tuner project.** There are two projects × two hosts = 4 repos. Push only to **origin** and **plex** from here.
+**This folder is the IPTV Tunerr project.** There are two projects × two hosts = 4 repos. Push only to **origin** and **plex** from here.
 
 ## Remotes (do not cross-push)
 
 | Remote    | Repo         | Host   | Use from this folder      |
 |-----------|--------------|--------|----------------------------|
-| **origin** | plexTuner    | GitLab | ✓ Push Plex Tuner here    |
-| **plex**   | plexTuner    | GitHub | ✓ Push Plex Tuner here    |
+| **origin** | iptvTunerr    | GitLab | ✓ Push IPTV Tunerr here    |
+| **plex**   | iptvTunerr    | GitHub | ✓ Push IPTV Tunerr here    |
 | **github** | repoTemplate | GitHub | ✗ Do not push from here   |
 | **template** | repoTemplate | GitLab | ✗ Do not push from here   |
 
-To push Plex Tuner to both: `git push origin main && git push plex main`. Never `git push github` or `git push template` from this folder.
+To push IPTV Tunerr to both: `git push origin main && git push plex main`. Never `git push github` or `git push template` from this folder.
 
 ## Main entrypoints
 
 | Path | Purpose |
 |------|--------|
-| **`cmd/plex-tuner/main.go`** | Plex Tuner app: flags, index (M3U/player_api), catalog, HTTP (lineup, stream), optional VODFS mount. |
+| **`cmd/iptv-tunerr/main.go`** | IPTV Tunerr app: flags, index (M3U/player_api), catalog, HTTP (lineup, stream), optional VODFS mount. |
 | **`internal/indexer/`** | M3U stream parsing, player_api (auth, live, VOD, series with parallel fetch). |
 | **`internal/catalog/`** | Movie/Series/LiveChannel types; Save (snapshot then encode), Load. |
 | **`internal/vodfs/`** | FUSE: root, Movies/TV dirs, virtual files (NodeOpener, keep FD). |
@@ -28,21 +28,21 @@ To push Plex Tuner to both: `git push origin main && git push plex main`. Never 
 
 ## Single binary (supervisor vs oracle)
 
-**There is only one application:** `plex-tuner` (one binary, one build). All modes are subcommands of that binary:
+**There is only one application:** `iptv-tunerr` (one binary, one build). All modes are subcommands of that binary:
 
 - `run`, `serve`, `index` — single tuner or catalog refresh
-- `supervise` — read a JSON config and spawn N child processes (each child is the same binary, e.g. `plex-tuner run -addr=:5004 ...`)
+- `supervise` — read a JSON config and spawn N child processes (each child is the same binary, e.g. `iptv-tunerr run -addr=:5004 ...`)
 - `plex-epg-oracle` — CLI to probe Plex HDHR wizard/channelmap and write reports (one-shot or cron)
 - `probe`, `mount`, `vod-split`, `plex-vod-register`, `epg-link-report` — other subcommands
 
-**Single-pod consolidation (done):** Main and oracle instances run in **one** supervisor pod. The main supervisor config (ConfigMap `plextuner-supervisor-config`) includes both the main instances (hdhr-main, categories, …) and the oracle-cap instances (hdhrcap100…hdhrcap600). Service `plextuner-oracle-hdhr` selects `app=plextuner-supervisor` and exposes ports 5201–5206. There is no separate `plextuner-oracle-supervisor` deployment. Oracle instance definitions for merging into a generated config: `k8s/oracle-instances.json`. Windows/macOS: one `go build`; no extra binaries.
+**Single-pod consolidation (done):** Main and oracle instances run in **one** supervisor pod. The main supervisor config (ConfigMap `iptvtunerr-supervisor-config`) includes both the main instances (hdhr-main, categories, …) and the oracle-cap instances (hdhrcap100…hdhrcap600). Service `iptvtunerr-oracle-hdhr` selects `app=iptvtunerr-supervisor` and exposes ports 5201–5206. There is no separate `iptvtunerr-oracle-supervisor` deployment. Oracle instance definitions for merging into a generated config: `k8s/oracle-instances.json`. Windows/macOS: one `go build`; no extra binaries.
 
-**Category DVR feeds (dvr-*.m3u):** Category instances (bcastus, newsus, generalent, …) use M3U URLs like `http://iptv-m3u-server.plex.svc/dvr-bcastus.m3u`. Those files are produced by **iptv-m3u-server** (split step) in the sibling `k3s/plex` repo. They must emit **all** stream URLs per channel (not just one), or after `PLEX_TUNER_STRIP_STREAM_HOSTS` every channel is dropped and guides show "no live channels available". See known_issues.md (Category DVRs … 0 channels) and runbook §10.
+**Category DVR feeds (dvr-*.m3u):** Category instances (bcastus, newsus, generalent, …) use M3U URLs like `http://iptv-m3u-server.plex.svc/dvr-bcastus.m3u`. Those files are produced by **iptv-m3u-server** (split step) in the sibling `k3s/plex` repo. They must emit **all** stream URLs per channel (not just one), or after `IPTV_TUNERR_STRIP_STREAM_HOSTS` every channel is dropped and guides show "no live channels available". See known_issues.md (Category DVRs … 0 channels) and runbook §10.
 
 ## Key modules
 
 - **`internal/httpclient`** — Shared tuned HTTP client; used by indexer, gateway, materializer, vodfs.
-- **`internal/materializer`** — Download: single GET or range (16 MiB, 206 when off>0); env `PLEX_TUNER_RANGE_DOWNLOAD=1`.
+- **`internal/materializer`** — Download: single GET or range (16 MiB, 206 when off>0); env `IPTV_TUNERR_RANGE_DOWNLOAD=1`.
 - **`internal/gateway`** — Proxy `/stream?url=...` to upstream.
 - **`internal/probe`** — Lineup (lineup.json), discovery (device.xml).
 
@@ -56,5 +56,5 @@ To push Plex Tuner to both: `git push origin main && git push plex main`. Never 
 
 - **`scripts/verify`** — Full check: format (gofmt) → vet → test → build. Fail fast, same as CI.
 - **`scripts/quick-check.sh`** — Tests only; use for short feedback when iterating.
-- **Troubleshooting:** [docs/runbooks/plextuner-troubleshooting.md](docs/runbooks/plextuner-troubleshooting.md) — fail-fast checklist, probe, logs, common failures.
+- **Troubleshooting:** [docs/runbooks/iptvtunerr-troubleshooting.md](docs/runbooks/iptvtunerr-troubleshooting.md) — fail-fast checklist, probe, logs, common failures.
 - CI runs only `scripts/verify`.

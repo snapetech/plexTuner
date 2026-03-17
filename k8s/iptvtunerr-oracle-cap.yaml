@@ -1,46 +1,46 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: plextuner-oracle-config
+  name: iptvtunerr-oracle-config
   namespace: plex
 data:
   supervisor.json: |
-    REPLACE_WITH_k8s/plextuner-supervisor-oracle.example.json
+    REPLACE_WITH_k8s/iptvtunerr-supervisor-oracle.example.json
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: plextuner-oracle
+  name: iptvtunerr-oracle
   namespace: plex
   labels:
-    app: plextuner-oracle
+    app: iptvtunerr-oracle
 spec:
   replicas: 1
   strategy:
     type: Recreate
   selector:
     matchLabels:
-      app: plextuner-oracle
+      app: iptvtunerr-oracle
   template:
     metadata:
       labels:
-        app: plextuner-oracle
+        app: iptvtunerr-oracle
     spec:
       nodeSelector:
         media: plex
       hostNetwork: false
       dnsPolicy: ClusterFirst
       containers:
-        - name: plextuner
-          image: plex-tuner:hdhr-test
+        - name: iptvtunerr
+          image: iptv-tunerr:hdhr-test
           imagePullPolicy: IfNotPresent
           args: ["supervise", "-config", "/config/supervisor.json"]
           env:
             - name: TZ
               value: America/Chicago
-            - name: PLEX_TUNER_PMS_URL
+            - name: IPTV_TUNERR_PMS_URL
               value: http://plex.plex.svc:32400
-            - name: PLEX_TUNER_PMS_TOKEN
+            - name: IPTV_TUNERR_PMS_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: plex-token
@@ -74,72 +74,72 @@ spec:
       volumes:
         - name: oracle-config
           configMap:
-            name: plextuner-oracle-config
+            name: iptvtunerr-oracle-config
         - name: data
           emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: plextuner-oracle100
+  name: iptvtunerr-oracle100
   namespace: plex
 spec:
   selector:
-    app: plextuner-oracle
+    app: iptvtunerr-oracle
   ports:
     - { name: http, port: 5004, targetPort: 5201, protocol: TCP }
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: plextuner-oracle200
+  name: iptvtunerr-oracle200
   namespace: plex
 spec:
   selector:
-    app: plextuner-oracle
+    app: iptvtunerr-oracle
   ports:
     - { name: http, port: 5004, targetPort: 5202, protocol: TCP }
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: plextuner-oracle300
+  name: iptvtunerr-oracle300
   namespace: plex
 spec:
   selector:
-    app: plextuner-oracle
+    app: iptvtunerr-oracle
   ports:
     - { name: http, port: 5004, targetPort: 5203, protocol: TCP }
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: plextuner-oracle400
+  name: iptvtunerr-oracle400
   namespace: plex
 spec:
   selector:
-    app: plextuner-oracle
+    app: iptvtunerr-oracle
   ports:
     - { name: http, port: 5004, targetPort: 5204, protocol: TCP }
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: plextuner-oracle479
+  name: iptvtunerr-oracle479
   namespace: plex
 spec:
   selector:
-    app: plextuner-oracle
+    app: iptvtunerr-oracle
   ports:
     - { name: http, port: 5004, targetPort: 5205, protocol: TCP }
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: plextuner-oracle600
+  name: iptvtunerr-oracle600
   namespace: plex
 spec:
   selector:
-    app: plextuner-oracle
+    app: iptvtunerr-oracle
   ports:
     - { name: http, port: 5004, targetPort: 5206, protocol: TCP }

@@ -6,7 +6,7 @@ package vodfs
 import (
 	"fmt"
 
-	"github.com/plextuner/plex-tuner/internal/catalog"
+	"github.com/iptvtunerr/iptv-tunerr/internal/catalog"
 )
 
 func buildUniqueMovieDirNames(movies []catalog.Movie) map[string]string {

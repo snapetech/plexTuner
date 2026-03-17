@@ -6,8 +6,8 @@ package vodfs
 import (
 	"fmt"
 
-	"github.com/plextuner/plex-tuner/internal/catalog"
-	"github.com/plextuner/plex-tuner/internal/materializer"
+	"github.com/iptvtunerr/iptv-tunerr/internal/catalog"
+	"github.com/iptvtunerr/iptv-tunerr/internal/materializer"
 )
 
 // Mount is unavailable on non-Linux builds because VODFS currently depends on go-fuse.

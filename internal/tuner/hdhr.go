@@ -8,15 +8,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/plextuner/plex-tuner/internal/catalog"
+	"github.com/iptvtunerr/iptv-tunerr/internal/catalog"
 )
 
 // HDHR serves HDHomeRun-compatible discover, lineup_status, and lineup endpoints.
 type HDHR struct {
 	BaseURL      string // e.g. http://192.168.1.10:5004
 	TunerCount   int
-	DeviceID     string // stable device id (PLEX_TUNER_DEVICE_ID); some Plex versions are picky
-	FriendlyName string // friendly name shown in Plex (PLEX_TUNER_FRIENDLY_NAME)
+	DeviceID     string // stable device id (IPTV_TUNERR_DEVICE_ID); some Plex versions are picky
+	FriendlyName string // friendly name shown in Plex (IPTV_TUNERR_FRIENDLY_NAME)
 	Channels     []catalog.LiveChannel
 }
 
@@ -45,23 +45,23 @@ func (h *HDHR) serveDiscover(w http.ResponseWriter) {
 	// FriendlyName: use struct field first, then env var, then default
 	friendly := h.FriendlyName
 	if friendly == "" {
-		friendly = os.Getenv("PLEX_TUNER_FRIENDLY_NAME")
+		friendly = os.Getenv("IPTV_TUNERR_FRIENDLY_NAME")
 	}
 	if friendly == "" {
 		friendly = os.Getenv("HOSTNAME") // fallback to pod hostname
 	}
 	if friendly == "" {
-		friendly = "Plex Tuner"
+		friendly = "IPTV Tunerr"
 	}
 	deviceID := h.DeviceID
 	if deviceID == "" {
-		deviceID = os.Getenv("PLEX_TUNER_DEVICE_ID")
+		deviceID = os.Getenv("IPTV_TUNERR_DEVICE_ID")
 	}
 	if deviceID == "" {
 		deviceID = os.Getenv("HOSTNAME")
 	}
 	if deviceID == "" {
-		deviceID = "plextuner01"
+		deviceID = "iptvtunerr01"
 	}
 	out := map[string]interface{}{
 		"FriendlyName": friendly,
@@ -70,19 +70,19 @@ func (h *HDHR) serveDiscover(w http.ResponseWriter) {
 		"TunerCount":   tunerCount,
 		"DeviceID":     deviceID,
 	}
-	if v := strings.TrimSpace(os.Getenv("PLEX_TUNER_HDHR_MANUFACTURER")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HDHR_MANUFACTURER")); v != "" {
 		out["Manufacturer"] = v
 	}
-	if v := strings.TrimSpace(os.Getenv("PLEX_TUNER_HDHR_MODEL_NUMBER")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HDHR_MODEL_NUMBER")); v != "" {
 		out["ModelNumber"] = v
 	}
-	if v := strings.TrimSpace(os.Getenv("PLEX_TUNER_HDHR_FIRMWARE_NAME")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HDHR_FIRMWARE_NAME")); v != "" {
 		out["FirmwareName"] = v
 	}
-	if v := strings.TrimSpace(os.Getenv("PLEX_TUNER_HDHR_FIRMWARE_VERSION")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HDHR_FIRMWARE_VERSION")); v != "" {
 		out["FirmwareVersion"] = v
 	}
-	if v := strings.TrimSpace(os.Getenv("PLEX_TUNER_HDHR_DEVICE_AUTH")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HDHR_DEVICE_AUTH")); v != "" {
 		out["DeviceAuth"] = v
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -91,7 +91,7 @@ func (h *HDHR) serveDiscover(w http.ResponseWriter) {
 
 func (h *HDHR) serveLineupStatus(w http.ResponseWriter) {
 	scanPossible := 1
-	if v := strings.TrimSpace(os.Getenv("PLEX_TUNER_HDHR_SCAN_POSSIBLE")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HDHR_SCAN_POSSIBLE")); v != "" {
 		if strings.EqualFold(v, "0") || strings.EqualFold(v, "false") || strings.EqualFold(v, "no") {
 			scanPossible = 0
 		}
@@ -114,7 +114,7 @@ func (h *HDHR) serveLineup(w http.ResponseWriter) {
 		base = "http://localhost:5004"
 	}
 	var urlSuffix string
-	if getenvBool("PLEX_TUNER_LINEUP_URL_NONCE", false) {
+	if getenvBool("IPTV_TUNERR_LINEUP_URL_NONCE", false) {
 		urlSuffix = "?ptnonce=" + strconv.FormatInt(time.Now().UTC().UnixNano(), 36)
 	}
 	out := make([]map[string]string, 0, len(channels))

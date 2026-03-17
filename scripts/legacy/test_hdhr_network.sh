@@ -3,28 +3,28 @@
 
 set -e
 
-cd /home/coder/code/plextuner
+cd /home/coder/code/iptvtunerr
 
 export PATH=/home/coder/go/bin:$PATH
 export GOPATH=/home/coder/go
 
-echo "=== Building plex-tuner ==="
-go build -o plex-tuner ./cmd/plex-tuner
+echo "=== Building iptv-tunerr ==="
+go build -o iptv-tunerr ./cmd/iptv-tunerr
 
-echo "=== Starting plex-tuner with HDHomeRun network mode ==="
+echo "=== Starting iptv-tunerr with HDHomeRun network mode ==="
 
 # Start with minimal env vars for HDHomeRun network mode
 # Note: Some vars needed for gateway to work, but HDHR should at least start listening
-export PLEX_TUNER_HDHR_NETWORK_MODE=true
-export PLEX_TUNER_HDHR_DEVICE_ID=12345678
-export PLEX_TUNER_HDHR_TUNER_COUNT=2
-export PLEX_TUNER_DEVICE_ID=12345678
-export PLEX_TUNER_FRIENDLY_NAME="PlexTuner-Test"
+export IPTV_TUNERR_HDHR_NETWORK_MODE=true
+export IPTV_TUNERR_HDHR_DEVICE_ID=12345678
+export IPTV_TUNERR_HDHR_TUNER_COUNT=2
+export IPTV_TUNERR_DEVICE_ID=12345678
+export IPTV_TUNERR_FRIENDLY_NAME="IptvTunerr-Test"
 
 # Start the server in background
-./plex-tuner serve &
+./iptv-tunerr serve &
 PID=$!
-echo "Started plex-tuner with PID $PID"
+echo "Started iptv-tunerr with PID $PID"
 
 # Give it time to start
 sleep 3

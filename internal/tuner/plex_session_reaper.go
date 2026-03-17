@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/plextuner/plex-tuner/internal/httpclient"
+	"github.com/iptvtunerr/iptv-tunerr/internal/httpclient"
 )
 
 type plexSessionReaperConfig struct {
@@ -64,16 +64,16 @@ type plexSessionReaperState struct {
 
 func loadPlexSessionReaperConfigFromEnv() plexSessionReaperConfig {
 	cfg := plexSessionReaperConfig{
-		Enabled:        envBool("PLEX_TUNER_PLEX_SESSION_REAPER", false),
-		PMSURL:         strings.TrimSpace(os.Getenv("PLEX_TUNER_PMS_URL")),
-		Token:          strings.TrimSpace(os.Getenv("PLEX_TUNER_PMS_TOKEN")),
-		PollInterval:   envDurationSeconds("PLEX_TUNER_PLEX_SESSION_REAPER_POLL_S", 2*time.Second),
-		IdleTimeout:    envDurationSeconds("PLEX_TUNER_PLEX_SESSION_REAPER_IDLE_S", 15*time.Second),
-		RenewLease:     envDurationSeconds("PLEX_TUNER_PLEX_SESSION_REAPER_RENEW_LEASE_S", 20*time.Second),
-		HardLease:      envDurationSeconds("PLEX_TUNER_PLEX_SESSION_REAPER_HARD_LEASE_S", 30*time.Minute),
-		SSE:            envBool("PLEX_TUNER_PLEX_SESSION_REAPER_SSE", true),
-		ScopeMachineID: strings.TrimSpace(os.Getenv("PLEX_TUNER_PLEX_SESSION_REAPER_MACHINE_ID")),
-		ScopePlayerIP:  strings.TrimSpace(os.Getenv("PLEX_TUNER_PLEX_SESSION_REAPER_PLAYER_IP")),
+		Enabled:        envBool("IPTV_TUNERR_PLEX_SESSION_REAPER", false),
+		PMSURL:         strings.TrimSpace(os.Getenv("IPTV_TUNERR_PMS_URL")),
+		Token:          strings.TrimSpace(os.Getenv("IPTV_TUNERR_PMS_TOKEN")),
+		PollInterval:   envDurationSeconds("IPTV_TUNERR_PLEX_SESSION_REAPER_POLL_S", 2*time.Second),
+		IdleTimeout:    envDurationSeconds("IPTV_TUNERR_PLEX_SESSION_REAPER_IDLE_S", 15*time.Second),
+		RenewLease:     envDurationSeconds("IPTV_TUNERR_PLEX_SESSION_REAPER_RENEW_LEASE_S", 20*time.Second),
+		HardLease:      envDurationSeconds("IPTV_TUNERR_PLEX_SESSION_REAPER_HARD_LEASE_S", 30*time.Minute),
+		SSE:            envBool("IPTV_TUNERR_PLEX_SESSION_REAPER_SSE", true),
+		ScopeMachineID: strings.TrimSpace(os.Getenv("IPTV_TUNERR_PLEX_SESSION_REAPER_MACHINE_ID")),
+		ScopePlayerIP:  strings.TrimSpace(os.Getenv("IPTV_TUNERR_PLEX_SESSION_REAPER_PLAYER_IP")),
 		LogPrefix:      "plex-reaper:",
 	}
 	if cfg.PollInterval <= 0 {
@@ -127,7 +127,7 @@ func maybeStartPlexSessionReaper(ctx context.Context, client *http.Client) {
 		return
 	}
 	if cfg.PMSURL == "" || cfg.Token == "" {
-		log.Printf("%s disabled (missing PLEX_TUNER_PMS_URL or PLEX_TUNER_PMS_TOKEN)", cfg.LogPrefix)
+		log.Printf("%s disabled (missing IPTV_TUNERR_PMS_URL or IPTV_TUNERR_PMS_TOKEN)", cfg.LogPrefix)
 		return
 	}
 	if cfg.IdleTimeout <= 0 && cfg.RenewLease <= 0 && cfg.HardLease <= 0 {
@@ -194,7 +194,7 @@ func (r *plexSessionReaper) consumeSSE(ctx context.Context, wakeCh chan<- struct
 		return err
 	}
 	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("User-Agent", "PlexTuner/1.0")
+	req.Header.Set("User-Agent", "IptvTunerr/1.0")
 	resp, err := r.client.Do(req)
 	if err != nil {
 		return err
@@ -329,7 +329,7 @@ func (r *plexSessionReaper) listLiveSessions(ctx context.Context) ([]plexLiveSes
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/xml")
-	req.Header.Set("User-Agent", "PlexTuner/1.0")
+	req.Header.Set("User-Agent", "IptvTunerr/1.0")
 	resp, err := r.client.Do(req)
 	if err != nil {
 		return nil, err
@@ -348,7 +348,7 @@ func (r *plexSessionReaper) stopTranscode(ctx context.Context, transcodeID strin
 	if err != nil {
 		return 0, err
 	}
-	req.Header.Set("User-Agent", "PlexTuner/1.0")
+	req.Header.Set("User-Agent", "IptvTunerr/1.0")
 	resp, err := r.client.Do(req)
 	if err != nil {
 		return 0, err

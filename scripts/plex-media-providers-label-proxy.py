@@ -318,7 +318,7 @@ def main() -> int:
     ap.add_argument("--listen", default="127.0.0.1:33240", help="listen host:port")
     ap.add_argument("--upstream", required=True, help="Plex PMS URL, e.g. http://127.0.0.1:32400")
     ap.add_argument("--token", required=True, help="Plex token (used to query /livetv/dvrs for labels)")
-    ap.add_argument("--strip-prefix", default="plextuner-", help="strip this prefix from lineup titles")
+    ap.add_argument("--strip-prefix", default="iptvtunerr-", help="strip this prefix from lineup titles")
     ap.add_argument("--refresh-seconds", type=int, default=30, help="DVR label map refresh interval")
     ap.add_argument("--dump-rewrite-test", metavar="FILE", help="rewrite a saved /media/providers XML file and print to stdout")
     ap.add_argument("--log-level", default="INFO", help="logging level")

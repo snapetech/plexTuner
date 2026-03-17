@@ -6,21 +6,21 @@ set -e
 export PATH=/home/coder/go/bin:$PATH
 export GOPATH=/home/coder/go
 
-cd /home/coder/code/plextuner
+cd /home/coder/code/iptvtunerr
 
-echo "=== Building plex-tuner ==="
-go build -o plex-tuner ./cmd/plex-tuner
+echo "=== Building iptv-tunerr ==="
+go build -o iptv-tunerr ./cmd/iptv-tunerr
 
-echo "=== Starting plex-tuner with HDHomeRun mode ==="
-export PLEX_TUNER_HDHR_NETWORK_MODE=true
-export PLEX_TUNER_HDHR_DEVICE_ID=12345678
-export PLEX_TUNER_HDHR_TUNER_COUNT=2
+echo "=== Starting iptv-tunerr with HDHomeRun mode ==="
+export IPTV_TUNERR_HDHR_NETWORK_MODE=true
+export IPTV_TUNERR_HDHR_DEVICE_ID=12345678
+export IPTV_TUNERR_HDHR_TUNER_COUNT=2
 # Note: Need PLEX_TOKEN and other config for full functionality
 
 # Start in background
-./plex-tuner &
+./iptv-tunerr &
 PID=$!
-echo "Started plex-tuner with PID $PID"
+echo "Started iptv-tunerr with PID $PID"
 
 # Wait for startup
 sleep 2
