@@ -87,6 +87,57 @@ func TestMergedEnvStripsParentPlexReaperEnvForChildren(t *testing.T) {
 	}
 }
 
+func TestMergedEnvStripsEmbyJellyfinEnvForChildren(t *testing.T) {
+	base := []string{
+		"A=1",
+		"IPTV_TUNERR_EMBY_HOST=http://emby:8096",
+		"IPTV_TUNERR_EMBY_TOKEN=embytoken",
+		"IPTV_TUNERR_JELLYFIN_HOST=http://jellyfin:8096",
+		"IPTV_TUNERR_JELLYFIN_TOKEN=jftoken",
+	}
+	out := mergedEnv(base, nil)
+	got := map[string]string{}
+	for _, kv := range out {
+		k, v, ok := splitEnvKV(kv)
+		if ok {
+			got[k] = v
+		}
+	}
+	for _, key := range []string{
+		"IPTV_TUNERR_EMBY_HOST", "IPTV_TUNERR_EMBY_TOKEN",
+		"IPTV_TUNERR_JELLYFIN_HOST", "IPTV_TUNERR_JELLYFIN_TOKEN",
+	} {
+		if _, ok := got[key]; ok {
+			t.Fatalf("%s should not be inherited by children", key)
+		}
+	}
+	if got["A"] != "1" {
+		t.Fatalf("unrelated env should pass through: %+v", got)
+	}
+}
+
+func TestLoadConfigMediaServerReg(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "cfg.json")
+	if err := os.WriteFile(p, []byte(`{
+  "instances": [{"name":"a","args":["run"]}],
+  "emby": {"host":"http://emby:8096","token":"tok","tunerUrl":"http://tuner:5004","stateFile":"/state/emby.json","interval":"10m"},
+  "jellyfin": {"host":"http://jf:8096","token":"jftok","stateFile":"/state/jf.json"}
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(p)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Emby == nil || cfg.Emby.Host != "http://emby:8096" || cfg.Emby.Interval != "10m" {
+		t.Fatalf("unexpected Emby config: %+v", cfg.Emby)
+	}
+	if cfg.Jellyfin == nil || cfg.Jellyfin.Token != "jftok" {
+		t.Fatalf("unexpected Jellyfin config: %+v", cfg.Jellyfin)
+	}
+}
+
 func splitEnvKV(s string) (string, string, bool) {
 	for i := 0; i < len(s); i++ {
 		if s[i] == '=' {

@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/iptvtunerr/iptv-tunerr/internal/emby"
 )
 
 type Config struct {
@@ -26,6 +28,23 @@ type Config struct {
 	// the supervisor's own process environment before any child instances are started, so all
 	// children inherit them automatically. Files that do not exist are silently skipped.
 	EnvFiles []string `json:"envFiles"`
+
+	// Emby and Jellyfin run registration + watchdog goroutines at the supervisor level,
+	// so a single pod handles both tuner serving (children) and media server registration.
+	// Children do NOT inherit IPTV_TUNERR_EMBY_* / IPTV_TUNERR_JELLYFIN_* env vars.
+	Emby     *MediaServerReg `json:"emby,omitempty"`
+	Jellyfin *MediaServerReg `json:"jellyfin,omitempty"`
+}
+
+// MediaServerReg is the supervisor-level config for Emby or Jellyfin registration.
+type MediaServerReg struct {
+	// Host and Token may be omitted to fall back to IPTV_TUNERR_EMBY_HOST / IPTV_TUNERR_EMBY_TOKEN
+	// (or JELLYFIN equivalents) from the process environment.
+	Host      string `json:"host"`
+	Token     string `json:"token"`
+	TunerURL  string `json:"tunerUrl"`   // base URL for the tuner this registration points at
+	StateFile string `json:"stateFile"`  // path for atomic registration state (prevents duplicates)
+	Interval  string `json:"interval"`   // watchdog interval, e.g. "5m" (default: 5m)
 }
 
 type Instance struct {
@@ -137,6 +156,10 @@ func Run(ctx context.Context, configPath string) error {
 	log.Printf("supervisor: starting %d instance(s) restart=%t failFast=%t restartDelay=%s exe=%s", len(cfg.Instances), cfg.Restart, failFast, restartDelay, exe)
 
 	ctx, cancel := context.WithCancel(ctx)
+
+	// Start supervisor-level Emby / Jellyfin registration goroutines.
+	startMediaServerReg(ctx, cfg.Emby, "emby")
+	startMediaServerReg(ctx, cfg.Jellyfin, "jellyfin")
 	defer cancel()
 
 	errCh := make(chan error, len(cfg.Instances))
@@ -377,9 +400,62 @@ func shouldDropChildInheritedEnv(key string) bool {
 		return true
 	case key == "IPTV_TUNERR_PMS_URL", key == "IPTV_TUNERR_PMS_TOKEN":
 		return true
+	// Emby/Jellyfin registration is handled at the supervisor level; children must not re-register.
+	case key == "IPTV_TUNERR_EMBY_HOST", key == "IPTV_TUNERR_EMBY_TOKEN":
+		return true
+	case key == "IPTV_TUNERR_JELLYFIN_HOST", key == "IPTV_TUNERR_JELLYFIN_TOKEN":
+		return true
 	default:
 		return false
 	}
+}
+
+// startMediaServerReg launches a registration + watchdog goroutine for one media server type
+// ("emby" or "jellyfin"). It resolves host/token from the MediaServerReg struct first, then
+// falls back to IPTV_TUNERR_{TYPE}_HOST / IPTV_TUNERR_{TYPE}_TOKEN env vars. No-ops if both
+// are empty.
+func startMediaServerReg(ctx context.Context, cfg *MediaServerReg, serverType string) {
+	if cfg == nil {
+		return
+	}
+	envPrefix := "IPTV_TUNERR_" + strings.ToUpper(serverType)
+	host := cfg.Host
+	if host == "" {
+		host = os.Getenv(envPrefix + "_HOST")
+	}
+	token := cfg.Token
+	if token == "" {
+		token = os.Getenv(envPrefix + "_TOKEN")
+	}
+	if host == "" || token == "" {
+		log.Printf("supervisor: [%s-reg] skipping — host or token not configured", serverType)
+		return
+	}
+
+	interval := 5 * time.Minute
+	if cfg.Interval != "" {
+		if d, err := time.ParseDuration(cfg.Interval); err == nil {
+			interval = d
+		}
+	}
+
+	embyCfg := emby.Config{
+		Host:         host,
+		Token:        token,
+		TunerURL:     cfg.TunerURL,
+		FriendlyName: "iptvTunerr",
+		TunerCount:   2,
+		ServerType:   serverType,
+	}
+
+	go func() {
+		if err := emby.FullRegister(embyCfg, cfg.StateFile); err != nil {
+			log.Printf("supervisor: [%s-reg] initial registration failed: %v", serverType, err)
+		}
+		if interval > 0 {
+			emby.DVRWatchdog(ctx, embyCfg, cfg.StateFile, interval)
+		}
+	}()
 }
 
 // loadEnvFile parses a shell-export-style file ("export KEY=VALUE" or "KEY=VALUE" lines)
