@@ -75,7 +75,8 @@ fi
 
 # Authenticate to get access token
 log "Authenticating with Jellyfin..."
-AUTH_HEADER='Authorization: MediaBrowser Client="TestScript", Device="TestDevice", DeviceId="test-setup", Version="1.0.0"'
+DEVICE_ID="test-$(date +%s)"
+AUTH_HEADER="Authorization: MediaBrowser Client=\"TestScript\", Device=\"TestDevice\", DeviceId=\"${DEVICE_ID}\", Version=\"1.0.0\""
 jf_auth=$(curl -sf -X POST "${JELLYFIN_URL}/Users/AuthenticateByName" \
     -H "Content-Type: application/json" \
     -H "${AUTH_HEADER}" \
@@ -125,7 +126,7 @@ fi
 
 # Authenticate
 log "Authenticating with Emby..."
-EMBY_AUTH_HEADER='X-Emby-Authorization: MediaBrowser Client="TestScript", Device="TestDevice", DeviceId="test-setup", Version="1.0.0"'
+EMBY_AUTH_HEADER="X-Emby-Authorization: MediaBrowser Client=\"TestScript\", Device=\"TestDevice\", DeviceId=\"${DEVICE_ID}\", Version=\"1.0.0\""
 emby_auth=$(curl -sf -X POST "${EMBY_URL}/Users/AuthenticateByName" \
     -H "Content-Type: application/json" \
     -H "${EMBY_AUTH_HEADER}" \
