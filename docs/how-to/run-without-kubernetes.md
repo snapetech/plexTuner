@@ -15,6 +15,8 @@ See also: [README](../../README.md) (quick start), [k8s/README.md](../../k8s/REA
 
 ## Prerequisites
 
+See [Platform requirements and installation](platform-requirements.md) for FFmpeg, FUSE, and platform-specific notes before continuing.
+
 - **Provider credentials:** Set in `.env` (copy from `.env.example`) or use a subscription file. You need at least:
   - `IPTV_TUNERR_PROVIDER_USER`, `IPTV_TUNERR_PROVIDER_PASS`, `IPTV_TUNERR_PROVIDER_URL` (or `IPTV_TUNERR_M3U_URL`)
   - `IPTV_TUNERR_BASE_URL` = the URL Plex will use to reach this host (e.g. `http://YOUR_SERVER_IP:5004`)
