@@ -11,9 +11,6 @@ on:
         description: "Platform matrix (space-separated, optional)"
         required: false
         type: string
-  push:
-    tags:
-      - "v*"
 
 jobs:
   build-tester-bundle:
