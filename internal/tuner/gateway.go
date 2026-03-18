@@ -68,6 +68,12 @@ type Gateway struct {
 	cfBlockHits          int
 	lastCFBlockAt        time.Time
 	lastCFBlockURL       string
+	hlsPlaylistFailures  int
+	lastHLSPlaylistAt    time.Time
+	lastHLSPlaylistURL   string
+	hlsSegmentFailures   int
+	lastHLSSegmentAt     time.Time
+	lastHLSSegmentURL    string
 }
 
 type ProviderBehaviorProfile struct {
@@ -85,6 +91,14 @@ type ProviderBehaviorProfile struct {
 	CFBlockHits            int      `json:"cf_block_hits"`
 	LastCFBlockAt          string   `json:"last_cf_block_at,omitempty"`
 	LastCFBlockURL         string   `json:"last_cf_block_url,omitempty"`
+	ProviderAutotune       bool     `json:"provider_autotune"`
+	AutoHLSReconnect       bool     `json:"auto_hls_reconnect"`
+	HLSPlaylistFailures    int      `json:"hls_playlist_failures"`
+	LastHLSPlaylistAt      string   `json:"last_hls_playlist_at,omitempty"`
+	LastHLSPlaylistURL     string   `json:"last_hls_playlist_url,omitempty"`
+	HLSSegmentFailures     int      `json:"hls_segment_failures"`
+	LastHLSSegmentAt       string   `json:"last_hls_segment_at,omitempty"`
+	LastHLSSegmentURL      string   `json:"last_hls_segment_url,omitempty"`
 }
 
 type gatewayReqIDKey struct{}
@@ -473,6 +487,47 @@ func (g *Gateway) noteCFBlock(segURL string) {
 	g.lastCFBlockURL = safeurl.RedactURL(segURL)
 }
 
+func (g *Gateway) noteHLSPlaylistFailure(playlistURL string) {
+	if g == nil {
+		return
+	}
+	g.providerStateMu.Lock()
+	defer g.providerStateMu.Unlock()
+	g.hlsPlaylistFailures++
+	g.lastHLSPlaylistAt = time.Now().UTC()
+	g.lastHLSPlaylistURL = safeurl.RedactURL(playlistURL)
+}
+
+func (g *Gateway) noteHLSSegmentFailure(segURL string) {
+	if g == nil {
+		return
+	}
+	g.providerStateMu.Lock()
+	defer g.providerStateMu.Unlock()
+	g.hlsSegmentFailures++
+	g.lastHLSSegmentAt = time.Now().UTC()
+	g.lastHLSSegmentURL = safeurl.RedactURL(segURL)
+}
+
+func providerAutotuneEnabled() bool {
+	return envBool("IPTV_TUNERR_PROVIDER_AUTOTUNE", true)
+}
+
+func (g *Gateway) shouldAutoEnableHLSReconnect() bool {
+	if !providerAutotuneEnabled() {
+		return false
+	}
+	if _, ok := os.LookupEnv("IPTV_TUNERR_FFMPEG_HLS_RECONNECT"); ok {
+		return false
+	}
+	if g == nil {
+		return false
+	}
+	g.providerStateMu.Lock()
+	defer g.providerStateMu.Unlock()
+	return g.hlsPlaylistFailures > 0 || g.hlsSegmentFailures > 0
+}
+
 func (g *Gateway) ProviderBehaviorProfile() ProviderBehaviorProfile {
 	if g == nil {
 		return ProviderBehaviorProfile{}
@@ -491,6 +546,12 @@ func (g *Gateway) ProviderBehaviorProfile() ProviderBehaviorProfile {
 	cfBlockHits := g.cfBlockHits
 	lastCFBlockAt := g.lastCFBlockAt
 	lastCFBlockURL := g.lastCFBlockURL
+	hlsPlaylistFailures := g.hlsPlaylistFailures
+	lastHLSPlaylistAt := g.lastHLSPlaylistAt
+	lastHLSPlaylistURL := g.lastHLSPlaylistURL
+	hlsSegmentFailures := g.hlsSegmentFailures
+	lastHLSSegmentAt := g.lastHLSSegmentAt
+	lastHLSSegmentURL := g.lastHLSSegmentURL
 	g.providerStateMu.Unlock()
 
 	prof := ProviderBehaviorProfile{
@@ -506,12 +567,24 @@ func (g *Gateway) ProviderBehaviorProfile() ProviderBehaviorProfile {
 		LastConcurrencyBody:    lastConcurrencyBody,
 		CFBlockHits:            cfBlockHits,
 		LastCFBlockURL:         lastCFBlockURL,
+		ProviderAutotune:       providerAutotuneEnabled(),
+		AutoHLSReconnect:       g.shouldAutoEnableHLSReconnect(),
+		HLSPlaylistFailures:    hlsPlaylistFailures,
+		LastHLSPlaylistURL:     lastHLSPlaylistURL,
+		HLSSegmentFailures:     hlsSegmentFailures,
+		LastHLSSegmentURL:      lastHLSSegmentURL,
 	}
 	if !lastConcurrencyAt.IsZero() {
 		prof.LastConcurrencyAt = lastConcurrencyAt.Format(time.RFC3339)
 	}
 	if !lastCFBlockAt.IsZero() {
 		prof.LastCFBlockAt = lastCFBlockAt.Format(time.RFC3339)
+	}
+	if !lastHLSPlaylistAt.IsZero() {
+		prof.LastHLSPlaylistAt = lastHLSPlaylistAt.Format(time.RFC3339)
+	}
+	if !lastHLSSegmentAt.IsZero() {
+		prof.LastHLSSegmentAt = lastHLSSegmentAt.Format(time.RFC3339)
 	}
 	return prof
 }
@@ -2260,6 +2333,9 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	// Generic HTTP reconnect flags (especially reconnect-at-EOF) can cause
 	// live .m3u8 inputs to loop on playlist EOF and never start segment reads.
 	hlsReconnect := getenvBool("IPTV_TUNERR_FFMPEG_HLS_RECONNECT", false)
+	if g.shouldAutoEnableHLSReconnect() {
+		hlsReconnect = true
+	}
 	hlsRealtime := getenvBool("IPTV_TUNERR_FFMPEG_HLS_REALTIME", false)
 	hlsLogLevel := strings.TrimSpace(os.Getenv("IPTV_TUNERR_FFMPEG_HLS_LOGLEVEL"))
 	if hlsLogLevel == "" {
@@ -3077,6 +3153,7 @@ func (g *Gateway) relayHLSAsTS(
 						}
 						log.Printf("gateway:%s channel=%q id=%s nested-playlist fetch failed url=%s err=%v",
 							reqField, channelName, channelID, safeurl.RedactURL(segURL), err)
+						g.noteHLSPlaylistFailure(segURL)
 						continue
 					}
 					currentPlaylistURL = segURL
@@ -3123,6 +3200,7 @@ func (g *Gateway) relayHLSAsTS(
 					if r.Context().Err() != nil {
 						return nil
 					}
+					g.noteHLSSegmentFailure(segURL)
 					log.Printf("gateway:%s channel=%q id=%s segment fetch failed url=%s err=%v",
 						reqField, channelName, channelID, safeurl.RedactURL(segURL), err)
 					continue
@@ -3177,8 +3255,10 @@ func (g *Gateway) relayHLSAsTS(
 				return nil
 			}
 			if time.Since(lastProgress) > 12*time.Second {
+				g.noteHLSPlaylistFailure(currentPlaylistURL)
 				return err
 			}
+			g.noteHLSPlaylistFailure(currentPlaylistURL)
 			log.Printf("gateway:%s channel=%q id=%s playlist refresh failed url=%s err=%v",
 				reqField, channelName, channelID, safeurl.RedactURL(currentPlaylistURL), err)
 			sleepHLSRefresh(currentPlaylist)

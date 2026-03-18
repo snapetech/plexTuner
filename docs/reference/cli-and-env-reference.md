@@ -237,8 +237,13 @@ What it exposes:
 - forwarded auth-context headers (`Cookie`, `Referer`, `Origin`)
 - whether provider basic auth is configured
 - whether `IPTV_TUNERR_FFMPEG_HLS_RECONNECT` and `IPTV_TUNERR_FETCH_CF_REJECT` are active
+- whether provider autotune is enabled and whether HLS reconnect has been auto-armed
 - count and last-seen details for provider concurrency-limit signals
 - count and last-seen details for Cloudflare-abuse block hits
+- count and last-seen details for HLS playlist/segment instability
+
+Related env:
+- `IPTV_TUNERR_PROVIDER_AUTOTUNE` — default `true`; enables conservative provider-aware runtime tuning when the operator has not explicitly set the relevant knob
 
 ## `iptv-tunerr probe`
 

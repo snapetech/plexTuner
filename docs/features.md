@@ -87,7 +87,7 @@ The guide pipeline merges three sources in priority order per channel: provider 
 | **Channel DNA foundation** | Live channels now carry a persisted `dna_id` derived from repaired `TVGID` or normalized channel identity inputs, forming the basis for future cross-provider identity stability. |
 | **Autopilot decision memory foundation** | Optional JSON-backed memory file remembers winning playback decisions by `dna_id + client_class`, so repeated Plex Web/native/internal requests can reuse a known-good transcode/profile choice. |
 | **Ghost Hunter foundation** | `ghost-hunter` CLI and `/plex/ghost-report.json` observe Plex Live TV sessions over time, classify visible stalls with reaper heuristics, and can optionally stop stale visible transcode sessions. |
-| **Provider behavior profile foundation** | `/provider/profile.json` exposes learned provider/runtime quirks such as effective tuner cap, recent concurrency-limit signals, Cloudflare-abuse hits, and current auth-context forwarding posture. |
+| **Provider behavior profile foundation** | `/provider/profile.json` exposes learned provider/runtime quirks such as effective tuner cap, recent concurrency-limit signals, Cloudflare-abuse hits, auth-context forwarding posture, and whether HLS reconnect has been auto-armed after observed instability. |
 | **Live TV intelligence roadmap** | Product roadmap documented as an epic: Channel DNA, Autopilot, lineup recipes, Ghost Hunter, and catch-up capsules. |
 
 ## 7. Lineup shaping for HDHR wizard / provider matching

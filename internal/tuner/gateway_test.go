@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -457,6 +458,38 @@ func TestGateway_requestAdaptation_autopilotMemoryWins(t *testing.T) {
 	}
 	if clientClass != "web" {
 		t.Fatalf("clientClass=%q want web", clientClass)
+	}
+}
+
+func TestGateway_shouldAutoEnableHLSReconnect(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE", "true")
+	_ = os.Unsetenv("IPTV_TUNERR_FFMPEG_HLS_RECONNECT")
+
+	g := &Gateway{}
+	if g.shouldAutoEnableHLSReconnect() {
+		t.Fatalf("expected auto reconnect off before failures")
+	}
+	g.noteHLSPlaylistFailure("http://provider.example/live/a.m3u8")
+	if !g.shouldAutoEnableHLSReconnect() {
+		t.Fatalf("expected auto reconnect on after hls playlist failure")
+	}
+	prof := g.ProviderBehaviorProfile()
+	if !prof.AutoHLSReconnect {
+		t.Fatalf("expected provider profile auto_hls_reconnect=true")
+	}
+	if prof.HLSPlaylistFailures != 1 {
+		t.Fatalf("hls_playlist_failures=%d want 1", prof.HLSPlaylistFailures)
+	}
+}
+
+func TestGateway_shouldAutoEnableHLSReconnectRespectsExplicitEnv(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE", "true")
+	t.Setenv("IPTV_TUNERR_FFMPEG_HLS_RECONNECT", "false")
+
+	g := &Gateway{}
+	g.noteHLSSegmentFailure("http://provider.example/live/seg.ts")
+	if g.shouldAutoEnableHLSReconnect() {
+		t.Fatalf("expected explicit env to disable auto reconnect override")
 	}
 }
 

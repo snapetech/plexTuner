@@ -219,12 +219,18 @@ Provider behavior profile foundation is now present too:
 - records recent upstream concurrency-limit signals
 - records Cloudflare-abuse block hits when fail-fast mode is enabled
 - shows current auth-context forwarding posture (`Cookie`, `Referer`, `Origin`) and related safety knobs
+- now also exposes whether HLS reconnect has been auto-armed after observed HLS instability
 
 Example:
 
 ```bash
 curl -s http://127.0.0.1:5004/provider/profile.json | jq
 ```
+
+Provider autotune defaults:
+- `IPTV_TUNERR_PROVIDER_AUTOTUNE=true` by default
+- if `IPTV_TUNERR_FFMPEG_HLS_RECONNECT` is not explicitly set and Tunerr has already observed HLS playlist/segment instability, ffmpeg HLS reconnect is auto-enabled on later requests
+- explicit `IPTV_TUNERR_FFMPEG_HLS_RECONNECT=true|false` still wins over autotune
 
 You can also use that intelligence to shape lineups:
 
