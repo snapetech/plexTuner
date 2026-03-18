@@ -1,10 +1,18 @@
-// Command iptv-tunerr: one-run Live TV/DVR (run), or index / mount / serve separately.
+// Command iptv-tunerr: IPTV bridge providing live TV streaming and XMLTV guide serving
+// for Plex, Emby, and Jellyfin. Two core capabilities:
 //
-//	run    One-run: refresh catalog, health check, then serve tuner. For systemd. Zero interaction after .env.
-//	index  Fetch M3U, parse, save catalog (movies + series + live channels)
+//   - Streaming: HDHomeRun-compatible tuner endpoints (/discover.json, /lineup.json,
+//     /stream/{id}) backed by M3U/Xtream provider with optional ffmpeg transcode.
+//   - Guide/EPG: XMLTV guide at /guide.xml — built-in placeholder or external XMLTV
+//     fetched, filtered to your channels, ID-remapped, and cached.
+//
+// Subcommands:
+//
+//	run    One-run: refresh catalog + health check + serve tuner and guide (for systemd)
+//	serve  Run tuner (streams) and guide (XMLTV) server from existing catalog
+//	index  Fetch M3U/Xtream, parse, save catalog (live channels + VOD + series)
 //	mount  Load catalog and mount VODFS (optional -cache for on-demand download)
-//	serve  Run HDHR emulator + XMLTV + stream gateway only (no index/health)
-//	probe  Cycle through provider URLs, probe each, report OK / Cloudflare / fail and which URL to use
+//	probe  Cycle through provider URLs, probe each, report OK / Cloudflare / fail
 package main
 
 import (
@@ -499,18 +507,25 @@ func main() {
 	epgLinkUnmatchedOut := epgLinkReportCmd.String("unmatched-out", "", "Optional unmatched-only JSON output path")
 
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <run|index|mount|serve|probe|plex-epg-oracle|plex-epg-oracle-cleanup|supervise|vod-split|plex-vod-register|epg-link-report> [flags]\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  run    One-run: refresh catalog, health check, serve tuner (for systemd)\n")
-		fmt.Fprintf(os.Stderr, "  index  Fetch M3U, save catalog\n")
-		fmt.Fprintf(os.Stderr, "  mount  Mount VODFS (use -cache for on-demand download)\n")
-		fmt.Fprintf(os.Stderr, "  serve  Run tuner server only\n")
-		fmt.Fprintf(os.Stderr, "  probe  Cycle through provider URLs, report OK / Cloudflare / fail (use -urls a,b,c to try specific hosts)\n")
-		fmt.Fprintf(os.Stderr, "  plex-epg-oracle  Probe Plex wizard-equivalent HDHR suggestions/channelmaps for one or more tuner base URLs\n")
-		fmt.Fprintf(os.Stderr, "  plex-epg-oracle-cleanup  Delete oracle-created DVR/device rows by prefix/URI filter (dry-run by default)\n")
-		fmt.Fprintf(os.Stderr, "  supervise  Start multiple child iptv-tunerr instances from one JSON config (single pod/container supervisor)\n")
-		fmt.Fprintf(os.Stderr, "  vod-split  Split VOD catalog into category/region lane catalogs for separate VODFS mounts/libraries\n")
-		fmt.Fprintf(os.Stderr, "  plex-vod-register  Create/reuse Plex libraries for VODFS (TV + Movies)\n")
-		fmt.Fprintf(os.Stderr, "  epg-link-report  Deterministic EPG match coverage report for live channels vs XMLTV\n")
+		fmt.Fprintf(os.Stderr, "iptv-tunerr %s — live TV streaming + XMLTV guide for Plex, Emby, Jellyfin\n\n", Version)
+		fmt.Fprintf(os.Stderr, "Streaming: HDHomeRun-compatible tuner endpoints backed by M3U/Xtream with optional transcode.\n")
+		fmt.Fprintf(os.Stderr, "Guide/EPG: /guide.xml — built-in placeholder or external XMLTV fetched, filtered, and remapped.\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: %s <command> [flags]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Core:\n")
+		fmt.Fprintf(os.Stderr, "  run    Refresh catalog + health check + serve tuner and guide (use for systemd/containers)\n")
+		fmt.Fprintf(os.Stderr, "  serve  Run tuner (streams) and guide (XMLTV) server from existing catalog\n")
+		fmt.Fprintf(os.Stderr, "  index  Fetch M3U/Xtream provider data and write catalog.json\n")
+		fmt.Fprintf(os.Stderr, "  probe  Test and rank provider hosts (OK / Cloudflare / fail)\n")
+		fmt.Fprintf(os.Stderr, "  supervise  Run multiple child tuner+guide instances from one JSON config (multi-DVR)\n\n")
+		fmt.Fprintf(os.Stderr, "Guide/EPG:\n")
+		fmt.Fprintf(os.Stderr, "  epg-link-report  Coverage report: which channels are EPG-linked vs unlinked, and by what match\n\n")
+		fmt.Fprintf(os.Stderr, "VOD (Linux):\n")
+		fmt.Fprintf(os.Stderr, "  mount            Mount VOD catalog as a browsable filesystem (FUSE)\n")
+		fmt.Fprintf(os.Stderr, "  plex-vod-register  Create/reuse Plex VOD libraries for a VODFS mount\n")
+		fmt.Fprintf(os.Stderr, "  vod-split        Split VOD catalog into category/region lane catalogs\n\n")
+		fmt.Fprintf(os.Stderr, "Lab/ops:\n")
+		fmt.Fprintf(os.Stderr, "  plex-epg-oracle          Probe Plex's HDHR wizard flow for EPG matching experiments\n")
+		fmt.Fprintf(os.Stderr, "  plex-epg-oracle-cleanup  Delete oracle-created DVR/device rows (dry-run by default)\n")
 		os.Exit(1)
 	}
 

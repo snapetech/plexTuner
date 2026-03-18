@@ -1,37 +1,51 @@
 # IPTV Tunerr
 
-Bridge IPTV feeds into Plex, Emby, and Jellyfin as an HDHomeRun-compatible tuner.
+IPTV Tunerr connects IPTV providers (M3U/Xtream) to Plex, Emby, and Jellyfin. It handles two things independently: **live TV streaming** and **guide/EPG data** — use one, the other, or both.
 
 **Source:** https://github.com/snapetech/iptvtunerr
 
 ---
 
-## What It Does
+## Two Core Capabilities
 
-- Indexes IPTV providers (M3U and Xtream `player_api`)
-- Emulates an HDHomeRun tuner (`/discover.json`, `/lineup.json`, `/guide.xml`, `/stream/...`)
-- Proxies and optionally transcodes live streams
-- Serves XMLTV guide data (placeholder or remapped from an external source)
-- Supports single-tuner and multi-DVR supervisor deployments
-- Optionally mounts a VOD filesystem (Linux-only, FUSE)
+### 1. Live TV streaming (tuner)
 
-No web UI. Configuration is CLI flags and environment variables.
+Emulates an HDHomeRun network tuner so your media server sees your IPTV channels as a standard tuner device — no plugins required.
+
+- Indexes channels from M3U playlists or Xtream `player_api`
+- Serves `/discover.json`, `/lineup.json`, `/stream/{id}` (HDHomeRun-compatible)
+- Proxies live streams; optional ffmpeg transcode (`auto` probes codec, transcodes only if needed)
+- Multi-host failover, Cloudflare detection, client-adaptive codec (Plex Web)
+- Tuner count enforcement, per-instance guide number offsets for multi-DVR setups
+
+### 2. Guide / EPG
+
+Serves XMLTV-format programme guide data at `/guide.xml`. Works standalone or alongside the tuner.
+
+- **Built-in placeholder**: always available, zero config — shows channels with no schedule data
+- **External XMLTV**: set `IPTV_TUNERR_XMLTV_URL` to fetch an upstream guide, filter it to only your channels (by `tvg-id`), remap channel IDs to local guide numbers, and cache the result
+- Language and script normalization for multilingual feeds (`IPTV_TUNERR_XMLTV_PREFER_LANGS`, `IPTV_TUNERR_XMLTV_PREFER_LATIN`)
+- `epg-link-report` command: deterministic coverage report showing which channels are matched, which are unlinked, and by what mechanism
+
+These two capabilities run from the same process. They can be used independently: point your media server at the tuner URL for streams and at a different guide source, or use IPTV Tunerr for both.
 
 ---
 
-## Two Integration Paths
+## Two Setup Paths (Registration)
 
-### HDHR / Wizard Path
+How you connect IPTV Tunerr to your media server:
 
-IPTV Tunerr appears as an HDHomeRun device. Add it through the normal Live TV wizard in Plex, Emby, or Jellyfin.
+### HDHR wizard
 
-Best for: single-tuner setups, manual wizard flows, parallel HDHR lane testing.
+IPTV Tunerr appears as an HDHomeRun device on your network. Add it through the standard Live TV wizard in Plex, Emby, or Jellyfin — no special steps.
 
-### DVR Injection / Headless Path
+- Device URL: `http://<host>:5004`
+- Guide URL: `http://<host>:5004/guide.xml`
+- Plex wizard caps lineup at 480 channels; use injection path to bypass
 
-Programmatic DVR creation and management without touching the UI. Supports multi-DVR category fleets, guide reloads, channelmap activation, and repeatable cutover operations.
+### Programmatic / DVR injection
 
-Best for: multi-DVR setups, headless lab environments, fast rebuilds after guide/channel remaps.
+IPTV Tunerr registers DVRs and guide data directly via the media server's API or database — no wizard, no UI interaction. Supports full channel counts, multi-DVR category fleets, repeatable headless setup, and guide reload workflows.
 
 Reference: [`docs/reference/plex-dvr-lifecycle-and-api.md`](docs/reference/plex-dvr-lifecycle-and-api.md)
 
