@@ -16,6 +16,13 @@
   3. split the oversized `cmd/iptv-tunerr/main.go` command execution paths into command-specific files without changing behavior
   4. verify and record the cleanup
 
+**Current focus shift (docs audience split, 2026-03-18):**
+- Follow-on cleanup after the architecture refactor: separate the general deployment/integration story from the Plex-heavy operational patterns so the docs are clearer for Emby/Jellyfin and basic Plex users.
+- This pass adds:
+  1. a media-server integration explainer
+  2. a Plex-only ops-patterns how-to
+  3. routing links from the deployment page and docs index
+
 **Current focus shift (README feature-story rewrite, 2026-03-18):**
 - User called out that the README was listing features without explaining why an operator should care.
 - This docs pass rewrites the front-page README around:

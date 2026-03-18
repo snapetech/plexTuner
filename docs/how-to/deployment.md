@@ -9,7 +9,12 @@ tags: [how-to, deployment, docker, systemd, binary]
 
 Deploy IPTV Tunerr on any host: **binary**, **Docker**, or **systemd**. For Kubernetes, see [k8s/README.md](../../k8s/README.md).
 
-See also: [README](../../README.md) (quick start), [iptvtunerr-troubleshooting](../runbooks/iptvtunerr-troubleshooting.md).
+See also:
+- [README](../../README.md)
+- [Media server integration modes](../explanations/media-server-integration-modes.md)
+- [Emby and Jellyfin Support](../emby-jellyfin-support.md)
+- [Plex ops patterns](plex-ops-patterns.md)
+- [iptvtunerr-troubleshooting](../runbooks/iptvtunerr-troubleshooting.md)
 
 ---
 
@@ -20,7 +25,10 @@ See [Platform requirements and installation](platform-requirements.md) for FFmpe
 - **Provider credentials:** Set in `.env` (copy from `.env.example`) or use a subscription file. You need at least:
   - `IPTV_TUNERR_PROVIDER_USER`, `IPTV_TUNERR_PROVIDER_PASS`, `IPTV_TUNERR_PROVIDER_URL` (or `IPTV_TUNERR_M3U_URL`)
   - `IPTV_TUNERR_BASE_URL` = the URL Plex/Emby/Jellyfin will use to reach this host (e.g. `http://YOUR_SERVER_IP:5004`)
-- **Media server:** On the same machine or another; add the tuner via Settings → Live TV & DVR → Set up (or use `-register-plex` once).
+- **Media server:** On the same machine or another.
+  - Plex, Emby, and Jellyfin can all use the same tuner and guide endpoints.
+  - If you only need a standard setup, stay on this page.
+  - If you need advanced Plex multi-DVR or injected-DVR workflows, switch to [Plex ops patterns](plex-ops-patterns.md).
 
 ---
 
@@ -39,7 +47,12 @@ cp .env.example .env   # edit with your provider and base URL
 ./iptv-tunerr run -addr :5004
 ```
 
-Optional: `-register-plex=/path/to/Plex` writes DVR/guide URLs and syncs the full lineup (no wizard, no 480 cap). Stop Plex first. **Zero-touch:** `PLEX_DATA_DIR=/path/to/Plex ./scripts/iptvtunerr-local-test.sh zero-touch` then start Plex.
+Optional for Plex:
+- `-register-plex=/path/to/Plex` writes DVR/guide URLs and syncs the full lineup (no wizard, no 480 cap)
+- stop Plex first
+- **Zero-touch:** `PLEX_DATA_DIR=/path/to/Plex ./scripts/iptvtunerr-local-test.sh zero-touch` then start Plex
+
+For Emby/Jellyfin registration, see [Emby and Jellyfin Support](../emby-jellyfin-support.md).
 
 **Or run in steps:**
 
@@ -50,7 +63,7 @@ Optional: `-register-plex=/path/to/Plex` writes DVR/guide URLs and syncs the ful
 
 **Add tuner in Plex:** Settings → Live TV & DVR → Set up → Device URL = your `IPTV_TUNERR_BASE_URL`, Guide URL = `$IPTV_TUNERR_BASE_URL/guide.xml`.
 
-### Optional: built-in stale Live TV session reaper (no Python helper)
+### Optional: built-in stale Live TV session reaper (Plex-focused)
 
 If Plex sometimes keeps Live TV sessions running after a browser tab closes or a TV app is left playing in the background, enable the built-in reaper in the same app process:
 
@@ -95,6 +108,8 @@ To run multiple DVR buckets in one app/container instead of one pod per bucket:
 ```
 
 This starts multiple child `iptv-tunerr run` processes with per-instance args/env from a JSON config.
+
+If you are using this for category DVR fleets or mixed wizard-plus-injected Plex layouts, see [Plex ops patterns](plex-ops-patterns.md) for when those patterns are worth the extra complexity.
 
 Important HDHR note:
 - Only one child should enable `IPTV_TUNERR_HDHR_NETWORK_MODE=true` on the default HDHR ports (`65001`), unless you intentionally assign different HDHR ports.
@@ -190,4 +205,6 @@ See also
 --------
 - [Runbooks index](../runbooks/index.md)
 - [Troubleshooting](../runbooks/iptvtunerr-troubleshooting.md)
+- [Media server integration modes](../explanations/media-server-integration-modes.md)
+- [Plex ops patterns](plex-ops-patterns.md)
 - [README](../../README.md)

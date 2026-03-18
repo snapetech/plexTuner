@@ -18,10 +18,12 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[adr/](adr/index.md)** | Decision log: architecture decision records. |
 | **[runbooks/](runbooks/index.md)** | Operational procedures. |
 | **[how-to/deployment.md](how-to/deployment.md)** | Deploy IPTV Tunerr (binary, Docker, systemd, local test script). |
+| **[how-to/plex-ops-patterns.md](how-to/plex-ops-patterns.md)** | Advanced Plex-only operating patterns: zero-touch, category DVR fleets, injected DVRs. |
 | **[how-to/package-test-builds.md](how-to/package-test-builds.md)** | Build cross-platform test bundles for testers (Linux/macOS/Windows). |
 | **[how-to/tester-handoff-checklist.md](how-to/tester-handoff-checklist.md)** | Tester handoff checklist (bundle contents, platform expectations, bug report capture). |
 | **[how-to/tester-release-notes-draft.md](how-to/tester-release-notes-draft.md)** | Draft tester-facing release notes for current validation builds. |
 | **[reference/cli-and-env-reference.md](reference/cli-and-env-reference.md)** | Commands, flags, and key env vars (including supervisor/testing knobs). |
+| **[explanations/media-server-integration-modes.md](explanations/media-server-integration-modes.md)** | Where the common tuner story ends and Plex-heavy ops begin. |
 | **[k8s/README.md](../k8s/README.md)** | Kubernetes deployment (HDHR in cluster). |
 | **[epics/](epics/EPIC-template.md)** | Multi-PR epic template. Use with [memory-bank/work_breakdown.md](../memory-bank/work_breakdown.md). |
 | **product/** · **stories/** | [PRD template](product/PRD-template.md), [STORY template](stories/STORY-template.md). |

@@ -1507,3 +1507,14 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - Filed maintainability follow-ups in `memory-bank/opportunities.md` for continued doc/code cleanup.
   Verification:
     - `./scripts/verify`
+
+---
+
+- Date: 2026-03-18
+  Title: Split general deployment docs from Plex-heavy ops patterns
+  Summary:
+    - Added a new explanation page describing the shared Plex/Emby/Jellyfin integration path versus Plex-only operational complexity.
+    - Added a new how-to page for advanced Plex patterns: wizard lane, zero-touch registration, category DVR fleets, and injected DVR layouts.
+    - Updated `docs/how-to/deployment.md` and `docs/index.md` to route operators toward the right doc path instead of mixing all audiences together.
+  Verification:
+    - Docs-only review of the new pages and updated links.
