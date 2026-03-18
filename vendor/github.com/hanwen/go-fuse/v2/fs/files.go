@@ -7,12 +7,12 @@ package fs
 import (
 	"context"
 	"sync"
-
-	//	"time"
-
 	"syscall"
+	"unsafe"
 
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/hanwen/go-fuse/v2/internal/fallocate"
+	"github.com/hanwen/go-fuse/v2/internal/ioctl"
 	"golang.org/x/sys/unix"
 )
 
@@ -42,6 +42,14 @@ var _ = (FileFlusher)((*loopbackFile)(nil))
 var _ = (FileFsyncer)((*loopbackFile)(nil))
 var _ = (FileSetattrer)((*loopbackFile)(nil))
 var _ = (FileAllocater)((*loopbackFile)(nil))
+var _ = (FilePassthroughFder)((*loopbackFile)(nil))
+
+func (f *loopbackFile) PassthroughFd() (int, bool) {
+	// This Fd is not accessed concurrently, but lock anyway for uniformity.
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.fd, true
+}
 
 func (f *loopbackFile) Read(ctx context.Context, buf []byte, off int64) (res fuse.ReadResult, errno syscall.Errno) {
 	f.mu.Lock()
@@ -240,4 +248,30 @@ func (f *loopbackFile) Lseek(ctx context.Context, off uint64, whence uint32) (ui
 	defer f.mu.Unlock()
 	n, err := unix.Seek(f.fd, int64(off), int(whence))
 	return uint64(n), ToErrno(err)
+}
+
+func (f *loopbackFile) Allocate(ctx context.Context, off uint64, sz uint64, mode uint32) syscall.Errno {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	err := fallocate.Fallocate(f.fd, mode, int64(off), int64(sz))
+	if err != nil {
+		return ToErrno(err)
+	}
+	return OK
+}
+
+func (f *loopbackFile) Ioctl(ctx context.Context, cmd uint32, arg uint64, input []byte, output []byte) (result int32, errno syscall.Errno) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	argWord := uintptr(arg)
+	ioc := ioctl.Command(cmd)
+	if ioc.Read() {
+		argWord = uintptr(unsafe.Pointer(&input[0]))
+	} else if ioc.Write() {
+		argWord = uintptr(unsafe.Pointer(&output[0]))
+	}
+
+	res, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(f.fd), uintptr(cmd), argWord)
+	return int32(res), errno
 }

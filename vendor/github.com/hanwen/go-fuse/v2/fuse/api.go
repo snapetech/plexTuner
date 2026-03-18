@@ -120,6 +120,16 @@
 // [1] https://github.com/libfuse/libfuse/commit/64e11073b9347fcf9c6d1eea143763ba9e946f70
 //
 // [2] https://sylabs.io/guides/3.7/user-guide/bind_paths_and_mounts.html#fuse-mounts
+//
+// # Aborting a file system
+//
+// A caller that has an open file in a buggy or crashed FUSE
+// filesystem will be hung. The easiest way to clean up this situation
+// is through the fusectl filesystem. By writing into
+// /sys/fs/fuse/connection/$ID/abort, reads from the FUSE device fail,
+// and all callers receive ENOTCONN (transport endpoint not connected)
+// on their pending syscalls.  The FUSE connection ID can be found as
+// the Dev field in the Stat_t result for a file in the mount.
 package fuse
 
 import "log"
@@ -147,12 +157,14 @@ type ReadResult interface {
 type MountOptions struct {
 	AllowOther bool
 
-	// Options are passed as -o string to fusermount.
+	// Options are the options passed as -o string to fusermount.
 	Options []string
 
-	// Default is _DEFAULT_BACKGROUND_TASKS, 12.  This numbers
-	// controls the allowed number of requests that relate to
-	// async I/O.  Concurrency for synchronous I/O is not limited.
+	// MaxBackground controls the maximum number of allowed backgruond
+	// asynchronous I/O requests.
+	//
+	// If unset, the default is _DEFAULT_BACKGROUND_TASKS, 12.
+	// Concurrency for synchronous I/O is not limited.
 	MaxBackground int
 
 	// MaxWrite is the max size for read and write requests. If 0, use
@@ -193,51 +205,89 @@ type MountOptions struct {
 	// (up to MaxWrite or VM_READAHEAD_PAGES=128 kiB, whichever is less).
 	MaxReadAhead int
 
-	// If IgnoreSecurityLabels is set, all security related xattr
-	// requests will return NO_DATA without passing through the
-	// user defined filesystem.  You should only set this if you
+	// IgnoreSecurityLabels, if set, makes security related xattr
+	// requests return NO_DATA without passing through the
+	// user defined filesystem. You should only set this if you
 	// file system implements extended attributes, and you are not
 	// interested in security labels.
 	IgnoreSecurityLabels bool // ignoring labels should be provided as a fusermount mount option.
 
-	// If RememberInodes is set, we will never forget inodes.
+	// RememberInodes, if set, makes go-fuse never forget inodes.
 	// This may be useful for NFS.
 	RememberInodes bool
 
-	// Values shown in "df -T" and friends
-	// First column, "Filesystem"
+	// FsName is the name of the filesystem, shown in "df -T"
+	// and friends (as the first column, "Filesystem").
 	FsName string
 
-	// Second column, "Type", will be shown as "fuse." + Name
+	// Name is the "fuse.<name>" suffix, shown in "df -T" and friends
+	// (as the second column, "Type")
 	Name string
 
-	// If set, wrap the file system in a single-threaded locking wrapper.
+	// SingleThreaded, if set, wraps the file system in a single-threaded
+	// locking wrapper.
 	SingleThreaded bool
 
-	// If set, return ENOSYS for Getxattr calls, so the kernel does not issue any
-	// Xattr operations at all.
+	// DisableXAttrs, if set, returns ENOSYS for Getxattr calls, so the kernel
+	// does not issue any Xattr operations at all.
 	DisableXAttrs bool
 
-	// If set, print debugging information.
+	// Debug, if set, enables verbose debugging information.
 	Debug bool
 
-	// If set, sink for debug statements.
+	// Logger, if set, is an alternate log sink for debug statements.
+	//
+	// To increase signal/noise ratio Go-FUSE uses abbreviations in its debug log
+	// output. Here is how to read it:
+	//
+	// - `iX` means `inode X`;
+	// - `gX` means `generation X`;
+	// - `tA` and `tE` means timeout for attributes and directory entry correspondingly;
+	// - `[<off> +<size>)` means data range from `<off>` inclusive till `<off>+<size>` exclusive;
+	// - `Xb` means `X bytes`.
+	// - `pX` means the request originated from PID `x`. 0 means the request originated from the kernel.
+	//
+	// Every line is prefixed with either `rx <unique>` (receive from kernel) or `tx <unique>` (send to kernel)
+	//
+	// Example debug log output:
+	//
+	//     rx 2: LOOKUP i1 [".wcfs"] 6b p5874
+	//     tx 2:     OK, {i3 g2 tE=1s tA=1s {M040755 SZ=0 L=0 1000:1000 B0*0 i0:3 A 0.000000 M 0.000000 C 0.000000}}
+	//     rx 3: LOOKUP i3 ["zurl"] 5b p5874
+	//     tx 3:     OK, {i4 g3 tE=1s tA=1s {M0100644 SZ=33 L=1 1000:1000 B0*0 i0:4 A 0.000000 M 0.000000 C 0.000000}}
+	//     rx 4: OPEN i4 {O_RDONLY,0x8000} p5874
+	//     tx 4:     38=function not implemented, {Fh 0 }
+	//     rx 5: READ i4 {Fh 0 [0 +4096)  L 0 RDONLY,0x8000} p5874
+	//     tx 5:     OK,  33b data "file:///"...
+	//     rx 6: GETATTR i4 {Fh 0} p5874
+	//     tx 6:     OK, {tA=1s {M0100644 SZ=33 L=1 1000:1000 B0*0 i0:4 A 0.000000 M 0.000000 C 0.000000}}
+	//     rx 7: FLUSH i4 {Fh 0} p5874
+	//     tx 7:     OK
+	//     rx 8: LOOKUP i1 ["head"] 5b p5874
+	//     tx 8:     OK, {i5 g4 tE=1s tA=1s {M040755 SZ=0 L=0 1000:1000 B0*0 i0:5 A 0.000000 M 0.000000 C 0.000000}}
+	//     rx 9: LOOKUP i5 ["bigfile"] 8b p5874
+	//     tx 9:     OK, {i6 g5 tE=1s tA=1s {M040755 SZ=0 L=0 1000:1000 B0*0 i0:6 A 0.000000 M 0.000000 C 0.000000}}
+	//     rx 10: FLUSH i4 {Fh 0} p5874
+	//     tx 10:     OK
+	//     rx 11: GETATTR i1 {Fh 0} p5874
+	//     tx 11:     OK, {tA=1s {M040755 SZ=0 L=1 1000:1000 B0*0 i0:1 A 0.000000 M 0.000000 C 0.000000}}
 	Logger *log.Logger
 
-	// If set, ask kernel to forward file locks to FUSE. If using,
-	// you must implement the GetLk/SetLk/SetLkw methods.
+	// EnableLocks, if set, asks the kernel to forward file locks to FUSE
+	// When used, you must implement the GetLk/SetLk/SetLkw methods.
 	EnableLocks bool
 
-	// If set, the kernel caches all Readlink return values. The
-	// filesystem must use content notification to force the
+	// EnableSymlinkCaching, if set, makes the kernel cache all Readlink return values.
+	// The filesystem must use content notification to force the
 	// kernel to issue a new Readlink call.
 	EnableSymlinkCaching bool
 
-	// If set, ask kernel not to do automatic data cache invalidation.
-	// The filesystem is fully responsible for invalidating data cache.
+	// ExplicitDataCacheControl, if set, asks the kernel not to do automatic
+	// data cache invalidation. The filesystem is fully responsible for
+	// invalidating data cache.
 	ExplicitDataCacheControl bool
 
-	// SyncRead is off by default, which means that go-fuse enable the
+	// SyncRead, if set, makes go-fuse enable the
 	// FUSE_CAP_ASYNC_READ capability.
 	// The kernel then submits multiple concurrent reads to service
 	// userspace requests and kernel readahead.
@@ -254,14 +304,14 @@ type MountOptions struct {
 	// for more details.
 	SyncRead bool
 
-	// If set, fuse will first attempt to use syscall.Mount instead of
+	// DirectMount, if set, makes go-fuse first attempt to use syscall.Mount instead of
 	// fusermount to mount the filesystem. This will not update /etc/mtab
 	// but might be needed if fusermount is not available.
 	// Also, Server.Unmount will attempt syscall.Unmount before calling
 	// fusermount.
 	DirectMount bool
 
-	// DirectMountStrict is like DirectMount but no fallback to fusermount is
+	// DirectMountStrict, if set, is like DirectMount but no fallback to fusermount is
 	// performed. If both DirectMount and DirectMountStrict are set,
 	// DirectMountStrict wins.
 	DirectMountStrict bool
@@ -273,25 +323,46 @@ type MountOptions struct {
 	// by the kernel. See `man 2 mount` for details about MS_MGC_VAL.
 	DirectMountFlags uintptr
 
-	// EnableAcls enables kernel ACL support.
+	// EnableAcl, if set, enables kernel ACL support.
 	//
 	// See the comments to FUSE_CAP_POSIX_ACL
 	// in https://github.com/libfuse/libfuse/blob/master/include/fuse_common.h
 	// for details.
 	EnableAcl bool
 
-	// Disable ReadDirPlus capability so ReadDir is used instead. Simple
-	// directory queries (i.e. 'ls' without '-l') can be faster with
-	// ReadDir, as no per-file stat calls are needed
+	// DisableReadDirPlus, if set, disables the ReadDirPlus capability so
+	// ReadDir is used instead. Simple directory queries (i.e. 'ls' without
+	// '-l') can be faster with ReadDir, as no per-file stat calls are needed.
 	DisableReadDirPlus bool
+
+	// DisableSplice, if set, disables splicing from files to the FUSE device.
+	DisableSplice bool
+
+	// MaxStackDepth is the maximum stacking depth for passthrough files.
+	// If unset, the default is 1.
+	MaxStackDepth int
+
+	// RawFileSystem, if set, enables an ID-mapped mount if the Kernel supports
+	// it.
+	//
+	// An ID-mapped mount allows the device to be mounted on the system with the
+	// IDs remapped (via mount_setattr, move_mount syscalls) to those of the
+	// user on the local system.
+	//
+	// Enabling this flag automatically sets the "default_permissions" mount
+	// option. This is required by FUSE to delegate the UID/GID-based permission
+	// checks to the kernel. For requests that create new inodes, FUSE will send
+	// the mapped UID/GIDs. For all other requests, FUSE will send "-1".
+	IDMappedMount bool
 }
 
 // RawFileSystem is an interface close to the FUSE wire protocol.
 //
 // Unless you really know what you are doing, you should not implement
-// this, but rather the nodefs.Node or pathfs.FileSystem interfaces; the
-// details of getting interactions with open files, renames, and threading
-// right etc. are somewhat tricky and not very interesting.
+// this, but rather the interfaces associated with
+// fs.InodeEmbedder. The details of getting interactions with open
+// files, renames, and threading right etc. are somewhat tricky and
+// not very interesting.
 //
 // Each FUSE request results in a corresponding method called by Server.
 // Several calls may be made simultaneously, because the server typically calls
@@ -306,11 +377,13 @@ type MountOptions struct {
 // API call, any incoming request data it wants to reference should be
 // copied over.
 //
-// If a FUSE API call is canceled (which is signaled by closing the
-// `cancel` channel), the API call should return EINTR. In this case,
-// the outstanding request data is not reused, so the API call may
-// return EINTR without ensuring that child contexts have successfully
-// completed.
+// If a FS operation is interrupted, the `cancel` channel is
+// closed. The fileystem can honor this request by returning EINTR. In
+// this case, the outstanding request data is not reused. Interrupts
+// occur if the process accessing the file system receives any signal
+// that is not ignored. In particular, the Go runtime uses signals to
+// manage goroutine preemption, so Go programs under load naturally
+// generate interupt opcodes when they access a FUSE filesystem.
 type RawFileSystem interface {
 	String() string
 
@@ -379,6 +452,7 @@ type RawFileSystem interface {
 	Release(cancel <-chan struct{}, input *ReleaseIn)
 	Write(cancel <-chan struct{}, input *WriteIn, data []byte) (written uint32, code Status)
 	CopyFileRange(cancel <-chan struct{}, input *CopyFileRangeIn) (written uint32, code Status)
+	Ioctl(cancel <-chan struct{}, input *IoctlIn, inbuf []byte, output *IoctlOut, outbuf []byte) (code Status)
 
 	Flush(cancel <-chan struct{}, input *FlushIn) Status
 	Fsync(cancel <-chan struct{}, input *FsyncIn) (code Status)
@@ -393,8 +467,12 @@ type RawFileSystem interface {
 
 	StatFs(cancel <-chan struct{}, input *InHeader, out *StatfsOut) (code Status)
 
+	Statx(cancel <-chan struct{}, input *StatxIn, out *StatxOut) (code Status)
 	// This is called on processing the first request. The
 	// filesystem implementation can use the server argument to
 	// talk back to the kernel (through notify methods).
 	Init(*Server)
+
+	// Called after processing the last request.
+	OnUnmount()
 }

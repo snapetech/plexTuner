@@ -3,7 +3,7 @@ module github.com/snapetech/iptvtunerr
 go 1.24.0
 
 require (
-	github.com/hanwen/go-fuse/v2 v2.5.0
+	github.com/hanwen/go-fuse/v2 v2.9.0
 	modernc.org/sqlite v1.46.1
 )
 
