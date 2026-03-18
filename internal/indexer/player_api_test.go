@@ -32,12 +32,23 @@ func TestParseSeriesEpisodesSupportsSeasonKeyedArrays(t *testing.T) {
 	if len(got) != 3 {
 		t.Fatalf("expected 3 episodes, got %d", len(got))
 	}
-	// First item omitted season_num; parser should backfill it from season-key.
-	if got[0].ID != "ep101" || got[0].SeasonNum != 1 || got[0].EpisodeNum != 1 {
-		t.Fatalf("unexpected first parsed episode: %+v", got[0])
+	// Index by ID — map iteration order is non-deterministic so positional checks are flaky.
+	byID := make(map[string]seriesEpisodeRaw)
+	for _, ep := range got {
+		byID[ep.ID] = ep
 	}
-	if got[2].ID != "ep201" || got[2].SeasonNum != 2 || got[2].EpisodeNum != 1 {
-		t.Fatalf("unexpected third parsed episode: %+v", got[2])
+	// ep101: season_num omitted in input; parser should backfill from season key "1".
+	ep101, ok := byID["ep101"]
+	if !ok || ep101.SeasonNum != 1 || ep101.EpisodeNum != 1 {
+		t.Errorf("ep101: %+v", ep101)
+	}
+	ep102, ok := byID["ep102"]
+	if !ok || ep102.SeasonNum != 1 || ep102.EpisodeNum != 2 {
+		t.Errorf("ep102: %+v", ep102)
+	}
+	ep201, ok := byID["ep201"]
+	if !ok || ep201.SeasonNum != 2 || ep201.EpisodeNum != 1 {
+		t.Errorf("ep201: %+v", ep201)
 	}
 }
 
