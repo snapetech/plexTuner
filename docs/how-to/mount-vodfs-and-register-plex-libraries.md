@@ -262,5 +262,5 @@ After cutover:
 ## See also
 
 - [CLI and env reference](../reference/cli-and-env-reference.md)
-- [Run without Kubernetes](run-without-kubernetes.md)
+- [Deployment guide](deployment.md)
 - [k8s README](../../k8s/README.md)

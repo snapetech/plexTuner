@@ -407,6 +407,12 @@ func main() {
 	_ = config.LoadEnvFile(".env")
 	log.SetFlags(log.LstdFlags)
 	log.SetPrefix("[iptv-tunerr] ")
+
+	if len(os.Args) == 2 && (os.Args[1] == "-version" || os.Args[1] == "--version" || os.Args[1] == "version") {
+		fmt.Println(Version)
+		os.Exit(0)
+	}
+
 	indexCmd := flag.NewFlagSet("index", flag.ExitOnError)
 	m3uURL := indexCmd.String("m3u", "", "M3U URL (default: IPTV_TUNERR_M3U_URL or IPTV_TUNERR_PROVIDER_URL)")
 	catalogPathIndex := indexCmd.String("catalog", "", "Catalog JSON path (default: IPTV_TUNERR_CATALOG)")

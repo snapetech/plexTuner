@@ -9,7 +9,7 @@ tags: [how-to, kubernetes, plex, deploy, plex.home]
 
 Get IPTV Tunerr running in your cluster and have **Plex at plex.home** use it for Live TV & DVR. One script deploys the tuner; then either zero-touch (lineup written into Plex’s DB) or one-time manual add in Plex.
 
-See also: [k8s/README.md](../../k8s/README.md) (full k8s options), [run-without-kubernetes](run-without-kubernetes.md) (binary/Docker on one host), [plex-in-cluster](../runbooks/plex-in-cluster.md), [iptvtunerr-troubleshooting](../runbooks/iptvtunerr-troubleshooting.md).
+See also: [k8s/README.md](../../k8s/README.md) (full k8s options), [deployment](deployment.md) (binary/Docker on one host), [plex-in-cluster](../runbooks/plex-in-cluster.md), [iptvtunerr-troubleshooting](../runbooks/iptvtunerr-troubleshooting.md).
 
 ---
 

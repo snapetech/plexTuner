@@ -127,5 +127,5 @@ It expands categories into:
 See also
 --------
 - [package-test-builds](../how-to/package-test-builds.md)
-- [run-without-kubernetes](../how-to/run-without-kubernetes.md)
+- [deployment](../how-to/deployment.md)
 - [k8s/README](../../k8s/README.md)

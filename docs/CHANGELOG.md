@@ -7,13 +7,47 @@ tags: [changelog, reference]
 
 # Changelog
 
-All notable changes to IPTV Tunerr are documented here. The repo is available on [GitHub](https://github.com/snapetech/iptvTunerr) (mirrored on GitLab).
+All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapetech/iptvtunerr](https://github.com/snapetech/iptvtunerr).
 
 ---
 
 ## [Unreleased]
 
 - *(none)*
+
+---
+
+## [v0.1.0] — 2026-03-17
+
+First tagged release. Covers all features developed through the pre-release testing cycle.
+
+### Features
+- **IPTV indexing**: M3U and Xtream `player_api` (live channels, VOD movies, series) with multi-host failover and Cloudflare detection
+- **HDHomeRun emulation**: `/discover.json`, `/lineup.json`, `/lineup_status.json`, `/guide.xml`, `/stream/{id}`, `/live.m3u`, `/healthz`
+- **Optional native HDHR network mode**: UDP/TCP 65001 for LAN broadcast discovery
+- **Stream gateway**: direct MPEG-TS proxy, HLS-to-TS relay, optional ffmpeg transcode (`off`/`on`/`auto`); adaptive buffer; client detection for browser-compatible codec
+- **Live TV startup race hardening**: bootstrap TS burst, startup gate, null-TS and PAT+PMT keepalive to prevent Plex `dash_init_404`
+- **XMLTV guide**: placeholder or external XMLTV fetch/filter/remap; language/script normalization; TTL cache
+- **Supervisor mode**: `iptv-tunerr supervise` runs many child tuner instances from one JSON config for multi-DVR category deployments
+- **Plex DVR injection**: programmatic DVR/guide registration via Plex internal API and SQLite (`-register-plex`), bypassing 480-channel wizard limit
+- **Emby and Jellyfin support**: tuner registration, idempotent state file, watchdog auto-recovery on server restart
+- **VOD filesystem (Linux)**: FUSE mount exposing VOD catalog as directories for Plex library scanning (`iptv-tunerr mount` / `plex-vod-register`)
+- **EPG link report**: deterministic coverage report (tvg-id / alias / name match tiers) for improving unlinked channel tail
+- **Plex stale-session reaper**: built-in background worker with poll + SSE, configurable idle/lease timeouts
+- **Smoketest**: optional per-channel stream probe at index time with persistent cache
+- **Lineup shaping**: wizard-safe cap (479), drop-music, region profile, overflow shards (`LINEUP_SKIP`/`LINEUP_TAKE`) for category DVR buckets
+
+### Security
+- SSRF prevention: stream gateway validates URLs as HTTP/HTTPS before any fetch
+- Credentials redacted from all logs via `safeurl.RedactURL()`
+- No TLS verification bypass
+
+### Build / ops
+- Single static binary (CGO disabled), Alpine Docker image with ffmpeg
+- CI: `go test ./...`, `go vet`, `gofmt` on every push/PR
+- Docker: multi-arch (`linux/amd64`, `linux/arm64`), GHCR image on tag push
+- Tester bundle workflow: per-platform ZIPs + SHA256SUMS attached to GitHub Release on tag push
+- Version embedded at build time via `-ldflags "-X main.Version=..."`; `iptv-tunerr --version` prints it
 
 ---
 

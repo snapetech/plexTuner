@@ -63,7 +63,7 @@ grep 'ffmpeg.*failed\|ffprobe.*failed' /path/to/log
 ### Exit behaviour
 
 - **Non-zero exit:** `run`, `index`, `serve`, `probe` exit 1 on fatal errors (e.g. catalog save failed, provider check failed, no URLs to probe).
-- **No silent failures:** Critical path errors are logged and then exit; don’t swallow errors.
+- **No silent failures:** Critical path errors are logged and then exit; don't swallow errors.
 
 ---
 
@@ -89,15 +89,15 @@ go run ./cmd/iptv-tunerr probe -urls=http://host1.com,http://host2.com -timeout=
 
 | Symptom | Likely cause | Fix / check |
 |---------|--------------|-------------|
-| Verify fails: “format check failed” | Unformatted Go files | Run `gofmt -s -w .` then re-run `./scripts/verify` |
-| Verify fails: “vet failed” | Vet reported issue | Fix reported code; re-run verify |
-| Verify fails: “tests failed” | Failing unit test | Run `go test -v ./...` and fix failing test |
-| Index fails: “no player_api OK and no get.php OK” | Provider down / wrong creds / Cloudflare | Run `iptv-tunerr probe`; check .env USER/PASS and URL |
-| Run fails: “Provider check failed” | Health check to provider failed | Same as index; run probe; check network |
-| “All tuners in use” (805) | More clients than IPTV_TUNERR_TUNER_COUNT | Increase tuner count or close other clients |
-| “All upstreams failed” (502) | All stream URLs failed (4xx/5xx, empty body, or SSRF rejected) | Check provider stream URLs; run probe; check gateway logs for `upstream[1/2] status=...` |
+| Verify fails: "format check failed" | Unformatted Go files | Run `gofmt -s -w .` then re-run `./scripts/verify` |
+| Verify fails: "vet failed" | Vet reported issue | Fix reported code; re-run verify |
+| Verify fails: "tests failed" | Failing unit test | Run `go test -v ./...` and fix failing test |
+| Index fails: "no player_api OK and no get.php OK" | Provider down / wrong creds / Cloudflare | Run `iptv-tunerr probe`; check .env USER/PASS and URL |
+| Run fails: "Provider check failed" | Health check to provider failed | Same as index; run probe; check network |
+| "All tuners in use" (805) | More clients than IPTV_TUNERR_TUNER_COUNT | Increase tuner count or close other clients |
+| "All upstreams failed" (502) | All stream URLs failed (4xx/5xx, empty body, or SSRF rejected) | Check provider stream URLs; run probe; check gateway logs for `upstream[1/2] status=...` |
 | Stream stalls or buffering | Upstream slow / HLS segment issues | Enable buffer: IPTV_TUNERR_STREAM_BUFFER_BYTES=2097152 or `auto`; check logs for segment/playlist fetch failures |
-| Plex doesn’t see tuner | Wrong base URL / discovery | Set IPTV_TUNERR_BASE_URL to the URL Plex uses (e.g. http://192.168.1.10:5004); in Plex use that URL for device setup |
+| Plex doesn't see tuner | Wrong base URL / discovery | Set IPTV_TUNERR_BASE_URL to the URL Plex uses (e.g. http://192.168.1.10:5004); in Plex use that URL for device setup |
 | Plex "failed to save channel lineup" after adding tuner | Too many channels (Plex DVR limit ~480) | We cap at 480 by default. If you still see this, set IPTV_TUNERR_LINEUP_MAX_CHANNELS=480 or lower. Logs show "Lineup capped at 480 channels (Plex DVR limit); catalog has N". |
 | FFmpeg/transcode errors in logs | Codec/format not supported or ffmpeg missing | Install ffmpeg; or set IPTV_TUNERR_STREAM_TRANSCODE=on to force transcode; for auto, check ffprobe errors in log |
 
@@ -224,11 +224,11 @@ Non-200 → check server logs and config (catalog loaded, base URL, port).
 
 ---
 
-## 9. Checklist for “is the tuner OK?”
+## 9. Checklist for "is the tuner OK?"
 
 1. **Verify passes:** `./scripts/verify`
 2. **Probe OK (if using provider):** `iptv-tunerr probe` shows at least one get.php or player_api OK
-3. **Endpoints 200:** discover, lineup, guide, live.m3u return 200 (see §6)
+3. **Endpoints 200:** discover, lineup, guide, live.m3u return 200 (see §8)
 4. **One stream test:** In Plex or `curl "$BASE/stream/0"` (or a known channel ID) — expect 200 and MPEG-TS data or HLS relay
 
 ---

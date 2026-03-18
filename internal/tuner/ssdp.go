@@ -111,7 +111,7 @@ func (s *SSDP) searchResponse() string {
 			"CACHE-CONTROL: max-age=300\r\n"+
 			"EXT:\r\n"+
 			"LOCATION: %s\r\n"+
-			"SERVER: Plex-Tuner/1.0\r\n"+
+			"SERVER: IPTV-Tunerr/1.0\r\n"+
 			"ST: urn:schemas-upnp-org:device:MediaServer:1\r\n"+
 			"USN: uuid:%s::urn:schemas-upnp-org:device:MediaServer:1\r\n"+
 			"\r\n",

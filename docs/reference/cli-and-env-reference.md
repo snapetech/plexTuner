@@ -264,13 +264,32 @@ Use for:
 
 ## Stream behavior
 
-- `IPTV_TUNERR_STREAM_TRANSCODE` (`off|on|auto`)
-- `IPTV_TUNERR_STREAM_BUFFER_BYTES` (`0|auto|<bytes>`)
-- `IPTV_TUNERR_FFMPEG_PATH`
-- `IPTV_TUNERR_FFMPEG_HLS_RECONNECT` (advanced ffmpeg/HLS behavior)
-- `IPTV_TUNERR_CLIENT_ADAPT` — when true, resolve Plex client from session and force websafe (transcode+plexsafe) for web/browser clients and for internal fetcher (Lavf/PMS) so Chrome and Firefox both get compatible audio.
-- `IPTV_TUNERR_FORCE_WEBSAFE` — when true, always transcode with plexsafe (MP3) regardless of client; use if Chrome has no audio after a Plex/server update and client detection misclassifies.
-- `IPTV_TUNERR_STRIP_STREAM_HOSTS` — comma-separated hostnames (e.g. `cf.like-cdn.com,like-cdn.com`) whose stream URLs are removed at catalog build; channels with only those hosts are dropped so the tuner never uses CF-blocked endpoints.
+- `IPTV_TUNERR_STREAM_TRANSCODE` (`off|on|auto`) — `off` remuxes only; `on` always transcodes with libx264/AAC; `auto` probes the codec with ffprobe and transcodes only if Plex can't handle it natively (e.g. HEVC, VP9).
+- `IPTV_TUNERR_STREAM_BUFFER_BYTES` (`0|auto|<bytes>`) — `auto` enables adaptive buffering when transcoding; `0` disables; a fixed integer (e.g. `2097152`) sets a 2 MiB buffer.
+- `IPTV_TUNERR_FFMPEG_PATH` — override the ffmpeg binary path (e.g. `/opt/ffmpeg-static/current/ffmpeg`).
+- `IPTV_TUNERR_FFMPEG_HLS_RECONNECT` — when `true`, adds HLS reconnect flags to ffmpeg (`-reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1`). Helps with providers whose HLS segment URLs expire mid-stream.
+- `IPTV_TUNERR_CLIENT_ADAPT` — when `true`, resolve the Plex client from the active session and force websafe (transcode + MP3 audio) for web/browser clients and for internal fetchers (Lavf/PMS). Ensures Chrome and Firefox get compatible audio without transcoding non-browser clients.
+- `IPTV_TUNERR_FORCE_WEBSAFE` — when `true`, always transcode with MP3 audio regardless of client. Use if client detection misclassifies a browser client or after a Plex update changes the session UA.
+- `IPTV_TUNERR_STRIP_STREAM_HOSTS` — comma-separated hostnames (e.g. `cf.like-cdn.com,like-cdn.com`) whose stream URLs are removed at catalog build time. Channels with only stripped hosts are dropped entirely so the tuner never attempts CF-blocked endpoints.
+
+## Live TV startup race hardening (websafe bootstrap)
+
+These vars address the Plex `dash_init_404` / "Failed to find consumer" race where Plex accepts a session but its DASH packager doesn't receive usable MPEG-TS bytes fast enough to initialize.
+
+- `IPTV_TUNERR_WEBSAFE_BOOTSTRAP` — when `true`, sends a short burst of TS bytes immediately on stream open to give Plex's packager a head start before the real stream arrives.
+- `IPTV_TUNERR_WEBSAFE_BOOTSTRAP_ALL` — apply bootstrap to all stream types, not just HLS inputs.
+- `IPTV_TUNERR_WEBSAFE_BOOTSTRAP_SECONDS` — duration of the bootstrap burst (default `0.35`).
+- `IPTV_TUNERR_WEBSAFE_STARTUP_MIN_BYTES` — startup gate: minimum buffered bytes before passing data to Plex (default `65536`).
+- `IPTV_TUNERR_WEBSAFE_STARTUP_MAX_BYTES` — startup gate: maximum bytes to buffer waiting for min threshold (default `524288`).
+- `IPTV_TUNERR_WEBSAFE_STARTUP_TIMEOUT_MS` — startup gate: give up waiting after this many ms and pass whatever is available (default `30000`).
+- `IPTV_TUNERR_WEBSAFE_REQUIRE_GOOD_START` — when `true`, abort the session if the startup gate times out without meeting the min threshold (strict mode).
+- `IPTV_TUNERR_WEBSAFE_NULL_TS_KEEPALIVE` — send null TS packets (PID `0x1FFF`) while the startup gate waits. Keeps the TCP connection alive but carries no program structure.
+- `IPTV_TUNERR_WEBSAFE_NULL_TS_KEEPALIVE_MS` — interval between null TS bursts (default `100`ms).
+- `IPTV_TUNERR_WEBSAFE_NULL_TS_KEEPALIVE_PACKETS` — null TS packets per burst (default `1`).
+- `IPTV_TUNERR_WEBSAFE_PROGRAM_KEEPALIVE` — send real PAT+PMT packets while the startup gate waits. Stronger than null TS: delivers the program map (video+audio PIDs) so Plex's DASH packager can instantiate its consumer before the first IDR frame arrives. Use when null TS alone doesn't prevent `dash_init_404`.
+- `IPTV_TUNERR_WEBSAFE_PROGRAM_KEEPALIVE_MS` — interval between PAT+PMT bursts (default `500`ms).
+
+See [iptvtunerr-troubleshooting §6](../runbooks/iptvtunerr-troubleshooting.md#6-plex-live-tv-startup-race-session-opens-consumer-never-starts) for a recommended config profile.
 
 ## Guide / XMLTV
 

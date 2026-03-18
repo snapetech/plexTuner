@@ -11,7 +11,7 @@ Background and rationale. Add project-specific explanation docs here.
 
 | Doc | Description |
 |-----|-------------|
-| *(none yet)* | Add architecture, design tradeoffs, concepts as needed. |
+| [architecture](architecture.md) | System architecture: data flow, process modes, package structure, key design decisions. |
 
 See also
 --------

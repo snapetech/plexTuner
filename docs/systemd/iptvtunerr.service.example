@@ -1,0 +1,41 @@
+# Example systemd unit for IPTV Tunerr (Live TV/DVR).
+# Copy to /etc/systemd/system/iptvtunerr.service and enable:
+#   sudo cp iptvtunerr.service.example /etc/systemd/system/iptvtunerr.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now iptvtunerr
+#
+# Prerequisites:
+#   - Binary at /opt/iptvtunerr/iptv-tunerr (built with: go build -o iptv-tunerr ./cmd/iptv-tunerr)
+#   - .env at /opt/iptvtunerr/.env (copy from .env.example, set IPTV_TUNERR_PROVIDER_* and IPTV_TUNERR_BASE_URL)
+#   - IPTV_TUNERR_BASE_URL must be the URL Plex/Emby/Jellyfin uses to reach this host
+#     (e.g. http://YOUR_SERVER_IP:5004)
+#
+# One-time in Plex: Settings > Live TV & DVR > Set up > Device URL = IPTV_TUNERR_BASE_URL
+# Guide URL (if asked): $IPTV_TUNERR_BASE_URL/guide.xml
+
+[Unit]
+Description=IPTV Tunerr (Live TV/DVR bridge)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/iptvtunerr
+EnvironmentFile=/opt/iptvtunerr/.env
+ExecStart=/opt/iptvtunerr/iptv-tunerr run -addr :5004
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=iptvtunerr
+
+# Override BASE_URL here if not set in .env (use your server IP or hostname):
+# Environment="IPTV_TUNERR_BASE_URL=http://192.168.1.10:5004"
+
+# Optional: enable the built-in Plex stale-session reaper:
+# Environment="IPTV_TUNERR_PMS_URL=http://127.0.0.1:32400"
+# Environment="IPTV_TUNERR_PMS_TOKEN=your_plex_token"
+# Environment="IPTV_TUNERR_PLEX_SESSION_REAPER=1"
+
+[Install]
+WantedBy=multi-user.target

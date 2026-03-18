@@ -17,7 +17,7 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[explanations/](explanations/index.md)** | Why and concepts. Add project docs here. |
 | **[adr/](adr/index.md)** | Decision log: architecture decision records. |
 | **[runbooks/](runbooks/index.md)** | Operational procedures. |
-| **[how-to/run-without-kubernetes.md](how-to/run-without-kubernetes.md)** | Run without Kubernetes (binary, Docker, systemd, local test script). |
+| **[how-to/deployment.md](how-to/deployment.md)** | Deploy IPTV Tunerr (binary, Docker, systemd, local test script). |
 | **[how-to/package-test-builds.md](how-to/package-test-builds.md)** | Build cross-platform test bundles for testers (Linux/macOS/Windows). |
 | **[how-to/tester-handoff-checklist.md](how-to/tester-handoff-checklist.md)** | Tester handoff checklist (bundle contents, platform expectations, bug report capture). |
 | **[how-to/tester-release-notes-draft.md](how-to/tester-release-notes-draft.md)** | Draft tester-facing release notes for current validation builds. |

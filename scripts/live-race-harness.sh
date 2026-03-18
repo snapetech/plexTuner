@@ -377,7 +377,7 @@ detect_pms_log_dir() {
   return 1
 }
 
-start_plex_tuner() {
+start_iptvtunerr() {
   log "Starting iptv-tunerr serve on $TUNER_ADDR using generated diag catalog"
   (
     cd "$ROOT"
@@ -492,7 +492,7 @@ main() {
   start_hls_http_server
   start_tcpdump
   snapshot_pms_logs
-  start_plex_tuner
+  start_iptvtunerr
   wait_for_tuner || die "iptv-tunerr did not start on $TUNER_BASE_URL"
 
   run_concurrent_clients

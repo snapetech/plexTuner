@@ -127,7 +127,7 @@ Expected outputs after workflows finish:
 
 - `iptv-tunerr` binary (`iptv-tunerr.exe` on Windows)
 - `README.md`
-- `docs/how-to/run-without-kubernetes.md`
+- `docs/how-to/deployment.md`
 - `docs/how-to/package-test-builds.md`
 - `docs/reference/testing-and-supervisor-config.md`
 - `k8s/iptvtunerr-supervisor-multi.example.json`
@@ -166,6 +166,6 @@ sha256sum -c SHA256SUMS.txt
 
 See also
 --------
-- [run-without-kubernetes](run-without-kubernetes.md)
+- [deployment](deployment.md)
 - [testing-and-supervisor-config](../reference/testing-and-supervisor-config.md)
 - [k8s/README](../../k8s/README.md)

@@ -1,100 +1,80 @@
 # IPTV Tunerr
 
-IPTV Tunerr bridges IPTV feeds into Plex Live TV & DVR.
+Bridge IPTV feeds into Plex, Emby, and Jellyfin as an HDHomeRun-compatible tuner.
 
-It supports two major integration modes with Plex:
-- **HDHR mode**: act like an HDHomeRun tuner (`discover.json`, `lineup.json`, `guide.xml`, `/stream/...`) so Plex can use the normal Live TV wizard.
-- **DVR injection mode**: programmatic / headless Plex DVR creation and updates (including multi-DVR/category setups), plus guide refresh and channelmap activation workflows.
+**Source:** https://github.com/snapetech/iptvtunerr
 
-It also supports running many virtual tuners from one process (`supervise`) and optional VOD filesystem mounting on Linux.
+---
 
-No web UI. Configuration is CLI + env vars.
+## What It Does
 
-Source: <https://github.com/snapetech/iptvTunerr>
+- Indexes IPTV providers (M3U and Xtream `player_api`)
+- Emulates an HDHomeRun tuner (`/discover.json`, `/lineup.json`, `/guide.xml`, `/stream/...`)
+- Proxies and optionally transcodes live streams
+- Serves XMLTV guide data (placeholder or remapped from an external source)
+- Supports single-tuner and multi-DVR supervisor deployments
+- Optionally mounts a VOD filesystem (Linux-only, FUSE)
 
-## What This App Does
+No web UI. Configuration is CLI flags and environment variables.
 
-- Indexes IPTV sources (M3U and Xtream `player_api`)
-- Exposes a Plex-compatible tuner interface (HDHR-compatible HTTP endpoints)
-- Proxies/transcodes streams for Plex playback
-- Serves XMLTV guide data (placeholder or external XMLTV remap)
-- Supports both Plex wizard-based setup and programmatic DVR/injection workflows
-- Supports multi-DVR setups (for example category DVRs) in one app via `supervise`
-- Supports deterministic EPG-link coverage reporting for long-tail unlinked channels (`epg-link-report`)
+---
 
-## Two Plex Integration Paths (Important)
+## Two Integration Paths
 
-## 1. HDHR Functions (Wizard-Compatible)
+### HDHR / Wizard Path
 
-Use this when you want Plex to discover/add IPTV Tunerr as if it were an HDHomeRun tuner.
+IPTV Tunerr appears as an HDHomeRun device. Add it through the normal Live TV wizard in Plex, Emby, or Jellyfin.
 
-IPTV Tunerr provides:
-- `GET /discover.json`
-- `GET /lineup.json`
-- `GET /lineup_status.json`
-- `GET /guide.xml`
-- `GET /stream/<id>`
+Best for: single-tuner setups, manual wizard flows, parallel HDHR lane testing.
 
-This path is used for:
-- normal Plex “Add DVR / Set up” wizard flows
-- HDHR-style manual URL entry
-- HDHR lane testing in parallel with injected DVRs
+### DVR Injection / Headless Path
 
-Related features for this path:
-- lineup shaping / wizard-safe caps (for provider matching behavior)
-- HDHR metadata controls (`Manufacturer`, `ModelNumber`, etc.)
-- `ScanPossible` control (so category tuners can be de-emphasized in wizard selection)
+Programmatic DVR creation and management without touching the UI. Supports multi-DVR category fleets, guide reloads, channelmap activation, and repeatable cutover operations.
 
-## 2. DVR Injection Functions (Programmatic / Headless)
+Best for: multi-DVR setups, headless lab environments, fast rebuilds after guide/channel remaps.
 
-Use this when you want Plex DVRs created/managed without relying on the wizard UI.
+Reference: [`docs/reference/plex-dvr-lifecycle-and-api.md`](docs/reference/plex-dvr-lifecycle-and-api.md)
 
-This path supports:
-- programmatic DVR registration flows (API/DB-assisted)
-- multi-DVR category setups (for example 13 injected DVRs)
-- guide reload workflows
-- channelmap activation / replay workflows
-- repeatable cutover/update operations
-- overflow category buckets via lineup sharding (`category2`, `category3`, ...)
+---
 
-This is the path used for:
-- category DVR fleets
-- headless Plex lab/test setups
-- fast rebuilds after guide/channel remaps
+## Quick Start
 
-Reference (authoritative for Plex-side manipulation details):
-- [`docs/reference/plex-dvr-lifecycle-and-api.md`](docs/reference/plex-dvr-lifecycle-and-api.md)
-
-## Core App Features
-
-- **Inputs**: M3U URL or Xtream `player_api` (live, VOD, series)
-- **Provider failover**: multi-host probing + ranked backup stream URLs
-- **Streaming gateway**: HLS relay/transcode to Plex-friendly MPEG-TS paths
-- **Guide handling**: placeholder XMLTV or external XMLTV fetch/filter/remap
-- **XMLTV normalization**: language/script preference options (optional)
-- **Multi-DVR safety**: per-instance guide number offsets (avoid Plex guide collisions)
-- **Built-in Plex stale-session reaper**: optional background worker (poll + SSE + lease)
-- **Supervisor mode**: many child tuner instances from one JSON config (`iptv-tunerr supervise`)
-- **VODFS (optional)**: Linux-only FUSE mount for VOD catalog browsing
-
-Feature reference:
-- [`docs/features.md`](docs/features.md)
-
-## Supported Runtime Modes
-
-## 1. Single Tuner (Simple)
-
-Run one IPTV Tunerr instance for a single HDHR-style tuner endpoint.
+### Build
 
 ```bash
-iptv-tunerr run
-# or
-iptv-tunerr serve -addr :5004
+go build -o iptv-tunerr ./cmd/iptv-tunerr
 ```
 
-## 2. Multi-Instance Supervisor (Single App / Single Container)
+### Minimum Configuration
 
-Run many virtual tuners (for example category DVR children + one HDHR wizard child) from one process:
+```bash
+IPTV_TUNERR_PROVIDER_URL=https://your-provider.com
+IPTV_TUNERR_PROVIDER_USER=username
+IPTV_TUNERR_PROVIDER_PASS=password
+IPTV_TUNERR_BASE_URL=http://<this-host>:5004
+```
+
+### Run
+
+```bash
+./iptv-tunerr run
+```
+
+This fetches the catalog, checks provider health, and starts the tuner server on `:5004`.
+
+### Add to Plex (Wizard)
+
+Plex → Settings → Live TV & DVR → Set up
+Device URL: `http://<this-host>:5004`
+Guide URL: `http://<this-host>:5004/guide.xml`
+
+For Docker, systemd, and bare-metal setups: [`docs/how-to/deployment.md`](docs/how-to/deployment.md)
+
+---
+
+## Supervisor Mode (Multi-DVR)
+
+Run multiple virtual tuner instances from a single process — each on its own port, with independent provider credentials, lineup, and guide configuration.
 
 ```bash
 iptv-tunerr supervise -config /path/to/supervisor.json
@@ -104,97 +84,112 @@ Examples:
 - [`k8s/iptvtunerr-supervisor-multi.example.json`](k8s/iptvtunerr-supervisor-multi.example.json)
 - [`k8s/iptvtunerr-supervisor-singlepod.example.yaml`](k8s/iptvtunerr-supervisor-singlepod.example.yaml)
 
-## Quick Start (HDHR / Wizard Path)
+Config reference: [`docs/reference/testing-and-supervisor-config.md`](docs/reference/testing-and-supervisor-config.md)
 
-1. Build
-
-```bash
-go build -o iptv-tunerr ./cmd/iptv-tunerr
-```
-
-2. Configure (`.env`)
-
-Set at least:
-- `IPTV_TUNERR_PROVIDER_USER` / `IPTV_TUNERR_PROVIDER_PASS` (or subscription file)
-- `IPTV_TUNERR_PROVIDER_URL` or `IPTV_TUNERR_PROVIDER_URLS`
-- `IPTV_TUNERR_BASE_URL=http://<host>:5004`
-
-3. Run
-
-```bash
-./iptv-tunerr run
-```
-
-4. Add in Plex (wizard)
-
-Plex -> Settings -> Live TV & DVR -> Add DVR / Set up
-- Device URL: your base URL
-- Guide URL: `<base>/guide.xml` (if Plex asks for XMLTV)
-
-For local binary/Docker/systemd setups:
-- [`docs/how-to/run-without-kubernetes.md`](docs/how-to/run-without-kubernetes.md)
-
-## Quick Start (DVR Injection / Headless Path)
-
-Use the programmatic registration/injection path when you want multiple DVRs or repeatable headless setup.
-
-Start with:
-- Plex lifecycle/API reference: [`docs/reference/plex-dvr-lifecycle-and-api.md`](docs/reference/plex-dvr-lifecycle-and-api.md)
-- Supervisor/testing config reference: [`docs/reference/testing-and-supervisor-config.md`](docs/reference/testing-and-supervisor-config.md)
-- k8s deployment examples and cutover docs: [`k8s/README.md`](k8s/README.md)
-
-Common headless operations include:
-- create/update DVRs
-- reload guides
-- replay channelmaps
-- clean stale devices/providers
+---
 
 ## CLI Commands
 
-- `run` — refresh catalog + health check + serve (systemd-friendly)
-- `serve` — tuner only
-- `index` — fetch provider data and write catalog
-- `probe` — provider host probe / ranking
-- `mount` — VODFS mount (Linux only)
-- `plex-vod-register` — create/reuse Plex libraries for a VODFS mount (`VOD`, `VOD-Movies` by default)
-- `epg-link-report` — deterministic EPG coverage + unmatched report for live channels vs XMLTV
-- `supervise` — run multiple child tuner instances from one JSON config
+| Command | Description |
+|---------|-------------|
+| `run` | Index + health check + serve (use for systemd/containers) |
+| `serve` | Tuner server only (requires existing catalog) |
+| `index` | Fetch provider data and write `catalog.json` |
+| `probe` | Test and rank provider hosts |
+| `supervise` | Run multiple child tuner instances from a JSON config |
+| `epg-link-report` | Report EPG coverage and unmatched channels |
+| `mount` | Mount VODFS (Linux only) |
+| `plex-vod-register` | Create or reuse Plex VOD libraries for a VODFS mount |
 
-Reference:
-- [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-and-env-reference.md)
-- [`docs/reference/testing-and-supervisor-config.md`](docs/reference/testing-and-supervisor-config.md)
+Full reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-and-env-reference.md)
+
+---
+
+## Key Environment Variables
+
+### Provider / Input
+
+| Variable | Description |
+|----------|-------------|
+| `IPTV_TUNERR_PROVIDER_URL` | Xtream or M3U provider base URL |
+| `IPTV_TUNERR_PROVIDER_URLS` | Comma-separated URLs for multi-host failover |
+| `IPTV_TUNERR_PROVIDER_USER` | Provider username |
+| `IPTV_TUNERR_PROVIDER_PASS` | Provider password |
+| `IPTV_TUNERR_M3U_URL` | Full M3U URL (skips host+credentials assembly) |
+| `IPTV_TUNERR_SUBSCRIPTION_FILE` | File with `Username:` / `Password:` lines |
+
+### Tuner Identity & Lineup
+
+| Variable | Description |
+|----------|-------------|
+| `IPTV_TUNERR_BASE_URL` | URL the media server uses to reach this tuner (required) |
+| `IPTV_TUNERR_DEVICE_ID` | Stable HDHomeRun device identifier |
+| `IPTV_TUNERR_FRIENDLY_NAME` | Display name in media server UI |
+| `IPTV_TUNERR_TUNER_COUNT` | Max concurrent streams |
+| `IPTV_TUNERR_LINEUP_MAX_CHANNELS` | Max channels in lineup (default 480, Plex wizard cap) |
+| `IPTV_TUNERR_GUIDE_NUMBER_OFFSET` | Channel number offset (prevents multi-DVR collisions) |
+| `IPTV_TUNERR_LINEUP_SKIP` / `IPTV_TUNERR_LINEUP_TAKE` | Slice lineup for overflow DVR shards |
+| `IPTV_TUNERR_LIVE_EPG_ONLY` | Only include channels with a `tvg-id` |
+
+### Streaming
+
+| Variable | Description |
+|----------|-------------|
+| `IPTV_TUNERR_STREAM_TRANSCODE` | `off` \| `on` \| `auto` (probe codec, transcode if needed) |
+| `IPTV_TUNERR_STREAM_BUFFER_BYTES` | `0` \| `auto` \| `<bytes>` |
+| `IPTV_TUNERR_FFMPEG_PATH` | Custom ffmpeg binary path |
+| `IPTV_TUNERR_CLIENT_ADAPT` | Detect Plex Web; apply browser-compatible codec automatically |
+| `IPTV_TUNERR_FORCE_WEBSAFE` | Always transcode with MP3 audio |
+
+### Guide / XMLTV
+
+| Variable | Description |
+|----------|-------------|
+| `IPTV_TUNERR_XMLTV_URL` | External XMLTV source to fetch, filter, and serve |
+| `IPTV_TUNERR_XMLTV_CACHE_TTL` | How long to cache remapped XMLTV (default `10m`) |
+| `IPTV_TUNERR_EPG_PRUNE_UNLINKED` | Exclude unlinked channels from guide and lineup |
+| `IPTV_TUNERR_XMLTV_PREFER_LANGS` | Language preference for programme titles (e.g. `en,eng`) |
+| `IPTV_TUNERR_XMLTV_PREFER_LATIN` | Prefer Latin script when multilingual data is available |
+
+### Plex Session Reaper (Optional)
+
+| Variable | Description |
+|----------|-------------|
+| `IPTV_TUNERR_PMS_URL` | Plex Media Server URL |
+| `IPTV_TUNERR_PMS_TOKEN` | Plex API token |
+| `IPTV_TUNERR_PLEX_SESSION_REAPER` | Enable background stale-session cleanup |
+| `IPTV_TUNERR_PLEX_SESSION_REAPER_IDLE_S` | Seconds idle before a session is pruned |
+
+### Emby / Jellyfin
+
+| Variable | Description |
+|----------|-------------|
+| `IPTV_TUNERR_EMBY_HOST` | Emby server URL |
+| `IPTV_TUNERR_EMBY_TOKEN` | Emby API key |
+| `IPTV_TUNERR_JELLYFIN_HOST` | Jellyfin server URL |
+| `IPTV_TUNERR_JELLYFIN_TOKEN` | Jellyfin API key |
+
+Full variable reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-and-env-reference.md)
+
+---
 
 ## Platform Support
 
-### Linux / macOS / Windows (core app)
+| Feature | Linux | macOS | Windows |
+|---------|-------|-------|---------|
+| `run`, `serve`, `index`, `probe`, `supervise` | ✓ | ✓ | ✓ |
+| HDHR HTTP endpoints | ✓ | ✓ | ✓ |
+| XMLTV remap / normalization | ✓ | ✓ | ✓ |
+| Plex session reaper | ✓ | ✓ | ✓ |
+| `mount` / VODFS (FUSE) | ✓ | — | — |
 
-Supported:
-- `run`, `serve`, `index`, `probe`, `supervise`
-- HDHR-compatible HTTP tuner endpoints
-- XMLTV remap/normalization
-- built-in Plex session reaper
+Platform requirements: [`docs/how-to/platform-requirements.md`](docs/how-to/platform-requirements.md)
 
-### Linux-only
+---
 
-- `mount` / `VODFS` (FUSE)
+## VOD Filesystem (Linux Only)
 
-### VOD Libraries in Plex (VODFS)
-
-VOD library injection is not the same as Live TV DVR injection.
-
-Current supported flow:
-1. mount VODFS (`iptv-tunerr mount`) on a path the Plex server can see
-2. register libraries via `plex-vod-register`
-
-By default, `plex-vod-register` creates/reuses:
-- `VOD` -> `<mount>/TV`
-- `VOD-Movies` -> `<mount>/Movies`
-
-Optional one-sided registration:
-- `-shows-only` (create/reuse only the TV library)
-- `-movies-only` (create/reuse only the Movie library)
-
-Example:
+Mount IPTV VOD catalog as a browsable filesystem that Plex can index as libraries.
 
 ```bash
 iptv-tunerr mount -catalog ./catalog.json -mount /srv/iptvtunerr-vodfs
@@ -204,70 +199,88 @@ iptv-tunerr plex-vod-register \
   -token "$PLEX_TOKEN"
 ```
 
-Important:
-- the VODFS mount path must be visible to Plex (same host / shared filesystem path)
-- Kubernetes Plex pods usually need a host-level/systemd VODFS mount or a privileged mount-propagation setup; mounting VODFS in a separate helper pod does not automatically make it visible to the Plex pod
+By default this creates `VOD` (TV) and `VOD-Movies` libraries. Use `-shows-only` or `-movies-only` to register one at a time.
 
-### Windows note (HDHR network mode)
+The mount path must be visible to the Plex server. In Kubernetes, VODFS mounts inside a helper container are not automatically visible to the Plex pod without host-level mounts or `MountPropagation`.
 
-Windows builds include the HDHR network-mode code path, but native Windows validation is still recommended (do not treat `wine` smoke tests as authoritative for discovery/network behavior).
+Guide: [`docs/how-to/mount-vodfs-and-register-plex-libraries.md`](docs/how-to/mount-vodfs-and-register-plex-libraries.md)
 
-## Recent Advanced Features / Ops Notes
+---
 
-- **EPG long-tail tooling (Phase 1):**
-  - `iptv-tunerr epg-link-report` compares `catalog.json` live channels vs XMLTV and reports deterministic matches (`tvg-id`, alias exact, normalized-name exact unique)
-  - intended for safely improving the large unlinked-channel tail before auto-applying matches
-- **Injected DVR overflow buckets:**
-  - runtime lineup sharding envs `IPTV_TUNERR_LINEUP_SKIP` / `IPTV_TUNERR_LINEUP_TAKE`
-  - supervisor manifest generator can auto-create `category2/category3/...` children from confirmed linked counts (`--category-counts-json`)
-- **Live TV provider label proxy tooling (experimental/client-dependent):**
-  - server-side `/media/providers` and provider-endpoint rewrite proxy is available for per-source labels in clients that honor provider metadata
-  - current Plex Web/TV clients may still display server-level labels (`plexKube`) in some source-tab UIs
+## Kubernetes
 
-## Packaging for Testers / Test Releases
-
-Cross-platform tester bundles:
+Single-command deployment:
 
 ```bash
-./scripts/build-test-packages.sh
-./scripts/build-tester-release.sh
+./k8s/standup-local-cluster.sh
 ```
 
-Tag-based test release flow (recommended):
-- push `v*` tag -> versioned GHCR images + tester bundle GitHub Release asset
+Or step-by-step with env-based credentials:
 
-Docs:
-- [`docs/how-to/package-test-builds.md`](docs/how-to/package-test-builds.md)
-- [`docs/how-to/tester-handoff-checklist.md`](docs/how-to/tester-handoff-checklist.md)
-- [`docs/how-to/tester-release-notes-draft.md`](docs/how-to/tester-release-notes-draft.md)
+```bash
+IPTV_TUNERR_PROVIDER_USER='user' \
+IPTV_TUNERR_PROVIDER_PASS='pass' \
+IPTV_TUNERR_PROVIDER_URL='https://provider.com' \
+./k8s/deploy-hdhr-one-shot.sh --static
+```
 
-## Troubleshooting / Runbooks
+Full K8s guide: [`k8s/README.md`](k8s/README.md)
 
+---
+
+## Repo Layout
+
+```
+cmd/iptv-tunerr/      CLI entrypoint
+internal/tuner/       HDHR endpoints, streaming gateway, XMLTV, Plex reaper
+internal/supervisor/  Multi-instance supervisor runtime
+internal/plex/        Plex registration helpers (API + DB-assisted)
+internal/emby/        Emby / Jellyfin registration and watchdog
+internal/provider/    Xtream / M3U probing and indexing
+internal/catalog/     Normalized channel/VOD data model
+internal/vodfs/       VOD filesystem mount (Linux only)
+internal/epglink/     EPG match reporting
+k8s/                  Manifests, supervisor examples, deploy scripts
+scripts/              Packaging, Plex ops helpers, analysis tools
+docs/                 Reference, how-to guides, runbooks
+```
+
+---
+
+## Security Notes
+
+**Endpoints are unauthenticated.** All HTTP endpoints (`/lineup.json`, `/stream/*`, `/guide.xml`, etc.) have no access control. This is by design — IPTV Tunerr is a LAN-internal service and the media server is the only expected consumer. Do not expose port 5004 directly to the internet. If you need public access, put a reverse proxy with authentication (Caddy, nginx) in front.
+
+**`catalog.json` may contain provider credentials.** The catalog is built from Xtream API responses which embed credentials in stream URLs. Restrict permissions on the catalog file: `chmod 0600 catalog.json`. In supervisor deployments, use env file injection rather than baking credentials into the config JSON.
+
+**Stream URLs are SSRF-validated.** The stream gateway only fetches `http://` and `https://` URLs. `file://`, `ftp://`, `data:`, and other schemes are rejected before any network request is made.
+
+---
+
+## Documentation
+
+**Reference**
+- [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-and-env-reference.md) — All CLI flags and environment variables
+- [`docs/reference/plex-dvr-lifecycle-and-api.md`](docs/reference/plex-dvr-lifecycle-and-api.md) — Plex DVR lifecycle, HDHR wizard flow, injection API
+- [`docs/reference/testing-and-supervisor-config.md`](docs/reference/testing-and-supervisor-config.md) — Supervisor config, guide offsets, overflow shards
+- [`docs/reference/epg-linking-pipeline.md`](docs/reference/epg-linking-pipeline.md) — EPG match strategy
+
+**How-To**
+- [`docs/how-to/deployment.md`](docs/how-to/deployment.md) — Binary, Docker, systemd deployment
+- [`docs/how-to/platform-requirements.md`](docs/how-to/platform-requirements.md) — FFmpeg, FUSE, platform notes
+- [`docs/how-to/mount-vodfs-and-register-plex-libraries.md`](docs/how-to/mount-vodfs-and-register-plex-libraries.md) — VOD filesystem setup
+
+**Runbooks**
 - [`docs/runbooks/iptvtunerr-troubleshooting.md`](docs/runbooks/iptvtunerr-troubleshooting.md)
 - [`docs/runbooks/plex-hidden-live-grab-recovery.md`](docs/runbooks/plex-hidden-live-grab-recovery.md)
 - [`docs/runbooks/plex-in-cluster.md`](docs/runbooks/plex-in-cluster.md)
 
-## Repo Layout (High-Value Paths)
+**Development**
+- [`AGENTS.md`](AGENTS.md) — Agent/handoff workflow
+- [`docs/features.md`](docs/features.md) — Full feature list
 
-- `cmd/iptv-tunerr/` — CLI entrypoint
-- `internal/tuner/` — HDHR endpoints, XMLTV, streaming gateway, Plex reaper
-- `internal/supervisor/` — multi-instance supervisor runtime
-- `internal/plex/` — Plex registration helpers (API/DB-assisted flows)
-- `internal/provider/` — Xtream/M3U probing + indexing support
-- `internal/vodfs/` — VOD filesystem mount (Linux-only runtime)
-- `k8s/` — manifests, supervisor examples, deploy scripts
-- `scripts/` — packaging, Plex ops helpers, analysis tools
-- `memory-bank/` — project state/history/recurring issue notes
-
-## Development
-
-Verification:
+Verify the build:
 
 ```bash
 ./scripts/verify
 ```
-
-Agent/handoff workflow:
-- [`AGENTS.md`](AGENTS.md)
-- [`memory-bank/repo_map.md`](memory-bank/repo_map.md)
-- [`memory-bank/commands.yml`](memory-bank/commands.yml)

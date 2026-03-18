@@ -16,7 +16,7 @@ Deploy, rollback, troubleshoot. Goal → preconditions → steps → verify → 
 | [plex-hidden-live-grab-recovery](plex-hidden-live-grab-recovery.md) | **Plex Live TV recovery:** detect hidden active-grab wedges and safely restart Plex when no active viewers remain. |
 | [plex-livetv-tab-label-rewrite-proxy](plex-livetv-tab-label-rewrite-proxy.md) | **Plex Live TV labels:** rewrite `/media/providers` labels per DVR/provider so source tabs are distinguishable (client-dependent). |
 | [k8s/README.md](../../k8s/README.md) | **Kubernetes:** HDHR deployment in cluster, Ingress, Plex setup. |
-| [how-to: run without Kubernetes](../how-to/run-without-kubernetes.md) | **Local:** Binary, Docker, systemd, local QA/smoke script (no cluster). |
+| [how-to: deployment](../how-to/deployment.md) | **Local/self-hosted:** Binary, Docker, systemd, local QA/smoke script. |
 | [service-template](service-template.md) | Skeleton: start/stop, config knobs, logs/metrics, common failures. Fill in when the repo runs as a service. |
 | *(add more)* | Deploy, cache recovery, incident response, etc. |
 
