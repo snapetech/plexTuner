@@ -53,7 +53,7 @@ jobs:
           echo "Using $latest"
 
       - name: Upload tester bundle artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tester-bundle-${{ steps.out.outputs.release_name }}
           path: ${{ steps.out.outputs.release_dir }}
