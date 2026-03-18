@@ -2,9 +2,9 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Goal:** Ship the direct-M3U multi-credential follow-up fix after `v0.1.6`: when multiple credentialed M3U URLs are configured, catalog indexing must merge all successful feeds instead of stopping at the first one.
+**Goal:** Completed on 2026-03-18: ship the direct-M3U multi-credential follow-up fix after `v0.1.6`, release it as `v0.1.7`, and clean up superseded git tags/releases.
 
-**Scope:** In: direct-M3U multi-URL config/indexing fix, targeted tests, local verify, git commit/tag/push for the next patch release, and memory-bank/task-history updates. Out: broader provider-merge redesign, fuzzy EPG matching, or persistent match storage.
+**Scope:** In: direct-M3U multi-URL config/indexing fix, targeted tests, local verify, git commit/tag/push for the next patch release, and release cleanup for obsolete git tags/GitHub releases. Out: broader provider-merge redesign, fuzzy EPG matching, persistent match storage, or registry cleanup requiring unavailable package credentials.
 
 **Last updated:** 2026-03-18
 
@@ -16,6 +16,9 @@
   2. Changed direct-M3U catalog build to merge all successful configured M3U feeds before dedupe/filtering.
   3. Added config and catalog-build tests for the multi-M3U merge path.
   4. Re-ran `scripts/verify`.
+  5. Released commit `49ddf3d` as tag `v0.1.7` and pushed `main` + tag to `origin`.
+  6. Deleted superseded git tags locally/remotely and deleted old GitHub releases, leaving git tag `v0.1.7` as the only remaining repo tag.
+  7. Confirmed registry cleanup is only partially possible from this environment: GHCR deletion is blocked by missing `read:packages`/package-delete scope, and Docker Hub deletion is blocked by missing Docker Hub auth.
 
 **Current focus shift (EPG hardening, 2026-03-18):**
 - Review found that runtime guide quality still depended mainly on source-provided `TVGID`s: if a channel had a non-empty but wrong ID, it survived `LIVE_EPG_ONLY` yet still fell through to placeholder programme entries. The deterministic linker existed only as `epg-link-report`, not as a runtime repair path.

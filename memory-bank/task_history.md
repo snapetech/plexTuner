@@ -23,6 +23,23 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-18
+  Title: Release v0.1.7 for multi-credential direct-M3U indexing and prune old release tags
+  Summary:
+    - Added numbered direct-M3U config support so `IPTV_TUNERR_M3U_URL`, `_2`, `_3`, and higher are loaded together when operators split channels across multiple credentialed playlist URLs.
+    - Changed direct-M3U catalog indexing to merge all successful configured M3U feeds before dedupe/filtering instead of stopping at the first successful fetch, fixing incomplete indexes when providers require multiple credential sets.
+    - Added targeted config/indexing tests, released the change as `v0.1.7`, and removed superseded git tags and GitHub releases so only the current repo tag remains.
+  Verification:
+    - `go test -count=1 ./cmd/iptv-tunerr ./internal/config`
+    - `./scripts/verify`
+  Notes:
+    - Git cleanup completed: local and remote git tags older than `v0.1.7` were deleted, and old GitHub releases were deleted.
+    - Registry artifact cleanup could not be completed from this environment: GHCR package APIs returned `403` without package scopes, and Docker Hub had no authenticated credentials configured for delete operations.
+  Opportunities filed:
+    - none
+  Links:
+    - cmd/iptv-tunerr/main.go, cmd/iptv-tunerr/main_test.go, internal/config/config.go, internal/config/config_test.go, memory-bank/current_task.md
+
+- Date: 2026-03-18
   Title: Runtime EPG repair from provider/external XMLTV metadata
   Summary:
     - Integrated deterministic EPG matching into catalog build so live channels can have missing or incorrect `TVGID`s repaired from provider `xmltv.php` metadata first and external XMLTV metadata second, before `LIVE_EPG_ONLY` filtering runs.
