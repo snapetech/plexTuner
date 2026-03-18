@@ -23,6 +23,21 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-18
+  Title: Expand tagged GitHub Release binaries to linux armv7 and windows arm64
+  Summary:
+    - Extended `.github/workflows/release.yml` so tagged releases now publish `linux/arm/v7` and `windows/arm64` binaries in addition to the existing amd64/arm64 targets.
+    - Updated the release build helper to carry `GOARM` through to artifact naming so the Linux 32-bit ARM build is emitted as a distinct `linux-armv7` release asset.
+    - Aligned the packaging and platform docs with the actual published artifact matrix.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - This change expands GitHub Release binary artifacts only; container images remain `linux/amd64` and `linux/arm64`.
+  Opportunities filed:
+    - none
+  Links:
+    - .github/workflows/release.yml, docs/how-to/package-test-builds.md, docs/how-to/platform-requirements.md
+
+- Date: 2026-03-18
   Title: Automate GitHub Release notes from repo changelog and tag commit range
   Summary:
     - Added `scripts/generate-release-notes.sh` so release pages are generated from repository data instead of GitHub's generic auto-notes.

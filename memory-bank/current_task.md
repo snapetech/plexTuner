@@ -2,11 +2,19 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Goal:** Completed on 2026-03-18: replace vague GitHub auto-release notes with repo-generated release notes so tagged releases always show the actual IPTV Tunerr changes without manual follow-up.
+**Goal:** Completed on 2026-03-18: extend tagged release assets to publish the additional supported binary targets (`linux/arm/v7` and `windows/arm64`) so GitHub Releases match the repo's documented platform support.
 
-**Scope:** In: release-note generator script, workflow wiring, release-doc update, memory-bank updates, local verify, and backfilling the current `v0.1.7` GitHub Release page with generated notes. Out: broader changelog process redesign, asset-publishing refactors, or registry cleanup requiring unavailable package credentials.
+**Scope:** In: release workflow matrix expansion, docs alignment for supported/released platforms, memory-bank updates, local verify. Out: Docker image matrix changes, hardware-accelerated ffmpeg packaging, or broader platform support beyond current Go/ffmpeg expectations.
 
 **Last updated:** 2026-03-18
+
+**Current focus shift (release asset matrix expansion, 2026-03-18):**
+- The repo already packaged `linux/arm/v7` and `windows/arm64` in test bundles, but `.github/workflows/release.yml` still published only `linux/amd64`, `linux/arm64`, `darwin/*`, and `windows/amd64`.
+- Implemented in this session:
+  1. Extended the tagged release workflow build helper to understand `GOARM` suffixes and publish `linux-armv7` tarballs.
+  2. Added `windows/arm64` to the tagged GitHub Release artifact matrix.
+  3. Updated platform/package docs so the documented support table and release artifacts match.
+  4. Re-ran `./scripts/verify` before pushing.
 
 **Current focus shift (release notes automation, 2026-03-18):**
 - GitHub Releases were still using `generate_release_notes: true`, which produced vague/empty notes and required manual cleanup after each tag.

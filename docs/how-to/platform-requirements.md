@@ -15,9 +15,9 @@ iptvTunerr cross-compiles and runs on Linux, macOS, and Windows. The core tuner 
 
 | Platform | Architecture | Core tuner | `mount` command | SIGHUP reload |
 |----------|-------------|------------|-----------------|---------------|
-| Linux | amd64, arm64 | ✓ | ✓ (requires libfuse) | ✓ |
+| Linux | amd64, arm64, arm/v7 | ✓ | ✓ (requires libfuse) | ✓ |
 | macOS | amd64, arm64 (Apple Silicon) | ✓ | ✓ (requires macFUSE) | ✓ |
-| Windows | amd64 | ✓ | ✗ (no FUSE driver) | no-op (signal never fires; use `-refresh` flag for scheduled reload instead) |
+| Windows | amd64, arm64 | ✓ | ✗ (no FUSE driver) | no-op (signal never fires; use `-refresh` flag for scheduled reload instead) |
 
 ---
 
@@ -81,11 +81,17 @@ go build -o iptv-tunerr.exe ./cmd/iptv-tunerr
 # Linux ARM64 (e.g. Raspberry Pi, Oracle Ampere)
 GOOS=linux GOARCH=arm64 go build -o iptv-tunerr-linux-arm64 ./cmd/iptv-tunerr
 
+# Linux ARMv7 (e.g. 32-bit Raspberry Pi OS)
+GOOS=linux GOARCH=arm GOARM=7 go build -o iptv-tunerr-linux-armv7 ./cmd/iptv-tunerr
+
 # macOS Apple Silicon
 GOOS=darwin GOARCH=arm64 go build -o iptv-tunerr-darwin-arm64 ./cmd/iptv-tunerr
 
-# Windows
+# Windows AMD64
 GOOS=windows GOARCH=amd64 go build -o iptv-tunerr-windows-amd64.exe ./cmd/iptv-tunerr
+
+# Windows ARM64
+GOOS=windows GOARCH=arm64 go build -o iptv-tunerr-windows-arm64.exe ./cmd/iptv-tunerr
 ```
 
 ### Docker (Linux, multi-arch)
