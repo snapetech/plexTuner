@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -19,6 +20,88 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/refio"
 	"github.com/snapetech/iptvtunerr/internal/tuner"
 )
+
+func reportCommands() []commandSpec {
+	epgLinkReportCmd := flag.NewFlagSet("epg-link-report", flag.ExitOnError)
+	epgLinkCatalog := epgLinkReportCmd.String("catalog", "", "Input catalog.json (default: IPTV_TUNERR_CATALOG)")
+	epgLinkXMLTV := epgLinkReportCmd.String("xmltv", "", "XMLTV file path or http(s) URL (required)")
+	epgLinkAliases := epgLinkReportCmd.String("aliases", "", "Optional alias override JSON (name_to_xmltv_id map)")
+	epgLinkOut := epgLinkReportCmd.String("out", "", "Optional full JSON report output path")
+	epgLinkUnmatchedOut := epgLinkReportCmd.String("unmatched-out", "", "Optional unmatched-only JSON output path")
+
+	channelReportCmd := flag.NewFlagSet("channel-report", flag.ExitOnError)
+	channelReportCatalog := channelReportCmd.String("catalog", "", "Input catalog.json (default: IPTV_TUNERR_CATALOG)")
+	channelReportXMLTV := channelReportCmd.String("xmltv", "", "Optional XMLTV file path or http(s) URL to enrich report with exact/alias/name match details")
+	channelReportAliases := channelReportCmd.String("aliases", "", "Optional alias override JSON (name_to_xmltv_id map)")
+	channelReportOut := channelReportCmd.String("out", "", "Optional JSON report output path (default: stdout)")
+
+	channelDNAReportCmd := flag.NewFlagSet("channel-dna-report", flag.ExitOnError)
+	channelDNAReportCatalog := channelDNAReportCmd.String("catalog", "", "Input catalog.json (default: IPTV_TUNERR_CATALOG)")
+	channelDNAReportOut := channelDNAReportCmd.String("out", "", "Optional JSON report output path (default: stdout)")
+
+	guideHealthCmd := flag.NewFlagSet("guide-health", flag.ExitOnError)
+	guideHealthCatalog := guideHealthCmd.String("catalog", "", "Input catalog.json (default: IPTV_TUNERR_CATALOG)")
+	guideHealthGuide := guideHealthCmd.String("guide", "", "Guide XML file path or http(s) URL (required; /guide.xml works well)")
+	guideHealthXMLTV := guideHealthCmd.String("xmltv", "", "Optional source XMLTV file path or http(s) URL for deterministic match provenance")
+	guideHealthAliases := guideHealthCmd.String("aliases", "", "Optional alias override JSON (name_to_xmltv_id map)")
+	guideHealthOut := guideHealthCmd.String("out", "", "Optional JSON report output path (default: stdout)")
+
+	epgDoctorCmd := flag.NewFlagSet("epg-doctor", flag.ExitOnError)
+	epgDoctorCatalog := epgDoctorCmd.String("catalog", "", "Input catalog.json (default: IPTV_TUNERR_CATALOG)")
+	epgDoctorGuide := epgDoctorCmd.String("guide", "", "Guide XML file path or http(s) URL (required; /guide.xml works well)")
+	epgDoctorXMLTV := epgDoctorCmd.String("xmltv", "", "Optional source XMLTV file path or http(s) URL for deterministic match provenance")
+	epgDoctorAliases := epgDoctorCmd.String("aliases", "", "Optional alias override JSON (name_to_xmltv_id map)")
+	epgDoctorOut := epgDoctorCmd.String("out", "", "Optional JSON report output path (default: stdout)")
+
+	ghostHunterCmd := flag.NewFlagSet("ghost-hunter", flag.ExitOnError)
+	ghostHunterPMSURL := ghostHunterCmd.String("pms-url", strings.TrimSpace(os.Getenv("IPTV_TUNERR_PMS_URL")), "Plex base URL")
+	ghostHunterToken := ghostHunterCmd.String("token", strings.TrimSpace(os.Getenv("IPTV_TUNERR_PMS_TOKEN")), "Plex token")
+	ghostHunterObserve := ghostHunterCmd.Duration("observe", 4*time.Second, "Observation window before classifying stale sessions")
+	ghostHunterPoll := ghostHunterCmd.Duration("poll", time.Second, "Poll interval while observing")
+	ghostHunterStop := ghostHunterCmd.Bool("stop", false, "Stop stale visible transcode sessions after classification")
+	ghostHunterMachineID := ghostHunterCmd.String("machine-id", strings.TrimSpace(os.Getenv("IPTV_TUNERR_PLEX_SESSION_REAPER_MACHINE_ID")), "Optional client machineIdentifier scope")
+	ghostHunterPlayerIP := ghostHunterCmd.String("player-ip", strings.TrimSpace(os.Getenv("IPTV_TUNERR_PLEX_SESSION_REAPER_PLAYER_IP")), "Optional player IP scope")
+
+	catchupCapsulesCmd := flag.NewFlagSet("catchup-capsules", flag.ExitOnError)
+	catchupCapsulesCatalog := catchupCapsulesCmd.String("catalog", "", "Input catalog.json (default: IPTV_TUNERR_CATALOG)")
+	catchupCapsulesXMLTV := catchupCapsulesCmd.String("xmltv", "", "Guide/XMLTV file path or http(s) URL (required; /guide.xml works well)")
+	catchupCapsulesHorizon := catchupCapsulesCmd.Duration("horizon", 3*time.Hour, "How far ahead to include candidate programme windows")
+	catchupCapsulesLimit := catchupCapsulesCmd.Int("limit", 20, "Max capsules to export")
+	catchupCapsulesOut := catchupCapsulesCmd.String("out", "", "Optional JSON output path (default: stdout)")
+	catchupCapsulesLayoutDir := catchupCapsulesCmd.String("layout-dir", "", "Optional output directory for lane-split capsule JSON files plus manifest.json")
+	catchupCapsulesGuidePolicy := catchupCapsulesCmd.String("guide-policy", strings.TrimSpace(os.Getenv("IPTV_TUNERR_CATCHUP_GUIDE_POLICY")), "Optional guide-quality policy: off|healthy|strict")
+
+	return []commandSpec{
+		{Name: "channel-report", Section: "Guide/EPG", Summary: "Channel intelligence report: score stream resilience + guide confidence", FlagSet: channelReportCmd, Run: func(cfg *config.Config, args []string) {
+			_ = channelReportCmd.Parse(args)
+			handleChannelReport(cfg, *channelReportCatalog, *channelReportXMLTV, *channelReportAliases, *channelReportOut)
+		}},
+		{Name: "guide-health", Section: "Guide/EPG", Summary: "Guide health report: actual programme coverage, placeholders, and XMLTV match status", FlagSet: guideHealthCmd, Run: func(cfg *config.Config, args []string) {
+			_ = guideHealthCmd.Parse(args)
+			handleGuideHealth(cfg, *guideHealthCatalog, *guideHealthGuide, *guideHealthXMLTV, *guideHealthAliases, *guideHealthOut)
+		}},
+		{Name: "epg-doctor", Section: "Guide/EPG", Summary: "One-shot EPG doctor: combine match analysis and real guide coverage", FlagSet: epgDoctorCmd, Run: func(cfg *config.Config, args []string) {
+			_ = epgDoctorCmd.Parse(args)
+			handleEPGDoctor(cfg, *epgDoctorCatalog, *epgDoctorGuide, *epgDoctorXMLTV, *epgDoctorAliases, *epgDoctorOut)
+		}},
+		{Name: "channel-dna-report", Section: "Guide/EPG", Summary: "Group live channels by stable dna_id identity", FlagSet: channelDNAReportCmd, Run: func(cfg *config.Config, args []string) {
+			_ = channelDNAReportCmd.Parse(args)
+			handleChannelDNAReport(cfg, *channelDNAReportCatalog, *channelDNAReportOut)
+		}},
+		{Name: "ghost-hunter", Section: "Guide/EPG", Summary: "Observe Plex Live TV sessions, classify stalls, optionally stop stale ones", FlagSet: ghostHunterCmd, Run: func(_ *config.Config, args []string) {
+			_ = ghostHunterCmd.Parse(args)
+			handleGhostHunter(*ghostHunterPMSURL, *ghostHunterToken, *ghostHunterObserve, *ghostHunterPoll, *ghostHunterStop, *ghostHunterMachineID, *ghostHunterPlayerIP)
+		}},
+		{Name: "catchup-capsules", Section: "Guide/EPG", Summary: "Export near-live capsule candidates from guide XML/guide.xml", FlagSet: catchupCapsulesCmd, Run: func(cfg *config.Config, args []string) {
+			_ = catchupCapsulesCmd.Parse(args)
+			handleCatchupCapsules(cfg, *catchupCapsulesCatalog, *catchupCapsulesXMLTV, *catchupCapsulesHorizon, *catchupCapsulesLimit, *catchupCapsulesOut, *catchupCapsulesLayoutDir, *catchupCapsulesGuidePolicy)
+		}},
+		{Name: "epg-link-report", Section: "Guide/EPG", Summary: "Coverage report: which channels are EPG-linked vs unlinked, and by what match", FlagSet: epgLinkReportCmd, Run: func(cfg *config.Config, args []string) {
+			_ = epgLinkReportCmd.Parse(args)
+			handleEPGLinkReport(cfg, *epgLinkCatalog, *epgLinkXMLTV, *epgLinkAliases, *epgLinkOut, *epgLinkUnmatchedOut)
+		}},
+	}
+}
 
 func handleEPGLinkReport(cfg *config.Config, catalogPath, xmltvRef, aliasesRef, outPath, unmatchedOut string) {
 	path := strings.TrimSpace(catalogPath)

@@ -17,7 +17,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"log"
 	"net/url"
@@ -632,263 +631,45 @@ func main() {
 		os.Exit(0)
 	}
 
-	indexCmd := flag.NewFlagSet("index", flag.ExitOnError)
-	m3uURL := indexCmd.String("m3u", "", "M3U URL (default: IPTV_TUNERR_M3U_URL or IPTV_TUNERR_PROVIDER_URL)")
-	catalogPathIndex := indexCmd.String("catalog", "", "Catalog JSON path (default: IPTV_TUNERR_CATALOG)")
-
-	mountCmd := flag.NewFlagSet("mount", flag.ExitOnError)
-	mountPoint := mountCmd.String("mount", "", "Mount point (default: IPTV_TUNERR_MOUNT)")
-	catalogPathMount := mountCmd.String("catalog", "", "Catalog JSON path (default: IPTV_TUNERR_CATALOG)")
-	cacheDir := mountCmd.String("cache", "", "Cache dir for VOD (default: IPTV_TUNERR_CACHE); if set, direct-file URLs are downloaded on demand")
-	mountAllowOther := mountCmd.Bool("allow-other", false, "Linux/FUSE: mount with allow_other so other users/processes can access the VODFS mount (may require user_allow_other in /etc/fuse.conf)")
-
-	serveCmd := flag.NewFlagSet("serve", flag.ExitOnError)
-	catalogPathServe := serveCmd.String("catalog", "", "Catalog JSON path for live channels (default: IPTV_TUNERR_CATALOG)")
-	serveAddr := serveCmd.String("addr", ":5004", "Listen address")
-	serveBaseURL := serveCmd.String("base-url", "http://localhost:5004", "Base URL for discover/lineup (set to your host for Plex)")
-	serveDeviceID := serveCmd.String("device-id", "", "HDHR Device ID (default: IPTV_TUNERR_DEVICE_ID)")
-	serveFriendlyName := serveCmd.String("friendly-name", "", "HDHR Friendly Name (default: IPTV_TUNERR_FRIENDLY_NAME)")
-	serveMode := serveCmd.String("mode", "", "easy = lineup capped at 479 for Plex wizard; full = use IPTV_TUNERR_LINEUP_MAX_CHANNELS or no cap")
-
-	runCmd := flag.NewFlagSet("run", flag.ExitOnError)
-	runCatalog := runCmd.String("catalog", "", "Catalog path (default: IPTV_TUNERR_CATALOG)")
-	runAddr := runCmd.String("addr", ":5004", "Listen address")
-	runBaseURL := runCmd.String("base-url", "http://localhost:5004", "Base URL for Plex (use your host, e.g. http://192.168.1.10:5004)")
-	runDeviceID := runCmd.String("device-id", "", "HDHR Device ID (default: IPTV_TUNERR_DEVICE_ID)")
-	runFriendlyName := runCmd.String("friendly-name", "", "HDHR Friendly Name (default: IPTV_TUNERR_FRIENDLY_NAME)")
-	runRefresh := runCmd.Duration("refresh", 0, "Refresh catalog interval (e.g. 6h). 0 = only at startup")
-	runSkipIndex := runCmd.Bool("skip-index", false, "Skip catalog refresh at startup (use existing catalog)")
-	runSkipHealth := runCmd.Bool("skip-health", false, "Skip provider health check at startup")
-	runRegisterPlex := runCmd.String("register-plex", "", "If set, update Plex DB at this path (stop Plex first, backup DB) so DVR/XMLTV point to this tuner")
-	runRegisterOnly := runCmd.Bool("register-only", false, "If set with -register-plex and -mode=full: write Plex DB and exit without starting the tuner server (for one-shot jobs)")
-	runRegisterInterval := runCmd.Duration("register-plex-interval", 5*time.Minute, "How often to verify and repair DVR registration while running (0 = disable watchdog; default 5m)")
-	runMode := runCmd.String("mode", "", "Flow: easy = HDHR + wizard, lineup capped at 479 (strip from end); full = DVR builder, max feeds, use -register-plex for zero-touch")
-	// Emby / Jellyfin registration flags
-	runRegisterEmby := runCmd.Bool("register-emby", false, "Register with Emby (requires IPTV_TUNERR_EMBY_HOST and IPTV_TUNERR_EMBY_TOKEN env vars)")
-	runRegisterJellyfin := runCmd.Bool("register-jellyfin", false, "Register with Jellyfin (requires IPTV_TUNERR_JELLYFIN_HOST and IPTV_TUNERR_JELLYFIN_TOKEN env vars)")
-	runEmbyInterval := runCmd.Duration("register-emby-interval", 5*time.Minute, "How often to verify Emby registration (0 = disable watchdog; default 5m)")
-	runJellyfinInterval := runCmd.Duration("register-jellyfin-interval", 5*time.Minute, "How often to verify Jellyfin registration (0 = disable watchdog; default 5m)")
-	runEmbyStateFile := runCmd.String("emby-state-file", "", "Path to persist Emby registration IDs for idempotent re-registration (e.g. /data/emby-state.json)")
-	runJellyfinStateFile := runCmd.String("jellyfin-state-file", "", "Path to persist Jellyfin registration IDs for idempotent re-registration (e.g. /data/jellyfin-state.json)")
-
-	probeCmd := flag.NewFlagSet("probe", flag.ExitOnError)
-	probeURLs := probeCmd.String("urls", "", "Comma-separated base URLs to probe (default: from .env IPTV_TUNERR_PROVIDER_URL or IPTV_TUNERR_PROVIDER_URLS)")
-	probeTimeout := probeCmd.Duration("timeout", 60*time.Second, "Timeout per URL")
-
-	epgOracleCmd := flag.NewFlagSet("plex-epg-oracle", flag.ExitOnError)
-	epgOraclePlexURL := epgOracleCmd.String("plex-url", "", "Plex base URL (default: IPTV_TUNERR_PMS_URL or http://PLEX_HOST:32400)")
-	epgOracleToken := epgOracleCmd.String("token", "", "Plex token (default: IPTV_TUNERR_PMS_TOKEN or PLEX_TOKEN)")
-	epgOracleBaseURLs := epgOracleCmd.String("base-urls", "", "Comma-separated tuner base URLs to test (e.g. http://tuner1:5004,http://tuner2:5004)")
-	epgOracleBaseTemplate := epgOracleCmd.String("base-url-template", "", "Optional URL template containing {cap}; used with -caps (e.g. http://iptvtunerr-hdhr-cap{cap}.plex.home)")
-	epgOracleCaps := epgOracleCmd.String("caps", "", "Optional caps list for template expansion (e.g. 100,200,300,400,479,600)")
-	epgOracleOut := epgOracleCmd.String("out", "", "Optional JSON report output path")
-	epgOracleReload := epgOracleCmd.Bool("reload-guide", true, "Call reloadGuide before channelmap fetch")
-	epgOracleActivate := epgOracleCmd.Bool("activate", false, "Apply channelmap activation (default false; probe/report only)")
-
-	epgOracleCleanupCmd := flag.NewFlagSet("plex-epg-oracle-cleanup", flag.ExitOnError)
-	epgOracleCleanupPlexURL := epgOracleCleanupCmd.String("plex-url", "", "Plex base URL (default: IPTV_TUNERR_PMS_URL or http://PLEX_HOST:32400)")
-	epgOracleCleanupToken := epgOracleCleanupCmd.String("token", "", "Plex token (default: IPTV_TUNERR_PMS_TOKEN or PLEX_TOKEN)")
-	epgOracleCleanupPrefix := epgOracleCleanupCmd.String("lineup-prefix", "oracle-", "Delete DVRs whose lineupTitle/title starts with this prefix")
-	epgOracleCleanupDeviceURISubstr := epgOracleCleanupCmd.String("device-uri-substr", "", "Optional device URI substring filter (e.g. iptvtunerr-hdhr)")
-	epgOracleCleanupDo := epgOracleCleanupCmd.Bool("do", false, "Actually delete matches (default dry-run)")
-
-	superviseCmd := flag.NewFlagSet("supervise", flag.ExitOnError)
-	superviseConfig := superviseCmd.String("config", "", "JSON supervisor config (instances[] with args/env)")
-
-	vodSplitCmd := flag.NewFlagSet("vod-split", flag.ExitOnError)
-	vodSplitCatalog := vodSplitCmd.String("catalog", "", "Input catalog.json (default: IPTV_TUNERR_CATALOG)")
-	vodSplitOutDir := vodSplitCmd.String("out-dir", "", "Output directory for per-lane catalogs (required)")
-
-	vodRegisterCmd := flag.NewFlagSet("plex-vod-register", flag.ExitOnError)
-	vodMount := vodRegisterCmd.String("mount", "", "VODFS mount root (contains Movies/ and TV/; default: IPTV_TUNERR_MOUNT)")
-	vodPlexURL := vodRegisterCmd.String("plex-url", "", "Plex base URL (default: IPTV_TUNERR_PMS_URL or http://PLEX_HOST:32400)")
-	vodPlexToken := vodRegisterCmd.String("token", "", "Plex token (default: IPTV_TUNERR_PMS_TOKEN or PLEX_TOKEN)")
-	vodShowsName := vodRegisterCmd.String("shows-name", "VOD", "Plex TV library name")
-	vodMoviesName := vodRegisterCmd.String("movies-name", "VOD-Movies", "Plex Movie library name")
-	vodShowsOnly := vodRegisterCmd.Bool("shows-only", false, "Register only the TV library for this mount (skip Movies)")
-	vodMoviesOnly := vodRegisterCmd.Bool("movies-only", false, "Register only the Movie library for this mount (skip TV)")
-	vodSafePreset := vodRegisterCmd.Bool("vod-safe-preset", true, "Apply per-library Plex settings to disable heavy analysis jobs (credits/intros/thumbnails) on VODFS libraries")
-	vodRefresh := vodRegisterCmd.Bool("refresh", true, "Trigger library refresh after create/reuse")
-
-	epgLinkReportCmd := flag.NewFlagSet("epg-link-report", flag.ExitOnError)
-	epgLinkCatalog := epgLinkReportCmd.String("catalog", "", "Input catalog.json (default: IPTV_TUNERR_CATALOG)")
-	epgLinkXMLTV := epgLinkReportCmd.String("xmltv", "", "XMLTV file path or http(s) URL (required)")
-	epgLinkAliases := epgLinkReportCmd.String("aliases", "", "Optional alias override JSON (name_to_xmltv_id map)")
-	epgLinkOut := epgLinkReportCmd.String("out", "", "Optional full JSON report output path")
-	epgLinkUnmatchedOut := epgLinkReportCmd.String("unmatched-out", "", "Optional unmatched-only JSON output path")
-
-	channelReportCmd := flag.NewFlagSet("channel-report", flag.ExitOnError)
-	channelReportCatalog := channelReportCmd.String("catalog", "", "Input catalog.json (default: IPTV_TUNERR_CATALOG)")
-	channelReportXMLTV := channelReportCmd.String("xmltv", "", "Optional XMLTV file path or http(s) URL to enrich report with exact/alias/name match details")
-	channelReportAliases := channelReportCmd.String("aliases", "", "Optional alias override JSON (name_to_xmltv_id map)")
-	channelReportOut := channelReportCmd.String("out", "", "Optional JSON report output path (default: stdout)")
-
-	channelDNAReportCmd := flag.NewFlagSet("channel-dna-report", flag.ExitOnError)
-	channelDNAReportCatalog := channelDNAReportCmd.String("catalog", "", "Input catalog.json (default: IPTV_TUNERR_CATALOG)")
-	channelDNAReportOut := channelDNAReportCmd.String("out", "", "Optional JSON report output path (default: stdout)")
-
-	guideHealthCmd := flag.NewFlagSet("guide-health", flag.ExitOnError)
-	guideHealthCatalog := guideHealthCmd.String("catalog", "", "Input catalog.json (default: IPTV_TUNERR_CATALOG)")
-	guideHealthGuide := guideHealthCmd.String("guide", "", "Guide XML file path or http(s) URL (required; /guide.xml works well)")
-	guideHealthXMLTV := guideHealthCmd.String("xmltv", "", "Optional source XMLTV file path or http(s) URL for deterministic match provenance")
-	guideHealthAliases := guideHealthCmd.String("aliases", "", "Optional alias override JSON (name_to_xmltv_id map)")
-	guideHealthOut := guideHealthCmd.String("out", "", "Optional JSON report output path (default: stdout)")
-
-	epgDoctorCmd := flag.NewFlagSet("epg-doctor", flag.ExitOnError)
-	epgDoctorCatalog := epgDoctorCmd.String("catalog", "", "Input catalog.json (default: IPTV_TUNERR_CATALOG)")
-	epgDoctorGuide := epgDoctorCmd.String("guide", "", "Guide XML file path or http(s) URL (required; /guide.xml works well)")
-	epgDoctorXMLTV := epgDoctorCmd.String("xmltv", "", "Optional source XMLTV file path or http(s) URL for deterministic match provenance")
-	epgDoctorAliases := epgDoctorCmd.String("aliases", "", "Optional alias override JSON (name_to_xmltv_id map)")
-	epgDoctorOut := epgDoctorCmd.String("out", "", "Optional JSON report output path (default: stdout)")
-
-	ghostHunterCmd := flag.NewFlagSet("ghost-hunter", flag.ExitOnError)
-	ghostHunterPMSURL := ghostHunterCmd.String("pms-url", strings.TrimSpace(os.Getenv("IPTV_TUNERR_PMS_URL")), "Plex base URL")
-	ghostHunterToken := ghostHunterCmd.String("token", strings.TrimSpace(os.Getenv("IPTV_TUNERR_PMS_TOKEN")), "Plex token")
-	ghostHunterObserve := ghostHunterCmd.Duration("observe", 4*time.Second, "Observation window before classifying stale sessions")
-	ghostHunterPoll := ghostHunterCmd.Duration("poll", time.Second, "Poll interval while observing")
-	ghostHunterStop := ghostHunterCmd.Bool("stop", false, "Stop stale visible transcode sessions after classification")
-	ghostHunterMachineID := ghostHunterCmd.String("machine-id", strings.TrimSpace(os.Getenv("IPTV_TUNERR_PLEX_SESSION_REAPER_MACHINE_ID")), "Optional client machineIdentifier scope")
-	ghostHunterPlayerIP := ghostHunterCmd.String("player-ip", strings.TrimSpace(os.Getenv("IPTV_TUNERR_PLEX_SESSION_REAPER_PLAYER_IP")), "Optional player IP scope")
-
-	catchupCapsulesCmd := flag.NewFlagSet("catchup-capsules", flag.ExitOnError)
-	catchupCapsulesCatalog := catchupCapsulesCmd.String("catalog", "", "Input catalog.json (default: IPTV_TUNERR_CATALOG)")
-	catchupCapsulesXMLTV := catchupCapsulesCmd.String("xmltv", "", "Guide/XMLTV file path or http(s) URL (required; /guide.xml works well)")
-	catchupCapsulesHorizon := catchupCapsulesCmd.Duration("horizon", 3*time.Hour, "How far ahead to include candidate programme windows")
-	catchupCapsulesLimit := catchupCapsulesCmd.Int("limit", 20, "Max capsules to export")
-	catchupCapsulesOut := catchupCapsulesCmd.String("out", "", "Optional JSON output path (default: stdout)")
-	catchupCapsulesLayoutDir := catchupCapsulesCmd.String("layout-dir", "", "Optional output directory for lane-split capsule JSON files plus manifest.json")
-	catchupCapsulesGuidePolicy := catchupCapsulesCmd.String("guide-policy", strings.TrimSpace(os.Getenv("IPTV_TUNERR_CATCHUP_GUIDE_POLICY")), "Optional guide-quality policy: off|healthy|strict")
-
-	catchupPublishCmd := flag.NewFlagSet("catchup-publish", flag.ExitOnError)
-	catchupPublishCatalog := catchupPublishCmd.String("catalog", "", "Input catalog.json (default: IPTV_TUNERR_CATALOG)")
-	catchupPublishXMLTV := catchupPublishCmd.String("xmltv", "", "Guide/XMLTV file path or http(s) URL (required; /guide.xml works well)")
-	catchupPublishHorizon := catchupPublishCmd.Duration("horizon", 3*time.Hour, "How far ahead to include capsule windows")
-	catchupPublishLimit := catchupPublishCmd.Int("limit", 20, "Max capsules to publish")
-	catchupPublishOutDir := catchupPublishCmd.String("out-dir", "", "Output directory for published catch-up libraries (required)")
-	catchupPublishStreamBaseURL := catchupPublishCmd.String("stream-base-url", "", "Base URL used inside generated .strm files (default: IPTV_TUNERR_BASE_URL)")
-	catchupPublishLibraryPrefix := catchupPublishCmd.String("library-prefix", "Catchup", "Prefix for generated library names (e.g. 'Catchup')")
-	catchupPublishGuidePolicy := catchupPublishCmd.String("guide-policy", strings.TrimSpace(os.Getenv("IPTV_TUNERR_CATCHUP_GUIDE_POLICY")), "Optional guide-quality policy: off|healthy|strict")
-	catchupPublishManifestOut := catchupPublishCmd.String("manifest-out", "", "Optional JSON output path for the publish manifest (default: stdout)")
-	catchupPublishRegisterPlex := catchupPublishCmd.Bool("register-plex", false, "Create/reuse Plex libraries for each published lane")
-	catchupPublishRegisterEmby := catchupPublishCmd.Bool("register-emby", false, "Create/reuse Emby libraries for each published lane")
-	catchupPublishRegisterJellyfin := catchupPublishCmd.Bool("register-jellyfin", false, "Create/reuse Jellyfin libraries for each published lane")
-	catchupPublishPlexURL := catchupPublishCmd.String("plex-url", "", "Plex base URL (default: IPTV_TUNERR_PMS_URL or http://PLEX_HOST:32400)")
-	catchupPublishPlexToken := catchupPublishCmd.String("token", "", "Plex token (default: IPTV_TUNERR_PMS_TOKEN or PLEX_TOKEN)")
-	catchupPublishEmbyHost := catchupPublishCmd.String("emby-host", "", "Emby base URL (default: IPTV_TUNERR_EMBY_HOST)")
-	catchupPublishEmbyToken := catchupPublishCmd.String("emby-token", "", "Emby API key (default: IPTV_TUNERR_EMBY_TOKEN)")
-	catchupPublishJellyfinHost := catchupPublishCmd.String("jellyfin-host", "", "Jellyfin base URL (default: IPTV_TUNERR_JELLYFIN_HOST)")
-	catchupPublishJellyfinToken := catchupPublishCmd.String("jellyfin-token", "", "Jellyfin API key (default: IPTV_TUNERR_JELLYFIN_TOKEN)")
-	catchupPublishRefresh := catchupPublishCmd.Bool("refresh", true, "Trigger a library refresh/scan after create or reuse")
+	commands := append(coreCommands(), reportCommands()...)
+	commands = append(commands, opsCommands()...)
+	commandByName := make(map[string]commandSpec, len(commands))
+	sections := []string{"Core", "Guide/EPG", "VOD (Linux)", "Lab/ops"}
+	for _, cmd := range commands {
+		commandByName[cmd.Name] = cmd
+	}
 
 	if len(os.Args) < 2 {
 		fmt.Fprintf(os.Stderr, "iptv-tunerr %s — live TV streaming + XMLTV guide for Plex, Emby, Jellyfin\n\n", Version)
 		fmt.Fprintf(os.Stderr, "Streaming: HDHomeRun-compatible tuner endpoints backed by M3U/Xtream with optional transcode.\n")
 		fmt.Fprintf(os.Stderr, "Guide/EPG: /guide.xml — provider XMLTV + external XMLTV + placeholder fallback, with deterministic TVGID repair during catalog build.\n\n")
 		fmt.Fprintf(os.Stderr, "Usage: %s <command> [flags]\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "Core:\n")
-		fmt.Fprintf(os.Stderr, "  run    Refresh catalog + health check + serve tuner and guide (use for systemd/containers)\n")
-		fmt.Fprintf(os.Stderr, "  serve  Run tuner (streams) and guide (XMLTV) server from existing catalog\n")
-		fmt.Fprintf(os.Stderr, "  index  Fetch M3U/Xtream provider data and write catalog.json\n")
-		fmt.Fprintf(os.Stderr, "  probe  Test and rank provider hosts (OK / Cloudflare / fail)\n")
-		fmt.Fprintf(os.Stderr, "  supervise  Run multiple child tuner+guide instances from one JSON config (multi-DVR)\n\n")
-		fmt.Fprintf(os.Stderr, "Guide/EPG:\n")
-		fmt.Fprintf(os.Stderr, "  channel-report   Channel intelligence report: score stream resilience + guide confidence\n")
-		fmt.Fprintf(os.Stderr, "  guide-health    Guide health report: actual programme coverage, placeholders, and XMLTV match status\n")
-		fmt.Fprintf(os.Stderr, "  epg-doctor      One-shot EPG doctor: combine match analysis and real guide coverage\n")
-		fmt.Fprintf(os.Stderr, "  channel-dna-report  Group live channels by stable dna_id identity\n")
-		fmt.Fprintf(os.Stderr, "  ghost-hunter    Observe Plex Live TV sessions, classify stalls, optionally stop stale ones\n")
-		fmt.Fprintf(os.Stderr, "  catchup-capsules Export near-live capsule candidates from guide XML/guide.xml\n")
-		fmt.Fprintf(os.Stderr, "  catchup-publish Publish near-live capsules as .strm + .nfo libraries for Plex/Emby/Jellyfin\n")
-		fmt.Fprintf(os.Stderr, "  epg-link-report  Coverage report: which channels are EPG-linked vs unlinked, and by what match\n\n")
-		fmt.Fprintf(os.Stderr, "VOD (Linux):\n")
-		fmt.Fprintf(os.Stderr, "  mount            Mount VOD catalog as a browsable filesystem (FUSE)\n")
-		fmt.Fprintf(os.Stderr, "  plex-vod-register  Create/reuse Plex VOD libraries for a VODFS mount\n")
-		fmt.Fprintf(os.Stderr, "  vod-split        Split VOD catalog into category/region lane catalogs\n\n")
-		fmt.Fprintf(os.Stderr, "Lab/ops:\n")
-		fmt.Fprintf(os.Stderr, "  plex-epg-oracle          Probe Plex's HDHR wizard flow for EPG matching experiments\n")
-		fmt.Fprintf(os.Stderr, "  plex-epg-oracle-cleanup  Delete oracle-created DVR/device rows (dry-run by default)\n")
+		for _, section := range sections {
+			first := true
+			for _, cmd := range commands {
+				if cmd.Section != section {
+					continue
+				}
+				if first {
+					fmt.Fprintf(os.Stderr, "%s:\n", section)
+					first = false
+				}
+				fmt.Fprintf(os.Stderr, "  %-18s %s\n", cmd.Name, cmd.Summary)
+			}
+			if !first {
+				fmt.Fprintln(os.Stderr)
+			}
+		}
 		os.Exit(1)
 	}
 
 	cfg := config.Load()
-
-	switch os.Args[1] {
-	case "index":
-		_ = indexCmd.Parse(os.Args[2:])
-		handleIndex(cfg, *m3uURL, *catalogPathIndex)
-
-	case "mount":
-		_ = mountCmd.Parse(os.Args[2:])
-		handleMount(cfg, *catalogPathMount, *mountPoint, *cacheDir, *mountAllowOther)
-
-	case "serve":
-		_ = serveCmd.Parse(os.Args[2:])
-		handleServe(cfg, *catalogPathServe, *serveAddr, *serveBaseURL, *serveDeviceID, *serveFriendlyName, *serveMode)
-
-	case "run":
-		_ = runCmd.Parse(os.Args[2:])
-		handleRun(cfg, *runCatalog, *runAddr, *runBaseURL, *runDeviceID, *runFriendlyName, *runRefresh, *runSkipIndex, *runSkipHealth, *runRegisterPlex, *runRegisterOnly, *runRegisterInterval, *runMode, *runRegisterEmby, *runRegisterJellyfin, *runEmbyInterval, *runJellyfinInterval, *runEmbyStateFile, *runJellyfinStateFile)
-
-	case "probe":
-		_ = probeCmd.Parse(os.Args[2:])
-		handleProbe(cfg, *probeURLs, *probeTimeout)
-
-	case "plex-epg-oracle":
-		_ = epgOracleCmd.Parse(os.Args[2:])
-		handlePlexEPGOracle(*epgOraclePlexURL, *epgOracleToken, *epgOracleBaseURLs, *epgOracleBaseTemplate, *epgOracleCaps, *epgOracleOut, *epgOracleReload, *epgOracleActivate)
-
-	case "plex-epg-oracle-cleanup":
-		_ = epgOracleCleanupCmd.Parse(os.Args[2:])
-		handlePlexEPGOracleCleanup(*epgOracleCleanupPlexURL, *epgOracleCleanupToken, *epgOracleCleanupPrefix, *epgOracleCleanupDeviceURISubstr, *epgOracleCleanupDo)
-
-	case "supervise":
-		_ = superviseCmd.Parse(os.Args[2:])
-		handleSupervise(*superviseConfig)
-
-	case "vod-split":
-		_ = vodSplitCmd.Parse(os.Args[2:])
-		handleVODSplit(cfg, *vodSplitCatalog, *vodSplitOutDir)
-
-	case "plex-vod-register":
-		_ = vodRegisterCmd.Parse(os.Args[2:])
-		handlePlexVODRegister(cfg, *vodMount, *vodPlexURL, *vodPlexToken, *vodShowsName, *vodMoviesName, *vodShowsOnly, *vodMoviesOnly, *vodSafePreset, *vodRefresh)
-
-	case "epg-link-report":
-		_ = epgLinkReportCmd.Parse(os.Args[2:])
-		handleEPGLinkReport(cfg, *epgLinkCatalog, *epgLinkXMLTV, *epgLinkAliases, *epgLinkOut, *epgLinkUnmatchedOut)
-
-	case "channel-report":
-		_ = channelReportCmd.Parse(os.Args[2:])
-		handleChannelReport(cfg, *channelReportCatalog, *channelReportXMLTV, *channelReportAliases, *channelReportOut)
-
-	case "channel-dna-report":
-		_ = channelDNAReportCmd.Parse(os.Args[2:])
-		handleChannelDNAReport(cfg, *channelDNAReportCatalog, *channelDNAReportOut)
-
-	case "guide-health":
-		_ = guideHealthCmd.Parse(os.Args[2:])
-		handleGuideHealth(cfg, *guideHealthCatalog, *guideHealthGuide, *guideHealthXMLTV, *guideHealthAliases, *guideHealthOut)
-
-	case "epg-doctor":
-		_ = epgDoctorCmd.Parse(os.Args[2:])
-		handleEPGDoctor(cfg, *epgDoctorCatalog, *epgDoctorGuide, *epgDoctorXMLTV, *epgDoctorAliases, *epgDoctorOut)
-
-	case "ghost-hunter":
-		_ = ghostHunterCmd.Parse(os.Args[2:])
-		handleGhostHunter(*ghostHunterPMSURL, *ghostHunterToken, *ghostHunterObserve, *ghostHunterPoll, *ghostHunterStop, *ghostHunterMachineID, *ghostHunterPlayerIP)
-
-	case "catchup-capsules":
-		_ = catchupCapsulesCmd.Parse(os.Args[2:])
-		handleCatchupCapsules(cfg, *catchupCapsulesCatalog, *catchupCapsulesXMLTV, *catchupCapsulesHorizon, *catchupCapsulesLimit, *catchupCapsulesOut, *catchupCapsulesLayoutDir, *catchupCapsulesGuidePolicy)
-
-	case "catchup-publish":
-		_ = catchupPublishCmd.Parse(os.Args[2:])
-		handleCatchupPublish(cfg, *catchupPublishCatalog, *catchupPublishXMLTV, *catchupPublishHorizon, *catchupPublishLimit, *catchupPublishOutDir, *catchupPublishStreamBaseURL, *catchupPublishLibraryPrefix, *catchupPublishGuidePolicy, *catchupPublishRegisterPlex, *catchupPublishPlexURL, *catchupPublishPlexToken, *catchupPublishRegisterEmby, *catchupPublishEmbyHost, *catchupPublishEmbyToken, *catchupPublishRegisterJellyfin, *catchupPublishJellyfinHost, *catchupPublishJellyfinToken, *catchupPublishRefresh, *catchupPublishManifestOut)
-
-	default:
+	cmd, ok := commandByName[os.Args[1]]
+	if !ok {
 		fmt.Fprintf(os.Stderr, "Unknown command %q\n", os.Args[1])
 		os.Exit(1)
 	}
+	cmd.Run(cfg, os.Args[2:])
 }
 
 func parseCSV(s string) []string {

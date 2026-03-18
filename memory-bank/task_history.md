@@ -23,6 +23,21 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-18
+  Title: Split CLI command registration out of main.go
+  Summary:
+    - Moved command flag wiring and summaries into concern-specific registry builders in `cmd_core.go`, `cmd_reports.go`, and `cmd_ops.go`.
+    - Added a small shared command-spec type so `main.go` now only handles version, usage rendering, command lookup, and dispatch.
+  Verification:
+    - `go test ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - This is a structural refactor only; command names and runtime behavior were preserved.
+  Opportunities filed:
+    - none
+  Links:
+    - cmd/iptv-tunerr/cmd_registry.go, cmd/iptv-tunerr/main.go, cmd/iptv-tunerr/cmd_core.go, cmd/iptv-tunerr/cmd_reports.go, cmd/iptv-tunerr/cmd_ops.go
+
+- Date: 2026-03-18
   Title: Cross-wire guide-health into lineup and catch-up policy
   Summary:
     - Added a shared local-file/URL loader under `internal/refio` and switched report/guide tooling away from duplicated `http.DefaultClient` helper paths.

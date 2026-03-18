@@ -18,6 +18,13 @@
   4. `INT-004` catch-up publishing hooks for healthy-guide filtering
   5. docs/changelog/memory-bank updates plus verification
 
+**Current focus shift (CLI command-registry split, 2026-03-18):**
+- Follow-on structural cleanup after the guide-policy slice: stop keeping all CLI flag wiring in one giant `main.go`.
+- This pass covers:
+  1. move command registration/flag ownership into concern-specific files
+  2. make `main.go` a thin usage + dispatch layer
+  3. preserve command names/help/behavior while reducing the size and coupling of the top-level entrypoint
+
 **Current focus shift (EPG doctor operator docs, 2026-03-18):**
 - Follow-on docs cleanup after shipping `guide-health` and `epg-doctor`: make the new guide-diagnostics workflow discoverable from the how-to and runbook indexes so operators have one documented path from symptom to fix.
 - This pass adds:

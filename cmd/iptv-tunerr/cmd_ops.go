@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -18,6 +19,61 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/supervisor"
 	"github.com/snapetech/iptvtunerr/internal/tuner"
 )
+
+func opsCommands() []commandSpec {
+	epgOracleCmd := flag.NewFlagSet("plex-epg-oracle", flag.ExitOnError)
+	epgOraclePlexURL := epgOracleCmd.String("plex-url", "", "Plex base URL (default: IPTV_TUNERR_PMS_URL or http://PLEX_HOST:32400)")
+	epgOracleToken := epgOracleCmd.String("token", "", "Plex token (default: IPTV_TUNERR_PMS_TOKEN or PLEX_TOKEN)")
+	epgOracleBaseURLs := epgOracleCmd.String("base-urls", "", "Comma-separated tuner base URLs to test (e.g. http://tuner1:5004,http://tuner2:5004)")
+	epgOracleBaseTemplate := epgOracleCmd.String("base-url-template", "", "Optional URL template containing {cap}; used with -caps (e.g. http://iptvtunerr-hdhr-cap{cap}.plex.home)")
+	epgOracleCaps := epgOracleCmd.String("caps", "", "Optional caps list for template expansion (e.g. 100,200,300,400,479,600)")
+	epgOracleOut := epgOracleCmd.String("out", "", "Optional JSON report output path")
+	epgOracleReload := epgOracleCmd.Bool("reload-guide", true, "Call reloadGuide before channelmap fetch")
+	epgOracleActivate := epgOracleCmd.Bool("activate", false, "Apply channelmap activation (default false; probe/report only)")
+
+	epgOracleCleanupCmd := flag.NewFlagSet("plex-epg-oracle-cleanup", flag.ExitOnError)
+	epgOracleCleanupPlexURL := epgOracleCleanupCmd.String("plex-url", "", "Plex base URL (default: IPTV_TUNERR_PMS_URL or http://PLEX_HOST:32400)")
+	epgOracleCleanupToken := epgOracleCleanupCmd.String("token", "", "Plex token (default: IPTV_TUNERR_PMS_TOKEN or PLEX_TOKEN)")
+	epgOracleCleanupPrefix := epgOracleCleanupCmd.String("lineup-prefix", "oracle-", "Delete DVRs whose lineupTitle/title starts with this prefix")
+	epgOracleCleanupDeviceURISubstr := epgOracleCleanupCmd.String("device-uri-substr", "", "Optional device URI substring filter (e.g. iptvtunerr-hdhr)")
+	epgOracleCleanupDo := epgOracleCleanupCmd.Bool("do", false, "Actually delete matches (default dry-run)")
+
+	catchupPublishCmd := flag.NewFlagSet("catchup-publish", flag.ExitOnError)
+	catchupPublishCatalog := catchupPublishCmd.String("catalog", "", "Input catalog.json (default: IPTV_TUNERR_CATALOG)")
+	catchupPublishXMLTV := catchupPublishCmd.String("xmltv", "", "Guide/XMLTV file path or http(s) URL (required; /guide.xml works well)")
+	catchupPublishHorizon := catchupPublishCmd.Duration("horizon", 3*time.Hour, "How far ahead to include capsule windows")
+	catchupPublishLimit := catchupPublishCmd.Int("limit", 20, "Max capsules to publish")
+	catchupPublishOutDir := catchupPublishCmd.String("out-dir", "", "Output directory for published catch-up libraries (required)")
+	catchupPublishStreamBaseURL := catchupPublishCmd.String("stream-base-url", "", "Base URL used inside generated .strm files (default: IPTV_TUNERR_BASE_URL)")
+	catchupPublishLibraryPrefix := catchupPublishCmd.String("library-prefix", "Catchup", "Prefix for generated library names (e.g. 'Catchup')")
+	catchupPublishGuidePolicy := catchupPublishCmd.String("guide-policy", strings.TrimSpace(os.Getenv("IPTV_TUNERR_CATCHUP_GUIDE_POLICY")), "Optional guide-quality policy: off|healthy|strict")
+	catchupPublishManifestOut := catchupPublishCmd.String("manifest-out", "", "Optional JSON output path for the publish manifest (default: stdout)")
+	catchupPublishRegisterPlex := catchupPublishCmd.Bool("register-plex", false, "Create/reuse Plex libraries for each published lane")
+	catchupPublishRegisterEmby := catchupPublishCmd.Bool("register-emby", false, "Create/reuse Emby libraries for each published lane")
+	catchupPublishRegisterJellyfin := catchupPublishCmd.Bool("register-jellyfin", false, "Create/reuse Jellyfin libraries for each published lane")
+	catchupPublishPlexURL := catchupPublishCmd.String("plex-url", "", "Plex base URL (default: IPTV_TUNERR_PMS_URL or http://PLEX_HOST:32400)")
+	catchupPublishPlexToken := catchupPublishCmd.String("token", "", "Plex token (default: IPTV_TUNERR_PMS_TOKEN or PLEX_TOKEN)")
+	catchupPublishEmbyHost := catchupPublishCmd.String("emby-host", "", "Emby base URL (default: IPTV_TUNERR_EMBY_HOST)")
+	catchupPublishEmbyToken := catchupPublishCmd.String("emby-token", "", "Emby API key (default: IPTV_TUNERR_EMBY_TOKEN)")
+	catchupPublishJellyfinHost := catchupPublishCmd.String("jellyfin-host", "", "Jellyfin base URL (default: IPTV_TUNERR_JELLYFIN_HOST)")
+	catchupPublishJellyfinToken := catchupPublishCmd.String("jellyfin-token", "", "Jellyfin API key (default: IPTV_TUNERR_JELLYFIN_TOKEN)")
+	catchupPublishRefresh := catchupPublishCmd.Bool("refresh", true, "Trigger a library refresh/scan after create or reuse")
+
+	return []commandSpec{
+		{Name: "plex-epg-oracle", Section: "Lab/ops", Summary: "Probe Plex's HDHR wizard flow for EPG matching experiments", FlagSet: epgOracleCmd, Run: func(_ *config.Config, args []string) {
+			_ = epgOracleCmd.Parse(args)
+			handlePlexEPGOracle(*epgOraclePlexURL, *epgOracleToken, *epgOracleBaseURLs, *epgOracleBaseTemplate, *epgOracleCaps, *epgOracleOut, *epgOracleReload, *epgOracleActivate)
+		}},
+		{Name: "plex-epg-oracle-cleanup", Section: "Lab/ops", Summary: "Delete oracle-created DVR/device rows (dry-run by default)", FlagSet: epgOracleCleanupCmd, Run: func(_ *config.Config, args []string) {
+			_ = epgOracleCleanupCmd.Parse(args)
+			handlePlexEPGOracleCleanup(*epgOracleCleanupPlexURL, *epgOracleCleanupToken, *epgOracleCleanupPrefix, *epgOracleCleanupDeviceURISubstr, *epgOracleCleanupDo)
+		}},
+		{Name: "catchup-publish", Section: "Guide/EPG", Summary: "Publish near-live capsules as .strm + .nfo libraries for Plex/Emby/Jellyfin", FlagSet: catchupPublishCmd, Run: func(cfg *config.Config, args []string) {
+			_ = catchupPublishCmd.Parse(args)
+			handleCatchupPublish(cfg, *catchupPublishCatalog, *catchupPublishXMLTV, *catchupPublishHorizon, *catchupPublishLimit, *catchupPublishOutDir, *catchupPublishStreamBaseURL, *catchupPublishLibraryPrefix, *catchupPublishGuidePolicy, *catchupPublishRegisterPlex, *catchupPublishPlexURL, *catchupPublishPlexToken, *catchupPublishRegisterEmby, *catchupPublishEmbyHost, *catchupPublishEmbyToken, *catchupPublishRegisterJellyfin, *catchupPublishJellyfinHost, *catchupPublishJellyfinToken, *catchupPublishRefresh, *catchupPublishManifestOut)
+		}},
+	}
+}
 
 func handlePlexEPGOracle(plexBaseURL, plexToken, baseURLs, baseTemplate, capsCSV, outPath string, reloadGuide, activate bool) {
 	plexBaseURL = strings.TrimSpace(plexBaseURL)

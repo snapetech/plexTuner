@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"io"
 	"log"
 	"net/url"
@@ -24,6 +25,151 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/tuner"
 	"github.com/snapetech/iptvtunerr/internal/vodfs"
 )
+
+func coreCommands() []commandSpec {
+	indexCmd := flag.NewFlagSet("index", flag.ExitOnError)
+	m3uURL := indexCmd.String("m3u", "", "M3U URL (default: IPTV_TUNERR_M3U_URL or IPTV_TUNERR_PROVIDER_URL)")
+	catalogPathIndex := indexCmd.String("catalog", "", "Catalog JSON path (default: IPTV_TUNERR_CATALOG)")
+
+	mountCmd := flag.NewFlagSet("mount", flag.ExitOnError)
+	mountPoint := mountCmd.String("mount", "", "Mount point (default: IPTV_TUNERR_MOUNT)")
+	catalogPathMount := mountCmd.String("catalog", "", "Catalog JSON path (default: IPTV_TUNERR_CATALOG)")
+	cacheDir := mountCmd.String("cache", "", "Cache dir for VOD (default: IPTV_TUNERR_CACHE); if set, direct-file URLs are downloaded on demand")
+	mountAllowOther := mountCmd.Bool("allow-other", false, "Linux/FUSE: mount with allow_other so other users/processes can access the VODFS mount (may require user_allow_other in /etc/fuse.conf)")
+
+	serveCmd := flag.NewFlagSet("serve", flag.ExitOnError)
+	catalogPathServe := serveCmd.String("catalog", "", "Catalog JSON path for live channels (default: IPTV_TUNERR_CATALOG)")
+	serveAddr := serveCmd.String("addr", ":5004", "Listen address")
+	serveBaseURL := serveCmd.String("base-url", "http://localhost:5004", "Base URL for discover/lineup (set to your host for Plex)")
+	serveDeviceID := serveCmd.String("device-id", "", "HDHR Device ID (default: IPTV_TUNERR_DEVICE_ID)")
+	serveFriendlyName := serveCmd.String("friendly-name", "", "HDHR Friendly Name (default: IPTV_TUNERR_FRIENDLY_NAME)")
+	serveMode := serveCmd.String("mode", "", "easy = lineup capped at 479 for Plex wizard; full = use IPTV_TUNERR_LINEUP_MAX_CHANNELS or no cap")
+
+	runCmd := flag.NewFlagSet("run", flag.ExitOnError)
+	runCatalog := runCmd.String("catalog", "", "Catalog path (default: IPTV_TUNERR_CATALOG)")
+	runAddr := runCmd.String("addr", ":5004", "Listen address")
+	runBaseURL := runCmd.String("base-url", "http://localhost:5004", "Base URL for Plex (use your host, e.g. http://192.168.1.10:5004)")
+	runDeviceID := runCmd.String("device-id", "", "HDHR Device ID (default: IPTV_TUNERR_DEVICE_ID)")
+	runFriendlyName := runCmd.String("friendly-name", "", "HDHR Friendly Name (default: IPTV_TUNERR_FRIENDLY_NAME)")
+	runRefresh := runCmd.Duration("refresh", 0, "Refresh catalog interval (e.g. 6h). 0 = only at startup")
+	runSkipIndex := runCmd.Bool("skip-index", false, "Skip catalog refresh at startup (use existing catalog)")
+	runSkipHealth := runCmd.Bool("skip-health", false, "Skip provider health check at startup")
+	runRegisterPlex := runCmd.String("register-plex", "", "If set, update Plex DB at this path (stop Plex first, backup DB) so DVR/XMLTV point to this tuner")
+	runRegisterOnly := runCmd.Bool("register-only", false, "If set with -register-plex and -mode=full: write Plex DB and exit without starting the tuner server (for one-shot jobs)")
+	runRegisterInterval := runCmd.Duration("register-plex-interval", 5*time.Minute, "How often to verify and repair DVR registration while running (0 = disable watchdog; default 5m)")
+	runMode := runCmd.String("mode", "", "Flow: easy = HDHR + wizard, lineup capped at 479 (strip from end); full = DVR builder, max feeds, use -register-plex for zero-touch")
+	runRegisterEmby := runCmd.Bool("register-emby", false, "Register with Emby (requires IPTV_TUNERR_EMBY_HOST and IPTV_TUNERR_EMBY_TOKEN env vars)")
+	runRegisterJellyfin := runCmd.Bool("register-jellyfin", false, "Register with Jellyfin (requires IPTV_TUNERR_JELLYFIN_HOST and IPTV_TUNERR_JELLYFIN_TOKEN env vars)")
+	runEmbyInterval := runCmd.Duration("register-emby-interval", 5*time.Minute, "How often to verify Emby registration (0 = disable watchdog; default 5m)")
+	runJellyfinInterval := runCmd.Duration("register-jellyfin-interval", 5*time.Minute, "How often to verify Jellyfin registration (0 = disable watchdog; default 5m)")
+	runEmbyStateFile := runCmd.String("emby-state-file", "", "Path to persist Emby registration IDs for idempotent re-registration (e.g. /data/emby-state.json)")
+	runJellyfinStateFile := runCmd.String("jellyfin-state-file", "", "Path to persist Jellyfin registration IDs for idempotent re-registration (e.g. /data/jellyfin-state.json)")
+
+	probeCmd := flag.NewFlagSet("probe", flag.ExitOnError)
+	probeURLs := probeCmd.String("urls", "", "Comma-separated base URLs to probe (default: from .env IPTV_TUNERR_PROVIDER_URL or IPTV_TUNERR_PROVIDER_URLS)")
+	probeTimeout := probeCmd.Duration("timeout", 60*time.Second, "Timeout per URL")
+
+	superviseCmd := flag.NewFlagSet("supervise", flag.ExitOnError)
+	superviseConfig := superviseCmd.String("config", "", "JSON supervisor config (instances[] with args/env)")
+
+	vodRegisterCmd := flag.NewFlagSet("plex-vod-register", flag.ExitOnError)
+	vodMount := vodRegisterCmd.String("mount", "", "VODFS mount root (contains Movies/ and TV/; default: IPTV_TUNERR_MOUNT)")
+	vodPlexURL := vodRegisterCmd.String("plex-url", "", "Plex base URL (default: IPTV_TUNERR_PMS_URL or http://PLEX_HOST:32400)")
+	vodPlexToken := vodRegisterCmd.String("token", "", "Plex token (default: IPTV_TUNERR_PMS_TOKEN or PLEX_TOKEN)")
+	vodShowsName := vodRegisterCmd.String("shows-name", "VOD", "Plex TV library name")
+	vodMoviesName := vodRegisterCmd.String("movies-name", "VOD-Movies", "Plex Movie library name")
+	vodShowsOnly := vodRegisterCmd.Bool("shows-only", false, "Register only the TV library for this mount (skip Movies)")
+	vodMoviesOnly := vodRegisterCmd.Bool("movies-only", false, "Register only the Movie library for this mount (skip TV)")
+	vodSafePreset := vodRegisterCmd.Bool("vod-safe-preset", true, "Apply per-library Plex settings to disable heavy analysis jobs (credits/intros/thumbnails) on VODFS libraries")
+	vodRefresh := vodRegisterCmd.Bool("refresh", true, "Trigger library refresh after create/reuse")
+
+	vodSplitCmd := flag.NewFlagSet("vod-split", flag.ExitOnError)
+	vodSplitCatalog := vodSplitCmd.String("catalog", "", "Input catalog.json (default: IPTV_TUNERR_CATALOG)")
+	vodSplitOutDir := vodSplitCmd.String("out-dir", "", "Output directory for per-lane catalogs (required)")
+
+	return []commandSpec{
+		{
+			Name:    "run",
+			Section: "Core",
+			Summary: "Refresh catalog + health check + serve tuner and guide (use for systemd/containers)",
+			FlagSet: runCmd,
+			Run: func(cfg *config.Config, args []string) {
+				_ = runCmd.Parse(args)
+				handleRun(cfg, *runCatalog, *runAddr, *runBaseURL, *runDeviceID, *runFriendlyName, *runRefresh, *runSkipIndex, *runSkipHealth, *runRegisterPlex, *runRegisterOnly, *runRegisterInterval, *runMode, *runRegisterEmby, *runRegisterJellyfin, *runEmbyInterval, *runJellyfinInterval, *runEmbyStateFile, *runJellyfinStateFile)
+			},
+		},
+		{
+			Name:    "serve",
+			Section: "Core",
+			Summary: "Run tuner (streams) and guide (XMLTV) server from existing catalog",
+			FlagSet: serveCmd,
+			Run: func(cfg *config.Config, args []string) {
+				_ = serveCmd.Parse(args)
+				handleServe(cfg, *catalogPathServe, *serveAddr, *serveBaseURL, *serveDeviceID, *serveFriendlyName, *serveMode)
+			},
+		},
+		{
+			Name:    "index",
+			Section: "Core",
+			Summary: "Fetch M3U/Xtream provider data and write catalog.json",
+			FlagSet: indexCmd,
+			Run: func(cfg *config.Config, args []string) {
+				_ = indexCmd.Parse(args)
+				handleIndex(cfg, *m3uURL, *catalogPathIndex)
+			},
+		},
+		{
+			Name:    "probe",
+			Section: "Core",
+			Summary: "Test and rank provider hosts (OK / Cloudflare / fail)",
+			FlagSet: probeCmd,
+			Run: func(cfg *config.Config, args []string) {
+				_ = probeCmd.Parse(args)
+				handleProbe(cfg, *probeURLs, *probeTimeout)
+			},
+		},
+		{
+			Name:    "supervise",
+			Section: "Core",
+			Summary: "Run multiple child tuner+guide instances from one JSON config (multi-DVR)",
+			FlagSet: superviseCmd,
+			Run: func(_ *config.Config, args []string) {
+				_ = superviseCmd.Parse(args)
+				handleSupervise(*superviseConfig)
+			},
+		},
+		{
+			Name:    "mount",
+			Section: "VOD (Linux)",
+			Summary: "Mount VOD catalog as a browsable filesystem (FUSE)",
+			FlagSet: mountCmd,
+			Run: func(cfg *config.Config, args []string) {
+				_ = mountCmd.Parse(args)
+				handleMount(cfg, *catalogPathMount, *mountPoint, *cacheDir, *mountAllowOther)
+			},
+		},
+		{
+			Name:    "plex-vod-register",
+			Section: "VOD (Linux)",
+			Summary: "Create/reuse Plex VOD libraries for a VODFS mount",
+			FlagSet: vodRegisterCmd,
+			Run: func(cfg *config.Config, args []string) {
+				_ = vodRegisterCmd.Parse(args)
+				handlePlexVODRegister(cfg, *vodMount, *vodPlexURL, *vodPlexToken, *vodShowsName, *vodMoviesName, *vodShowsOnly, *vodMoviesOnly, *vodSafePreset, *vodRefresh)
+			},
+		},
+		{
+			Name:    "vod-split",
+			Section: "VOD (Linux)",
+			Summary: "Split VOD catalog into category/region lane catalogs",
+			FlagSet: vodSplitCmd,
+			Run: func(cfg *config.Config, args []string) {
+				_ = vodSplitCmd.Parse(args)
+				handleVODSplit(cfg, *vodSplitCatalog, *vodSplitOutDir)
+			},
+		},
+	}
+}
 
 func handleIndex(cfg *config.Config, m3uURL, catalogPath string) {
 	path := catalogPath
