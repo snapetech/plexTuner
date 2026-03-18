@@ -102,3 +102,37 @@ func TestServer_ghostHunterReport(t *testing.T) {
 		t.Fatalf("expected snapshot note")
 	}
 }
+
+func TestRunGhostHunterEscalatesWhenNoVisibleSessions(t *testing.T) {
+	pms := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/status/sessions" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><MediaContainer size="0"></MediaContainer>`))
+	}))
+	defer pms.Close()
+
+	rep, err := RunGhostHunter(context.Background(), GhostHunterConfig{
+		PMSURL:        pms.URL,
+		Token:         "tok",
+		PollInterval:  20 * time.Millisecond,
+		ObserveWindow: 40 * time.Millisecond,
+		IdleTimeout:   10 * time.Second,
+		RenewLease:    20 * time.Second,
+		HardLease:     time.Minute,
+	}, false, pms.Client())
+	if err != nil {
+		t.Fatalf("RunGhostHunter: %v", err)
+	}
+	if !rep.HiddenGrabSuspected {
+		t.Fatalf("expected hidden_grab_suspected=true")
+	}
+	if rep.RecoveryCommand == "" {
+		t.Fatalf("expected recovery command")
+	}
+	if rep.Runbook == "" {
+		t.Fatalf("expected runbook")
+	}
+}

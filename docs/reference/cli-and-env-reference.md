@@ -225,6 +225,11 @@ Query params:
 
 Limit:
 - hidden Plex grabs that never appear in `/status/sessions` are not visible to Ghost Hunter; use the recovery runbook for those cases.
+- when Ghost Hunter observes zero visible sessions, it now returns:
+  - `hidden_grab_suspected=true`
+  - `recommended_action`
+  - `recovery_command`
+  - `runbook`
 
 ## Provider behavior profile endpoint
 

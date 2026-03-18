@@ -202,6 +202,7 @@ Ghost Hunter foundation is now present too:
 - it classifies visible stalls using the same idle/lease heuristics as the built-in reaper
 - it can optionally stop stale visible transcode sessions
 - live server endpoint: `/plex/ghost-report.json`
+- when no visible sessions exist, it now emits a structured hidden-grab escalation with a recovery command and runbook pointer
 
 Examples:
 
@@ -211,7 +212,7 @@ iptv-tunerr ghost-hunter -observe 6s -stop
 curl -s "http://127.0.0.1:5004/plex/ghost-report.json?observe=4s" | jq
 ```
 
-Limit: hidden Plex grabs that do not appear in `/status/sessions` still need the existing recovery runbook or a Plex restart.
+Limit: hidden Plex grabs that do not appear in `/status/sessions` still need the existing recovery helper or a Plex restart, but Ghost Hunter now surfaces that recommendation explicitly.
 
 Provider behavior profile foundation is now present too:
 - live server endpoint: `/provider/profile.json`
