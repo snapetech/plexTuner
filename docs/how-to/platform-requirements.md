@@ -101,8 +101,8 @@ GOOS=windows GOARCH=arm64 go build -o iptv-tunerr-windows-arm64.exe ./cmd/iptv-t
 docker build --network=host -t iptv-tunerr:local .
 docker run -p 5004:5004 --env-file .env iptv-tunerr:local
 
-# Multi-arch image (linux/amd64 + linux/arm64)
-docker buildx build --platform linux/amd64,linux/arm64 -t iptv-tunerr:latest --push .
+# Multi-arch image (linux/amd64 + linux/arm64 + linux/arm/v7)
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t iptv-tunerr:latest --push .
 ```
 
 ---

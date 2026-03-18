@@ -2,11 +2,19 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Goal:** Completed on 2026-03-18: extend tagged release assets to publish the additional supported binary targets (`linux/arm/v7` and `windows/arm64`) so GitHub Releases match the repo's documented platform support.
+**Goal:** Completed on 2026-03-18: extend the container image matrix to every Linux platform we reasonably support in Docker (`linux/amd64`, `linux/arm64`, `linux/arm/v7`) and cut the next release tag so the registry build publishes it.
 
-**Scope:** In: release workflow matrix expansion, docs alignment for supported/released platforms, memory-bank updates, local verify. Out: Docker image matrix changes, hardware-accelerated ffmpeg packaging, or broader platform support beyond current Go/ffmpeg expectations.
+**Scope:** In: Docker workflow matrix expansion, Dockerfile `GOARM` handling for `arm/v7`, docs alignment, memory-bank updates, local verify, and next tag push. Out: non-Linux container targets, hardware-accelerated ffmpeg packaging, or broader platform support beyond current Go/ffmpeg expectations.
 
 **Last updated:** 2026-03-18
+
+**Current focus shift (Docker image matrix expansion, 2026-03-18):**
+- Binary releases were expanded first, but container images were still limited to `linux/amd64` and `linux/arm64`.
+- Implemented in this session:
+  1. Added `linux/arm/v7` to `.github/workflows/docker.yml`.
+  2. Updated `Dockerfile` to honor `TARGETVARIANT` and pass `GOARM` for armv7 builds.
+  3. Updated packaging/platform docs so the published Docker platform set is explicit.
+  4. Planned release step: tag the next patch release so the Docker workflow publishes the widened matrix.
 
 **Current focus shift (release asset matrix expansion, 2026-03-18):**
 - The repo already packaged `linux/arm/v7` and `windows/arm64` in test bundles, but `.github/workflows/release.yml` still published only `linux/amd64`, `linux/arm64`, `darwin/*`, and `windows/amd64`.

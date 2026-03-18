@@ -1,13 +1,18 @@
 FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS build
-ARG TARGETOS TARGETARCH VERSION=dev
+ARG TARGETOS TARGETARCH TARGETVARIANT VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
 COPY vendor/ vendor/
 COPY . .
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -mod=vendor \
-    -ldflags="-X main.Version=${VERSION}" \
-    -o /iptv-tunerr ./cmd/iptv-tunerr
+RUN set -eu; \
+    goarm=""; \
+    if [ "${TARGETARCH}" = "arm" ] && [ -n "${TARGETVARIANT:-}" ]; then \
+      goarm="${TARGETVARIANT#v}"; \
+    fi; \
+    CGO_ENABLED=0 GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" GOARM="${goarm}" \
+      go build -mod=vendor \
+      -ldflags="-X main.Version=${VERSION}" \
+      -o /iptv-tunerr ./cmd/iptv-tunerr
 
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates curl wget ffmpeg

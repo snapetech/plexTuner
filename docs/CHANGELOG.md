@@ -17,6 +17,17 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ---
 
+## [v0.1.9] — 2026-03-18
+
+### Build / release
+- **Expanded Docker image matrix**: registry publishes now target `linux/amd64`, `linux/arm64`, and `linux/arm/v7`.
+- **Correct armv7 Docker cross-builds**: the Docker build path now translates BuildKit's `TARGETVARIANT` into `GOARM`, which is required for correct Go builds on `linux/arm/v7`.
+
+### Docs
+- **Container platform alignment**: Docker and packaging docs now match the actual Linux image platforms shipped by the workflow.
+
+---
+
 ## [v0.1.8] — 2026-03-18
 
 ### Build / release

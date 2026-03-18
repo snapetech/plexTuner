@@ -23,6 +23,21 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-18
+  Title: Expand Docker image matrix to linux armv7
+  Summary:
+    - Extended `.github/workflows/docker.yml` so registry publishes now target `linux/amd64`, `linux/arm64`, and `linux/arm/v7`.
+    - Updated `Dockerfile` to translate BuildKit `TARGETVARIANT` into `GOARM`, which is required for correct Go builds on `linux/arm/v7`.
+    - Aligned the packaging/platform docs with the widened Linux container platform set.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Container publishing remains Linux-only. Windows and macOS continue to be binary-release targets, not container targets.
+  Opportunities filed:
+    - none
+  Links:
+    - Dockerfile, .github/workflows/docker.yml, docs/how-to/package-test-builds.md, docs/how-to/platform-requirements.md
+
+- Date: 2026-03-18
   Title: Expand tagged GitHub Release binaries to linux armv7 and windows arm64
   Summary:
     - Extended `.github/workflows/release.yml` so tagged releases now publish `linux/arm/v7` and `windows/arm64` binaries in addition to the existing amd64/arm64 targets.
