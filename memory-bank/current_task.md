@@ -8,6 +8,14 @@
 
 **Last updated:** 2026-03-18
 
+**Current focus shift (README feature-story rewrite, 2026-03-18):**
+- User called out that the README was listing features without explaining why an operator should care.
+- This docs pass rewrites the front-page README around:
+  1. real IPTV pain points
+  2. what IPTV Tunerr changes operationally
+  3. why the new intelligence/catch-up features matter in practice
+  4. clearer value framing for tuner, EPG, Ghost Hunter, provider profile, and catch-up publishing
+
 **Current focus shift (catch-up library publishing + media-server parity, 2026-03-18):**
 - User asked to close the remaining catch-up gap and extend the new intelligence/capsule work to Emby and Jellyfin too, not just Plex.
 - Implemented in this session:

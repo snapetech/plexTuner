@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://github.com/snapetech/iptvtunerr/releases">Releases</a> •
   <a href="https://github.com/snapetech/iptvtunerr/issues">Issues</a> •
-  <a href="#two-core-capabilities">Features</a> •
+  <a href="#core-capabilities">Features</a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#kubernetes">Kubernetes</a>
 </p>
@@ -18,21 +18,50 @@
 
 ---
 
-IPTV Tunerr connects IPTV providers (M3U/Xtream) to Plex, Emby, and Jellyfin. It handles two things independently: **live TV streaming** and **guide/EPG data** — use one, the other, or both.
+IPTV Tunerr turns messy IPTV inputs into something your media server can actually live with.
+
+Most IPTV setups fail in the same ways:
+- channels exist but do not play reliably
+- guide data is missing or mismatched
+- one bad provider host poisons the whole lineup
+- browser clients need transcoding while TV clients do not
+- Plex, Emby, and Jellyfin each want slightly different behavior
+
+IPTV Tunerr sits in the middle and fixes those problems. It can:
+- present IPTV as a normal HDHomeRun-style tuner
+- repair and merge guide data instead of just passing broken `tvg-id` values through
+- rank and fail over between provider hosts and duplicate streams
+- adapt playback behavior by client
+- generate near-live catch-up libraries when Live TV alone is not enough
+
+You can use it for just the tuner, just the guide, or as the full control plane in front of Plex, Emby, and Jellyfin.
+
+## Why People Use It
+
+### It makes unreliable IPTV behave like a normal DVR source
+
+Instead of pointing Plex or Jellyfin directly at a fragile provider playlist, you give them one stable tuner endpoint. IPTV Tunerr handles probing, fallbacks, guide shaping, and client quirks upstream so your media server sees something boring and predictable.
+
+### It fixes the stuff that usually wastes the most time
+
+If channels only show names and no programme blocks, if one provider host keeps dying, if Plex Web needs different codecs than a set-top box, or if concurrency limits are vague and provider-specific, IPTV Tunerr is where those problems get detected and corrected.
+
+### It gives operators visibility instead of guesswork
+
+You can inspect channel health, guide confidence, provider behavior, stale Plex-session signals, and catch-up candidates directly. That turns "why is this channel bad?" into an answerable question.
 
 ## What's New
 
-Recent product additions now in the repo:
-- runtime EPG repair and EPG provenance reporting
-- channel intelligence reports and lineup recipes
-- Channel DNA grouping
-- Autopilot playback-decision memory
-- Ghost Hunter session/stall reporting
-- provider behavior profile and conservative provider autotune
-- guide highlights lanes
-- catch-up capsule preview, export, and lane layout generation
-- catch-up publishing as real `.strm + .nfo` libraries
-- Emby and Jellyfin catch-up library registration, live-validated in cluster
+Recent additions are aimed at one thing: making the system explain itself and recover better.
+
+- **Runtime EPG repair**: fixes bad or missing channel IDs before guide pruning, so "channel name only" guide entries stop surviving just because a source had a bogus `tvg-id`.
+- **Channel intelligence reports**: scores each channel by guide confidence, resilience, and backup depth so you can see which channels are strong, weak, or not worth exposing.
+- **Channel DNA**: gives channels a stable identity across provider variants and duplicates, so merged lineups and future automation have something more durable than a raw channel name.
+- **Autopilot memory**: remembers winning playback choices per channel and client class, so the system can reuse what already worked instead of rediscovering it every time.
+- **Ghost Hunter**: surfaces stale-session and hidden-grab clues for Plex instead of leaving operators to infer them from broken playback.
+- **Provider profile and autotune**: shows learned concurrency caps, instability signals, Cloudflare hits, and cautious self-tuning decisions.
+- **Guide highlights and catch-up capsules**: turn raw XMLTV data into "what's on now", "starting soon", and publishable near-live programme blocks.
+- **Catch-up publishing**: writes real `.strm + .nfo` items and can register lane libraries in Plex, Emby, and Jellyfin. Emby and Jellyfin were live-validated in cluster.
 
 See:
 - [docs/features.md](docs/features.md)
@@ -121,11 +150,16 @@ Key tuning variables:
 
 ---
 
-## Two Core Capabilities
+## Core Capabilities
 
 ### 1. Live TV streaming (tuner)
 
-Emulates an HDHomeRun network tuner so your media server sees your IPTV channels as a standard tuner device — no plugins required.
+IPTV Tunerr emulates an HDHomeRun network tuner, which means your media server sees your IPTV channels as a normal tuner instead of as an unsupported custom source.
+
+Why that matters:
+- you use the built-in Live TV flow in Plex, Emby, or Jellyfin
+- you avoid custom client plugins
+- you get one stable endpoint even if your real provider setup is messy underneath
 
 - Indexes channels from M3U playlists or Xtream `player_api`
 - Serves `/discover.json`, `/lineup.json`, `/stream/{id}` (HDHomeRun-compatible)
@@ -133,9 +167,16 @@ Emulates an HDHomeRun network tuner so your media server sees your IPTV channels
 - Multi-host failover, Cloudflare detection, client-adaptive codec (Plex Web)
 - Tuner count enforcement, per-instance guide number offsets for multi-DVR setups
 
+In practice, this is the layer that makes "provider host 1 is broken today" or "browser clients need safer audio/video" into gateway policy instead of a user-visible outage.
+
 ### 2. Guide / EPG
 
-Serves XMLTV-format programme guide data at `/guide.xml`. Works standalone or alongside the tuner.
+IPTV Tunerr also serves XMLTV guide data at `/guide.xml`. It works standalone or together with the tuner.
+
+Why that matters:
+- channels with no useful guide data are much less valuable in Plex/Emby/Jellyfin
+- providers often ship bad `tvg-id` values or incomplete XMLTV coverage
+- operators need real show blocks, times, titles, and descriptions, not just channel-name placeholders
 
 Three guide sources, merged automatically in priority order — highest wins per channel, lower sources gap-fill:
 
@@ -143,14 +184,14 @@ Three guide sources, merged automatically in priority order — highest wins per
 2. **External XMLTV** — set `IPTV_TUNERR_XMLTV_URL` to fetch an upstream guide; filtered to your channels, remapped to local guide numbers. Gap-fills provider for time windows the provider EPG doesn't cover.
 3. **Built-in placeholder** — always available, zero config. Fallback for channels with no data from either source above.
 
-Guide cache is pre-warmed at startup (first request is never cold). On fetch failure, stale data is served — no guide outage on transient provider errors. Language and script normalization applied across all sources (`IPTV_TUNERR_XMLTV_PREFER_LANGS`, `IPTV_TUNERR_XMLTV_PREFER_LATIN`).
+Guide cache is pre-warmed at startup, so the first guide request is not cold. If a fetch fails, stale data is served instead of blanking the guide. Language and script normalization can also clean up multilingual feeds (`IPTV_TUNERR_XMLTV_PREFER_LANGS`, `IPTV_TUNERR_XMLTV_PREFER_LATIN`).
 
 During catalog build, IPTV Tunerr can also repair or assign channel `TVGID`s from
 provider/external XMLTV channel metadata before `LIVE_EPG_ONLY` filtering runs. That
 uses deterministic tiers only (exact `tvg-id`, alias override, normalized exact-name
 match). Optional alias overrides come from `IPTV_TUNERR_XMLTV_ALIASES`.
 
-`epg-link-report` command: deterministic coverage report showing which channels are matched, which are unlinked, and by what mechanism.
+`epg-link-report` shows exactly which channels are linked, which are not, and whether the match came from an exact ID, alias, or normalized-name repair.
 
 These two capabilities run from the same process. They can be used independently: point your media server at the tuner URL for streams and at a different guide source, or use IPTV Tunerr for both.
 
@@ -158,9 +199,16 @@ These two capabilities run from the same process. They can be used independently
 
 ## Channel Intelligence
 
-IPTV Tunerr is starting to expose the intelligence it already uses internally.
+This is where IPTV Tunerr stops being "just a relay" and starts behaving like an operator tool.
 
-You can now generate a per-channel health report that scores:
+The channel-intelligence surfaces answer questions that are otherwise annoying to debug:
+- Which channels are actually trustworthy?
+- Which ones only barely have guide coverage?
+- Which ones have enough fallbacks to survive a bad upstream host?
+- Which channels are duplicates of the same real-world station?
+- What should I prune before exposing this lineup to users?
+
+The per-channel health report scores:
 - guide confidence
 - stream resilience
 - backup-stream depth
@@ -187,27 +235,26 @@ When XMLTV is supplied, the report also shows whether a channel matched by:
 - normalized-name repair
 - or not at all
 
-This is the first foundation step toward a larger “live TV intelligence layer”:
-- Channel DNA
-- Autopilot stream selection
-- guide confidence policies
-- saved lineup recipes
-- Ghost Hunter recovery
-- catch-up capsules
+### Channel DNA
 
-Roadmap: [docs/epics/EPIC-live-tv-intelligence.md](docs/epics/EPIC-live-tv-intelligence.md)
+Each live channel now gets a persisted `dna_id`. That gives IPTV Tunerr a stable identity even when provider names, numbers, or stream URLs are noisy.
 
-Channel DNA foundation is now present too:
-- each live channel gets a persisted `dna_id`
-- it prefers repaired/real `TVGID` when available
-- otherwise it falls back to normalized channel identity inputs
+Why it matters:
+- merged provider lineups can treat variants as the same underlying channel
+- reports and automation can hang off a stable key instead of a brittle display name
+- future routing and matching logic has something durable to learn against
 
-Channel DNA is now surfaced too:
+Channel DNA is surfaced through:
 - live endpoint: `/channels/dna.json`
 - CLI export: `iptv-tunerr channel-dna-report`
-- groups channels by shared stable identity so merged providers/variants are visible as one DNA cluster
+- grouping by shared identity so duplicate variants become visible as one cluster
 
-Autopilot memory foundation is now present as well:
+### Autopilot Memory
+
+Autopilot memory lets IPTV Tunerr remember what already worked.
+
+Instead of rediscovering the same successful playback decision over and over, the system can remember a winning transcode/profile choice for a specific `dna_id + client_class` pair and reuse it later.
+
 - startup can load a JSON memory file with remembered playback decisions
 - decisions are keyed by `dna_id + client_class`
 - once a stream path actually succeeds, Tunerr can remember the winning transcode/profile choice for that channel/client class pair
@@ -219,7 +266,10 @@ Enable it with:
 IPTV_TUNERR_AUTOPILOT_STATE_FILE=/var/lib/iptvtunerr/autopilot.json
 ```
 
-Ghost Hunter foundation is now present too:
+### Ghost Hunter
+
+Ghost Hunter is aimed at one of the nastiest Plex support loops: playback looks dead, but something is still holding on to the session.
+
 - `iptv-tunerr ghost-hunter` watches Plex Live TV sessions over a short observation window
 - it classifies visible stalls using the same idle/lease heuristics as the built-in reaper
 - it can optionally stop stale visible transcode sessions
@@ -234,9 +284,13 @@ iptv-tunerr ghost-hunter -observe 6s -stop
 curl -s "http://127.0.0.1:5004/plex/ghost-report.json?observe=4s" | jq
 ```
 
-Limit: hidden Plex grabs that do not appear in `/status/sessions` still need the existing recovery helper or a Plex restart, but Ghost Hunter now surfaces that recommendation explicitly.
+Limit: hidden Plex grabs that do not appear in `/status/sessions` still need the existing recovery helper or a Plex restart, but Ghost Hunter now tells you that directly instead of leaving you to guess.
 
-Provider behavior profile foundation is now present too:
+### Provider Profile And Autotune
+
+Providers often fail in provider-specific ways: vague concurrency caps, HLS instability, Cloudflare blocks, or brittle auth/header expectations.
+
+The provider profile makes those conditions visible:
 - live server endpoint: `/provider/profile.json`
 - exposes the gateway's learned effective tuner cap
 - records recent upstream concurrency-limit signals
@@ -250,12 +304,15 @@ Example:
 curl -s http://127.0.0.1:5004/provider/profile.json | jq
 ```
 
-Provider autotune defaults:
+Provider autotune is intentionally conservative:
 - `IPTV_TUNERR_PROVIDER_AUTOTUNE=true` by default
 - if `IPTV_TUNERR_FFMPEG_HLS_RECONNECT` is not explicitly set and Tunerr has already observed HLS playlist/segment instability, ffmpeg HLS reconnect is auto-enabled on later requests
 - explicit `IPTV_TUNERR_FFMPEG_HLS_RECONNECT=true|false` still wins over autotune
 
-Guide highlights foundation is now present too:
+### Guide Highlights
+
+Guide highlights repackage the merged guide into something immediately useful instead of forcing every client or operator workflow to start from raw XMLTV.
+
 - live endpoint: `/guide/highlights.json`
 - packages the cached merged guide into:
   - `current`
@@ -272,7 +329,10 @@ Example:
 curl -s "http://127.0.0.1:5004/guide/highlights.json?soon=45m&limit=10" | jq
 ```
 
-Catch-up capsule preview foundation is now present too:
+### Catch-Up Capsules
+
+Catch-up capsules turn guide rows into publishable programme blocks. This is the bridge between "Live TV is on right now" and "I want something library-like to click on."
+
 - live endpoint: `/guide/capsules.json`
 - CLI export: `iptv-tunerr catchup-capsules`
 - turns real guide rows into publishable capsule candidates with:
@@ -294,7 +354,10 @@ iptv-tunerr catchup-capsules -catalog ./catalog.json -xmltv http://127.0.0.1:500
 iptv-tunerr catchup-capsules -catalog ./catalog.json -xmltv http://127.0.0.1:5004/guide.xml -layout-dir ./capsule-layout
 ```
 
-Catch-up publishing is now present too:
+### Catch-Up Publishing
+
+Catch-up publishing takes those programme blocks and writes actual media-server-ingestible output.
+
 - CLI: `iptv-tunerr catchup-publish`
 - writes real library-ingestible `.strm + .nfo` items into lane directories:
   - `sports/`
@@ -308,6 +371,11 @@ Catch-up publishing is now present too:
 - current Jellyfin support uses Jellyfin's native virtual-folder API shape:
   - list via `GET /Library/VirtualFolders`
   - create via `POST /Library/VirtualFolders` with query params
+
+Why this matters:
+- users get a browsable near-live library, not only a DVR grid
+- operators can publish sports, movies, and general lanes separately
+- the same feed can be reused across Plex, Emby, and Jellyfin
 
 Live-validated on the cluster:
 - Emby catch-up publish created lane libraries and on-disk `.strm + .nfo` content on the server PVC
@@ -330,7 +398,9 @@ The generated items are near-live launchers, not historical recordings:
 - each `.strm` points back to the matching live channel stream
 - rerun the publisher on a schedule to keep the libraries fresh as programme windows roll
 
-You can also use that intelligence to shape lineups:
+### Lineup Recipes
+
+You can also use the intelligence layer to shape the lineup itself instead of dumping everything into the server and hoping for the best:
 
 ```bash
 IPTV_TUNERR_LINEUP_RECIPE=high_confidence  # keep only the strongest guide-ready channels

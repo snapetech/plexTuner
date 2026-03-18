@@ -1479,3 +1479,15 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
       - Jellyfin tuner registration recovered and indexed channels
       - Emby catch-up library publishing created lane libraries and on-disk `.strm + .nfo` output on the server PVC
       - Jellyfin required an additional API compatibility follow-up (`GET /Library/VirtualFolders`, query-param create on `POST /Library/VirtualFolders`) before its catch-up library publishing path succeeded live too
+
+---
+
+- Date: 2026-03-18
+  Title: README rewrite for user-facing feature value
+  Summary:
+    - Reworked `README.md` to explain why IPTV Tunerr matters operationally instead of listing internal feature names.
+    - Reframed the intro around common IPTV failure modes: bad guide matches, dead provider hosts, client codec quirks, and media-server integration friction.
+    - Expanded the core capability, channel intelligence, provider profile, Ghost Hunter, and catch-up publishing sections with problem/solution/value language.
+    - Kept the newly shipped intelligence and catch-up features visible while making their operator benefit explicit.
+  Verification:
+    - Docs-only review of `README.md`; no code-path changes.
