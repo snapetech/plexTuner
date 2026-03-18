@@ -2,11 +2,20 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Goal:** Ship the live EPG hardening work: channels with bad or missing source `TVGID`s should no longer fall through to placeholder guide entries when deterministic XMLTV matches are available, and the external XMLTV/alias source should be explicit in repo examples.
+**Goal:** Ship the direct-M3U multi-credential follow-up fix after `v0.1.6`: when multiple credentialed M3U URLs are configured, catalog indexing must merge all successful feeds instead of stopping at the first one.
 
-**Scope:** In: runtime deterministic EPG repair during catalog build, provider/external XMLTV source review, alias-source config wiring, docs/example updates, targeted guide-output verification, local verify, git commit/tag/push for the next patch release, and memory-bank/task-history updates. Out: fuzzy matching, persistent match DB/store, or a multi-source canonical EPG resolver.
+**Scope:** In: direct-M3U multi-URL config/indexing fix, targeted tests, local verify, git commit/tag/push for the next patch release, and memory-bank/task-history updates. Out: broader provider-merge redesign, fuzzy EPG matching, or persistent match storage.
 
 **Last updated:** 2026-03-18
+
+**Current focus shift (M3U multi-credential follow-up, 2026-03-18):**
+- Tester confirmed a separate root cause on their side: the index build did not include multiple credentialed M3U URLs.
+- Verified in code: direct-M3U mode accepted only one `IPTV_TUNERR_M3U_URL` and catalog build stopped after the first successful M3U fetch.
+- Implemented in this session:
+  1. Added numbered `IPTV_TUNERR_M3U_URL_2/_3/...` support.
+  2. Changed direct-M3U catalog build to merge all successful configured M3U feeds before dedupe/filtering.
+  3. Added config and catalog-build tests for the multi-M3U merge path.
+  4. Re-ran `scripts/verify`.
 
 **Current focus shift (EPG hardening, 2026-03-18):**
 - Review found that runtime guide quality still depended mainly on source-provided `TVGID`s: if a channel had a non-empty but wrong ID, it survived `LIVE_EPG_ONLY` yet still fell through to placeholder programme entries. The deterministic linker existed only as `epg-link-report`, not as a runtime repair path.
@@ -224,6 +233,7 @@
 
 ## Assumptions & questions (only if uncertainty matters)
 Assumptions (safe defaults you are proceeding with):
+- Next release version for this direct-M3U follow-up patch is `v0.1.7` (latest existing tag is `v0.1.6`).
 - Next release version for this follow-up patch build is `v0.1.5` (latest existing tag is `v0.1.4`).
 - Next release version for this patch-only build is `v0.1.4` (latest existing tag is `v0.1.3`).
 - Local environment may not have Go installed; OK to use a temporary local Go toolchain (non-system install) only for verification.

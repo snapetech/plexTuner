@@ -242,11 +242,25 @@ func (c *Config) M3UURLOrBuild() string {
 	return ""
 }
 
-// M3UURLsOrBuild returns a list of M3U URLs to probe: single IPTV_TUNERR_M3U_URL if set,
-// otherwise one URL per IPTV_TUNERR_PROVIDER_URLS (or single ProviderBaseURL) with get.php.
+// M3UURLsOrBuild returns a list of M3U URLs to probe.
+// Sources, in order:
+//  1. IPTV_TUNERR_M3U_URL plus numbered IPTV_TUNERR_M3U_URL_2/_3/... entries if present
+//  2. otherwise one get.php URL per IPTV_TUNERR_PROVIDER_URLS (or single ProviderBaseURL) with primary creds
 func (c *Config) M3UURLsOrBuild() []string {
+	var direct []string
 	if c.M3UURL != "" {
-		return []string{c.M3UURL}
+		direct = append(direct, c.M3UURL)
+	}
+	for n := 2; ; n++ {
+		suffix := fmt.Sprintf("_%d", n)
+		u := getEnvURL("IPTV_TUNERR_M3U_URL" + suffix)
+		if u == "" {
+			break
+		}
+		direct = append(direct, u)
+	}
+	if len(direct) > 0 {
+		return direct
 	}
 	user, pass := c.ProviderUser, c.ProviderPass
 	if user == "" || pass == "" {

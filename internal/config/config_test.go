@@ -149,6 +149,21 @@ func TestM3UURLsOrBuild_preferM3UURL(t *testing.T) {
 	}
 }
 
+func TestM3UURLsOrBuild_multipleDirectM3UURLs(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("IPTV_TUNERR_M3U_URL", "http://custom/m3u")
+	os.Setenv("IPTV_TUNERR_M3U_URL_2", "http://custom/m3u2")
+	os.Setenv("IPTV_TUNERR_M3U_URL_3", "http://custom/m3u3")
+	c := Load()
+	urls := c.M3UURLsOrBuild()
+	if len(urls) != 3 {
+		t.Fatalf("M3UURLsOrBuild() len = %d, want 3", len(urls))
+	}
+	if urls[0] != "http://custom/m3u" || urls[1] != "http://custom/m3u2" || urls[2] != "http://custom/m3u3" {
+		t.Fatalf("unexpected direct M3U URLs: %v", urls)
+	}
+}
+
 func TestProviderURLs(t *testing.T) {
 	os.Clearenv()
 	os.Setenv("IPTV_TUNERR_PROVIDER_URLS", "http://x.com, http://y.com")

@@ -284,19 +284,31 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 		res.Live = dedupeByTVGID(res.Live, cfg.StripStreamHosts)
 		enrichM3UWithProviderBases(cfg, res.Live)
 	} else if m3uURLs := cfg.M3UURLsOrBuild(); len(m3uURLs) > 0 {
-		var lastErr error
+		var (
+			lastErr      error
+			mergedMovies []catalog.Movie
+			mergedSeries []catalog.Series
+			mergedLive   []catalog.LiveChannel
+			okCount      int
+		)
 		for _, u := range m3uURLs {
 			movies, series, live, err := indexer.ParseM3U(u, nil)
 			if err != nil {
 				lastErr = err
 				continue
 			}
-			res.Movies, res.Series, res.Live = movies, series, live
+			mergedMovies = append(mergedMovies, movies...)
+			mergedSeries = append(mergedSeries, series...)
+			mergedLive = append(mergedLive, live...)
 			lastErr = nil
-			break
+			okCount++
 		}
-		if lastErr != nil {
+		if okCount == 0 {
 			return res, fmt.Errorf("parse M3U: %w", lastErr)
+		}
+		res.Movies, res.Series, res.Live = mergedMovies, mergedSeries, mergedLive
+		if okCount > 1 {
+			log.Printf("Merged %d direct M3U feeds into one catalog", okCount)
 		}
 		res.Live = dedupeByTVGID(res.Live, cfg.StripStreamHosts)
 		enrichM3UWithProviderBases(cfg, res.Live)

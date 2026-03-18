@@ -9,6 +9,37 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/config"
 )
 
+func TestFetchCatalog_MergesMultipleDirectM3UURLs(t *testing.T) {
+	m3u1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("#EXTM3U\n#EXTINF:-1 tvg-id=\"foxnews.us\",FOX News\nhttp://provider1/live/u1/p1/100.m3u8\n"))
+	}))
+	defer m3u1.Close()
+	m3u2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("#EXTM3U\n#EXTINF:-1 tvg-id=\"cnn.us\",CNN\nhttp://provider2/live/u2/p2/200.m3u8\n"))
+	}))
+	defer m3u2.Close()
+
+	cfg := &config.Config{
+		M3UURL: m3u1.URL,
+	}
+	t.Setenv("IPTV_TUNERR_M3U_URL_2", m3u2.URL)
+
+	res, err := fetchCatalog(cfg, "")
+	if err != nil {
+		t.Fatalf("fetchCatalog error: %v", err)
+	}
+	if len(res.Live) != 2 {
+		t.Fatalf("live len=%d want 2", len(res.Live))
+	}
+	got := map[string]string{}
+	for _, ch := range res.Live {
+		got[ch.TVGID] = ch.StreamURL
+	}
+	if got["foxnews.us"] == "" || got["cnn.us"] == "" {
+		t.Fatalf("missing merged channels: %+v", res.Live)
+	}
+}
+
 func TestApplyRuntimeEPGRepairs_ExternalRepairsIncorrectTVGID(t *testing.T) {
 	xmltv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`<?xml version="1.0"?><tv>
