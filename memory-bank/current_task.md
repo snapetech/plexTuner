@@ -2,11 +2,29 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Goal:** Add and validate an in-app VOD Plex library registration path (`plex-vod-register`) so mounted VODFS content can be created/reused in Plex as `VOD` (TV) and `VOD-Movies` (Movies), and document the remaining k8s test-environment blocker for making the IPTV VOD mount visible to the Plex pod.
+**Goal:** Ship a new release build containing the completed Cloudflare/CDN playback fixes: preserve upstream auth context (cookies/referer/origin) across ffmpeg and Go relay fetches, prefer IPv4 when ffmpeg canonicalizes input hosts, and raise default startup tolerance for slow HLS starts.
 
-**Scope:** In: in-app CLI/API support for Plex library section create/reuse/refresh, docs/reference updates, live PMS API validation against the test Plex server, and documenting the VODFS mount-visibility constraint in k8s. Out: redesigning VODFS away from FUSE, invasive Plex deployment privilege/mount-propagation changes, or implementing a brand-new non-filesystem VOD library ingestion path.
+**Scope:** In: finalize the current gateway/request-path fixes for HLS playback, targeted tuner tests, troubleshooting doc update, local verify/package checks, git commit/tag/push for the next patch release, and memory-bank/task-history updates. Out: broad CDN bypass work, provider-specific scraper logic, or unrelated VOD/Plex library work.
 
-**Last updated:** 2026-02-27
+**Last updated:** 2026-03-18
+
+**Current focus shift (release build, 2026-03-18):**
+- The playback patch is already implemented in the working tree (`internal/tuner/gateway.go`, tests, troubleshooting doc). The remaining work is release hygiene: verify locally, package once, then commit/tag/push so GitHub Actions can publish the build artifacts and container images.
+- This checkout does not currently have the `plex` remote described in `repo_map.md`; `origin` points at `https://github.com/snapetech/iptvtunerr.git`. For this session, push the release through the remotes actually configured in this checkout.
+- Planned release steps in this session:
+  1. Run `scripts/verify`.
+  2. Run the packaging script once locally against the planned version tag.
+  3. Commit the playback fix set.
+  4. Create and push the next patch tag so release workflows publish artifacts.
+
+**Current focus shift (Cloudflare playback triage, 2026-03-18):**
+- Tester report from `phantasm`: Cloudflare-backed playback improved when local startup wait was raised from ~15s to 60s, but streams still fail later with likely missing auth context and ffmpeg logs show fallback to unroutable IPv6 (`2606:4700::/32`, `No route to host`).
+- Working hypothesis from code inspection: ffmpeg currently receives only Basic auth, and the Go HLS relay forwards only Basic auth + fixed UA; neither path preserves request cookies/referer/origin needed by some CDN-backed playlists/segments. Separately, ffmpeg input URL canonicalization picks the first resolver answer, which can be IPv6 even when the node has no usable IPv6 route.
+- Planned fix in this session:
+  1. Forward selected upstream auth headers (`Cookie`, `Referer`, `Origin`, plus non-conflicting auth) from the incoming request into upstream playlist/segment fetches and ffmpeg `-headers`.
+  2. Prefer IPv4 when rewriting ffmpeg input hosts after DNS resolution.
+  3. Raise the default websafe startup gate timeout so slow CDN-backed HLS starts do not fail over before first bytes arrive.
+  4. Add unit coverage for header forwarding and IPv4 preference, then run `scripts/verify`.
 
 **OpenBao rollout + credential migration (2026-02-27):**
 - Found correct unseal keys in `~/Documents/code/k3s/openbao/openbao-init-output.txt` (the two other init files, `~/Documents/openbao-init-output.txt` and `~/Documents/k3s-secrets/openbao/openbao-init-output.json`, were stale/bad — deleted).
@@ -180,9 +198,11 @@
 
 ## Assumptions & questions (only if uncertainty matters)
 Assumptions (safe defaults you are proceeding with):
+- Next release version for this patch-only build is `v0.1.4` (latest existing tag is `v0.1.3`).
 - Local environment may not have Go installed; OK to use a temporary local Go toolchain (non-system install) only for verification.
 - k3s/Plex troubleshooting changes on remote hosts may be temporary runtime fixes unless later codified in infra manifests or host firewall config.
 - Existing WebSafe/Trial pod processes and DVR IDs noted below may have drifted since 2026-02-24; all IDs/URIs must be rechecked before interpreting probe results.
+- Incoming stream requests may already carry CDN session state via normal HTTP headers from the caller/proxy layer; forwarding a narrow allowlist upstream is lower risk than inventing provider-specific auth handling.
 
 Questions (ONLY if blocked or high-risk ambiguity):
 - Q: None currently blocking for this patch-sized change.

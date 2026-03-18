@@ -22,6 +22,24 @@ Append-only. One entry per completed task.
 
 ## Entries
 
+- Date: 2026-03-18
+  Title: Release v0.1.4 with Cloudflare/CDN playback fixes
+  Summary:
+    - Forwarded selected upstream request context (`Cookie`, `Referer`, `Origin`, and passthrough `Authorization` when provider basic auth is not configured) into both Go relay fetches and ffmpeg HLS input headers so CDN-backed playlists and segments retain caller auth context.
+    - Changed ffmpeg input host canonicalization to prefer resolved IPv4 addresses when available, avoiding unroutable IPv6 selection on dual-stack CDN hosts.
+    - Raised the default ffmpeg HLS read/write timeout and websafe startup timeout to 60s for slower CDN-backed live starts, and documented the new defaults in the troubleshooting runbook.
+    - Added tuner unit coverage for ffmpeg header construction and IPv4 resolution preference, then prepared the patch for release as `v0.1.4`.
+  Verification:
+    - `./scripts/verify`
+    - `VERSION=v0.1.4 ./scripts/build-test-packages.sh`
+  Notes:
+    - Generated package archives under `dist/test-packages/v0.1.4/` for local verification only; they were not committed.
+    - This checkout only had `origin` configured for the IPTV Tunerr repo, so the release push used the remotes actually present in this workspace.
+  Opportunities filed:
+    - none
+  Links:
+    - internal/tuner/gateway.go, internal/tuner/gateway_test.go, docs/runbooks/iptvtunerr-troubleshooting.md, memory-bank/current_task.md
+
 - Date: 2026-03-13
   Title: Fix iptv-m3u-server splitter: emit all stream URLs per channel in dvr-*.m3u
   Summary:

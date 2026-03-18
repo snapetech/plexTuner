@@ -13,6 +13,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"os/exec"
@@ -222,6 +223,110 @@ func debugHeaderLines(h http.Header) []string {
 		lines = append(lines, k+": "+strings.Join(show, ", "))
 	}
 	return lines
+}
+
+var forwardedUpstreamHeaderNames = []string{"Cookie", "Referer", "Origin"}
+
+func cloneClientWithCookieJar(src *http.Client) *http.Client {
+	if src == nil {
+		src = httpclient.ForStreaming()
+	}
+	out := *src
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return &out
+	}
+	out.Jar = jar
+	return &out
+}
+
+func pickPreferredResolvedIP(ips []string) string {
+	var first string
+	for _, raw := range ips {
+		ip := strings.TrimSpace(raw)
+		if ip == "" {
+			continue
+		}
+		if first == "" {
+			first = ip
+		}
+		parsed := net.ParseIP(ip)
+		if parsed != nil && parsed.To4() != nil {
+			return ip
+		}
+	}
+	return first
+}
+
+func appendFFmpegHeaderLine(lines []string, name, value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return lines
+	}
+	value = strings.NewReplacer("\r", " ", "\n", " ").Replace(value)
+	return append(lines, name+": "+value)
+}
+
+func (g *Gateway) applyUpstreamRequestHeaders(req *http.Request, incoming *http.Request) {
+	if req == nil {
+		return
+	}
+	if incoming != nil {
+		for _, name := range forwardedUpstreamHeaderNames {
+			for _, value := range incoming.Header.Values(name) {
+				if strings.TrimSpace(value) != "" {
+					req.Header.Add(name, value)
+				}
+			}
+		}
+		if g.ProviderUser == "" && g.ProviderPass == "" {
+			for _, value := range incoming.Header.Values("Authorization") {
+				if strings.TrimSpace(value) != "" {
+					req.Header.Add("Authorization", value)
+				}
+			}
+		}
+	}
+	if g.ProviderUser != "" || g.ProviderPass != "" {
+		req.SetBasicAuth(g.ProviderUser, g.ProviderPass)
+	}
+	req.Header.Set("User-Agent", "IptvTunerr/1.0")
+}
+
+func (g *Gateway) newUpstreamRequest(ctx context.Context, incoming *http.Request, rawURL string) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	g.applyUpstreamRequestHeaders(req, incoming)
+	return req, nil
+}
+
+func (g *Gateway) ffmpegInputHeaderBlock(incoming *http.Request, hostOverride string) string {
+	lines := make([]string, 0, 8)
+	if hostOverride != "" {
+		lines = appendFFmpegHeaderLine(lines, "Host", hostOverride)
+	}
+	if incoming != nil {
+		for _, name := range forwardedUpstreamHeaderNames {
+			for _, value := range incoming.Header.Values(name) {
+				lines = appendFFmpegHeaderLine(lines, name, value)
+			}
+		}
+		if g.ProviderUser == "" && g.ProviderPass == "" {
+			for _, value := range incoming.Header.Values("Authorization") {
+				lines = appendFFmpegHeaderLine(lines, "Authorization", value)
+			}
+		}
+	}
+	if g.ProviderUser != "" || g.ProviderPass != "" {
+		auth := base64.StdEncoding.EncodeToString([]byte(g.ProviderUser + ":" + g.ProviderPass))
+		lines = appendFFmpegHeaderLine(lines, "Authorization", "Basic "+auth)
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return strings.Join(lines, "\r\n") + "\r\n"
 }
 
 type cappedBodyTee struct {
@@ -559,7 +664,7 @@ func canonicalizeFFmpegInputURL(ctx context.Context, raw string) (rewritten stri
 	if err != nil || len(ips) == 0 {
 		return raw, "", ""
 	}
-	ip := strings.TrimSpace(ips[0])
+	ip := pickPreferredResolvedIP(ips)
 	if ip == "" || ip == host {
 		return raw, "", ""
 	}
@@ -1508,19 +1613,16 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
-		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, streamURL, nil)
+		req, err := g.newUpstreamRequest(r.Context(), r, streamURL)
 		if err != nil {
 			continue
 		}
-		if g.ProviderUser != "" || g.ProviderPass != "" {
-			req.SetBasicAuth(g.ProviderUser, g.ProviderPass)
-		}
-		req.Header.Set("User-Agent", "IptvTunerr/1.0")
 
 		client := g.Client
 		if client == nil {
 			client = httpclient.ForStreaming()
 		}
+		client = cloneClientWithCookieJar(client)
 		resp, err := client.Do(req)
 		if err != nil {
 			log.Printf("gateway: channel=%q id=%s upstream[%d/%d] error url=%s err=%v",
@@ -1892,7 +1994,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	// Default to safer probing and allow env overrides when chasing startup races.
 	hlsAnalyzeDurationUs := getenvInt("IPTV_TUNERR_FFMPEG_HLS_ANALYZEDURATION_US", 5000000)
 	hlsProbeSize := getenvInt("IPTV_TUNERR_FFMPEG_HLS_PROBESIZE", 5000000)
-	hlsRWTimeoutUs := getenvInt("IPTV_TUNERR_FFMPEG_HLS_RW_TIMEOUT_US", 15000000)
+	hlsRWTimeoutUs := getenvInt("IPTV_TUNERR_FFMPEG_HLS_RW_TIMEOUT_US", 60000000)
 	hlsLiveStartIndex := getenvInt("IPTV_TUNERR_FFMPEG_HLS_LIVE_START_INDEX", -3)
 	hlsUseNoBuffer := getenvBool("IPTV_TUNERR_FFMPEG_HLS_NOBUFFER", false)
 	// Let ffmpeg's HLS demuxer manage live playlist refreshes by default.
@@ -1935,9 +2037,8 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	if hlsLiveStartIndex != 0 {
 		args = append(args, "-live_start_index", strconv.Itoa(hlsLiveStartIndex))
 	}
-	if g.ProviderUser != "" || g.ProviderPass != "" {
-		auth := base64.StdEncoding.EncodeToString([]byte(g.ProviderUser + ":" + g.ProviderPass))
-		args = append(args, "-headers", "Authorization: Basic "+auth+"\r\n")
+	if headers := g.ffmpegInputHeaderBlock(r, ffmpegInputHost); headers != "" {
+		args = append(args, "-headers", headers)
 	}
 	args = append(args, "-i", ffmpegPlaylistURL)
 	args = append(args, buildFFmpegMPEGTSCodecArgs(transcode, profile)...)
@@ -1967,7 +2068,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	// deterministic H264/AAC TS bootstrap) so Plex's live DASH packager gets a clean start.
 	startupMin := getenvInt("IPTV_TUNERR_WEBSAFE_STARTUP_MIN_BYTES", 65536)
 	startupMax := getenvInt("IPTV_TUNERR_WEBSAFE_STARTUP_MAX_BYTES", 786432)
-	startupTimeoutMs := getenvInt("IPTV_TUNERR_WEBSAFE_STARTUP_TIMEOUT_MS", 12000)
+	startupTimeoutMs := getenvInt("IPTV_TUNERR_WEBSAFE_STARTUP_TIMEOUT_MS", 60000)
 	enableBootstrap := transcode && getenvBool("IPTV_TUNERR_WEBSAFE_BOOTSTRAP", true)
 	enableTimeoutBootstrap := getenvBool("IPTV_TUNERR_WEBSAFE_TIMEOUT_BOOTSTRAP", true)
 	continueOnStartupTimeout := transcode && getenvBool("IPTV_TUNERR_WEBSAFE_TIMEOUT_CONTINUE_FFMPEG", false)
@@ -2092,7 +2193,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 		}()
 		timeout := time.Duration(startupTimeoutMs) * time.Millisecond
 		if timeout <= 0 {
-			timeout = 12 * time.Second
+			timeout = 60 * time.Second
 		}
 		select {
 		case pr := <-ch:
@@ -2844,14 +2945,10 @@ func sleepHLSRefresh(playlistBody []byte) {
 }
 
 func (g *Gateway) fetchAndRewritePlaylist(r *http.Request, client *http.Client, playlistURL string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, playlistURL, nil)
+	req, err := g.newUpstreamRequest(r.Context(), r, playlistURL)
 	if err != nil {
 		return nil, err
 	}
-	if g.ProviderUser != "" || g.ProviderPass != "" {
-		req.SetBasicAuth(g.ProviderUser, g.ProviderPass)
-	}
-	req.Header.Set("User-Agent", "IptvTunerr/1.0")
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -2878,14 +2975,10 @@ func (g *Gateway) fetchAndWriteSegment(
 	if bodyOut == nil {
 		bodyOut = w
 	}
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, segURL, nil)
+	req, err := g.newUpstreamRequest(r.Context(), r, segURL)
 	if err != nil {
 		return 0, err
 	}
-	if g.ProviderUser != "" || g.ProviderPass != "" {
-		req.SetBasicAuth(g.ProviderUser, g.ProviderPass)
-	}
-	req.Header.Set("User-Agent", "IptvTunerr/1.0")
 	resp, err := client.Do(req)
 	if err != nil {
 		if g.FetchCFReject && strings.Contains(err.Error(), "cloudflare-terms-of-service-abuse.com") {

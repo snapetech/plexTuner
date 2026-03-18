@@ -454,3 +454,40 @@ type mockResponseWriter struct {
 func (m *mockResponseWriter) Header() http.Header         { return nil }
 func (m *mockResponseWriter) WriteHeader(int)             {}
 func (m *mockResponseWriter) Write(p []byte) (int, error) { return m.w.Write(p) }
+
+func TestGateway_ffmpegInputHeaderBlock_includesForwardedHeaders(t *testing.T) {
+	g := &Gateway{}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream", nil)
+	req.Header.Set("Cookie", "session=abc123")
+	req.Header.Set("Referer", "https://referer.example")
+	req.Header.Set("Origin", "https://origin.example")
+	req.Header.Set("Authorization", "Bearer upstream-token")
+	block := g.ffmpegInputHeaderBlock(req, "cdn.example")
+	if !strings.Contains(block, "Host: cdn.example") {
+		t.Fatalf("missing host header in block: %q", block)
+	}
+	if !strings.Contains(block, "Cookie: session=abc123") {
+		t.Fatalf("missing cookie header in block: %q", block)
+	}
+	if !strings.Contains(block, "Referer: https://referer.example") {
+		t.Fatalf("missing referer header in block: %q", block)
+	}
+	if !strings.Contains(block, "Origin: https://origin.example") {
+		t.Fatalf("missing origin header in block: %q", block)
+	}
+	if !strings.Contains(block, "Authorization: Bearer upstream-token") {
+		t.Fatalf("missing auth header in block: %q", block)
+	}
+}
+
+func TestPickPreferredResolvedIPPrefersIPv4(t *testing.T) {
+	if got := pickPreferredResolvedIP([]string{"2606:4700::1", "198.51.100.5"}); got != "198.51.100.5" {
+		t.Fatalf("got %q, want IPv4", got)
+	}
+}
+
+func TestPickPreferredResolvedIPFallsBack(t *testing.T) {
+	if got := pickPreferredResolvedIP([]string{"2606:4700::1", "::"}); got != "2606:4700::1" {
+		t.Fatalf("got %q, want first entry", got)
+	}
+}
