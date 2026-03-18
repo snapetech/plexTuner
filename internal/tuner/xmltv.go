@@ -492,15 +492,19 @@ func truncateGuideHighlights(in []GuideHighlight, n int) []GuideHighlight {
 }
 
 func (x *XMLTV) CatchupCapsulePreview(now time.Time, horizon time.Duration, limit int) (CatchupCapsulePreview, error) {
+	x.mu.RLock()
+	data := append([]byte(nil), x.cachedXML...)
+	x.mu.RUnlock()
+	return BuildCatchupCapsulePreview(x.Channels, data, now, horizon, limit)
+}
+
+func BuildCatchupCapsulePreview(channels []catalog.LiveChannel, data []byte, now time.Time, horizon time.Duration, limit int) (CatchupCapsulePreview, error) {
 	if horizon <= 0 {
 		horizon = 3 * time.Hour
 	}
 	if limit <= 0 {
 		limit = 20
 	}
-	x.mu.RLock()
-	data := append([]byte(nil), x.cachedXML...)
-	x.mu.RUnlock()
 	out := CatchupCapsulePreview{
 		GeneratedAt: now.UTC().Format(time.RFC3339),
 		SourceReady: len(data) > 0,
@@ -512,8 +516,8 @@ func (x *XMLTV) CatchupCapsulePreview(now time.Time, horizon time.Duration, limi
 	if err := xml.Unmarshal(data, &tv); err != nil {
 		return out, err
 	}
-	byChannel := make(map[string]catalog.LiveChannel, len(x.Channels))
-	for _, ch := range x.Channels {
+	byChannel := make(map[string]catalog.LiveChannel, len(channels))
+	for _, ch := range channels {
 		byChannel[strings.TrimSpace(ch.GuideNumber)] = ch
 	}
 	channelNames := make(map[string]string, len(tv.Channels))

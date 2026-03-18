@@ -1,13 +1,16 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
 	"github.com/snapetech/iptvtunerr/internal/channeldna"
 	"github.com/snapetech/iptvtunerr/internal/config"
+	"github.com/snapetech/iptvtunerr/internal/tuner"
 )
 
 func TestFetchCatalog_MergesMultipleDirectM3UURLs(t *testing.T) {
@@ -117,5 +120,37 @@ func TestChannelDNAStableAfterRuntimeEPGRepair(t *testing.T) {
 	other := catalog.LiveChannel{GuideName: "FOX News HD", TVGID: "foxnews.us", EPGLinked: true}
 	if live[0].DNAID != channeldna.Compute(other) {
 		t.Fatalf("DNAID=%q want stable match for repaired tvgid", live[0].DNAID)
+	}
+}
+
+func TestBuildCatchupCapsulePreview_UsesCatalogDNA(t *testing.T) {
+	now := time.Now().UTC()
+	start := now.Add(-15 * time.Minute).Format("20060102150405 +0000")
+	stop := now.Add(45 * time.Minute).Format("20060102150405 +0000")
+	live := []catalog.LiveChannel{
+		{GuideNumber: "101", GuideName: "Sports Net", DNAID: "dna:sports"},
+	}
+	rep, err := tuner.BuildCatchupCapsulePreview(live, []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="101"><display-name>Sports Net</display-name></channel>
+  <programme start="`+start+`" stop="`+stop+`" channel="101">
+    <title>Team A vs Team B</title>
+    <category>Sports</category>
+  </programme>
+</tv>`), now, time.Hour, 10)
+	if err != nil {
+		t.Fatalf("BuildCatchupCapsulePreview: %v", err)
+	}
+	if len(rep.Capsules) != 1 {
+		t.Fatalf("capsules len=%d want 1", len(rep.Capsules))
+	}
+	if rep.Capsules[0].DNAID != "dna:sports" {
+		t.Fatalf("dna_id=%q want dna:sports", rep.Capsules[0].DNAID)
+	}
+	if rep.Capsules[0].Lane != "sports" {
+		t.Fatalf("lane=%q want sports", rep.Capsules[0].Lane)
+	}
+	if _, err := json.Marshal(rep); err != nil {
+		t.Fatalf("marshal: %v", err)
 	}
 }

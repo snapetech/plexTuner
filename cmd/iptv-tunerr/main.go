@@ -640,6 +640,13 @@ func main() {
 	ghostHunterMachineID := ghostHunterCmd.String("machine-id", strings.TrimSpace(os.Getenv("IPTV_TUNERR_PLEX_SESSION_REAPER_MACHINE_ID")), "Optional client machineIdentifier scope")
 	ghostHunterPlayerIP := ghostHunterCmd.String("player-ip", strings.TrimSpace(os.Getenv("IPTV_TUNERR_PLEX_SESSION_REAPER_PLAYER_IP")), "Optional player IP scope")
 
+	catchupCapsulesCmd := flag.NewFlagSet("catchup-capsules", flag.ExitOnError)
+	catchupCapsulesCatalog := catchupCapsulesCmd.String("catalog", "", "Input catalog.json (default: IPTV_TUNERR_CATALOG)")
+	catchupCapsulesXMLTV := catchupCapsulesCmd.String("xmltv", "", "Guide/XMLTV file path or http(s) URL (required; /guide.xml works well)")
+	catchupCapsulesHorizon := catchupCapsulesCmd.Duration("horizon", 3*time.Hour, "How far ahead to include candidate programme windows")
+	catchupCapsulesLimit := catchupCapsulesCmd.Int("limit", 20, "Max capsules to export")
+	catchupCapsulesOut := catchupCapsulesCmd.String("out", "", "Optional JSON output path (default: stdout)")
+
 	if len(os.Args) < 2 {
 		fmt.Fprintf(os.Stderr, "iptv-tunerr %s — live TV streaming + XMLTV guide for Plex, Emby, Jellyfin\n\n", Version)
 		fmt.Fprintf(os.Stderr, "Streaming: HDHomeRun-compatible tuner endpoints backed by M3U/Xtream with optional transcode.\n")
@@ -654,6 +661,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Guide/EPG:\n")
 		fmt.Fprintf(os.Stderr, "  channel-report   Channel intelligence report: score stream resilience + guide confidence\n")
 		fmt.Fprintf(os.Stderr, "  ghost-hunter    Observe Plex Live TV sessions, classify stalls, optionally stop stale ones\n")
+		fmt.Fprintf(os.Stderr, "  catchup-capsules Export near-live capsule candidates from guide XML/guide.xml\n")
 		fmt.Fprintf(os.Stderr, "  epg-link-report  Coverage report: which channels are EPG-linked vs unlinked, and by what match\n\n")
 		fmt.Fprintf(os.Stderr, "VOD (Linux):\n")
 		fmt.Fprintf(os.Stderr, "  mount            Mount VOD catalog as a browsable filesystem (FUSE)\n")
@@ -1754,6 +1762,50 @@ func main() {
 		}
 		data, _ := json.MarshalIndent(rep, "", "  ")
 		fmt.Println(string(data))
+
+	case "catchup-capsules":
+		_ = catchupCapsulesCmd.Parse(os.Args[2:])
+		path := strings.TrimSpace(*catchupCapsulesCatalog)
+		if path == "" {
+			path = cfg.CatalogPath
+		}
+		xmltvRef := strings.TrimSpace(*catchupCapsulesXMLTV)
+		if xmltvRef == "" {
+			log.Print("Set -xmltv to a local file or http(s) guide/XMLTV URL")
+			os.Exit(1)
+		}
+		c := catalog.New()
+		if err := c.Load(path); err != nil {
+			log.Printf("Load catalog %s: %v", path, err)
+			os.Exit(1)
+		}
+		live := c.SnapshotLive()
+		guideR, err := openFileOrURL(xmltvRef)
+		if err != nil {
+			log.Printf("Open guide/XMLTV %s: %v", xmltvRef, err)
+			os.Exit(1)
+		}
+		data, err := io.ReadAll(guideR)
+		_ = guideR.Close()
+		if err != nil {
+			log.Printf("Read guide/XMLTV %s: %v", xmltvRef, err)
+			os.Exit(1)
+		}
+		rep, err := tuner.BuildCatchupCapsulePreview(live, data, time.Now(), *catchupCapsulesHorizon, *catchupCapsulesLimit)
+		if err != nil {
+			log.Printf("Build catchup capsule preview failed: %v", err)
+			os.Exit(1)
+		}
+		out, _ := json.MarshalIndent(rep, "", "  ")
+		if p := strings.TrimSpace(*catchupCapsulesOut); p != "" {
+			if err := os.WriteFile(p, out, 0o600); err != nil {
+				log.Printf("Write catchup capsules %s: %v", p, err)
+				os.Exit(1)
+			}
+			log.Printf("Wrote catchup capsules: %s", p)
+		} else {
+			fmt.Println(string(out))
+		}
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %q\n", os.Args[1])

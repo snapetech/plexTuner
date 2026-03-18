@@ -288,6 +288,17 @@ Current states:
 
 This endpoint does not publish Plex library items yet; it is the preview/input layer for a later catch-up publisher.
 
+## `iptv-tunerr catchup-capsules`
+
+Export the same capsule preview model to JSON from a catalog plus a guide/XMLTV source.
+
+Common flags:
+- `-catalog`
+- `-xmltv` — required; local file or `http(s)` URL, including your own `/guide.xml`
+- `-horizon`
+- `-limit`
+- `-out`
+
 ## `iptv-tunerr probe`
 
 Probe provider URLs and print ranked results (best host first).
