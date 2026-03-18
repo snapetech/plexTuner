@@ -37,7 +37,7 @@ jobs:
           else
             echo "value=dev-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           fi
-      - uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
