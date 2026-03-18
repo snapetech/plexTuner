@@ -245,6 +245,21 @@ What it exposes:
 Related env:
 - `IPTV_TUNERR_PROVIDER_AUTOTUNE` — default `true`; enables conservative provider-aware runtime tuning when the operator has not explicitly set the relevant knob
 
+## Guide highlights endpoint
+
+User-facing guide packaging surface built from the cached merged `/guide.xml`:
+- `GET /guide/highlights.json`
+
+Query params:
+- `soon=30m` — future window for `starting_soon` / `movies_starting_soon`
+- `limit=12` — max items per lane
+
+Returned lanes:
+- `current`
+- `starting_soon`
+- `sports_now`
+- `movies_starting_soon`
+
 ## `iptv-tunerr probe`
 
 Probe provider URLs and print ranked results (best host first).

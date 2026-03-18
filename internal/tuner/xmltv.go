@@ -292,14 +292,179 @@ type xmlChannel struct {
 }
 
 type xmlProgramme struct {
-	Start   string   `xml:"start,attr"`
-	Stop    string   `xml:"stop,attr"`
-	Channel string   `xml:"channel,attr"`
-	Title   xmlValue `xml:"title"`
+	Start      string     `xml:"start,attr"`
+	Stop       string     `xml:"stop,attr"`
+	Channel    string     `xml:"channel,attr"`
+	Title      xmlValue   `xml:"title"`
+	SubTitle   xmlValue   `xml:"sub-title"`
+	Desc       xmlValue   `xml:"desc"`
+	Categories []xmlValue `xml:"category"`
 }
 
 type xmlValue struct {
 	Value string `xml:",chardata"`
+}
+
+type GuideHighlight struct {
+	ChannelID    string   `json:"channel_id"`
+	ChannelName  string   `json:"channel_name"`
+	Title        string   `json:"title"`
+	SubTitle     string   `json:"sub_title,omitempty"`
+	Desc         string   `json:"desc,omitempty"`
+	Categories   []string `json:"categories,omitempty"`
+	Start        string   `json:"start"`
+	Stop         string   `json:"stop"`
+	StartsIn     string   `json:"starts_in,omitempty"`
+	EndsIn       string   `json:"ends_in,omitempty"`
+	DurationMins int      `json:"duration_mins"`
+}
+
+type GuideHighlights struct {
+	GeneratedAt        string           `json:"generated_at"`
+	SourceReady        bool             `json:"source_ready"`
+	Current            []GuideHighlight `json:"current"`
+	StartingSoon       []GuideHighlight `json:"starting_soon"`
+	SportsNow          []GuideHighlight `json:"sports_now"`
+	MoviesStartingSoon []GuideHighlight `json:"movies_starting_soon"`
+}
+
+func (x *XMLTV) GuideHighlights(now time.Time, soonWindow time.Duration, limit int) (GuideHighlights, error) {
+	if soonWindow <= 0 {
+		soonWindow = 30 * time.Minute
+	}
+	if limit <= 0 {
+		limit = 12
+	}
+	x.mu.RLock()
+	data := append([]byte(nil), x.cachedXML...)
+	x.mu.RUnlock()
+	out := GuideHighlights{
+		GeneratedAt: now.UTC().Format(time.RFC3339),
+		SourceReady: len(data) > 0,
+	}
+	if len(data) == 0 {
+		return out, nil
+	}
+	var tv xmlTVRoot
+	if err := xml.Unmarshal(data, &tv); err != nil {
+		return out, err
+	}
+	channelNames := make(map[string]string, len(tv.Channels))
+	for _, ch := range tv.Channels {
+		channelNames[strings.TrimSpace(ch.ID)] = strings.TrimSpace(ch.Display)
+	}
+	current := make([]GuideHighlight, 0, limit)
+	soon := make([]GuideHighlight, 0, limit)
+	sportsNow := make([]GuideHighlight, 0, limit)
+	moviesSoon := make([]GuideHighlight, 0, limit)
+	for _, p := range tv.Programmes {
+		start, okStart := parseXMLTVTime(p.Start)
+		stop, okStop := parseXMLTVTime(p.Stop)
+		if !okStart || !okStop || !stop.After(start) {
+			continue
+		}
+		item := GuideHighlight{
+			ChannelID:    strings.TrimSpace(p.Channel),
+			ChannelName:  channelNames[strings.TrimSpace(p.Channel)],
+			Title:        strings.TrimSpace(p.Title.Value),
+			SubTitle:     strings.TrimSpace(p.SubTitle.Value),
+			Desc:         strings.TrimSpace(p.Desc.Value),
+			Categories:   xmlValueStrings(p.Categories),
+			Start:        start.UTC().Format(time.RFC3339),
+			Stop:         stop.UTC().Format(time.RFC3339),
+			DurationMins: int(stop.Sub(start).Minutes()),
+		}
+		if !start.After(now) && stop.After(now) {
+			item.EndsIn = stop.Sub(now).Round(time.Minute).String()
+			current = append(current, item)
+			if looksLikeSportsHighlight(item) {
+				sportsNow = append(sportsNow, item)
+			}
+			continue
+		}
+		if start.After(now) && start.Sub(now) <= soonWindow {
+			item.StartsIn = start.Sub(now).Round(time.Minute).String()
+			soon = append(soon, item)
+			if looksLikeMovieHighlight(item) {
+				moviesSoon = append(moviesSoon, item)
+			}
+		}
+	}
+	sortGuideHighlightsCurrent(current)
+	sortGuideHighlightsCurrent(sportsNow)
+	sortGuideHighlightsSoon(soon)
+	sortGuideHighlightsSoon(moviesSoon)
+	out.Current = truncateGuideHighlights(current, limit)
+	out.StartingSoon = truncateGuideHighlights(soon, limit)
+	out.SportsNow = truncateGuideHighlights(sportsNow, limit)
+	out.MoviesStartingSoon = truncateGuideHighlights(moviesSoon, limit)
+	return out, nil
+}
+
+func xmlValueStrings(in []xmlValue) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		s := strings.TrimSpace(v.Value)
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func looksLikeSportsHighlight(h GuideHighlight) bool {
+	for _, cat := range h.Categories {
+		v := strings.ToLower(strings.TrimSpace(cat))
+		if strings.Contains(v, "sport") || strings.Contains(v, "sports") {
+			return true
+		}
+	}
+	text := strings.ToLower(strings.TrimSpace(h.Title + " " + h.SubTitle + " " + h.Desc))
+	return strings.Contains(text, " vs ") ||
+		strings.Contains(text, " at ") ||
+		strings.Contains(text, "football") ||
+		strings.Contains(text, "hockey") ||
+		strings.Contains(text, "baseball") ||
+		strings.Contains(text, "basketball") ||
+		strings.Contains(text, "soccer")
+}
+
+func looksLikeMovieHighlight(h GuideHighlight) bool {
+	for _, cat := range h.Categories {
+		v := strings.ToLower(strings.TrimSpace(cat))
+		if strings.Contains(v, "movie") || strings.Contains(v, "film") {
+			return true
+		}
+	}
+	return h.DurationMins >= 80
+}
+
+func sortGuideHighlightsCurrent(in []GuideHighlight) {
+	sort.SliceStable(in, func(i, j int) bool {
+		if in[i].EndsIn == in[j].EndsIn {
+			return in[i].ChannelID < in[j].ChannelID
+		}
+		return in[i].Stop < in[j].Stop
+	})
+}
+
+func sortGuideHighlightsSoon(in []GuideHighlight) {
+	sort.SliceStable(in, func(i, j int) bool {
+		if in[i].Start == in[j].Start {
+			return in[i].ChannelID < in[j].ChannelID
+		}
+		return in[i].Start < in[j].Start
+	})
+}
+
+func truncateGuideHighlights(in []GuideHighlight, n int) []GuideHighlight {
+	if len(in) <= n {
+		return in
+	}
+	return in[:n]
 }
 
 func loadXMLTVTextPolicyFromEnv() xmltvTextPolicy {

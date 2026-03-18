@@ -232,6 +232,23 @@ Provider autotune defaults:
 - if `IPTV_TUNERR_FFMPEG_HLS_RECONNECT` is not explicitly set and Tunerr has already observed HLS playlist/segment instability, ffmpeg HLS reconnect is auto-enabled on later requests
 - explicit `IPTV_TUNERR_FFMPEG_HLS_RECONNECT=true|false` still wins over autotune
 
+Guide highlights foundation is now present too:
+- live endpoint: `/guide/highlights.json`
+- packages the cached merged guide into:
+  - `current`
+  - `starting_soon`
+  - `sports_now`
+  - `movies_starting_soon`
+- query params:
+  - `soon=30m`
+  - `limit=12`
+
+Example:
+
+```bash
+curl -s "http://127.0.0.1:5004/guide/highlights.json?soon=45m&limit=10" | jq
+```
+
 You can also use that intelligence to shape lineups:
 
 ```bash

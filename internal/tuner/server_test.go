@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
 )
@@ -113,6 +114,55 @@ func TestServer_providerProfile(t *testing.T) {
 	}
 	if body.CFBlockHits != 1 {
 		t.Fatalf("cf_block_hits=%d want 1", body.CFBlockHits)
+	}
+}
+
+func TestServer_guideHighlights(t *testing.T) {
+	now := time.Now().UTC()
+	currentStart := now.Add(-10 * time.Minute).Format("20060102150405 +0000")
+	currentStop := now.Add(50 * time.Minute).Format("20060102150405 +0000")
+	soonStart := now.Add(10 * time.Minute).Format("20060102150405 +0000")
+	soonStop := now.Add(130 * time.Minute).Format("20060102150405 +0000")
+	s := &Server{
+		xmltv: &XMLTV{
+			cachedXML: []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="101"><display-name>Sports Net</display-name></channel>
+  <channel id="202"><display-name>Movie Max</display-name></channel>
+  <programme start="` + currentStart + `" stop="` + currentStop + `" channel="101">
+    <title>Team A vs Team B</title>
+    <category>Sports</category>
+    <desc>Live game</desc>
+  </programme>
+  <programme start="` + soonStart + `" stop="` + soonStop + `" channel="202">
+    <title>Big Movie</title>
+    <category>Movie</category>
+    <desc>Feature film</desc>
+  </programme>
+</tv>`),
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/guide/highlights.json?soon=20m&limit=5", nil)
+	w := httptest.NewRecorder()
+	s.serveGuideHighlights().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d want 200", w.Code)
+	}
+	var body GuideHighlights
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !body.SourceReady {
+		t.Fatalf("expected source_ready true")
+	}
+	if len(body.Current) != 1 || body.Current[0].ChannelName != "Sports Net" {
+		t.Fatalf("unexpected current=%+v", body.Current)
+	}
+	if len(body.SportsNow) != 1 {
+		t.Fatalf("unexpected sports_now=%+v", body.SportsNow)
+	}
+	if len(body.MoviesStartingSoon) != 1 || body.MoviesStartingSoon[0].ChannelName != "Movie Max" {
+		t.Fatalf("unexpected movies_starting_soon=%+v", body.MoviesStartingSoon)
 	}
 }
 

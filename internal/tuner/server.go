@@ -762,6 +762,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/lineup.json", hdhr)
 	mux.Handle("/device.xml", s.serveDeviceXML())
 	mux.Handle("/guide.xml", xmltv)
+	mux.Handle("/guide/highlights.json", s.serveGuideHighlights())
 	mux.Handle("/live.m3u", m3uServe)
 	mux.Handle("/stream/", gateway)
 	mux.Handle("/healthz", s.serveHealth())
@@ -872,6 +873,39 @@ func (s *Server) serveChannelReport() http.Handler {
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
 			http.Error(w, `{"error":"encode channel report"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveGuideHighlights() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if s.xmltv == nil {
+			http.Error(w, `{"error":"xmltv unavailable"}`, http.StatusServiceUnavailable)
+			return
+		}
+		soonWindow := 30 * time.Minute
+		if raw := strings.TrimSpace(r.URL.Query().Get("soon")); raw != "" {
+			if d, err := time.ParseDuration(raw); err == nil {
+				soonWindow = d
+			}
+		}
+		limit := 12
+		if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+			if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+				limit = n
+			}
+		}
+		rep, err := s.xmltv.GuideHighlights(time.Now(), soonWindow, limit)
+		if err != nil {
+			http.Error(w, `{"error":"guide highlights failed"}`, http.StatusBadGateway)
+			return
+		}
+		body, err := json.MarshalIndent(rep, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode guide highlights"}`, http.StatusInternalServerError)
 			return
 		}
 		_, _ = w.Write(body)
