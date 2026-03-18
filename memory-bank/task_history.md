@@ -23,6 +23,20 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-18
+  Title: Add operator how-to for fixing guide data with EPG Doctor
+  Summary:
+    - Added a dedicated how-to for the new `epg-doctor` workflow so operators can diagnose placeholder-only guide rows, missing programme blocks, unmatched XMLTV channels, and bad `TVGID` linkage from one document.
+    - Linked the new guide-fix workflow from both the how-to index and the runbooks index so guide troubleshooting now routes to the same documented path.
+  Verification:
+    - N/A (docs-only)
+  Notes:
+    - This does not add new runtime behavior; it documents the already-shipped `guide-health` and `epg-doctor` surfaces in an operator-facing format.
+  Opportunities filed:
+    - none
+  Links:
+    - docs/how-to/fix-guide-data-with-epg-doctor.md, docs/how-to/index.md, docs/runbooks/index.md
+
+- Date: 2026-03-18
   Title: Start Live TV Intelligence with channel health and EPG provenance reports
   Summary:
     - Added a new channel intelligence foundation: `iptv-tunerr channel-report` and `/channels/report.json` now score channels by guide confidence, stream resilience, and actionable next steps.

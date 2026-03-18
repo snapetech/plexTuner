@@ -12,6 +12,7 @@ Deploy, rollback, troubleshoot. Goal → preconditions → steps → verify → 
 | Doc | Description |
 |-----|-------------|
 | [iptvtunerr-troubleshooting](iptvtunerr-troubleshooting.md) | **IPTV Tunerr:** fail-fast checklist, short test cycle, probe, log patterns, common failures, endpoint sanity checks. |
+| [how-to: fix-guide-data-with-epg-doctor](../how-to/fix-guide-data-with-epg-doctor.md) | **Guide debugging:** one workflow for XMLTV matching, placeholder-only rows, and missing programme blocks. |
 | [plex-in-cluster](plex-in-cluster.md) | **Plex in cluster:** Check if Plex is running; why it's missing (not in this repo); where it went (k3s/external); how to restore. |
 | [plex-hidden-live-grab-recovery](plex-hidden-live-grab-recovery.md) | **Plex Live TV recovery:** detect hidden active-grab wedges and safely restart Plex when no active viewers remain. |
 | [plex-livetv-tab-label-rewrite-proxy](plex-livetv-tab-label-rewrite-proxy.md) | **Plex Live TV labels:** rewrite `/media/providers` labels per DVR/provider so source tabs are distinguishable (client-dependent). |

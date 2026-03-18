@@ -8,6 +8,13 @@
 
 **Last updated:** 2026-03-18
 
+**Current focus shift (EPG doctor operator docs, 2026-03-18):**
+- Follow-on docs cleanup after shipping `guide-health` and `epg-doctor`: make the new guide-diagnostics workflow discoverable from the how-to and runbook indexes so operators have one documented path from symptom to fix.
+- This pass adds:
+  1. a practical how-to for "channel names but no what's on" and other weak-guide symptoms
+  2. links from the how-to index
+  3. links from the runbooks index so troubleshooting flows route to the same doctor workflow
+
 **Current focus shift (architecture cleanup + command split, 2026-03-18):**
 - User asked for the follow-on work after the architecture review: map the active layers clearly, identify improvement opportunities, then execute the cleanup.
 - This pass covers:

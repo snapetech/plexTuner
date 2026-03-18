@@ -13,6 +13,7 @@ Goal → preconditions → steps → verify.
 |-----|-------------|
 | [first-push](first-push.md) | Add remote and push (GitHub / GitLab / self-hosted). |
 | [deployment](deployment.md) | Deploy IPTV Tunerr: binary, Docker, systemd; local QA/smoke script. |
+| [fix-guide-data-with-epg-doctor](fix-guide-data-with-epg-doctor.md) | Diagnose and fix bad guide data, placeholder-only channels, and weak XMLTV matches. |
 | [deploy-and-connect-plex-home](deploy-and-connect-plex-home.md) | Deploy IPTV Tunerr in-cluster and connect Plex at plex.home (one-command deploy, zero-touch or manual add). |
 | [package-test-builds](package-test-builds.md) | Build cross-platform test bundles (Linux/macOS/Windows) for binary + supervisor testing. |
 | [tester-handoff-checklist](tester-handoff-checklist.md) | Final handoff checklist for sending tester bundles and collecting useful bug reports. |
