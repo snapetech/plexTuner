@@ -17,6 +17,30 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ---
 
+## [v0.1.2] — 2026-03-18
+
+### Features
+- **Layered EPG pipeline**: guide data now comes from three sources merged by priority — provider XMLTV (`xmltv.php`) > external XMLTV (`IPTV_TUNERR_XMLTV_URL`) > placeholder. External gap-fills provider for any time windows the provider EPG doesn't cover. Placeholder is always the final fallback per channel.
+- **Provider EPG via `xmltv.php`**: fetches the Xtream-standard EPG endpoint using existing provider credentials. No additional configuration required for Xtream providers. Produces real programme schedule data without any third-party EPG source.
+- **Background refresh**: guide cache is pre-warmed synchronously at startup (first `/guide.xml` request is never cold), then refreshed by a background goroutine on the TTL tick. Stale cache is preserved on fetch error — no guide outage on transient provider failures.
+
+### New env vars
+- `IPTV_TUNERR_PROVIDER_EPG_ENABLED` (default `true`) — disable provider `xmltv.php` fetch if not needed
+- `IPTV_TUNERR_PROVIDER_EPG_TIMEOUT` (default `90s`) — per-fetch timeout (provider XMLTV can be large)
+- `IPTV_TUNERR_PROVIDER_EPG_CACHE_TTL` (default `10m`) — refresh interval; overrides `XMLTV_CACHE_TTL` when set
+
+### Fixes
+- **HDHR tuner count integer overflow**: `uint8(tunerCount)` with no bounds check would silently truncate values > 255 in the HDHR discovery packet. Now clamped to [0, 255]. (CodeQL alert #5)
+
+---
+
+## [v0.1.1] — 2026-03-18
+
+- CI: use `GHCR_TOKEN` secret for GHCR registry login; `GITHUB_TOKEN` cannot create new container packages.
+- CI: add `release.yml` workflow — creates a GitHub Release with auto-generated notes on every `v*` tag push. `tester-bundles.yml` is now manual-only (`workflow_dispatch`).
+
+---
+
 ## [v0.1.0] — 2026-03-17
 
 First tagged release. Covers all features developed through the pre-release testing cycle.

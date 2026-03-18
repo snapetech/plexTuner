@@ -84,10 +84,15 @@ Emulates an HDHomeRun network tuner so your media server sees your IPTV channels
 
 Serves XMLTV-format programme guide data at `/guide.xml`. Works standalone or alongside the tuner.
 
-- **Built-in placeholder**: always available, zero config — shows channels with no schedule data
-- **External XMLTV**: set `IPTV_TUNERR_XMLTV_URL` to fetch an upstream guide, filter it to only your channels (by `tvg-id`), remap channel IDs to local guide numbers, and cache the result
-- Language and script normalization for multilingual feeds (`IPTV_TUNERR_XMLTV_PREFER_LANGS`, `IPTV_TUNERR_XMLTV_PREFER_LATIN`)
-- `epg-link-report` command: deterministic coverage report showing which channels are matched, which are unlinked, and by what mechanism
+Three guide sources, merged automatically in priority order — highest wins per channel, lower sources gap-fill:
+
+1. **Provider EPG** (`xmltv.php`) — fetched directly from your Xtream provider using existing credentials. Real programme schedule data, no third-party EPG required. On by default when provider credentials are set.
+2. **External XMLTV** — set `IPTV_TUNERR_XMLTV_URL` to fetch an upstream guide; filtered to your channels, remapped to local guide numbers. Gap-fills provider for time windows the provider EPG doesn't cover.
+3. **Built-in placeholder** — always available, zero config. Fallback for channels with no data from either source above.
+
+Guide cache is pre-warmed at startup (first request is never cold). On fetch failure, stale data is served — no guide outage on transient provider errors. Language and script normalization applied across all sources (`IPTV_TUNERR_XMLTV_PREFER_LANGS`, `IPTV_TUNERR_XMLTV_PREFER_LATIN`).
+
+`epg-link-report` command: deterministic coverage report showing which channels are matched, which are unlinked, and by what mechanism.
 
 These two capabilities run from the same process. They can be used independently: point your media server at the tuner URL for streams and at a different guide source, or use IPTV Tunerr for both.
 
@@ -221,8 +226,11 @@ Full reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-a
 
 | Variable | Description |
 |----------|-------------|
-| `IPTV_TUNERR_XMLTV_URL` | External XMLTV source to fetch, filter, and serve |
-| `IPTV_TUNERR_XMLTV_CACHE_TTL` | How long to cache remapped XMLTV (default `10m`) |
+| `IPTV_TUNERR_PROVIDER_EPG_ENABLED` | Fetch EPG from provider `xmltv.php` (default `true`) |
+| `IPTV_TUNERR_PROVIDER_EPG_TIMEOUT` | Provider EPG fetch timeout (default `90s`) |
+| `IPTV_TUNERR_PROVIDER_EPG_CACHE_TTL` | Provider EPG refresh interval (default `10m`) |
+| `IPTV_TUNERR_XMLTV_URL` | External XMLTV source — gap-fills provider EPG |
+| `IPTV_TUNERR_XMLTV_CACHE_TTL` | External XMLTV refresh interval (default `10m`) |
 | `IPTV_TUNERR_EPG_PRUNE_UNLINKED` | Exclude unlinked channels from guide and lineup |
 | `IPTV_TUNERR_XMLTV_PREFER_LANGS` | Language preference for programme titles (e.g. `en,eng`) |
 | `IPTV_TUNERR_XMLTV_PREFER_LATIN` | Prefer Latin script when multilingual data is available |

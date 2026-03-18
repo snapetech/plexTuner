@@ -320,16 +320,36 @@ See [iptvtunerr-troubleshooting §6](../runbooks/iptvtunerr-troubleshooting.md#6
 
 ## Guide / XMLTV
 
-- `IPTV_TUNERR_XMLTV_URL`
-- `IPTV_TUNERR_XMLTV_TIMEOUT`
-- `IPTV_TUNERR_XMLTV_CACHE_TTL`
-- `IPTV_TUNERR_LIVE_EPG_ONLY`
-- `IPTV_TUNERR_EPG_PRUNE_UNLINKED`
+The guide pipeline serves the most complete data available, merging three sources in priority order (highest wins per channel):
 
-XMLTV language normalization:
-- `IPTV_TUNERR_XMLTV_PREFER_LANGS`
-- `IPTV_TUNERR_XMLTV_PREFER_LATIN`
-- `IPTV_TUNERR_XMLTV_NON_LATIN_TITLE_FALLBACK`
+```
+placeholder  <  external XMLTV  <  provider XMLTV (xmltv.php)
+```
+
+External gap-fills provider for any time windows the provider EPG doesn't cover. The cache is pre-warmed synchronously at startup so the first request is never cold. On fetch failure, stale data is served — no guide outage on transient errors.
+
+### Provider EPG (Xtream `xmltv.php`)
+
+Fetches EPG directly from your IPTV provider using existing credentials. No separate EPG source needed for Xtream providers.
+
+- `IPTV_TUNERR_PROVIDER_EPG_ENABLED` (`true`) — set `false` to disable provider EPG fetch
+- `IPTV_TUNERR_PROVIDER_EPG_TIMEOUT` (`90s`) — fetch timeout; provider XMLTV can be large (10–50 MB)
+- `IPTV_TUNERR_PROVIDER_EPG_CACHE_TTL` (`10m`) — how often to re-fetch; overrides `XMLTV_CACHE_TTL` when set
+
+### External XMLTV (tier 2)
+
+- `IPTV_TUNERR_XMLTV_URL` — external XMLTV source URL; fetched, filtered to your channels, remapped to guide numbers
+- `IPTV_TUNERR_XMLTV_TIMEOUT` — fetch timeout (default `45s`)
+- `IPTV_TUNERR_XMLTV_CACHE_TTL` — refresh interval when provider EPG cache TTL is not set (default `10m`)
+- `IPTV_TUNERR_LIVE_EPG_ONLY` — only serve channels that have a `tvg-id`
+- `IPTV_TUNERR_EPG_PRUNE_UNLINKED` — exclude channels with no EPG match from both guide and lineup
+
+### XMLTV language normalization
+
+Applied to all sources (provider and external):
+- `IPTV_TUNERR_XMLTV_PREFER_LANGS` — preferred language codes for programme titles/descriptions (e.g. `en,eng`)
+- `IPTV_TUNERR_XMLTV_PREFER_LATIN` — prefer Latin-script variants where available
+- `IPTV_TUNERR_XMLTV_NON_LATIN_TITLE_FALLBACK` — what to use when title text is non-Latin and no Latin variant exists (`channel` = use channel name)
 
 ## HDHR network mode
 

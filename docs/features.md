@@ -61,11 +61,15 @@ See also:
 
 ## 5. XMLTV / EPG behavior
 
+The guide pipeline merges three sources in priority order per channel: provider XMLTV > external XMLTV > placeholder. External gap-fills provider. Cache is pre-warmed at startup; stale data served on fetch error.
+
 | Feature | Description |
 |---------|-------------|
-| **Placeholder XMLTV** | Valid XMLTV output even without external guide source. |
-| **External XMLTV fetch/remap** | Fetch XMLTV, filter to current lineup, remap programme channel IDs to local guide numbers. |
-| **Language preference normalization** | Prefer selected language variants (for example `en,eng`) when multiple programme nodes exist. |
+| **Provider EPG via `xmltv.php`** | Fetches EPG directly from Xtream provider using existing credentials (`IPTV_TUNERR_PROVIDER_EPG_ENABLED`). No third-party EPG source required for Xtream providers. |
+| **External XMLTV fetch/remap** | Fetch external XMLTV, filter to current lineup, remap programme channel IDs to local guide numbers. Gap-fills provider EPG for uncovered time windows. |
+| **Placeholder XMLTV** | Valid XMLTV output always available — per-channel fallback when neither provider nor external has data. |
+| **Background refresh** | Guide cache refreshed by background goroutine on TTL tick. First refresh is synchronous (cache warm before server starts). Stale cache preserved on error. |
+| **Language preference normalization** | Prefer selected language variants (for example `en,eng`) across all sources. |
 | **Latin-script preference** | Prefer Latin-script title/desc variants where available. |
 | **Non-Latin title fallback** | Optional fallback to channel name when title text is non-Latin and no usable variant exists. |
 | **Guide number offsets** | Per-instance channel/guide number offsets to avoid Plex multi-DVR guide collisions. |
