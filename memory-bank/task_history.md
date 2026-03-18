@@ -23,6 +23,22 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-18
+  Title: Cross-wire guide-health into lineup and catch-up policy
+  Summary:
+    - Added a shared local-file/URL loader under `internal/refio` and switched report/guide tooling away from duplicated `http.DefaultClient` helper paths.
+    - Cached guide-health alongside the merged XMLTV cache and added opt-in guide-quality policies so runtime lineup refreshes and catch-up capsule preview/publish flows can suppress placeholder-only or no-programme channels.
+    - Added guide-policy tests for lineup refresh and catch-up capsule filtering, plus env/docs/changelog updates for the new behavior.
+  Verification:
+    - `go test ./internal/refio ./internal/tuner ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - Runtime lineup filtering depends on cached guide-health being available, so the first startup refresh remains permissive until the merged guide cache exists.
+  Opportunities filed:
+    - none
+  Links:
+    - internal/refio/refio.go, internal/tuner/guide_policy.go, internal/tuner/epg_pipeline.go, internal/tuner/server.go, cmd/iptv-tunerr/main.go, cmd/iptv-tunerr/cmd_reports.go, cmd/iptv-tunerr/cmd_ops.go
+
+- Date: 2026-03-18
   Title: Add operator how-to for fixing guide data with EPG Doctor
   Summary:
     - Added a dedicated how-to for the new `epg-doctor` workflow so operators can diagnose placeholder-only guide rows, missing programme blocks, unmatched XMLTV channels, and bad `TVGID` linkage from one document.

@@ -1,10 +1,7 @@
 package tuner
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,6 +12,7 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/epgdoctor"
 	"github.com/snapetech/iptvtunerr/internal/epglink"
 	"github.com/snapetech/iptvtunerr/internal/guidehealth"
+	"github.com/snapetech/iptvtunerr/internal/refio"
 )
 
 func (x *XMLTV) GuideHealth(now time.Time, aliasesRef string) (guidehealth.Report, error) {
@@ -147,7 +145,7 @@ func loadGuideHealthAliases(ref string) (epglink.AliasOverrides, error) {
 	if strings.TrimSpace(ref) == "" {
 		return epglink.AliasOverrides{NameToXMLTVID: map[string]string{}}, nil
 	}
-	r, err := openGuideHealthRef(ref)
+	r, err := refio.Open(ref, 45*time.Second)
 	if err != nil {
 		return epglink.AliasOverrides{}, err
 	}
@@ -156,32 +154,12 @@ func loadGuideHealthAliases(ref string) (epglink.AliasOverrides, error) {
 }
 
 func loadGuideHealthXMLTVChannels(ref string) ([]epglink.XMLTVChannel, error) {
-	r, err := openGuideHealthRef(ref)
+	r, err := refio.Open(ref, 45*time.Second)
 	if err != nil {
 		return nil, err
 	}
 	defer r.Close()
 	return epglink.ParseXMLTVChannels(r)
-}
-
-func openGuideHealthRef(ref string) (io.ReadCloser, error) {
-	if strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://") {
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ref, nil)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("User-Agent", "IptvTunerr/1.0")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		if resp.StatusCode != http.StatusOK {
-			defer resp.Body.Close()
-			return nil, fmt.Errorf("http %d", resp.StatusCode)
-		}
-		return resp.Body, nil
-	}
-	return os.Open(ref)
 }
 
 func providerXMLTVURL(baseURL, user, pass string) string {

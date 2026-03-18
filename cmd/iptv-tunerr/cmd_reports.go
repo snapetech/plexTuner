@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/epgdoctor"
 	"github.com/snapetech/iptvtunerr/internal/epglink"
 	"github.com/snapetech/iptvtunerr/internal/guidehealth"
+	"github.com/snapetech/iptvtunerr/internal/refio"
 	"github.com/snapetech/iptvtunerr/internal/tuner"
 )
 
@@ -39,7 +39,7 @@ func handleEPGLinkReport(cfg *config.Config, catalogPath, xmltvRef, aliasesRef, 
 		log.Printf("Catalog %s contains no live_channels", path)
 		os.Exit(1)
 	}
-	xmltvR, err := openFileOrURL(strings.TrimSpace(xmltvRef))
+	xmltvR, err := refio.Open(strings.TrimSpace(xmltvRef), 45*time.Second)
 	if err != nil {
 		log.Printf("Open XMLTV %s: %v", xmltvRef, err)
 		os.Exit(1)
@@ -52,7 +52,7 @@ func handleEPGLinkReport(cfg *config.Config, catalogPath, xmltvRef, aliasesRef, 
 	}
 	aliases := epglink.AliasOverrides{NameToXMLTVID: map[string]string{}}
 	if p := strings.TrimSpace(aliasesRef); p != "" {
-		aliasR, err := openFileOrURL(p)
+		aliasR, err := refio.Open(p, 45*time.Second)
 		if err != nil {
 			log.Printf("Open aliases %s: %v", p, err)
 			os.Exit(1)
@@ -101,7 +101,7 @@ func handleChannelReport(cfg *config.Config, catalogPath, xmltvRef, aliasesRef, 
 	live := c.SnapshotLive()
 	rep := channelreport.Build(live)
 	if strings.TrimSpace(xmltvRef) != "" {
-		xmltvR, err := openFileOrURL(strings.TrimSpace(xmltvRef))
+		xmltvR, err := refio.Open(strings.TrimSpace(xmltvRef), 45*time.Second)
 		if err != nil {
 			log.Printf("Open XMLTV %s: %v", xmltvRef, err)
 			os.Exit(1)
@@ -114,7 +114,7 @@ func handleChannelReport(cfg *config.Config, catalogPath, xmltvRef, aliasesRef, 
 		}
 		aliases := epglink.AliasOverrides{NameToXMLTVID: map[string]string{}}
 		if p := strings.TrimSpace(aliasesRef); p != "" {
-			aliasR, err := openFileOrURL(p)
+			aliasR, err := refio.Open(p, 45*time.Second)
 			if err != nil {
 				log.Printf("Open aliases %s: %v", p, err)
 				os.Exit(1)
@@ -182,7 +182,7 @@ func handleGhostHunter(pmsURL, token string, observe, poll time.Duration, stop b
 	fmt.Println(string(data))
 }
 
-func handleCatchupCapsules(cfg *config.Config, catalogPath, xmltvRef string, horizon time.Duration, limit int, outPath, layoutDir string) {
+func handleCatchupCapsules(cfg *config.Config, catalogPath, xmltvRef string, horizon time.Duration, limit int, outPath, layoutDir, guidePolicy string) {
 	path := strings.TrimSpace(catalogPath)
 	if path == "" {
 		path = cfg.CatalogPath
@@ -191,7 +191,7 @@ func handleCatchupCapsules(cfg *config.Config, catalogPath, xmltvRef string, hor
 		log.Print("Set -xmltv to a local file or http(s) guide/XMLTV URL")
 		os.Exit(1)
 	}
-	rep, err := buildCatchupCapsulePreviewFromRef(path, strings.TrimSpace(xmltvRef), horizon, limit)
+	rep, err := buildCatchupCapsulePreviewFromRef(path, strings.TrimSpace(xmltvRef), horizon, limit, guidePolicy)
 	if err != nil {
 		log.Printf("Build catchup capsule preview failed: %v", err)
 		os.Exit(1)
@@ -232,20 +232,14 @@ func handleGuideHealth(cfg *config.Config, catalogPath, guideRef, xmltvRef, alia
 		os.Exit(1)
 	}
 	live := c.SnapshotLive()
-	guideR, err := openFileOrURL(guideRef)
+	data, err := refio.ReadAll(guideRef, 45*time.Second)
 	if err != nil {
 		log.Printf("Open guide %s: %v", guideRef, err)
 		os.Exit(1)
 	}
-	data, err := io.ReadAll(guideR)
-	_ = guideR.Close()
-	if err != nil {
-		log.Printf("Read guide %s: %v", guideRef, err)
-		os.Exit(1)
-	}
 	var matchRep *epglink.Report
 	if strings.TrimSpace(xmltvRef) != "" {
-		xmltvR, err := openFileOrURL(strings.TrimSpace(xmltvRef))
+		xmltvR, err := refio.Open(strings.TrimSpace(xmltvRef), 45*time.Second)
 		if err != nil {
 			log.Printf("Open XMLTV %s: %v", xmltvRef, err)
 			os.Exit(1)
@@ -258,7 +252,7 @@ func handleGuideHealth(cfg *config.Config, catalogPath, guideRef, xmltvRef, alia
 		}
 		aliases := epglink.AliasOverrides{NameToXMLTVID: map[string]string{}}
 		if p := strings.TrimSpace(aliasesRef); p != "" {
-			aliasR, err := openFileOrURL(p)
+			aliasR, err := refio.Open(p, 45*time.Second)
 			if err != nil {
 				log.Printf("Open aliases %s: %v", p, err)
 				os.Exit(1)
@@ -306,20 +300,14 @@ func handleEPGDoctor(cfg *config.Config, catalogPath, guideRef, xmltvRef, aliase
 		os.Exit(1)
 	}
 	live := c.SnapshotLive()
-	guideR, err := openFileOrURL(guideRef)
+	data, err := refio.ReadAll(guideRef, 45*time.Second)
 	if err != nil {
 		log.Printf("Open guide %s: %v", guideRef, err)
 		os.Exit(1)
 	}
-	data, err := io.ReadAll(guideR)
-	_ = guideR.Close()
-	if err != nil {
-		log.Printf("Read guide %s: %v", guideRef, err)
-		os.Exit(1)
-	}
 	var matchRep *epglink.Report
 	if strings.TrimSpace(xmltvRef) != "" {
-		xmltvR, err := openFileOrURL(strings.TrimSpace(xmltvRef))
+		xmltvR, err := refio.Open(strings.TrimSpace(xmltvRef), 45*time.Second)
 		if err != nil {
 			log.Printf("Open XMLTV %s: %v", xmltvRef, err)
 			os.Exit(1)
@@ -332,7 +320,7 @@ func handleEPGDoctor(cfg *config.Config, catalogPath, guideRef, xmltvRef, aliase
 		}
 		aliases := epglink.AliasOverrides{NameToXMLTVID: map[string]string{}}
 		if p := strings.TrimSpace(aliasesRef); p != "" {
-			aliasR, err := openFileOrURL(p)
+			aliasR, err := refio.Open(p, 45*time.Second)
 			if err != nil {
 				log.Printf("Open aliases %s: %v", p, err)
 				os.Exit(1)

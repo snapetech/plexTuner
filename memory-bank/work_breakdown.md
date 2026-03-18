@@ -21,6 +21,23 @@ Create or update this file when **any** of these are true:
 - **Goal (2–5 sentences):** Make IptvTunerr the "home run" Plex IPTV bridge by outperforming common Threadfin/xTeVe setups on the things users actually feel: stream correctness, client compatibility, lineup/EPG hygiene, resilience, and low overhead. Success means a direct IptvTunerr deployment can be dropped into Plex with minimal manual cleanup, stable playback across Plex Web and TV clients, and reliable recordings under normal upstream instability. This epic is the durable product-hardening track; bugfixes should map back to one of these pillars.
 - **Non-goals (scope fence):** Building a full UI, replacing Plex's DVR/channel UX, supporting every IPTV provider edge case in one pass, or introducing placeholder/disabled fallback behavior that cannot be exercised in real Plex tests.
 
+### Active epic overlay (2026-03-18)
+
+- **Goal (2–5 sentences):** Consolidate the new intelligence layer so it feeds runtime behavior instead of staying report-only, while also paying down the biggest structural hotspots created by rapid feature growth. Success means guide quality can drive lineup and catch-up decisions, shared file/URL loading is consistent across runtime and tooling, and the next refactors can land on smaller, cleaner seams.
+- **Non-goals (scope fence):** Shipping a full UI, building a real timeshift recorder in one pass, or pretending near-live catch-up is already true replay without an actual replay source.
+
+### Active story list (2026-03-18)
+
+| ID | Acceptance criteria | Files/areas (expected) | Verification | Risk flags |
+|----|---------------------|------------------------|--------------|------------|
+| INT-001 | Shared file/URL loading lives in one internal helper and report/guide tooling stop using ad-hoc `http.DefaultClient` code paths. | `internal/*`, `cmd/iptv-tunerr/*`, `internal/tuner/*` | targeted `go test` + `./scripts/verify` | maintainability / operability |
+| INT-002 | Guide quality policy exists as a reusable runtime decision surface that can classify channels as healthy/placeholder-only/no-programme and feed other flows from cached guide state. | `internal/tuner/*`, new `internal/*` helper package if needed | `go test ./internal/tuner ...`; `./scripts/verify` | reliability / behavior |
+| INT-003 | Lineup shaping can optionally use guide-quality policy so operators can prefer or require channels with real programme coverage. | `internal/tuner/server.go`, config/docs/tests | `go test ./internal/tuner`; `./scripts/verify` | behavior / migration |
+| INT-004 | Catch-up publishing can optionally suppress weak channels/capsules using guide-quality policy instead of publishing every preview row. | `internal/tuner/*`, `cmd/iptv-tunerr/*`, docs/tests | targeted tests + `./scripts/verify` | product behavior |
+| INT-005 | CLI flag construction is no longer centralized in one 900+ line `main.go`; command registration follows the same concern split as execution. | `cmd/iptv-tunerr/*` | `go test ./cmd/iptv-tunerr`; `./scripts/verify` | maintainability |
+| INT-006 | `internal/tuner/gateway.go` is decomposed into smaller concern-focused files without changing public behavior. | `internal/tuner/gateway*.go` | `go test ./internal/tuner`; `./scripts/verify` | maintainability / regression |
+| INT-007 | Catch-up publishing distinguishes clearly between near-live launchers and true replay, and a real replay mode is only introduced behind an explicit source-backed path. | `internal/tuner/*`, docs/tests | targeted tests + docs updates | product / scope |
+
 ### Milestones (vertical slices)
 
 | Milestone | Done = verifiable outcomes |
@@ -55,6 +72,15 @@ For each story:
 | PR-3 | `HR-005` + `HR-006` (built-in lineup/EPG hygiene + stable channel identity policy) |
 | PR-4 | `HR-007` + `HR-010` (remux-first/per-channel normalization + concurrency/keepalive tuning) |
 | PR-5 | `HR-008` + `HR-009` (resilience hardening + recording soak baseline and runbooks) |
+
+### Active PR plan (2026-03-18)
+
+| PR | Scope |
+|----|--------|
+| PR-A | `INT-001` + `INT-002` + `INT-003` + `INT-004` (shared loader + guide-quality policy + lineup/catch-up integration) |
+| PR-B | `INT-005` (CLI flag/registration split) |
+| PR-C | `INT-006` (gateway decomposition) |
+| PR-D | `INT-007` (explicit replay-mode boundary and any source-backed true replay work) |
 
 ### Decision points (needs user input)
 

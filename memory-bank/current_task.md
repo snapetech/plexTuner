@@ -8,6 +8,16 @@
 
 **Last updated:** 2026-03-18
 
+**Current focus shift (intelligence cross-wiring epic, 2026-03-18):**
+- User requested the full next wave from the audit: structural cleanup plus runtime cross-wiring so the newer intelligence/reporting work actually changes behavior.
+- This is now tracked as a multi-PR epic in `memory-bank/work_breakdown.md` under `INT-001` through `INT-007`.
+- Current PR-sized slice:
+  1. `INT-001` shared file/URL loader cleanup
+  2. `INT-002` cached guide-quality policy foundation
+  3. `INT-003` lineup shaping hooks for healthy-guide filtering
+  4. `INT-004` catch-up publishing hooks for healthy-guide filtering
+  5. docs/changelog/memory-bank updates plus verification
+
 **Current focus shift (EPG doctor operator docs, 2026-03-18):**
 - Follow-on docs cleanup after shipping `guide-health` and `epg-doctor`: make the new guide-diagnostics workflow discoverable from the how-to and runbook indexes so operators have one documented path from symptom to fix.
 - This pass adds:

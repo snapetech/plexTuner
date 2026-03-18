@@ -15,6 +15,7 @@ import (
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
 	"github.com/snapetech/iptvtunerr/internal/epglink"
+	"github.com/snapetech/iptvtunerr/internal/guidehealth"
 )
 
 // XMLTV serves /guide.xml using a layered EPG pipeline:
@@ -46,6 +47,7 @@ type XMLTV struct {
 	cachedMatchReport  *epglink.Report
 	cachedMatchAliases string
 	cachedMatchExp     time.Time
+	cachedGuideHealth  *guidehealth.Report
 }
 
 type xmltvTextPolicy struct {

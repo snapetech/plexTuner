@@ -337,6 +337,7 @@ Preview/feed of future publishable near-live capsule candidates built from the c
 Query params:
 - `horizon=3h` — how far ahead to include candidate programme windows
 - `limit=20` — max capsules returned
+- `policy=healthy|strict` — optional guide-quality filter; when omitted, falls back to `IPTV_TUNERR_CATCHUP_GUIDE_POLICY`
 
 Returned fields include:
 - `capsule_id`
@@ -363,6 +364,7 @@ Common flags:
 - `-limit`
 - `-out`
 - `-layout-dir` — optional lane-split output directory; writes `<lane>.json` files plus `manifest.json`
+- `-guide-policy` — optional `off|healthy|strict`; filters capsules using real guide-health before export
 
 ## `iptv-tunerr catchup-publish`
 
@@ -376,6 +378,7 @@ Common flags:
 - `-out-dir` — required; root output directory
 - `-stream-base-url` — required unless `IPTV_TUNERR_BASE_URL` is set; used inside generated `.strm` files
 - `-library-prefix` — default `Catchup`
+- `-guide-policy` — optional `off|healthy|strict`; filters capsules using real guide-health before publish
 - `-manifest-out`
 - `-register-plex`
 - `-register-emby`
@@ -520,6 +523,10 @@ Probe method:
   - `balanced` = rank by combined guide + stream score
   - `guide_first` = rank by guide confidence before stream resilience
   - `resilient` = rank by backup-stream resilience before guide score
+- `IPTV_TUNERR_GUIDE_POLICY` — optional runtime guide-quality policy:
+  - `off` = current permissive behavior
+  - `healthy` = keep only channels with real programme rows once cached guide-health is available
+  - `strict` = same as `healthy`, plus require a non-empty `TVGID`
 
 `IPTV_TUNERR_GUIDE_NUMBER_OFFSET`:
 - adds a per-instance channel/guide ID offset
@@ -577,6 +584,7 @@ Fetches EPG directly from your IPTV provider using existing credentials. No sepa
 
 - `IPTV_TUNERR_XMLTV_URL` — external XMLTV source URL; fetched, filtered to your channels, remapped to guide numbers
 - `IPTV_TUNERR_XMLTV_ALIASES` — optional file path or `http(s)` URL for alias overrides used in deterministic EPG repair
+- `IPTV_TUNERR_CATCHUP_GUIDE_POLICY` — optional `off|healthy|strict`; applies guide-quality filtering to `/guide/capsules.json`, `catchup-capsules`, and `catchup-publish`
 - `IPTV_TUNERR_XMLTV_MATCH_ENABLE` — repair/assign channel `TVGID`s from provider/external XMLTV channel metadata during catalog build (default `true`)
 - `IPTV_TUNERR_XMLTV_TIMEOUT` — fetch timeout (default `45s`)
 - `IPTV_TUNERR_XMLTV_CACHE_TTL` — refresh interval when provider EPG cache TTL is not set (default `10m`)

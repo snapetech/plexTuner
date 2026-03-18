@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
+	"github.com/snapetech/iptvtunerr/internal/guidehealth"
 )
 
 func TestServer_healthz(t *testing.T) {
@@ -251,6 +252,32 @@ func TestServer_guideHealth(t *testing.T) {
 	}
 }
 
+func TestServer_UpdateChannelsGuidePolicy(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_GUIDE_POLICY", "healthy")
+	s := &Server{
+		xmltv: &XMLTV{
+			cachedGuideHealth: &guidehealth.Report{
+				SourceReady: true,
+				Channels: []guidehealth.ChannelHealth{
+					{ChannelID: "1", HasRealProgrammes: true, TVGID: "news.one"},
+					{ChannelID: "2", HasRealProgrammes: false, TVGID: "mystery.tv", PlaceholderOnly: true},
+				},
+			},
+		},
+		LineupMaxChannels: NoLineupCap,
+	}
+	s.UpdateChannels([]catalog.LiveChannel{
+		{ChannelID: "1", GuideNumber: "101", GuideName: "News One", TVGID: "news.one"},
+		{ChannelID: "2", GuideNumber: "102", GuideName: "Mystery TV", TVGID: "mystery.tv"},
+	})
+	if len(s.Channels) != 1 {
+		t.Fatalf("channels=%d want 1", len(s.Channels))
+	}
+	if s.Channels[0].ChannelID != "1" {
+		t.Fatalf("kept channel=%q want 1", s.Channels[0].ChannelID)
+	}
+}
+
 func TestServer_epgDoctor(t *testing.T) {
 	s := &Server{
 		xmltv: &XMLTV{
@@ -338,6 +365,55 @@ func TestServer_catchupCapsules(t *testing.T) {
 	}
 	if body.Capsules[0].Lane == "" {
 		t.Fatalf("expected lane on capsule")
+	}
+}
+
+func TestServer_catchupCapsulesGuidePolicy(t *testing.T) {
+	now := time.Now().UTC()
+	start := now.Add(10 * time.Minute).Format("20060102150405 +0000")
+	stop := now.Add(70 * time.Minute).Format("20060102150405 +0000")
+	xml := []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="101"><display-name>Sports Net</display-name></channel>
+  <channel id="202"><display-name>Mystery TV</display-name></channel>
+  <programme start="` + start + `" stop="` + stop + `" channel="101">
+    <title>Team A vs Team B</title>
+    <desc>Live game</desc>
+  </programme>
+  <programme start="` + start + `" stop="` + stop + `" channel="202">
+    <title>Mystery TV</title>
+  </programme>
+</tv>`)
+	live := []catalog.LiveChannel{
+		{ChannelID: "1", GuideNumber: "101", GuideName: "Sports Net", TVGID: "sports.net", DNAID: "dna:sports"},
+		{ChannelID: "2", GuideNumber: "202", GuideName: "Mystery TV", TVGID: "mystery.tv", DNAID: "dna:mystery"},
+	}
+	gh, err := buildGuideHealthForChannels(live, xml, now)
+	if err != nil {
+		t.Fatalf("buildGuideHealthForChannels: %v", err)
+	}
+	s := &Server{
+		xmltv: &XMLTV{
+			Channels:          live,
+			cachedXML:         xml,
+			cachedGuideHealth: &gh,
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/guide/capsules.json?horizon=2h&limit=10&policy=healthy", nil)
+	w := httptest.NewRecorder()
+	s.serveCatchupCapsules().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d want 200", w.Code)
+	}
+	var body CatchupCapsulePreview
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Capsules) != 1 {
+		t.Fatalf("capsules len=%d want 1", len(body.Capsules))
+	}
+	if body.Capsules[0].ChannelID != "101" {
+		t.Fatalf("kept capsule channel=%q want 101", body.Capsules[0].ChannelID)
 	}
 }
 

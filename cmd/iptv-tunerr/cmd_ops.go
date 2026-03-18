@@ -373,7 +373,7 @@ func handlePlexVODRegister(cfg *config.Config, mount, plexURL, plexToken, showsN
 	}
 }
 
-func handleCatchupPublish(cfg *config.Config, catalogPath, xmltvRef string, horizon time.Duration, limit int, outDir, streamBaseURL, libraryPrefix string, registerPlex bool, plexURL, plexToken string, registerEmby bool, embyHost, embyToken string, registerJellyfin bool, jellyfinHost, jellyfinToken string, refresh bool, manifestOut string) {
+func handleCatchupPublish(cfg *config.Config, catalogPath, xmltvRef string, horizon time.Duration, limit int, outDir, streamBaseURL, libraryPrefix, guidePolicy string, registerPlex bool, plexURL, plexToken string, registerEmby bool, embyHost, embyToken string, registerJellyfin bool, jellyfinHost, jellyfinToken string, refresh bool, manifestOut string) {
 	path := strings.TrimSpace(catalogPath)
 	if path == "" {
 		path = cfg.CatalogPath
@@ -393,7 +393,7 @@ func handleCatchupPublish(cfg *config.Config, catalogPath, xmltvRef string, hori
 		log.Print("Set -stream-base-url or IPTV_TUNERR_BASE_URL so generated .strm files can reach this tuner")
 		os.Exit(1)
 	}
-	rep, err := buildCatchupCapsulePreviewFromRef(path, xmltvRef, horizon, limit)
+	rep, err := buildCatchupCapsulePreviewFromRef(path, xmltvRef, horizon, limit, guidePolicy)
 	if err != nil {
 		log.Printf("Build catchup capsule preview failed: %v", err)
 		os.Exit(1)

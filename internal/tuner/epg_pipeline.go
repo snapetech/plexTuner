@@ -437,9 +437,18 @@ func (x *XMLTV) refresh() {
 		ttl = 10 * time.Minute
 	}
 
+	gh, ghErr := buildGuideHealthForChannels(channels, data, time.Now())
+	if ghErr != nil {
+		log.Printf("xmltv: guide-health cache refresh failed: %v", ghErr)
+	}
+
 	x.mu.Lock()
 	x.cachedXML = data
 	x.cacheExp = time.Now().Add(ttl)
+	if ghErr == nil {
+		ghCopy := gh
+		x.cachedGuideHealth = &ghCopy
+	}
 	x.mu.Unlock()
 
 	log.Printf("xmltv: EPG cache updated (%d bytes, expires in %v)", len(data), ttl)

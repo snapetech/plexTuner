@@ -19,9 +19,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -35,6 +33,7 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/indexer"
 	"github.com/snapetech/iptvtunerr/internal/plex"
 	"github.com/snapetech/iptvtunerr/internal/provider"
+	"github.com/snapetech/iptvtunerr/internal/refio"
 	"github.com/snapetech/iptvtunerr/internal/tuner"
 )
 
@@ -328,24 +327,26 @@ func registerCatchupMediaServerLibraries(serverType, host, token string, manifes
 	return nil
 }
 
-func buildCatchupCapsulePreviewFromRef(path, xmltvRef string, horizon time.Duration, limit int) (tuner.CatchupCapsulePreview, error) {
+func buildCatchupCapsulePreviewFromRef(path, xmltvRef string, horizon time.Duration, limit int, guidePolicy string) (tuner.CatchupCapsulePreview, error) {
 	c := catalog.New()
 	if err := c.Load(path); err != nil {
 		return tuner.CatchupCapsulePreview{}, fmt.Errorf("load catalog %s: %w", path, err)
 	}
 	live := c.SnapshotLive()
-	guideR, err := openFileOrURL(xmltvRef)
+	data, err := refio.ReadAll(xmltvRef, 45*time.Second)
 	if err != nil {
 		return tuner.CatchupCapsulePreview{}, fmt.Errorf("open guide/XMLTV %s: %w", xmltvRef, err)
-	}
-	data, err := io.ReadAll(guideR)
-	_ = guideR.Close()
-	if err != nil {
-		return tuner.CatchupCapsulePreview{}, fmt.Errorf("read guide/XMLTV %s: %w", xmltvRef, err)
 	}
 	rep, err := tuner.BuildCatchupCapsulePreview(live, data, time.Now(), horizon, limit)
 	if err != nil {
 		return tuner.CatchupCapsulePreview{}, fmt.Errorf("build catchup capsule preview: %w", err)
+	}
+	if policy := strings.TrimSpace(guidePolicy); policy != "" {
+		gh, err := tuner.BuildGuideHealthForPolicy(live, data, time.Now())
+		if err != nil {
+			return tuner.CatchupCapsulePreview{}, fmt.Errorf("build guide health for catchup policy: %w", err)
+		}
+		rep = tuner.FilterCatchupCapsulesByGuidePolicy(rep, gh, policy)
 	}
 	return rep, nil
 }
@@ -541,7 +542,7 @@ func loadAliasOverrides(ref string) (epglink.AliasOverrides, error) {
 	if strings.TrimSpace(ref) == "" {
 		return epglink.AliasOverrides{NameToXMLTVID: map[string]string{}}, nil
 	}
-	r, err := openFileOrURL(ref)
+	r, err := refio.Open(ref, 45*time.Second)
 	if err != nil {
 		return epglink.AliasOverrides{}, err
 	}
@@ -550,7 +551,7 @@ func loadAliasOverrides(ref string) (epglink.AliasOverrides, error) {
 }
 
 func loadXMLTVChannels(ref string) ([]epglink.XMLTVChannel, error) {
-	r, err := openFileOrURL(ref)
+	r, err := refio.Open(ref, 45*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -756,6 +757,7 @@ func main() {
 	catchupCapsulesLimit := catchupCapsulesCmd.Int("limit", 20, "Max capsules to export")
 	catchupCapsulesOut := catchupCapsulesCmd.String("out", "", "Optional JSON output path (default: stdout)")
 	catchupCapsulesLayoutDir := catchupCapsulesCmd.String("layout-dir", "", "Optional output directory for lane-split capsule JSON files plus manifest.json")
+	catchupCapsulesGuidePolicy := catchupCapsulesCmd.String("guide-policy", strings.TrimSpace(os.Getenv("IPTV_TUNERR_CATCHUP_GUIDE_POLICY")), "Optional guide-quality policy: off|healthy|strict")
 
 	catchupPublishCmd := flag.NewFlagSet("catchup-publish", flag.ExitOnError)
 	catchupPublishCatalog := catchupPublishCmd.String("catalog", "", "Input catalog.json (default: IPTV_TUNERR_CATALOG)")
@@ -765,6 +767,7 @@ func main() {
 	catchupPublishOutDir := catchupPublishCmd.String("out-dir", "", "Output directory for published catch-up libraries (required)")
 	catchupPublishStreamBaseURL := catchupPublishCmd.String("stream-base-url", "", "Base URL used inside generated .strm files (default: IPTV_TUNERR_BASE_URL)")
 	catchupPublishLibraryPrefix := catchupPublishCmd.String("library-prefix", "Catchup", "Prefix for generated library names (e.g. 'Catchup')")
+	catchupPublishGuidePolicy := catchupPublishCmd.String("guide-policy", strings.TrimSpace(os.Getenv("IPTV_TUNERR_CATCHUP_GUIDE_POLICY")), "Optional guide-quality policy: off|healthy|strict")
 	catchupPublishManifestOut := catchupPublishCmd.String("manifest-out", "", "Optional JSON output path for the publish manifest (default: stdout)")
 	catchupPublishRegisterPlex := catchupPublishCmd.Bool("register-plex", false, "Create/reuse Plex libraries for each published lane")
 	catchupPublishRegisterEmby := catchupPublishCmd.Bool("register-emby", false, "Create/reuse Emby libraries for each published lane")
@@ -876,36 +879,16 @@ func main() {
 
 	case "catchup-capsules":
 		_ = catchupCapsulesCmd.Parse(os.Args[2:])
-		handleCatchupCapsules(cfg, *catchupCapsulesCatalog, *catchupCapsulesXMLTV, *catchupCapsulesHorizon, *catchupCapsulesLimit, *catchupCapsulesOut, *catchupCapsulesLayoutDir)
+		handleCatchupCapsules(cfg, *catchupCapsulesCatalog, *catchupCapsulesXMLTV, *catchupCapsulesHorizon, *catchupCapsulesLimit, *catchupCapsulesOut, *catchupCapsulesLayoutDir, *catchupCapsulesGuidePolicy)
 
 	case "catchup-publish":
 		_ = catchupPublishCmd.Parse(os.Args[2:])
-		handleCatchupPublish(cfg, *catchupPublishCatalog, *catchupPublishXMLTV, *catchupPublishHorizon, *catchupPublishLimit, *catchupPublishOutDir, *catchupPublishStreamBaseURL, *catchupPublishLibraryPrefix, *catchupPublishRegisterPlex, *catchupPublishPlexURL, *catchupPublishPlexToken, *catchupPublishRegisterEmby, *catchupPublishEmbyHost, *catchupPublishEmbyToken, *catchupPublishRegisterJellyfin, *catchupPublishJellyfinHost, *catchupPublishJellyfinToken, *catchupPublishRefresh, *catchupPublishManifestOut)
+		handleCatchupPublish(cfg, *catchupPublishCatalog, *catchupPublishXMLTV, *catchupPublishHorizon, *catchupPublishLimit, *catchupPublishOutDir, *catchupPublishStreamBaseURL, *catchupPublishLibraryPrefix, *catchupPublishGuidePolicy, *catchupPublishRegisterPlex, *catchupPublishPlexURL, *catchupPublishPlexToken, *catchupPublishRegisterEmby, *catchupPublishEmbyHost, *catchupPublishEmbyToken, *catchupPublishRegisterJellyfin, *catchupPublishJellyfinHost, *catchupPublishJellyfinToken, *catchupPublishRefresh, *catchupPublishManifestOut)
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %q\n", os.Args[1])
 		os.Exit(1)
 	}
-}
-
-func openFileOrURL(ref string) (io.ReadCloser, error) {
-	if strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://") {
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ref, nil)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("User-Agent", "IptvTunerr/1.0")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		if resp.StatusCode != http.StatusOK {
-			defer resp.Body.Close()
-			return nil, fmt.Errorf("http %d", resp.StatusCode)
-		}
-		return resp.Body, nil
-	}
-	return os.Open(ref)
 }
 
 func parseCSV(s string) []string {

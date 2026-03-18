@@ -73,6 +73,9 @@ type Server struct {
 // When LineupMaxChannels is NoLineupCap, no cap is applied (for programmatic lineup sync; see -register-plex).
 func (s *Server) UpdateChannels(live []catalog.LiveChannel) {
 	live = applyLineupPreCapFilters(live)
+	if s.xmltv != nil {
+		live = s.xmltv.applyGuidePolicyToChannels(live, os.Getenv("IPTV_TUNERR_GUIDE_POLICY"))
+	}
 	if s.LineupMaxChannels == NoLineupCap {
 		// Full lineup for programmatic sync; do not cap.
 	} else {
@@ -103,6 +106,7 @@ func (s *Server) UpdateChannels(live []catalog.LiveChannel) {
 		s.xmltv.cachedMatchReport = nil
 		s.xmltv.cachedMatchAliases = ""
 		s.xmltv.cachedMatchExp = time.Time{}
+		s.xmltv.cachedGuideHealth = nil
 		s.xmltv.mu.Unlock()
 	}
 	if s.m3uServe != nil {
@@ -953,10 +957,19 @@ func (s *Server) serveCatchupCapsules() http.Handler {
 				limit = n
 			}
 		}
+		policy := strings.TrimSpace(r.URL.Query().Get("policy"))
+		if policy == "" {
+			policy = strings.TrimSpace(os.Getenv("IPTV_TUNERR_CATCHUP_GUIDE_POLICY"))
+		}
 		rep, err := s.xmltv.CatchupCapsulePreview(time.Now(), horizon, limit)
 		if err != nil {
 			http.Error(w, `{"error":"catchup capsule preview failed"}`, http.StatusBadGateway)
 			return
+		}
+		if policy != "" {
+			if gh, ok := s.xmltv.cachedGuideHealthReport(); ok {
+				rep = FilterCatchupCapsulesByGuidePolicy(rep, gh, policy)
+			}
 		}
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {

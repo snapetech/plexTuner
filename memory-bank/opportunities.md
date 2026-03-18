@@ -24,6 +24,60 @@ It exists to encourage quality gains without derailing the current task.
 
 - Date: 2026-03-18
   Category: maintainability
+  Title: Split CLI flag construction and shared input helpers out of `cmd/iptv-tunerr/main.go`
+  Context: Fresh whole-project audit after the command-handler split.
+  Why it matters: Command execution moved into `cmd_core.go`, `cmd_ops.go`, and `cmd_reports.go`, but `main.go` is still the central flag factory and usage printer at 944 lines. Every new command still expands one file and keeps help text, flag defaults, and dispatch tightly coupled.
+  Evidence: `cmd/iptv-tunerr/main.go` still contains all `flag.NewFlagSet(...)` calls, command usage text, `buildCatchupCapsulePreviewFromRef`, `loadXMLTVChannelsFromRef`, and `openFileOrURL`.
+  Suggested fix: Move each command's flag wiring and usage summary into the same concern-specific files as the handlers, with a small shared command registry and one common file/URL loader helper.
+  Risk/Scope: med | fits current scope? no
+  User decision needed?: no
+
+- Date: 2026-03-18
+  Category: maintainability
+  Title: Break up `internal/tuner/gateway.go` into adaptation, upstream fetch, and provider-intelligence modules
+  Context: Fresh whole-project audit after provider-profile, Autopilot, and Ghost Hunter additions.
+  Why it matters: `gateway.go` is now 3426 lines and owns request adaptation, ffmpeg path selection, HLS relay, upstream retry/fallback, Cloudflare handling, provider-cap learning, provider profile stats, and Autopilot memory hooks. That makes regression review expensive and cross-feature changes risky.
+  Evidence: `wc -l internal/tuner/gateway.go` reports 3426 lines; Autopilot and provider-profile code now live alongside low-level relay logic.
+  Suggested fix: Split into focused files such as `gateway_adapt.go`, `gateway_hls.go`, `gateway_provider_profile.go`, and `gateway_autopilot.go` while preserving the current public surface.
+  Risk/Scope: med-high | fits current scope? no
+  User decision needed?: no
+
+- Date: 2026-03-18
+  Category: reliability
+  Title: Unify file/URL fetch helpers and stop bypassing the shared HTTP client in guide tooling
+  Context: Fresh whole-project audit of report and guide-health paths.
+  Why it matters: guide/report tools currently use duplicated open helpers and `http.DefaultClient`, which means timeout, transport, and header behavior can drift from the rest of the app. That is exactly the kind of subtle difference that makes diagnostics disagree with runtime behavior.
+  Evidence: `cmd/iptv-tunerr/main.go:891` defines `openFileOrURL`; `internal/tuner/guide_health.go:167` defines `openGuideHealthRef`; both call `http.DefaultClient.Do(...)` directly.
+  Suggested fix: Add one shared loader helper under `internal/` that accepts local files or URLs and uses the repo's shared HTTP client defaults.
+  Risk/Scope: low-med | fits current scope? no
+  User decision needed?: no
+
+- Date: 2026-03-18
+  Category: operability
+  Title: Feed guide-health and channel-intelligence results back into runtime publishing and lineup decisions
+  Context: Fresh whole-project audit of the new intelligence layer.
+  Why it matters: the app can now diagnose weak guide coverage very well, but most runtime decisions still operate on static channel metadata and simple score heuristics. That leaves real user-facing wins on the table: high-confidence lineups, cleaner catch-up output, and media-server registration that avoids weak channels by default.
+  Evidence: `internal/tuner/server.go:203` lineup recipes sort by `channelreport.Score/GuideConfidence/StreamResilience` only; `internal/tuner/catchup_publish.go` publishes every capsule preview row regardless of actual guide-health quality; no runtime path consumes `guide-health` or `epg-doctor` results as policy input.
+  Suggested fix: Introduce an optional cached guide-quality policy layer that can suppress placeholder-only channels, publish only high-confidence capsules, and expose one "healthy lineup" mode for registration and recipes.
+  Risk/Scope: med | fits current scope? no
+  User decision needed?: yes
+  If yes: 2–3 options + recommended default + what you will do if no answer
+  Recommended default: add an opt-in policy (`healthy`, `strict`) first, keep today's permissive behavior as default, and reuse the cached guide-health surface rather than recomputing diagnostics per request.
+
+- Date: 2026-03-18
+  Category: other
+  Title: Catch-up publishing currently produces near-live launchers, not program-bound playback
+  Context: Fresh whole-project audit of the catch-up subsystem.
+  Why it matters: the feature is useful today, but users may assume each published item replays a specific programme window. Right now it launches the current live channel stream, so the library object is metadata-rich but not a true time-shifted asset.
+  Evidence: `internal/tuner/catchup_publish.go:97` writes `.strm` files pointing to `streamBaseURL + \"/stream/\" + capsule.ChannelID`; no time window, DVR buffer, or recording path is encoded.
+  Suggested fix: Keep documenting the current behavior honestly, and consider a future "true catch-up" mode backed by provider timeshift/replay URLs or a short rolling recorder.
+  Risk/Scope: med-high | fits current scope? no
+  User decision needed?: yes
+  If yes: 2–3 options + recommended default + what you will do if no answer
+  Recommended default: keep the current near-live publisher, label it clearly as a launcher, and only pursue true replay once there is a real time-shift source.
+
+- Date: 2026-03-18
+  Category: maintainability
   Title: Reconcile repo navigation docs with the actual remote setup and current product surfaces
   Context: Architecture review after the Live TV intelligence and catch-up work.
   Why it matters: `memory-bank/repo_map.md` still says to push to both `origin` and `plex`, but the active repo setup in this workspace only uses `origin`. The same file also under-describes newer product areas such as channel intelligence, Ghost Hunter, provider profile, and catch-up publishing.

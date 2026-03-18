@@ -62,6 +62,7 @@ Recent additions are aimed at one thing: making the system explain itself and re
 - **Provider profile and autotune**: shows learned concurrency caps, instability signals, Cloudflare hits, and cautious self-tuning decisions.
 - **Guide highlights and catch-up capsules**: turn raw XMLTV data into "what's on now", "starting soon", and publishable near-live programme blocks.
 - **Catch-up publishing**: writes real `.strm + .nfo` items and can register lane libraries in Plex, Emby, and Jellyfin. Emby and Jellyfin were live-validated in cluster.
+- **Guide-quality policy hooks**: can now use actual guide-health results, not just channel metadata, to suppress placeholder-only channels from runtime lineups and catch-up outputs.
 
 See:
 - [docs/features.md](docs/features.md)
@@ -424,6 +425,13 @@ IPTV_TUNERR_LINEUP_RECIPE=high_confidence  # keep only the strongest guide-ready
 IPTV_TUNERR_LINEUP_RECIPE=balanced         # rank by combined score
 IPTV_TUNERR_LINEUP_RECIPE=guide_first      # rank by guide confidence first
 IPTV_TUNERR_LINEUP_RECIPE=resilient        # rank by backup-stream resilience first
+IPTV_TUNERR_GUIDE_POLICY=healthy           # keep only channels with real programme blocks once guide cache is ready
+```
+
+For catch-up preview/publish flows:
+
+```bash
+IPTV_TUNERR_CATCHUP_GUIDE_POLICY=healthy
 ```
 
 ---

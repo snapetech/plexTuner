@@ -16,6 +16,8 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 ### Guide / intelligence
 - **Guide health report**: added `guide-health` plus `/guide/health.json` to combine XMLTV match status with actual merged-guide coverage, including detection of placeholder-only channel rows versus real programme blocks.
 - **EPG doctor workflow**: added `epg-doctor` plus `/guide/doctor.json` as the combined top-level diagnosis path, and cached live guide match provenance so repeated guide diagnostics do not rebuild the same match analysis on every request.
+- **Guide-quality policy hooks**: added shared guide-health caching plus `IPTV_TUNERR_GUIDE_POLICY` / `IPTV_TUNERR_CATCHUP_GUIDE_POLICY` so runtime lineup shaping and catch-up capsule output can optionally suppress placeholder-only or no-programme channels.
+- **Shared ref loader**: report and guide tooling now use one shared local-file/URL loader with the repo HTTP client defaults instead of duplicated `http.DefaultClient` code paths.
 
 ---
 
