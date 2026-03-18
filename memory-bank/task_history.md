@@ -1531,3 +1531,16 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
   Verification:
     - `go test ./internal/guidehealth ./internal/tuner ./cmd/iptv-tunerr`
     - `./scripts/verify`
+
+---
+
+- Date: 2026-03-18
+  Title: EPG doctor workflow and cached live diagnostics
+  Summary:
+    - Added `internal/epgdoctor` plus `iptv-tunerr epg-doctor` to combine deterministic XMLTV matching and real merged-guide coverage into one operator-facing report.
+    - Added live endpoint `/guide/doctor.json` for the same combined diagnosis on running instances.
+    - Added cached reuse of live guide match-provenance analysis in `XMLTV`, keyed to the current guide cache generation plus alias source, so repeated guide-health/doctor requests do not rebuild the same source-XMLTV channel match report each time.
+    - Updated README, features, CLI reference, and changelog so `epg-doctor` is the recommended top-level workflow and lower-level reports remain available as supporting tools.
+  Verification:
+    - `go test ./internal/epgdoctor ./internal/guidehealth ./internal/tuner ./cmd/iptv-tunerr`
+    - `./scripts/verify`

@@ -14,6 +14,7 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/channeldna"
 	"github.com/snapetech/iptvtunerr/internal/channelreport"
 	"github.com/snapetech/iptvtunerr/internal/config"
+	"github.com/snapetech/iptvtunerr/internal/epgdoctor"
 	"github.com/snapetech/iptvtunerr/internal/epglink"
 	"github.com/snapetech/iptvtunerr/internal/guidehealth"
 	"github.com/snapetech/iptvtunerr/internal/tuner"
@@ -284,6 +285,81 @@ func handleGuideHealth(cfg *config.Config, catalogPath, guideRef, xmltvRef, alia
 			os.Exit(1)
 		}
 		log.Printf("Wrote guide health: %s", p)
+	} else {
+		fmt.Println(string(out))
+	}
+}
+
+func handleEPGDoctor(cfg *config.Config, catalogPath, guideRef, xmltvRef, aliasesRef, outPath string) {
+	path := strings.TrimSpace(catalogPath)
+	if path == "" {
+		path = cfg.CatalogPath
+	}
+	guideRef = strings.TrimSpace(guideRef)
+	if guideRef == "" {
+		log.Print("Set -guide to a local file or http(s) guide.xml URL")
+		os.Exit(1)
+	}
+	c := catalog.New()
+	if err := c.Load(path); err != nil {
+		log.Printf("Load catalog %s: %v", path, err)
+		os.Exit(1)
+	}
+	live := c.SnapshotLive()
+	guideR, err := openFileOrURL(guideRef)
+	if err != nil {
+		log.Printf("Open guide %s: %v", guideRef, err)
+		os.Exit(1)
+	}
+	data, err := io.ReadAll(guideR)
+	_ = guideR.Close()
+	if err != nil {
+		log.Printf("Read guide %s: %v", guideRef, err)
+		os.Exit(1)
+	}
+	var matchRep *epglink.Report
+	if strings.TrimSpace(xmltvRef) != "" {
+		xmltvR, err := openFileOrURL(strings.TrimSpace(xmltvRef))
+		if err != nil {
+			log.Printf("Open XMLTV %s: %v", xmltvRef, err)
+			os.Exit(1)
+		}
+		xmltvChans, err := epglink.ParseXMLTVChannels(xmltvR)
+		_ = xmltvR.Close()
+		if err != nil {
+			log.Printf("Parse XMLTV channels: %v", err)
+			os.Exit(1)
+		}
+		aliases := epglink.AliasOverrides{NameToXMLTVID: map[string]string{}}
+		if p := strings.TrimSpace(aliasesRef); p != "" {
+			aliasR, err := openFileOrURL(p)
+			if err != nil {
+				log.Printf("Open aliases %s: %v", p, err)
+				os.Exit(1)
+			}
+			aliases, err = epglink.LoadAliasOverrides(aliasR)
+			_ = aliasR.Close()
+			if err != nil {
+				log.Printf("Parse aliases: %v", err)
+				os.Exit(1)
+			}
+		}
+		rep := epglink.MatchLiveChannels(live, xmltvChans, aliases)
+		matchRep = &rep
+	}
+	gh, err := guidehealth.Build(live, data, matchRep, time.Now())
+	if err != nil {
+		log.Printf("Build guide health failed: %v", err)
+		os.Exit(1)
+	}
+	rep := epgdoctor.Build(gh, matchRep, time.Now())
+	out, _ := json.MarshalIndent(rep, "", "  ")
+	if p := strings.TrimSpace(outPath); p != "" {
+		if err := os.WriteFile(p, out, 0o600); err != nil {
+			log.Printf("Write epg doctor %s: %v", p, err)
+			os.Exit(1)
+		}
+		log.Printf("Wrote epg doctor report: %s", p)
 	} else {
 		fmt.Println(string(out))
 	}

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
+	"github.com/snapetech/iptvtunerr/internal/epgdoctor"
 	"github.com/snapetech/iptvtunerr/internal/epglink"
 	"github.com/snapetech/iptvtunerr/internal/guidehealth"
 )
@@ -27,7 +28,30 @@ func (x *XMLTV) GuideHealth(now time.Time, aliasesRef string) (guidehealth.Repor
 	return guidehealth.Build(x.Channels, data, matchRep, now)
 }
 
+func (x *XMLTV) EPGDoctor(now time.Time, aliasesRef string) (epgdoctor.Report, error) {
+	x.mu.RLock()
+	data := append([]byte(nil), x.cachedXML...)
+	x.mu.RUnlock()
+	matchRep, err := x.buildMatchReport(aliasesRef)
+	if err != nil {
+		return epgdoctor.Report{}, err
+	}
+	gh, err := guidehealth.Build(x.Channels, data, matchRep, now)
+	if err != nil {
+		return epgdoctor.Report{}, err
+	}
+	return epgdoctor.Build(gh, matchRep, now), nil
+}
+
 func (x *XMLTV) buildMatchReport(aliasesRef string) (*epglink.Report, error) {
+	x.mu.RLock()
+	if x.cachedMatchReport != nil && x.cachedMatchAliases == strings.TrimSpace(aliasesRef) && x.cachedMatchExp.Equal(x.cacheExp) {
+		rep := *x.cachedMatchReport
+		x.mu.RUnlock()
+		return &rep, nil
+	}
+	currentCacheExp := x.cacheExp
+	x.mu.RUnlock()
 	if len(x.Channels) == 0 {
 		rep := epglink.Report{TotalChannels: 0, Methods: map[string]int{}}
 		return &rep, nil
@@ -110,6 +134,12 @@ func (x *XMLTV) buildMatchReport(aliasesRef string) (*epglink.Report, error) {
 		final.Rows = append(final.Rows, row)
 	}
 	final.Unmatched = final.TotalChannels - final.Matched
+	x.mu.Lock()
+	repCopy := final
+	x.cachedMatchReport = &repCopy
+	x.cachedMatchAliases = strings.TrimSpace(aliasesRef)
+	x.cachedMatchExp = currentCacheExp
+	x.mu.Unlock()
 	return &final, nil
 }
 
@@ -173,6 +203,22 @@ func (s *Server) serveGuideHealth() http.Handler {
 		rep, err := s.xmltv.GuideHealth(time.Now(), aliasesRef)
 		if err != nil {
 			http.Error(w, "guide health unavailable: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(rep)
+	})
+}
+
+func (s *Server) serveEPGDoctor() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		aliasesRef := strings.TrimSpace(r.URL.Query().Get("aliases"))
+		if aliasesRef == "" {
+			aliasesRef = strings.TrimSpace(os.Getenv("IPTV_TUNERR_XMLTV_ALIASES"))
+		}
+		rep, err := s.xmltv.EPGDoctor(time.Now(), aliasesRef)
+		if err != nil {
+			http.Error(w, "epg doctor unavailable: "+err.Error(), http.StatusBadGateway)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")

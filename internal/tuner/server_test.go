@@ -251,6 +251,43 @@ func TestServer_guideHealth(t *testing.T) {
 	}
 }
 
+func TestServer_epgDoctor(t *testing.T) {
+	s := &Server{
+		xmltv: &XMLTV{
+			Channels: []catalog.LiveChannel{
+				{ChannelID: "1", GuideNumber: "101", GuideName: "News One", TVGID: "news.one", EPGLinked: true},
+			},
+			cachedXML: []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="101"><display-name>News One</display-name></channel>
+  <programme start="20260318120000 +0000" stop="20260318130000 +0000" channel="101">
+    <title>Morning News</title>
+    <desc>Top stories</desc>
+  </programme>
+</tv>`),
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/guide/doctor.json", nil)
+	w := httptest.NewRecorder()
+	s.serveEPGDoctor().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d want 200", w.Code)
+	}
+	var body struct {
+		SourceReady bool `json:"source_ready"`
+		Summary     struct {
+			TotalChannels              int `json:"total_channels"`
+			ChannelsWithRealProgrammes int `json:"channels_with_real_programmes"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !body.SourceReady || body.Summary.TotalChannels != 1 || body.Summary.ChannelsWithRealProgrammes != 1 {
+		t.Fatalf("unexpected body=%+v", body)
+	}
+}
+
 func TestServer_catchupCapsules(t *testing.T) {
 	now := time.Now().UTC()
 	currentStart := now.Add(-20 * time.Minute).Format("20060102150405 +0000")

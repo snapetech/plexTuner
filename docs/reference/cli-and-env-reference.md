@@ -232,6 +232,30 @@ Use for:
 - identifying channels that are guide-linked but still have no programme coverage
 - debugging tester reports like "channel names appear, but no actual what's-on data"
 
+## `iptv-tunerr epg-doctor`
+
+Run the combined EPG diagnostic workflow in one report.
+
+This is the recommended top-level operator tool when you want one answer to:
+- did the channel match XMLTV?
+- did real programme rows make it into the served guide?
+- is the channel only surviving on placeholders?
+- what should I fix first?
+
+Common flags:
+- `-catalog`
+- `-guide` (required; file path or `http(s)` URL, usually `/guide.xml`)
+- `-xmltv` (optional source XMLTV for deterministic match provenance)
+- `-aliases` (optional JSON alias override file)
+- `-out` (optional JSON output file; otherwise stdout)
+
+Live endpoint:
+- `GET /guide/doctor.json`
+
+Use for:
+- one-shot EPG triage instead of manually comparing `epg-link-report` and `guide-health`
+- prioritizing whether the real problem is matching, programme coverage, or placeholder fallback
+
 ## `iptv-tunerr channel-dna-report`
 
 Export grouped live-channel identity clusters from a catalog.

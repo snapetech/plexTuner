@@ -30,6 +30,9 @@
   2. `GET /guide/health.json`
   3. real merged-guide coverage checks: actual programme blocks vs placeholder-only rows vs no guide rows
   4. optional XMLTV match provenance in the same report
+  5. `iptv-tunerr epg-doctor`
+  6. `GET /guide/doctor.json`
+  7. cached live match-provenance reuse so repeated guide diagnostics do not rebuild the same source-XMLTV match analysis on every request
 
 **Current focus shift (README feature-story rewrite, 2026-03-18):**
 - User called out that the README was listing features without explaining why an operator should care.

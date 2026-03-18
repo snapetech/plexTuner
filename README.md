@@ -199,6 +199,11 @@ match). Optional alias overrides come from `IPTV_TUNERR_XMLTV_ALIASES`.
 - whether it has no guide rows at all
 - whether the XMLTV match came from exact ID, alias override, name repair, or nowhere
 
+`epg-doctor` is the one-shot workflow that combines both sides:
+- deterministic XMLTV matching
+- actual merged-guide coverage
+- a single summary of what is broken and what to fix first
+
 These two capabilities run from the same process. They can be used independently: point your media server at the tuner URL for streams and at a different guide source, or use IPTV Tunerr for both.
 
 ---
@@ -236,7 +241,9 @@ curl -s http://127.0.0.1:5004/channels/report.json | jq
 
 # guide-health / EPG doctor style report
 iptv-tunerr guide-health -catalog ./catalog.json -guide http://127.0.0.1:5004/guide.xml -xmltv http://example/xmltv.xml -aliases ./aliases.json
+iptv-tunerr epg-doctor -catalog ./catalog.json -guide http://127.0.0.1:5004/guide.xml -xmltv http://example/xmltv.xml -aliases ./aliases.json
 curl -s http://127.0.0.1:5004/guide/health.json | jq
+curl -s http://127.0.0.1:5004/guide/doctor.json | jq
 ```
 
 When XMLTV is supplied, the report also shows whether a channel matched by:
@@ -503,6 +510,7 @@ Config reference: [`docs/reference/testing-and-supervisor-config.md`](docs/refer
 | `supervise` | Run multiple child tuner instances from a JSON config |
 | `channel-report` | Score channels by guide confidence, stream resilience, and EPG match quality |
 | `guide-health` | Diagnose real guide coverage, placeholder-only channels, and XMLTV match quality |
+| `epg-doctor` | Run the combined EPG diagnosis workflow in one report |
 | `channel-dna-report` | Group channels by stable cross-provider `dna_id` identity |
 | `ghost-hunter` | Observe Plex Live TV sessions and classify stale/hidden-grab cases |
 | `catchup-capsules` | Export near-live capsule candidates from guide XMLTV |

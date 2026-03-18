@@ -82,6 +82,7 @@ The guide pipeline merges three sources in priority order per channel: provider 
 |---------|-------------|
 | **Channel health report** | Per-channel score/tier showing guide confidence, stream resilience, strengths, risks, and next actions (`channel-report` or `/channels/report.json`). |
 | **Guide health report** | `guide-health` and `/guide/health.json` inspect the actual merged guide output and classify channels by real programme coverage, placeholder-only fallback, or no guide rows at all. |
+| **EPG doctor workflow** | `epg-doctor` and `/guide/doctor.json` combine deterministic XMLTV match analysis with real merged-guide coverage so operators get one diagnosis instead of stitching together multiple reports. |
 | **EPG match provenance** | When an XMLTV source is supplied to the report command, channels show whether they matched by exact `tvg-id`, alias override, normalized-name repair, or not at all. |
 | **Top opportunity summary** | Report summary highlights the highest-frequency fixes across the lineup (for example missing `TVGID`, no backup streams, or alias repair candidates). |
 | **Lineup recipes** | Intelligence-driven lineup shaping with `IPTV_TUNERR_LINEUP_RECIPE=high_confidence|balanced|guide_first|resilient`. |
