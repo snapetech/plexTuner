@@ -8,6 +8,14 @@
 
 **Last updated:** 2026-03-18
 
+**Current focus shift (architecture cleanup + command split, 2026-03-18):**
+- User asked for the follow-on work after the architecture review: map the active layers clearly, identify improvement opportunities, then execute the cleanup.
+- This pass covers:
+  1. rewrite architecture docs around core runtime vs intelligence vs publishing
+  2. fix stale repo navigation/remotes guidance
+  3. split the oversized `cmd/iptv-tunerr/main.go` command execution paths into command-specific files without changing behavior
+  4. verify and record the cleanup
+
 **Current focus shift (README feature-story rewrite, 2026-03-18):**
 - User called out that the README was listing features without explaining why an operator should care.
 - This docs pass rewrites the front-page README around:

@@ -7,155 +7,243 @@ tags: [explanations, architecture, design]
 
 # Architecture
 
-How IPTV Tunerr is structured and how the pieces fit together.
+How IPTV Tunerr is structured now that it is more than a tuner shim.
 
 ---
 
 ## Overview
 
-IPTV Tunerr sits between an IPTV provider and a media server (Plex, Emby, Jellyfin). It translates the provider's protocols (Xtream API, M3U playlists) into the HDHomeRun tuner interface that media servers natively understand.
+IPTV Tunerr has three active layers:
+
+1. **Core runtime**
+   Ingest provider data, build a catalog, serve HDHomeRun-compatible tuner endpoints, proxy streams, and generate `/guide.xml`.
+2. **Intelligence layer**
+   Repair bad guide IDs, score channels, group duplicates by stable identity, remember working playback choices, and expose provider/session diagnostics.
+3. **Publishing and registration layer**
+   Register tuners and libraries with Plex, Emby, and Jellyfin; publish near-live catch-up libraries as `.strm + .nfo`.
+
+That means the app is no longer just:
+
+`Indexer -> Catalog -> Tuner Server`
+
+It is closer to:
 
 ```
-IPTV Provider
-  (Xtream API / M3U)
-        │
-        ▼
-  ┌─────────────────────────────────────┐
-  │          IPTV Tunerr                │
-  │                                     │
-  │  Indexer → Catalog → Tuner Server  │
-  │                │                    │
-  │           Stream Gateway            │
-  └─────────────────────────────────────┘
-        │
-        ▼
-  Media Server
-  (Plex / Emby / Jellyfin)
-```
-
----
-
-## Data flow
-
-### 1. Indexing (catalog build)
-
-`iptv-tunerr index` (or the index phase of `run`) fetches from the provider:
-
-- **Xtream API** (`player_api.php`): structured live channels, VOD movies, series, EPG data
-- **M3U** (`get.php` or a direct URL): channel list with EXTINF attributes
-
-The indexer normalizes this into a **catalog** (`catalog.json`): a unified JSON document containing `live_channels`, `movies`, and `series`. Each channel entry includes all available stream URLs (for failover), the `tvg-id` (EPG link), group, logo, and codec hints.
-
-Provider failover runs at index time: if multiple hosts are configured (`IPTV_TUNERR_PROVIDER_URLS`), the indexer probes each one and uses the first that responds successfully. Cloudflare-proxied endpoints can be filtered out (`IPTV_TUNERR_STRIP_STREAM_HOSTS`).
-
-### 2. Serving (tuner runtime)
-
-`iptv-tunerr serve` loads the catalog and starts an HTTP server that emulates an HDHomeRun tuner:
-
-| Endpoint | What it returns |
-|----------|-----------------|
-| `GET /discover.json` | Device identity (name, device ID, lineup URL) |
-| `GET /lineup_status.json` | Lineup scan status |
-| `GET /lineup.json` | Channel list with guide numbers and stream URLs |
-| `GET /guide.xml` | XMLTV EPG (placeholder or remapped from external source) |
-| `GET /stream/{id}` | Proxied or transcoded live stream |
-| `GET /live.m3u` | M3U export for VLC or other players |
-| `GET /healthz` | Health check (channel count, last refresh) |
-
-### 3. Stream gateway
-
-When Plex requests `/stream/{id}`, the gateway:
-
-1. Looks up the channel in the catalog; tries stream URLs in ranked order
-2. Optionally transcodes via ffmpeg (`IPTV_TUNERR_STREAM_TRANSCODE`)
-3. Applies startup race hardening if configured (bootstrap TS, PAT+PMT keepalive, startup gate)
-4. Streams MPEG-TS data to the client
-
-If the primary URL fails, it falls back to the next URL automatically. Cloudflare abuse-page detection aborts immediately rather than passing garbage bytes to Plex.
-
-### 4. Guide handling
-
-`/guide.xml` is served in XMLTV format from a layered pipeline:
-
-- **Provider XMLTV (`xmltv.php`)** when provider credentials/base are available
-- **External XMLTV** from `IPTV_TUNERR_XMLTV_URL`
-- **Placeholder fallback** when neither source has programme data for a channel
-
-Before `LIVE_EPG_ONLY` filtering is applied during catalog build, IPTV Tunerr can also
-repair or assign channel `TVGID`s deterministically from provider/external XMLTV
-channel metadata (exact `tvg-id`, alias override, normalized exact-name match). That
-lets channels reach real programme data even when the source M3U/API supplied a bad or
-missing ID.
-
----
-
-## Process modes
-
-### Single instance
-
-One `iptv-tunerr` process on one port. Suitable for a single HDHomeRun-style tuner in Plex.
-
-```
-iptv-tunerr run -addr :5004
-```
-
-### Supervisor (multi-instance)
-
-`iptv-tunerr supervise` spawns multiple child `iptv-tunerr run` processes from a JSON config. Each child runs independently on its own port with its own provider, lineup, guide, and device identity.
-
-Used for:
-- **Category DVR fleets**: one child per content category (sports, news, broadcast US, etc.), each registered as a separate DVR in Plex
-- **Combined HDHR + injection**: one child serves the wizard-compatible HDHR lane; others serve injected category DVRs
-
-The supervisor manages process lifecycle (restart on crash, startup delays) and optionally runs a top-level Emby/Jellyfin watchdog.
-
-```
-supervise
- ├─ child: hdhr-main  (:5004)  — wizard-compatible, capped at 480
- ├─ child: bcastus    (:5101)  — broadcast US category
- ├─ child: newsus     (:5102)  — news category
- └─ child: sports     (:5103)  — sports category
+Provider inputs
+  (Xtream API / M3U / XMLTV)
+        |
+        v
+Catalog build and repair
+  - provider probe/ranking
+  - live/VOD/series indexing
+  - TVGID repair
+  - dedupe/fallback URL merge
+        |
+        +-----------------------------+
+        |                             |
+        v                             v
+Core tuner runtime              Intelligence surfaces
+  - HDHR endpoints                - channel report
+  - stream gateway                - Channel DNA
+  - guide.xml                     - Ghost Hunter
+  - live.m3u                      - provider profile
+                                  - lineup recipes
+                                  - guide highlights
+                                  - catch-up capsules
+        |
+        v
+Registration / publishing
+  - Plex DVR + lineup + guide sync
+  - Emby/Jellyfin tuner registration
+  - catch-up library publishing
 ```
 
 ---
 
-## Internal package structure
+## Layer 1: Core Runtime
 
-| Package | Responsibility |
-|---------|---------------|
-| `cmd/iptv-tunerr` | CLI dispatcher; wires together all packages |
-| `internal/config` | Environment variable parsing and validation |
-| `internal/indexer` | M3U and Xtream API fetching and parsing |
-| `internal/catalog` | Catalog data model and JSON persistence |
-| `internal/provider` | Multi-host probing, Cloudflare detection, stream URL ranking |
-| `internal/tuner` | HDHR HTTP endpoints, XMLTV serving, stream gateway, Plex session reaper, SSDP discovery |
-| `internal/supervisor` | Child process lifecycle management |
-| `internal/plex` | Programmatic Plex DVR registration (API + SQLite-assisted) |
-| `internal/emby` | Emby and Jellyfin registration and watchdog |
-| `internal/vodfs` | FUSE filesystem mount for VOD browsing (Linux only) |
-| `internal/materializer` | Pluggable stream backends for VOD playback (direct, HLS relay, download cache) |
-| `internal/hdhomerun` | Native HDHomeRun UDP/TCP protocol (optional network mode) |
-| `internal/epglink` | EPG match reporting (tvg-id / alias / name-based coverage analysis) |
-| `internal/health` | Provider health check |
-| `internal/cache` | Smoketest probe result persistence |
-| `internal/httpclient` | Retry logic, timeouts, user-agent handling |
+This is the original product foundation and it is still the backbone.
+
+### Ingest and catalog build
+
+`iptv-tunerr index` and the index phase of `run` still:
+- fetch live, movie, and series data from Xtream or M3U sources
+- probe provider hosts and rank them
+- merge backup stream URLs
+- dedupe duplicate live channels
+- write the catalog as the runtime source of truth
+
+Primary code:
+- [main.go](../../cmd/iptv-tunerr/main.go)
+- [indexer](../../internal/indexer)
+- [catalog](../../internal/catalog)
+- [provider](../../internal/provider)
+
+### Tuner runtime
+
+`iptv-tunerr serve` and `run` still expose the HDHomeRun-compatible surface:
+- `/discover.json`
+- `/lineup.json`
+- `/lineup_status.json`
+- `/stream/{id}`
+- `/guide.xml`
+- `/live.m3u`
+- `/healthz`
+
+Primary code:
+- [server.go](../../internal/tuner/server.go)
+- [gateway.go](../../internal/tuner/gateway.go)
+- [xmltv.go](../../internal/tuner/xmltv.go)
+
+### Lineup shaping and category fleets
+
+The older lineup/category logic is still active:
+- wizard-safe channel caps
+- language/drop/exclude filters
+- region/profile shaping
+- skip/take sharding
+- multi-instance supervisor deployments
+- category DVR fleets
+
+This matters especially for Plex-heavy multi-DVR setups.
+
+Primary code:
+- [server.go](../../internal/tuner/server.go)
+- [main.go](../../cmd/iptv-tunerr/main.go)
+- [supervisor](../../internal/supervisor)
 
 ---
 
-## Key design decisions
+## Layer 2: Guide And Intelligence
 
-**No web UI.** Configuration is entirely via environment variables and CLI flags. This keeps the binary small, makes containerization simple, and eliminates a whole class of auth/state management problems.
+This is the major post-integration expansion.
 
-**Catalog as the source of truth.** All runtime decisions (lineup, guide, streaming) read from `catalog.json`. Index and serve are decoupled: you can schedule indexing separately from serving, pre-warm a catalog, or inspect it directly.
+### Guide pipeline
 
-**HDHomeRun emulation over native API.** By emulating an HDHomeRun device, IPTV Tunerr works with the standard Plex/Emby/Jellyfin wizard with no special plugins or integrations required. The DVR injection path builds on top of this foundation.
+The guide path now has a real layered merge:
 
-**Provider failover at multiple layers.** At index time (choose a working host), at stream time (try next URL on failure), and at the ffmpeg level (HLS reconnect options). This makes the tuner resilient to CDN outages without user intervention.
+1. provider XMLTV (`xmltv.php`)
+2. external XMLTV
+3. placeholder fallback
 
-**Startup race hardening.** Plex's DASH packager has a timing dependency: it needs valid MPEG-TS program structure (PAT+PMT) before the first IDR frame arrives, or it fails silently. The startup gate and PAT+PMT keepalive features address this without requiring changes to Plex.
+Provider data wins where present; external XMLTV gap-fills it; placeholder only survives where neither source has programme rows.
+
+Before `LIVE_EPG_ONLY` pruning, IPTV Tunerr can also repair bad or missing `TVGID`s using deterministic matching:
+- exact `tvg-id`
+- alias override
+- normalized exact-name match
+
+Primary code:
+- [epg_pipeline.go](../../internal/tuner/epg_pipeline.go)
+- [xmltv.go](../../internal/tuner/xmltv.go)
+- [epglink.go](../../internal/epglink/epglink.go)
+
+### Channel intelligence
+
+The intelligence layer makes the runtime explain itself:
+- `channel-report`
+- `/channels/report.json`
+- lineup recipes
+- guide-confidence scoring
+- stream-resilience scoring
+
+Primary code:
+- [report.go](../../internal/channelreport/report.go)
+- [server.go](../../internal/tuner/server.go)
+
+### Stable channel identity
+
+Channel DNA gives live channels a stable `dna_id` so the system can reason about:
+- duplicates across merged providers
+- repaired guide matches
+- future playback-memory and routing decisions
+
+Primary code:
+- [dna.go](../../internal/channeldna/dna.go)
+- [report.go](../../internal/channeldna/report.go)
+
+### Runtime learning and diagnostics
+
+Several operator-facing surfaces now sit on top of the runtime:
+- **Autopilot memory** for successful playback decisions
+- **Ghost Hunter** for stale/hidden-grab investigation
+- **Provider profile** for learned caps and instability signals
+- **Guide highlights** and **catch-up capsules**
+
+These are layered additions. They do not replace the tuner/gateway/guide core.
+
+Primary code:
+- [autopilot.go](../../internal/tuner/autopilot.go)
+- [ghost_hunter.go](../../internal/tuner/ghost_hunter.go)
+- [gateway.go](../../internal/tuner/gateway.go)
+- [xmltv.go](../../internal/tuner/xmltv.go)
+
+---
+
+## Layer 3: Registration And Publishing
+
+This layer turns the runtime into a full media-server control plane.
+
+### Tuner and DVR registration
+
+The app still supports:
+- HDHR wizard flows
+- Plex DVR/API/DB registration
+- Emby tuner registration
+- Jellyfin tuner registration
+- watchdog repair loops
+
+Primary code:
+- [main.go](../../cmd/iptv-tunerr/main.go)
+- [dvr.go](../../internal/plex/dvr.go)
+- [emby](../../internal/emby)
+
+### Catch-up publishing
+
+The catch-up path is now a real publishing subsystem:
+- derive capsules from guide windows
+- export preview/layout JSON
+- write `.strm + .nfo`
+- write `publish-manifest.json`
+- optionally create/reuse and refresh libraries in Plex, Emby, and Jellyfin
+
+Primary code:
+- [catchup_publish.go](../../internal/tuner/catchup_publish.go)
+- [catchup_capsules_export.go](../../internal/tuner/catchup_capsules_export.go)
+- [main.go](../../cmd/iptv-tunerr/main.go)
+
+---
+
+## What Is Still Foundational
+
+These older flows are still first-class, not abandoned:
+- lineup sorting and shaping
+- category DVR lanes
+- guide-number offsets
+- wizard-safe caps
+- supervisor mode
+- Plex DVR registration
+- EPG link reporting
+
+The newer intelligence work depends on these layers. It did not replace them.
+
+---
+
+## Current Design Tension
+
+The main architectural tension now is that the product has outgrown the original code and doc shape:
+- the runtime is still cleanly layered in packages
+- but the CLI wiring in `cmd/iptv-tunerr` has carried many unrelated flows in one place
+- and some docs still describe the pre-intelligence system more than the current one
+
+That is why recent cleanup work is focused on:
+- splitting command execution paths by concern
+- updating repo navigation docs
+- documenting core runtime vs intelligence vs publishing separately
 
 See also
 --------
-- [ADR index](../adr/index.md) — decision records for specific choices
-- [Glossary](../glossary.md) — term definitions
-- [Features](../features.md) — full feature list
+- [Features](../features.md)
+- [CLI and env reference](../reference/cli-and-env-reference.md)
+- [Plex DVR lifecycle and API](../reference/plex-dvr-lifecycle-and-api.md)
+- [Live TV Intelligence epic](../epics/EPIC-live-tv-intelligence.md)

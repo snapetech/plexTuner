@@ -1491,3 +1491,19 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - Kept the newly shipped intelligence and catch-up features visible while making their operator benefit explicit.
   Verification:
     - Docs-only review of `README.md`; no code-path changes.
+
+---
+
+- Date: 2026-03-18
+  Title: Architecture cleanup and command dispatcher split
+  Summary:
+    - Rewrote `docs/explanations/architecture.md` around the real current system: core runtime, intelligence layer, and registration/publishing layer.
+    - Updated `memory-bank/repo_map.md` so remotes, entrypoints, and key modules match the current repo and product surfaces.
+    - Split `cmd/iptv-tunerr/main.go` command execution into command-specific files:
+      - `cmd_core.go`
+      - `cmd_reports.go`
+      - `cmd_ops.go`
+    - Kept behavior unchanged while reducing the size and responsibility concentration of the main command switch.
+    - Filed maintainability follow-ups in `memory-bank/opportunities.md` for continued doc/code cleanup.
+  Verification:
+    - `./scripts/verify`

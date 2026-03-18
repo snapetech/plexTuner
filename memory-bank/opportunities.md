@@ -22,6 +22,36 @@ It exists to encourage quality gains without derailing the current task.
 
 ## Entries
 
+- Date: 2026-03-18
+  Category: maintainability
+  Title: Reconcile repo navigation docs with the actual remote setup and current product surfaces
+  Context: Architecture review after the Live TV intelligence and catch-up work.
+  Why it matters: `memory-bank/repo_map.md` still says to push to both `origin` and `plex`, but the active repo setup in this workspace only uses `origin`. The same file also under-describes newer product areas such as channel intelligence, Ghost Hunter, provider profile, and catch-up publishing.
+  Evidence: `memory-bank/repo_map.md` remote table and entrypoint list do not match the current repo/workflow used in recent release work.
+  Suggested fix: Update `repo_map.md` so remotes, entrypoints, and key modules reflect the current repo reality and include the intelligence/catch-up subsystems.
+  Risk/Scope: low | fits current scope? no
+  User decision needed?: no
+
+- Date: 2026-03-18
+  Category: maintainability
+  Title: Refresh architecture docs to reflect the post-integration system, not only the original tuner pipeline
+  Context: Review requested for sorting/categories/guide builder/DVR builder after major feature integration.
+  Why it matters: `docs/explanations/architecture.md` still presents IPTV Tunerr mostly as `Indexer -> Catalog -> Tuner Server`, but the runtime now also includes deterministic EPG repair, channel intelligence, provider profiles/autotune, Ghost Hunter, catch-up capsule generation, and multi-server catch-up publishing.
+  Evidence: `docs/explanations/architecture.md` overview and package map do not mention `internal/channelreport`, `internal/channeldna`, or the catch-up publishing surfaces, even though they are shipped and user-facing.
+  Suggested fix: Add an updated architecture diagram and a "core runtime vs intelligence layer vs publishing layer" section so future contributors can see which flows are foundational and which are layered additions.
+  Risk/Scope: low-med | fits current scope? no
+  User decision needed?: no
+
+- Date: 2026-03-18
+  Category: maintainability
+  Title: Split `cmd/iptv-tunerr/main.go` into command-specific modules
+  Context: Architecture review of active command, DVR, EPG, and catch-up flows.
+  Why it matters: `cmd/iptv-tunerr/main.go` now owns CLI parsing and orchestration for indexing, serving, Plex/Emby/Jellyfin registration, EPG repair, oracle tooling, channel intelligence, catch-up export, and catch-up publishing. That raises the risk of regression and makes command-specific changes expensive to review.
+  Evidence: `cmd/iptv-tunerr/main.go` contains all command flags and execution paths for `run`, `serve`, `index`, `supervise`, `epg-link-report`, `channel-report`, `channel-dna-report`, `ghost-hunter`, `catchup-capsules`, and `catchup-publish`.
+  Suggested fix: Move command wiring into per-command files or a small dispatcher package (for example `cmd/iptv-tunerr/cmd_run.go`, `cmd_guide.go`, `cmd_catchup.go`, `cmd_registration.go`) while keeping shared helpers in a small common file.
+  Risk/Scope: med | fits current scope? no
+  User decision needed?: no
+
 - Date: 2026-02-26
   Category: operability
   Title: Add near-live catch-up library mode with category-split Plex libraries and targeted scans
