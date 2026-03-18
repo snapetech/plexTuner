@@ -166,6 +166,59 @@ func TestServer_guideHighlights(t *testing.T) {
 	}
 }
 
+func TestServer_catchupCapsules(t *testing.T) {
+	now := time.Now().UTC()
+	currentStart := now.Add(-20 * time.Minute).Format("20060102150405 +0000")
+	currentStop := now.Add(40 * time.Minute).Format("20060102150405 +0000")
+	soonStart := now.Add(25 * time.Minute).Format("20060102150405 +0000")
+	soonStop := now.Add(145 * time.Minute).Format("20060102150405 +0000")
+	s := &Server{
+		xmltv: &XMLTV{
+			Channels: []catalog.LiveChannel{
+				{GuideNumber: "101", GuideName: "Sports Net", DNAID: "dna:sports"},
+				{GuideNumber: "202", GuideName: "Movie Max", DNAID: "dna:movie"},
+			},
+			cachedXML: []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="101"><display-name>Sports Net</display-name></channel>
+  <channel id="202"><display-name>Movie Max</display-name></channel>
+  <programme start="` + currentStart + `" stop="` + currentStop + `" channel="101">
+    <title>Team A vs Team B</title>
+    <category>Sports</category>
+    <desc>Live game</desc>
+  </programme>
+  <programme start="` + soonStart + `" stop="` + soonStop + `" channel="202">
+    <title>Big Movie</title>
+    <category>Movie</category>
+    <desc>Feature film</desc>
+  </programme>
+</tv>`),
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/guide/capsules.json?horizon=4h&limit=10", nil)
+	w := httptest.NewRecorder()
+	s.serveCatchupCapsules().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d want 200", w.Code)
+	}
+	var body CatchupCapsulePreview
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !body.SourceReady {
+		t.Fatalf("expected source_ready true")
+	}
+	if len(body.Capsules) != 2 {
+		t.Fatalf("capsules len=%d want 2", len(body.Capsules))
+	}
+	if body.Capsules[0].DNAID == "" {
+		t.Fatalf("expected dna_id on capsule")
+	}
+	if body.Capsules[0].Lane == "" {
+		t.Fatalf("expected lane on capsule")
+	}
+}
+
 func TestUpdateChannels_capsLineup(t *testing.T) {
 	// Plex DVR fails to save lineup when channel count exceeds ~480. UpdateChannels must cap.
 	live := make([]catalog.LiveChannel, 500)

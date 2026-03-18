@@ -328,6 +328,30 @@ type GuideHighlights struct {
 	MoviesStartingSoon []GuideHighlight `json:"movies_starting_soon"`
 }
 
+type CatchupCapsule struct {
+	CapsuleID    string   `json:"capsule_id"`
+	DNAID        string   `json:"dna_id,omitempty"`
+	ChannelID    string   `json:"channel_id"`
+	ChannelName  string   `json:"channel_name"`
+	Title        string   `json:"title"`
+	SubTitle     string   `json:"sub_title,omitempty"`
+	Desc         string   `json:"desc,omitempty"`
+	Categories   []string `json:"categories,omitempty"`
+	Lane         string   `json:"lane"`
+	State        string   `json:"state"`
+	Start        string   `json:"start"`
+	Stop         string   `json:"stop"`
+	PublishAt    string   `json:"publish_at"`
+	ExpiresAt    string   `json:"expires_at"`
+	DurationMins int      `json:"duration_mins"`
+}
+
+type CatchupCapsulePreview struct {
+	GeneratedAt string           `json:"generated_at"`
+	SourceReady bool             `json:"source_ready"`
+	Capsules    []CatchupCapsule `json:"capsules"`
+}
+
 func (x *XMLTV) GuideHighlights(now time.Time, soonWindow time.Duration, limit int) (GuideHighlights, error) {
 	if soonWindow <= 0 {
 		soonWindow = 30 * time.Minute
@@ -465,6 +489,141 @@ func truncateGuideHighlights(in []GuideHighlight, n int) []GuideHighlight {
 		return in
 	}
 	return in[:n]
+}
+
+func (x *XMLTV) CatchupCapsulePreview(now time.Time, horizon time.Duration, limit int) (CatchupCapsulePreview, error) {
+	if horizon <= 0 {
+		horizon = 3 * time.Hour
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	x.mu.RLock()
+	data := append([]byte(nil), x.cachedXML...)
+	x.mu.RUnlock()
+	out := CatchupCapsulePreview{
+		GeneratedAt: now.UTC().Format(time.RFC3339),
+		SourceReady: len(data) > 0,
+	}
+	if len(data) == 0 {
+		return out, nil
+	}
+	var tv xmlTVRoot
+	if err := xml.Unmarshal(data, &tv); err != nil {
+		return out, err
+	}
+	byChannel := make(map[string]catalog.LiveChannel, len(x.Channels))
+	for _, ch := range x.Channels {
+		byChannel[strings.TrimSpace(ch.GuideNumber)] = ch
+	}
+	channelNames := make(map[string]string, len(tv.Channels))
+	for _, ch := range tv.Channels {
+		channelNames[strings.TrimSpace(ch.ID)] = strings.TrimSpace(ch.Display)
+	}
+	capsules := make([]CatchupCapsule, 0, limit)
+	windowEnd := now.Add(horizon)
+	for _, p := range tv.Programmes {
+		start, okStart := parseXMLTVTime(p.Start)
+		stop, okStop := parseXMLTVTime(p.Stop)
+		if !okStart || !okStop || !stop.After(start) {
+			continue
+		}
+		if stop.Before(now) || start.After(windowEnd) {
+			continue
+		}
+		channelID := strings.TrimSpace(p.Channel)
+		ch := byChannel[channelID]
+		state := "starting_soon"
+		publishAt := stop
+		if !start.After(now) && stop.After(now) {
+			state = "in_progress"
+			publishAt = stop
+		}
+		if !stop.After(now) {
+			state = "ready"
+			publishAt = stop
+		}
+		title := strings.TrimSpace(p.Title.Value)
+		if title == "" {
+			title = channelNames[channelID]
+		}
+		capsule := CatchupCapsule{
+			CapsuleID:    catchupCapsuleID(ch, channelID, title, start),
+			DNAID:        strings.TrimSpace(ch.DNAID),
+			ChannelID:    channelID,
+			ChannelName:  firstNonEmptyString(channelNames[channelID], strings.TrimSpace(ch.GuideName)),
+			Title:        title,
+			SubTitle:     strings.TrimSpace(p.SubTitle.Value),
+			Desc:         strings.TrimSpace(p.Desc.Value),
+			Categories:   xmlValueStrings(p.Categories),
+			Lane:         catchupCapsuleLane(title, p.Categories),
+			State:        state,
+			Start:        start.UTC().Format(time.RFC3339),
+			Stop:         stop.UTC().Format(time.RFC3339),
+			PublishAt:    publishAt.UTC().Format(time.RFC3339),
+			ExpiresAt:    stop.Add(catchupRetentionForProgramme(title, p.Categories)).UTC().Format(time.RFC3339),
+			DurationMins: int(stop.Sub(start).Minutes()),
+		}
+		capsules = append(capsules, capsule)
+	}
+	sort.SliceStable(capsules, func(i, j int) bool {
+		if capsules[i].PublishAt == capsules[j].PublishAt {
+			return capsules[i].ChannelName < capsules[j].ChannelName
+		}
+		return capsules[i].PublishAt < capsules[j].PublishAt
+	})
+	if len(capsules) > limit {
+		capsules = capsules[:limit]
+	}
+	out.Capsules = capsules
+	return out, nil
+}
+
+func firstNonEmptyString(v ...string) string {
+	for _, s := range v {
+		s = strings.TrimSpace(s)
+		if s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+func catchupCapsuleID(ch catalog.LiveChannel, channelID, title string, start time.Time) string {
+	base := strings.TrimSpace(ch.DNAID)
+	if base == "" {
+		base = strings.TrimSpace(channelID)
+	}
+	if base == "" {
+		base = "capsule"
+	}
+	title = strings.ToLower(strings.TrimSpace(title))
+	title = strings.NewReplacer(" ", "-", "/", "-", ":", "-", "&", "and").Replace(title)
+	return base + ":" + start.UTC().Format("200601021504") + ":" + title
+}
+
+func catchupCapsuleLane(title string, cats []xmlValue) string {
+	h := GuideHighlight{Title: title, Categories: xmlValueStrings(cats)}
+	switch {
+	case looksLikeSportsHighlight(h):
+		return "sports"
+	case looksLikeMovieHighlight(h):
+		return "movies"
+	default:
+		return "general"
+	}
+}
+
+func catchupRetentionForProgramme(title string, cats []xmlValue) time.Duration {
+	h := GuideHighlight{Title: title, Categories: xmlValueStrings(cats)}
+	switch {
+	case looksLikeSportsHighlight(h):
+		return 12 * time.Hour
+	case looksLikeMovieHighlight(h):
+		return 72 * time.Hour
+	default:
+		return 24 * time.Hour
+	}
 }
 
 func loadXMLTVTextPolicyFromEnv() xmltvTextPolicy {

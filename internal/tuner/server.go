@@ -763,6 +763,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/device.xml", s.serveDeviceXML())
 	mux.Handle("/guide.xml", xmltv)
 	mux.Handle("/guide/highlights.json", s.serveGuideHighlights())
+	mux.Handle("/guide/capsules.json", s.serveCatchupCapsules())
 	mux.Handle("/live.m3u", m3uServe)
 	mux.Handle("/stream/", gateway)
 	mux.Handle("/healthz", s.serveHealth())
@@ -906,6 +907,39 @@ func (s *Server) serveGuideHighlights() http.Handler {
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
 			http.Error(w, `{"error":"encode guide highlights"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveCatchupCapsules() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if s.xmltv == nil {
+			http.Error(w, `{"error":"xmltv unavailable"}`, http.StatusServiceUnavailable)
+			return
+		}
+		horizon := 3 * time.Hour
+		if raw := strings.TrimSpace(r.URL.Query().Get("horizon")); raw != "" {
+			if d, err := time.ParseDuration(raw); err == nil {
+				horizon = d
+			}
+		}
+		limit := 20
+		if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+			if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+				limit = n
+			}
+		}
+		rep, err := s.xmltv.CatchupCapsulePreview(time.Now(), horizon, limit)
+		if err != nil {
+			http.Error(w, `{"error":"catchup capsule preview failed"}`, http.StatusBadGateway)
+			return
+		}
+		body, err := json.MarshalIndent(rep, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode catchup capsules"}`, http.StatusInternalServerError)
 			return
 		}
 		_, _ = w.Write(body)

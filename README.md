@@ -250,6 +250,27 @@ Example:
 curl -s "http://127.0.0.1:5004/guide/highlights.json?soon=45m&limit=10" | jq
 ```
 
+Catch-up capsule preview foundation is now present too:
+- live endpoint: `/guide/capsules.json`
+- turns real guide rows into publishable capsule candidates with:
+  - `capsule_id`
+  - `dna_id`
+  - `lane`
+  - `state`
+  - `publish_at`
+  - `expires_at`
+- query params:
+  - `horizon=3h`
+  - `limit=20`
+
+Example:
+
+```bash
+curl -s "http://127.0.0.1:5004/guide/capsules.json?horizon=4h&limit=12" | jq
+```
+
+This is a preview/feed only. It does not publish Plex library items yet.
+
 You can also use that intelligence to shape lineups:
 
 ```bash

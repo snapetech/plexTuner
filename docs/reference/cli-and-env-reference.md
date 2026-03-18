@@ -265,6 +265,29 @@ Returned lanes:
 - `sports_now`
 - `movies_starting_soon`
 
+## Catch-up capsule preview endpoint
+
+Preview/feed of future publishable near-live capsule candidates built from the cached merged guide:
+- `GET /guide/capsules.json`
+
+Query params:
+- `horizon=3h` — how far ahead to include candidate programme windows
+- `limit=20` — max capsules returned
+
+Returned fields include:
+- `capsule_id`
+- `dna_id`
+- `lane`
+- `state`
+- `publish_at`
+- `expires_at`
+
+Current states:
+- `in_progress`
+- `starting_soon`
+
+This endpoint does not publish Plex library items yet; it is the preview/input layer for a later catch-up publisher.
+
 ## `iptv-tunerr probe`
 
 Probe provider URLs and print ranked results (best host first).

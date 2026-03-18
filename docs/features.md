@@ -89,6 +89,7 @@ The guide pipeline merges three sources in priority order per channel: provider 
 | **Ghost Hunter foundation** | `ghost-hunter` CLI and `/plex/ghost-report.json` observe Plex Live TV sessions over time, classify visible stalls with reaper heuristics, optionally stop stale visible transcode sessions, and escalate hidden-grab suspicion when Plex exposes no visible sessions. |
 | **Provider behavior profile foundation** | `/provider/profile.json` exposes learned provider/runtime quirks such as effective tuner cap, recent concurrency-limit signals, Cloudflare-abuse hits, auth-context forwarding posture, and whether HLS reconnect has been auto-armed after observed instability. |
 | **Guide highlights foundation** | `/guide/highlights.json` repackages the cached merged guide into immediate user-facing lanes: `current`, `starting_soon`, `sports_now`, and `movies_starting_soon`. |
+| **Catch-up capsule preview foundation** | `/guide/capsules.json` turns real guide rows into previewable near-live capsule candidates with lane, publish, and expiry metadata, ready for future library publishing flows. |
 | **Live TV intelligence roadmap** | Product roadmap documented as an epic: Channel DNA, Autopilot, lineup recipes, Ghost Hunter, and catch-up capsules. |
 
 ## 7. Lineup shaping for HDHR wizard / provider matching

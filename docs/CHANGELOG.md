@@ -23,6 +23,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Provider autotune foundation**: when `IPTV_TUNERR_FFMPEG_HLS_RECONNECT` is not explicitly set, Tunerr can now auto-arm ffmpeg HLS reconnect after it has actually observed HLS playlist/segment instability at runtime.
 - **Guide highlights foundation**: added `/guide/highlights.json`, which repackages the cached merged guide into `current`, `starting_soon`, `sports_now`, and `movies_starting_soon` lanes.
 - **Ghost Hunter escalation**: when Plex exposes zero visible live sessions, Ghost Hunter now flags the hidden-grab pattern explicitly and returns the guarded recovery helper command and runbook path.
+- **Catch-up capsule preview foundation**: added `/guide/capsules.json`, which turns real guide rows into near-live capsule candidates with lane, publish, and expiry metadata for future library publishing.
 - **Product roadmap**: documented the Live TV Intelligence epic (Channel DNA, Autopilot, lineup recipes, Ghost Hunter, catch-up capsules).
 
 ---
