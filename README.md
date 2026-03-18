@@ -6,6 +6,68 @@ IPTV Tunerr connects IPTV providers (M3U/Xtream) to Plex, Emby, and Jellyfin. It
 
 ---
 
+## Multi-provider support
+
+IPTV Tunerr can pull from multiple provider subscriptions simultaneously and merge them into one catalog.
+
+**Multiple hosts, one subscription** — failover across CDN endpoints for the same account:
+```bash
+IPTV_TUNERR_PROVIDER_URLS=http://host1.com,http://host2.com,http://backup.com
+```
+All hosts are probed at startup; the fastest/healthiest wins for catalog indexing. Every host's stream URLs are stored as per-channel fallbacks — so if CDN 1 goes down mid-stream, the gateway automatically retries on CDN 2 without re-indexing.
+
+**Multiple subscriptions** — merge channels from separate provider accounts:
+```bash
+IPTV_TUNERR_PROVIDER_URL=http://provider1.com
+IPTV_TUNERR_PROVIDER_USER=user1
+IPTV_TUNERR_PROVIDER_PASS=pass1
+
+IPTV_TUNERR_PROVIDER_URL_2=http://provider2.com
+IPTV_TUNERR_PROVIDER_USER_2=user2
+IPTV_TUNERR_PROVIDER_PASS_2=pass2
+# _3, _4, ... continue the pattern
+```
+Each numbered provider is independently probed. The best host indexes the catalog; all provider hosts become stream URL fallbacks per channel. Channels with duplicate `tvg-id` values across providers are deduplicated — one entry in the lineup with all matching stream URLs ranked and available for failover.
+
+---
+
+## Post-index validation (smoketest)
+
+After indexing, IPTV Tunerr can optionally probe every channel's primary stream URL and drop channels that don't respond — so dead channels never appear in the lineup.
+
+```bash
+IPTV_TUNERR_SMOKETEST_ENABLED=true
+```
+
+What it does:
+- Probes each channel's primary stream URL concurrently
+- For MPEG-TS streams: sends an HTTP Range request for the first 4 KB (avoids pulling full streams)
+- For HLS streams: fetches the playlist and validates `#EXTM3U` / `#EXTINF` content
+- Channels that return a non-200/206 response or invalid content are dropped from the catalog
+
+To avoid re-probing thousands of channels on every restart, set a cache file:
+
+```bash
+IPTV_TUNERR_SMOKETEST_CACHE_FILE=/var/lib/iptvtunerr/smoketest-cache.json
+IPTV_TUNERR_SMOKETEST_CACHE_TTL=4h
+```
+
+Results are cached per URL. On the next index run, channels whose URLs have a fresh cache entry skip the probe entirely — only new or expired entries are re-checked.
+
+Key tuning variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `IPTV_TUNERR_SMOKETEST_ENABLED` | `false` | Enable post-index stream probing |
+| `IPTV_TUNERR_SMOKETEST_TIMEOUT` | `8s` | Per-channel probe timeout |
+| `IPTV_TUNERR_SMOKETEST_CONCURRENCY` | `10` | Parallel probes |
+| `IPTV_TUNERR_SMOKETEST_MAX_CHANNELS` | `0` (all) | Cap on channels probed (0 = unlimited) |
+| `IPTV_TUNERR_SMOKETEST_MAX_DURATION` | `5m` | Wall-clock cap for the full probe pass |
+| `IPTV_TUNERR_SMOKETEST_CACHE_FILE` | — | Path to persistent probe result cache |
+| `IPTV_TUNERR_SMOKETEST_CACHE_TTL` | `4h` | How long a cached result stays valid |
+
+---
+
 ## Two Core Capabilities
 
 ### 1. Live TV streaming (tuner)

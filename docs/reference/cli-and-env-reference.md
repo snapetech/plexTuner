@@ -236,12 +236,39 @@ Use for:
 
 ## Provider / input
 
+Multi-host failover (one subscription, multiple CDN endpoints):
+- `IPTV_TUNERR_PROVIDER_URLS` — comma-separated list of provider base URLs; all are probed at startup, fastest/healthiest wins for indexing, rest become per-channel stream URL fallbacks
+
+Single provider:
 - `IPTV_TUNERR_PROVIDER_URL`
-- `IPTV_TUNERR_PROVIDER_URLS`
 - `IPTV_TUNERR_PROVIDER_USER`
 - `IPTV_TUNERR_PROVIDER_PASS`
+
+Multiple subscriptions (numbered suffix, merge into one catalog):
+- `IPTV_TUNERR_PROVIDER_URL_2`, `IPTV_TUNERR_PROVIDER_USER_2`, `IPTV_TUNERR_PROVIDER_PASS_2`
+- `IPTV_TUNERR_PROVIDER_URL_3`, `IPTV_TUNERR_PROVIDER_USER_3`, `IPTV_TUNERR_PROVIDER_PASS_3`
+- (pattern continues for `_4`, `_5`, ...)
+- Channels with duplicate `tvg-id` values across providers are deduplicated — one lineup entry, all stream URLs merged as fallbacks
+
+Other:
 - `IPTV_TUNERR_SUBSCRIPTION_FILE`
 - `IPTV_TUNERR_M3U_URL`
+
+## Post-index stream validation (smoketest)
+
+Optional: probe each channel's primary stream URL at index time and drop channels that fail. Eliminates dead channels before they ever appear in the lineup.
+
+- `IPTV_TUNERR_SMOKETEST_ENABLED` (`false`) — enable the probe pass
+- `IPTV_TUNERR_SMOKETEST_TIMEOUT` (`8s`) — per-channel probe timeout
+- `IPTV_TUNERR_SMOKETEST_CONCURRENCY` (`10`) — parallel probe workers
+- `IPTV_TUNERR_SMOKETEST_MAX_CHANNELS` (`0` = unlimited) — random sample cap; 0 probes all channels
+- `IPTV_TUNERR_SMOKETEST_MAX_DURATION` (`5m`) — wall-clock cap for the full probe pass
+- `IPTV_TUNERR_SMOKETEST_CACHE_FILE` — path to persistent per-URL result cache; skips re-probing fresh entries on subsequent runs
+- `IPTV_TUNERR_SMOKETEST_CACHE_TTL` (`4h`) — how long a cached result is considered fresh
+
+Probe method:
+- MPEG-TS: HTTP Range request for first 4 KB (avoids pulling full streams); 200 or 206 = pass
+- HLS (`.m3u8`): GET playlist; validates `#EXTM3U` / `#EXTINF` or a non-comment segment URI
 
 ## Paths
 
