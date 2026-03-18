@@ -763,6 +763,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/lineup.json", hdhr)
 	mux.Handle("/device.xml", s.serveDeviceXML())
 	mux.Handle("/guide.xml", xmltv)
+	mux.Handle("/guide/health.json", s.serveGuideHealth())
 	mux.Handle("/guide/highlights.json", s.serveGuideHighlights())
 	mux.Handle("/guide/capsules.json", s.serveCatchupCapsules())
 	mux.Handle("/live.m3u", m3uServe)

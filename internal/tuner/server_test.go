@@ -195,6 +195,62 @@ func TestServer_guideHighlights(t *testing.T) {
 	}
 }
 
+func TestServer_guideHealth(t *testing.T) {
+	s := &Server{
+		xmltv: &XMLTV{
+			Channels: []catalog.LiveChannel{
+				{ChannelID: "1", GuideNumber: "101", GuideName: "News One", TVGID: "news.one", EPGLinked: true},
+				{ChannelID: "2", GuideNumber: "102", GuideName: "Mystery TV", TVGID: "mystery.tv", EPGLinked: true},
+			},
+			cachedXML: []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="101"><display-name>News One</display-name></channel>
+  <channel id="102"><display-name>Mystery TV</display-name></channel>
+  <programme start="20260318120000 +0000" stop="20260318130000 +0000" channel="101">
+    <title>Morning News</title>
+    <desc>Top stories</desc>
+  </programme>
+  <programme start="20260317120000 +0000" stop="20260325120000 +0000" channel="102">
+    <title>Mystery TV</title>
+  </programme>
+</tv>`),
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/guide/health.json", nil)
+	w := httptest.NewRecorder()
+	s.serveGuideHealth().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d want 200", w.Code)
+	}
+	var body struct {
+		SourceReady bool `json:"source_ready"`
+		Summary     struct {
+			ChannelsWithRealProgrammes int `json:"channels_with_real_programmes"`
+			PlaceholderOnlyChannels    int `json:"placeholder_only_channels"`
+		} `json:"summary"`
+		Channels []struct {
+			ChannelID       string `json:"channel_id"`
+			Status          string `json:"status"`
+			PlaceholderOnly bool   `json:"placeholder_only"`
+		} `json:"channels"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !body.SourceReady {
+		t.Fatalf("expected source_ready true")
+	}
+	if body.Summary.ChannelsWithRealProgrammes != 1 {
+		t.Fatalf("real_programmes=%d want 1", body.Summary.ChannelsWithRealProgrammes)
+	}
+	if body.Summary.PlaceholderOnlyChannels != 1 {
+		t.Fatalf("placeholder_only=%d want 1", body.Summary.PlaceholderOnlyChannels)
+	}
+	if len(body.Channels) != 2 {
+		t.Fatalf("channels len=%d want 2", len(body.Channels))
+	}
+}
+
 func TestServer_catchupCapsules(t *testing.T) {
 	now := time.Now().UTC()
 	currentStart := now.Add(-20 * time.Minute).Format("20060102150405 +0000")

@@ -13,7 +13,8 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
-- No unreleased entries yet.
+### Guide / intelligence
+- **Guide health report**: added `guide-health` plus `/guide/health.json` to combine XMLTV match status with actual merged-guide coverage, including detection of placeholder-only channel rows versus real programme blocks.
 
 ---
 

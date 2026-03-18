@@ -203,6 +203,35 @@ Notes:
 - each reported channel now includes a persisted `dna_id`
 - the current Channel DNA foundation prefers real/repaired `TVGID`, then falls back to normalized channel identity inputs
 
+## `iptv-tunerr guide-health`
+
+Generate a guide-health report for the actual merged guide output.
+
+This answers a different question than `epg-link-report`:
+- not only "did the channel match XMLTV?"
+- but also "did real programme rows make it into the served guide?"
+
+The report classifies channels by:
+- real programme coverage
+- placeholder-only fallback
+- no programme rows
+- optional XMLTV match provenance
+
+Common flags:
+- `-catalog`
+- `-guide` (required; file path or `http(s)` URL, usually `/guide.xml`)
+- `-xmltv` (optional source XMLTV for deterministic match provenance)
+- `-aliases` (optional JSON alias override file)
+- `-out` (optional JSON output file; otherwise stdout)
+
+Live endpoint:
+- `GET /guide/health.json`
+
+Use for:
+- proving that guide data contains real show blocks, not only channel-name placeholders
+- identifying channels that are guide-linked but still have no programme coverage
+- debugging tester reports like "channel names appear, but no actual what's-on data"
+
 ## `iptv-tunerr channel-dna-report`
 
 Export grouped live-channel identity clusters from a catalog.

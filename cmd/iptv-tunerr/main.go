@@ -726,6 +726,13 @@ func main() {
 	channelDNAReportCatalog := channelDNAReportCmd.String("catalog", "", "Input catalog.json (default: IPTV_TUNERR_CATALOG)")
 	channelDNAReportOut := channelDNAReportCmd.String("out", "", "Optional JSON report output path (default: stdout)")
 
+	guideHealthCmd := flag.NewFlagSet("guide-health", flag.ExitOnError)
+	guideHealthCatalog := guideHealthCmd.String("catalog", "", "Input catalog.json (default: IPTV_TUNERR_CATALOG)")
+	guideHealthGuide := guideHealthCmd.String("guide", "", "Guide XML file path or http(s) URL (required; /guide.xml works well)")
+	guideHealthXMLTV := guideHealthCmd.String("xmltv", "", "Optional source XMLTV file path or http(s) URL for deterministic match provenance")
+	guideHealthAliases := guideHealthCmd.String("aliases", "", "Optional alias override JSON (name_to_xmltv_id map)")
+	guideHealthOut := guideHealthCmd.String("out", "", "Optional JSON report output path (default: stdout)")
+
 	ghostHunterCmd := flag.NewFlagSet("ghost-hunter", flag.ExitOnError)
 	ghostHunterPMSURL := ghostHunterCmd.String("pms-url", strings.TrimSpace(os.Getenv("IPTV_TUNERR_PMS_URL")), "Plex base URL")
 	ghostHunterToken := ghostHunterCmd.String("token", strings.TrimSpace(os.Getenv("IPTV_TUNERR_PMS_TOKEN")), "Plex token")
@@ -776,6 +783,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  supervise  Run multiple child tuner+guide instances from one JSON config (multi-DVR)\n\n")
 		fmt.Fprintf(os.Stderr, "Guide/EPG:\n")
 		fmt.Fprintf(os.Stderr, "  channel-report   Channel intelligence report: score stream resilience + guide confidence\n")
+		fmt.Fprintf(os.Stderr, "  guide-health    Guide health report: actual programme coverage, placeholders, and XMLTV match status\n")
 		fmt.Fprintf(os.Stderr, "  channel-dna-report  Group live channels by stable dna_id identity\n")
 		fmt.Fprintf(os.Stderr, "  ghost-hunter    Observe Plex Live TV sessions, classify stalls, optionally stop stale ones\n")
 		fmt.Fprintf(os.Stderr, "  catchup-capsules Export near-live capsule candidates from guide XML/guide.xml\n")
@@ -845,6 +853,10 @@ func main() {
 	case "channel-dna-report":
 		_ = channelDNAReportCmd.Parse(os.Args[2:])
 		handleChannelDNAReport(cfg, *channelDNAReportCatalog, *channelDNAReportOut)
+
+	case "guide-health":
+		_ = guideHealthCmd.Parse(os.Args[2:])
+		handleGuideHealth(cfg, *guideHealthCatalog, *guideHealthGuide, *guideHealthXMLTV, *guideHealthAliases, *guideHealthOut)
 
 	case "ghost-hunter":
 		_ = ghostHunterCmd.Parse(os.Args[2:])

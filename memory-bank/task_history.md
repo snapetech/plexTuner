@@ -1518,3 +1518,16 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - Updated `docs/how-to/deployment.md` and `docs/index.md` to route operators toward the right doc path instead of mixing all audiences together.
   Verification:
     - Docs-only review of the new pages and updated links.
+
+---
+
+- Date: 2026-03-18
+  Title: Guide health report and live endpoint
+  Summary:
+    - Added `internal/guidehealth` to classify actual merged-guide coverage by channel: real programme rows, placeholder-only fallback, or no guide rows.
+    - Added `iptv-tunerr guide-health` so operators can inspect a catalog plus served `guide.xml` and optionally include source-XMLTV match provenance in the same report.
+    - Added live endpoint `/guide/health.json` so running instances expose the same guide-health view over HTTP.
+    - Updated README, features, CLI reference, and changelog so the new guide-diagnostics path is discoverable.
+  Verification:
+    - `go test ./internal/guidehealth ./internal/tuner ./cmd/iptv-tunerr`
+    - `./scripts/verify`

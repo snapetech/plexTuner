@@ -23,6 +23,14 @@
   2. a Plex-only ops-patterns how-to
   3. routing links from the deployment page and docs index
 
+**Current focus shift (guide health / EPG doctor surface, 2026-03-18):**
+- Next cleanup/productivity step after the architecture pass: unify guide diagnostics into one operator-facing report instead of leaving them split across `epg-link-report`, `channel-report`, and raw `/guide.xml` inspection.
+- This pass adds:
+  1. `iptv-tunerr guide-health`
+  2. `GET /guide/health.json`
+  3. real merged-guide coverage checks: actual programme blocks vs placeholder-only rows vs no guide rows
+  4. optional XMLTV match provenance in the same report
+
 **Current focus shift (README feature-story rewrite, 2026-03-18):**
 - User called out that the README was listing features without explaining why an operator should care.
 - This docs pass rewrites the front-page README around:

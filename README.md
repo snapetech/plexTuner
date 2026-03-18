@@ -193,6 +193,12 @@ match). Optional alias overrides come from `IPTV_TUNERR_XMLTV_ALIASES`.
 
 `epg-link-report` shows exactly which channels are linked, which are not, and whether the match came from an exact ID, alias, or normalized-name repair.
 
+`guide-health` is the operator-facing answer to the tester complaint of "I only get channel names, not what's on." It checks the actual merged guide output and tells you, per channel:
+- whether it has real programme rows with start/stop blocks
+- whether it only has placeholder channel-name guide rows
+- whether it has no guide rows at all
+- whether the XMLTV match came from exact ID, alias override, name repair, or nowhere
+
 These two capabilities run from the same process. They can be used independently: point your media server at the tuner URL for streams and at a different guide source, or use IPTV Tunerr for both.
 
 ---
@@ -227,6 +233,10 @@ iptv-tunerr channel-report -catalog ./catalog.json -xmltv http://example/xmltv.x
 ```bash
 # live server endpoint
 curl -s http://127.0.0.1:5004/channels/report.json | jq
+
+# guide-health / EPG doctor style report
+iptv-tunerr guide-health -catalog ./catalog.json -guide http://127.0.0.1:5004/guide.xml -xmltv http://example/xmltv.xml -aliases ./aliases.json
+curl -s http://127.0.0.1:5004/guide/health.json | jq
 ```
 
 When XMLTV is supplied, the report also shows whether a channel matched by:
@@ -492,6 +502,7 @@ Config reference: [`docs/reference/testing-and-supervisor-config.md`](docs/refer
 | `probe` | Test and rank provider hosts |
 | `supervise` | Run multiple child tuner instances from a JSON config |
 | `channel-report` | Score channels by guide confidence, stream resilience, and EPG match quality |
+| `guide-health` | Diagnose real guide coverage, placeholder-only channels, and XMLTV match quality |
 | `channel-dna-report` | Group channels by stable cross-provider `dna_id` identity |
 | `ghost-hunter` | Observe Plex Live TV sessions and classify stale/hidden-grab cases |
 | `catchup-capsules` | Export near-live capsule candidates from guide XMLTV |
