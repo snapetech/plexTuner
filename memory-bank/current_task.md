@@ -4,7 +4,7 @@
 
 **Goal:** Start the new Live TV Intelligence product track: map the multi-PR roadmap, then ship the first visible foundation feature so IPTV Tunerr feels like an intelligent control plane instead of only a tuner bridge.
 
-**Scope:** In: roadmap/epic documentation, channel intelligence reporting (`channel-report` + `/channels/report.json`), EPG match provenance visibility, README/features/reference/changelog updates, memory-bank updates, local verification. Out: full Channel DNA, Autopilot, lineup recipes, Ghost Hunter, and catch-up capsules implementation in one patch.
+**Scope:** In: roadmap/epic documentation, channel intelligence reporting (`channel-report` + `/channels/report.json`), EPG match provenance visibility, lineup recipes, Channel DNA foundation, Autopilot decision-memory foundation, README/features/reference/changelog updates, memory-bank updates, local verification. Out: full Ghost Hunter, catch-up capsules, provider behavior profile subsystem, and a complete cross-provider identity graph in one patch.
 
 **Last updated:** 2026-03-18
 
@@ -18,7 +18,8 @@
   4. Optional XMLTV-enriched provenance so tester feedback like “no tvg-id/xmltv matches” is visible as exact match vs alias/name repair vs unmatched.
   5. Intelligence-driven lineup recipes via `IPTV_TUNERR_LINEUP_RECIPE=high_confidence|balanced|guide_first|resilient`.
   6. Channel DNA foundation via persisted `dna_id` on live channels.
-  7. README/features/reference/changelog updates so this becomes part of the product story, not just an internal tool.
+  7. Autopilot decision-memory foundation via optional JSON-backed remembered choices keyed by `dna_id + client_class`.
+  8. README/features/reference/changelog updates so this becomes part of the product story, not just an internal tool.
 
 **Current focus shift (Docker image matrix expansion, 2026-03-18):**
 - Binary releases were expanded first, but container images were still limited to `linux/amd64` and `linux/arm64`.

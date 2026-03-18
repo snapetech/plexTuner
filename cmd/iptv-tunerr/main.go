@@ -746,6 +746,7 @@ func main() {
 			FriendlyName:        friendlyName,
 			StreamBufferBytes:   cfg.StreamBufferBytes,
 			StreamTranscodeMode: cfg.StreamTranscodeMode,
+			AutopilotStateFile:  cfg.AutopilotStateFile,
 			Channels:            nil,
 			ProviderUser:        cfg.ProviderUser,
 			ProviderPass:        cfg.ProviderPass,
@@ -916,6 +917,7 @@ func main() {
 			FriendlyName:        friendlyName,
 			StreamBufferBytes:   cfg.StreamBufferBytes,
 			StreamTranscodeMode: cfg.StreamTranscodeMode,
+			AutopilotStateFile:  cfg.AutopilotStateFile,
 			Channels:            nil, // set by UpdateChannels
 			ProviderUser:        firstNonEmpty(runProviderUser, cfg.ProviderUser),
 			ProviderPass:        firstNonEmpty(runProviderPass, cfg.ProviderPass),

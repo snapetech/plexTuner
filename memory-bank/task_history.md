@@ -27,16 +27,16 @@ Append-only. One entry per completed task.
   Summary:
     - Added a new channel intelligence foundation: `iptv-tunerr channel-report` and `/channels/report.json` now score channels by guide confidence, stream resilience, and actionable next steps.
     - Wired optional XMLTV enrichment into the report so operators can see whether guide success comes from exact `tvg-id` matches, alias overrides, normalized-name repairs, or no deterministic match at all.
-    - Added early intelligence-driven lineup recipes (`high_confidence`, `balanced`, `guide_first`, `resilient`) plus a persisted Channel DNA foundation (`dna_id`) and documented the broader product direction in `docs/epics/EPIC-live-tv-intelligence.md` so IPTV Tunerr starts behaving like a live-TV intelligence layer rather than only a tuner bridge.
+    - Added early intelligence-driven lineup recipes (`high_confidence`, `balanced`, `guide_first`, `resilient`), a persisted Channel DNA foundation (`dna_id`), and an Autopilot decision-memory foundation (`IPTV_TUNERR_AUTOPILOT_STATE_FILE`) so successful playback choices can be reused by channel identity and client class.
   Verification:
     - `./scripts/verify`
     - `go test ./internal/channelreport ./internal/tuner ./cmd/iptv-tunerr`
   Notes:
-    - This is the foundation slice only. Channel DNA, Autopilot, lineup recipes, Ghost Hunter, and catch-up capsules remain explicitly planned multi-PR work.
+    - This is still a foundation slice only. Ghost Hunter, catch-up capsules, provider behavior profiles, and a fuller cross-provider Channel DNA graph remain explicitly planned multi-PR work.
   Opportunities filed:
     - none
   Links:
-    - internal/channelreport/report.go, internal/tuner/server.go, cmd/iptv-tunerr/main.go, docs/epics/EPIC-live-tv-intelligence.md, README.md
+    - internal/channelreport/report.go, internal/tuner/autopilot.go, internal/tuner/server.go, cmd/iptv-tunerr/main.go, docs/epics/EPIC-live-tv-intelligence.md, README.md
 
 - Date: 2026-03-18
   Title: Expand Docker image matrix to linux armv7

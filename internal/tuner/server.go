@@ -42,6 +42,7 @@ type Server struct {
 	FriendlyName        string // HDHomeRun discover.json; set from IPTV_TUNERR_FRIENDLY_NAME
 	StreamBufferBytes   int    // 0 = no buffer; -1 = auto; e.g. 2097152 for 2 MiB
 	StreamTranscodeMode string // "off" | "on" | "auto"
+	AutopilotStateFile  string // optional JSON file for remembered dna_id+client_class playback decisions
 	Channels            []catalog.LiveChannel
 	ProviderUser        string
 	ProviderPass        string
@@ -705,6 +706,14 @@ func (s *Server) Run(ctx context.Context) error {
 		PlexPMSURL:          strings.TrimSpace(os.Getenv("IPTV_TUNERR_PMS_URL")),
 		PlexPMSToken:        strings.TrimSpace(os.Getenv("IPTV_TUNERR_PMS_TOKEN")),
 		PlexClientAdapt:     strings.EqualFold(strings.TrimSpace(os.Getenv("IPTV_TUNERR_CLIENT_ADAPT")), "1") || strings.EqualFold(strings.TrimSpace(os.Getenv("IPTV_TUNERR_CLIENT_ADAPT")), "true") || strings.EqualFold(strings.TrimSpace(os.Getenv("IPTV_TUNERR_CLIENT_ADAPT")), "yes"),
+	}
+	if store, err := loadAutopilotStore(strings.TrimSpace(s.AutopilotStateFile)); err != nil {
+		log.Printf("Autopilot memory disabled: load %q failed: %v", s.AutopilotStateFile, err)
+	} else {
+		gateway.Autopilot = store
+		if store != nil && strings.TrimSpace(s.AutopilotStateFile) != "" {
+			log.Printf("Gateway Autopilot memory enabled: path=%q decisions=%d", s.AutopilotStateFile, len(store.byKey))
+		}
 	}
 	log.Printf("Gateway stream mode: transcode=%q buffer_bytes=%d", gateway.StreamTranscodeMode, gateway.StreamBufferBytes)
 	if gateway.PlexClientAdapt {

@@ -47,6 +47,7 @@ type Config struct {
 	// Stream: buffering absorbs brief upstream stalls; transcoding re-encodes (libx264/aac) for compatibility.
 	StreamBufferBytes   int    // -1 = auto (default; adaptive when transcoding). 0 = no buffer. >0 = fixed bytes.
 	StreamTranscodeMode string // "off" | "on" | "auto". auto = probe stream (ffprobe) and transcode only when codec not Plex-friendly.
+	AutopilotStateFile  string // optional JSON state file for remembered channel/client playback decisions
 	XMLTVURL            string // optional external XMLTV source to proxy/remap into /guide.xml
 	XMLTVAliases        string // optional file path or http(s) URL for deterministic XMLTV alias overrides
 	XMLTVMatchEnable    bool   // when true, repair/assign TVGIDs during catalog build from XMLTV channel metadata
@@ -124,6 +125,7 @@ func Load() *Config {
 		FriendlyName:         os.Getenv("IPTV_TUNERR_FRIENDLY_NAME"),
 		StreamBufferBytes:    getEnvIntOrAuto("IPTV_TUNERR_STREAM_BUFFER_BYTES", -1),
 		StreamTranscodeMode:  getEnvTranscodeMode("IPTV_TUNERR_STREAM_TRANSCODE", "off"),
+		AutopilotStateFile:   os.Getenv("IPTV_TUNERR_AUTOPILOT_STATE_FILE"),
 		XMLTVURL:             getEnvURL("IPTV_TUNERR_XMLTV_URL"),
 		XMLTVAliases:         os.Getenv("IPTV_TUNERR_XMLTV_ALIASES"),
 		XMLTVMatchEnable:     getEnvBool("IPTV_TUNERR_XMLTV_MATCH_ENABLE", true),

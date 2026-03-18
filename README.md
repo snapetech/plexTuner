@@ -185,6 +185,18 @@ Channel DNA foundation is now present too:
 
 That is not a full cross-provider identity graph yet, but it is the stable substrate for getting there.
 
+Autopilot memory foundation is now present as well:
+- startup can load a JSON memory file with remembered playback decisions
+- decisions are keyed by `dna_id + client_class`
+- once a stream path actually succeeds, Tunerr can remember the winning transcode/profile choice for that channel/client class pair
+- later requests from the same client class can reuse that remembered choice before falling back to generic client-adaptation rules
+
+Enable it with:
+
+```bash
+IPTV_TUNERR_AUTOPILOT_STATE_FILE=/var/lib/iptvtunerr/autopilot.json
+```
+
 You can also use that intelligence to shape lineups:
 
 ```bash

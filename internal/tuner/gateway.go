@@ -55,6 +55,7 @@ type Gateway struct {
 	PlexPMSURL           string
 	PlexPMSToken         string
 	PlexClientAdapt      bool
+	Autopilot            *autopilotStore
 	mu                   sync.Mutex
 	inUse                int
 	learnedUpstreamLimit int
@@ -1125,7 +1126,20 @@ func looksLikePlexInternalFetcher(product, platform string) bool {
 	return false
 }
 
-func (g *Gateway) requestAdaptation(ctx context.Context, r *http.Request, channel *catalog.LiveChannel, channelID string) (bool, bool, string, string) {
+func plexClientClass(info *plexResolvedClient) string {
+	if info == nil {
+		return "unknown"
+	}
+	if looksLikePlexWeb(info.Product) || looksLikePlexWeb(info.Platform) {
+		return "web"
+	}
+	if looksLikePlexInternalFetcher(info.Product, info.Platform) {
+		return "internal"
+	}
+	return "native"
+}
+
+func (g *Gateway) requestAdaptation(ctx context.Context, r *http.Request, channel *catalog.LiveChannel, channelID string) (bool, bool, string, string, string) {
 	hints := plexRequestHints(r)
 	log.Printf("gateway: channel=%q id=%s plex-hints %s", channel.GuideName, channelID, hints.summary())
 	// Explicit override always wins and is deterministic.
@@ -1133,39 +1147,66 @@ func (g *Gateway) requestAdaptation(ctx context.Context, r *http.Request, channe
 	if strings.TrimSpace(r.URL.Query().Get("profile")) != "" {
 		switch explicitProfile {
 		case profilePlexSafe, profileAACCFR, profileVideoOnly, profileLowBitrate, profileDashFast:
-			return true, true, explicitProfile, "query-profile"
+			return true, true, explicitProfile, "query-profile", "manual"
 		default:
-			return true, false, explicitProfile, "query-profile"
+			return true, false, explicitProfile, "query-profile", "manual"
 		}
 	}
 	// Force websafe so both Chrome and Firefox get browser-safe audio (e.g. MP3); use when
 	// client detection is wrong or after Plex/server updates change how sessions are reported.
 	if getenvBool("IPTV_TUNERR_FORCE_WEBSAFE", false) {
-		return true, true, profilePlexSafe, "force-websafe"
+		return true, true, profilePlexSafe, "force-websafe", "manual"
 	}
 	if !g.PlexClientAdapt {
-		return false, false, "", "adapt-disabled"
+		return false, false, "", "adapt-disabled", "unknown"
 	}
 	info, err := g.resolvePlexClient(ctx, hints)
 	if err != nil {
 		log.Printf("gateway: channel=%q id=%s plex-client-resolve err=%v", channel.GuideName, channelID, err)
-		return true, true, profilePlexSafe, "resolve-error-websafe"
+		return true, true, profilePlexSafe, "resolve-error-websafe", "unknown"
+	}
+	clientClass := plexClientClass(info)
+	if row, ok := g.lookupAutopilotDecision(channel, clientClass); ok {
+		return true, row.Transcode, normalizeProfileName(row.Profile), "autopilot-memory", clientClass
 	}
 	if info == nil {
-		return true, true, profilePlexSafe, "unknown-client-websafe"
+		return true, true, profilePlexSafe, "unknown-client-websafe", clientClass
 	}
 	log.Printf("gateway: channel=%q id=%s plex-client-resolved sid=%q cid=%q product=%q platform=%q title=%q",
 		channel.GuideName, channelID, info.SessionIdentifier, info.ClientIdentifier, info.Product, info.Platform, info.Title)
 	if looksLikePlexWeb(info.Product) || looksLikePlexWeb(info.Platform) {
-		return true, true, profilePlexSafe, "resolved-web-client"
+		return true, true, profilePlexSafe, "resolved-web-client", clientClass
 	}
 	// Resolved session looks like non-web (e.g. native app), but it might be the internal
 	// fetcher (Lavf/PMS) that Plex uses to pull our stream—end viewer could still be Chrome.
 	// Use websafe so both browsers and native clients get compatible audio.
 	if looksLikePlexInternalFetcher(info.Product, info.Platform) {
-		return true, true, profilePlexSafe, "internal-fetcher-websafe"
+		return true, true, profilePlexSafe, "internal-fetcher-websafe", clientClass
 	}
-	return true, false, "", "resolved-nonweb-client"
+	return true, false, "", "resolved-nonweb-client", clientClass
+}
+
+func (g *Gateway) lookupAutopilotDecision(channel *catalog.LiveChannel, clientClass string) (autopilotDecision, bool) {
+	if g == nil || g.Autopilot == nil || channel == nil {
+		return autopilotDecision{}, false
+	}
+	return g.Autopilot.get(channel.DNAID, clientClass)
+}
+
+func (g *Gateway) rememberAutopilotDecision(channel *catalog.LiveChannel, clientClass string, transcode bool, profile, reason string) {
+	if g == nil || g.Autopilot == nil || channel == nil {
+		return
+	}
+	if strings.TrimSpace(channel.DNAID) == "" || strings.TrimSpace(clientClass) == "" {
+		return
+	}
+	g.Autopilot.put(autopilotDecision{
+		DNAID:       channel.DNAID,
+		ClientClass: clientClass,
+		Profile:     normalizeProfileName(profile),
+		Transcode:   transcode,
+		Reason:      reason,
+	})
 }
 
 // Adaptive buffer tuning: grow when client is slow (backpressure), shrink when client keeps up.
@@ -1650,7 +1691,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			log.Printf("gateway: req=%s channel=%q id=%s debug-http < %s", reqID, channel.GuideName, channelID, line)
 		}
 	}
-	hasTranscodeOverride, forceTranscode, forcedProfile, adaptReason := g.requestAdaptation(r.Context(), r, channel, channelID)
+	hasTranscodeOverride, forceTranscode, forcedProfile, adaptReason, clientClass := g.requestAdaptation(r.Context(), r, channel, channelID)
 	if adaptReason != "" && adaptReason != "adapt-disabled" {
 		if hasTranscodeOverride {
 			log.Printf("gateway: channel=%q id=%s adapt transcode=%t profile=%q reason=%s", channel.GuideName, channelID, forceTranscode, forcedProfile, adaptReason)
@@ -1790,6 +1831,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			log.Printf("gateway: channel=%q id=%s hls-mode transcode=%t mode=%q guide=%q tvg=%q", channel.GuideName, channelID, transcode, g.StreamTranscodeMode, channel.GuideNumber, channel.TVGID)
 			if ffmpegPath, ffmpegErr := resolveFFmpegPath(); ffmpegErr == nil {
 				if err := g.relayHLSWithFFmpeg(w, r, ffmpegPath, streamURL, channel.GuideName, channelID, channel.GuideNumber, channel.TVGID, start, transcode, bufferSize, forcedProfile); err == nil {
+					g.rememberAutopilotDecision(channel, clientClass, transcode, effectiveProfileName(g, channel, channelID, forcedProfile), adaptReason)
 					return
 				} else {
 					log.Printf("gateway: channel=%q id=%s ffmpeg-%s failed (falling back to go relay): %v",
@@ -1820,6 +1862,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log.Printf("gateway: channel=%q id=%s hls-relay failed: %v", channel.GuideName, channelID, err)
 				continue
 			}
+			g.rememberAutopilotDecision(channel, clientClass, transcode, effectiveProfileName(g, channel, channelID, forcedProfile), adaptReason)
 			return
 		}
 		bufferSize := g.effectiveBufferSize(false)
@@ -1839,6 +1882,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		n, _ := io.Copy(sw, resp.Body)
 		resp.Body.Close()
 		flush()
+		g.rememberAutopilotDecision(channel, clientClass, false, "", adaptReason)
 		log.Printf("gateway: channel=%q id=%s proxied bytes=%d dur=%s", channel.GuideName, channelID, n, time.Since(start).Round(time.Millisecond))
 		return
 	}
@@ -2080,6 +2124,16 @@ func buildFFmpegMPEGTSCodecArgs(transcode bool, profile string) []string {
 		"pipe:1",
 	)
 	return codecArgs
+}
+
+func effectiveProfileName(g *Gateway, channel *catalog.LiveChannel, channelID, forcedProfile string) string {
+	if strings.TrimSpace(forcedProfile) != "" {
+		return normalizeProfileName(forcedProfile)
+	}
+	if g == nil || channel == nil {
+		return ""
+	}
+	return g.profileForChannelMeta(channelID, channel.GuideNumber, channel.TVGID)
 }
 
 func (g *Gateway) relayHLSWithFFmpeg(

@@ -71,8 +71,10 @@ Make IPTV Tunerr feel less like a tuner bridge and more like a live-TV intellige
   - `INT-002` EPG match provenance in the report when XMLTV is supplied
   - early lineup recipes driven by channel intelligence scores (`high_confidence`, `balanced`, `guide_first`, `resilient`)
   - Channel DNA foundation: persisted `dna_id` derived from repaired `TVGID` or normalized channel identity inputs
-- Next recommended slice:
-  - persist richer match provenance and long-lived cross-provider relationships into a full Channel DNA store
+  - `INT-005` Autopilot memory foundation: optional JSON-backed remembered decisions keyed by `dna_id + client_class`, with successful stream choices reused before generic client adaptation
+- Next recommended slices:
+  - persist richer match provenance and long-lived cross-provider relationships into a fuller Channel DNA store
+  - expand Autopilot from profile/transcode memory into fallback URL/provider selection and hot-start behavior
 
 See also
 --------

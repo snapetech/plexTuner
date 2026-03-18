@@ -261,7 +261,7 @@ func TestGateway_requestAdaptation_unknownDefaultsWebsafe(t *testing.T) {
 	ch := &catalog.LiveChannel{GuideName: "Test"}
 	req := httptest.NewRequest(http.MethodGet, "http://local/stream/test", nil)
 
-	hasOverride, transcode, profile, reason := g.requestAdaptation(context.Background(), req, ch, "test")
+	hasOverride, transcode, profile, reason, clientClass := g.requestAdaptation(context.Background(), req, ch, "test")
 	if !hasOverride {
 		t.Fatalf("expected transcode override for unknown client")
 	}
@@ -273,6 +273,9 @@ func TestGateway_requestAdaptation_unknownDefaultsWebsafe(t *testing.T) {
 	}
 	if reason != "unknown-client-websafe" {
 		t.Fatalf("reason=%q", reason)
+	}
+	if clientClass != "unknown" {
+		t.Fatalf("clientClass=%q want unknown", clientClass)
 	}
 }
 
@@ -297,7 +300,7 @@ func TestGateway_requestAdaptation_resolvedNonWebGetsFull(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "http://local/stream/test", nil)
 	req.Header.Set("X-Plex-Session-Identifier", "sid-1")
 
-	hasOverride, transcode, profile, reason := g.requestAdaptation(context.Background(), req, ch, "test")
+	hasOverride, transcode, profile, reason, clientClass := g.requestAdaptation(context.Background(), req, ch, "test")
 	if !hasOverride {
 		t.Fatalf("expected override for resolved non-web client")
 	}
@@ -309,6 +312,9 @@ func TestGateway_requestAdaptation_resolvedNonWebGetsFull(t *testing.T) {
 	}
 	if reason != "resolved-nonweb-client" {
 		t.Fatalf("reason=%q", reason)
+	}
+	if clientClass != "native" {
+		t.Fatalf("clientClass=%q want native", clientClass)
 	}
 }
 
@@ -333,7 +339,7 @@ func TestGateway_requestAdaptation_resolvedWebGetsWebsafe(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "http://local/stream/test", nil)
 	req.Header.Set("X-Plex-Session-Identifier", "sid-web")
 
-	hasOverride, transcode, profile, reason := g.requestAdaptation(context.Background(), req, ch, "test")
+	hasOverride, transcode, profile, reason, clientClass := g.requestAdaptation(context.Background(), req, ch, "test")
 	if !hasOverride {
 		t.Fatalf("expected override for resolved web client")
 	}
@@ -345,6 +351,9 @@ func TestGateway_requestAdaptation_resolvedWebGetsWebsafe(t *testing.T) {
 	}
 	if reason != "resolved-web-client" {
 		t.Fatalf("reason=%q", reason)
+	}
+	if clientClass != "web" {
+		t.Fatalf("clientClass=%q want web", clientClass)
 	}
 }
 
@@ -371,7 +380,7 @@ func TestGateway_requestAdaptation_internalFetcherGetsWebsafe(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "http://local/stream/test", nil)
 	req.Header.Set("X-Plex-Session-Identifier", "sid-lavf")
 
-	hasOverride, transcode, profile, reason := g.requestAdaptation(context.Background(), req, ch, "test")
+	hasOverride, transcode, profile, reason, clientClass := g.requestAdaptation(context.Background(), req, ch, "test")
 	if !hasOverride {
 		t.Fatalf("expected override for internal fetcher")
 	}
@@ -383,6 +392,61 @@ func TestGateway_requestAdaptation_internalFetcherGetsWebsafe(t *testing.T) {
 	}
 	if reason != "internal-fetcher-websafe" {
 		t.Fatalf("reason=%q want internal-fetcher-websafe", reason)
+	}
+	if clientClass != "internal" {
+		t.Fatalf("clientClass=%q want internal", clientClass)
+	}
+}
+
+func TestGateway_requestAdaptation_autopilotMemoryWins(t *testing.T) {
+	pms := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/status/sessions" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer size="1"><Video title="Live TV"><Session id="sid-web"/><Player machineIdentifier="cid-web" product="Plex Web" platform="Firefox"/></Video></MediaContainer>`))
+	}))
+	defer pms.Close()
+
+	store := &autopilotStore{
+		byKey: map[string]autopilotDecision{
+			autopilotKey("dna:test", "web"): {
+				DNAID:       "dna:test",
+				ClientClass: "web",
+				Profile:     profileDashFast,
+				Transcode:   true,
+				Reason:      "resolved-web-client",
+				Hits:        3,
+			},
+		},
+	}
+	g := &Gateway{
+		PlexClientAdapt: true,
+		PlexPMSURL:      pms.URL,
+		PlexPMSToken:    "tok",
+		Client:          pms.Client(),
+		Autopilot:       store,
+	}
+	ch := &catalog.LiveChannel{GuideName: "Test", DNAID: "dna:test"}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/test", nil)
+	req.Header.Set("X-Plex-Session-Identifier", "sid-web")
+
+	hasOverride, transcode, profile, reason, clientClass := g.requestAdaptation(context.Background(), req, ch, "test")
+	if !hasOverride {
+		t.Fatalf("expected autopilot override")
+	}
+	if !transcode {
+		t.Fatalf("expected remembered transcode=true")
+	}
+	if profile != profileDashFast {
+		t.Fatalf("profile=%q want %q", profile, profileDashFast)
+	}
+	if reason != "autopilot-memory" {
+		t.Fatalf("reason=%q want autopilot-memory", reason)
+	}
+	if clientClass != "web" {
+		t.Fatalf("clientClass=%q want web", clientClass)
 	}
 }
 
