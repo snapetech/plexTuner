@@ -103,6 +103,88 @@ func TestGateway_stream_allFail(t *testing.T) {
 	}
 }
 
+func TestGateway_stream_upstreamConcurrencyLimitReturnsAllTunersInUse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "max connections reached", 458)
+	}))
+	defer srv.Close()
+
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "1", GuideName: "Ch1", StreamURL: srv.URL},
+		},
+		TunerCount: 2,
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("code: %d", w.Code)
+	}
+	if got := w.Header().Get("X-HDHomeRun-Error"); got != "805" {
+		t.Fatalf("X-HDHomeRun-Error=%q", got)
+	}
+	if !strings.Contains(w.Body.String(), "All tuners in use") {
+		t.Fatalf("body=%q", w.Body.String())
+	}
+}
+
+func TestParseUpstreamConcurrencyLimit(t *testing.T) {
+	cases := []struct {
+		preview string
+		want    int
+	}{
+		{preview: "max connections reached: 1", want: 1},
+		{preview: "Only 2 streams allowed on this account", want: 2},
+		{preview: "connection limit hit", want: 0},
+	}
+	for _, tc := range cases {
+		if got := parseUpstreamConcurrencyLimit(tc.preview); got != tc.want {
+			t.Fatalf("preview=%q got=%d want=%d", tc.preview, got, tc.want)
+		}
+	}
+}
+
+func TestGateway_learnsUpstreamConcurrencyLimitAndRejectsLocally(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		http.Error(w, "maximum 1 connections allowed", 423)
+	}))
+	defer srv.Close()
+
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "1", GuideName: "Ch1", StreamURL: srv.URL},
+		},
+		TunerCount: 4,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("first code: %d", w.Code)
+	}
+	if g.learnedUpstreamLimit != 1 {
+		t.Fatalf("learnedUpstreamLimit=%d", g.learnedUpstreamLimit)
+	}
+
+	g.mu.Lock()
+	g.inUse = 1
+	g.mu.Unlock()
+
+	req2 := httptest.NewRequest(http.MethodGet, "http://local/stream/0", nil)
+	w2 := httptest.NewRecorder()
+	g.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusServiceUnavailable {
+		t.Fatalf("second code: %d", w2.Code)
+	}
+	if hits != 1 {
+		t.Fatalf("upstream hits=%d want=1", hits)
+	}
+}
+
 func TestGateway_stream_primaryOK(t *testing.T) {
 	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

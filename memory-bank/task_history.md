@@ -23,6 +23,21 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-18
+  Title: Learn provider concurrency caps from 423/429/458 live-stream failures
+  Summary:
+    - Updated the tuner gateway to classify upstream `423`, `429`, and `458` playlist failures as provider concurrency-limit errors instead of collapsing them into a generic `502`.
+    - Added bounded upstream error-body capture to logs and a parser for numeric caps in phrases like `maximum 1 connections allowed`; when present, the gateway now learns that lower concurrency cap and clamps the effective local tuner limit for the current process.
+    - Added tuner tests for `458` translation, advertised-cap parsing, and local rejection after learning a lower upstream limit. Updated troubleshooting and known-issues docs to tell operators to persist the learned value via `IPTV_TUNERR_TUNER_COUNT`.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Learned caps only reduce the effective limit and only for the running process; they do not overwrite config or attempt to raise limits automatically.
+  Opportunities filed:
+    - none
+  Links:
+    - internal/tuner/gateway.go, internal/tuner/gateway_test.go, docs/runbooks/iptvtunerr-troubleshooting.md, memory-bank/known_issues.md
+
+- Date: 2026-03-18
   Title: Release v0.1.4 with Cloudflare/CDN playback fixes
   Summary:
     - Forwarded selected upstream request context (`Cookie`, `Referer`, `Origin`, and passthrough `Authorization` when provider basic auth is not configured) into both Go relay fetches and ffmpeg HLS input headers so CDN-backed playlists and segments retain caller auth context.

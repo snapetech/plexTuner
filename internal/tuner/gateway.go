@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,23 +41,24 @@ var errCFBlock = errors.New("cloudflare-abuse-block")
 // Gateway proxies live stream requests to provider URLs with optional auth.
 // Limit concurrent streams to TunerCount (tuner semantics).
 type Gateway struct {
-	Channels            []catalog.LiveChannel
-	ProviderUser        string
-	ProviderPass        string
-	TunerCount          int
-	StreamBufferBytes   int    // 0 = no buffer, -1 = auto
-	StreamTranscodeMode string // "off" | "on" | "auto"
-	TranscodeOverrides  map[string]bool
-	DefaultProfile      string
-	ProfileOverrides    map[string]string
-	Client              *http.Client
-	FetchCFReject       bool // abort HLS stream on segment redirected to CF abuse page
-	PlexPMSURL          string
-	PlexPMSToken        string
-	PlexClientAdapt     bool
-	mu                  sync.Mutex
-	inUse               int
-	reqSeq              uint64
+	Channels             []catalog.LiveChannel
+	ProviderUser         string
+	ProviderPass         string
+	TunerCount           int
+	StreamBufferBytes    int    // 0 = no buffer, -1 = auto
+	StreamTranscodeMode  string // "off" | "on" | "auto"
+	TranscodeOverrides   map[string]bool
+	DefaultProfile       string
+	ProfileOverrides     map[string]string
+	Client               *http.Client
+	FetchCFReject        bool // abort HLS stream on segment redirected to CF abuse page
+	PlexPMSURL           string
+	PlexPMSToken         string
+	PlexClientAdapt      bool
+	mu                   sync.Mutex
+	inUse                int
+	learnedUpstreamLimit int
+	reqSeq               uint64
 }
 
 type gatewayReqIDKey struct{}
@@ -327,6 +329,99 @@ func (g *Gateway) ffmpegInputHeaderBlock(incoming *http.Request, hostOverride st
 		return ""
 	}
 	return strings.Join(lines, "\r\n") + "\r\n"
+}
+
+func readUpstreamErrorPreview(resp *http.Response) string {
+	if resp == nil || resp.Body == nil {
+		return ""
+	}
+	const limit = 256
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit))
+	if err != nil {
+		return ""
+	}
+	text := strings.TrimSpace(string(body))
+	if text == "" {
+		return ""
+	}
+	text = strings.NewReplacer("\r", " ", "\n", " ", "\t", " ").Replace(text)
+	if len(text) > 160 {
+		text = text[:160]
+	}
+	return text
+}
+
+func isUpstreamConcurrencyLimit(status int, preview string) bool {
+	switch status {
+	case http.StatusLocked, http.StatusTooManyRequests, 458:
+		return true
+	}
+	if preview == "" {
+		return false
+	}
+	s := strings.ToLower(strings.TrimSpace(preview))
+	return strings.Contains(s, "max connections") ||
+		strings.Contains(s, "maximum connections") ||
+		strings.Contains(s, "too many connections") ||
+		strings.Contains(s, "connection limit") ||
+		strings.Contains(s, "concurrent")
+}
+
+var upstreamConcurrencyLimitPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)(?:max(?:imum)?|limit|allowed)[^0-9]{0,24}(\d{1,2})[^0-9]{0,12}(?:connections?|streams?|devices?|sessions?)`),
+	regexp.MustCompile(`(?i)(?:max(?:imum)?)[^0-9]{0,12}(?:connections?|streams?|devices?|sessions?)[^0-9]{0,24}(\d{1,2})`),
+	regexp.MustCompile(`(?i)(\d{1,2})[^0-9]{0,12}(?:connections?|streams?|devices?|sessions?)[^0-9]{0,24}(?:max(?:imum)?|limit|allowed|only)`),
+}
+
+func parseUpstreamConcurrencyLimit(preview string) int {
+	if preview == "" {
+		return 0
+	}
+	for _, re := range upstreamConcurrencyLimitPatterns {
+		m := re.FindStringSubmatch(preview)
+		if len(m) < 2 {
+			continue
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(m[1]))
+		if err == nil && n > 0 {
+			return n
+		}
+	}
+	return 0
+}
+
+func (g *Gateway) configuredTunerLimit() int {
+	limit := g.TunerCount
+	if limit <= 0 {
+		limit = 2
+	}
+	return limit
+}
+
+func (g *Gateway) learnUpstreamConcurrencyLimit(preview string) int {
+	learned := parseUpstreamConcurrencyLimit(preview)
+	if learned <= 0 {
+		return 0
+	}
+	configured := g.configuredTunerLimit()
+	if learned > configured {
+		return 0
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.learnedUpstreamLimit != 0 && g.learnedUpstreamLimit <= learned {
+		return 0
+	}
+	g.learnedUpstreamLimit = learned
+	return learned
+}
+
+func (g *Gateway) effectiveTunerLimitLocked() int {
+	limit := g.configuredTunerLimit()
+	if g.learnedUpstreamLimit > 0 && g.learnedUpstreamLimit < limit {
+		limit = g.learnedUpstreamLimit
+	}
+	return limit
 }
 
 type cappedBodyTee struct {
@@ -1580,10 +1675,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	g.mu.Lock()
-	limit := g.TunerCount
-	if limit <= 0 {
-		limit = 2
-	}
+	limit := g.effectiveTunerLimitLocked()
 	if g.inUse >= limit {
 		g.mu.Unlock()
 		log.Printf("gateway: req=%s channel=%q id=%s reject all-tuners-in-use limit=%d ua=%q", reqID, channel.GuideName, channelID, limit, r.UserAgent())
@@ -1603,6 +1695,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("gateway: req=%s channel=%q id=%s release inuse=%d/%d dur=%s", reqID, channel.GuideName, channelID, inUseLeft, limit, time.Since(start).Round(time.Millisecond))
 	}()
 
+	upstreamConcurrencyLimited := false
 	// Try primary then backups until one works. Do not retry or backoff on 429/423 here:
 	// that would block stream throughput. We only fail over to next URL and return 502 if all fail.
 	// Reject non-http(s) URLs to prevent SSRF (e.g. file:// or provider-supplied internal URLs).
@@ -1630,12 +1723,25 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if resp.StatusCode != http.StatusOK {
-			if resp.StatusCode == http.StatusTooManyRequests {
-				log.Printf("gateway: channel=%q id=%s upstream[%d/%d] 429 rate limited url=%s",
-					channel.GuideName, channelID, i+1, len(urls), safeurl.RedactURL(streamURL))
-			} else {
-				log.Printf("gateway: channel=%q id=%s upstream[%d/%d] status=%d url=%s",
-					channel.GuideName, channelID, i+1, len(urls), resp.StatusCode, safeurl.RedactURL(streamURL))
+			preview := readUpstreamErrorPreview(resp)
+			limited := isUpstreamConcurrencyLimit(resp.StatusCode, preview)
+			if limited {
+				upstreamConcurrencyLimited = true
+				if learned := g.learnUpstreamConcurrencyLimit(preview); learned > 0 {
+					log.Printf("gateway: channel=%q id=%s learned upstream concurrency limit=%d from status=%d body=%q",
+						channel.GuideName, channelID, learned, resp.StatusCode, preview)
+				}
+			}
+			switch {
+			case resp.StatusCode == http.StatusTooManyRequests:
+				log.Printf("gateway: channel=%q id=%s upstream[%d/%d] 429 rate limited url=%s body=%q",
+					channel.GuideName, channelID, i+1, len(urls), safeurl.RedactURL(streamURL), preview)
+			case limited:
+				log.Printf("gateway: channel=%q id=%s upstream[%d/%d] concurrency-limited status=%d url=%s body=%q",
+					channel.GuideName, channelID, i+1, len(urls), resp.StatusCode, safeurl.RedactURL(streamURL), preview)
+			default:
+				log.Printf("gateway: channel=%q id=%s upstream[%d/%d] status=%d url=%s body=%q",
+					channel.GuideName, channelID, i+1, len(urls), resp.StatusCode, safeurl.RedactURL(streamURL), preview)
 			}
 			resp.Body.Close()
 			continue
@@ -1734,6 +1840,13 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		resp.Body.Close()
 		flush()
 		log.Printf("gateway: channel=%q id=%s proxied bytes=%d dur=%s", channel.GuideName, channelID, n, time.Since(start).Round(time.Millisecond))
+		return
+	}
+	if upstreamConcurrencyLimited {
+		log.Printf("gateway: req=%s channel=%q id=%s upstream concurrency limit hit; surfacing all-tuners-in-use to client",
+			reqID, channel.GuideName, channelID)
+		w.Header().Set("X-HDHomeRun-Error", "805")
+		http.Error(w, "All tuners in use", http.StatusServiceUnavailable)
 		return
 	}
 	log.Printf("gateway: channel=%q id=%s all %d upstream(s) failed dur=%s", channel.GuideName, channelID, len(urls), time.Since(start).Round(time.Millisecond))

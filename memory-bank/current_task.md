@@ -2,11 +2,27 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Goal:** Ship a new release build containing the completed Cloudflare/CDN playback fixes: preserve upstream auth context (cookies/referer/origin) across ffmpeg and Go relay fetches, prefer IPv4 when ffmpeg canonicalizes input hosts, and raise default startup tolerance for slow HLS starts.
+**Goal:** Ship a new patch release containing the tester-reported concurrent-playback fix after `v0.1.4`: classify upstream `423`/`429`/`458` responses as provider concurrency limits, learn lower numeric caps when the provider advertises them, and surface a local HDHR-style capacity error instead of a generic upstream failure.
 
-**Scope:** In: finalize the current gateway/request-path fixes for HLS playback, targeted tuner tests, troubleshooting doc update, local verify/package checks, git commit/tag/push for the next patch release, and memory-bank/task-history updates. Out: broad CDN bypass work, provider-specific scraper logic, or unrelated VOD/Plex library work.
+**Scope:** In: targeted gateway/tests/docs updates for provider concurrency-limit signaling and learned-cap clamping, local verify, git commit/tag/push for the next patch release, and memory-bank/task-history updates. Out: broad stream-sharing architecture, provider-specific scraper/login logic, or unrelated VOD/Plex library work.
 
 **Last updated:** 2026-03-18
+
+**Current focus shift (release build, 2026-03-18 late):**
+- The provider-capacity follow-up patch is implemented in the working tree. Remaining work is release hygiene: verify, commit, tag, and push the next patch release so CI publishes binaries and container images.
+- This checkout still only has `origin` configured for the IPTV Tunerr repo, so the release push will use that configured remote.
+- Planned release steps in this session:
+  1. Run `scripts/verify`.
+  2. Commit the provider concurrency-limit fix set.
+  3. Create and push tag `v0.1.5`.
+
+**Current focus shift (tester follow-up, 2026-03-18):**
+- New tester report from `phantasm`: a second concurrent tune from another device fails with `gateway: ... upstream[1/1] status=458 ... .m3u8`.
+- Working hypothesis: the provider is enforcing a per-account live-stream cap and IptvTunerr is currently surfacing that as a generic upstream failure (`502`) instead of the HDHR-style capacity signal Plex expects (`805` / service unavailable). This is likely distinct from the just-shipped header/IPv4/startup fixes.
+- Planned fix in this session:
+  1. Inspect gateway handling for upstream non-200 statuses, especially one-URL live streams.
+  2. Add a targeted regression test for upstream `458` capacity errors.
+  3. Translate provider concurrency-limit responses into a clearer local capacity response and document that operators should align `IPTV_TUNERR_TUNER_COUNT` with the provider's actual concurrent-stream allowance.
 
 **Current focus shift (release build, 2026-03-18):**
 - The playback patch is already implemented in the working tree (`internal/tuner/gateway.go`, tests, troubleshooting doc). The remaining work is release hygiene: verify locally, package once, then commit/tag/push so GitHub Actions can publish the build artifacts and container images.
@@ -198,6 +214,7 @@
 
 ## Assumptions & questions (only if uncertainty matters)
 Assumptions (safe defaults you are proceeding with):
+- Next release version for this follow-up patch build is `v0.1.5` (latest existing tag is `v0.1.4`).
 - Next release version for this patch-only build is `v0.1.4` (latest existing tag is `v0.1.3`).
 - Local environment may not have Go installed; OK to use a temporary local Go toolchain (non-system install) only for verification.
 - k3s/Plex troubleshooting changes on remote hosts may be temporary runtime fixes unless later codified in infra manifests or host firewall config.
