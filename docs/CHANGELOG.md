@@ -27,6 +27,9 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Autopilot upstream memory**: remembered playback decisions now also keep the last known-good upstream URL/host, so repeat requests can prefer the working stream path first on duplicate or multi-CDN channels.
 - **Provider host penalties**: provider autotune now tracks repeated host-level upstream failures and automatically prefers healthier stream hosts/CDNs before retrying known-bad ones.
 - **Channel DNA preference policy**: added `IPTV_TUNERR_DNA_POLICY=prefer_best|prefer_resilient` so lineup and registration flows can now collapse duplicate `dna_id` variants to a preferred winner instead of only reporting the group.
+- **Channel DNA preferred hosts**: added `IPTV_TUNERR_DNA_PREFERRED_HOSTS` so duplicate-variant selection can bias trusted provider/CDN authorities before falling back to score-based tie-breaking.
+- **Ghost Hunter action recommendations**: visible stale sessions and hidden-grab suspicion now produce different recommended next actions and recovery commands, and the live endpoint supports `?stop=true`.
+- **Catch-up capsule curation**: duplicate programme rows that share the same `dna_id + start + title` are now curated down to the richer capsule candidate before export/publish.
 - **Shared ref loader**: report and guide tooling now use one shared local-file/URL loader with the repo HTTP client defaults instead of duplicated `http.DefaultClient` code paths.
 
 ### Ingest / probe

@@ -57,6 +57,7 @@ Recent additions are aimed at one thing: making the system explain itself and re
 - **Runtime EPG repair**: fixes bad or missing channel IDs before guide pruning, so "channel name only" guide entries stop surviving just because a source had a bogus `tvg-id`.
 - **Channel intelligence reports**: scores each channel by guide confidence, resilience, and backup depth so you can see which channels are strong, weak, or not worth exposing.
 - **Channel DNA**: gives channels a stable identity across provider variants and duplicates, so merged lineups and future automation have something more durable than a raw channel name.
+- **Channel DNA provider preference**: duplicate variants can now prefer trusted provider/CDN authorities first, so the winner can reflect operator preference as well as generic channel score.
 - **Autopilot memory**: remembers winning playback choices per channel and client class, including the upstream URL/host that actually worked, so the system can reuse what already worked instead of rediscovering it every time.
 - **Ghost Hunter**: surfaces stale-session and hidden-grab clues for Plex instead of leaving operators to infer them from broken playback.
 - **Provider profile and autotune**: shows learned concurrency caps, instability signals, Cloudflare hits, penalized bad hosts, and cautious self-tuning decisions.
@@ -321,6 +322,7 @@ Ghost Hunter is aimed at one of the nastiest Plex support loops: playback looks 
 - it classifies visible stalls using the same idle/lease heuristics as the built-in reaper
 - it can optionally stop stale visible transcode sessions
 - live server endpoint: `/plex/ghost-report.json`
+- for visible stale sessions it now recommends rerunning with stop mode first
 - when no visible sessions exist, it now emits a structured hidden-grab escalation with a recovery command and runbook pointer
 
 Examples:
@@ -425,6 +427,7 @@ Why this matters:
 - operators can publish sports, movies, and general lanes separately
 - the same feed can be reused across Plex, Emby, and Jellyfin
 - when a replay-capable source exists, the same workflow can now publish real replay `.strm` targets instead of only live launchers
+- duplicate programme rows that share the same `dna_id + start + title` are now curated down to the richer capsule before export/publish
 
 Live-validated on the cluster:
 - Emby catch-up publish created lane libraries and on-disk `.strm + .nfo` content on the server PVC

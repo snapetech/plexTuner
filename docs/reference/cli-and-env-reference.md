@@ -319,6 +319,7 @@ Also available live over HTTP:
 
 Live endpoint:
 - `GET /plex/ghost-report.json`
+  - supports `?stop=true` to apply the same stale-visible-session stop mode as the CLI
 
 Query params:
 - `observe=4s`
@@ -583,6 +584,7 @@ Probe method:
   - `off` = keep all variants
   - `prefer_best` = keep the strongest duplicate by combined channel-intelligence score
   - `prefer_resilient` = keep the most backup-stream-resilient duplicate first
+- `IPTV_TUNERR_DNA_PREFERRED_HOSTS` — optional comma-separated preferred provider/CDN authorities (for example `preferred.example,backup.example:8080`) used as a tie-breaker when duplicate variants share the same `dna_id`
 - `IPTV_TUNERR_GUIDE_POLICY` — optional runtime guide-quality policy:
   - `off` = current permissive behavior
   - `healthy` = keep only channels with real programme rows once cached guide-health is available

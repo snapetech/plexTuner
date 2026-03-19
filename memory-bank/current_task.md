@@ -250,6 +250,14 @@
   2. automatically prefer healthier hosts/CDNs before retrying penalized ones
   3. expose penalized hosts through the provider profile surface
   4. add regression coverage plus docs/changelog updates and verify before pushing
+
+**Current focus shift (backlog consolidation pass, 2026-03-18):**
+- User asked to continue the remaining backlog in one combined pass instead of more tiny follow-ups.
+- This pass covers:
+  1. add preferred-provider hints for duplicate DNA winners via `IPTV_TUNERR_DNA_PREFERRED_HOSTS`
+  2. curate catch-up capsules so duplicate programme rows collapse to the richer candidate before export/publish
+  3. improve Ghost Hunter output so visible-stale vs hidden-grab cases recommend different next safe actions
+  4. keep docs/changelog/env/memory-bank aligned and verify before pushing
 - README was rewritten so the front page explains why the features matter operationally, not just that they exist.
 
 **Current focus shift (remaining product-facing intelligence surfaces, 2026-03-18):**

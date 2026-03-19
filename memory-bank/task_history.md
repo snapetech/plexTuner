@@ -23,6 +23,22 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-18
+  Title: Add DNA provider preference, catch-up curation, and Ghost Hunter action guidance
+  Summary:
+    - Added `IPTV_TUNERR_DNA_PREFERRED_HOSTS` so duplicate DNA winners can bias trusted provider/CDN authorities before score-based tie-breaking.
+    - Curated catch-up capsule generation so duplicate programme rows that share the same `dna_id + start + title` collapse to the richer candidate before export and publishing.
+    - Improved Ghost Hunter so visible stale sessions and hidden-grab suspicion now produce different recommended next actions, and the live endpoint accepts `?stop=true`.
+  Verification:
+    - `go test ./internal/tuner ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - Catch-up curation prefers richer metadata and better state priority while keeping the existing lane model intact.
+  Opportunities filed:
+    - none
+  Links:
+    - internal/tuner/dna_policy.go, internal/tuner/xmltv.go, internal/tuner/ghost_hunter.go, internal/tuner/server.go
+
+- Date: 2026-03-18
   Title: Add provider host-penalty autotune
   Summary:
     - Added host-level failure tracking so repeated request/status/empty-body failures penalize specific upstream hosts instead of only incrementing global instability counters.

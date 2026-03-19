@@ -1120,7 +1120,11 @@ func (s *Server) serveGhostHunterReport() http.Handler {
 				cfg.PollInterval = d
 			}
 		}
-		rep, err := RunGhostHunter(r.Context(), cfg, false, nil)
+		stop := false
+		if raw := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("stop"))); raw != "" {
+			stop = raw == "1" || raw == "true" || raw == "yes" || raw == "on"
+		}
+		rep, err := RunGhostHunter(r.Context(), cfg, stop, nil)
 		if err != nil {
 			http.Error(w, `{"error":"ghost hunter failed"}`, http.StatusBadGateway)
 			return

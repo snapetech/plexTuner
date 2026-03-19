@@ -57,6 +57,12 @@ func TestRunGhostHunterClassifiesStaleSessionAfterObservation(t *testing.T) {
 	if rep.Sessions[0].Status != "stale" {
 		t.Fatalf("status=%q want stale", rep.Sessions[0].Status)
 	}
+	if rep.RecoveryCommand == "" {
+		t.Fatalf("expected recovery command for stale visible sessions")
+	}
+	if len(rep.SafeActions) == 0 {
+		t.Fatalf("expected safe actions for stale visible sessions")
+	}
 }
 
 func TestServer_ghostHunterReport(t *testing.T) {
@@ -134,5 +140,8 @@ func TestRunGhostHunterEscalatesWhenNoVisibleSessions(t *testing.T) {
 	}
 	if rep.Runbook == "" {
 		t.Fatalf("expected runbook")
+	}
+	if len(rep.SafeActions) == 0 {
+		t.Fatalf("expected safe actions")
 	}
 }

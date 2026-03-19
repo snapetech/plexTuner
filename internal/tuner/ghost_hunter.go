@@ -46,10 +46,12 @@ type GhostHunterReport struct {
 	SessionCount        int                  `json:"session_count"`
 	StaleCount          int                  `json:"stale_count"`
 	CanStop             bool                 `json:"can_stop"`
+	StopApplied         bool                 `json:"stop_applied"`
 	HiddenGrabSuspected bool                 `json:"hidden_grab_suspected"`
 	RecommendedAction   string               `json:"recommended_action,omitempty"`
 	RecoveryCommand     string               `json:"recovery_command,omitempty"`
 	Runbook             string               `json:"runbook,omitempty"`
+	SafeActions         []string             `json:"safe_actions,omitempty"`
 	Notes               []string             `json:"notes,omitempty"`
 	Thresholds          map[string]string    `json:"thresholds"`
 	Sessions            []GhostHunterSession `json:"sessions"`
@@ -105,6 +107,7 @@ func (r *plexSessionReaper) observeAndOptionallyStop(ctx context.Context, observ
 	report := GhostHunterReport{
 		GeneratedAt: now.UTC().Format(time.RFC3339),
 		CanStop:     stop,
+		StopApplied: stop,
 		Thresholds: map[string]string{
 			"idle_timeout": strings.TrimSpace(r.cfg.IdleTimeout.String()),
 			"renew_lease":  strings.TrimSpace(r.cfg.RenewLease.String()),
@@ -246,11 +249,25 @@ func (r *plexSessionReaper) observeAndOptionallyStop(ctx context.Context, observ
 	if observe == 0 {
 		report.Notes = append(report.Notes, "single-snapshot mode: stale classification is limited without observing offset/timestamp movement over time")
 	}
+	if report.StaleCount > 0 {
+		report.Runbook = firstNonEmptyString(report.Runbook, "docs/runbooks/plex-hidden-live-grab-recovery.md")
+		report.SafeActions = append(report.SafeActions, "inspect_visible_stale_sessions")
+		if stop {
+			report.RecommendedAction = "Visible stale sessions were classified and stop mode was enabled. If tunes are still blocked afterward, escalate to hidden-grab recovery."
+			report.RecoveryCommand = "./scripts/plex-hidden-grab-recover.sh --dry-run"
+			report.SafeActions = append(report.SafeActions, "stop_visible_stale_sessions", "consider_hidden_grab_recovery")
+		} else {
+			report.RecommendedAction = "Visible stale sessions were found. Re-run Ghost Hunter with stop mode to clear stale visible transcode sessions first."
+			report.RecoveryCommand = "iptv-tunerr ghost-hunter -observe " + observe.Round(time.Millisecond).String() + " -stop"
+			report.SafeActions = append(report.SafeActions, "rerun_with_stop")
+		}
+	}
 	if report.SessionCount == 0 {
 		report.HiddenGrabSuspected = true
 		report.RecommendedAction = "If channel tunes are still blocked and IptvTunerr sees no /stream requests, run the guarded hidden-grab recovery helper."
 		report.RecoveryCommand = "./scripts/plex-hidden-grab-recover.sh --dry-run"
 		report.Runbook = "docs/runbooks/plex-hidden-live-grab-recovery.md"
+		report.SafeActions = append(report.SafeActions, "run_hidden_grab_recovery_dry_run")
 		report.Notes = append(report.Notes, "no visible live sessions found; hidden Plex grabs can still require external recovery if tunes remain blocked")
 	}
 	return report, nil

@@ -2,6 +2,8 @@ package tuner
 
 import (
 	"log"
+	"net/url"
+	"os"
 	"strings"
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
@@ -66,6 +68,11 @@ func ApplyDNAPolicyForRegistration(live []catalog.LiveChannel, policy string) []
 }
 
 func dnaPolicyBetter(left, right catalog.LiveChannel, policy string) bool {
+	leftPreferred := dnaPreferredHostScore(left)
+	rightPreferred := dnaPreferredHostScore(right)
+	if leftPreferred != rightPreferred {
+		return leftPreferred > rightPreferred
+	}
 	leftScore := channelreport.Score(left)
 	rightScore := channelreport.Score(right)
 	leftGuide := channelreport.GuideConfidence(left)
@@ -98,4 +105,50 @@ func dnaPolicyBetter(left, right catalog.LiveChannel, policy string) bool {
 		return strings.TrimSpace(left.TVGID) != ""
 	}
 	return strings.ToLower(strings.TrimSpace(left.GuideName)) < strings.ToLower(strings.TrimSpace(right.GuideName))
+}
+
+func dnaPreferredHostScore(ch catalog.LiveChannel) int {
+	host := strings.TrimSpace(strings.ToLower(dnaPrimaryAuthority(ch)))
+	if host == "" {
+		return 0
+	}
+	for idx, preferred := range dnaPreferredHosts() {
+		if host == preferred {
+			return len(dnaPreferredHosts()) - idx
+		}
+	}
+	return 0
+}
+
+func dnaPrimaryAuthority(ch catalog.LiveChannel) string {
+	for _, raw := range append([]string{ch.StreamURL}, ch.StreamURLs...) {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		u, err := url.Parse(raw)
+		if err != nil {
+			continue
+		}
+		if host := strings.TrimSpace(strings.ToLower(u.Host)); host != "" {
+			return host
+		}
+	}
+	return ""
+}
+
+func dnaPreferredHosts() []string {
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv("IPTV_TUNERR_DNA_PREFERRED_HOSTS")))
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }

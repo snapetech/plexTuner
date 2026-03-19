@@ -585,12 +585,7 @@ func BuildCatchupCapsulePreview(channels []catalog.LiveChannel, data []byte, now
 		}
 		capsules = append(capsules, capsule)
 	}
-	sort.SliceStable(capsules, func(i, j int) bool {
-		if capsules[i].PublishAt == capsules[j].PublishAt {
-			return capsules[i].ChannelName < capsules[j].ChannelName
-		}
-		return capsules[i].PublishAt < capsules[j].PublishAt
-	})
+	capsules = curateCatchupCapsules(capsules)
 	if len(capsules) > limit {
 		capsules = capsules[:limit]
 	}
@@ -689,6 +684,98 @@ func catchupRetentionForProgramme(title string, cats []xmlValue) time.Duration {
 		return 72 * time.Hour
 	default:
 		return 24 * time.Hour
+	}
+}
+
+func curateCatchupCapsules(in []CatchupCapsule) []CatchupCapsule {
+	if len(in) <= 1 {
+		return in
+	}
+	bestByKey := make(map[string]int, len(in))
+	out := make([]CatchupCapsule, 0, len(in))
+	for _, capsule := range in {
+		key := catchupCuratedKey(capsule)
+		if idx, ok := bestByKey[key]; ok {
+			if catchupCapsuleBetter(capsule, out[idx]) {
+				out[idx] = capsule
+			}
+			continue
+		}
+		bestByKey[key] = len(out)
+		out = append(out, capsule)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		leftState := catchupCapsuleStateRank(out[i].State)
+		rightState := catchupCapsuleStateRank(out[j].State)
+		if leftState != rightState {
+			return leftState < rightState
+		}
+		leftLane := catchupCapsuleLaneRank(out[i].Lane)
+		rightLane := catchupCapsuleLaneRank(out[j].Lane)
+		if leftLane != rightLane {
+			return leftLane < rightLane
+		}
+		if out[i].PublishAt == out[j].PublishAt {
+			return out[i].ChannelName < out[j].ChannelName
+		}
+		return out[i].PublishAt < out[j].PublishAt
+	})
+	return out
+}
+
+func catchupCuratedKey(c CatchupCapsule) string {
+	base := strings.TrimSpace(c.DNAID)
+	if base == "" {
+		base = strings.TrimSpace(c.ChannelID)
+	}
+	return strings.ToLower(base + "|" + strings.TrimSpace(c.Start) + "|" + normalizeCatchupTitle(c.Title))
+}
+
+func normalizeCatchupTitle(v string) string {
+	v = strings.ToLower(strings.TrimSpace(v))
+	v = strings.NewReplacer("&", "and", ":", " ", "/", " ", "-", " ").Replace(v)
+	return strings.Join(strings.Fields(v), " ")
+}
+
+func catchupCapsuleBetter(left, right CatchupCapsule) bool {
+	if catchupCapsuleStateRank(left.State) != catchupCapsuleStateRank(right.State) {
+		return catchupCapsuleStateRank(left.State) < catchupCapsuleStateRank(right.State)
+	}
+	if len(strings.TrimSpace(left.Desc)) != len(strings.TrimSpace(right.Desc)) {
+		return len(strings.TrimSpace(left.Desc)) > len(strings.TrimSpace(right.Desc))
+	}
+	if len(left.Categories) != len(right.Categories) {
+		return len(left.Categories) > len(right.Categories)
+	}
+	if len(strings.TrimSpace(left.SubTitle)) != len(strings.TrimSpace(right.SubTitle)) {
+		return len(strings.TrimSpace(left.SubTitle)) > len(strings.TrimSpace(right.SubTitle))
+	}
+	return strings.ToLower(strings.TrimSpace(left.ChannelName)) < strings.ToLower(strings.TrimSpace(right.ChannelName))
+}
+
+func catchupCapsuleStateRank(state string) int {
+	switch strings.ToLower(strings.TrimSpace(state)) {
+	case "in_progress":
+		return 0
+	case "starting_soon":
+		return 1
+	case "ready":
+		return 2
+	default:
+		return 9
+	}
+}
+
+func catchupCapsuleLaneRank(lane string) int {
+	switch strings.ToLower(strings.TrimSpace(lane)) {
+	case "sports":
+		return 0
+	case "movies":
+		return 1
+	case "general":
+		return 2
+	default:
+		return 9
 	}
 }
 

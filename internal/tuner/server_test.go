@@ -534,6 +534,51 @@ func TestServer_catchupCapsulesGuidePolicy(t *testing.T) {
 	}
 }
 
+func TestServer_catchupCapsulesCuratesDuplicateDNAProgrammes(t *testing.T) {
+	now := time.Now().UTC()
+	start := now.Add(5 * time.Minute).Format("20060102150405 +0000")
+	stop := now.Add(65 * time.Minute).Format("20060102150405 +0000")
+	s := &Server{
+		xmltv: &XMLTV{
+			Channels: []catalog.LiveChannel{
+				{GuideNumber: "101", GuideName: "Sports Net", DNAID: "dna:sports-a"},
+				{GuideNumber: "102", GuideName: "Sports Net Backup", DNAID: "dna:sports-a"},
+			},
+			cachedXML: []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="101"><display-name>Sports Net</display-name></channel>
+  <channel id="102"><display-name>Sports Net Backup</display-name></channel>
+  <programme start="` + start + `" stop="` + stop + `" channel="101">
+    <title>Team A vs Team B</title>
+    <category>Sports</category>
+    <desc>Short</desc>
+  </programme>
+  <programme start="` + start + `" stop="` + stop + `" channel="102">
+    <title>Team A vs Team B</title>
+    <category>Sports</category>
+    <desc>Much longer programme description from the better source</desc>
+  </programme>
+</tv>`),
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/guide/capsules.json?horizon=2h&limit=10", nil)
+	w := httptest.NewRecorder()
+	s.serveCatchupCapsules().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d want 200", w.Code)
+	}
+	var body CatchupCapsulePreview
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Capsules) != 1 {
+		t.Fatalf("capsules len=%d want 1", len(body.Capsules))
+	}
+	if body.Capsules[0].ChannelID != "102" {
+		t.Fatalf("channel=%q want 102", body.Capsules[0].ChannelID)
+	}
+}
+
 func TestServer_catchupCapsulesReplayTemplate(t *testing.T) {
 	now := time.Now().UTC()
 	start := now.Add(15 * time.Minute).Format("20060102150405 +0000")
@@ -757,6 +802,23 @@ func TestUpdateChannels_appliesDNAPolicyPreferBest(t *testing.T) {
 	}
 	if s.Channels[0].ChannelID != "1" {
 		t.Fatalf("kept channel=%q want 1", s.Channels[0].ChannelID)
+	}
+}
+
+func TestUpdateChannels_appliesDNAPolicyPreferredHosts(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_DNA_POLICY", "prefer_best")
+	t.Setenv("IPTV_TUNERR_DNA_PREFERRED_HOSTS", "preferred.example")
+	s := &Server{xmltv: &XMLTV{}}
+	live := []catalog.LiveChannel{
+		{ChannelID: "1", GuideNumber: "101", GuideName: "FOX News", TVGID: "foxnews.us", DNAID: "dna-fox", StreamURL: "http://other.example/live/1"},
+		{ChannelID: "2", GuideNumber: "102", GuideName: "FOX News Preferred", TVGID: "foxnews.us", DNAID: "dna-fox", StreamURL: "http://preferred.example/live/1"},
+	}
+	s.UpdateChannels(live)
+	if len(s.Channels) != 1 {
+		t.Fatalf("len=%d want 1", len(s.Channels))
+	}
+	if s.Channels[0].ChannelID != "2" {
+		t.Fatalf("channel=%q want 2", s.Channels[0].ChannelID)
 	}
 }
 
