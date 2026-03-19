@@ -32,6 +32,14 @@
   2. move Plex client adaptation and Autopilot helper logic into a dedicated file
   3. preserve all runtime behavior and tests while shrinking the monolith
 
+**Current focus shift (gateway decomposition follow-on, 2026-03-18):**
+- Continuing the gateway breakup after the first adaptation/provider-profile split.
+- This pass covers:
+  1. move profile selection, override loading, and ffmpeg codec/bootstrap helpers into `gateway_profiles.go`
+  2. move HLS playlist/segment fetch and rewrite helpers into `gateway_hls.go`
+  3. keep the remaining `gateway.go` focused on request orchestration / relay control flow
+  4. run focused tuner tests, then full verify, then push the refactor
+
 **Current focus shift (EPG doctor operator docs, 2026-03-18):**
 - Follow-on docs cleanup after shipping `guide-health` and `epg-doctor`: make the new guide-diagnostics workflow discoverable from the how-to and runbook indexes so operators have one documented path from symptom to fix.
 - This pass adds:

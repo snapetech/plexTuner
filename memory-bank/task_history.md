@@ -23,6 +23,22 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-18
+  Title: Split gateway profile/ffmpeg and HLS helpers into focused files
+  Summary:
+    - Moved profile selection, override loading, ffmpeg codec argument building, bootstrap audio helpers, and ffmpeg input URL canonicalization into `internal/tuner/gateway_profiles.go`.
+    - Moved HLS playlist refresh, rewrite, segment fetch, and playlist parsing helpers into `internal/tuner/gateway_hls.go`.
+    - Preserved runtime behavior while reducing `internal/tuner/gateway.go` to more of the request/relay orchestration layer.
+  Verification:
+    - `go test ./internal/tuner`
+    - `./scripts/verify`
+  Notes:
+    - This continues the `INT-006` gateway decomposition without changing runtime policy or transcoding decisions.
+  Opportunities filed:
+    - none
+  Links:
+    - internal/tuner/gateway.go, internal/tuner/gateway_profiles.go, internal/tuner/gateway_hls.go
+
+- Date: 2026-03-18
   Title: Split gateway provider-profile and adaptation helpers into focused files
   Summary:
     - Moved provider behavior profile/autotune reporting out of `internal/tuner/gateway.go` into `gateway_provider_profile.go`.
