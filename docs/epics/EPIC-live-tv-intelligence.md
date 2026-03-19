@@ -79,6 +79,7 @@ Make IPTV Tunerr feel less like a tuner bridge and more like a live-TV intellige
   - expand Autopilot from profile/transcode memory into fallback URL/provider selection and hot-start behavior
   - extend Ghost Hunter beyond visible sessions by tying in hidden-grab operational recovery signals
   - promote provider behavior profiles from passive reporting into active default tuning and remediation
+  - evaluate an always-on recorder daemon for non-replay sources so catch-up can evolve from guide-driven launchers into rolling recorded replay
 
 See also
 --------

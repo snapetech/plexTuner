@@ -23,6 +23,21 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-18
+  Title: Document always-on recorder daemon as a future feature
+  Summary:
+    - Added a future-feature explainer describing what an always-on recorder daemon would do, why it matters, and how it would fit into the existing catch-up system.
+    - Linked the new explainer from the docs index and noted it in the Live TV intelligence epic as a future evaluation path.
+    - Recorded the daemon as a high-scope opportunity in the memory bank so future work can pick it up cleanly.
+  Verification:
+    - N/A (docs-only)
+  Notes:
+    - This is design/backlog documentation only; no runtime behavior changed.
+  Opportunities filed:
+    - `memory-bank/opportunities.md` always-on recorder daemon entry
+  Links:
+    - docs/explanations/always-on-recorder-daemon.md, docs/index.md, docs/epics/EPIC-live-tv-intelligence.md
+
+- Date: 2026-03-18
   Title: Add catch-up recorder and Autopilot failure memory
   Summary:
     - Added `catchup-record`, which records current in-progress capsules to local TS files plus `record-manifest.json` for non-replay sources.

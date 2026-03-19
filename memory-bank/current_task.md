@@ -266,6 +266,13 @@
   2. extend Autopilot memory so failures are tracked and stale remembered decisions stop being reused
   3. add a CLI recovery hook so Ghost Hunter can invoke the guarded hidden-grab helper directly
   4. keep docs/changelog/env/memory-bank aligned and verify before pushing
+
+**Current focus shift (future-feature documentation, 2026-03-18):**
+- User asked to document the always-on recorder daemon concept for future work.
+- This pass covers:
+  1. write a future-feature explainer under `docs/explanations/`
+  2. link it from the docs index and the Live TV intelligence epic
+  3. record it in `memory-bank/opportunities.md` so it stays visible as backlog, not hallway lore
 - README was rewritten so the front page explains why the features matter operationally, not just that they exist.
 
 **Current focus shift (remaining product-facing intelligence surfaces, 2026-03-18):**

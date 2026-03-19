@@ -23,6 +23,17 @@ It exists to encourage quality gains without derailing the current task.
 ## Entries
 
 - Date: 2026-03-18
+  Category: other
+  Title: Build an always-on recorder daemon for non-replay catch-up
+  Context: User asked what a full recorder-backed future feature would be, beyond current `catchup-publish`, replay templates, and `catchup-record`.
+  Why it matters: The repo now has strong guide-driven catch-up packaging, but non-replay sources still lack a continuous background capture layer. An always-on recorder daemon would turn short-lived catch-up libraries into real recorded assets instead of only launcher/replay surfaces.
+  Evidence: Current shipped stack includes `catchup-publish`, `catchup-record`, replay-template support, capsule curation, and media-server publishing, but no continuous scheduler/worker/retention subsystem.
+  Suggested fix: Build a future `catchup-daemon` subsystem with a scheduler, recording workers, persistent state, publisher integration, and retention sweeps. Start with a small MVP that records `in_progress` / `starting_soon` items for selected lanes.
+  Risk/Scope: high | fits current scope? no
+  User decision needed?: yes
+  If yes: 1) design/spec only (Recommended), 2) MVP single-process daemon for one or two lanes, 3) full multi-worker recorder/publisher architecture. If no answer: keep as a documented future feature and continue current catch-up tooling evolution.
+
+- Date: 2026-03-18
   Category: maintainability
   Title: Split CLI flag construction and shared input helpers out of `cmd/iptv-tunerr/main.go`
   Context: Fresh whole-project audit after the command-handler split.
