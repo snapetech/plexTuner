@@ -165,6 +165,8 @@ func (g *Gateway) ffmpegInputHeaderBlock(incoming *http.Request, hostOverride st
 		lines = appendFFmpegHeaderLine(lines, "User-Agent", ua)
 	} else if g.CustomUserAgent != "" {
 		lines = appendFFmpegHeaderLine(lines, "User-Agent", g.CustomUserAgent)
+	} else if incoming != nil && incoming.UserAgent() != "" {
+		lines = appendFFmpegHeaderLine(lines, "User-Agent", incoming.UserAgent())
 	} else {
 		lines = appendFFmpegHeaderLine(lines, "User-Agent", "IptvTunerr/1.0")
 	}
