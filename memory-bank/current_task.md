@@ -8,6 +8,22 @@
 
 **Last updated:** 2026-03-18
 
+**Current focus shift (direct-vs-Tunerr stream debug harness, 2026-03-19):**
+- User asked to build out a real troubleshooting harness for the remaining provider/CDN weirdness, explicitly including tools like `ffplay` and packet capture so direct upstream pulls can be compared against Tunerr pulls.
+- This pass covers:
+  1. add a reproducible comparison harness that can run direct URL and Tunerr URL fetch/playback attempts side by side
+  2. capture the evidence operators actually need (`ffprobe`/`ffplay` logs, optional `tcpdump` pcaps, headers, byte samples, summary)
+  3. document the workflow in the troubleshooting/runbook path so future CF/CDN debugging uses one standard lane instead of ad hoc shell history
+- Assumptions:
+  1. Wireshark itself does not need to be embedded; generating `.pcap` artifacts and analysis hints is the useful part
+  2. the harness should work against an already running tuner or a hand-supplied direct upstream URL without requiring Kubernetes/Plex
+- Result:
+  1. added `scripts/stream-compare-harness.sh` plus `scripts/stream-compare-report.py` for direct-vs-Tunerr `curl`/`ffprobe`/`ffplay` comparison with optional `tcpdump`
+  2. added app-side structured debug export at `/debug/stream-attempts.json` so the harness can pull Tunerr's own per-upstream decisions instead of only external tool logs
+  3. documented the workflow in `docs/runbooks/iptvtunerr-troubleshooting.md` and `memory-bank/commands.yml`
+  4. verified the harness with a clean-cwd local smoke against a synthetic HLS source plus local `iptv-tunerr serve`, including automatic fetch of `tunerr/stream-attempts.json`
+  5. documented the recurring `.env` contamination trap for synthetic/local harnesses in `memory-bank/recurring_loops.md`
+
 **Current focus shift (tester fork assessment, 2026-03-19):**
 - User asked for a review of the tester fork at `https://github.com/rkdavies/iptvtunerr` to decide which submitted fixes should be integrated upstream.
 - Review scope:

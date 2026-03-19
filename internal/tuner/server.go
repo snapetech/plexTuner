@@ -913,6 +913,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/autopilot/report.json", s.serveAutopilotReport())
 	mux.Handle("/plex/ghost-report.json", s.serveGhostHunterReport())
 	mux.Handle("/provider/profile.json", s.serveProviderProfile())
+	mux.Handle("/debug/stream-attempts.json", s.serveRecentStreamAttempts())
 
 	srv := &http.Server{Addr: addr, Handler: logRequests(mux)}
 
@@ -1199,6 +1200,23 @@ func (s *Server) serveProviderProfile() http.Handler {
 		body, err := json.MarshalIndent(s.gateway.ProviderBehaviorProfile(), "", "  ")
 		if err != nil {
 			http.Error(w, `{"error":"encode provider profile"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveRecentStreamAttempts() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if s.gateway == nil {
+			http.Error(w, `{"error":"gateway unavailable"}`, http.StatusServiceUnavailable)
+			return
+		}
+		rep := s.gateway.RecentStreamAttempts(streamAttemptLimitFromQuery(r.URL.Query().Get("limit"), 10))
+		body, err := json.MarshalIndent(rep, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode stream attempts"}`, http.StatusInternalServerError)
 			return
 		}
 		_, _ = w.Write(body)

@@ -2243,3 +2243,22 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
   Verification:
     - `go test ./cmd/iptv-tunerr ./internal/provider ./internal/safeurl ./internal/tuner`
     - `./scripts/verify`
+
+---
+
+- Date: 2026-03-19
+  Title: Add direct-vs-Tunerr stream comparison harness
+  Summary:
+    - Added `scripts/stream-compare-harness.sh` to run direct upstream and Tunerr stream URLs side by side with `curl`, `ffprobe`, `ffplay`, and optional `tcpdump` capture in one output bundle.
+    - Added `scripts/stream-compare-report.py` to summarize the resulting artifacts into a quick text/JSON diff so operators can see status, stream-shape, and playback mismatches without manually opening every file first.
+    - Added `/debug/stream-attempts.json` so Tunerr now exports recent structured gateway decisions, including per-upstream outcomes, effective URLs, and redacted request/ffmpeg header summaries.
+    - Wired the harness to fetch that debug export automatically when the Tunerr target has a resolvable base URL.
+    - Documented the new workflow in the troubleshooting runbook and added the helper command to `memory-bank/commands.yml`.
+    - Documented the recurring local-test pitfall where repo-root `.env` auto-loading contaminates synthetic harness runs unless the process is launched from a clean working directory.
+  Verification:
+    - `bash -n scripts/stream-compare-harness.sh`
+    - `python3 -m py_compile scripts/stream-compare-report.py`
+    - `go test -count=1 ./cmd/iptv-tunerr ./internal/tuner`
+    - Clean-cwd local smoke:
+      `DIRECT_URL=http://127.0.0.1:18086/playlist.m3u8 TUNERR_BASE_URL=http://127.0.0.1:5522 CHANNEL_ID=diag RUN_SECONDS=3 USE_TCPDUMP=false ./scripts/stream-compare-harness.sh`
+    - `./scripts/verify`

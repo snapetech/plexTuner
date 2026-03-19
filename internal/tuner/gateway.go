@@ -31,6 +31,7 @@ type Gateway struct {
 	ProviderUser         string
 	ProviderPass         string
 	TunerCount           int
+	StreamAttemptLimit   int
 	StreamBufferBytes    int    // 0 = no buffer, -1 = auto
 	StreamTranscodeMode  string // "off" | "on" | "auto"
 	TranscodeOverrides   map[string]bool
@@ -68,6 +69,8 @@ type Gateway struct {
 	lastHLSSegmentAt     time.Time
 	lastHLSSegmentURL    string
 	hostFailures         map[string]hostFailureStat
+	attemptsMu           sync.Mutex
+	recentAttempts       []StreamAttemptRecord
 }
 
 type gatewayReqIDKey struct{}
@@ -144,6 +147,12 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no stream URL", http.StatusBadGateway)
 		return
 	}
+	attempt := newStreamAttemptBuilder(reqID, r, channelID, channel.GuideName, len(urls))
+	var finalStatus, finalMode, finalEffectiveURL string
+	var finalErr error
+	defer func() {
+		g.appendStreamAttempt(attempt.finish(finalStatus, finalMode, finalErr, finalEffectiveURL))
+	}()
 	urls = g.reorderStreamURLs(channel, clientClass, urls)
 
 	g.mu.Lock()
@@ -178,6 +187,8 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Reject non-http(s) URLs to prevent SSRF (e.g. file:// or provider-supplied internal URLs).
 	for i, streamURL := range urls {
 		if !safeurl.IsHTTPOrHTTPS(streamURL) {
+			attemptIdx := attempt.addUpstream(i+1, streamURL, nil, false, false, false, false)
+			attempt.markUpstreamError(attemptIdx, "rejected_scheme", errors.New("invalid stream URL scheme"))
 			if i == 0 {
 				log.Printf("gateway: channel %s: invalid stream URL scheme (rejected)", channel.GuideName)
 			}
@@ -185,8 +196,15 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		req, err := g.newUpstreamRequest(r.Context(), r, streamURL)
 		if err != nil {
+			attemptIdx := attempt.addUpstream(i+1, streamURL, nil, false, false, false, false)
+			attempt.markUpstreamError(attemptIdx, "request_build_error", err)
 			continue
 		}
+		authApplied := req.Header.Get("Authorization") != ""
+		cookiesForwarded := req.Header.Get("Cookie") != ""
+		hostOverride := strings.TrimSpace(req.Host) != ""
+		userAgentOverride := strings.TrimSpace(req.Header.Get("User-Agent")) != "" && strings.TrimSpace(req.Header.Get("User-Agent")) != "IptvTunerr/1.0"
+		attemptIdx := attempt.addUpstream(i+1, streamURL, requestHeaderSummary(req), authApplied, cookiesForwarded, hostOverride, userAgentOverride)
 
 		client := g.Client
 		if client == nil {
@@ -195,13 +213,20 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		client = cloneClientWithCookieJar(client)
 		resp, err := client.Do(req)
 		if err != nil {
+			attempt.markUpstreamError(attemptIdx, "request_error", err)
 			g.noteUpstreamFailure(streamURL, 0, "request_error")
 			log.Printf("gateway: channel=%q id=%s upstream[%d/%d] error url=%s err=%v",
 				channel.GuideName, channelID, i+1, len(urls), safeurl.RedactURL(streamURL), err)
 			continue
 		}
+		effectiveURL := streamURL
+		if resp.Request != nil && resp.Request.URL != nil {
+			effectiveURL = resp.Request.URL.String()
+		}
+		attempt.markUpstreamResponse(attemptIdx, resp.StatusCode, resp.Header.Get("Content-Type"), effectiveURL)
 		if resp.StatusCode != http.StatusOK {
 			preview := readUpstreamErrorPreview(resp)
+			attempt.markUpstreamError(attemptIdx, "http_status", errors.New(preview))
 			g.noteUpstreamFailure(streamURL, resp.StatusCode, "http_status")
 			limited := isUpstreamConcurrencyLimit(resp.StatusCode, preview)
 			if limited {
@@ -235,6 +260,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		g.noteUpstreamSuccess(streamURL)
+		attempt.markUpstreamError(attemptIdx, "response_ok", nil)
 		log.Printf("gateway: req=%s channel=%q id=%s start upstream[%d/%d] url=%s ct=%q cl=%d inuse=%d/%d ua=%q",
 			reqID, channel.GuideName, channelID, i+1, len(urls), safeurl.RedactURL(streamURL), resp.Header.Get("Content-Type"), resp.ContentLength, inUseNow, limit, r.UserAgent())
 		for k, v := range resp.Header {
@@ -252,13 +278,11 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log.Printf("gateway: channel=%q id=%s read-playlist-failed err=%v", channel.GuideName, channelID, err)
 				continue
 			}
-			effectiveURL := streamURL
-			if resp.Request != nil && resp.Request.URL != nil {
-				effectiveURL = resp.Request.URL.String()
-			}
 			body = rewriteHLSPlaylist(body, effectiveURL)
 			firstSeg := firstHLSMediaLine(body)
+			attempt.markPlaylist(attemptIdx, hlsPlaylistLooksUsable(body) && firstSeg != "", len(body), firstSeg)
 			if !hlsPlaylistLooksUsable(body) || firstSeg == "" {
+				attempt.markUpstreamError(attemptIdx, "invalid_hls_playlist", nil)
 				g.noteUpstreamFailure(streamURL, resp.StatusCode, "invalid_hls_playlist")
 				log.Printf("gateway: channel=%q id=%s upstream[%d/%d] invalid-hls-playlist url=%s ct=%q bytes=%d",
 					channel.GuideName, channelID, i+1, len(urls), safeurl.RedactURL(streamURL), resp.Header.Get("Content-Type"), len(body))
@@ -283,10 +307,15 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			hotStart := g.hotStartConfig(channel, clientClass)
 			if !g.DisableFFmpeg {
 				if ffmpegPath, ffmpegErr := resolveFFmpegPath(); ffmpegErr == nil {
+					attempt.setFFmpegHeaders(attemptIdx, ffmpegHeaderSummary(g.ffmpegInputHeaderBlock(r, effectiveURL, "")))
 					if err := g.relayHLSWithFFmpeg(w, r, ffmpegPath, streamURL, channel.GuideName, channelID, channel.GuideNumber, channel.TVGID, start, transcode, bufferSize, forcedProfile, hotStart); err == nil {
+						finalStatus = "ok"
+						finalMode = "hls_ffmpeg"
+						finalEffectiveURL = effectiveURL
 						g.rememberAutopilotDecision(channel, clientClass, transcode, effectiveProfileName(g, channel, channelID, forcedProfile), adaptReason, streamURL)
 						return
 					} else {
+						attempt.markUpstreamError(attemptIdx, "ffmpeg_hls_failed", err)
 						log.Printf("gateway: channel=%q id=%s ffmpeg-%s failed (falling back to go relay): %v",
 							channel.GuideName, channelID, mode, err)
 					}
@@ -315,9 +344,13 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				bufferSize,
 				responseAlreadyStarted(w),
 			); err != nil {
+				attempt.markUpstreamError(attemptIdx, "hls_go_failed", err)
 				log.Printf("gateway: channel=%q id=%s hls-relay failed: %v", channel.GuideName, channelID, err)
 				continue
 			}
+			finalStatus = "ok"
+			finalMode = "hls_go"
+			finalEffectiveURL = effectiveURL
 			g.rememberAutopilotDecision(channel, clientClass, transcode, effectiveProfileName(g, channel, channelID, forcedProfile), adaptReason, streamURL)
 			return
 		}
@@ -338,11 +371,17 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		n, _ := io.Copy(sw, resp.Body)
 		resp.Body.Close()
 		flush()
+		attempt.setBytesWritten(attemptIdx, n)
+		finalStatus = "ok"
+		finalMode = "raw_proxy"
+		finalEffectiveURL = effectiveURL
 		g.rememberAutopilotDecision(channel, clientClass, false, "", adaptReason, streamURL)
 		log.Printf("gateway: channel=%q id=%s proxied bytes=%d dur=%s", channel.GuideName, channelID, n, time.Since(start).Round(time.Millisecond))
 		return
 	}
 	if upstreamConcurrencyLimited {
+		finalStatus = "upstream_concurrency_limited"
+		finalErr = errors.New("upstream concurrency limit hit")
 		g.rememberAutopilotFailure(channel, clientClass)
 		log.Printf("gateway: req=%s channel=%q id=%s upstream concurrency limit hit; surfacing all-tuners-in-use to client",
 			reqID, channel.GuideName, channelID)
@@ -350,6 +389,8 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "All tuners in use", http.StatusServiceUnavailable)
 		return
 	}
+	finalStatus = "all_upstreams_failed"
+	finalErr = errors.New("all upstreams failed")
 	g.rememberAutopilotFailure(channel, clientClass)
 	log.Printf("gateway: channel=%q id=%s all %d upstream(s) failed dur=%s", channel.GuideName, channelID, len(urls), time.Since(start).Round(time.Millisecond))
 	http.Error(w, "All upstreams failed", http.StatusBadGateway)

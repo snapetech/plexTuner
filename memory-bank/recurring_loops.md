@@ -218,6 +218,27 @@
 **Where it's documented**
 - `internal/provider/probe.go`
 - `internal/provider/probe_test.go`
+
+### Loop: Local diagnostics accidentally inherit the repo `.env` and stop being self-contained
+
+**Symptom**
+- A supposedly local/synthetic smoke or harness unexpectedly hangs, talks to real providers, or takes much longer than expected before the local server is reachable.
+- Repro scripts that should only use a temp catalog/HLS source behave differently depending on which checkout directory they are launched from.
+
+**Why it's tricky**
+- `iptv-tunerr` auto-loads `.env` from the current working directory.
+- If a harness starts the binary from the repo root, real provider/XMLTV settings can leak into a synthetic test and hide whether the harness itself is valid.
+
+**What works**
+- For synthetic/local harness runs, either:
+  1. run the binary from a clean temp working directory, or
+  2. temporarily hide/move `.env` for the duration of the harness, as `scripts/live-race-harness.sh` already does.
+- Treat a mysteriously slow or unreachable local `serve` process as an env-isolation problem before assuming the app or harness is broken.
+
+**Where it's documented**
+- `scripts/live-race-harness.sh`
+- `scripts/stream-compare-harness.sh`
+- `memory-bank/current_task.md` (2026-03-19 harness notes)
 - `cmd/iptv-tunerr/cmd_catalog.go`
 - `cmd/iptv-tunerr/main_test.go`
 

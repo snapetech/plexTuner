@@ -226,7 +226,83 @@ Non-200 → check server logs and config (catalog loaded, base URL, port).
 
 ---
 
-## 9. Checklist for "is the tuner OK?"
+## 9. Direct upstream vs Tunerr comparison harness
+
+When a provider/CDN path plays directly in `ffplay` but fails through Tunerr, use `scripts/stream-compare-harness.sh` to collect one reproducible evidence bundle instead of hand-running curl/ffplay/tcpdump commands.
+
+Typical case:
+
+```bash
+DIRECT_URL='https://provider.example/live/user/pass/12345.m3u8' \
+TUNERR_BASE_URL='http://127.0.0.1:5004' \
+CHANNEL_ID='espn.us' \
+USE_TCPDUMP=true \
+./scripts/stream-compare-harness.sh
+```
+
+You can also pass an already-built Tunerr stream URL:
+
+```bash
+DIRECT_URL='https://provider.example/path/playlist.m3u8' \
+TUNERR_URL='http://127.0.0.1:5004/stream/espn.us' \
+./scripts/stream-compare-harness.sh
+```
+
+Optional headers:
+
+```bash
+# one header per line; comments allowed with #
+cat > /tmp/direct.headers <<'EOF'
+User-Agent: okhttp/4.9.2
+Referer: https://provider.example/
+Origin: https://provider.example
+EOF
+
+DIRECT_URL='https://provider.example/path/playlist.m3u8' \
+DIRECT_HEADERS_FILE=/tmp/direct.headers \
+TUNERR_URL='http://127.0.0.1:5004/stream/espn.us' \
+./scripts/stream-compare-harness.sh
+```
+
+Artifacts are written under `.diag/stream-compare/<timestamp>/`:
+
+- `direct/` and `tunerr/` each contain `curl`, `ffprobe`, and `ffplay` logs
+- `tunerr/stream-attempts.json` is fetched automatically from `/debug/stream-attempts.json` when the Tunerr target has a resolvable base URL
+- `summary.txt` gives the run inputs and quick next steps
+- `report.txt` / `report.json` summarize the high-level differences
+- `compare.pcap` is written when `USE_TCPDUMP=true`; open it in Wireshark or inspect with `tshark`
+
+Useful knobs:
+
+- `RUN_SECONDS=30` to keep `ffplay` / `curl` open longer
+- `USE_FFPLAY=false` if `ffplay` is not installed on the host
+- `COMMON_HEADERS_FILE=/path/headers.txt` to apply the same headers to both direct and Tunerr paths
+- `TCPDUMP_FILTER='host 1.2.3.4 or host 127.0.0.1'` to override the auto-derived capture filter
+
+The harness does not replace Wireshark; it standardizes the capture session so the pcap, ffplay logs, ffprobe stream info, and curl headers all line up in one folder.
+
+### App-side debug export
+
+Tunerr now exposes recent structured gateway attempts at:
+
+```bash
+curl -s http://127.0.0.1:5004/debug/stream-attempts.json?limit=10
+```
+
+This is the useful app-side cross-wire for the harness:
+
+- final stream outcome (`ok`, `all_upstreams_failed`, `upstream_concurrency_limited`)
+- final relay mode (`hls_ffmpeg`, `hls_go`, `raw_proxy`)
+- effective upstream URL after redirects
+- per-upstream request outcomes
+- redacted request-header summaries
+- redacted ffmpeg input-header summaries when ffmpeg handled the HLS path
+
+It is intentionally not a packet-capture feature. The app exports its own decision trace; the harness handles playback tools and pcaps.
+
+---
+
+## 10. Checklist for "is the tuner OK?"
 
 1. **Verify passes:** `./scripts/verify`
 2. **Probe OK (if using provider):** `iptv-tunerr probe` shows at least one get.php or player_api OK
@@ -235,7 +311,7 @@ Non-200 → check server logs and config (catalog loaded, base URL, port).
 
 ---
 
-## 10. Category DVRs empty / "no live channels available" / guides stuck updating
+## 11. Category DVRs empty / "no live channels available" / guides stuck updating
 
 **Symptom:** Main HDHR lineup and guide work; category tuners (bcastus, newsus, generalent, etc.) log `xmltv: external source failed (no live channels available); falling back to placeholder guide` and serve tiny placeholder guides.
 

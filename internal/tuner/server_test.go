@@ -223,6 +223,49 @@ func TestServer_providerProfile(t *testing.T) {
 	}
 }
 
+func TestServer_recentStreamAttempts(t *testing.T) {
+	s := &Server{
+		gateway: &Gateway{},
+	}
+	s.gateway.appendStreamAttempt(StreamAttemptRecord{
+		ReqID:        "r000123",
+		ChannelID:    "espn.us",
+		ChannelName:  "ESPN",
+		StartedAt:    time.Now().UTC().Format(time.RFC3339),
+		DurationMS:   1234,
+		FinalStatus:  "ok",
+		FinalMode:    "hls_ffmpeg",
+		EffectiveURL: "http://provider.example/live/.../123.m3u8",
+		Upstreams: []StreamAttemptUpstreamRecord{
+			{
+				Index:          1,
+				URL:            "http://provider.example/live/.../123.m3u8",
+				Outcome:        "response_ok",
+				RequestHeaders: []string{"Authorization: <redacted>", "Cookie: <redacted>"},
+			},
+		},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/debug/stream-attempts.json?limit=1", nil)
+	w := httptest.NewRecorder()
+	s.serveRecentStreamAttempts().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d want 200", w.Code)
+	}
+	var body StreamAttemptReport
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body.Count != 1 || len(body.Attempts) != 1 {
+		t.Fatalf("unexpected count=%d len=%d", body.Count, len(body.Attempts))
+	}
+	if body.Attempts[0].ReqID != "r000123" {
+		t.Fatalf("req_id=%q want r000123", body.Attempts[0].ReqID)
+	}
+	if got := body.Attempts[0].Upstreams[0].RequestHeaders[0]; got != "Authorization: <redacted>" {
+		t.Fatalf("request header=%q want redacted authorization", got)
+	}
+}
+
 func TestServer_guideHighlights(t *testing.T) {
 	now := time.Now().UTC()
 	currentStart := now.Add(-10 * time.Minute).Format("20060102150405 +0000")

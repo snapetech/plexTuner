@@ -13,7 +13,10 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
-No unreleased changes yet.
+### QA / diagnostics
+- **Direct-vs-Tunerr comparison harness**: added `scripts/stream-compare-harness.sh` and `scripts/stream-compare-report.py` to capture `ffprobe`, `ffplay`, `curl`, and optional `tcpdump` evidence for a direct upstream URL versus the equivalent Tunerr stream URL in one reproducible bundle.
+- **Structured stream-attempt export**: added `/debug/stream-attempts.json`, which exposes recent gateway decisions, per-upstream outcomes, effective URLs, and redacted request/ffmpeg header summaries for debugging direct-vs-Tunerr mismatches.
+- **Troubleshooting workflow update**: the runbook now documents the new comparison harness, including header-file inputs, pcap generation, and how to inspect the resulting artifacts in Wireshark or `tshark`.
 
 ---
 
