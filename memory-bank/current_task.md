@@ -6,7 +6,13 @@
 
 **Scope:** In: roadmap/epic documentation, channel intelligence reporting (`channel-report` + `/channels/report.json`), EPG match provenance visibility, lineup recipes, Channel DNA foundation, Autopilot decision-memory foundation, Ghost Hunter visible-session foundation, provider behavior profile foundation, README/features/reference/changelog updates, memory-bank updates, local verification. Out: catch-up capsules, active provider self-tuning defaults, hidden-grab Ghost Hunter automation, and a complete cross-provider identity graph in one patch.
 
-**Last updated:** 2026-03-18
+**Last updated:** 2026-03-19
+
+**Recorder spool/finalize (2026-03-19):**
+- `RecordCatchupCapsule` streams to `<lane>/<sanitized-capsule-id>.partial.ts`, removes stale spool, then `Rename`s to `.ts` only after HTTP 200, successful `io.Copy`, and a clean context (no more half-written “final” assets on failure).
+- Exported `CatchupRecordArtifactPaths`; `catchup-daemon` sets active `output_path` to the spool file while recording so restarts and pruning align with on-disk bytes.
+- Tests cover path derivation, successful finalize (spool removed), and deadline/cancel leaving a spool artifact without a final `.ts`.
+- Docs: `docs/CHANGELOG.md` [Unreleased], `docs/features.md`, `docs/reference/cli-and-env-reference.md`.
 
 **Current focus shift (direct-vs-Tunerr stream debug harness, 2026-03-19):**
 - User asked to build out a real troubleshooting harness for the remaining provider/CDN weirdness, explicitly including tools like `ffplay` and packet capture so direct upstream pulls can be compared against Tunerr pulls.

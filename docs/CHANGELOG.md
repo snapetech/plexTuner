@@ -26,6 +26,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Recorder status/reporting surface**: added `catchup-recorder-report` plus `/recordings/recorder.json`, which summarize recorder state, per-lane counts, published item totals, and recent active/completed/failed items from the persistent daemon state file.
 - **Lane-specific retention and storage budgets**: `catchup-daemon` now supports per-lane completed/failed retention counts and per-lane completed-item storage budgets, pruning older items first within each lane before global retention limits are applied.
 - **Interrupted-recording recovery semantics**: daemon restarts now preserve unfinished recordings as explicit failed `status=interrupted` items with recovery metadata and partial byte counts when available, and the scheduler can automatically retry the same programme window if it is still eligible after restart.
+- **Recorder spool/finalize**: `catchup-record` / `catchup-daemon` capture streams to `<lane>/<sanitized-capsule-id>.partial.ts` first and rename to the final `.ts` only after a clean HTTP 200 + body copy; interrupted or failed runs no longer leave a finished-looking `.ts` on disk.
 - **Better ffmpeg HLS request parity**: ffmpeg relay inputs now inherit the effective upstream `User-Agent`, `Referer`, and cookie-jar cookies more faithfully, and enable persistent/multi-request HLS HTTP input by default to better match successful direct `ffplay` behavior on legitimate CDN/HLS paths.
 
 ---

@@ -512,7 +512,7 @@ func TestRunCatchupRecorderDaemon_LoadMarksInterruptedPartialRecording(t *testin
 	now := time.Now().UTC()
 	dir := t.TempDir()
 	stateFile := filepath.Join(dir, "recorder-state.json")
-	partialPath := filepath.Join(dir, "sports", "partial.ts")
+	partialPath := filepath.Join(dir, "sports", "active-1.partial.ts")
 	if err := os.MkdirAll(filepath.Dir(partialPath), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}

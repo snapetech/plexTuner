@@ -23,6 +23,24 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Catch-up recorder spool/finalize (.partial.ts → .ts)
+  Summary:
+    - `RecordCatchupCapsule` writes to a spool file and renames to the final `.ts` only after a complete, successful transfer; added `CatchupRecordArtifactPaths`.
+    - `catchup-daemon` active items now record `output_path` as the spool path while a capture is in flight.
+    - Added unit tests for paths, successful finalize, and deadline leaving a spool without a final file; adjusted interrupted-recording daemon test for `*.partial.ts` naming.
+    - Updated changelog, features blurb, and CLI reference for the spool/finalize behavior.
+  Verification:
+    - `gofmt` on touched Go files
+    - `go test -count=1 ./...`
+    - `./scripts/verify`
+  Notes:
+    - Remaining pragmatic recorder slices (see prior roadmap): richer mid-record retry/backoff policy, tighter publish/budget/ops polish.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/catchup_record.go`, `internal/tuner/catchup_daemon.go`, `internal/tuner/catchup_record_test.go`, `internal/tuner/catchup_daemon_test.go`
+
+- Date: 2026-03-19
   Title: Harden local smoke harness and normalize epg-link-report output
   Summary:
     - Updated `scripts/iptvtunerr-local-test.sh` so its default smoke path no longer depends on remote provider/XMLTV fetches from `.env`, making local loopback readiness deterministic.

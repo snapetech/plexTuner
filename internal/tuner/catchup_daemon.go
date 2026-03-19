@@ -395,7 +395,8 @@ func (m *catchupRecorderManager) runCapsule(c CatchupCapsule) {
 	}
 	sourceURL, _ := ResolveCatchupRecordSourceURL(c, m.cfg.StreamBaseURL)
 	item.SourceURL = sourceURL
-	item.OutputPath = filepath.Join(m.cfg.OutDir, firstNonEmptyString(c.Lane, "general"), sanitizeCatchupName(c.CapsuleID)+".ts")
+	spoolPath, _ := CatchupRecordArtifactPaths(c, m.cfg.OutDir)
+	item.OutputPath = spoolPath
 	m.updateActive(item)
 
 	ctx := context.Background()

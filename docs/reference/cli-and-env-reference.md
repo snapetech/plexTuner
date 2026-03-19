@@ -480,7 +480,7 @@ Common flags:
 - `-replay-url-template`
 
 Output:
-- one `.ts` file per recorded in-progress capsule
+- one `.ts` file per recorded in-progress capsule (written as `<lane>/<sanitized-capsule-id>.partial.ts` first, then renamed to `.ts` when the transfer completes cleanly)
 - `record-manifest.json`
 
 Replay template variables:
@@ -541,7 +541,7 @@ Common flags:
 - `-run-for`
 
 Output/state:
-- recorded `.ts` files under `<out-dir>/<lane>/`
+- recorded `.ts` files under `<out-dir>/<lane>/` (each capture uses a `.partial.ts` spool path until the transfer finishes, then renames to `.ts`)
 - optional published media-server-friendly layout under `-publish-dir` with linked/copied `.ts` plus `.nfo`
 - persistent recorder state JSON at `<out-dir>/recorder-state.json` unless overridden with `-state-file`
 - `recorded-publish-manifest.json` under `-publish-dir` when publishing is enabled

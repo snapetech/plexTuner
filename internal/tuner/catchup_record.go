@@ -42,6 +42,14 @@ func ResolveCatchupRecordSourceURL(capsule CatchupCapsule, streamBaseURL string)
 	return streamBaseURL + "/stream/" + capsule.ChannelID, nil
 }
 
+// CatchupRecordArtifactPaths returns the spool path (.partial.ts) and final path (.ts) for a capsule under outDir.
+func CatchupRecordArtifactPaths(capsule CatchupCapsule, outDir string) (spoolPath, finalPath string) {
+	outDir = strings.TrimSpace(outDir)
+	laneDir := filepath.Join(outDir, firstNonEmptyString(capsule.Lane, "general"))
+	base := sanitizeCatchupName(capsule.CapsuleID)
+	return filepath.Join(laneDir, base+".partial.ts"), filepath.Join(laneDir, base+".ts")
+}
+
 func RecordCatchupCapsule(ctx context.Context, capsule CatchupCapsule, streamBaseURL, outDir string, client *http.Client) (CatchupRecordedItem, error) {
 	outDir = strings.TrimSpace(outDir)
 	if outDir == "" {
@@ -58,7 +66,10 @@ func RecordCatchupCapsule(ctx context.Context, capsule CatchupCapsule, streamBas
 	if err := os.MkdirAll(laneDir, 0o755); err != nil {
 		return CatchupRecordedItem{}, err
 	}
-	path := filepath.Join(laneDir, sanitizeCatchupName(capsule.CapsuleID)+".ts")
+	spoolPath, finalPath := CatchupRecordArtifactPaths(capsule, outDir)
+	// Drop stale spool from a prior attempt; leave any existing final .ts until this run completes.
+	_ = os.Remove(spoolPath)
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
 	if err != nil {
 		return CatchupRecordedItem{}, err
@@ -71,21 +82,30 @@ func RecordCatchupCapsule(ctx context.Context, capsule CatchupCapsule, streamBas
 	if resp.StatusCode != http.StatusOK {
 		return CatchupRecordedItem{}, fmt.Errorf("record %s status=%d", capsule.CapsuleID, resp.StatusCode)
 	}
-	f, err := os.Create(path)
+	f, err := os.Create(spoolPath)
 	if err != nil {
 		return CatchupRecordedItem{}, err
 	}
 	n, copyErr := io.Copy(f, resp.Body)
-	_ = f.Close()
-	if copyErr != nil && ctx.Err() == nil {
+	if closeErr := f.Close(); closeErr != nil && copyErr == nil {
+		copyErr = closeErr
+	}
+	if copyErr != nil {
 		return CatchupRecordedItem{}, copyErr
+	}
+	if err := ctx.Err(); err != nil {
+		return CatchupRecordedItem{}, err
+	}
+	_ = os.Remove(finalPath) // Windows: allow replacing an existing completed file on re-record.
+	if err := os.Rename(spoolPath, finalPath); err != nil {
+		return CatchupRecordedItem{}, err
 	}
 	return CatchupRecordedItem{
 		CapsuleID:  capsule.CapsuleID,
 		Lane:       capsule.Lane,
 		Title:      capsule.Title,
 		ChannelID:  capsule.ChannelID,
-		OutputPath: path,
+		OutputPath: finalPath,
 		SourceURL:  sourceURL,
 		Bytes:      n,
 	}, nil
