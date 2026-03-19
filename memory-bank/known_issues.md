@@ -4,12 +4,6 @@
 
 ## Cluster / Plex
 
-- **`iptv-tunerr probe` can still false-negative some real Xtream panels as `player_api bad_status HTTP 200` even when direct auth + `get_live_streams` succeed and `run` can index them via the direct fallback path:** Reconfirmed on 2026-03-19 against the local two-provider test environment.
-  - Symptom: `probe` shows both providers, but each `player_api` line reports `bad_status HTTP 200`; meanwhile direct authenticated requests return valid Xtream JSON and `run` successfully builds a live catalog.
-  - Current state: `probe` now correctly includes numbered provider entries (`_2`, `_3`, …), but at least some panels still present an auth response shape or request-behavior quirk that `ProbePlayerAPI` does not classify as OK.
-  - Impact: `probe` is useful for visibility into Cloudflare/get.php trouble and host coverage, but it is not yet a definitive pass/fail signal for these panels. `run` / `index` remain the real truth path.
-  - Workaround: if `probe` says `bad_status HTTP 200` but direct `player_api` requests are known-good, test with `run` or `index` directly before concluding the provider is unusable.
-
 - **OpenBao root token invalidated on raft instability — use generate-root ceremony:** When both raft nodes crash/cycle, the active leader entry can point to a dead pod IP. Both nodes become "standby" with no active election. Fix: (1) delete the crashed pod so the stateful set restarts it, (2) unseal both pods with `scripts/unseal-openbao.sh all`, (3) if the existing root token is rejected (403), run `generate-root` ceremony against the active pod IP. Canonical unseal keys: `~/Documents/code/k3s/openbao/openbao-init-output.txt`. Current root token stored in `secret/data/iptvtunerr.openbao_root_token`. Bad/stale init files were at `~/Documents/openbao-init-output.txt` and `~/Documents/k3s-secrets/openbao/` — both deleted 2026-02-27.
 
 - **Supervisor envFiles must be sourced before children start — Bao agent writes files, not process env:** The Bao agent injector writes secrets to `/vault/secrets/*.env` as `export KEY=VALUE` files. The supervisor process does NOT automatically inherit them — they must be listed in the `envFiles` field of `supervisor.json` so `loadEnvFile()` sets them into the supervisor's own process env before spawning children. Children then inherit via `os.Environ()`. Without this, children get old/missing provider credentials even though the files exist.

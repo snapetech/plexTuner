@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -154,13 +155,15 @@ func ProbePlayerAPI(ctx context.Context, baseURL, user, pass string, client *htt
 	if code == http.StatusTooManyRequests {
 		return Result{URL: baseURL, Status: StatusRateLimited, StatusCode: code, LatencyMs: latency}
 	}
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return Result{URL: url, Status: StatusError, StatusCode: code, LatencyMs: latency}
+	}
+	previewStr := strings.ToLower(string(body[:min(len(body), 512)]))
 	// Cloudflare detection: same logic as ProbeOne — check Server header and body signals.
 	server := strings.ToLower(strings.TrimSpace(resp.Header.Get("Server")))
 	isCFServer := server == "cloudflare"
 	if isCFServer || code == 520 || code == 521 || code == 524 {
-		preview := make([]byte, 512)
-		n, _ := resp.Body.Read(preview)
-		previewStr := strings.ToLower(string(preview[:n]))
 		bodyHasCFChallenge := strings.Contains(previewStr, "checking your browser") ||
 			strings.Contains(previewStr, "cf-bypass") ||
 			strings.Contains(previewStr, "ray id")
@@ -175,7 +178,7 @@ func ProbePlayerAPI(ctx context.Context, baseURL, user, pass string, client *htt
 		return Result{URL: url, Status: StatusBadStatus, StatusCode: code, LatencyMs: latency}
 	}
 	var raw map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+	if err := json.Unmarshal(body, &raw); err != nil {
 		return Result{URL: url, Status: StatusBadStatus, StatusCode: resp.StatusCode, LatencyMs: latency}
 	}
 	if raw["user_info"] != nil || raw["auth"] != nil || raw["server_info"] != nil {
@@ -376,4 +379,11 @@ func providerBaseFromURL(s string) string {
 		return strings.TrimSuffix(s, "/")
 	}
 	return strings.TrimSuffix(u.Scheme+"://"+u.Host, "/")
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

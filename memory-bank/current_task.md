@@ -82,6 +82,18 @@
   6. real-provider stream test now fails over correctly from provider-2 HTML `200` to provider-1 `513` and returns a clean `502` instead of stalling on the first bogus playlist
   7. verification passed with `go test ./internal/safeurl ./internal/tuner ./cmd/iptv-tunerr` and `./scripts/verify`
 
+**Current focus shift (probe false-negative fix, 2026-03-19):**
+- Follow-on from the real provider validation: the remaining gap was that `probe` still reported `player_api bad_status HTTP 200` for the same Cloudflare-fronted providers that direct requests and `run` already proved valid.
+- Root cause:
+  1. `ProbePlayerAPI` treated any `Server: cloudflare` response as a challenge-inspection path
+  2. on `200 application/json` responses, it consumed the first chunk of the body before JSON decode
+  3. the later decoder then saw a truncated stream and returned `bad_status`
+- Result:
+  1. fixed `ProbePlayerAPI` to read the body once, inspect a preview for CF challenge text, and unmarshal the full JSON body afterward
+  2. added regression coverage for `Server: cloudflare` + `200 application/json`
+  3. reran real-provider `probe` and both configured providers now report `player_api ok HTTP 200`
+  4. full `./scripts/verify` passed after the fix
+
 **Current focus shift (intelligence cross-wiring epic, 2026-03-18):**
 - User requested the full next wave from the audit: structural cleanup plus runtime cross-wiring so the newer intelligence/reporting work actually changes behavior.
 - This is now tracked as a multi-PR epic in `memory-bank/work_breakdown.md` under `INT-001` through `INT-007`.

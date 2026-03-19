@@ -2204,3 +2204,17 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - `./scripts/verify`
     - Real-provider `go run ./cmd/iptv-tunerr probe` with local `.env`
     - Real-provider `go run ./cmd/iptv-tunerr run -skip-health` with `IPTV_TUNERR_BLOCK_CF_PROVIDERS=false IPTV_TUNERR_LIVE_ONLY=true`
+
+---
+
+- Date: 2026-03-19
+  Title: Fix Cloudflare-200 JSON probe false negatives
+  Summary:
+    - Root-caused the remaining provider-probe mismatch to `ProbePlayerAPI` consuming the first chunk of `Server: cloudflare` `200 application/json` responses before attempting JSON decode.
+    - Reworked `ProbePlayerAPI` to inspect a preview from the full buffered body, then unmarshal the same body for Xtream auth-shape detection.
+    - Added regression coverage for a Cloudflare-served `200 application/json` Xtream auth response.
+    - Revalidated against the real local providers: `iptv-tunerr probe` now reports both providers as `player_api ok HTTP 200`.
+  Verification:
+    - `go test ./internal/provider ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+    - Real-provider `go run ./cmd/iptv-tunerr probe` with local `.env`
