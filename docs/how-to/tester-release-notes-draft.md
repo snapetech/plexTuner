@@ -67,6 +67,74 @@ If testing a supervisor build (single app managing multiple child tuners):
 - Added cross-platform package builder and staged tester handoff bundle builder.
 - Added CLI/env reference and Plex DVR lifecycle/API reference docs.
 
+---
+
+## Cloudflare provider support (current build)
+
+Some IPTV providers route their management and stream endpoints through Cloudflare. This can cause streams to fail even when `ffplay -i <url>` works fine directly — the difference is the HTTP User-Agent Tunerr sends vs what ffplay/ffmpeg sends.
+
+### What was fixed
+
+**UA cycling (automatic):** When Tunerr detects a Cloudflare response, it now automatically cycles through all known media-player User-Agents (Lavf, VLC, mpv, Kodi, Firefox, Chrome, curl) until one works. The working UA is learned per-provider and used for all subsequent requests in that session — including the ffmpeg subprocess. Zero config required.
+
+**Auto-detect ffmpeg UA:** At startup, Tunerr detects the installed ffmpeg version and uses the matching `Lavf/X.Y.Z` as the first candidate UA. If `ffplay -i <url>` works for you, Tunerr will send the exact same UA automatically.
+
+**CF auto-boot (`IPTV_TUNERR_CF_AUTO_BOOT=true`):** When enabled, at startup Tunerr probes each provider host and, if CF is detected, runs a resolution chain:
+1. UA cycling (no user action needed)
+2. Reads `cf_clearance` from your Chrome/Firefox profile (no user action needed)
+3. Launches Chromium headlessly to solve the challenge (no user action needed — requires `chromium`/`google-chrome` to be installed)
+4. Opens your default browser at the provider URL and waits up to 60 seconds for you to click through the CF challenge (only if a display is available)
+
+Enable it with:
+```
+IPTV_TUNERR_CF_AUTO_BOOT=true
+IPTV_TUNERR_COOKIE_JAR_FILE=/path/to/cf-cookies.json   # required for persistence
+```
+
+### Manual bypass (if auto-boot doesn't work)
+
+**Option A — set UA explicitly:**
+```
+IPTV_TUNERR_UPSTREAM_USER_AGENT=lavf
+```
+This uses the auto-detected Lavf UA (same as ffplay). Also works: `vlc`, `firefox`, `kodi`, `mpv`, or any literal string.
+
+**Option B — import `cf_clearance` from your browser:**
+1. Open the failing provider URL in Chrome/Firefox (CF challenge solves automatically)
+2. DevTools → Network → any request to the provider → copy the `Cookie:` header value
+3. Run:
+```bash
+iptv-tunerr import-cookies \
+  -jar "$IPTV_TUNERR_COOKIE_JAR_FILE" \
+  -cookie "cf_clearance=<paste here>" \
+  -domain <provider hostname>
+```
+Or export cookies using the "Cookie-Editor" browser extension (Export → Netscape format) then:
+```bash
+iptv-tunerr import-cookies \
+  -jar "$IPTV_TUNERR_COOKIE_JAR_FILE" \
+  -netscape /tmp/cookies.txt
+```
+
+### Diagnostic commands
+
+If a CF-proxied stream still fails, the stream compare harness now shows the User-Agent each tool uses and flags UA mismatches as a likely CF cause:
+```bash
+DIRECT_URL='http://the.stream.url/channel.m3u8' \
+TUNERR_BASE_URL='http://localhost:5004' \
+CHANNEL_ID='channel-id' \
+FFPLAY_LOGLEVEL=verbose \
+./scripts/stream-compare-harness.sh
+```
+The `report.txt` output will show `ua=Lavf/X.Y.Z` for the direct path and whatever Tunerr used, with a suggested fix if they differ.
+
+Also useful:
+```bash
+curl http://localhost:5004/debug/stream-attempts.json | python3 -m json.tool
+```
+
+---
+
 ## Known limitations (current)
 
 - `mount` / VODFS is Linux-only.
