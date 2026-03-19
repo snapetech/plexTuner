@@ -23,6 +23,21 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-18
+  Title: Split gateway relay implementations into a focused file
+  Summary:
+    - Moved the raw TS ffmpeg normalizer and the HLS relay implementations into `internal/tuner/gateway_relay.go`.
+    - Reduced `internal/tuner/gateway.go` to the request entrypoint and upstream-selection/orchestration path.
+  Verification:
+    - `go test ./internal/tuner`
+    - `./scripts/verify`
+  Notes:
+    - This is structural only; runtime relay behavior was preserved while isolating the remaining ffmpeg/HLS engine from the top-level gateway request path.
+  Opportunities filed:
+    - none
+  Links:
+    - internal/tuner/gateway.go, internal/tuner/gateway_relay.go
+
+- Date: 2026-03-18
   Title: Fix player_api probe shape handling and restore direct index fallback
   Summary:
     - Updated `internal/provider/ProbePlayerAPI` to treat `server_info`-only HTTP 200 JSON as a valid Xtream-style auth response instead of misclassifying it as `bad_status`.

@@ -128,6 +128,14 @@
   3. add regression tests for both cases
   4. verify and push before returning to the structural cleanup track
 
+**Current focus shift (gateway relay split, 2026-03-18):**
+- Returning to the structural cleanup after the player_api regression hotfix.
+- This pass covers:
+  1. move the FFmpeg/raw TS/HLS relay implementations out of `internal/tuner/gateway.go`
+  2. keep `gateway.go` focused on request entry, channel lookup, and upstream selection/orchestration
+  3. preserve runtime behavior while shrinking the last major tuner hotspot
+  4. verify and push if green
+
 **Current focus shift (EPG doctor operator docs, 2026-03-18):**
 - Follow-on docs cleanup after shipping `guide-health` and `epg-doctor`: make the new guide-diagnostics workflow discoverable from the how-to and runbook indexes so operators have one documented path from symptom to fix.
 - This pass adds:
