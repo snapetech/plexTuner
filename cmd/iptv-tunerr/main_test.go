@@ -199,8 +199,8 @@ func TestFetchCatalog_FallsBackToPlayerAPIWhenBuiltGetPHPFails(t *testing.T) {
 }
 
 func TestFetchCatalog_DirectPlayerAPIFallbackWhenProbeFindsNoOKHost(t *testing.T) {
-	var baseURL string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var baseURL1, baseURL2 string
+	srv1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodHead && r.URL.Path == "/":
 			w.WriteHeader(http.StatusOK)
@@ -209,33 +209,58 @@ func TestFetchCatalog_DirectPlayerAPIFallbackWhenProbeFindsNoOKHost(t *testing.T
 		case r.URL.Path == "/player_api.php" && r.URL.RawQuery == "username=u&password=p":
 			_, _ = w.Write([]byte(`{"server_status":"ok"}`))
 		case r.URL.Path == "/player_api.php" && strings.Contains(r.URL.RawQuery, "action=get_live_streams"):
-			_, _ = w.Write([]byte(`[{"num":101,"name":"FOX News","stream_id":1001,"epg_channel_id":"foxnews.us","stream_icon":"` + baseURL + `/icon.png"}]`))
+			_, _ = w.Write([]byte(`[{"num":101,"name":"FOX News","stream_id":1001,"epg_channel_id":"foxnews.us","stream_icon":"` + baseURL1 + `/icon.png"}]`))
 		default:
 			http.NotFound(w, r)
 		}
 	}))
-	defer srv.Close()
-	baseURL = srv.URL
+	defer srv1.Close()
+	baseURL1 = srv1.URL
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodHead && r.URL.Path == "/":
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/get.php":
+			http.Error(w, "884 busy", 884)
+		case r.URL.Path == "/player_api.php" && r.URL.RawQuery == "username=u2&password=p2":
+			_, _ = w.Write([]byte(`{"server_status":"ok"}`))
+		case r.URL.Path == "/player_api.php" && strings.Contains(r.URL.RawQuery, "action=get_live_streams"):
+			_, _ = w.Write([]byte(`[{"num":101,"name":"FOX News","stream_id":1001,"epg_channel_id":"foxnews.us","stream_icon":"` + baseURL2 + `/icon.png"}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv2.Close()
+	baseURL2 = srv2.URL
 
 	cfg := &config.Config{
-		ProviderBaseURL: srv.URL,
+		ProviderBaseURL: baseURL1,
 		ProviderUser:    "u",
 		ProviderPass:    "p",
 		LiveOnly:        true,
 	}
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL_2", baseURL2)
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER_2", "u2")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS_2", "p2")
 
 	res, err := fetchCatalog(cfg, "")
 	if err != nil {
 		t.Fatalf("fetchCatalog error: %v", err)
 	}
-	if res.APIBase != srv.URL {
-		t.Fatalf("APIBase=%q want %q", res.APIBase, srv.URL)
+	if res.APIBase != baseURL1 {
+		t.Fatalf("APIBase=%q want %q", res.APIBase, baseURL1)
 	}
 	if len(res.Live) != 1 {
 		t.Fatalf("live len=%d want 1", len(res.Live))
 	}
 	if got := res.Live[0].TVGID; got != "foxnews.us" {
 		t.Fatalf("TVGID=%q want foxnews.us", got)
+	}
+	if len(res.Live[0].StreamURLs) != 2 {
+		t.Fatalf("stream urls len=%d want 2", len(res.Live[0].StreamURLs))
+	}
+	if len(res.Live[0].StreamAuths) != 2 {
+		t.Fatalf("stream auths len=%d want 2", len(res.Live[0].StreamAuths))
 	}
 }
 

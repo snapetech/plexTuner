@@ -2187,3 +2187,20 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - `go test ./cmd/iptv-tunerr`
     - `go test ./...`
     - `./scripts/verify`
+
+---
+
+- Date: 2026-03-19
+  Title: Validate real providers and fix direct-fallback failover gaps
+  Summary:
+    - Tested against the real two-provider `.env` setup without exposing credentials and proved both provider accounts answer direct `player_api` auth plus `get_live_streams` successfully.
+    - Fixed `iptv-tunerr probe` so it now includes numbered provider entries (`_2`, `_3`, …) instead of silently inspecting only the primary provider URL.
+    - Fixed the no-ranked direct `player_api` fallback so successful direct indexing still attaches multi-provider backup URLs plus per-stream auth rules in the real provider path.
+    - Fixed HLS gateway failover so `.m3u8` responses that are HTML/empty count as `invalid-hls-playlist` and fall through to the next backup URL instead of stalling on a bogus `200`.
+    - Fixed `safeurl.RedactURL` to redact Xtream path-embedded credentials in logged URLs.
+    - Revalidated the real provider flow: the app now tries backup URL 2 after rejecting provider-2 HTML and returns a clean `502` when provider-1 answers `513`, which is an honest upstream failure instead of an app-side stall.
+  Verification:
+    - `go test ./internal/safeurl ./internal/tuner ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+    - Real-provider `go run ./cmd/iptv-tunerr probe` with local `.env`
+    - Real-provider `go run ./cmd/iptv-tunerr run -skip-health` with `IPTV_TUNERR_BLOCK_CF_PROVIDERS=false IPTV_TUNERR_LIVE_ONLY=true`

@@ -150,6 +150,17 @@ func firstHLSMediaLine(body []byte) string {
 	return lines[0]
 }
 
+func hlsPlaylistLooksUsable(body []byte) bool {
+	trimmed := strings.TrimSpace(string(body))
+	if trimmed == "" {
+		return false
+	}
+	if !strings.Contains(trimmed, "#EXTM3U") {
+		return false
+	}
+	return len(hlsMediaLines(body)) > 0
+}
+
 func hlsMediaLines(body []byte) []string {
 	sc := bufio.NewScanner(bytes.NewReader(body))
 	var out []string

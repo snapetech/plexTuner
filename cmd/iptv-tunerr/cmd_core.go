@@ -131,7 +131,17 @@ func handleIndex(cfg *config.Config, m3uURL, catalogPath string) {
 }
 
 func handleProbe(cfg *config.Config, probeURLs string, timeout time.Duration) {
-	baseURLs := cfg.ProviderURLs()
+	entries := cfg.ProviderEntries()
+	baseURLs := make([]string, 0, len(entries))
+	entryByBase := make(map[string]config.ProviderEntry, len(entries))
+	for _, entry := range entries {
+		base := strings.TrimSpace(strings.TrimSuffix(entry.BaseURL, "/"))
+		if base == "" {
+			continue
+		}
+		baseURLs = append(baseURLs, base)
+		entryByBase[base] = entry
+	}
 	if probeURLs != "" {
 		parts := strings.Split(probeURLs, ",")
 		baseURLs = make([]string, 0, len(parts))
@@ -146,15 +156,25 @@ func handleProbe(cfg *config.Config, probeURLs string, timeout time.Duration) {
 		log.Print("No URLs to probe. Set IPTV_TUNERR_PROVIDER_URL(S) and USER, PASS in .env, or pass -urls=http://host1.com,http://host2.com")
 		os.Exit(1)
 	}
-	user, pass := cfg.ProviderUser, cfg.ProviderPass
-	if user == "" || pass == "" {
-		log.Print("Set IPTV_TUNERR_PROVIDER_USER and IPTV_TUNERR_PROVIDER_PASS in .env")
-		os.Exit(1)
-	}
 	m3uURLs := make([]string, 0, len(baseURLs))
 	for _, base := range baseURLs {
-		base = strings.TrimSuffix(base, "/")
+		entry, ok := entryByBase[base]
+		if !ok && probeURLs == "" {
+			continue
+		}
+		user, pass := cfg.ProviderUser, cfg.ProviderPass
+		if ok {
+			user, pass = entry.User, entry.Pass
+		}
+		if user == "" || pass == "" {
+			log.Printf("Skipping %s: missing provider credentials", base)
+			continue
+		}
 		m3uURLs = append(m3uURLs, base+"/get.php?username="+url.QueryEscape(user)+"&password="+url.QueryEscape(pass)+"&type=m3u_plus&output=ts")
+	}
+	if len(m3uURLs) == 0 {
+		log.Print("No probeable provider URLs with credentials. Set IPTV_TUNERR_PROVIDER_URL[_N], USER[_N], PASS[_N] in .env")
+		os.Exit(1)
 	}
 	log.Printf("Probing %d host(s) — get.php and player_api.php (timeout %v)...", len(baseURLs), timeout)
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -162,7 +182,16 @@ func handleProbe(cfg *config.Config, probeURLs string, timeout time.Duration) {
 	getResults := provider.ProbeAll(ctx, m3uURLs, nil)
 	var getOK, apiOK []string
 	for _, base := range baseURLs {
-		base = strings.TrimSuffix(base, "/")
+		entry, ok := entryByBase[base]
+		user, pass := cfg.ProviderUser, cfg.ProviderPass
+		if ok {
+			user, pass = entry.User, entry.Pass
+		}
+		if user == "" || pass == "" {
+			log.Printf("  %s", base)
+			log.Printf("    skipped     missing credentials")
+			continue
+		}
 		var getR *provider.Result
 		for i := range getResults {
 			if strings.HasPrefix(getResults[i].URL, base+"/") {
@@ -197,7 +226,22 @@ func handleProbe(cfg *config.Config, probeURLs string, timeout time.Duration) {
 		log.Printf("    player_api  %s  HTTP %d  %dms", apiR.Status, apiR.StatusCode, apiR.LatencyMs)
 	}
 	log.Printf("--- get.php: %d OK  |  player_api: %d OK ---", len(getOK), len(apiOK))
-	ranked := provider.RankedPlayerAPI(ctx, baseURLs, user, pass, nil)
+	ranked := make([]string, 0, len(baseURLs))
+	if probeURLs == "" {
+		probeEntries := make([]provider.Entry, 0, len(baseURLs))
+		for _, base := range baseURLs {
+			entry, ok := entryByBase[base]
+			if !ok {
+				continue
+			}
+			probeEntries = append(probeEntries, provider.Entry{BaseURL: base, User: entry.User, Pass: entry.Pass})
+		}
+		for _, er := range provider.RankedEntries(ctx, probeEntries, nil, provider.ProbeOptions{}) {
+			ranked = append(ranked, er.Entry.BaseURL)
+		}
+	} else if cfg.ProviderUser != "" || cfg.ProviderPass != "" {
+		ranked = provider.RankedPlayerAPI(ctx, baseURLs, cfg.ProviderUser, cfg.ProviderPass, nil)
+	}
 	if len(ranked) > 0 {
 		log.Printf("Ranked order (best first; index uses #1, stream failover tries #2, #3, …):")
 		for i, base := range ranked {

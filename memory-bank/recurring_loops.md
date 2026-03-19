@@ -279,6 +279,26 @@
 - `cmd/iptv-tunerr/cmd_catalog.go`
 - `internal/tuner/gateway_upstream.go`
 
+### Loop: A `.m3u8` URL returning HTTP 200 can still be garbage, so URL failover never triggers unless the playlist is validated
+
+**Symptom**
+- The gateway logs `start upstream[1/2] ... ct="text/html"` or an empty playlist body for a `.m3u8` URL, then stalls or returns zero bytes without ever trying backup URL 2.
+- Direct provider checks show the first URL returns HTML or an empty body, while the second URL would have been the next useful fallback to try.
+
+**Why it's tricky**
+- The existing failover loop naturally handles hard failures like non-200 status codes, but a bogus HLS endpoint can still return `200` and a `.m3u8` suffix.
+- HLS detection by content type / extension alone is not enough; some providers/CDNs answer with HTML challenge pages or empty responses that look superficially valid to the router.
+
+**What works**
+- Validate the playlist body before committing to the HLS relay path.
+- Treat empty/no-`#EXTM3U`/no-media-line playlists as `invalid-hls-playlist` and continue to the next upstream URL.
+- Keep this validation before ffmpeg/go relay selection so both relay modes inherit the same failover behavior.
+
+**Where it's documented**
+- `internal/tuner/gateway.go`
+- `internal/tuner/gateway_hls.go`
+- `internal/tuner/gateway_test.go`
+
 **Where it's documented**
 - `memory-bank/known_issues.md` (WebSafe ffmpeg startup gate + HLS reconnect follow-up)
 - `internal/tuner/gateway.go` (`IPTV_TUNERR_FFMPEG_HLS_RECONNECT` default for HLS ffmpeg path)

@@ -69,6 +69,37 @@ func TestGateway_stream_primaryThenBackup(t *testing.T) {
 	}
 }
 
+func TestGateway_stream_invalidHLSPlaylistFallsBackToBackup(t *testing.T) {
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("<html>blocked</html>"))
+	}))
+	defer primary.Close()
+	backup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("backup"))
+	}))
+	defer backup.Close()
+
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "1", GuideName: "Ch1", StreamURLs: []string{primary.URL + "/stream.m3u8", backup.URL}},
+		},
+		TunerCount:    2,
+		DisableFFmpeg: true,
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code: %d", w.Code)
+	}
+	if w.Body.String() != "backup" {
+		t.Fatalf("body: %q", w.Body.String())
+	}
+}
+
 func TestGateway_stream_prefersAutopilotRememberedURL(t *testing.T) {
 	hits := []string{}
 	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -46,6 +46,14 @@ func TestRedactURL(t *testing.T) {
 			"http://example.com/plain",
 		},
 		{
+			"http://example.com/live/user123/pass456/789.m3u8",
+			"http://example.com/live/redacted/redacted/789.m3u8",
+		},
+		{
+			"https://example.com/timeshift/user123/pass456/60/2026-03-19:10-00/789.ts?token=abc",
+			"https://example.com/timeshift/redacted/redacted/60/2026-03-19:10-00/789.ts",
+		},
+		{
 			"not valid url ://",
 			"(invalid url)",
 		},
@@ -87,6 +95,7 @@ func TestHasSensitive(t *testing.T) {
 	}{
 		{"http://host/get.php?username=user&password=pass", true},
 		{"http://host/api?token=abc123", true},
+		{"http://host/live/user/pass/1234.m3u8", true},
 		{"http://host/stream/1234", false},
 		{"", false},
 	}

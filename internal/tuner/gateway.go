@@ -258,6 +258,12 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			body = rewriteHLSPlaylist(body, effectiveURL)
 			firstSeg := firstHLSMediaLine(body)
+			if !hlsPlaylistLooksUsable(body) || firstSeg == "" {
+				g.noteUpstreamFailure(streamURL, resp.StatusCode, "invalid_hls_playlist")
+				log.Printf("gateway: channel=%q id=%s upstream[%d/%d] invalid-hls-playlist url=%s ct=%q bytes=%d",
+					channel.GuideName, channelID, i+1, len(urls), safeurl.RedactURL(streamURL), resp.Header.Get("Content-Type"), len(body))
+				continue
+			}
 			transcode := g.effectiveTranscodeForChannelMeta(r.Context(), channelID, channel.GuideNumber, channel.TVGID, streamURL)
 			if hasTranscodeOverride {
 				transcode = forceTranscode

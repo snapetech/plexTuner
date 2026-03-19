@@ -18,6 +18,8 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Redirect-safe HLS relay**: HLS playlist rewriting and refresh now track the effective post-redirect playlist URL, so relative segment or nested playlist paths keep resolving correctly after CDN redirects.
 - **Credential-aware fallback stream routing**: multi-provider fallback URLs now keep per-stream auth metadata through catalog dedupe and host filtering, so channel changes and second-session failover do not silently reuse provider-1 credentials against provider-2 URLs.
 - **FFmpeg Cloudflare cookie forwarding**: ffmpeg HLS relay inputs now inherit the same per-stream credentials and learned upstream cookies as the Go gateway client, which closes the remaining gap where Cloudflare-cleared playlists still failed once ffmpeg took over segment fetches.
+- **Direct player_api fallback now preserves multi-provider backups**: when probe ranking returns no provider as `OK` but direct `player_api` indexing still works, the catalog now keeps multi-provider fallback URLs and per-stream auth rules instead of collapsing back to a single provider path.
+- **Invalid HLS playlists now fail over**: `.m3u8` responses that come back as empty or HTML are now treated as upstream failures and the gateway advances to the next fallback URL instead of stalling on a useless `200`.
 
 ### Guide / intelligence
 - **Guide health report**: added `guide-health` plus `/guide/health.json` to combine XMLTV match status with actual merged-guide coverage, including detection of placeholder-only channel rows versus real programme blocks.
@@ -44,6 +46,10 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 ### Ingest / probe
 - **Server-info Xtream auth probes**: `player_api.php` probes now treat `server_info`-only JSON responses as valid Xtream-style auth success, matching panels that index correctly even when they do not return `user_info`.
 - **Direct player_api fallback restored**: when no provider host ranks as probe-OK, catalog refresh now retries direct `IndexFromPlayerAPI` before falling through to `get.php`, restoring the older behavior that kept indexing alive on panels with probe-only response-shape quirks.
+- **Multi-entry probe coverage**: `iptv-tunerr probe` now inspects numbered provider entries (`IPTV_TUNERR_PROVIDER_URL_2`, `_3`, etc.) instead of only the primary provider URL.
+
+### Security
+- **Xtream path credential redaction**: URL logging now redacts provider credentials embedded in Xtream-style stream paths (`/live/<user>/<pass>/...`, `/movie/...`, `/series/...`, `/timeshift/...`) instead of only stripping query parameters.
 
 ---
 

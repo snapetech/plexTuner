@@ -66,6 +66,22 @@
   4. added regression tests for auth-preserving dedupe/strip, per-provider auth assignment, gateway per-stream auth selection, and ffmpeg cookie forwarding
   5. verification passed with `go test ./...` and `./scripts/verify`
 
+**Current focus shift (real provider validation follow-up, 2026-03-19):**
+- User asked to test the fix against the real configured providers from local `.env`.
+- This pass covered:
+  1. validate both configured provider accounts directly without exposing secrets
+  2. verify that `run` / live catalog generation actually preserve multi-provider backups and per-stream auth rules in the real environment
+  3. verify that the gateway advances to backup URLs when the primary `.m3u8` response is HTML/empty instead of a usable playlist
+  4. fix any provider-tested regressions discovered during that run
+- Result:
+  1. proved both configured providers return `200` for direct `player_api` auth and `get_live_streams` requests, even though `probe` still classifies them as `bad_status`
+  2. fixed `handleProbe` so it now inspects numbered provider entries (`_2`, `_3`, …) instead of only the primary provider URL
+  3. fixed the no-ranked direct `player_api` fallback so the real provider catalog now keeps backups/auth rules (`51641` live channels, all with `2` stream URLs and `2` stream auth rules in the tested env)
+  4. fixed gateway HLS failover so `.m3u8` responses that are HTML/empty now count as `invalid-hls-playlist` and the gateway tries the next fallback URL
+  5. fixed `safeurl.RedactURL` so Xtream path-embedded credentials are redacted from logs
+  6. real-provider stream test now fails over correctly from provider-2 HTML `200` to provider-1 `513` and returns a clean `502` instead of stalling on the first bogus playlist
+  7. verification passed with `go test ./internal/safeurl ./internal/tuner ./cmd/iptv-tunerr` and `./scripts/verify`
+
 **Current focus shift (intelligence cross-wiring epic, 2026-03-18):**
 - User requested the full next wave from the audit: structural cleanup plus runtime cross-wiring so the newer intelligence/reporting work actually changes behavior.
 - This is now tracked as a multi-PR epic in `memory-bank/work_breakdown.md` under `INT-001` through `INT-007`.

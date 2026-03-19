@@ -312,6 +312,27 @@ type streamVariant struct {
 	Auth catalog.StreamAuth
 }
 
+func applyStreamVariants(live []catalog.LiveChannel, variantsByProvider []provider.EntryResult) {
+	for i := range live {
+		variants := streamVariantsFromRankedEntries(live[i].StreamURL, variantsByProvider)
+		if len(variants) == 0 {
+			continue
+		}
+		live[i].StreamURLs = live[i].StreamURLs[:0]
+		live[i].StreamAuths = live[i].StreamAuths[:0]
+		for _, variant := range variants {
+			if strings.TrimSpace(variant.URL) == "" {
+				continue
+			}
+			live[i].StreamURLs = append(live[i].StreamURLs, variant.URL)
+			live[i].StreamAuths = appendStreamAuthRule(live[i].StreamAuths, variant.Auth)
+		}
+		if len(live[i].StreamURLs) > 0 {
+			live[i].StreamURL = live[i].StreamURLs[0]
+		}
+	}
+}
+
 func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error) {
 	var res catalogResult
 
@@ -383,39 +404,39 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 				best.Entry.BaseURL, best.Entry.User, best.Entry.Pass, "m3u8", cfg.LiveOnly, allBases, nil,
 			)
 			if fetchErr == nil {
-				for i := range res.Live {
-					variants := streamVariantsFromRankedEntries(res.Live[i].StreamURL, ranked)
-					if len(variants) > 0 {
-						res.Live[i].StreamURLs = res.Live[i].StreamURLs[:0]
-						res.Live[i].StreamAuths = res.Live[i].StreamAuths[:0]
-						for _, variant := range variants {
-							if strings.TrimSpace(variant.URL) == "" {
-								continue
-							}
-							res.Live[i].StreamURLs = append(res.Live[i].StreamURLs, variant.URL)
-							res.Live[i].StreamAuths = appendStreamAuthRule(res.Live[i].StreamAuths, variant.Auth)
-						}
-						if len(res.Live[i].StreamURLs) > 0 {
-							res.Live[i].StreamURL = res.Live[i].StreamURLs[0]
-						}
-					}
-				}
+				applyStreamVariants(res.Live, ranked)
 			}
 		}
 		if len(ranked) == 0 && !cfg.BlockCFProviders {
+			var successfulEntries []provider.EntryResult
 			for _, e := range entries {
 				base := strings.TrimSuffix(e.BaseURL, "/")
 				log.Printf("No player_api host passed probe; attempting direct index on %s", base)
-				res.Movies, res.Series, res.Live, fetchErr = indexer.IndexFromPlayerAPI(
+				movies, series, live, err := indexer.IndexFromPlayerAPI(
 					base, e.User, e.Pass, "m3u8", cfg.LiveOnly, nil, nil,
 				)
-				if fetchErr == nil {
+				if err == nil {
+					res.Movies, res.Series, res.Live = movies, series, live
 					res.APIBase = base
 					res.ProviderBase = e.BaseURL
 					res.ProviderUser = e.User
 					res.ProviderPass = e.Pass
+					successfulEntries = append(successfulEntries, provider.EntryResult{
+						Entry: provider.Entry{BaseURL: e.BaseURL, User: e.User, Pass: e.Pass},
+					})
+					for _, other := range entries {
+						if strings.TrimSuffix(other.BaseURL, "/") == base && other.User == e.User && other.Pass == e.Pass {
+							continue
+						}
+						successfulEntries = append(successfulEntries, provider.EntryResult{
+							Entry: provider.Entry{BaseURL: other.BaseURL, User: other.User, Pass: other.Pass},
+						})
+					}
+					applyStreamVariants(res.Live, successfulEntries)
+					fetchErr = nil
 					break
 				}
+				fetchErr = err
 			}
 		}
 		if fetchErr != nil || res.APIBase == "" {

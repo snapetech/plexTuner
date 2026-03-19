@@ -2,6 +2,7 @@ package safeurl
 
 import (
 	"net/url"
+	"path"
 	"strings"
 )
 
@@ -27,6 +28,7 @@ func RedactURL(s string) string {
 	}
 	u.RawQuery = ""
 	u.User = nil
+	u.Path = redactSensitivePath(u.Path)
 	return u.String()
 }
 
@@ -45,5 +47,37 @@ func RedactQuery(s string) string {
 
 // HasSensitive returns true if the string looks like it contains credentials.
 func HasSensitive(s string) bool {
-	return strings.Contains(s, "password=") || strings.Contains(s, "token=")
+	if strings.Contains(s, "password=") || strings.Contains(s, "token=") {
+		return true
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return false
+	}
+	parts := xtreamPathParts(u.Path)
+	return len(parts) >= 3
+}
+
+func xtreamPathParts(p string) []string {
+	clean := path.Clean("/" + strings.TrimSpace(p))
+	parts := strings.Split(strings.TrimPrefix(clean, "/"), "/")
+	if len(parts) < 3 {
+		return nil
+	}
+	switch strings.ToLower(parts[0]) {
+	case "live", "movie", "series", "timeshift":
+		return parts
+	default:
+		return nil
+	}
+}
+
+func redactSensitivePath(p string) string {
+	parts := xtreamPathParts(p)
+	if len(parts) < 3 {
+		return p
+	}
+	parts[1] = "redacted"
+	parts[2] = "redacted"
+	return "/" + strings.Join(parts, "/")
 }
