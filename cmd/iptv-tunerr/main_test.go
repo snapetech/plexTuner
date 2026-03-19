@@ -214,6 +214,63 @@ func TestFetchCatalog_TriesNextRankedProviderWhenBestIndexFails(t *testing.T) {
 	}
 }
 
+func TestFetchCatalog_GetPHPFallbackMergesProviders(t *testing.T) {
+	var base1, base2 string
+	srv1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodHead && r.URL.Path == "/":
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/player_api.php":
+			http.Error(w, "player api broken", http.StatusInternalServerError)
+		case r.URL.Path == "/get.php":
+			_, _ = w.Write([]byte("#EXTM3U\n#EXTINF:-1 tvg-id=\"foxnews.us\",FOX News\n" + base1 + "/live/u1/p1/1001.m3u8\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv1.Close()
+	base1 = srv1.URL
+
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodHead && r.URL.Path == "/":
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/player_api.php":
+			http.Error(w, "player api broken", http.StatusInternalServerError)
+		case r.URL.Path == "/get.php":
+			_, _ = w.Write([]byte("#EXTM3U\n#EXTINF:-1 tvg-id=\"foxnews.us\",FOX News Backup\n" + base2 + "/live/u2/p2/1001.m3u8\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv2.Close()
+	base2 = srv2.URL
+
+	cfg := &config.Config{
+		ProviderBaseURL: srv1.URL,
+		ProviderUser:    "u1",
+		ProviderPass:    "p1",
+		LiveOnly:        true,
+	}
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL_2", srv2.URL)
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER_2", "u2")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS_2", "p2")
+
+	res, err := fetchCatalog(cfg, "")
+	if err != nil {
+		t.Fatalf("fetchCatalog error: %v", err)
+	}
+	if len(res.Live) != 1 {
+		t.Fatalf("live len=%d want 1", len(res.Live))
+	}
+	if len(res.Live[0].StreamURLs) != 2 {
+		t.Fatalf("stream urls len=%d want 2", len(res.Live[0].StreamURLs))
+	}
+	if res.ProviderBase != srv1.URL {
+		t.Fatalf("ProviderBase=%q want %q", res.ProviderBase, srv1.URL)
+	}
+}
+
 func TestFetchCatalog_FallsBackToPlayerAPIWhenBuiltGetPHPFails(t *testing.T) {
 	var baseURL string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

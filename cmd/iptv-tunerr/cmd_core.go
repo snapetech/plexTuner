@@ -12,6 +12,7 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/catalog"
 	"github.com/snapetech/iptvtunerr/internal/config"
 	"github.com/snapetech/iptvtunerr/internal/provider"
+	"github.com/snapetech/iptvtunerr/internal/safeurl"
 )
 
 func coreCommands() []commandSpec {
@@ -212,10 +213,7 @@ func handleProbe(cfg *config.Config, probeURLs string, timeout time.Duration) {
 		}
 		log.Printf("  %s", base)
 		if getR != nil {
-			displayGet := getR.URL
-			if cfg.ProviderPass != "" {
-				displayGet = strings.Replace(displayGet, "password="+cfg.ProviderPass, "password=***", 1)
-			}
+			displayGet := safeurl.RedactURL(getR.URL)
 			if len(displayGet) > 70 {
 				displayGet = displayGet[:67] + "..."
 			}
@@ -236,7 +234,10 @@ func handleProbe(cfg *config.Config, probeURLs string, timeout time.Duration) {
 			}
 			probeEntries = append(probeEntries, provider.Entry{BaseURL: base, User: entry.User, Pass: entry.Pass})
 		}
-		for _, er := range provider.RankedEntries(ctx, probeEntries, nil, provider.ProbeOptions{}) {
+		for _, er := range provider.RankedEntries(ctx, probeEntries, nil, provider.ProbeOptions{
+			BlockCloudflare: cfg.BlockCFProviders,
+			Logger:          log.Printf,
+		}) {
 			ranked = append(ranked, er.Entry.BaseURL)
 		}
 	} else if cfg.ProviderUser != "" || cfg.ProviderPass != "" {

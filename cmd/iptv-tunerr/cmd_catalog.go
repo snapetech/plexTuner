@@ -444,22 +444,41 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 		}
 		if fetchErr != nil || res.APIBase == "" {
 			res.APIBase = ""
-			var fallbackErr error
+			var (
+				fallbackErr   error
+				mergedMovies  []catalog.Movie
+				mergedSeries  []catalog.Series
+				mergedLive    []catalog.LiveChannel
+				okCount       int
+				firstProvider provider.Entry
+			)
 			for _, e := range entries {
 				base := strings.TrimSuffix(e.BaseURL, "/")
 				m3uURL := base + "/get.php?username=" + url.QueryEscape(e.User) + "&password=" + url.QueryEscape(e.Pass) + "&type=m3u_plus&output=ts"
-				res.Movies, res.Series, res.Live, fallbackErr = indexer.ParseM3U(m3uURL, nil)
+				movies, series, live, err := indexer.ParseM3U(m3uURL, nil)
+				fallbackErr = err
 				if fallbackErr == nil {
-					res.ProviderBase = e.BaseURL
-					res.ProviderUser = e.User
-					res.ProviderPass = e.Pass
+					if okCount == 0 {
+						firstProvider = provider.Entry{BaseURL: e.BaseURL, User: e.User, Pass: e.Pass}
+					}
+					mergedMovies = append(mergedMovies, movies...)
+					mergedSeries = append(mergedSeries, series...)
+					mergedLive = append(mergedLive, live...)
+					okCount++
 					log.Printf("Using get.php from %s", base)
-					break
 				}
 			}
-			if fallbackErr != nil {
+			if okCount == 0 {
 				return res, fmt.Errorf("no player_api OK and no get.php OK on any provider")
 			}
+			res.Movies, res.Series, res.Live = mergedMovies, mergedSeries, mergedLive
+			res.ProviderBase = firstProvider.BaseURL
+			res.ProviderUser = firstProvider.User
+			res.ProviderPass = firstProvider.Pass
+			if okCount > 1 {
+				log.Printf("Merged %d get.php provider feeds into one catalog", okCount)
+			}
+			res.Live = dedupeByTVGID(res.Live, cfg.StripStreamHosts)
 		}
 	} else {
 		return res, fmt.Errorf("need -m3u URL or set IPTV_TUNERR_PROVIDER_USER and IPTV_TUNERR_PROVIDER_PASS in .env")

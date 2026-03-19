@@ -104,6 +104,19 @@
      - remaining failures were upstream `513` or request-timeout/context-cancel outcomes, returned to the client as clean `502`
   3. release conclusion: app-side fixes are landed and validated; the remaining risk is provider/channel quality, not IPTV Tunerr logic
 
+**Current focus shift (post-release audit follow-up, 2026-03-19):**
+- User asked for another audit specifically looking for bugs, mistakes, logic errors, and gaps after the provider work landed.
+- Findings addressed in this pass:
+  1. `get.php` fallback still collapsed multi-provider mode to the first successful provider instead of merging feeds and preserving duplicate-channel backups
+  2. `probe` log output only redacted the primary provider password and could leak numbered-provider credentials
+  3. `probe` ranking output ignored `IPTV_TUNERR_BLOCK_CF_PROVIDERS`, so it could recommend hosts that runtime ingest would reject
+- Result:
+  1. `get.php` fallback now merges all successful provider feeds, dedupes by `tvg-id`, and preserves multi-provider backup URLs in fallback mode too
+  2. `probe` now logs provider URLs through `safeurl.RedactURL`, so numbered-provider usernames/passwords are not exposed
+  3. `probe` ranking now uses the same Cloudflare-blocking policy as runtime ingest
+  4. added regression coverage for merged `get.php` fallback providers
+  5. full `./scripts/verify` passed after the fixes
+
 **Current focus shift (intelligence cross-wiring epic, 2026-03-18):**
 - User requested the full next wave from the audit: structural cleanup plus runtime cross-wiring so the newer intelligence/reporting work actually changes behavior.
 - This is now tracked as a multi-PR epic in `memory-bank/work_breakdown.md` under `INT-001` through `INT-007`.

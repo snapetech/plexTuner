@@ -2230,3 +2230,16 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
   Verification:
     - `go test ./cmd/iptv-tunerr ./internal/tuner`
     - Real-provider `go run ./cmd/iptv-tunerr run -skip-health` on loopback with local `.env`
+
+---
+
+- Date: 2026-03-19
+  Title: Fix post-release audit gaps in probe and get.php fallback
+  Summary:
+    - Fixed the remaining multi-provider gap in the `get.php` fallback path so successful fallback feeds are merged and deduped instead of collapsing to the first provider only.
+    - Fixed `probe` logging to redact numbered-provider credentials via `safeurl.RedactURL` instead of only masking the primary provider password.
+    - Fixed `probe` ranking output to respect `IPTV_TUNERR_BLOCK_CF_PROVIDERS`, aligning operator-facing ranking with runtime ingest policy.
+    - Added regression coverage for merged multi-provider `get.php` fallback behavior.
+  Verification:
+    - `go test ./cmd/iptv-tunerr ./internal/provider ./internal/safeurl ./internal/tuner`
+    - `./scripts/verify`
