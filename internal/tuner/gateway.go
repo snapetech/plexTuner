@@ -71,6 +71,7 @@ type Gateway struct {
 }
 
 type gatewayReqIDKey struct{}
+type gatewayChannelKey struct{}
 
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	reqID := fmt.Sprintf("r%06d", atomic.AddUint64(&g.reqSeq, 1))
@@ -112,6 +113,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	r = r.WithContext(context.WithValue(r.Context(), gatewayChannelKey{}, channel))
 	log.Printf("gateway: req=%s recv path=%q channel=%q remote=%q ua=%q", reqID, r.URL.Path, channelID, r.RemoteAddr, r.UserAgent())
 	debugOpts := streamDebugOptionsFromEnv()
 	if debugOpts.HTTPHeaders {

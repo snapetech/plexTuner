@@ -258,6 +258,27 @@
 - Disable generic HLS ffmpeg reconnect flags (`IPTV_TUNERR_FFMPEG_HLS_RECONNECT=false`); let ffmpeg's HLS demuxer handle playlist refresh.
 - Confirm in IptvTunerr logs that the ffmpeg path now reports `reconnect=false` and reaches `startup-gate-ready` / `first-bytes`.
 
+### Loop: Multi-provider fallback URLs get detached from the credentials that actually belong to them
+
+**Symptom**
+- Channel changes, second sessions, or backup-URL failover still hit provider-2 or provider-3 URLs with provider-1 credentials.
+- Cloudflare/CDN troubleshooting looks half-fixed because the Go gateway may clear the first request, but ffmpeg later fails on the same stream family.
+
+**Why it's tricky**
+- The original live-channel model only tracked `StreamURLs`, with one global `ProviderUser` / `ProviderPass`.
+- Once channels are deduped, re-ordered, or host-filtered, URL order alone is not enough to recover which credentials belong to which provider entry.
+- ffmpeg is a second HTTP client; fixing only the Go request path leaves the relay handoff broken.
+
+**What works**
+- Treat fallback auth as per-stream metadata, not global process state.
+- Keep credential rules attached to stream URL prefixes through every catalog transform that can add, merge, or remove URLs.
+- When building ffmpeg HLS input headers, use the effective playlist URL to select the matching per-stream auth and forward any cookies already learned by the shared jar.
+
+**Where it's documented**
+- `internal/catalog/catalog.go`
+- `cmd/iptv-tunerr/cmd_catalog.go`
+- `internal/tuner/gateway_upstream.go`
+
 **Where it's documented**
 - `memory-bank/known_issues.md` (WebSafe ffmpeg startup gate + HLS reconnect follow-up)
 - `internal/tuner/gateway.go` (`IPTV_TUNERR_FFMPEG_HLS_RECONNECT` default for HLS ffmpeg path)

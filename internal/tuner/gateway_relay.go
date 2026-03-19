@@ -151,7 +151,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	if hlsLiveStartIndex != 0 {
 		args = append(args, "-live_start_index", strconv.Itoa(hlsLiveStartIndex))
 	}
-	if headers := g.ffmpegInputHeaderBlock(r, ffmpegInputHost); headers != "" {
+	if headers := g.ffmpegInputHeaderBlock(r, playlistURL, ffmpegInputHost); headers != "" {
 		args = append(args, "-headers", headers)
 	}
 	args = append(args, "-i", ffmpegPlaylistURL)

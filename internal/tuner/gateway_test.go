@@ -781,7 +781,7 @@ func TestGateway_ffmpegInputHeaderBlock_includesForwardedHeaders(t *testing.T) {
 	req.Header.Set("Referer", "https://referer.example")
 	req.Header.Set("Origin", "https://origin.example")
 	req.Header.Set("Authorization", "Bearer upstream-token")
-	block := g.ffmpegInputHeaderBlock(req, "cdn.example")
+	block := g.ffmpegInputHeaderBlock(req, "http://cdn.example/live/u/p/1.m3u8", "cdn.example")
 	if !strings.Contains(block, "Host: cdn.example") {
 		t.Fatalf("missing host header in block: %q", block)
 	}
@@ -931,7 +931,7 @@ func TestGateway_ffmpegInputHeaderBlock_includesCustomHeaders(t *testing.T) {
 			"X-Custom": "custom-value",
 		},
 	}
-	block := g.ffmpegInputHeaderBlock(nil, "cdn.example")
+	block := g.ffmpegInputHeaderBlock(nil, "http://cdn.example/live/u/p/1.m3u8", "cdn.example")
 	if !strings.Contains(block, "Referer: http://smarter8k.ru") {
 		t.Fatalf("missing custom Referer in block: %q", block)
 	}
@@ -952,7 +952,7 @@ func TestGateway_ffmpegInputHeaderBlock_customHostOverridesResolvedHost(t *testi
 			"Host": "edge.example",
 		},
 	}
-	block := g.ffmpegInputHeaderBlock(nil, "resolved.example")
+	block := g.ffmpegInputHeaderBlock(nil, "http://resolved.example/live/u/p/1.m3u8", "resolved.example")
 	if !strings.Contains(block, "Host: edge.example") {
 		t.Fatalf("missing custom Host in block: %q", block)
 	}
@@ -1049,5 +1049,57 @@ func TestPersistentCookieJarRemovesExpiredCookies(t *testing.T) {
 	}
 	if strings.Contains(string(data), "expired") {
 		t.Fatalf("cookie file still contains expired cookie: %s", string(data))
+	}
+}
+
+func TestGateway_applyUpstreamRequestHeaders_usesPerStreamAuth(t *testing.T) {
+	ch := &catalog.LiveChannel{
+		StreamAuths: []catalog.StreamAuth{{
+			Prefix: "http://provider2.example/live/u2/p2/",
+			User:   "u2",
+			Pass:   "p2",
+		}},
+	}
+	g := &Gateway{ProviderUser: "u1", ProviderPass: "p1"}
+	req := httptest.NewRequest(http.MethodGet, "http://provider2.example/live/u2/p2/1001.m3u8", nil)
+	req = req.WithContext(context.WithValue(req.Context(), gatewayChannelKey{}, ch))
+	g.applyUpstreamRequestHeaders(req, nil)
+	user, pass, ok := req.BasicAuth()
+	if !ok || user != "u2" || pass != "p2" {
+		t.Fatalf("BasicAuth = %q/%q ok=%t, want u2/p2", user, pass, ok)
+	}
+}
+
+func TestGateway_ffmpegInputHeaderBlock_usesPerStreamAuthAndCookies(t *testing.T) {
+	jar, err := newPersistentCookieJar("")
+	if err != nil {
+		t.Fatalf("newPersistentCookieJar: %v", err)
+	}
+	playlistURL := "http://provider2.example/live/u2/p2/1001.m3u8"
+	u, err := url.Parse(playlistURL)
+	if err != nil {
+		t.Fatalf("url.Parse: %v", err)
+	}
+	jar.SetCookies(u, []*http.Cookie{{Name: "cf_clearance", Value: "token123", Path: "/"}})
+	ch := &catalog.LiveChannel{
+		StreamAuths: []catalog.StreamAuth{{
+			Prefix: "http://provider2.example/live/u2/p2/",
+			User:   "u2",
+			Pass:   "p2",
+		}},
+	}
+	g := &Gateway{
+		Client:       &http.Client{Jar: jar},
+		ProviderUser: "u1",
+		ProviderPass: "p1",
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/1", nil)
+	req = req.WithContext(context.WithValue(req.Context(), gatewayChannelKey{}, ch))
+	block := g.ffmpegInputHeaderBlock(req, playlistURL, "provider2.example")
+	if !strings.Contains(block, "Authorization: Basic dTI6cDI=") {
+		t.Fatalf("missing per-stream auth in block: %q", block)
+	}
+	if !strings.Contains(block, "Cookie: cf_clearance=token123") {
+		t.Fatalf("missing cookie jar cookies in block: %q", block)
 	}
 }

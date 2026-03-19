@@ -2171,3 +2171,19 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - Kept the recorder-daemon concept consolidated in one future-feature explainer rather than leaving key rationale only in chat history.
   Verification:
     - Docs-only review of the updated explanation page.
+
+---
+
+- Date: 2026-03-19
+  Title: Finish Cloudflare handoff and multi-provider credential rolling
+  Summary:
+    - Evaluated the public `rkdavies/iptvtunerr` fork state and confirmed the remaining Cloudflare/credential work was not fully represented there yet.
+    - Added per-stream auth metadata to live channels so fallback URLs can keep the correct provider credentials after M3U enrichment, duplicate-channel merging, and host filtering.
+    - Updated the gateway and ffmpeg HLS relay input-header generation to select auth by stream URL and forward shared cookie-jar cookies for the effective playlist URL.
+    - Added regression tests covering auth-preserving dedupe/strip, multi-provider auth assignment, gateway per-stream auth usage, and ffmpeg cookie forwarding.
+    - Updated the changelog and recurring-loops notes so future Cloudflare/fallback work does not regress back to global-credential assumptions.
+  Verification:
+    - `go test ./internal/tuner`
+    - `go test ./cmd/iptv-tunerr`
+    - `go test ./...`
+    - `./scripts/verify`

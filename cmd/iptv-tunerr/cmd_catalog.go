@@ -55,6 +55,7 @@ func stripStreamHosts(live []catalog.LiveChannel, hosts []string) []catalog.Live
 			continue
 		}
 		ch.StreamURLs = filtered
+		ch.StreamAuths = filterStreamAuthRules(ch.StreamAuths, filtered)
 		ch.StreamURL = filtered[0]
 		out = append(out, ch)
 	}
@@ -88,6 +89,7 @@ func dedupeByTVGID(live []catalog.LiveChannel, cfHosts []string) []catalog.LiveC
 			for _, u := range ch.StreamURLs {
 				seen[u] = struct{}{}
 			}
+			ch.StreamAuths = filterStreamAuthRules(ch.StreamAuths, ch.StreamURLs)
 			byTVGID[ch.TVGID] = &entry{idx: len(out), seen: seen}
 			out = append(out, ch)
 			continue
@@ -97,6 +99,9 @@ func dedupeByTVGID(live []catalog.LiveChannel, cfHosts []string) []catalog.LiveC
 				out[e.idx].StreamURLs = append(out[e.idx].StreamURLs, u)
 				e.seen[u] = struct{}{}
 			}
+		}
+		for _, rule := range ch.StreamAuths {
+			out[e.idx].StreamAuths = appendStreamAuthRule(out[e.idx].StreamAuths, rule)
 		}
 		merged++
 	}
@@ -115,6 +120,7 @@ func dedupeByTVGID(live []catalog.LiveChannel, cfHosts []string) []catalog.LiveC
 				}
 			}
 			out[i].StreamURLs = append(nonCF, cfURLs...)
+			out[i].StreamAuths = filterStreamAuthRules(out[i].StreamAuths, out[i].StreamURLs)
 			if len(out[i].StreamURLs) > 0 {
 				out[i].StreamURL = out[i].StreamURLs[0]
 			}
@@ -152,14 +158,16 @@ func enrichM3UWithProviderBases(cfg *config.Config, live []catalog.LiveChannel) 
 	}
 	log.Printf("enrichM3UWithProviderBases: adding %d provider base(s) as stream fallback for %d channels", len(allBases), len(live))
 	for i := range live {
-		backups := streamURLsFromRankedBases(live[i].StreamURL, allBases)
+		variants := streamVariantsFromRankedEntries(live[i].StreamURL, ranked)
 		existing := make(map[string]struct{}, len(live[i].StreamURLs))
 		for _, u := range live[i].StreamURLs {
 			existing[u] = struct{}{}
 		}
-		for _, u := range backups {
+		for _, variant := range variants {
+			u := variant.URL
 			if _, seen := existing[u]; !seen {
 				live[i].StreamURLs = append(live[i].StreamURLs, u)
+				live[i].StreamAuths = appendStreamAuthRule(live[i].StreamAuths, variant.Auth)
 				existing[u] = struct{}{}
 			}
 		}
@@ -184,6 +192,85 @@ func streamURLsFromRankedBases(streamURL string, rankedBases []string) []string 
 		out = append(out, base+path)
 	}
 	return out
+}
+
+func appendStreamAuthRule(rules []catalog.StreamAuth, rule catalog.StreamAuth) []catalog.StreamAuth {
+	if strings.TrimSpace(rule.Prefix) == "" {
+		return rules
+	}
+	for _, existing := range rules {
+		if existing.Prefix == rule.Prefix && existing.User == rule.User && existing.Pass == rule.Pass {
+			return rules
+		}
+	}
+	return append(rules, rule)
+}
+
+func filterStreamAuthRules(rules []catalog.StreamAuth, urls []string) []catalog.StreamAuth {
+	if len(rules) == 0 || len(urls) == 0 {
+		return nil
+	}
+	filtered := make([]catalog.StreamAuth, 0, len(rules))
+	for _, rule := range rules {
+		prefix := strings.TrimSpace(rule.Prefix)
+		if prefix == "" {
+			continue
+		}
+		for _, rawURL := range urls {
+			if strings.HasPrefix(rawURL, prefix) {
+				filtered = appendStreamAuthRule(filtered, rule)
+				break
+			}
+		}
+	}
+	return filtered
+}
+
+func streamVariantsFromRankedEntries(streamURL string, ranked []provider.EntryResult) []streamVariant {
+	if len(ranked) == 0 {
+		return nil
+	}
+	u, err := url.Parse(streamURL)
+	if err != nil {
+		return []streamVariant{{URL: streamURL}}
+	}
+	path := u.Path
+	if u.RawQuery != "" {
+		path += "?" + u.RawQuery
+	}
+	out := make([]streamVariant, 0, len(ranked))
+	for _, er := range ranked {
+		base := strings.TrimSuffix(er.Entry.BaseURL, "/")
+		if base == "" {
+			continue
+		}
+		variantURL := base + path
+		out = append(out, streamVariant{
+			URL: variantURL,
+			Auth: catalog.StreamAuth{
+				Prefix: streamAuthPrefix(variantURL),
+				User:   er.Entry.User,
+				Pass:   er.Entry.Pass,
+			},
+		})
+	}
+	return out
+}
+
+func streamAuthPrefix(rawURL string) string {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || u == nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	prefix := u.Scheme + "://" + u.Host
+	path := strings.TrimSuffix(u.EscapedPath(), "/")
+	if path == "" {
+		return prefix + "/"
+	}
+	if idx := strings.LastIndex(path, "/"); idx >= 0 {
+		path = path[:idx+1]
+	}
+	return prefix + path
 }
 
 func buildCatchupCapsulePreviewFromRef(path, xmltvRef string, horizon time.Duration, limit int, guidePolicy string) (tuner.CatchupCapsulePreview, error) {
@@ -218,6 +305,11 @@ type catalogResult struct {
 	ProviderBase string
 	ProviderUser string
 	ProviderPass string
+}
+
+type streamVariant struct {
+	URL  string
+	Auth catalog.StreamAuth
 }
 
 func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error) {
@@ -292,11 +384,19 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 			)
 			if fetchErr == nil {
 				for i := range res.Live {
-					urls := streamURLsFromRankedBases(res.Live[i].StreamURL, allBases)
-					if len(urls) > 0 {
-						res.Live[i].StreamURLs = urls
-						if res.Live[i].StreamURL == "" {
-							res.Live[i].StreamURL = urls[0]
+					variants := streamVariantsFromRankedEntries(res.Live[i].StreamURL, ranked)
+					if len(variants) > 0 {
+						res.Live[i].StreamURLs = res.Live[i].StreamURLs[:0]
+						res.Live[i].StreamAuths = res.Live[i].StreamAuths[:0]
+						for _, variant := range variants {
+							if strings.TrimSpace(variant.URL) == "" {
+								continue
+							}
+							res.Live[i].StreamURLs = append(res.Live[i].StreamURLs, variant.URL)
+							res.Live[i].StreamAuths = appendStreamAuthRule(res.Live[i].StreamAuths, variant.Auth)
+						}
+						if len(res.Live[i].StreamURLs) > 0 {
+							res.Live[i].StreamURL = res.Live[i].StreamURLs[0]
 						}
 					}
 				}

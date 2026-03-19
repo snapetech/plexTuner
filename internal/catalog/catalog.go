@@ -11,14 +11,21 @@ import (
 // LiveChannel is a live TV channel with primary + backup stream URLs.
 // ChannelID is a stable identifier for streaming URLs (e.g. tvg-id or provider stream_id); used in /stream/{ChannelID}.
 type LiveChannel struct {
-	ChannelID   string   `json:"channel_id"` // stable ID for /stream/{ChannelID}
-	DNAID       string   `json:"dna_id,omitempty"`
-	GuideNumber string   `json:"guide_number"`
-	GuideName   string   `json:"guide_name"`
-	StreamURL   string   `json:"stream_url"`  // primary (first working)
-	StreamURLs  []string `json:"stream_urls"` // primary + backups for failover
-	EPGLinked   bool     `json:"epg_linked"`  // has tvg-id / can be matched to guide
-	TVGID       string   `json:"tvg_id,omitempty"`
+	ChannelID   string       `json:"channel_id"` // stable ID for /stream/{ChannelID}
+	DNAID       string       `json:"dna_id,omitempty"`
+	GuideNumber string       `json:"guide_number"`
+	GuideName   string       `json:"guide_name"`
+	StreamURL   string       `json:"stream_url"`             // primary (first working)
+	StreamURLs  []string     `json:"stream_urls"`            // primary + backups for failover
+	StreamAuths []StreamAuth `json:"stream_auths,omitempty"` // optional per-stream auth rules for fallback URLs
+	EPGLinked   bool         `json:"epg_linked"`             // has tvg-id / can be matched to guide
+	TVGID       string       `json:"tvg_id,omitempty"`
+}
+
+type StreamAuth struct {
+	Prefix string `json:"prefix"`
+	User   string `json:"user,omitempty"`
+	Pass   string `json:"pass,omitempty"`
 }
 
 // Catalog is the normalized VOD catalog plus optional live channels.

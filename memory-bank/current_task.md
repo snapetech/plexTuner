@@ -52,6 +52,20 @@
   2. local loopback smoke on `127.0.0.1:5019` succeeded consistently
   3. `guide-health`, `epg-doctor`, `catchup-capsules`, and `epg-link-report` all ran end-to-end against the served local `guide.xml`
 
+**Current focus shift (Cloudflare / credential-rolling finish line, 2026-03-19):**
+- User reported newer tester feedback from RK Davies / phantasm: Cloudflare handling was improved but still not complete, and multi-account credential rolling still broke when fallback URLs crossed provider entries.
+- This pass covers:
+  1. evaluate the public fork state versus our current branch and confirm the remaining gaps are not fully represented in the public fork tip
+  2. preserve provider-specific auth alongside fallback stream URLs so merged/deduped channels do not lose credential affinity
+  3. make ffmpeg HLS inputs inherit both per-stream auth and cookie-jar cookies so CF-cleared sessions survive the handoff from Go fetches to ffmpeg
+  4. add regression tests and rerun repo-wide verification before push
+- Result:
+  1. confirmed the public `rkdavies/iptvtunerr` fork still only exposes the older `15d7cff` tip, while the remaining work was to finish the behavior already partially integrated upstream
+  2. added `LiveChannel.StreamAuths` and threaded per-stream auth selection through catalog enrichment, duplicate-channel merging, host stripping, gateway upstream requests, and ffmpeg header generation
+  3. ffmpeg relay inputs now include learned cookie-jar cookies for the actual playlist URL, which closes the Cloudflare clearance gap between Go HTTP and ffmpeg
+  4. added regression tests for auth-preserving dedupe/strip, per-provider auth assignment, gateway per-stream auth selection, and ffmpeg cookie forwarding
+  5. verification passed with `go test ./...` and `./scripts/verify`
+
 **Current focus shift (intelligence cross-wiring epic, 2026-03-18):**
 - User requested the full next wave from the audit: structural cleanup plus runtime cross-wiring so the newer intelligence/reporting work actually changes behavior.
 - This is now tracked as a multi-PR epic in `memory-bank/work_breakdown.md` under `INT-001` through `INT-007`.

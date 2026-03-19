@@ -45,6 +45,118 @@ func TestFetchCatalog_MergesMultipleDirectM3UURLs(t *testing.T) {
 	}
 }
 
+func TestDedupeByTVGID_MergesStreamAuthsWithURLs(t *testing.T) {
+	live := []catalog.LiveChannel{
+		{
+			ChannelID:   "a",
+			GuideName:   "FOX News",
+			TVGID:       "foxnews.us",
+			StreamURL:   "http://provider1.example/live/u1/p1/1001.m3u8",
+			StreamURLs:  []string{"http://provider1.example/live/u1/p1/1001.m3u8"},
+			StreamAuths: []catalog.StreamAuth{{Prefix: "http://provider1.example/live/u1/p1/", User: "u1", Pass: "p1"}},
+		},
+		{
+			ChannelID:   "b",
+			GuideName:   "FOX News Backup",
+			TVGID:       "foxnews.us",
+			StreamURL:   "http://provider2.example/live/u2/p2/1001.m3u8",
+			StreamURLs:  []string{"http://provider2.example/live/u2/p2/1001.m3u8"},
+			StreamAuths: []catalog.StreamAuth{{Prefix: "http://provider2.example/live/u2/p2/", User: "u2", Pass: "p2"}},
+		},
+	}
+
+	got := dedupeByTVGID(live, nil)
+	if len(got) != 1 {
+		t.Fatalf("dedupe len=%d want 1", len(got))
+	}
+	if len(got[0].StreamURLs) != 2 {
+		t.Fatalf("stream urls len=%d want 2", len(got[0].StreamURLs))
+	}
+	if len(got[0].StreamAuths) != 2 {
+		t.Fatalf("stream auths len=%d want 2", len(got[0].StreamAuths))
+	}
+}
+
+func TestStripStreamHosts_PrunesStreamAuthsForDroppedURLs(t *testing.T) {
+	live := []catalog.LiveChannel{{
+		ChannelID:  "a",
+		GuideName:  "FOX News",
+		StreamURL:  "http://good.example/live/u2/p2/1001.m3u8",
+		StreamURLs: []string{"http://blocked.example/live/u1/p1/1001.m3u8", "http://good.example/live/u2/p2/1001.m3u8"},
+		StreamAuths: []catalog.StreamAuth{
+			{Prefix: "http://blocked.example/live/u1/p1/", User: "u1", Pass: "p1"},
+			{Prefix: "http://good.example/live/u2/p2/", User: "u2", Pass: "p2"},
+		},
+	}}
+
+	got := stripStreamHosts(live, []string{"blocked.example"})
+	if len(got) != 1 {
+		t.Fatalf("strip len=%d want 1", len(got))
+	}
+	if len(got[0].StreamURLs) != 1 || got[0].StreamURLs[0] != "http://good.example/live/u2/p2/1001.m3u8" {
+		t.Fatalf("stream urls=%v", got[0].StreamURLs)
+	}
+	if len(got[0].StreamAuths) != 1 || got[0].StreamAuths[0].User != "u2" {
+		t.Fatalf("stream auths=%+v", got[0].StreamAuths)
+	}
+}
+
+func TestFetchCatalog_AssignsPerProviderStreamAuths(t *testing.T) {
+	var base1, base2 string
+	srv1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodHead && r.URL.Path == "/":
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/player_api.php" && r.URL.RawQuery == "username=u1&password=p1":
+			_, _ = w.Write([]byte(`{"user_info":{"auth":1},"server_info":{"url":"` + base1 + `","server_url":"` + base1 + `"}}`))
+		case r.URL.Path == "/player_api.php" && strings.Contains(r.URL.RawQuery, "action=get_live_streams"):
+			_, _ = w.Write([]byte(`[{"num":101,"name":"FOX News","stream_id":1001,"epg_channel_id":"foxnews.us"}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv1.Close()
+	base1 = srv1.URL
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodHead && r.URL.Path == "/":
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/player_api.php" && r.URL.RawQuery == "username=u2&password=p2":
+			_, _ = w.Write([]byte(`{"user_info":{"auth":1},"server_info":{"url":"` + base2 + `","server_url":"` + base2 + `"}}`))
+		case r.URL.Path == "/player_api.php" && strings.Contains(r.URL.RawQuery, "action=get_live_streams"):
+			_, _ = w.Write([]byte(`[{"num":101,"name":"FOX News","stream_id":1001,"epg_channel_id":"foxnews.us"}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv2.Close()
+	base2 = srv2.URL
+
+	cfg := &config.Config{
+		ProviderBaseURL: base1,
+		ProviderUser:    "u1",
+		ProviderPass:    "p1",
+		LiveOnly:        true,
+	}
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL_2", base2)
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER_2", "u2")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS_2", "p2")
+
+	res, err := fetchCatalog(cfg, "")
+	if err != nil {
+		t.Fatalf("fetchCatalog error: %v", err)
+	}
+	if len(res.Live) != 1 {
+		t.Fatalf("live len=%d want 1", len(res.Live))
+	}
+	if len(res.Live[0].StreamURLs) != 2 {
+		t.Fatalf("stream urls len=%d want 2", len(res.Live[0].StreamURLs))
+	}
+	if len(res.Live[0].StreamAuths) != 2 {
+		t.Fatalf("stream auths len=%d want 2", len(res.Live[0].StreamAuths))
+	}
+}
+
 func TestFetchCatalog_FallsBackToPlayerAPIWhenBuiltGetPHPFails(t *testing.T) {
 	var baseURL string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

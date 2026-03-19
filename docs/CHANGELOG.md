@@ -16,6 +16,8 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 ### Streaming
 - **Provider/CDN compatibility controls**: added `IPTV_TUNERR_UPSTREAM_HEADERS`, `IPTV_TUNERR_UPSTREAM_ADD_SEC_FETCH`, `IPTV_TUNERR_UPSTREAM_USER_AGENT`, `IPTV_TUNERR_COOKIE_JAR_FILE`, `IPTV_TUNERR_FFMPEG_DISABLED`, and `IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE` so operators can match stricter upstream header/cookie expectations and disable ffmpeg-side host rewriting when necessary.
 - **Redirect-safe HLS relay**: HLS playlist rewriting and refresh now track the effective post-redirect playlist URL, so relative segment or nested playlist paths keep resolving correctly after CDN redirects.
+- **Credential-aware fallback stream routing**: multi-provider fallback URLs now keep per-stream auth metadata through catalog dedupe and host filtering, so channel changes and second-session failover do not silently reuse provider-1 credentials against provider-2 URLs.
+- **FFmpeg Cloudflare cookie forwarding**: ffmpeg HLS relay inputs now inherit the same per-stream credentials and learned upstream cookies as the Go gateway client, which closes the remaining gap where Cloudflare-cleared playlists still failed once ffmpeg took over segment fetches.
 
 ### Guide / intelligence
 - **Guide health report**: added `guide-health` plus `/guide/health.json` to combine XMLTV match status with actual merged-guide coverage, including detection of placeholder-only channel rows versus real programme blocks.

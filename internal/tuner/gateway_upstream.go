@@ -7,10 +7,12 @@ import (
 	"net"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/snapetech/iptvtunerr/internal/catalog"
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
 )
 
@@ -74,6 +76,62 @@ func (g *Gateway) customHeaderValue(name string) (string, bool) {
 	return "", false
 }
 
+func gatewayChannelFromContext(ctx context.Context) *catalog.LiveChannel {
+	if ctx == nil {
+		return nil
+	}
+	ch, _ := ctx.Value(gatewayChannelKey{}).(*catalog.LiveChannel)
+	return ch
+}
+
+func streamAuthForURL(ch *catalog.LiveChannel, rawURL string) (catalog.StreamAuth, bool) {
+	if ch == nil || strings.TrimSpace(rawURL) == "" {
+		return catalog.StreamAuth{}, false
+	}
+	var best catalog.StreamAuth
+	bestLen := -1
+	for _, rule := range ch.StreamAuths {
+		prefix := strings.TrimSpace(rule.Prefix)
+		if prefix == "" {
+			continue
+		}
+		if strings.HasPrefix(rawURL, prefix) && len(prefix) > bestLen {
+			best = rule
+			bestLen = len(prefix)
+		}
+	}
+	return best, bestLen >= 0
+}
+
+func (g *Gateway) authForURL(ctx context.Context, rawURL string) (string, string) {
+	if rule, ok := streamAuthForURL(gatewayChannelFromContext(ctx), rawURL); ok {
+		return rule.User, rule.Pass
+	}
+	return g.ProviderUser, g.ProviderPass
+}
+
+func (g *Gateway) cookieHeaderForURL(rawURL string) string {
+	if g == nil || g.Client == nil || g.Client.Jar == nil || strings.TrimSpace(rawURL) == "" {
+		return ""
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u == nil {
+		return ""
+	}
+	cookies := g.Client.Jar.Cookies(u)
+	if len(cookies) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(cookies))
+	for _, c := range cookies {
+		if c == nil || strings.TrimSpace(c.Name) == "" {
+			continue
+		}
+		parts = append(parts, c.Name+"="+c.Value)
+	}
+	return strings.Join(parts, "; ")
+}
+
 func (g *Gateway) applyUpstreamRequestHeaders(req *http.Request, incoming *http.Request) {
 	if req == nil {
 		return
@@ -94,8 +152,9 @@ func (g *Gateway) applyUpstreamRequestHeaders(req *http.Request, incoming *http.
 			}
 		}
 	}
-	if g.ProviderUser != "" || g.ProviderPass != "" {
-		req.SetBasicAuth(g.ProviderUser, g.ProviderPass)
+	authUser, authPass := g.authForURL(req.Context(), req.URL.String())
+	if authUser != "" || authPass != "" {
+		req.SetBasicAuth(authUser, authPass)
 	}
 	if host, ok := g.customHeaderValue("Host"); ok {
 		req.Host = host
@@ -138,7 +197,7 @@ func (g *Gateway) newUpstreamRequest(ctx context.Context, incoming *http.Request
 	return req, nil
 }
 
-func (g *Gateway) ffmpegInputHeaderBlock(incoming *http.Request, hostOverride string) string {
+func (g *Gateway) ffmpegInputHeaderBlock(incoming *http.Request, rawURL, hostOverride string) string {
 	lines := make([]string, 0, 8)
 	if host, ok := g.customHeaderValue("Host"); ok {
 		lines = appendFFmpegHeaderLine(lines, "Host", host)
@@ -157,9 +216,16 @@ func (g *Gateway) ffmpegInputHeaderBlock(incoming *http.Request, hostOverride st
 			}
 		}
 	}
-	if g.ProviderUser != "" || g.ProviderPass != "" {
-		auth := base64.StdEncoding.EncodeToString([]byte(g.ProviderUser + ":" + g.ProviderPass))
+	authUser, authPass := g.ProviderUser, g.ProviderPass
+	if incoming != nil {
+		authUser, authPass = g.authForURL(incoming.Context(), rawURL)
+	}
+	if authUser != "" || authPass != "" {
+		auth := base64.StdEncoding.EncodeToString([]byte(authUser + ":" + authPass))
 		lines = appendFFmpegHeaderLine(lines, "Authorization", "Basic "+auth)
+	}
+	if cookieHeader := g.cookieHeaderForURL(rawURL); cookieHeader != "" {
+		lines = appendFFmpegHeaderLine(lines, "Cookie", cookieHeader)
 	}
 	if ua, ok := g.customHeaderValue("User-Agent"); ok {
 		lines = appendFFmpegHeaderLine(lines, "User-Agent", ua)
