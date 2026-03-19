@@ -23,6 +23,24 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Fix second-pass audit CLI and local-test harness issues
+  Summary:
+    - Adjusted the top-level usage path so `iptv-tunerr help` behaves like a normal help request and exits successfully.
+    - Fixed `scripts/iptvtunerr-local-test.sh` so explicit runtime override env vars win over `.env`, which restores the loopback/alternate-port smoke path.
+    - Revalidated the exact repros with `help`, explicit loopback smoke, and full repo verification.
+  Verification:
+    - `go test ./cmd/iptv-tunerr`
+    - `go run ./cmd/iptv-tunerr help`
+    - `IPTV_TUNERR_BASE_URL=http://127.0.0.1:5015 IPTV_TUNERR_ADDR=:5015 ./scripts/iptvtunerr-local-test.sh all`
+    - `./scripts/verify`
+  Notes:
+    - This closes the remaining concrete defects found during the local audit that were fixable without external provider/media-server credentials.
+  Opportunities filed:
+    - none
+  Links:
+    - cmd/iptv-tunerr/main.go, cmd/iptv-tunerr/main_test.go, scripts/iptvtunerr-local-test.sh
+
+- Date: 2026-03-19
   Title: Fix audit follow-up CLI and script defects
   Summary:
     - Added a top-level `help` / `-h` / `--help` alias path in the CLI entrypoint so usage is reachable through the expected command form.

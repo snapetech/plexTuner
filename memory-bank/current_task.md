@@ -30,6 +30,17 @@
   2. `./scripts/quick-check.sh` now executes successfully
   3. second-pass verification is green
 
+**Current focus shift (audit follow-up round 2, 2026-03-19):**
+- User asked to keep going after the first audit follow-up landed.
+- This pass covers:
+  1. make `iptv-tunerr help` return success (`0`) instead of an error exit code
+  2. fix `scripts/iptvtunerr-local-test.sh` so explicit caller-supplied `IPTV_TUNERR_BASE_URL` / `IPTV_TUNERR_ADDR` are not overridden by `.env`
+  3. rerun the exact repro paths (`help`, `verify`, and local smoke with explicit loopback override)
+- Result:
+  1. `go run ./cmd/iptv-tunerr help` now exits `0`
+  2. `IPTV_TUNERR_BASE_URL=http://127.0.0.1:5015 IPTV_TUNERR_ADDR=:5015 ./scripts/iptvtunerr-local-test.sh all` now succeeds
+  3. full `./scripts/verify` still passes
+
 **Current focus shift (intelligence cross-wiring epic, 2026-03-18):**
 - User requested the full next wave from the audit: structural cleanup plus runtime cross-wiring so the newer intelligence/reporting work actually changes behavior.
 - This is now tracked as a multi-PR epic in `memory-bank/work_breakdown.md` under `INT-001` through `INT-007`.

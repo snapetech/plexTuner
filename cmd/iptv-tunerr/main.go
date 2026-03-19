@@ -60,6 +60,13 @@ func usageText(prog string, commands []commandSpec, version string, sections []s
 	return out.String()
 }
 
+func topLevelUsageRequested(args []string) bool {
+	if len(args) < 2 {
+		return true
+	}
+	return normalizeTopLevelCommand(args[1]) == ""
+}
+
 func main() {
 	_ = config.LoadEnvFile(".env")
 	log.SetFlags(log.LstdFlags)
@@ -82,9 +89,12 @@ func main() {
 		commandByName[cmd.Name] = cmd
 	}
 
-	if len(os.Args) < 2 || normalizeTopLevelCommand(os.Args[1]) == "" {
+	if topLevelUsageRequested(os.Args) {
 		fmt.Fprint(os.Stderr, usageText(os.Args[0], commands, Version, sections))
-		os.Exit(1)
+		if len(os.Args) < 2 {
+			os.Exit(1)
+		}
+		os.Exit(0)
 	}
 
 	cfg := config.Load()

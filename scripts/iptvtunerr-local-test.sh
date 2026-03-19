@@ -14,12 +14,24 @@ CATALOG_PATH="${IPTV_TUNERR_CATALOG_PATH:-./catalog.json}"
 WAIT_SECS="${WAIT_SECS:-20}"
 
 load_env() {
+  local base_set="${IPTV_TUNERR_BASE_URL+x}" base_val="${IPTV_TUNERR_BASE_URL-}"
+  local addr_set="${IPTV_TUNERR_ADDR+x}" addr_val="${IPTV_TUNERR_ADDR-}"
+  local catalog_set="${IPTV_TUNERR_CATALOG_PATH+x}" catalog_val="${IPTV_TUNERR_CATALOG_PATH-}"
+  local wait_set="${WAIT_SECS+x}" wait_val="${WAIT_SECS-}"
   if [[ -f .env ]]; then
     set -a
     # shellcheck disable=SC1091
     source .env
     set +a
   fi
+  if [[ -n "${base_set:-}" ]]; then export IPTV_TUNERR_BASE_URL="$base_val"; fi
+  if [[ -n "${addr_set:-}" ]]; then export IPTV_TUNERR_ADDR="$addr_val"; fi
+  if [[ -n "${catalog_set:-}" ]]; then export IPTV_TUNERR_CATALOG_PATH="$catalog_val"; fi
+  if [[ -n "${wait_set:-}" ]]; then export WAIT_SECS="$wait_val"; fi
+  BASE_URL="${IPTV_TUNERR_BASE_URL:-$BASE_URL}"
+  ADDR="${IPTV_TUNERR_ADDR:-$ADDR}"
+  CATALOG_PATH="${IPTV_TUNERR_CATALOG_PATH:-$CATALOG_PATH}"
+  WAIT_SECS="${WAIT_SECS:-20}"
 }
 
 log() {

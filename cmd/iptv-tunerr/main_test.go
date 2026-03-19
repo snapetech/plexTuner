@@ -270,3 +270,20 @@ func TestUsageTextIncludesCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestTopLevelUsageRequested(t *testing.T) {
+	tests := []struct {
+		args []string
+		want bool
+	}{
+		{args: []string{"iptv-tunerr"}, want: true},
+		{args: []string{"iptv-tunerr", "help"}, want: true},
+		{args: []string{"iptv-tunerr", "--help"}, want: true},
+		{args: []string{"iptv-tunerr", "run"}, want: false},
+	}
+	for _, tt := range tests {
+		if got := topLevelUsageRequested(tt.args); got != tt.want {
+			t.Fatalf("topLevelUsageRequested(%q) = %t, want %t", tt.args, got, tt.want)
+		}
+	}
+}
