@@ -2218,3 +2218,15 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - `go test ./internal/provider ./cmd/iptv-tunerr`
     - `./scripts/verify`
     - Real-provider `go run ./cmd/iptv-tunerr probe` with local `.env`
+
+---
+
+- Date: 2026-03-19
+  Title: Retry lower-ranked providers and finish release-confidence smoke
+  Summary:
+    - Release-confidence smoke exposed one more ranked-path bug: once `probe` correctly marked both providers `OK`, `fetchCatalog` could still fail if the top-ranked provider authenticated successfully but could not complete live indexing.
+    - Fixed the ranked index path to try the next ranked provider before giving up, while still preserving the full ranked backup/auth set on the resulting live channels.
+    - Revalidated with a fresh real-provider `run -skip-health`: the server now boots cleanly on the ranked path, keeps `51641` channels with backups, and sampled channel failures are now clearly upstream (`invalid-hls-playlist`, `513`, timeout) rather than app-side routing failures.
+  Verification:
+    - `go test ./cmd/iptv-tunerr ./internal/tuner`
+    - Real-provider `go run ./cmd/iptv-tunerr run -skip-health` on loopback with local `.env`

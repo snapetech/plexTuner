@@ -157,6 +157,63 @@ func TestFetchCatalog_AssignsPerProviderStreamAuths(t *testing.T) {
 	}
 }
 
+func TestFetchCatalog_TriesNextRankedProviderWhenBestIndexFails(t *testing.T) {
+	var base1, base2 string
+	srv1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodHead && r.URL.Path == "/":
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/player_api.php" && r.URL.RawQuery == "username=u1&password=p1":
+			_, _ = w.Write([]byte(`{"user_info":{"auth":1},"server_info":{"url":"` + base1 + `","server_url":"` + base1 + `"}}`))
+		case r.URL.Path == "/player_api.php" && strings.Contains(r.URL.RawQuery, "action=get_live_streams"):
+			http.Error(w, "broken live index", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv1.Close()
+	base1 = srv1.URL
+
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodHead && r.URL.Path == "/":
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/player_api.php" && r.URL.RawQuery == "username=u2&password=p2":
+			_, _ = w.Write([]byte(`{"user_info":{"auth":1},"server_info":{"url":"` + base2 + `","server_url":"` + base2 + `"}}`))
+		case r.URL.Path == "/player_api.php" && strings.Contains(r.URL.RawQuery, "action=get_live_streams"):
+			_, _ = w.Write([]byte(`[{"num":101,"name":"FOX News","stream_id":1001,"epg_channel_id":"foxnews.us"}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv2.Close()
+	base2 = srv2.URL
+
+	cfg := &config.Config{
+		ProviderBaseURL: base1,
+		ProviderUser:    "u1",
+		ProviderPass:    "p1",
+		LiveOnly:        true,
+	}
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL_2", base2)
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER_2", "u2")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS_2", "p2")
+
+	res, err := fetchCatalog(cfg, "")
+	if err != nil {
+		t.Fatalf("fetchCatalog error: %v", err)
+	}
+	if res.APIBase != base2 {
+		t.Fatalf("APIBase=%q want %q", res.APIBase, base2)
+	}
+	if len(res.Live) != 1 {
+		t.Fatalf("live len=%d want 1", len(res.Live))
+	}
+	if len(res.Live[0].StreamURLs) != 2 || len(res.Live[0].StreamAuths) != 2 {
+		t.Fatalf("stream_urls=%d stream_auths=%d want 2/2", len(res.Live[0].StreamURLs), len(res.Live[0].StreamAuths))
+	}
+}
+
 func TestFetchCatalog_FallsBackToPlayerAPIWhenBuiltGetPHPFails(t *testing.T) {
 	var baseURL string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

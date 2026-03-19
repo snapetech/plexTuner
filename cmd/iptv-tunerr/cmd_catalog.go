@@ -390,21 +390,24 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 		}
 		var fetchErr error
 		if len(ranked) > 0 {
-			best := ranked[0]
-			res.APIBase = best.Entry.BaseURL
-			res.ProviderBase = best.Entry.BaseURL
-			res.ProviderUser = best.Entry.User
-			res.ProviderPass = best.Entry.Pass
 			allBases := make([]string, 0, len(ranked))
 			for _, er := range ranked {
 				allBases = append(allBases, er.Entry.BaseURL)
 			}
-			log.Printf("Ranked %d provider(s): using best %s (2nd/3rd used as stream backups)", len(ranked), res.APIBase)
-			res.Movies, res.Series, res.Live, fetchErr = indexer.IndexFromPlayerAPI(
-				best.Entry.BaseURL, best.Entry.User, best.Entry.Pass, "m3u8", cfg.LiveOnly, allBases, nil,
-			)
-			if fetchErr == nil {
-				applyStreamVariants(res.Live, ranked)
+			log.Printf("Ranked %d provider(s): best-first order %s", len(ranked), strings.Join(allBases, ", "))
+			for _, candidate := range ranked {
+				res.Movies, res.Series, res.Live, fetchErr = indexer.IndexFromPlayerAPI(
+					candidate.Entry.BaseURL, candidate.Entry.User, candidate.Entry.Pass, "m3u8", cfg.LiveOnly, allBases, nil,
+				)
+				if fetchErr == nil {
+					res.APIBase = candidate.Entry.BaseURL
+					res.ProviderBase = candidate.Entry.BaseURL
+					res.ProviderUser = candidate.Entry.User
+					res.ProviderPass = candidate.Entry.Pass
+					applyStreamVariants(res.Live, ranked)
+					break
+				}
+				log.Printf("Ranked provider index failed on %s: %v", candidate.Entry.BaseURL, fetchErr)
 			}
 		}
 		if len(ranked) == 0 && !cfg.BlockCFProviders {

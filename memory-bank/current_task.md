@@ -94,6 +94,16 @@
   3. reran real-provider `probe` and both configured providers now report `player_api ok HTTP 200`
   4. full `./scripts/verify` passed after the fix
 
+**Current focus shift (release-confidence smoke, 2026-03-19):**
+- User asked for a short curated real-provider smoke before declaring release confidence.
+- Result:
+  1. fresh loopback `run -skip-health` now succeeds on the ranked-provider path too after teaching `fetchCatalog` to try the next ranked provider when the best-ranked host cannot actually index live streams
+  2. the sampled lineup slice (first 5 exposed channels) still failed upstream, but now in a clean and diagnosable way:
+     - some URLs returned HTML instead of HLS playlists and were rejected as `invalid-hls-playlist`
+     - backup URLs were attempted afterward
+     - remaining failures were upstream `513` or request-timeout/context-cancel outcomes, returned to the client as clean `502`
+  3. release conclusion: app-side fixes are landed and validated; the remaining risk is provider/channel quality, not IPTV Tunerr logic
+
 **Current focus shift (intelligence cross-wiring epic, 2026-03-18):**
 - User requested the full next wave from the audit: structural cleanup plus runtime cross-wiring so the newer intelligence/reporting work actually changes behavior.
 - This is now tracked as a multi-PR epic in `memory-bank/work_breakdown.md` under `INT-001` through `INT-007`.
