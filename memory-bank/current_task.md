@@ -144,6 +144,14 @@
   3. preserve command behavior while separating Guide/EPG publishing from VOD ops
   4. verify and push if green
 
+**Current focus shift (runtime registration split, 2026-03-18):**
+- Continuing the runtime cleanup after the catch-up publish split.
+- This pass covers:
+  1. move the Plex/Emby/Jellyfin registration and watchdog logic out of `cmd_runtime.go`
+  2. keep `cmd_runtime.go` focused on serve/run lifecycle and catalog/runtime setup
+  3. preserve runtime behavior while separating media-server integration from core run flow
+  4. verify and push if green
+
 **Current focus shift (EPG doctor operator docs, 2026-03-18):**
 - Follow-on docs cleanup after shipping `guide-health` and `epg-doctor`: make the new guide-diagnostics workflow discoverable from the how-to and runbook indexes so operators have one documented path from symptom to fix.
 - This pass adds:

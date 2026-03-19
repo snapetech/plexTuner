@@ -23,6 +23,21 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-18
+  Title: Split runtime registration logic out of cmd_runtime.go
+  Summary:
+    - Moved Plex/Emby/Jellyfin registration and watchdog helpers into `cmd/iptv-tunerr/cmd_runtime_register.go`.
+    - Kept `cmd_runtime.go` focused on the serve/run lifecycle, catalog loading, and runtime server setup.
+  Verification:
+    - `go test ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - This is structural only; run/serve behavior and registration flows were preserved.
+  Opportunities filed:
+    - none
+  Links:
+    - cmd/iptv-tunerr/cmd_runtime.go, cmd/iptv-tunerr/cmd_runtime_register.go
+
+- Date: 2026-03-18
   Title: Split catch-up publish command out of cmd_ops.go
   Summary:
     - Moved `catchup-publish` into `cmd/iptv-tunerr/cmd_catchup_publish.go`.
