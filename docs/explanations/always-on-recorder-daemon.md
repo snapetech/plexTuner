@@ -1,28 +1,28 @@
 ---
 id: expl-always-on-recorder-daemon
 type: explanation
-status: draft
-tags: [catchup, recorder, daemon, future-feature]
+status: stable
+tags: [catchup, recorder, daemon, catchup-daemon]
 ---
 
-# Future feature: always-on recorder daemon
+# Always-on recorder daemon (MVP shipped)
 
-The current catch-up stack gives IPTV Tunerr three useful modes:
+This document started as a **future-feature** sketch. The first **policy-driven, headless** slice is now shipped as **`iptv-tunerr catchup-daemon`**: it polls the merged guide, schedules `in_progress` / `starting_soon` captures, records concurrently (within `-max-concurrency`), persists state to JSON, spool-then-finalizes `.ts` files, can publish into lane folders with optional Plex/Emby/Jellyfin registration, applies retention and per-lane storage budgets, retries transient failures with backoff (including HTTP `Range` resume on the same `.partial.ts` when supported), and exposes status via `catchup-recorder-report` and `/recordings/recorder.json`.
+
+The catch-up stack still includes:
 - guide-derived capsule previews
 - launcher/replay publishing into Plex, Emby, and Jellyfin
-- on-demand `catchup-record` capture for current in-progress capsules
+- on-demand `catchup-record` for current in-progress capsules
 
-What it does **not** do yet is run a continuous background recorder that watches the guide, records programmes automatically, and turns them into short-lived replayable library items without operator intervention.
+**Always-on** here means: **continuous scheduling + capture without per-programme operator clicks**, not “every aspirational bullet below is implemented.” See [Current status](#current-status) for gaps.
 
-That future feature is the **always-on recorder daemon**.
-
-## What problem it would solve
+## What problem it solves (and what “full vision” adds)
 
 Some providers expose replay/timeshift URLs. For those, IPTV Tunerr can already build real replay launchers by rendering a replay URL template.
 
 Other providers do not.
 
-For those sources, catch-up is still limited unless IPTV Tunerr records the content itself. An always-on recorder daemon would provide:
+For those sources, catch-up is still limited unless IPTV Tunerr records the content itself. The daemon addresses that gap; a **full** always-on vision would also provide:
 - real rolling catch-up for non-replay sources
 - short-lived near-DVR libraries built from live TV automatically
 - recent-playback availability after a programme ends
@@ -100,9 +100,7 @@ So the two features are complementary, not interchangeable:
 
 ## Headless concurrency model
 
-One of the strategic reasons this future feature matters is that it would not depend on Plex's scheduling UI at all.
-
-If built, IPTV Tunerr could record headlessly according to policy, limited by:
+The daemon does **not** depend on Plex's scheduling UI: it records headlessly according to CLI policy, limited by:
 - the provider's real concurrent-stream allowance
 - local bandwidth
 - CPU if normalization/transcode is involved
@@ -114,9 +112,9 @@ So yes, the daemon concept is explicitly about:
 - bounded by actual provider/system limits
 - not by whether Plex currently has a recording rule for that content
 
-## What the daemon would do
+## What the daemon does (high level)
 
-At a high level, it would:
+At a high level, the MVP does:
 1. watch the merged guide continuously
 2. decide which programmes should be recorded
 3. start recording before or at programme start
@@ -201,34 +199,34 @@ Likely policy inputs:
 - sports/news priority
 - keep windows like `6h`, `24h`, `72h` by lane
 
-## MVP shape
+## MVP shape (largely implemented)
 
-A realistic MVP would be intentionally smaller than a full DVR.
+The shipped MVP is intentionally smaller than a full DVR. It includes:
+- background scheduler loop (`-poll-interval`, commonly 30–60s)
+- records `in_progress` and `starting_soon` (`-lead-time`) items
+- lane allow/deny lists (`-lanes`, `-exclude-lanes`)
+- one output file per programme (`.partial.ts` spool, then final `.ts`)
+- JSON state file (`-state-file` or `<out-dir>/recorder-state.json`)
+- finalize and optional publish on completion; interrupted items annotated on restart
+- retention pruning (global and per-lane counts; per-lane byte budgets)
+- optional targeted media-server library create/reuse + refresh (`-register-*`, `-refresh`, `-defer-library-refresh`)
 
-Suggested MVP:
-- background scheduler loop every 30-60 seconds
-- record only `in_progress` and `starting_soon` items
-- record only selected lanes first
-- one output file per programme
-- small JSON state file or state directory
-- finalize and publish on programme stop
-- retention sweep on a timer
-- targeted media-server refresh
-
-That MVP would already be enough to make non-replay sources feel much more powerful.
+See `iptv-tunerr catchup-daemon -h` and [cli-and-env-reference](../reference/cli-and-env-reference.md).
 
 ## Why this is different from the current stack
 
-Current catch-up behavior:
+Catch-up *preview/publish* behavior:
 - capsules are guide-derived
-- published items are launcher or replay URLs
-- `catchup-record` is operator-invoked and limited to current in-progress capture
+- published items are launcher or replay URLs (unless you recorded assets separately)
 
-Always-on daemon behavior:
-- recordings are scheduled and captured automatically
-- finished programmes become actual recorded assets
-- library items correspond to stored content, not just launchers
-- retention is automatic instead of manual
+One-shot recording:
+- `catchup-record` is operator-invoked and targets current in-progress capsules
+
+Always-on daemon behavior (`catchup-daemon`):
+- recordings are scheduled and captured automatically on a poll loop
+- finished programmes become actual recorded assets on disk (and optionally under `-publish-dir`)
+- library items can correspond to stored content when publishing + registration are enabled
+- retention pruning and budgets run as part of daemon operation
 
 ## Hard parts
 
@@ -243,31 +241,28 @@ The hard parts are:
 - avoiding constant full-library rescans
 - handling live schedule drift when upstream guide data changes mid-event
 
-## Likely operator surface
+## Operator surface
 
-If implemented, it would probably want:
-- a daemon/worker command, not just a flag on `run`
-- a state directory
-- a spool/output root
-- max concurrent recordings
-- lane/channel policy
-- retention policy
-- disk budget
-- publish on/off and media-server target flags
+The CLI exposes (see `catchup-daemon`):
+- `catchup-daemon` as the long-running worker (distinct from `iptv-tunerr run` / `serve`)
+- `-out-dir` for recordings and default state path (`-state-file` overrides)
+- `-max-concurrency`, `-poll-interval`, `-lead-time`, lane/channel filters
+- retention via `-retain-*` and `-budget-bytes-per-lane`
+- `-publish-dir` plus optional `-register-plex|emby|jellyfin` and `-refresh` / `-defer-library-refresh`
 
-Possible future command shape:
+Example command shape (see `-h` for the full flag set):
 
 ```bash
 iptv-tunerr catchup-daemon \
   -catalog ./catalog.json \
   -xmltv http://127.0.0.1:5004/guide.xml \
-  -state-dir ./catchup-state \
-  -spool-dir ./catchup-spool \
+  -out-dir ./catchup-recordings \
   -publish-dir ./catchup-published \
   -stream-base-url http://127.0.0.1:5004 \
   -lanes sports,general \
-  -max-recordings 4 \
-  -retention sports=12h,general=24h,movies=72h
+  -max-concurrency 4 \
+  -retain-completed-per-lane "sports=50,general=100" \
+  -budget-bytes-per-lane "sports=20GiB,general=40GiB"
 ```
 
 ## Relationship to current features
@@ -281,29 +276,30 @@ This feature would build on top of:
 
 So it is not a separate product. It is the next deeper layer of the catch-up system.
 
-## Recommended implementation order
+## Implementation order (original plan vs today)
 
-If this is ever built, the recommended order is:
-1. define recording state schema and spool/finalize layout
-2. build a single-process scheduler + worker MVP
-3. publish completed recordings through the existing catch-up publisher path
-4. add retention sweeps
-5. add upstream failover during recording
-6. add smarter lane/channel policy
+Original recommended order:
+1. **Done** — recording state schema and spool/finalize layout
+2. **Done** — single-process scheduler + worker MVP (`catchup-daemon`)
+3. **Done** — publish completed recordings through the catch-up style publisher path (plus optional media-server registration)
+4. **Done** — retention pruning and storage budgets (count- and byte-based)
+5. **Open** — upstream failover *during* a single capture (multi-URL / provider switch without abandoning the window)
+6. **Partially done** — lane/channel policy (`-lanes`, `-channels`, guide policy); richer prioritization remains future work
 
 ## Current status
 
-Documented only.
+**Implemented and covered by `go test ./...` (via `./scripts/verify`)** for the **recording pipeline** and **CLI wiring**: single-capsule capture (`RecordCatchupCapsule`), spool/finalize behavior, resilient retries and partial HTTP resume, publish-hook construction for the daemon, and related helpers. There is **no** dedicated long-running CI test that drives the full scheduler loop for hours; production confidence still comes from unit tests plus operator soak runs.
 
-The repo currently has:
-- `catchup-publish`
-- `catchup-record`
-- replay-template support
+**Shipped in the product:**
+- `iptv-tunerr catchup-daemon` — continuous guide scan, concurrency limits, persistent state, publish/retention/budgets, transient retries + optional same-spool `Range` resume, capture metrics in state JSON
+- `iptv-tunerr catchup-recorder-report` and `/recordings/recorder.json` — observability
+- shared primitives with `catchup-record` and replay-template-aware URLs when configured
 
-It does **not** yet have:
-- an always-on background recorder daemon
-- automatic scheduling/finalization
-- rolling retention-managed recorded catch-up
+**Still aspirational / partial relative to this doc’s “full vision”:**
+- **Mid-recording upstream switching** (fail over to another provider URL mid-capture without restarting the programme window) — not the same as HTTP retry/`Range` resume on the **same** URL
+- **Tight integration** with every intelligence signal listed below (Autopilot, host penalties) **during** capture selection — policy today is guide/capsule/lane/channel oriented
+- **Time-based retention strings** like `sports=12h` in one flag — retention is count- and budget-oriented; expiry still ties to programme/capsule semantics
+- **Soak/regression harness** for DVR-style multi-hour reliability (see work breakdown `HR-009`-style items)
 
 See also
 --------
