@@ -136,6 +136,14 @@
   3. preserve runtime behavior while shrinking the last major tuner hotspot
   4. verify and push if green
 
+**Current focus shift (catch-up publish command split, 2026-03-18):**
+- Continuing the CLI decomposition after the relay split.
+- This pass covers:
+  1. move `catchup-publish` into a dedicated command file
+  2. keep `cmd_ops.go` focused on supervisor/VOD operational helpers
+  3. preserve command behavior while separating Guide/EPG publishing from VOD ops
+  4. verify and push if green
+
 **Current focus shift (EPG doctor operator docs, 2026-03-18):**
 - Follow-on docs cleanup after shipping `guide-health` and `epg-doctor`: make the new guide-diagnostics workflow discoverable from the how-to and runbook indexes so operators have one documented path from symptom to fix.
 - This pass adds:

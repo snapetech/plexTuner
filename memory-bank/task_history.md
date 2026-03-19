@@ -23,6 +23,21 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-18
+  Title: Split catch-up publish command out of cmd_ops.go
+  Summary:
+    - Moved `catchup-publish` into `cmd/iptv-tunerr/cmd_catchup_publish.go`.
+    - Kept `cmd_ops.go` focused on supervisor and VOD operational helpers instead of mixing them with Guide/EPG publishing.
+  Verification:
+    - `go test ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - This is structural only; command flags and publish behavior were preserved.
+  Opportunities filed:
+    - none
+  Links:
+    - cmd/iptv-tunerr/cmd_ops.go, cmd/iptv-tunerr/cmd_catchup_publish.go, cmd/iptv-tunerr/main.go
+
+- Date: 2026-03-18
   Title: Split gateway relay implementations into a focused file
   Summary:
     - Moved the raw TS ffmpeg normalizer and the HLS relay implementations into `internal/tuner/gateway_relay.go`.
