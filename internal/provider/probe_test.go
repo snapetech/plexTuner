@@ -129,6 +129,23 @@ func TestProbePlayerAPI_ok(t *testing.T) {
 	}
 }
 
+func TestProbePlayerAPI_serverInfoOnly(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"server_info":{"url":"example","server_url":"example"}}`))
+	}))
+	defer srv.Close()
+
+	ctx := context.Background()
+	r := ProbePlayerAPI(ctx, srv.URL, "u", "p", nil)
+	if r.Status != StatusOK {
+		t.Fatalf("Status: %s", r.Status)
+	}
+	if r.URL != srv.URL {
+		t.Fatalf("URL: %q", r.URL)
+	}
+}
+
 func TestProbePlayerAPI_badStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(503)

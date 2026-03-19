@@ -302,6 +302,22 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 				}
 			}
 		}
+		if len(ranked) == 0 && !cfg.BlockCFProviders {
+			for _, e := range entries {
+				base := strings.TrimSuffix(e.BaseURL, "/")
+				log.Printf("No player_api host passed probe; attempting direct index on %s", base)
+				res.Movies, res.Series, res.Live, fetchErr = indexer.IndexFromPlayerAPI(
+					base, e.User, e.Pass, "m3u8", cfg.LiveOnly, nil, nil,
+				)
+				if fetchErr == nil {
+					res.APIBase = base
+					res.ProviderBase = e.BaseURL
+					res.ProviderUser = e.User
+					res.ProviderPass = e.Pass
+					break
+				}
+			}
+		}
 		if fetchErr != nil || res.APIBase == "" {
 			res.APIBase = ""
 			var fallbackErr error

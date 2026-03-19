@@ -120,6 +120,14 @@
   3. preserve command behavior while reducing the last mixed-purpose CLI file
   4. verify and push if green
 
+**Current focus shift (player_api probe/direct-index regression, 2026-03-18):**
+- Tester reported that some Xtream panels still index successfully but `probe` shows `player_api bad_status HTTP 200`, after which `run` can fail with `no player_api OK and no get.php OK on any provider`.
+- This pass covers:
+  1. relax `player_api` probe success to accept `server_info`-only Xtream auth responses
+  2. restore the old direct `IndexFromPlayerAPI` fallback when ranked probes return no OK host
+  3. add regression tests for both cases
+  4. verify and push before returning to the structural cleanup track
+
 **Current focus shift (EPG doctor operator docs, 2026-03-18):**
 - Follow-on docs cleanup after shipping `guide-health` and `epg-doctor`: make the new guide-diagnostics workflow discoverable from the how-to and runbook indexes so operators have one documented path from symptom to fix.
 - This pass adds:

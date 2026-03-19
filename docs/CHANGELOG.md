@@ -19,6 +19,10 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Guide-quality policy hooks**: added shared guide-health caching plus `IPTV_TUNERR_GUIDE_POLICY` / `IPTV_TUNERR_CATCHUP_GUIDE_POLICY` so runtime lineup shaping and catch-up capsule output can optionally suppress placeholder-only or no-programme channels.
 - **Shared ref loader**: report and guide tooling now use one shared local-file/URL loader with the repo HTTP client defaults instead of duplicated `http.DefaultClient` code paths.
 
+### Ingest / probe
+- **Server-info Xtream auth probes**: `player_api.php` probes now treat `server_info`-only JSON responses as valid Xtream-style auth success, matching panels that index correctly even when they do not return `user_info`.
+- **Direct player_api fallback restored**: when no provider host ranks as probe-OK, catalog refresh now retries direct `IndexFromPlayerAPI` before falling through to `get.php`, restoring the older behavior that kept indexing alive on panels with probe-only response-shape quirks.
+
 ---
 
 ## [v0.1.10] — 2026-03-18

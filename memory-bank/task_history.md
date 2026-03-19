@@ -23,6 +23,22 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-18
+  Title: Fix player_api probe shape handling and restore direct index fallback
+  Summary:
+    - Updated `internal/provider/ProbePlayerAPI` to treat `server_info`-only HTTP 200 JSON as a valid Xtream-style auth response instead of misclassifying it as `bad_status`.
+    - Restored the older direct `IndexFromPlayerAPI` retry path in `fetchCatalog` when ranked provider probes return no OK host, before falling back to `get.php`.
+    - Added regression coverage for both the `server_info` probe case and the no-ranked-host direct-index fallback case.
+  Verification:
+    - `go test ./internal/provider ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - This fixes a real tester regression where `run` could fail on usable Xtream panels whose top-level auth response shape differed from the probe's stricter expectations.
+  Opportunities filed:
+    - none
+  Links:
+    - internal/provider/probe.go, internal/provider/probe_test.go, cmd/iptv-tunerr/cmd_catalog.go, cmd/iptv-tunerr/main_test.go
+
+- Date: 2026-03-18
   Title: Split Plex oracle lab commands out of cmd_ops.go
   Summary:
     - Moved `plex-epg-oracle` and `plex-epg-oracle-cleanup` into `cmd/iptv-tunerr/cmd_oracle_ops.go`.

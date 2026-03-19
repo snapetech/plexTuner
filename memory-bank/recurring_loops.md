@@ -199,6 +199,28 @@
 
 ### Loop: Trying to fix Plex Live TV source-tab labels by patching DVR/provider DB rows
 
+### Loop: Provider probe becomes stricter than the real indexer path
+
+**Symptom**
+- `probe` reports `player_api bad_status HTTP 200` or `run` fails with `no player_api OK and no get.php OK on any provider`, even though the same panel still indexes successfully through the older direct player API path.
+
+**Why it's tricky**
+- Xtream panels do not all return the same top-level auth JSON shape. Some only return `server_info` on the initial `player_api.php?username=&password=` call, while the later `get_live_streams` path still works normally.
+- If probe/ranking logic becomes stricter than `IndexFromPlayerAPI`, `fetchCatalog` can reject a usable panel before the real indexer ever gets a chance.
+
+**What works**
+- Keep `ProbePlayerAPI` aligned with what `IndexFromPlayerAPI` can actually use: accept Xtream-style HTTP 200 JSON containing `user_info`, `auth`, or `server_info`.
+- If ranked probes still return no OK host, try a direct `IndexFromPlayerAPI` pass on configured provider entries before giving up and falling back to `get.php`.
+- Preserve regression tests for both:
+  1. `server_info`-only auth response
+  2. no-ranked-host direct-index fallback
+
+**Where it's documented**
+- `internal/provider/probe.go`
+- `internal/provider/probe_test.go`
+- `cmd/iptv-tunerr/cmd_catalog.go`
+- `cmd/iptv-tunerr/main_test.go`
+
 **Symptom**
 - Live TV source/guide tabs still show the Plex server name (for example `plexKube`) for every provider even after per-DVR device IDs, guide URIs, and provider metadata appear correct.
 - Agents keep patching `media_provider_resources` (`type 1/3/4`) rows or tuner `FriendlyName`/HDHR metadata hoping a missing DB field will change the labels.

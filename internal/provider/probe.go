@@ -125,7 +125,9 @@ func BestM3UURL(ctx context.Context, m3uURLs []string, client *http.Client) stri
 }
 
 // ProbePlayerAPI hits player_api.php?username=&password= on the given base URL.
-// Returns StatusOK if response is 200 and body is JSON with user_info or auth (Xtream auth response).
+// Returns StatusOK if response is 200 and body is JSON with a recognizable Xtream-style
+// auth shape: user_info, auth, or server_info. Some panels only return server_info on the
+// top-level auth call even though the subsequent get_live_streams call still works.
 // This is what xtream-to-m3u.js uses; get.php often returns 884/Cloudflare while player_api.php works.
 func ProbePlayerAPI(ctx context.Context, baseURL, user, pass string, client *http.Client) Result {
 	baseURL = strings.TrimSuffix(baseURL, "/")
@@ -176,7 +178,7 @@ func ProbePlayerAPI(ctx context.Context, baseURL, user, pass string, client *htt
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return Result{URL: url, Status: StatusBadStatus, StatusCode: resp.StatusCode, LatencyMs: latency}
 	}
-	if raw["user_info"] != nil || raw["auth"] != nil {
+	if raw["user_info"] != nil || raw["auth"] != nil || raw["server_info"] != nil {
 		return Result{URL: baseURL, Status: StatusOK, StatusCode: 200, LatencyMs: latency}
 	}
 	return Result{URL: url, Status: StatusBadStatus, StatusCode: 200, LatencyMs: latency}

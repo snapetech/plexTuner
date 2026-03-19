@@ -86,6 +86,47 @@ func TestFetchCatalog_FallsBackToPlayerAPIWhenBuiltGetPHPFails(t *testing.T) {
 	}
 }
 
+func TestFetchCatalog_DirectPlayerAPIFallbackWhenProbeFindsNoOKHost(t *testing.T) {
+	var baseURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodHead && r.URL.Path == "/":
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/get.php":
+			http.Error(w, "884 busy", 884)
+		case r.URL.Path == "/player_api.php" && r.URL.RawQuery == "username=u&password=p":
+			_, _ = w.Write([]byte(`{"server_status":"ok"}`))
+		case r.URL.Path == "/player_api.php" && strings.Contains(r.URL.RawQuery, "action=get_live_streams"):
+			_, _ = w.Write([]byte(`[{"num":101,"name":"FOX News","stream_id":1001,"epg_channel_id":"foxnews.us","stream_icon":"` + baseURL + `/icon.png"}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	baseURL = srv.URL
+
+	cfg := &config.Config{
+		ProviderBaseURL: srv.URL,
+		ProviderUser:    "u",
+		ProviderPass:    "p",
+		LiveOnly:        true,
+	}
+
+	res, err := fetchCatalog(cfg, "")
+	if err != nil {
+		t.Fatalf("fetchCatalog error: %v", err)
+	}
+	if res.APIBase != srv.URL {
+		t.Fatalf("APIBase=%q want %q", res.APIBase, srv.URL)
+	}
+	if len(res.Live) != 1 {
+		t.Fatalf("live len=%d want 1", len(res.Live))
+	}
+	if got := res.Live[0].TVGID; got != "foxnews.us" {
+		t.Fatalf("TVGID=%q want foxnews.us", got)
+	}
+}
+
 func TestApplyRuntimeEPGRepairs_ExternalRepairsIncorrectTVGID(t *testing.T) {
 	xmltv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`<?xml version="1.0"?><tv>
