@@ -2070,3 +2070,14 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
   Verification:
     - `go test ./internal/epgdoctor ./internal/guidehealth ./internal/tuner ./cmd/iptv-tunerr`
     - `./scripts/verify`
+
+---
+
+- Date: 2026-03-18
+  Title: Expand recorder-daemon explainer with Plex DVR comparison
+  Summary:
+    - Updated `docs/explanations/always-on-recorder-daemon.md` to explain how a future always-on recorder daemon differs from Plex DVR in operating model and purpose.
+    - Added the headless concurrency angle so the doc now explicitly describes policy-driven recording up to provider and system limits instead of Plex rule limits.
+    - Kept the recorder-daemon concept consolidated in one future-feature explainer rather than leaving key rationale only in chat history.
+  Verification:
+    - Docs-only review of the updated explanation page.

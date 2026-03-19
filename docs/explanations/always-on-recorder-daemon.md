@@ -34,6 +34,86 @@ In short, it turns catch-up from:
 into:
 - "guide-driven capture plus packaging"
 
+## How this differs from Plex DVR
+
+Plex DVR records from the Plex side.
+
+An always-on recorder daemon would record from the IPTV Tunerr side.
+
+That sounds similar on the surface, but it changes the operating model.
+
+### Plex DVR
+
+Plex DVR is:
+- user-scheduled or rule-driven
+- tightly coupled to Plex guide mapping and Plex DVR health
+- mainly about "record this show" or "record this series"
+- limited to the Plex server that owns the DVR workflow
+
+Plex DVR is good at:
+- familiar recording UX
+- series rules
+- user-managed recordings
+- integrated playback/management inside Plex
+
+### Always-on recorder daemon
+
+An always-on recorder daemon would be:
+- policy-driven instead of user-rule-driven
+- independent of Plex scheduling
+- able to record headlessly with no user recording rule
+- able to publish the results to Plex, Emby, Jellyfin, or only to disk
+
+It is mainly about:
+- "keep recent live content available automatically"
+- "build rolling catch-up from live TV"
+- "capture according to lane/channel policy"
+
+### Why that matters
+
+The daemon could use IPTV Tunerr's own intelligence layer instead of relying only on media-server scheduling:
+- `dna_id` duplicate collapse
+- guide-health filtering
+- Autopilot memory
+- provider host preference
+- provider concurrency knowledge
+- upstream failover during recording
+
+That means it could do things Plex DVR does not naturally do well:
+- record by lane/category without creating explicit per-show rules
+- keep a rolling recent-content window
+- switch upstreams when one CDN dies mid-recording
+- publish the same captured asset to multiple media servers
+- operate headlessly up to the provider's real concurrent-stream limit
+
+### Practical difference
+
+Plex DVR says:
+- record this programme because a user or rule asked for it
+
+The recorder daemon says:
+- continuously maintain recent replayable content for selected live-TV lanes
+
+So the two features are complementary, not interchangeable:
+- **Plex DVR** = intentional user-scheduled recording
+- **always-on recorder daemon** = rolling catch-up infrastructure
+
+## Headless concurrency model
+
+One of the strategic reasons this future feature matters is that it would not depend on Plex's scheduling UI at all.
+
+If built, IPTV Tunerr could record headlessly according to policy, limited by:
+- the provider's real concurrent-stream allowance
+- local bandwidth
+- CPU if normalization/transcode is involved
+- disk IO and storage budget
+- the daemon's own max-concurrency policy
+
+So yes, the daemon concept is explicitly about:
+- headless rolling capture
+- bounded by actual provider/system limits
+- not by whether Plex currently has a recording rule for that content
+
 ## What the daemon would do
 
 At a high level, it would:

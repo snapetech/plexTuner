@@ -887,3 +887,7 @@ Questions (ONLY if blocked or high-risk ambiguity):
   - Recovery procedure for next time: start FUSE processes on plex node → confirm mounts → `kubectl rollout restart deployment/plex` → copy iptv-tunerr binary to new pod → re-run `plex-vod-register` per lane.
 
 **Next focus:** Monitor VOD library scan counts. Fix `mountPropagation` on the Plex deployment YAML for durable VOD mount visibility (requires the live deployment YAML in k3s/plex to be patched). Consider systemd services for VODFS mounts on kspls0 for auto-restart on node reboot.
+**Session 2026-03-18 (recorder-daemon docs follow-up):**
+
+- Merged the later discussion about Plex DVR differences and headless provider-limited concurrency into `docs/explanations/always-on-recorder-daemon.md`.
+- This keeps the future-feature explainer self-contained instead of splitting the concept across chat-only context.
