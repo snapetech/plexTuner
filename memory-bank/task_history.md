@@ -23,6 +23,21 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-18
+  Title: Split Plex oracle lab commands out of cmd_ops.go
+  Summary:
+    - Moved `plex-epg-oracle` and `plex-epg-oracle-cleanup` into `cmd/iptv-tunerr/cmd_oracle_ops.go`.
+    - Kept `cmd_ops.go` focused on catch-up publishing and shared VOD/supervisor operational helpers.
+  Verification:
+    - `go test ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - This continues the CLI cleanup by separating experimental Plex lab tooling from the day-to-day operational commands.
+  Opportunities filed:
+    - none
+  Links:
+    - cmd/iptv-tunerr/cmd_ops.go, cmd/iptv-tunerr/cmd_oracle_ops.go, cmd/iptv-tunerr/main.go
+
+- Date: 2026-03-18
   Title: Split guide-diagnostics commands out of cmd_reports.go
   Summary:
     - Moved `epg-link-report`, `guide-health`, and `epg-doctor` into `cmd/iptv-tunerr/cmd_guide_reports.go`.

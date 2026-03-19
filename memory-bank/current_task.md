@@ -112,6 +112,14 @@
   3. consolidate duplicated catalog/XMLTV loading helpers for the guide-diagnostics path
   4. verify and push if green
 
+**Current focus shift (oracle ops split, 2026-03-18):**
+- Continuing the CLI decomposition with the `Lab/ops` command family.
+- This pass covers:
+  1. move Plex oracle experiment and cleanup commands into a dedicated oracle-ops file
+  2. keep `cmd_ops.go` focused on catch-up publishing plus VOD/supervisor helpers
+  3. preserve command behavior while reducing the last mixed-purpose CLI file
+  4. verify and push if green
+
 **Current focus shift (EPG doctor operator docs, 2026-03-18):**
 - Follow-on docs cleanup after shipping `guide-health` and `epg-doctor`: make the new guide-diagnostics workflow discoverable from the how-to and runbook indexes so operators have one documented path from symptom to fix.
 - This pass adds:
