@@ -2,6 +2,39 @@ package tuner
 
 import "strings"
 
+// browserHeadersForUA returns a complete HTTP header set that matches the given User-Agent.
+// When UA cycling promotes a browser UA to bypass Cloudflare Bot Management, CF also scores
+// Accept/Accept-Language/Accept-Encoding/Sec-Ch-Ua headers. A mismatched header profile
+// (e.g. Firefox UA with no Accept header) can still trigger a bot score even if UA matches.
+// Returns nil for media-player UAs (Lavf/VLC/mpv/Kodi) — those don't need a browser profile.
+func browserHeadersForUA(ua string) map[string]string {
+	lower := strings.ToLower(ua)
+	if strings.Contains(lower, "firefox") {
+		return map[string]string{
+			"Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+			"Accept-Language":           "en-US,en;q=0.5",
+			"Accept-Encoding":           "gzip, deflate, br",
+			"Connection":                "keep-alive",
+			"Upgrade-Insecure-Requests": "1",
+			"Cache-Control":             "max-age=0",
+		}
+	}
+	if strings.Contains(lower, "chrome") || strings.Contains(lower, "safari") {
+		return map[string]string{
+			"Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+			"Accept-Language":           "en-US,en;q=0.9",
+			"Accept-Encoding":           "gzip, deflate, br",
+			"Connection":                "keep-alive",
+			"Upgrade-Insecure-Requests": "1",
+			"Sec-Ch-Ua":                 `"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"`,
+			"Sec-Ch-Ua-Mobile":          "?0",
+			"Sec-Ch-Ua-Platform":        `"Linux"`,
+			"Cache-Control":             "max-age=0",
+		}
+	}
+	return nil
+}
+
 // uaCycleCandidates returns the ordered list of User-Agent values Tunerr tries automatically
 // when a Cloudflare response is detected. Ordered by likelihood of bypassing CF Bot Management
 // for IPTV streaming providers — media players first (most commonly allowlisted), browser UAs last.

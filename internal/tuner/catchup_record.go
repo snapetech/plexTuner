@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -51,64 +50,8 @@ func CatchupRecordArtifactPaths(capsule CatchupCapsule, outDir string) (spoolPat
 }
 
 func RecordCatchupCapsule(ctx context.Context, capsule CatchupCapsule, streamBaseURL, outDir string, client *http.Client) (CatchupRecordedItem, error) {
-	outDir = strings.TrimSpace(outDir)
-	if outDir == "" {
-		return CatchupRecordedItem{}, fmt.Errorf("output directory required")
-	}
-	if client == nil {
-		client = httpclient.ForStreaming()
-	}
-	sourceURL, err := ResolveCatchupRecordSourceURL(capsule, streamBaseURL)
-	if err != nil {
-		return CatchupRecordedItem{}, err
-	}
-	laneDir := filepath.Join(outDir, firstNonEmptyString(capsule.Lane, "general"))
-	if err := os.MkdirAll(laneDir, 0o755); err != nil {
-		return CatchupRecordedItem{}, err
-	}
-	spoolPath, finalPath := CatchupRecordArtifactPaths(capsule, outDir)
-	// Drop stale spool from a prior attempt; leave any existing final .ts until this run completes.
-	_ = os.Remove(spoolPath)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
-	if err != nil {
-		return CatchupRecordedItem{}, err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return CatchupRecordedItem{}, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return CatchupRecordedItem{}, fmt.Errorf("record %s status=%d", capsule.CapsuleID, resp.StatusCode)
-	}
-	f, err := os.Create(spoolPath)
-	if err != nil {
-		return CatchupRecordedItem{}, err
-	}
-	n, copyErr := io.Copy(f, resp.Body)
-	if closeErr := f.Close(); closeErr != nil && copyErr == nil {
-		copyErr = closeErr
-	}
-	if copyErr != nil {
-		return CatchupRecordedItem{}, copyErr
-	}
-	if err := ctx.Err(); err != nil {
-		return CatchupRecordedItem{}, err
-	}
-	_ = os.Remove(finalPath) // Windows: allow replacing an existing completed file on re-record.
-	if err := os.Rename(spoolPath, finalPath); err != nil {
-		return CatchupRecordedItem{}, err
-	}
-	return CatchupRecordedItem{
-		CapsuleID:  capsule.CapsuleID,
-		Lane:       capsule.Lane,
-		Title:      capsule.Title,
-		ChannelID:  capsule.ChannelID,
-		OutputPath: finalPath,
-		SourceURL:  sourceURL,
-		Bytes:      n,
-	}, nil
+	item, _, err := RecordCatchupCapsuleResilient(ctx, capsule, streamBaseURL, outDir, client, ResilientRecordOptions{MaxAttempts: 1, ResumePartial: false})
+	return item, err
 }
 
 func RecordCatchupCapsules(ctx context.Context, preview CatchupCapsulePreview, streamBaseURL, outDir string, maxDuration time.Duration, client *http.Client) (CatchupRecordManifest, error) {

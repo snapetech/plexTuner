@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"testing"
 	"time"
 )
@@ -38,6 +39,23 @@ type errNetTimeout struct{}
 func (errNetTimeout) Error() string   { return "timeout" }
 func (errNetTimeout) Timeout() bool   { return true }
 func (errNetTimeout) Temporary() bool { return false }
+
+func TestBackoffAfterRecordError429RetryAfter(t *testing.T) {
+	err := &recordHTTPStatusError{CapsuleID: "x", Status: http.StatusTooManyRequests, RetryAfter: "2"}
+	d := BackoffAfterRecordError(err, 0, 100*time.Millisecond, time.Second)
+	// Base exponential for index 0 is 100ms; Retry-After 2s should win (capped by max=1s).
+	if d != time.Second {
+		t.Fatalf("expected Retry-After capped by max, got %v", d)
+	}
+}
+
+func TestBackoffAfterRecordError503Multiplier(t *testing.T) {
+	err := &recordHTTPStatusError{CapsuleID: "x", Status: http.StatusServiceUnavailable, RetryAfter: ""}
+	d := BackoffAfterRecordError(err, 0, 200*time.Millisecond, time.Second)
+	if d < 240*time.Millisecond {
+		t.Fatalf("expected status multiplier, got %v", d)
+	}
+}
 
 func TestRecordRetryBackoffDuration(t *testing.T) {
 	if d := recordRetryBackoffDuration(0, 100*time.Millisecond, time.Second); d != 100*time.Millisecond {

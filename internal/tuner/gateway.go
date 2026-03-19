@@ -48,8 +48,10 @@ type Gateway struct {
 	CookieJarFile        string // path to persist cookies for Cloudflare clearance
 	persistentCookieJar  *persistentCookieJar
 	cfBoot               *cfBootstrapper // nil unless AutoCFBoot is true
+	cfLearnedStore       *cfLearnedStore // persisted per-host CF state (working UA, CF-tagged)
 	learnedUAMu          sync.Mutex
 	learnedUAByHost      map[string]string // hostname → working UA found by cycling
+	StreamAttemptLogFile string            // if set, stream attempt records are appended as JSON lines
 	FetchCFReject        bool              // abort HLS stream on segment redirected to CF abuse page
 	PlexPMSURL           string
 	PlexPMSToken         string

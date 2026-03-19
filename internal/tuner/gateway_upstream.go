@@ -292,7 +292,14 @@ func (g *Gateway) applyUpstreamRequestHeaders(req *http.Request, incoming *http.
 	if host, ok := g.customHeaderValue("Host"); ok {
 		req.Host = host
 	}
-	req.Header.Set("User-Agent", g.effectiveUpstreamUserAgentForURL(req.URL.String(), incoming))
+	ua := g.effectiveUpstreamUserAgentForURL(req.URL.String(), incoming)
+	req.Header.Set("User-Agent", ua)
+	// Apply full browser header profile when using a browser UA (helps CF Bot Management scoring).
+	for name, value := range browserHeadersForUA(ua) {
+		if req.Header.Get(name) == "" {
+			req.Header.Set(name, value)
+		}
+	}
 	if site, ok := g.customHeaderValue("Sec-Fetch-Site"); ok {
 		req.Header.Set("Sec-Fetch-Site", site)
 	} else if g.AddSecFetchHeaders {

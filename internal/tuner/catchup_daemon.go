@@ -27,6 +27,7 @@ type CatchupRecorderDaemonConfig struct {
 	RecordMaxAttempts     int
 	RecordRetryInitial    time.Duration
 	RecordRetryMax        time.Duration
+	RecordResumePartial   bool // HTTP Range resume on same spool after transient mid-stream failures
 	RetainCompleted       int
 	RetainFailed          int
 	LaneRetainCompleted   map[string]int
@@ -60,6 +61,10 @@ type CatchupRecorderStatistics struct {
 	FailedCount    int `json:"failed_count"`
 	// LaneStorage summarizes completed bytes per lane and headroom against LaneBudgetBytes (when configured).
 	LaneStorage map[string]CatchupRecorderLaneStorage `json:"lane_storage,omitempty"`
+	// Aggregate capture observability (sums over completed + failed item fields).
+	SumCaptureHTTPAttempts     int   `json:"sum_capture_http_attempts,omitempty"`
+	SumCaptureTransientRetries int   `json:"sum_capture_transient_retries,omitempty"`
+	SumCaptureBytesResumed     int64 `json:"sum_capture_bytes_resumed,omitempty"`
 }
 
 // CatchupRecorderLaneStorage is derived from completed items plus optional per-lane byte budgets.
@@ -101,6 +106,10 @@ type CatchupRecorderItem struct {
 	Attempt          int    `json:"attempt,omitempty"`
 	RecoveryReason   string `json:"recovery_reason,omitempty"`
 	Error            string `json:"error,omitempty"`
+	// Capture observability (daemon resilient recorder path).
+	CaptureHTTPAttempts     int   `json:"capture_http_attempts,omitempty"`
+	CaptureTransientRetries int   `json:"capture_transient_retries,omitempty"`
+	CaptureBytesResumed     int64 `json:"capture_bytes_resumed,omitempty"`
 }
 
 type CatchupRecorderPreviewFunc func(time.Time) (CatchupCapsulePreview, error)
@@ -441,10 +450,18 @@ func (m *catchupRecorderManager) runCapsule(c CatchupCapsule) {
 		ctx, cancel = context.WithDeadline(context.Background(), deadline)
 		defer cancel()
 	}
-	recorded, err := m.recordCatchupCapsuleWithRetries(ctx, c)
+	recorded, capMetrics, err := RecordCatchupCapsuleResilient(ctx, c, m.cfg.StreamBaseURL, m.cfg.OutDir, m.client, ResilientRecordOptions{
+		MaxAttempts:    m.cfg.RecordMaxAttempts,
+		InitialBackoff: m.cfg.RecordRetryInitial,
+		MaxBackoff:     m.cfg.RecordRetryMax,
+		ResumePartial:  m.cfg.RecordResumePartial,
+	})
 	if err != nil {
 		item.Status = "failed"
 		item.Error = err.Error()
+		item.CaptureHTTPAttempts = capMetrics.HTTPAttempts
+		item.CaptureTransientRetries = capMetrics.TransientRetries
+		item.CaptureBytesResumed = capMetrics.BytesResumed
 		item.StoppedAt = m.now().UTC().Format(time.RFC3339)
 		m.finish(item, false)
 		return
@@ -453,6 +470,9 @@ func (m *catchupRecorderManager) runCapsule(c CatchupCapsule) {
 	item.OutputPath = recorded.OutputPath
 	item.SourceURL = recorded.SourceURL
 	item.BytesRecorded = recorded.Bytes
+	item.CaptureHTTPAttempts = capMetrics.HTTPAttempts
+	item.CaptureTransientRetries = capMetrics.TransientRetries
+	item.CaptureBytesResumed = capMetrics.BytesResumed
 	item.StoppedAt = m.now().UTC().Format(time.RFC3339)
 	if strings.TrimSpace(m.cfg.PublishDir) != "" {
 		pub, pubErr := PublishRecordedCatchupItem(m.cfg.PublishDir, c, recorded)
@@ -538,36 +558,6 @@ func (m *catchupRecorderManager) finish(item CatchupRecorderItem, success bool) 
 	}
 }
 
-func (m *catchupRecorderManager) recordCatchupCapsuleWithRetries(ctx context.Context, c CatchupCapsule) (CatchupRecordedItem, error) {
-	maxAttempts := m.cfg.RecordMaxAttempts
-	initial := m.cfg.RecordRetryInitial
-	maxB := m.cfg.RecordRetryMax
-	var errs []string
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		if attempt > 0 {
-			d := recordRetryBackoffDuration(attempt-1, initial, maxB)
-			t := time.NewTimer(d)
-			select {
-			case <-t.C:
-			case <-ctx.Done():
-				if !t.Stop() {
-					<-t.C
-				}
-				return CatchupRecordedItem{}, ctx.Err()
-			}
-		}
-		rec, err := RecordCatchupCapsule(ctx, c, m.cfg.StreamBaseURL, m.cfg.OutDir, m.client)
-		if err == nil {
-			return rec, nil
-		}
-		errs = append(errs, fmt.Sprintf("attempt %d: %v", attempt+1, err))
-		if attempt+1 >= maxAttempts || !IsTransientRecordError(err) {
-			return CatchupRecordedItem{}, fmt.Errorf("%s", strings.Join(errs, " | "))
-		}
-	}
-	return CatchupRecordedItem{}, fmt.Errorf("%s", strings.Join(errs, " | "))
-}
-
 func (m *catchupRecorderManager) trimLocked() {
 	now := m.now()
 	filterExpired := func(items []CatchupRecorderItem) []CatchupRecorderItem {
@@ -602,13 +592,31 @@ func (m *catchupRecorderManager) trimLocked() {
 	}
 	m.rebuildIndexesLocked()
 	m.state.UpdatedAt = m.now().UTC().Format(time.RFC3339)
+	sumHTTP, sumRetry, sumRes := sumCaptureObservability(m.state.Completed, m.state.Failed)
 	m.state.Statistics = CatchupRecorderStatistics{
-		ActiveCount:    len(m.state.Active),
-		CompletedCount: len(m.state.Completed),
-		FailedCount:    len(m.state.Failed),
-		LaneStorage:    m.computeLaneStorageStatsLocked(),
+		ActiveCount:                len(m.state.Active),
+		CompletedCount:             len(m.state.Completed),
+		FailedCount:                len(m.state.Failed),
+		LaneStorage:                m.computeLaneStorageStatsLocked(),
+		SumCaptureHTTPAttempts:     sumHTTP,
+		SumCaptureTransientRetries: sumRetry,
+		SumCaptureBytesResumed:     sumRes,
 	}
 	sort.SliceStable(m.state.Active, func(i, j int) bool { return m.state.Active[i].EligibleAt > m.state.Active[j].EligibleAt })
+}
+
+func sumCaptureObservability(completed, failed []CatchupRecorderItem) (httpN, retryN int, resumed int64) {
+	for _, it := range completed {
+		httpN += it.CaptureHTTPAttempts
+		retryN += it.CaptureTransientRetries
+		resumed += it.CaptureBytesResumed
+	}
+	for _, it := range failed {
+		httpN += it.CaptureHTTPAttempts
+		retryN += it.CaptureTransientRetries
+		resumed += it.CaptureBytesResumed
+	}
+	return httpN, retryN, resumed
 }
 
 func (m *catchupRecorderManager) computeLaneStorageStatsLocked() map[string]CatchupRecorderLaneStorage {

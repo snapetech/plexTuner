@@ -111,6 +111,7 @@ func reportCommands() []commandSpec {
 	catchupDaemonRecordMaxAttempts := catchupDaemonCmd.Int("record-max-attempts", 1, "Max capture attempts per programme when upstream errors look transient (>=1)")
 	catchupDaemonRecordRetryBackoff := catchupDaemonCmd.Duration("record-retry-backoff", 5*time.Second, "Initial backoff between transient capture retries")
 	catchupDaemonRecordRetryBackoffMax := catchupDaemonCmd.Duration("record-retry-backoff-max", 2*time.Minute, "Max backoff between transient capture retries")
+	catchupDaemonRecordResumePartial := catchupDaemonCmd.Bool("record-resume-partial", true, "After transient mid-stream failures, retry with HTTP Range against the same .partial.ts spool when possible")
 	catchupDaemonOnce := catchupDaemonCmd.Bool("once", false, "Run one scheduler pass, wait for any scheduled recordings to finish, then exit")
 	catchupDaemonRunFor := catchupDaemonCmd.Duration("run-for", 0, "Optional overall runtime limit; 0 means run until interrupted")
 
@@ -150,7 +151,7 @@ func reportCommands() []commandSpec {
 		}},
 		{Name: "catchup-daemon", Section: "Guide/EPG", Summary: "Continuously schedule and record eligible catch-up capsules with concurrency/state control", FlagSet: catchupDaemonCmd, Run: func(cfg *config.Config, args []string) {
 			_ = catchupDaemonCmd.Parse(args)
-			handleCatchupDaemon(cfg, *catchupDaemonCatalog, *catchupDaemonXMLTV, *catchupDaemonHorizon, *catchupDaemonLimit, *catchupDaemonOutDir, *catchupDaemonPublishDir, *catchupDaemonLibraryPrefix, *catchupDaemonStreamBaseURL, *catchupDaemonPollInterval, *catchupDaemonLeadTime, *catchupDaemonMaxDuration, *catchupDaemonMaxConcurrency, *catchupDaemonStateFile, *catchupDaemonRetainCompleted, *catchupDaemonRetainFailed, *catchupDaemonRetainCompletedPerLane, *catchupDaemonRetainFailedPerLane, *catchupDaemonBudgetBytesPerLane, *catchupDaemonGuidePolicy, *catchupDaemonReplayTemplate, *catchupDaemonIncludeLanes, *catchupDaemonExcludeLanes, *catchupDaemonIncludeChannels, *catchupDaemonExcludeChannels, *catchupDaemonRegisterPlex, *catchupDaemonPlexURL, *catchupDaemonPlexToken, *catchupDaemonRegisterEmby, *catchupDaemonEmbyHost, *catchupDaemonEmbyToken, *catchupDaemonRegisterJellyfin, *catchupDaemonJellyfinHost, *catchupDaemonJellyfinToken, *catchupDaemonRefresh, *catchupDaemonDeferLibraryRefresh, *catchupDaemonRecordMaxAttempts, *catchupDaemonRecordRetryBackoff, *catchupDaemonRecordRetryBackoffMax, *catchupDaemonOnce, *catchupDaemonRunFor)
+			handleCatchupDaemon(cfg, *catchupDaemonCatalog, *catchupDaemonXMLTV, *catchupDaemonHorizon, *catchupDaemonLimit, *catchupDaemonOutDir, *catchupDaemonPublishDir, *catchupDaemonLibraryPrefix, *catchupDaemonStreamBaseURL, *catchupDaemonPollInterval, *catchupDaemonLeadTime, *catchupDaemonMaxDuration, *catchupDaemonMaxConcurrency, *catchupDaemonStateFile, *catchupDaemonRetainCompleted, *catchupDaemonRetainFailed, *catchupDaemonRetainCompletedPerLane, *catchupDaemonRetainFailedPerLane, *catchupDaemonBudgetBytesPerLane, *catchupDaemonGuidePolicy, *catchupDaemonReplayTemplate, *catchupDaemonIncludeLanes, *catchupDaemonExcludeLanes, *catchupDaemonIncludeChannels, *catchupDaemonExcludeChannels, *catchupDaemonRegisterPlex, *catchupDaemonPlexURL, *catchupDaemonPlexToken, *catchupDaemonRegisterEmby, *catchupDaemonEmbyHost, *catchupDaemonEmbyToken, *catchupDaemonRegisterJellyfin, *catchupDaemonJellyfinHost, *catchupDaemonJellyfinToken, *catchupDaemonRefresh, *catchupDaemonDeferLibraryRefresh, *catchupDaemonRecordMaxAttempts, *catchupDaemonRecordRetryBackoff, *catchupDaemonRecordRetryBackoffMax, *catchupDaemonRecordResumePartial, *catchupDaemonOnce, *catchupDaemonRunFor)
 		}},
 		{Name: "catchup-recorder-report", Section: "Guide/EPG", Summary: "Summarize the persistent catch-up recorder state file", FlagSet: catchupRecorderReportCmd, Run: func(_ *config.Config, args []string) {
 			_ = catchupRecorderReportCmd.Parse(args)
@@ -339,7 +340,7 @@ func handleCatchupRecord(cfg *config.Config, catalogPath, xmltvRef string, horiz
 	fmt.Println(string(data))
 }
 
-func handleCatchupDaemon(cfg *config.Config, catalogPath, xmltvRef string, horizon time.Duration, limit int, outDir, publishDir, libraryPrefix, streamBaseURL string, pollInterval, leadTime, maxDuration time.Duration, maxConcurrency int, stateFile string, retainCompleted, retainFailed int, retainCompletedPerLane, retainFailedPerLane, budgetBytesPerLane, guidePolicy, replayTemplate, includeLanes, excludeLanes, includeChannels, excludeChannels string, registerPlex bool, plexURL, plexToken string, registerEmby bool, embyHost, embyToken string, registerJellyfin bool, jellyfinHost, jellyfinToken string, refresh bool, deferLibraryRefresh bool, recordMaxAttempts int, recordRetryBackoff, recordRetryBackoffMax time.Duration, once bool, runFor time.Duration) {
+func handleCatchupDaemon(cfg *config.Config, catalogPath, xmltvRef string, horizon time.Duration, limit int, outDir, publishDir, libraryPrefix, streamBaseURL string, pollInterval, leadTime, maxDuration time.Duration, maxConcurrency int, stateFile string, retainCompleted, retainFailed int, retainCompletedPerLane, retainFailedPerLane, budgetBytesPerLane, guidePolicy, replayTemplate, includeLanes, excludeLanes, includeChannels, excludeChannels string, registerPlex bool, plexURL, plexToken string, registerEmby bool, embyHost, embyToken string, registerJellyfin bool, jellyfinHost, jellyfinToken string, refresh bool, deferLibraryRefresh bool, recordMaxAttempts int, recordRetryBackoff, recordRetryBackoffMax time.Duration, recordResumePartial bool, once bool, runFor time.Duration) {
 	path := strings.TrimSpace(catalogPath)
 	if path == "" {
 		path = cfg.CatalogPath
@@ -407,6 +408,7 @@ func handleCatchupDaemon(cfg *config.Config, catalogPath, xmltvRef string, horiz
 		RecordMaxAttempts:   recordMaxAttempts,
 		RecordRetryInitial:  recordRetryBackoff,
 		RecordRetryMax:      recordRetryBackoffMax,
+		RecordResumePartial: recordResumePartial,
 		RetainCompleted:     retainCompleted,
 		RetainFailed:        retainFailed,
 		LaneRetainCompleted: laneRetainCompleted,

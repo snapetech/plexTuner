@@ -117,6 +117,7 @@ func (c *cfBootstrapper) markResolved(host, ua string) {
 
 // tryCycleThenProbe attempts the rawURL with each UA candidate, returns the first one that
 // returns HTTP 200. A non-CF non-200 response is not retried (wrong auth etc).
+// Full browser header profile is applied alongside browser UAs to maximize CF bypass rate.
 func (c *cfBootstrapper) tryCycleThenProbe(ctx context.Context, rawURL string, client *http.Client) string {
 	for _, ua := range c.uaCandidates {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
@@ -124,6 +125,9 @@ func (c *cfBootstrapper) tryCycleThenProbe(ctx context.Context, rawURL string, c
 			continue
 		}
 		req.Header.Set("User-Agent", ua)
+		for name, value := range browserHeadersForUA(ua) {
+			req.Header.Set(name, value)
+		}
 		resp, err := client.Do(req)
 		if err != nil {
 			continue
@@ -140,6 +144,55 @@ func (c *cfBootstrapper) tryCycleThenProbe(ctx context.Context, rawURL string, c
 		}
 	}
 	return ""
+}
+
+// StartFreshnessMonitor runs a background goroutine that proactively refreshes CF clearance
+// for known CF-tagged hosts before their cf_clearance cookie expires.
+// This prevents mid-session failures when CF clearance TTLs expire (commonly 10min–12h).
+func (c *cfBootstrapper) StartFreshnessMonitor(ctx context.Context, client *http.Client) {
+	if c == nil {
+		return
+	}
+	go func() {
+		t := time.NewTicker(30 * time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				c.mu.Lock()
+				hosts := make([]string, 0, len(c.byHost))
+				for host, st := range c.byHost {
+					if st != nil && st.resolved {
+						hosts = append(hosts, host)
+					}
+				}
+				c.mu.Unlock()
+				for _, host := range hosts {
+					if c.jar == nil {
+						continue
+					}
+					u, err := url.Parse("https://" + host + "/")
+					if err != nil || u == nil {
+						continue
+					}
+					for _, ck := range c.jar.Cookies(u) {
+						if ck.Name != "cf_clearance" {
+							continue
+						}
+						if !ck.Expires.IsZero() && time.Until(ck.Expires) < time.Hour {
+							log.Printf("cf-bootstrap: cf_clearance for %s expires in %v; refreshing proactively", host, time.Until(ck.Expires).Round(time.Minute))
+							probeURL := "https://" + host + "/"
+							go func(h, u string) {
+								_ = c.EnsureAccess(ctx, u, client)
+							}(host, probeURL)
+						}
+					}
+				}
+			}
+		}
+	}()
 }
 
 // tryBrowserCookies reads cf_clearance cookies from Chrome/Firefox profiles on the local machine,

@@ -1,7 +1,9 @@
 package tuner
 
 import (
+	"encoding/json"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -250,6 +252,23 @@ func (g *Gateway) appendStreamAttempt(rec StreamAttemptRecord) {
 	if max := g.recentStreamAttemptLimit(); len(g.recentAttempts) > max {
 		g.recentAttempts = g.recentAttempts[:max]
 	}
+	// Append to audit log file if configured (JSONL format, one record per line).
+	if g.StreamAttemptLogFile != "" {
+		go g.appendAttemptToLog(rec)
+	}
+}
+
+func (g *Gateway) appendAttemptToLog(rec StreamAttemptRecord) {
+	line, err := json.Marshal(rec)
+	if err != nil {
+		return
+	}
+	f, err := os.OpenFile(g.StreamAttemptLogFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.Write(append(line, '\n'))
 }
 
 func (g *Gateway) RecentStreamAttempts(limit int) StreamAttemptReport {

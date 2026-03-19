@@ -83,6 +83,20 @@ func (g *Gateway) fetchAndWriteSegment(
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		// Detect CF at segment level — CF sometimes passes the playlist but blocks .ts segments.
+		// Peek at the body to check for CF signals, then note the block for bootstrapping.
+		preview := make([]byte, 256)
+		n, _ := resp.Body.Read(preview)
+		if isCFLikeStatus(resp.StatusCode, string(preview[:n])) {
+			g.noteUpstreamCFBlock(segURL)
+			if g.cfBoot != nil {
+				go func() {
+					if ua := g.cfBoot.EnsureAccess(r.Context(), segURL, client); ua != "" {
+						g.setLearnedUA(hostFromURL(segURL), ua)
+					}
+				}()
+			}
+		}
 		return 0, errors.New("segment http status " + strconv.Itoa(resp.StatusCode))
 	}
 	if !headerSent {

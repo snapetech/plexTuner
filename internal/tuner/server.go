@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -827,6 +828,61 @@ func (s *Server) Run(ctx context.Context) error {
 			log.Printf("Gateway Autopilot memory enabled: path=%q decisions=%d", s.AutopilotStateFile, len(store.byKey))
 		}
 	}
+	// CF learned store: persists working UA per-host and CF-tagged flags across restarts.
+	cfLearnedPath := strings.TrimSpace(os.Getenv("IPTV_TUNERR_CF_LEARNED_FILE"))
+	if cfLearnedPath == "" {
+		// Auto-derive from cookie jar path if set.
+		if jar := strings.TrimSpace(os.Getenv("IPTV_TUNERR_COOKIE_JAR_FILE")); jar != "" {
+			dir := strings.TrimSuffix(jar, "/"+filepath.Base(jar))
+			if dir == jar {
+				dir = filepath.Dir(jar)
+			}
+			cfLearnedPath = filepath.Join(dir, "cf-learned.json")
+		}
+	}
+	gateway.cfLearnedStore = loadCFLearnedStore(cfLearnedPath)
+	// Pre-populate learnedUAByHost from persisted CF learned store (survives restarts).
+	for _, status := range gateway.cfLearnedStore.allStatuses() {
+		if status.WorkingUA != "" {
+			gateway.setLearnedUA(status.Host, status.WorkingUA)
+		}
+	}
+	// Pre-populate learnedUAByHost from channel PreferredUA fields (set by catalog build after CF probe cycling).
+	for _, ch := range gateway.Channels {
+		if ch.PreferredUA == "" {
+			continue
+		}
+		for _, u := range append([]string{ch.StreamURL}, ch.StreamURLs...) {
+			if host := hostFromURL(u); host != "" {
+				gateway.setLearnedUA(host, ch.PreferredUA)
+			}
+		}
+	}
+	// Per-host UA override: IPTV_TUNERR_HOST_UA=host1:vlc,host2:lavf
+	// Lets operators pin a known-good UA per provider without waiting for cycling.
+	if hostUARaw := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HOST_UA")); hostUARaw != "" {
+		count := 0
+		for _, pair := range strings.Split(hostUARaw, ",") {
+			pair = strings.TrimSpace(pair)
+			host, preset, ok := strings.Cut(pair, ":")
+			if !ok || strings.TrimSpace(host) == "" || strings.TrimSpace(preset) == "" {
+				continue
+			}
+			host = strings.ToLower(strings.TrimSpace(host))
+			// resolveUserAgentPreset is not available here (wrong package), so resolve inline.
+			ua := resolveUserAgentPreset(strings.TrimSpace(preset), gateway.DetectedFFmpegUA)
+			gateway.setLearnedUA(host, ua)
+			count++
+		}
+		if count > 0 {
+			log.Printf("Gateway host UA overrides applied: %d entries from IPTV_TUNERR_HOST_UA", count)
+		}
+	}
+	// Stream attempt audit log: IPTV_TUNERR_STREAM_ATTEMPT_LOG=/path/to/attempts.jsonl
+	if logFile := strings.TrimSpace(os.Getenv("IPTV_TUNERR_STREAM_ATTEMPT_LOG")); logFile != "" {
+		gateway.StreamAttemptLogFile = logFile
+		log.Printf("Gateway stream attempt audit log enabled: path=%q", logFile)
+	}
 	log.Printf("Gateway stream mode: transcode=%q buffer_bytes=%d", gateway.StreamTranscodeMode, gateway.StreamBufferBytes)
 	if gateway.PlexClientAdapt {
 		log.Printf("Gateway Plex client adapt enabled: pms_url=%q token_set=%t", gateway.PlexPMSURL, gateway.PlexPMSToken != "")
@@ -874,6 +930,8 @@ func (s *Server) Run(ctx context.Context) error {
 		uaCands := uaCycleCandidates(gateway.DetectedFFmpegUA)
 		gateway.cfBoot = newCFBootstrapper(gateway.persistentCookieJar, uaCands)
 		log.Printf("Gateway CF auto-boot enabled (UA candidates: %d)", len(uaCands))
+		// Proactively refresh cf_clearance cookies before they expire.
+		gateway.cfBoot.StartFreshnessMonitor(ctx, gateway.Client)
 		// Pre-flight: ensure access for each unique provider host in the channel list.
 		go func() {
 			seen := make(map[string]bool)

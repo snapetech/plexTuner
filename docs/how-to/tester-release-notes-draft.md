@@ -75,9 +75,15 @@ Some IPTV providers route their management and stream endpoints through Cloudfla
 
 ### What was fixed
 
-**UA cycling (automatic):** When Tunerr detects a Cloudflare response, it now automatically cycles through all known media-player User-Agents (Lavf, VLC, mpv, Kodi, Firefox, Chrome, curl) until one works. The working UA is learned per-provider and used for all subsequent requests in that session — including the ffmpeg subprocess. Zero config required.
+**UA cycling (automatic):** When Tunerr detects a Cloudflare response (on the playlist, segment, or probe), it automatically cycles through all known media-player User-Agents (Lavf, VLC, mpv, Kodi, Firefox, Chrome, curl) until one works. The working UA is learned per-provider and used for all subsequent requests — including the ffmpeg subprocess. Zero config required.
+
+**Full browser header profile:** When cycling lands on a browser UA (Firefox/Chrome), Tunerr also sends the matching `Accept`, `Accept-Language`, `Accept-Encoding`, `Sec-Ch-Ua`, and other headers that complete the browser fingerprint. CF Bot Management scores the full header set, not just the UA — partial profiles still get flagged.
+
+**Learned UA survives restarts:** The working UA per provider host is now persisted to `cf-learned.json` (in the same directory as the cookie jar). On the next restart, Gateway pre-populates its in-memory learned UA map from disk instead of cycling again on the first stream.
 
 **Auto-detect ffmpeg UA:** At startup, Tunerr detects the installed ffmpeg version and uses the matching `Lavf/X.Y.Z` as the first candidate UA. If `ffplay -i <url>` works for you, Tunerr will send the exact same UA automatically.
+
+**HLS segment CF detection:** CF sometimes passes the M3U8 playlist but blocks individual `.ts` segment fetches on a different CDN path. Tunerr now detects CF responses at the segment level and triggers re-bootstrap immediately instead of silently failing.
 
 **CF auto-boot (`IPTV_TUNERR_CF_AUTO_BOOT=true`):** When enabled, at startup Tunerr probes each provider host and, if CF is detected, runs a resolution chain:
 1. UA cycling (no user action needed)
@@ -85,11 +91,19 @@ Some IPTV providers route their management and stream endpoints through Cloudfla
 3. Launches Chromium headlessly to solve the challenge (no user action needed — requires `chromium`/`google-chrome` to be installed)
 4. Opens your default browser at the provider URL and waits up to 60 seconds for you to click through the CF challenge (only if a display is available)
 
+**CF clearance freshness monitor:** When auto-boot is enabled, Tunerr runs a background goroutine that checks `cf_clearance` cookie expiry every 30 minutes. If a clearance is within 1 hour of expiry, it proactively re-bootstraps before the next stream attempt fails.
+
 Enable it with:
 ```
 IPTV_TUNERR_CF_AUTO_BOOT=true
 IPTV_TUNERR_COOKIE_JAR_FILE=/path/to/cf-cookies.json   # required for persistence
 ```
+
+**Per-host UA pinning (`IPTV_TUNERR_HOST_UA`):** Lock a specific UA per provider hostname without waiting for cycling:
+```
+IPTV_TUNERR_HOST_UA=provider1.example.com:vlc,provider2.example.com:lavf
+```
+Presets: `lavf`, `vlc`, `mpv`, `kodi`, `firefox`, or any literal UA string.
 
 ### Manual bypass (if auto-boot doesn't work)
 
@@ -116,6 +130,13 @@ iptv-tunerr import-cookies \
   -netscape /tmp/cookies.txt
 ```
 
+Or export a full browser session as HAR (DevTools → Network → Save all as HAR with content) then:
+```bash
+iptv-tunerr import-cookies \
+  -jar "$IPTV_TUNERR_COOKIE_JAR_FILE" \
+  -har /tmp/provider-session.har
+```
+
 ### Diagnostic commands
 
 If a CF-proxied stream still fails, the stream compare harness now shows the User-Agent each tool uses and flags UA mismatches as a likely CF cause:
@@ -128,10 +149,26 @@ FFPLAY_LOGLEVEL=verbose \
 ```
 The `report.txt` output will show `ua=Lavf/X.Y.Z` for the direct path and whatever Tunerr used, with a suggested fix if they differ.
 
+**Check per-host CF state (offline, no server needed):**
+```bash
+iptv-tunerr cf-status
+# or with explicit paths:
+iptv-tunerr cf-status -jar /path/to/cf-cookies.json
+# JSON output:
+iptv-tunerr cf-status -json
+```
+Shows: CF-tagged flag, `cf_clearance` presence and time-to-expiry, working UA learned per host.
+
 Also useful:
 ```bash
 curl http://localhost:5004/debug/stream-attempts.json | python3 -m json.tool
 ```
+
+**Stream attempt audit log (persistent across restarts):**
+```
+IPTV_TUNERR_STREAM_ATTEMPT_LOG=/var/log/tunerr-attempts.jsonl
+```
+Appends one JSON record per stream attempt to a file for post-mortem analysis. The in-process buffer (`/debug/stream-attempts.json`) is still there but now there's also an on-disk trail.
 
 ---
 

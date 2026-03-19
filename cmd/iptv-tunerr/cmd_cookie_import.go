@@ -16,6 +16,30 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/config"
 )
 
+// harFile is the minimal structure we care about in a browser HAR export.
+// HAR spec: http://www.softwareishard.com/blog/har-12-spec/
+type harFile struct {
+	Log struct {
+		Entries []struct {
+			Request struct {
+				URL     string `json:"url"`
+				Cookies []struct {
+					Name    string `json:"name"`
+					Value   string `json:"value"`
+					Domain  string `json:"domain"`
+					Path    string `json:"path"`
+					Secure  bool   `json:"secure"`
+					Expires string `json:"expires"` // ISO8601 or empty
+				} `json:"cookies"`
+				Headers []struct {
+					Name  string `json:"name"`
+					Value string `json:"value"`
+				} `json:"headers"`
+			} `json:"request"`
+		} `json:"entries"`
+	} `json:"log"`
+}
+
 func cookieImportCommands() []commandSpec {
 	return []commandSpec{
 		{
@@ -43,6 +67,7 @@ func runImportCookies(cfg *config.Config, args []string) {
 	jarFile := fs.String("jar", "", "Path to cookie jar JSON file (default: IPTV_TUNERR_COOKIE_JAR_FILE env var)")
 	cookieStr := fs.String("cookie", "", `Cookie string to import: "name=value; name2=value2" — use -domain to associate`)
 	netscapeFile := fs.String("netscape", "", "Path to Netscape/Mozilla cookie file exported from browser")
+	harFileFlag := fs.String("har", "", "Path to HAR file exported from browser DevTools (Network → Save all as HAR with content)")
 	domain := fs.String("domain", "", "Domain to associate cookies with when using -cookie string (e.g. provider.example.com)")
 	path := fs.String("path", "/", "Cookie path when using -cookie string")
 	secure := fs.Bool("secure", false, "Mark cookies as Secure when using -cookie string")
@@ -81,8 +106,8 @@ Flags:
 		os.Exit(1)
 	}
 
-	if *cookieStr == "" && *netscapeFile == "" {
-		log.Print("Provide -cookie or -netscape; see -help for usage")
+	if *cookieStr == "" && *netscapeFile == "" && *harFileFlag == "" {
+		log.Print("Provide -cookie, -netscape, or -har; see -help for usage")
 		os.Exit(1)
 	}
 
@@ -123,6 +148,27 @@ Flags:
 		cookies, err := parseNetscapeCookies(f, expiry)
 		if err != nil {
 			log.Printf("Parse %s: %v", *netscapeFile, err)
+			os.Exit(1)
+		}
+		for _, c := range cookies {
+			if *dryRun {
+				fmt.Printf("  [dry-run] import: domain=%s name=%s value=%.40s...\n", c.Domain, c.Name, c.Value)
+			} else {
+				storeCookie(saved, c)
+			}
+			imported++
+		}
+	}
+
+	if *harFileFlag != "" {
+		data, err := os.ReadFile(*harFileFlag)
+		if err != nil {
+			log.Printf("Cannot open HAR %s: %v", *harFileFlag, err)
+			os.Exit(1)
+		}
+		cookies, err := parseHARCookies(data, expiry)
+		if err != nil {
+			log.Printf("Parse HAR %s: %v", *harFileFlag, err)
 			os.Exit(1)
 		}
 		for _, c := range cookies {
@@ -255,4 +301,65 @@ func parseNetscapeCookies(r io.Reader, defaultExpiry int64) ([]*httpCookieJSON, 
 		})
 	}
 	return out, scanner.Err()
+}
+
+// parseHARCookies extracts cookies from a browser HAR (HTTP Archive) export.
+// HAR is the standard "Save all as HAR with content" format from Chrome/Firefox DevTools.
+// All unique cookies across all entries are collected and deduplicated by name+domain+path.
+func parseHARCookies(data []byte, defaultExpiry int64) ([]*httpCookieJSON, error) {
+	var har harFile
+	if err := json.Unmarshal(data, &har); err != nil {
+		return nil, err
+	}
+	type key struct{ name, domain, path string }
+	seen := make(map[key]*httpCookieJSON)
+	for _, entry := range har.Log.Entries {
+		for _, ck := range entry.Request.Cookies {
+			name := strings.TrimSpace(ck.Name)
+			value := strings.TrimSpace(ck.Value)
+			domain := strings.TrimPrefix(strings.TrimSpace(ck.Domain), ".")
+			if domain == "" {
+				// Fall back to Host header in this entry's request.
+				for _, h := range entry.Request.Headers {
+					if strings.EqualFold(h.Name, "host") {
+						domain = strings.TrimSpace(h.Value)
+						// strip port if present
+						if idx := strings.LastIndex(domain, ":"); idx > 0 {
+							domain = domain[:idx]
+						}
+						break
+					}
+				}
+			}
+			if name == "" || domain == "" {
+				continue
+			}
+			path := strings.TrimSpace(ck.Path)
+			if path == "" {
+				path = "/"
+			}
+			k := key{name, domain, path}
+			expiry := defaultExpiry
+			if ck.Expires != "" {
+				if t, err := time.Parse(time.RFC3339, ck.Expires); err == nil {
+					expiry = t.Unix()
+				} else if t, err := time.Parse("2006-01-02T15:04:05.000Z", ck.Expires); err == nil {
+					expiry = t.Unix()
+				}
+			}
+			seen[k] = &httpCookieJSON{
+				Name:    name,
+				Value:   value,
+				Domain:  domain,
+				Path:    path,
+				Secure:  ck.Secure,
+				Expires: expiry,
+			}
+		}
+	}
+	out := make([]*httpCookieJSON, 0, len(seen))
+	for _, c := range seen {
+		out = append(out, c)
+	}
+	return out, nil
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/http"
 	"strings"
 	"time"
 )
@@ -17,6 +18,17 @@ func IsTransientRecordError(err error) bool {
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
+	}
+	var h *recordHTTPStatusError
+	if errors.As(err, &h) {
+		switch h.Status {
+		case http.StatusRequestTimeout, http.StatusTooManyRequests,
+			http.StatusInternalServerError, http.StatusNotImplemented,
+			http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout, 509:
+			return true
+		default:
+			return false
+		}
 	}
 	var nerr net.Error
 	if errors.As(err, &nerr) && nerr.Timeout() {
@@ -72,4 +84,30 @@ func recordRetryBackoffDuration(retryIndex int, initial, maxBackoff time.Duratio
 		d = next
 	}
 	return d
+}
+
+// BackoffAfterRecordError combines exponential backoff with Retry-After and status-aware scaling.
+func BackoffAfterRecordError(err error, retryIndex int, initial, maxBackoff time.Duration) time.Duration {
+	base := recordRetryBackoffDuration(retryIndex, initial, maxBackoff)
+	var h *recordHTTPStatusError
+	if !errors.As(err, &h) {
+		return base
+	}
+	if ra := parseRetryAfterHeader(h.RetryAfter); ra > 0 {
+		if ra > maxBackoff {
+			ra = maxBackoff
+		}
+		if ra > base {
+			return ra
+		}
+	}
+	m := statusBackoffMultiplier(h.Status)
+	scaled := time.Duration(float64(base) * m)
+	if scaled > maxBackoff {
+		scaled = maxBackoff
+	}
+	if scaled > base {
+		return scaled
+	}
+	return base
 }

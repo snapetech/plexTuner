@@ -73,10 +73,19 @@ func (g *Gateway) noteUpstreamCFBlock(rawURL string) {
 		return
 	}
 	g.providerStateMu.Lock()
-	defer g.providerStateMu.Unlock()
 	g.cfBlockHits++
 	g.lastCFBlockAt = time.Now().UTC()
 	g.lastCFBlockURL = safeurl.RedactURL(rawURL)
+	g.providerStateMu.Unlock()
+	// CF blocks also feed into the host penalty system so autotune can deprioritize
+	// CF-blocking hosts in catalog ordering and prefer non-CF backup URLs.
+	g.noteUpstreamFailure(rawURL, 403, "cf_block")
+	// Mark host as CF-tagged in the learned store so it's known across restarts.
+	if g.cfLearnedStore != nil {
+		if host := hostFromURL(rawURL); host != "" {
+			go g.cfLearnedStore.markCFTagged(host)
+		}
+	}
 }
 
 func (g *Gateway) noteUpstreamFailure(rawURL string, status int, kind string) {

@@ -27,6 +27,7 @@ type Result struct {
 	StatusCode  int
 	LatencyMs   int64
 	BodyPreview string // first 512 bytes for CF detection
+	WorkingUA   string // UA that succeeded after CF cycling; "" if no cycling was needed or all failed
 }
 
 type Status string
@@ -101,6 +102,7 @@ func ProbeOne(ctx context.Context, m3uURL string, client *http.Client) Result {
 		// Cycle through all media-client UA presets — stop at the first that returns 200.
 		for _, ua := range probeUACandidates {
 			if r2 := probeOneWithUA(ctx, m3uURL, ua, client, start); r2.Status == StatusOK {
+				r2.WorkingUA = ua
 				return r2
 			}
 		}
@@ -214,6 +216,7 @@ func ProbePlayerAPI(ctx context.Context, baseURL, user, pass string, client *htt
 		apiURL := baseURL + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass)
 		for _, ua := range probeUACandidates {
 			if r2 := probePlayerAPIWithUA(ctx, baseURL, apiURL, ua, client, start); r2.Status == StatusOK {
+				r2.WorkingUA = ua
 				return r2
 			}
 		}

@@ -7,6 +7,7 @@ import (
 )
 
 // setLearnedUA records that ua works for the given hostname. Thread-safe.
+// Also persists to cfLearnedStore so the UA survives restarts.
 func (g *Gateway) setLearnedUA(host, ua string) {
 	if host == "" || ua == "" {
 		return
@@ -17,6 +18,9 @@ func (g *Gateway) setLearnedUA(host, ua string) {
 		g.learnedUAByHost = make(map[string]string)
 	}
 	g.learnedUAByHost[host] = ua
+	if g.cfLearnedStore != nil {
+		go g.cfLearnedStore.setUA(host, ua)
+	}
 }
 
 // getLearnedUA returns the previously-learned working UA for host, or "".
@@ -47,9 +51,14 @@ func (g *Gateway) tryCFUACycle(ctx context.Context, incoming *http.Request, stre
 		if err != nil {
 			continue
 		}
-		// Apply all standard upstream headers but override the UA.
+		// Apply all standard upstream headers, override the UA, and add browser profile headers.
 		g.applyUpstreamRequestHeaders(req, incoming)
 		req.Header.Set("User-Agent", ua)
+		for name, value := range browserHeadersForUA(ua) {
+			if req.Header.Get(name) == "" {
+				req.Header.Set(name, value)
+			}
+		}
 
 		resp, err := client.Do(req)
 		if err != nil {
