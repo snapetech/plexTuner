@@ -23,6 +23,21 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-18
+  Title: Split generic gateway support helpers into a focused file
+  Summary:
+    - Moved request-id, env parsing, disconnect detection, and path parsing helpers into `internal/tuner/gateway_support.go`.
+    - Kept `internal/tuner/gateway.go` focused on `ServeHTTP` and top-level request orchestration.
+  Verification:
+    - `go test ./internal/tuner`
+    - `./scripts/verify`
+  Notes:
+    - This is structural only; runtime gateway behavior was preserved.
+  Opportunities filed:
+    - none
+  Links:
+    - internal/tuner/gateway.go, internal/tuner/gateway_support.go
+
+- Date: 2026-03-18
   Title: Split runtime registration logic out of cmd_runtime.go
   Summary:
     - Moved Plex/Emby/Jellyfin registration and watchdog helpers into `cmd/iptv-tunerr/cmd_runtime_register.go`.

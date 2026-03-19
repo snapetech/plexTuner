@@ -152,6 +152,14 @@
   3. preserve runtime behavior while separating media-server integration from core run flow
   4. verify and push if green
 
+**Current focus shift (gateway support helper split, 2026-03-18):**
+- Finishing the remaining obvious gateway cleanup after the relay split.
+- This pass covers:
+  1. move request-id/env/disconnect/path helpers out of `internal/tuner/gateway.go`
+  2. keep `gateway.go` focused on `ServeHTTP` and request dispatch/orchestration
+  3. preserve runtime behavior while shrinking the last mixed helper block in the gateway entrypoint
+  4. verify and push if green
+
 **Current focus shift (EPG doctor operator docs, 2026-03-18):**
 - Follow-on docs cleanup after shipping `guide-health` and `epg-doctor`: make the new guide-diagnostics workflow discoverable from the how-to and runbook indexes so operators have one documented path from symptom to fix.
 - This pass adds:
