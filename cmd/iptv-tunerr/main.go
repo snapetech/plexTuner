@@ -16,6 +16,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"net/url"
@@ -24,6 +25,40 @@ import (
 
 	"github.com/snapetech/iptvtunerr/internal/config"
 )
+
+func normalizeTopLevelCommand(arg string) string {
+	switch strings.TrimSpace(strings.ToLower(arg)) {
+	case "help", "-h", "--help":
+		return ""
+	default:
+		return arg
+	}
+}
+
+func usageText(prog string, commands []commandSpec, version string, sections []string) string {
+	var out bytes.Buffer
+	fmt.Fprintf(&out, "iptv-tunerr %s — live TV streaming + XMLTV guide for Plex, Emby, Jellyfin\n\n", version)
+	fmt.Fprintf(&out, "Streaming: HDHomeRun-compatible tuner endpoints backed by M3U/Xtream with optional transcode.\n")
+	fmt.Fprintf(&out, "Guide/EPG: /guide.xml — provider XMLTV + external XMLTV + placeholder fallback, with deterministic TVGID repair during catalog build.\n\n")
+	fmt.Fprintf(&out, "Usage: %s <command> [flags]\n\n", prog)
+	for _, section := range sections {
+		first := true
+		for _, cmd := range commands {
+			if cmd.Section != section {
+				continue
+			}
+			if first {
+				fmt.Fprintf(&out, "%s:\n", section)
+				first = false
+			}
+			fmt.Fprintf(&out, "  %-18s %s\n", cmd.Name, cmd.Summary)
+		}
+		if !first {
+			fmt.Fprintln(&out)
+		}
+	}
+	return out.String()
+}
 
 func main() {
 	_ = config.LoadEnvFile(".env")
@@ -47,32 +82,14 @@ func main() {
 		commandByName[cmd.Name] = cmd
 	}
 
-	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "iptv-tunerr %s — live TV streaming + XMLTV guide for Plex, Emby, Jellyfin\n\n", Version)
-		fmt.Fprintf(os.Stderr, "Streaming: HDHomeRun-compatible tuner endpoints backed by M3U/Xtream with optional transcode.\n")
-		fmt.Fprintf(os.Stderr, "Guide/EPG: /guide.xml — provider XMLTV + external XMLTV + placeholder fallback, with deterministic TVGID repair during catalog build.\n\n")
-		fmt.Fprintf(os.Stderr, "Usage: %s <command> [flags]\n\n", os.Args[0])
-		for _, section := range sections {
-			first := true
-			for _, cmd := range commands {
-				if cmd.Section != section {
-					continue
-				}
-				if first {
-					fmt.Fprintf(os.Stderr, "%s:\n", section)
-					first = false
-				}
-				fmt.Fprintf(os.Stderr, "  %-18s %s\n", cmd.Name, cmd.Summary)
-			}
-			if !first {
-				fmt.Fprintln(os.Stderr)
-			}
-		}
+	if len(os.Args) < 2 || normalizeTopLevelCommand(os.Args[1]) == "" {
+		fmt.Fprint(os.Stderr, usageText(os.Args[0], commands, Version, sections))
 		os.Exit(1)
 	}
 
 	cfg := config.Load()
-	cmd, ok := commandByName[os.Args[1]]
+	cmdName := normalizeTopLevelCommand(os.Args[1])
+	cmd, ok := commandByName[cmdName]
 	if !ok {
 		fmt.Fprintf(os.Stderr, "Unknown command %q\n", os.Args[1])
 		os.Exit(1)

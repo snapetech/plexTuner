@@ -237,3 +237,36 @@ func TestBuildCatchupCapsulePreview_UsesCatalogDNA(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 }
+
+func TestNormalizeTopLevelCommand(t *testing.T) {
+	tests := map[string]string{
+		"help":   "",
+		"-h":     "",
+		"--help": "",
+		"probe":  "probe",
+		" run ":  " run ",
+	}
+	for in, want := range tests {
+		if got := normalizeTopLevelCommand(in); got != want {
+			t.Fatalf("normalizeTopLevelCommand(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestUsageTextIncludesCommands(t *testing.T) {
+	text := usageText("iptv-tunerr", []commandSpec{
+		{Name: "run", Section: "Core", Summary: "Run the server"},
+		{Name: "guide-health", Section: "Guide/EPG", Summary: "Guide health"},
+	}, "test", []string{"Core", "Guide/EPG"})
+	for _, want := range []string{
+		"Usage: iptv-tunerr <command> [flags]",
+		"Core:",
+		"run",
+		"Guide/EPG:",
+		"guide-health",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("usage text missing %q:\n%s", want, text)
+		}
+	}
+}

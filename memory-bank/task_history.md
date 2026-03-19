@@ -23,6 +23,24 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Fix audit follow-up CLI and script defects
+  Summary:
+    - Added a top-level `help` / `-h` / `--help` alias path in the CLI entrypoint so usage is reachable through the expected command form.
+    - Added entrypoint tests for command normalization and rendered usage text.
+    - Restored the executable bit on `scripts/quick-check.sh` and reran the second-pass audit checks.
+  Verification:
+    - `go test ./cmd/iptv-tunerr`
+    - `./scripts/quick-check.sh`
+    - `go run ./cmd/iptv-tunerr help`
+    - `./scripts/verify`
+  Notes:
+    - This was the direct follow-up to the broad repo audit; it closes both concrete defects found in the first pass.
+  Opportunities filed:
+    - none
+  Links:
+    - cmd/iptv-tunerr/main.go, cmd/iptv-tunerr/main_test.go, scripts/quick-check.sh
+
+- Date: 2026-03-19
   Title: Integrate tester gateway compatibility fixes
   Summary:
     - Integrated the tester fork's redirect-safe HLS playlist handling so playlist refreshes and nested relative segment paths keep using the effective post-redirect URL.

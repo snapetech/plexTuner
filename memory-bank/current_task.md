@@ -20,6 +20,16 @@
   3. integrated persistent upstream cookie storage, but rewrote it so newly learned cookies are actually tracked and saved across restarts
   4. added regression tests, updated env/docs/changelog, and ran full `scripts/verify`
 
+**Current focus shift (audit follow-up, 2026-03-19):**
+- Follow-on from the broad repo audit after `v0.1.11`:
+  1. fix the missing top-level `help` alias so `iptv-tunerr help` prints usage instead of erroring
+  2. restore the executable bit on `scripts/quick-check.sh` so the documented shortcut actually runs
+  3. rerun the original failing checks plus full `scripts/verify` as a second pass
+- Result:
+  1. `iptv-tunerr help` now prints the same usage surface as the no-arg path
+  2. `./scripts/quick-check.sh` now executes successfully
+  3. second-pass verification is green
+
 **Current focus shift (intelligence cross-wiring epic, 2026-03-18):**
 - User requested the full next wave from the audit: structural cleanup plus runtime cross-wiring so the newer intelligence/reporting work actually changes behavior.
 - This is now tracked as a multi-PR epic in `memory-bank/work_breakdown.md` under `INT-001` through `INT-007`.
