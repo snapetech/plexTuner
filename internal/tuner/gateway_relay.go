@@ -114,6 +114,8 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	hlsLiveStartIndex := getenvInt("IPTV_TUNERR_FFMPEG_HLS_LIVE_START_INDEX", -3)
 	hlsUseNoBuffer := getenvBool("IPTV_TUNERR_FFMPEG_HLS_NOBUFFER", false)
 	hlsReconnect := getenvBool("IPTV_TUNERR_FFMPEG_HLS_RECONNECT", false)
+	hlsHTTPPersistent := getenvBool("IPTV_TUNERR_FFMPEG_HLS_HTTP_PERSISTENT", true)
+	hlsMultipleRequests := getenvBool("IPTV_TUNERR_FFMPEG_HLS_MULTIPLE_REQUESTS", true)
 	if g.shouldAutoEnableHLSReconnect() {
 		hlsReconnect = true
 	}
@@ -134,7 +136,19 @@ func (g *Gateway) relayHLSWithFFmpeg(
 		"-analyzeduration", strconv.Itoa(hlsAnalyzeDurationUs),
 		"-probesize", strconv.Itoa(hlsProbeSize),
 		"-rw_timeout", strconv.Itoa(hlsRWTimeoutUs),
-		"-user_agent", "IptvTunerr/1.0",
+		"-user_agent", g.effectiveUpstreamUserAgent(r),
+	}
+	if hlsHTTPPersistent {
+		args = append(args, "-http_persistent", "1")
+	}
+	if hlsMultipleRequests {
+		args = append(args, "-multiple_requests", "1")
+	}
+	if referer := g.effectiveUpstreamReferer(r); referer != "" {
+		args = append(args, "-referer", referer)
+	}
+	if cookies := g.ffmpegCookiesOptionForURL(playlistURL); cookies != "" {
+		args = append(args, "-cookies", cookies)
 	}
 	if hlsReconnect {
 		args = append(args,
@@ -176,8 +190,8 @@ func (g *Gateway) relayHLSWithFFmpeg(
 			reqField, channelName, channelID, modeLabel, ffmpegInputHost, ffmpegInputIP)
 	}
 	log.Printf("gateway:%s channel=%q id=%s %s profile=%s", reqField, channelName, channelID, modeLabel, profile)
-	log.Printf("gateway:%s channel=%q id=%s %s hls-input analyzeduration_us=%d probesize=%d rw_timeout_us=%d live_start_index=%d nobuffer=%t reconnect=%t realtime=%t loglevel=%s",
-		reqField, channelName, channelID, modeLabel, hlsAnalyzeDurationUs, hlsProbeSize, hlsRWTimeoutUs, hlsLiveStartIndex, hlsUseNoBuffer, hlsReconnect, hlsRealtime, hlsLogLevel)
+	log.Printf("gateway:%s channel=%q id=%s %s hls-input analyzeduration_us=%d probesize=%d rw_timeout_us=%d live_start_index=%d nobuffer=%t reconnect=%t persistent=%t multi=%t realtime=%t loglevel=%s",
+		reqField, channelName, channelID, modeLabel, hlsAnalyzeDurationUs, hlsProbeSize, hlsRWTimeoutUs, hlsLiveStartIndex, hlsUseNoBuffer, hlsReconnect, hlsHTTPPersistent, hlsMultipleRequests, hlsRealtime, hlsLogLevel)
 	startupMin := getenvInt("IPTV_TUNERR_WEBSAFE_STARTUP_MIN_BYTES", 65536)
 	startupMax := getenvInt("IPTV_TUNERR_WEBSAFE_STARTUP_MAX_BYTES", 786432)
 	startupTimeoutMs := getenvInt("IPTV_TUNERR_WEBSAFE_STARTUP_TIMEOUT_MS", 60000)

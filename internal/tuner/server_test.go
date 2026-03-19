@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -220,6 +221,45 @@ func TestServer_providerProfile(t *testing.T) {
 	}
 	if body.CFBlockHits != 1 {
 		t.Fatalf("cf_block_hits=%d want 1", body.CFBlockHits)
+	}
+}
+
+func TestServer_catchupRecorderReport(t *testing.T) {
+	dir := t.TempDir()
+	stateFile := dir + "/recorder-state.json"
+	state := CatchupRecorderState{
+		UpdatedAt: "2026-03-19T18:00:00Z",
+		RootDir:   dir,
+		Statistics: CatchupRecorderStatistics{
+			CompletedCount: 1,
+		},
+		Completed: []CatchupRecorderItem{{
+			CapsuleID:     "done-1",
+			Lane:          "sports",
+			Title:         "Live Game",
+			PublishedPath: dir + "/sports/live-game.ts",
+		}},
+	}
+	data, _ := json.MarshalIndent(state, "", "  ")
+	if err := os.WriteFile(stateFile, data, 0o600); err != nil {
+		t.Fatalf("write state: %v", err)
+	}
+	s := &Server{RecorderStateFile: stateFile}
+	req := httptest.NewRequest(http.MethodGet, "/recordings/recorder.json?limit=5", nil)
+	w := httptest.NewRecorder()
+	s.serveCatchupRecorderReport().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d want 200", w.Code)
+	}
+	var body CatchupRecorderReport
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body.PublishedCount != 1 {
+		t.Fatalf("published_count=%d want 1", body.PublishedCount)
+	}
+	if len(body.Completed) != 1 || body.Completed[0].CapsuleID != "done-1" {
+		t.Fatalf("completed=%+v", body.Completed)
 	}
 }
 

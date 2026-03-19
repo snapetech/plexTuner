@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -15,6 +16,70 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/catalog"
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
 )
+
+// defaultLavfUA is the fallback Lavf User-Agent when ffmpeg is not installed or detection fails.
+// Matches the libavformat version shipped with ffmpeg 7.1 (2024).
+const defaultLavfUA = "Lavf/61.7.100"
+
+// detectFFmpegLavfUA runs ffprobe (or ffmpeg) to read the libavformat version and returns
+// a User-Agent string in the form "Lavf/X.Y.Z". Returns "" if detection fails.
+func detectFFmpegLavfUA() string {
+	for _, bin := range []string{"ffprobe", "ffmpeg"} {
+		out, err := exec.Command(bin, "-version").Output()
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(out), "\n") {
+			trimmed := strings.TrimSpace(line)
+			if !strings.HasPrefix(trimmed, "libavformat") {
+				continue
+			}
+			rest := strings.TrimSpace(strings.TrimPrefix(trimmed, "libavformat"))
+			// Take the part before "/" (build version vs ident version)
+			if idx := strings.Index(rest, "/"); idx >= 0 {
+				rest = strings.TrimSpace(rest[:idx])
+			}
+			// Remove all spaces: "61.  7.100" → "61.7.100"
+			ver := strings.ReplaceAll(rest, " ", "")
+			ver = strings.Trim(ver, ".")
+			if ver == "" {
+				continue
+			}
+			valid := true
+			for _, ch := range ver {
+				if ch != '.' && (ch < '0' || ch > '9') {
+					valid = false
+					break
+				}
+			}
+			if valid && strings.Contains(ver, ".") {
+				return "Lavf/" + ver
+			}
+		}
+	}
+	return ""
+}
+
+// resolveUserAgentPreset maps well-known preset names to canonical User-Agent strings.
+// detectedLavfUA is the auto-detected value from the installed ffmpeg, used for the
+// "lavf"/"ffmpeg" preset so the Go HTTP client sends the same UA as the ffmpeg subprocess.
+// If detectedLavfUA is empty, defaultLavfUA is used for those presets.
+func resolveUserAgentPreset(raw, detectedLavfUA string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "lavf", "ffmpeg", "libavformat":
+		if detectedLavfUA != "" {
+			return detectedLavfUA
+		}
+		return defaultLavfUA
+	case "vlc":
+		return "VLC/3.0.21 LibVLC/3.0.21"
+	case "kodi":
+		return "Kodi/21.0 (X11; Linux x86_64) App_Bitness/64 Version/21.0-Git:20240205-a9cf89e8fd"
+	case "firefox":
+		return "Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/115.0"
+	}
+	return raw
+}
 
 var forwardedUpstreamHeaderNames = []string{"Cookie", "Referer", "Origin"}
 
@@ -132,6 +197,74 @@ func (g *Gateway) cookieHeaderForURL(rawURL string) string {
 	return strings.Join(parts, "; ")
 }
 
+func (g *Gateway) ffmpegCookiesOptionForURL(rawURL string) string {
+	if g == nil || g.Client == nil || g.Client.Jar == nil || strings.TrimSpace(rawURL) == "" {
+		return ""
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u == nil {
+		return ""
+	}
+	host := strings.TrimSpace(u.Hostname())
+	if host == "" {
+		return ""
+	}
+	cookies := g.Client.Jar.Cookies(u)
+	if len(cookies) == 0 {
+		return ""
+	}
+	path := strings.TrimSpace(u.EscapedPath())
+	if path == "" {
+		path = "/"
+	}
+	lines := make([]string, 0, len(cookies))
+	for _, c := range cookies {
+		if c == nil || strings.TrimSpace(c.Name) == "" {
+			continue
+		}
+		line := c.Name + "=" + c.Value + "; path=" + path + "; domain=" + host + ";"
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (g *Gateway) effectiveUpstreamUserAgent(incoming *http.Request) string {
+	return g.effectiveUpstreamUserAgentForURL("", incoming)
+}
+
+// effectiveUpstreamUserAgentForURL resolves the User-Agent to use for a request to rawURL.
+// Priority: CustomHeaders["User-Agent"] > learned-per-host > CustomUserAgent preset > incoming > default.
+func (g *Gateway) effectiveUpstreamUserAgentForURL(rawURL string, incoming *http.Request) string {
+	if ua, ok := g.customHeaderValue("User-Agent"); ok {
+		return resolveUserAgentPreset(ua, g.DetectedFFmpegUA)
+	}
+	// Per-host learned UA (set by UA cycling after a CF hit).
+	if rawURL != "" {
+		if host := hostFromURL(rawURL); host != "" {
+			if learned := g.getLearnedUA(host); learned != "" {
+				return learned
+			}
+		}
+	}
+	if g.CustomUserAgent != "" {
+		return resolveUserAgentPreset(g.CustomUserAgent, g.DetectedFFmpegUA)
+	}
+	if incoming != nil && strings.TrimSpace(incoming.UserAgent()) != "" {
+		return strings.TrimSpace(incoming.UserAgent())
+	}
+	return "IptvTunerr/1.0"
+}
+
+func (g *Gateway) effectiveUpstreamReferer(incoming *http.Request) string {
+	if v, ok := g.customHeaderValue("Referer"); ok {
+		return v
+	}
+	if incoming != nil {
+		return strings.TrimSpace(incoming.Header.Get("Referer"))
+	}
+	return ""
+}
+
 func (g *Gateway) applyUpstreamRequestHeaders(req *http.Request, incoming *http.Request) {
 	if req == nil {
 		return
@@ -159,13 +292,7 @@ func (g *Gateway) applyUpstreamRequestHeaders(req *http.Request, incoming *http.
 	if host, ok := g.customHeaderValue("Host"); ok {
 		req.Host = host
 	}
-	if ua, ok := g.customHeaderValue("User-Agent"); ok {
-		req.Header.Set("User-Agent", ua)
-	} else if g.CustomUserAgent != "" {
-		req.Header.Set("User-Agent", g.CustomUserAgent)
-	} else {
-		req.Header.Set("User-Agent", "IptvTunerr/1.0")
-	}
+	req.Header.Set("User-Agent", g.effectiveUpstreamUserAgentForURL(req.URL.String(), incoming))
 	if site, ok := g.customHeaderValue("Sec-Fetch-Site"); ok {
 		req.Header.Set("Sec-Fetch-Site", site)
 	} else if g.AddSecFetchHeaders {
@@ -227,15 +354,7 @@ func (g *Gateway) ffmpegInputHeaderBlock(incoming *http.Request, rawURL, hostOve
 	if cookieHeader := g.cookieHeaderForURL(rawURL); cookieHeader != "" {
 		lines = appendFFmpegHeaderLine(lines, "Cookie", cookieHeader)
 	}
-	if ua, ok := g.customHeaderValue("User-Agent"); ok {
-		lines = appendFFmpegHeaderLine(lines, "User-Agent", ua)
-	} else if g.CustomUserAgent != "" {
-		lines = appendFFmpegHeaderLine(lines, "User-Agent", g.CustomUserAgent)
-	} else if incoming != nil && incoming.UserAgent() != "" {
-		lines = appendFFmpegHeaderLine(lines, "User-Agent", incoming.UserAgent())
-	} else {
-		lines = appendFFmpegHeaderLine(lines, "User-Agent", "IptvTunerr/1.0")
-	}
+	lines = appendFFmpegHeaderLine(lines, "User-Agent", g.effectiveUpstreamUserAgentForURL(rawURL, incoming))
 	if site, ok := g.customHeaderValue("Sec-Fetch-Site"); ok {
 		lines = appendFFmpegHeaderLine(lines, "Sec-Fetch-Site", site)
 	} else if g.AddSecFetchHeaders {

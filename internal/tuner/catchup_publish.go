@@ -45,6 +45,14 @@ type CatchupPublishManifest struct {
 	Items         []CatchupPublishedItem    `json:"items"`
 }
 
+func CatchupLibraryName(libraryPrefix, lane string) string {
+	libraryPrefix = strings.TrimSpace(libraryPrefix)
+	if libraryPrefix == "" {
+		libraryPrefix = "Catchup"
+	}
+	return libraryPrefix + " " + catchupLibraryTitle(strings.TrimSpace(lane))
+}
+
 func SaveCatchupCapsuleLibraryLayout(outDir, streamBaseURL, libraryPrefix string, preview CatchupCapsulePreview) (CatchupPublishManifest, error) {
 	outDir = strings.TrimSpace(outDir)
 	streamBaseURL = strings.TrimRight(strings.TrimSpace(streamBaseURL), "/")
@@ -76,7 +84,7 @@ func SaveCatchupCapsuleLibraryLayout(outDir, streamBaseURL, libraryPrefix string
 		}
 		manifest.Libraries = append(manifest.Libraries, CatchupPublishedLibrary{
 			Lane:           lane,
-			Name:           libraryPrefix + " " + catchupLibraryTitle(lane),
+			Name:           CatchupLibraryName(libraryPrefix, lane),
 			CollectionType: "movies",
 			Path:           laneDir,
 		})
@@ -249,4 +257,8 @@ func buildCatchupMovieNFO(c CatchupCapsule) []byte {
 	}
 	data, _ := xml.MarshalIndent(doc, "", "  ")
 	return append([]byte(xml.Header), append(data, '\n')...)
+}
+
+func BuildCatchupMovieNFO(c CatchupCapsule) []byte {
+	return buildCatchupMovieNFO(c)
 }

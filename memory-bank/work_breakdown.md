@@ -26,6 +26,11 @@ Create or update this file when **any** of these are true:
 - **Goal (2–5 sentences):** Consolidate the new intelligence layer so it feeds runtime behavior instead of staying report-only, while also paying down the biggest structural hotspots created by rapid feature growth. Success means guide quality can drive lineup and catch-up decisions, shared file/URL loading is consistent across runtime and tooling, and the next refactors can land on smaller, cleaner seams.
 - **Non-goals (scope fence):** Shipping a full UI, building a real timeshift recorder in one pass, or pretending near-live catch-up is already true replay without an actual replay source.
 
+### Active epic overlay (recorder track, 2026-03-19)
+
+- **Goal (2–5 sentences):** Turn the catch-up/recording path from a one-shot operator tool into a policy-driven subsystem that can automatically capture current and upcoming programmes across as many supported feeds as the provider/system budget allows. Success means Tunerr can schedule and persist recordings headlessly, dedupe duplicate channel variants, and produce real recorded assets instead of only launcher/replay links for non-replay sources.
+- **Non-goals (scope fence):** Shipping a full archive/DVR product in one patch, implementing every future retention/publisher heuristic immediately, or claiming gapless perfect mid-stream failover across all providers without proving it.
+
 ### Active story list (2026-03-18)
 
 | ID | Acceptance criteria | Files/areas (expected) | Verification | Risk flags |
@@ -37,6 +42,9 @@ Create or update this file when **any** of these are true:
 | INT-005 | CLI flag construction is no longer centralized in one 900+ line `main.go`; command registration follows the same concern split as execution. | `cmd/iptv-tunerr/*` | `go test ./cmd/iptv-tunerr`; `./scripts/verify` | maintainability |
 | INT-006 | `internal/tuner/gateway.go` is decomposed into smaller concern-focused files without changing public behavior. | `internal/tuner/gateway*.go` | `go test ./internal/tuner`; `./scripts/verify` | maintainability / regression |
 | INT-007 | Catch-up publishing distinguishes clearly between near-live launchers and true replay, and a real replay mode is only introduced behind an explicit source-backed path. | `internal/tuner/*`, docs/tests | targeted tests + docs updates | product / scope |
+| REC-001 | A new recorder command can continuously scan guide capsules, schedule eligible captures, dedupe duplicate variants, record multiple items concurrently up to a configured limit, and persist a JSON state file. | `cmd/iptv-tunerr/*`, `internal/tuner/*`, docs/tests | targeted tests + `./scripts/verify` | behavior / storage / long-running |
+| REC-002 | Recorder policy can filter by lane/channel and avoid duplicate recordings across `dna_id` variants while staying honest about replay-vs-recorded assets. | `internal/tuner/*`, docs/tests | targeted tests + docs updates | product behavior |
+| REC-003 | Recorder output can be finalized/published cleanly with retention-ready manifests and enough metadata to feed later media-server automation. | `internal/tuner/*`, docs/tests | targeted tests + `./scripts/verify` | operability / scope |
 
 ### Milestones (vertical slices)
 
@@ -81,6 +89,8 @@ For each story:
 | PR-B | `INT-005` (CLI flag/registration split) |
 | PR-C | `INT-006` (gateway decomposition) |
 | PR-D | `INT-007` (explicit replay-mode boundary and any source-backed true replay work) |
+| PR-E | `REC-001` (policy-driven recorder daemon MVP) |
+| PR-F | `REC-002` + `REC-003` (policy refinement + finalize/publish/retention wiring) |
 
 ### Progress notes (2026-03-18)
 

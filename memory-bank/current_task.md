@@ -24,6 +24,27 @@
   4. verified the harness with a clean-cwd local smoke against a synthetic HLS source plus local `iptv-tunerr serve`, including automatic fetch of `tunerr/stream-attempts.json`
   5. documented the recurring `.env` contamination trap for synthetic/local harnesses in `memory-bank/recurring_loops.md`
 
+**Current focus shift (recorder daemon MVP, 2026-03-19):**
+- User asked to implement the future recording feature seriously, with support for recording across as many feeds as the app can support.
+- This is now tracked in `memory-bank/work_breakdown.md` under `REC-001` through `REC-003`.
+- Current PR-sized slice:
+  1. `REC-001` policy-driven recorder daemon MVP
+  2. use existing catch-up capsule/recording primitives instead of inventing a second unrelated recording path
+  3. persist enough scheduling/recording state to survive restarts and make later retention/publishing work possible
+- Result:
+  1. added `iptv-tunerr catchup-daemon`, which continuously scans guide capsules, schedules eligible `in_progress` / `starting_soon` recordings, and records multiple items concurrently
+  2. added persistent recorder state with `active` / `completed` / `failed` buckets in `recorder-state.json`
+  3. refactored catch-up recording so the daemon and one-shot `catchup-record` share the same single-capsule record helper
+  4. added optional publish layout for completed recordings plus `.nfo` sidecars and `recorded-publish-manifest.json`
+  5. added expiry/retention pruning for completed/failed recorder items
+  6. improved ffmpeg HLS parity for legitimate CDN/HLS cases by forwarding effective UA/referer/cookies more faithfully and enabling persistent/multi-request HTTP input by default
+  7. added publish-time media-server automation so daemon-completed recordings can now create/reuse and refresh matching Plex, Emby, and Jellyfin lane libraries via the same workflow as `catchup-publish`
+  8. added recorder-policy refinement with channel-level allow/deny filters and duplicate suppression by programme identity (`dna_id`/channel + start + title), so duplicate provider variants do not record twice even if they slip into the scheduler input
+  9. added recorder observability via `catchup-recorder-report` and `/recordings/recorder.json`, backed by a shared state-file summary loader with lane counts and recent active/completed/failed items
+  10. added lane-specific retention and storage-budget controls, plus a fix for stale duplicate indexes after pruning so expired/trimmed recordings do not block future rerecords indefinitely
+  11. improved restart recovery semantics so interrupted active items are preserved as explicit partial failures with recovery metadata and can be retried automatically when the same programme window is still eligible
+  12. documented the MVP boundary honestly: scheduler/state/concurrency/publish/retention/initial media-server automation, first policy controls, first observability surfaces, basic per-lane quota controls, and first restart-recovery semantics are in; deeper budget intelligence and broader recorder heuristics remain future `REC-*` slices
+
 **Current focus shift (tester fork assessment, 2026-03-19):**
 - User asked for a review of the tester fork at `https://github.com/rkdavies/iptvtunerr` to decide which submitted fixes should be integrated upstream.
 - Review scope:

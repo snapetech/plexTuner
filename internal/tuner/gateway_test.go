@@ -150,7 +150,7 @@ func TestGateway_stream_penalizedHostFallsBehindHealthyHost(t *testing.T) {
 	hits := []string{}
 	penalized := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits = append(hits, "penalized")
-		w.WriteHeader(http.StatusServiceUnavailable)
+		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer penalized.Close()
 	healthy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -924,6 +924,26 @@ func TestGateway_applyUpstreamRequestHeaders_customUserAgent(t *testing.T) {
 	}
 }
 
+func TestGateway_effectiveUpstreamUserAgent_prefersIncomingWhenUnset(t *testing.T) {
+	g := &Gateway{}
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/segment.ts", nil)
+	req.Header.Set("User-Agent", "ffplay/7.1")
+	if got := g.effectiveUpstreamUserAgent(req); got != "ffplay/7.1" {
+		t.Fatalf("effectiveUpstreamUserAgent=%q want ffplay/7.1", got)
+	}
+}
+
+func TestGateway_effectiveUpstreamReferer_prefersCustomHeader(t *testing.T) {
+	g := &Gateway{
+		CustomHeaders: map[string]string{"Referer": "https://custom.example/"},
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/segment.ts", nil)
+	req.Header.Set("Referer", "https://incoming.example/")
+	if got := g.effectiveUpstreamReferer(req); got != "https://custom.example/" {
+		t.Fatalf("effectiveUpstreamReferer=%q want custom referer", got)
+	}
+}
+
 func TestGateway_applyUpstreamRequestHeaders_customUserAgentAndHeaders(t *testing.T) {
 	g := &Gateway{
 		CustomUserAgent: "CustomUA/1.0",
@@ -1132,5 +1152,26 @@ func TestGateway_ffmpegInputHeaderBlock_usesPerStreamAuthAndCookies(t *testing.T
 	}
 	if !strings.Contains(block, "Cookie: cf_clearance=token123") {
 		t.Fatalf("missing cookie jar cookies in block: %q", block)
+	}
+}
+
+func TestGateway_ffmpegCookiesOptionForURL(t *testing.T) {
+	jar, err := newPersistentCookieJar("")
+	if err != nil {
+		t.Fatalf("newPersistentCookieJar: %v", err)
+	}
+	playlistURL := "http://provider2.example/live/u2/p2/1001.m3u8"
+	u, err := url.Parse(playlistURL)
+	if err != nil {
+		t.Fatalf("url.Parse: %v", err)
+	}
+	jar.SetCookies(u, []*http.Cookie{{Name: "cf_clearance", Value: "token123", Path: "/"}})
+	g := &Gateway{Client: &http.Client{Jar: jar}}
+	got := g.ffmpegCookiesOptionForURL(playlistURL)
+	if !strings.Contains(got, "cf_clearance=token123;") {
+		t.Fatalf("cookies option missing token: %q", got)
+	}
+	if !strings.Contains(got, "domain=provider2.example;") {
+		t.Fatalf("cookies option missing domain: %q", got)
 	}
 }

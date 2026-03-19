@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
 	"github.com/snapetech/iptvtunerr/internal/channeldna"
@@ -39,6 +40,7 @@ func newRuntimeServer(cfg *config.Config, addr, baseURL, deviceID, friendlyName 
 		StreamBufferBytes:   cfg.StreamBufferBytes,
 		StreamTranscodeMode: cfg.StreamTranscodeMode,
 		AutopilotStateFile:  cfg.AutopilotStateFile,
+		RecorderStateFile:   os.Getenv("IPTV_TUNERR_CATCHUP_RECORDER_STATE_FILE"),
 		ProviderUser:        providerUser,
 		ProviderPass:        providerPass,
 		ProviderBaseURL:     providerBase,

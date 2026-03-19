@@ -2262,3 +2262,80 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - Clean-cwd local smoke:
       `DIRECT_URL=http://127.0.0.1:18086/playlist.m3u8 TUNERR_BASE_URL=http://127.0.0.1:5522 CHANNEL_ID=diag RUN_SECONDS=3 USE_TCPDUMP=false ./scripts/stream-compare-harness.sh`
     - `./scripts/verify`
+
+---
+
+- Date: 2026-03-19
+  Title: Add catch-up recorder daemon MVP
+  Summary:
+    - Added a new recorder workstream to `memory-bank/work_breakdown.md` (`REC-001`..`REC-003`) and implemented `REC-001` as the first real vertical slice.
+    - Added `iptv-tunerr catchup-daemon`, which continuously scans guide-derived capsules, schedules eligible `in_progress` / `starting_soon` items, enforces max-concurrency, and persists `active` / `completed` / `failed` state to JSON.
+    - Added reusable recording helpers so both one-shot `catchup-record` and the new daemon share the same capsule-to-TS fetch/write path.
+    - Extended the daemon with optional publish layout generation for completed recordings (`.ts` + `.nfo` plus `recorded-publish-manifest.json`) and automatic expiry/retention pruning.
+    - Tightened legitimate ffmpeg/HLS parity for tricky CDN cases by propagating effective UA/referer/cookies more faithfully and enabling persistent/multi-request HTTP input by default.
+    - Updated features/reference/changelog/docs and command references to describe the new recorder daemon MVP honestly.
+  Verification:
+    - `go test -run 'TestRunCatchupRecorderDaemon' -v ./internal/tuner`
+    - `go test -count=1 ./internal/tuner ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+
+---
+
+- Date: 2026-03-19
+  Title: Wire catch-up daemon publishing into media-server registration
+  Summary:
+    - Extended `catchup-daemon` so publish-time completion events can reuse the existing `catchup-publish` library-registration workflow instead of duplicating Plex/Emby/Jellyfin automation.
+    - Added `catchup-daemon` flags for `-library-prefix`, `-register-plex`, `-register-emby`, `-register-jellyfin`, and `-refresh`, with the same access/env fallbacks as the one-shot publisher.
+    - Added a recorded-item manifest bridge so each completed recording can trigger targeted lane-library create/reuse and refresh behavior as it lands under `-publish-dir`.
+    - Added regression coverage for the recorded-item manifest bridge and for daemon publish hooks that fail after publication.
+    - Updated CLI/docs/changelog entries to reflect publish-time library automation and the legitimate ffmpeg HLS parity improvements.
+  Verification:
+    - `go test -count=1 ./internal/tuner ./cmd/iptv-tunerr`
+
+---
+
+- Date: 2026-03-19
+  Title: Refine catch-up daemon policy filters and duplicate suppression
+  Summary:
+    - Extended `catchup-daemon` with `-channels` and `-exclude-channels`, matching exact `channel_id`, `guide_number`, `dna_id`, or `channel_name` so recorder policy can target specific services instead of only lane-level buckets.
+    - Added persistent programme-level duplicate suppression using the same curated key shape as capsule dedupe (`dna_id` or channel fallback + start + normalized title), so duplicate provider variants do not both record if they appear as separate capsules.
+    - Persisted the new record key in recorder state for debuggability and future policy work.
+    - Updated docs/changelog/features to describe the broader recorder-policy surface honestly.
+  Verification:
+    - `go test -count=1 ./internal/tuner ./cmd/iptv-tunerr`
+
+---
+
+- Date: 2026-03-19
+  Title: Add recorder status reporting surfaces
+  Summary:
+    - Added a shared recorder-report loader over the persistent daemon state file so recorder status can be summarized consistently without embedding daemon logic into the server or CLI layers.
+    - Added `iptv-tunerr catchup-recorder-report` to inspect recorder state from disk, including aggregate stats, per-lane counts, published totals, and recent active/completed/failed items.
+    - Added `/recordings/recorder.json` so a running tuner can expose the same recorder summary when `IPTV_TUNERR_CATCHUP_RECORDER_STATE_FILE` is configured.
+    - Added tests for the shared report loader and the new server endpoint, and updated docs/changelog/features accordingly.
+  Verification:
+    - `go test -count=1 ./internal/tuner ./cmd/iptv-tunerr`
+
+---
+
+- Date: 2026-03-19
+  Title: Add lane-specific recorder retention and storage budgets
+  Summary:
+    - Extended `catchup-daemon` with global retention flags (`-retain-completed`, `-retain-failed`) plus per-lane retention counts (`-retain-completed-per-lane`, `-retain-failed-per-lane`) and per-lane completed-item storage budgets (`-budget-bytes-per-lane`).
+    - Implemented newer-first per-lane pruning for completed and failed items before the global retention caps are applied, using `BytesRecorded` or on-disk file sizes for completed-item byte budgeting.
+    - Fixed a subtle state bug where items removed by expiry or retention pruning could leave stale duplicate-tracking keys behind and block future rerecords of the same programme identity.
+    - Added parser tests for the new CLI limit formats and recorder-state tests covering per-lane retention, per-lane byte budgets, and rerecord-after-prune behavior.
+  Verification:
+    - `go test -count=1 ./internal/tuner ./cmd/iptv-tunerr`
+
+---
+
+- Date: 2026-03-19
+  Title: Improve recorder restart recovery semantics
+  Summary:
+    - Extended daemon restart handling so unfinished active items are preserved as explicit failed `status=interrupted` records with `recovery_reason=daemon_restart`, `recovered_at`, and partial byte counts when output data already exists.
+    - Added automatic retry of interrupted recordings when the same programme window is still eligible after restart, carrying the attempt counter forward instead of silently restarting from attempt `1`.
+    - Extended the recorder report surface with `interrupted_count` so operators can see restart-damaged recordings without grepping raw state JSON.
+    - Added regression tests for interrupted partial-recording annotation and retry-within-window behavior, then updated docs/changelog/features to describe the restart semantics honestly.
+  Verification:
+    - `go test -count=1 ./internal/tuner ./cmd/iptv-tunerr`

@@ -392,6 +392,26 @@ Current states:
 
 This endpoint is the preview/input layer for the `catchup-publish` command.
 
+## Catch-up recorder report endpoint
+
+Summarized view of the persistent recorder state written by `catchup-daemon`:
+- `GET /recordings/recorder.json`
+
+Query params:
+- `limit=10` — max items returned from each of `active`, `completed`, and `failed`
+
+Requirements:
+- server must know the recorder state path via `IPTV_TUNERR_CATCHUP_RECORDER_STATE_FILE`
+
+Returned fields include:
+- `statistics`
+- `published_count`
+- `interrupted_count`
+- `lanes`
+- `active`
+- `completed`
+- `failed`
+
 ## `iptv-tunerr catchup-capsules`
 
 Export the same capsule preview model to JSON from a catalog plus a guide/XMLTV source.
@@ -476,6 +496,95 @@ Replay template variables:
 - `{start_ymd}`
 - `{start_hm}`
 - `{start_xtream}` / `{stop_xtream}` (`YYYY-MM-DD:HH-MM`)
+
+## `iptv-tunerr catchup-daemon`
+
+Continuously scan guide-derived capsules and record eligible programmes headlessly with a persistent state file.
+
+This is the first recorder-daemon MVP:
+- records `in_progress` capsules immediately
+- can schedule `starting_soon` capsules within a configurable lead window
+- records multiple items concurrently up to a configured limit
+- persists `active`, `completed`, and `failed` items in `recorder-state.json`
+- supports replay URLs when `-replay-url-template` is configured, otherwise records from `/stream/<channel>`
+
+Common flags:
+- `-catalog`
+- `-xmltv`
+- `-horizon`
+- `-limit`
+- `-out-dir`
+- `-publish-dir`
+- `-library-prefix`
+- `-stream-base-url`
+- `-poll-interval`
+- `-lead-time`
+- `-max-duration`
+- `-max-concurrency`
+- `-state-file`
+- `-retain-completed`
+- `-retain-failed`
+- `-retain-completed-per-lane`
+- `-retain-failed-per-lane`
+- `-budget-bytes-per-lane`
+- `-guide-policy`
+- `-replay-url-template`
+- `-lanes`
+- `-exclude-lanes`
+- `-channels`
+- `-exclude-channels`
+- `-register-plex`
+- `-register-emby`
+- `-register-jellyfin`
+- `-refresh`
+- `-once`
+- `-run-for`
+
+Output/state:
+- recorded `.ts` files under `<out-dir>/<lane>/`
+- optional published media-server-friendly layout under `-publish-dir` with linked/copied `.ts` plus `.nfo`
+- persistent recorder state JSON at `<out-dir>/recorder-state.json` unless overridden with `-state-file`
+- `recorded-publish-manifest.json` under `-publish-dir` when publishing is enabled
+
+State file model:
+- `active` — currently scheduled or recording items
+- `completed` — finished recordings
+- `failed` — interrupted or failed recordings
+
+Operational notes:
+- this MVP dedupes by `capsule_id`, which already collapses duplicate programme variants built from the same `dna_id + start + title`
+- the daemon also suppresses duplicate recordings by programme identity (`dna_id` or channel fallback + start + normalized title), so duplicate provider variants do not both record if they leak into the scheduler input
+- `-channels` / `-exclude-channels` match exact `channel_id`, `guide_number`, `dna_id`, or `channel_name`
+- `-retain-completed-per-lane` and `-retain-failed-per-lane` apply newer-first retention within each lane before the global completed/failed caps are enforced
+- `-budget-bytes-per-lane` applies newer-first completed-item pruning within each lane using `BytesRecorded` or on-disk file sizes, with units like `MiB`, `GiB`, or raw bytes
+- interrupted active items are preserved as failed `status=interrupted` records on startup, annotated with `recovery_reason=daemon_restart`, partial byte counts when available, and automatically retried if the same programme window is still eligible
+- `-once` is useful for cron-style “scan, record what is live/starting now, then exit”
+- without `-once`, the command keeps polling until interrupted or until `-run-for` elapses
+- completed and failed recorder state is pruned by retention count, and expired completed items are deleted automatically based on capsule expiry
+- when `-publish-dir` is combined with media-server registration flags, each completed recording can create/reuse the matching lane library and trigger a targeted refresh for that lane
+- daemon publish-time registration reuses the same lane naming as `catchup-publish` (`<library-prefix> Sports`, `<library-prefix> Movies`, etc.)
+
+Relevant streaming env knobs for tricky HLS/CDN paths:
+- `IPTV_TUNERR_FFMPEG_HLS_HTTP_PERSISTENT` (`true|false`, default `true`) — ask ffmpeg/libavformat to reuse HTTP connections across HLS fetches
+- `IPTV_TUNERR_FFMPEG_HLS_MULTIPLE_REQUESTS` (`true|false`, default `true`) — allow multiple HTTP requests on a persistent connection for HLS input
+
+These are legitimate transport-parity knobs, not Cloudflare bypasses.
+
+## `iptv-tunerr catchup-recorder-report`
+
+Summarize the persistent recorder state file without starting the daemon.
+
+Common flags:
+- `-state-file` — required unless `IPTV_TUNERR_CATCHUP_RECORDER_STATE_FILE` is set
+- `-limit`
+- `-out`
+
+Returned fields include:
+- aggregate recorder `statistics`
+- `published_count`
+- `interrupted_count`
+- per-lane counts
+- recent `active`, `completed`, and `failed` items
 
 ## `iptv-tunerr probe`
 

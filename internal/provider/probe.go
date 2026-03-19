@@ -40,7 +40,37 @@ const (
 	StatusError       Status = "error"
 )
 
+// DefaultLavfUA is the Lavf User-Agent used as a media-client fallback when probing CF-protected URLs.
+// This matches what ffplay/ffmpeg sends by default and is often whitelisted by Cloudflare Bot Management.
+const DefaultLavfUA = "Lavf/61.7.100"
+
+// classifyCFResponse returns true if the response looks like a Cloudflare challenge/block.
+func classifyCFResponse(code int, server, previewStr string) bool {
+	isCFServer := strings.ToLower(strings.TrimSpace(server)) == "cloudflare"
+	bodyHasCFChallenge := strings.Contains(previewStr, "checking your browser") ||
+		strings.Contains(previewStr, "cf-bypass") ||
+		strings.Contains(previewStr, "ray id")
+	if code == 403 || code == 503 || code == 520 || code == 521 || code == 524 {
+		return bodyHasCFChallenge || isCFServer
+	}
+	return isCFServer && code != http.StatusOK
+}
+
+// probeUACandidates is the ordered list of User-Agents tried when Cloudflare is detected.
+// Ordered by likelihood of being allowlisted by CF Bot Management for IPTV streaming providers.
+var probeUACandidates = []string{
+	DefaultLavfUA,
+	"VLC/3.0.21 LibVLC/3.0.21",
+	"mpv/0.38.0",
+	"Kodi/21.0 (X11; Linux x86_64) App_Bitness/64 Version/21.0-Git:20240205-a9cf89e8fd",
+	"Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+	"curl/8.4.0",
+}
+
 // ProbeOne fetches the M3U URL with a short timeout and classifies the result.
+// When Cloudflare is detected, it cycles through all media-client UA presets before giving up,
+// since many providers configure CF to pass known media clients while blocking others.
 func ProbeOne(ctx context.Context, m3uURL string, client *http.Client) Result {
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
@@ -67,20 +97,14 @@ func ProbeOne(ctx context.Context, m3uURL string, client *http.Client) Result {
 
 	// Cloudflare detection: only when we're sure (Server header or classic challenge page).
 	// Avoid false positives: e.g. 884 can be provider "pod busy", and body may mention "cloudflare" on non-CF pages.
-	server := strings.ToLower(strings.TrimSpace(resp.Header.Get("Server")))
-	isCFServer := server == "cloudflare"
-	// Definitive CF challenge/block text; avoid matching random "cloudflare" in other error pages.
-	bodyHasCFChallenge := strings.Contains(previewStr, "checking your browser") ||
-		strings.Contains(previewStr, "cf-bypass") ||
-		strings.Contains(previewStr, "ray id")
-	// Known CF challenge/block status codes; 884 is NOT included (often provider-specific).
-	if code == 403 || code == 503 || code == 520 || code == 521 || code == 524 {
-		if bodyHasCFChallenge || isCFServer {
-			return Result{URL: m3uURL, Status: StatusCloudflare, StatusCode: code, LatencyMs: latency, BodyPreview: previewStr}
+	if classifyCFResponse(code, resp.Header.Get("Server"), previewStr) {
+		// Cycle through all media-client UA presets — stop at the first that returns 200.
+		for _, ua := range probeUACandidates {
+			if r2 := probeOneWithUA(ctx, m3uURL, ua, client, start); r2.Status == StatusOK {
+				return r2
+			}
 		}
-	}
-	if isCFServer && code != http.StatusOK {
-		return Result{URL: m3uURL, Status: StatusCloudflare, StatusCode: code, LatencyMs: latency}
+		return Result{URL: m3uURL, Status: StatusCloudflare, StatusCode: code, LatencyMs: latency, BodyPreview: previewStr}
 	}
 	if code == http.StatusTooManyRequests {
 		return Result{URL: m3uURL, Status: StatusRateLimited, StatusCode: code, LatencyMs: latency}
@@ -90,6 +114,30 @@ func ProbeOne(ctx context.Context, m3uURL string, client *http.Client) Result {
 	}
 	return Result{URL: m3uURL, Status: StatusOK, StatusCode: code, LatencyMs: latency}
 }
+
+// probeOneWithUA is an internal helper that fetches a URL with a specific User-Agent.
+// startTime is the original request start used for end-to-end latency reporting.
+func probeOneWithUA(ctx context.Context, rawURL, ua string, client *http.Client, startTime time.Time) Result {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return Result{URL: rawURL, Status: StatusError, LatencyMs: time.Since(startTime).Milliseconds()}
+	}
+	req.Header.Set("User-Agent", ua)
+	resp, err := client.Do(req)
+	latency := time.Since(startTime).Milliseconds()
+	if err != nil {
+		return Result{URL: rawURL, Status: StatusError, LatencyMs: latency}
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body) //nolint:errcheck
+	if resp.StatusCode == http.StatusOK {
+		return Result{URL: rawURL, Status: StatusOK, StatusCode: resp.StatusCode, LatencyMs: latency}
+	}
+	return Result{URL: rawURL, Status: StatusBadStatus, StatusCode: resp.StatusCode, LatencyMs: latency}
+}
+
+// mURL is a trivial helper that just returns its argument; used for readability at call sites.
+func mURL(s string) string { return s }
 
 // ProbeAll probes each M3U URL and returns results sorted by: OK first (by latency), then non-OK.
 func ProbeAll(ctx context.Context, m3uURLs []string, client *http.Client) []Result {
@@ -132,23 +180,23 @@ func BestM3UURL(ctx context.Context, m3uURLs []string, client *http.Client) stri
 // This is what xtream-to-m3u.js uses; get.php often returns 884/Cloudflare while player_api.php works.
 func ProbePlayerAPI(ctx context.Context, baseURL, user, pass string, client *http.Client) Result {
 	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := baseURL + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass)
+	probeURL := baseURL + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass)
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
 	}
 	start := time.Now()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, probeURL, nil)
 	if err != nil {
-		return Result{URL: url, Status: StatusError, LatencyMs: time.Since(start).Milliseconds()}
+		return Result{URL: probeURL, Status: StatusError, LatencyMs: time.Since(start).Milliseconds()}
 	}
 	req.Header.Set("User-Agent", "IptvTunerr/1.0")
 	resp, err := client.Do(req)
 	latency := time.Since(start).Milliseconds()
 	if err != nil {
 		if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline") {
-			return Result{URL: url, Status: StatusTimeout, LatencyMs: latency}
+			return Result{URL: probeURL, Status: StatusTimeout, LatencyMs: latency}
 		}
-		return Result{URL: url, Status: StatusError, LatencyMs: latency}
+		return Result{URL: probeURL, Status: StatusError, LatencyMs: latency}
 	}
 	defer resp.Body.Close()
 	code := resp.StatusCode
@@ -157,34 +205,62 @@ func ProbePlayerAPI(ctx context.Context, baseURL, user, pass string, client *htt
 	}
 	body, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
-		return Result{URL: url, Status: StatusError, StatusCode: code, LatencyMs: latency}
+		return Result{URL: probeURL, Status: StatusError, StatusCode: code, LatencyMs: latency}
 	}
 	previewStr := strings.ToLower(string(body[:min(len(body), 512)]))
 	// Cloudflare detection: same logic as ProbeOne — check Server header and body signals.
-	server := strings.ToLower(strings.TrimSpace(resp.Header.Get("Server")))
-	isCFServer := server == "cloudflare"
-	if isCFServer || code == 520 || code == 521 || code == 524 {
-		bodyHasCFChallenge := strings.Contains(previewStr, "checking your browser") ||
-			strings.Contains(previewStr, "cf-bypass") ||
-			strings.Contains(previewStr, "ray id")
-		if isCFServer && code != http.StatusOK {
-			return Result{URL: baseURL, Status: StatusCloudflare, StatusCode: code, LatencyMs: latency, BodyPreview: previewStr}
+	if classifyCFResponse(code, resp.Header.Get("Server"), previewStr) {
+		// Cycle through all media-client UA presets before classifying as CF-blocked.
+		apiURL := baseURL + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass)
+		for _, ua := range probeUACandidates {
+			if r2 := probePlayerAPIWithUA(ctx, baseURL, apiURL, ua, client, start); r2.Status == StatusOK {
+				return r2
+			}
 		}
-		if bodyHasCFChallenge {
-			return Result{URL: baseURL, Status: StatusCloudflare, StatusCode: code, LatencyMs: latency, BodyPreview: previewStr}
-		}
+		return Result{URL: baseURL, Status: StatusCloudflare, StatusCode: code, LatencyMs: latency, BodyPreview: previewStr}
 	}
 	if code != http.StatusOK {
-		return Result{URL: url, Status: StatusBadStatus, StatusCode: code, LatencyMs: latency}
+		return Result{URL: probeURL, Status: StatusBadStatus, StatusCode: code, LatencyMs: latency}
 	}
 	var raw map[string]interface{}
 	if err := json.Unmarshal(body, &raw); err != nil {
-		return Result{URL: url, Status: StatusBadStatus, StatusCode: resp.StatusCode, LatencyMs: latency}
+		return Result{URL: probeURL, Status: StatusBadStatus, StatusCode: resp.StatusCode, LatencyMs: latency}
 	}
 	if raw["user_info"] != nil || raw["auth"] != nil || raw["server_info"] != nil {
 		return Result{URL: baseURL, Status: StatusOK, StatusCode: 200, LatencyMs: latency}
 	}
-	return Result{URL: url, Status: StatusBadStatus, StatusCode: 200, LatencyMs: latency}
+	return Result{URL: probeURL, Status: StatusBadStatus, StatusCode: 200, LatencyMs: latency}
+}
+
+// probePlayerAPIWithUA retries player_api.php with a specific User-Agent; used for CF media-client retry.
+func probePlayerAPIWithUA(ctx context.Context, baseURL, fullURL, ua string, client *http.Client, startTime time.Time) Result {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
+	if err != nil {
+		return Result{URL: baseURL, Status: StatusError, LatencyMs: time.Since(startTime).Milliseconds()}
+	}
+	req.Header.Set("User-Agent", ua)
+	resp, err := client.Do(req)
+	latency := time.Since(startTime).Milliseconds()
+	if err != nil {
+		return Result{URL: baseURL, Status: StatusError, LatencyMs: latency}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		io.Copy(io.Discard, resp.Body) //nolint:errcheck
+		return Result{URL: baseURL, Status: StatusBadStatus, StatusCode: resp.StatusCode, LatencyMs: latency}
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return Result{URL: baseURL, Status: StatusError, LatencyMs: latency}
+	}
+	var raw map[string]interface{}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return Result{URL: baseURL, Status: StatusBadStatus, StatusCode: resp.StatusCode, LatencyMs: latency}
+	}
+	if raw["user_info"] != nil || raw["auth"] != nil || raw["server_info"] != nil {
+		return Result{URL: baseURL, Status: StatusOK, StatusCode: 200, LatencyMs: latency}
+	}
+	return Result{URL: baseURL, Status: StatusBadStatus, StatusCode: 200, LatencyMs: latency}
 }
 
 // FirstWorkingPlayerAPI tries each base URL with player_api.php; returns the first base URL that returns OK.

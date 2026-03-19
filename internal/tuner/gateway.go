@@ -38,14 +38,19 @@ type Gateway struct {
 	DefaultProfile       string
 	ProfileOverrides     map[string]string
 	CustomHeaders        map[string]string // extra headers to send on all upstream requests (e.g. Referer, Origin)
-	CustomUserAgent      string            // override User-Agent sent to upstream (empty = default "IptvTunerr/1.0")
+	CustomUserAgent      string            // override User-Agent sent to upstream; supports preset names: lavf, ffmpeg, vlc, kodi, firefox
+	DetectedFFmpegUA     string            // auto-detected Lavf/X.Y.Z from installed ffmpeg, used when CustomUserAgent is "lavf"/"ffmpeg"
 	AddSecFetchHeaders   bool
+	AutoCFBoot           bool // when true, automatically bootstrap CF clearance at startup and on first CF hit
 	DisableFFmpeg        bool
 	DisableFFmpegDNS     bool
 	Client               *http.Client
 	CookieJarFile        string // path to persist cookies for Cloudflare clearance
 	persistentCookieJar  *persistentCookieJar
-	FetchCFReject        bool // abort HLS stream on segment redirected to CF abuse page
+	cfBoot               *cfBootstrapper // nil unless AutoCFBoot is true
+	learnedUAMu          sync.Mutex
+	learnedUAByHost      map[string]string // hostname → working UA found by cycling
+	FetchCFReject        bool              // abort HLS stream on segment redirected to CF abuse page
 	PlexPMSURL           string
 	PlexPMSToken         string
 	PlexClientAdapt      bool
@@ -226,6 +231,34 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		attempt.markUpstreamResponse(attemptIdx, resp.StatusCode, resp.Header.Get("Content-Type"), effectiveURL)
 		if resp.StatusCode != http.StatusOK {
 			preview := readUpstreamErrorPreview(resp)
+			resp.Body.Close()
+
+			// If this looks like a Cloudflare block, try cycling User-Agents before giving up.
+			if isCFLikeStatus(resp.StatusCode, preview) {
+				if cycled, ua := g.tryCFUACycle(r.Context(), r, streamURL, client, resp.StatusCode); cycled != nil {
+					log.Printf("gateway: channel=%q id=%s upstream[%d/%d] CF-cycle succeeded ua=%q url=%s",
+						channel.GuideName, channelID, i+1, len(urls), ua, safeurl.RedactURL(streamURL))
+					resp = cycled
+					goto streamOK
+				}
+				// UA cycle failed — try full auto-bootstrap if enabled (blocks briefly; once per host per TTL).
+				if g.cfBoot != nil && !hasCFClearanceInJar(g.persistentCookieJar, streamURL) {
+					workingUA := g.cfBoot.EnsureAccess(r.Context(), streamURL, client)
+					if workingUA != "" {
+						g.setLearnedUA(hostFromURL(streamURL), workingUA)
+					}
+					// Retry with whatever credentials we now have.
+					if retried, _ := g.tryCFUACycle(r.Context(), r, streamURL, client, resp.StatusCode); retried != nil {
+						resp = retried
+						goto streamOK
+					}
+				}
+				g.noteUpstreamCFBlock(streamURL)
+				log.Printf("gateway: channel=%q id=%s upstream[%d/%d] CF-blocked url=%s",
+					channel.GuideName, channelID, i+1, len(urls), safeurl.RedactURL(streamURL))
+				continue
+			}
+
 			attempt.markUpstreamError(attemptIdx, "http_status", errors.New(preview))
 			g.noteUpstreamFailure(streamURL, resp.StatusCode, "http_status")
 			limited := isUpstreamConcurrencyLimit(resp.StatusCode, preview)
@@ -248,9 +281,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log.Printf("gateway: channel=%q id=%s upstream[%d/%d] status=%d url=%s body=%q",
 					channel.GuideName, channelID, i+1, len(urls), resp.StatusCode, safeurl.RedactURL(streamURL), preview)
 			}
-			resp.Body.Close()
 			continue
 		}
+	streamOK:
 		// Reject 200 with empty body (e.g. Cloudflare/redirect returning 0 bytes) — try next URL (learned from k3s IPTV hardening).
 		if resp.ContentLength == 0 {
 			g.noteUpstreamFailure(streamURL, resp.StatusCode, "empty_body")

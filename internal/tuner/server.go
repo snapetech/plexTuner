@@ -63,6 +63,7 @@ type Server struct {
 	StreamBufferBytes   int    // 0 = no buffer; -1 = auto; e.g. 2097152 for 2 MiB
 	StreamTranscodeMode string // "off" | "on" | "auto"
 	AutopilotStateFile  string // optional JSON file for remembered dna_id+client_class playback decisions
+	RecorderStateFile   string // optional JSON file written by catchup-daemon for recorder status/reporting
 	Channels            []catalog.LiveChannel
 	ProviderUser        string
 	ProviderPass        string
@@ -859,6 +860,41 @@ func (s *Server) Run(ctx context.Context) error {
 	if gateway.Client == nil {
 		gateway.Client = httpclient.ForStreaming()
 	}
+	if gateway.DetectedFFmpegUA == "" {
+		gateway.DetectedFFmpegUA = detectFFmpegLavfUA()
+		if gateway.DetectedFFmpegUA != "" {
+			log.Printf("Gateway detected ffmpeg Lavf UA: %s", gateway.DetectedFFmpegUA)
+		}
+	}
+	gateway.AutoCFBoot = envBool("IPTV_TUNERR_CF_AUTO_BOOT", false)
+	if gateway.AutoCFBoot {
+		if gateway.persistentCookieJar == nil {
+			log.Printf("Gateway CF auto-boot enabled but no cookie jar configured — clearance cookies won't persist across restarts; set IPTV_TUNERR_COOKIE_JAR_FILE")
+		}
+		uaCands := uaCycleCandidates(gateway.DetectedFFmpegUA)
+		gateway.cfBoot = newCFBootstrapper(gateway.persistentCookieJar, uaCands)
+		log.Printf("Gateway CF auto-boot enabled (UA candidates: %d)", len(uaCands))
+		// Pre-flight: ensure access for each unique provider host in the channel list.
+		go func() {
+			seen := make(map[string]bool)
+			for _, ch := range gateway.Channels {
+				urls := ch.StreamURLs
+				if len(urls) == 0 && ch.StreamURL != "" {
+					urls = []string{ch.StreamURL}
+				}
+				for _, u := range urls {
+					host := hostFromURL(u)
+					if host == "" || seen[host] {
+						continue
+					}
+					seen[host] = true
+					if ua := gateway.cfBoot.EnsureAccess(ctx, u, gateway.Client); ua != "" {
+						gateway.setLearnedUA(host, ua)
+					}
+				}
+			}
+		}()
+	}
 	maybeStartPlexSessionReaper(ctx, gateway.Client)
 	s.gateway = gateway
 	cacheTTL := s.XMLTVCacheTTL
@@ -913,6 +949,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/autopilot/report.json", s.serveAutopilotReport())
 	mux.Handle("/plex/ghost-report.json", s.serveGhostHunterReport())
 	mux.Handle("/provider/profile.json", s.serveProviderProfile())
+	mux.Handle("/recordings/recorder.json", s.serveCatchupRecorderReport())
 	mux.Handle("/debug/stream-attempts.json", s.serveRecentStreamAttempts())
 
 	srv := &http.Server{Addr: addr, Handler: logRequests(mux)}
@@ -1217,6 +1254,31 @@ func (s *Server) serveRecentStreamAttempts() http.Handler {
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
 			http.Error(w, `{"error":"encode stream attempts"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveCatchupRecorderReport() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		stateFile := strings.TrimSpace(s.RecorderStateFile)
+		if stateFile == "" {
+			stateFile = strings.TrimSpace(os.Getenv("IPTV_TUNERR_CATCHUP_RECORDER_STATE_FILE"))
+		}
+		if stateFile == "" {
+			http.Error(w, `{"error":"recorder state unavailable"}`, http.StatusServiceUnavailable)
+			return
+		}
+		rep, err := LoadCatchupRecorderReport(stateFile, streamAttemptLimitFromQuery(r.URL.Query().Get("limit"), 10))
+		if err != nil {
+			http.Error(w, `{"error":"load recorder report failed"}`, http.StatusBadGateway)
+			return
+		}
+		body, err := json.MarshalIndent(rep, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode recorder report"}`, http.StatusInternalServerError)
 			return
 		}
 		_, _ = w.Write(body)

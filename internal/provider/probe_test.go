@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -384,5 +385,73 @@ func TestRankedEntries_allCF_blockReturnsEmpty(t *testing.T) {
 	ranked := RankedEntries(ctx, entries, nil, ProbeOptions{BlockCloudflare: true})
 	if len(ranked) != 0 {
 		t.Errorf("expected empty when all CF, got %d", len(ranked))
+	}
+}
+
+// TestProbeOne_cfLavfRetrySucceeds verifies that when an M3U URL returns a CF challenge
+// for the default Firefox UA but succeeds for the Lavf media-client UA, ProbeOne returns OK.
+func TestProbeOne_cfLavfRetrySucceeds(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ua := r.Header.Get("User-Agent")
+		if strings.Contains(ua, "Lavf") {
+			// Lavf UA is allowed through — simulates CF Bot Management pass for media clients.
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("#EXTM3U"))
+			return
+		}
+		// All other UAs get CF challenge.
+		w.Header().Set("Server", "cloudflare")
+		w.WriteHeader(503)
+		w.Write([]byte("Checking your browser before accessing the site."))
+	}))
+	defer srv.Close()
+
+	ctx := context.Background()
+	r := ProbeOne(ctx, srv.URL, nil)
+	if r.Status != StatusOK {
+		t.Errorf("ProbeOne CF-retry: Status=%s want OK (Lavf UA should succeed)", r.Status)
+	}
+}
+
+// TestProbePlayerAPI_cfLavfRetrySucceeds verifies that when player_api.php returns CF
+// for the default UA but succeeds for the Lavf UA, ProbePlayerAPI returns OK.
+func TestProbePlayerAPI_cfLavfRetrySucceeds(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ua := r.Header.Get("User-Agent")
+		if strings.Contains(ua, "Lavf") {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"user_info":{"username":"u"},"server_info":{}}`))
+			return
+		}
+		w.Header().Set("Server", "cloudflare")
+		w.WriteHeader(503)
+		w.Write([]byte("Checking your browser before accessing the site."))
+	}))
+	defer srv.Close()
+
+	ctx := context.Background()
+	r := ProbePlayerAPI(ctx, srv.URL, "u", "p", nil)
+	if r.Status != StatusOK {
+		t.Errorf("ProbePlayerAPI CF-retry: Status=%s want OK (Lavf UA should succeed)", r.Status)
+	}
+	if r.URL != srv.URL {
+		t.Errorf("URL=%q want %q", r.URL, srv.URL)
+	}
+}
+
+// TestProbeOne_cfNeitherUA verifies that when both Firefox and Lavf UAs get CF-blocked,
+// ProbeOne still returns StatusCloudflare.
+func TestProbeOne_cfNeitherUA(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Server", "cloudflare")
+		w.WriteHeader(503)
+		w.Write([]byte("Checking your browser"))
+	}))
+	defer srv.Close()
+
+	ctx := context.Background()
+	r := ProbeOne(ctx, srv.URL, nil)
+	if r.Status != StatusCloudflare {
+		t.Errorf("Status=%s want StatusCloudflare", r.Status)
 	}
 }

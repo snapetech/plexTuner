@@ -29,3 +29,4 @@ stream_compare_harness: "DIRECT_URL=<upstream.m3u8> TUNERR_URL=<base/stream/id> 
 build_test_packages: "./scripts/build-test-packages.sh  # cross-platform tester archives + checksums"
 build_tester_release: "./scripts/build-tester-release.sh  # staged tester handoff bundle (packages/examples/docs/manifest)"
 plex_hidden_grab_recover: "./scripts/plex-hidden-grab-recover.sh --dry-run  # detect Plex hidden active-grab wedge; add --restart when safe"
+catchup_daemon: "go run ./cmd/iptv-tunerr catchup-daemon -catalog ./catalog.json -xmltv ./guide.xml -out-dir ./recordings -publish-dir ./published -stream-base-url http://127.0.0.1:5004 -once  # policy-driven recorder daemon MVP with optional published layout"

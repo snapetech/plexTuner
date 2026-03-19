@@ -30,6 +30,67 @@ type CatchupRecordManifest struct {
 	Recorded    []CatchupRecordedItem `json:"recorded"`
 }
 
+func ResolveCatchupRecordSourceURL(capsule CatchupCapsule, streamBaseURL string) (string, error) {
+	sourceURL := strings.TrimSpace(capsule.ReplayURL)
+	if sourceURL != "" {
+		return sourceURL, nil
+	}
+	streamBaseURL = strings.TrimRight(strings.TrimSpace(streamBaseURL), "/")
+	if streamBaseURL == "" {
+		return "", fmt.Errorf("stream base url required")
+	}
+	return streamBaseURL + "/stream/" + capsule.ChannelID, nil
+}
+
+func RecordCatchupCapsule(ctx context.Context, capsule CatchupCapsule, streamBaseURL, outDir string, client *http.Client) (CatchupRecordedItem, error) {
+	outDir = strings.TrimSpace(outDir)
+	if outDir == "" {
+		return CatchupRecordedItem{}, fmt.Errorf("output directory required")
+	}
+	if client == nil {
+		client = httpclient.ForStreaming()
+	}
+	sourceURL, err := ResolveCatchupRecordSourceURL(capsule, streamBaseURL)
+	if err != nil {
+		return CatchupRecordedItem{}, err
+	}
+	laneDir := filepath.Join(outDir, firstNonEmptyString(capsule.Lane, "general"))
+	if err := os.MkdirAll(laneDir, 0o755); err != nil {
+		return CatchupRecordedItem{}, err
+	}
+	path := filepath.Join(laneDir, sanitizeCatchupName(capsule.CapsuleID)+".ts")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
+	if err != nil {
+		return CatchupRecordedItem{}, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return CatchupRecordedItem{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return CatchupRecordedItem{}, fmt.Errorf("record %s status=%d", capsule.CapsuleID, resp.StatusCode)
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return CatchupRecordedItem{}, err
+	}
+	n, copyErr := io.Copy(f, resp.Body)
+	_ = f.Close()
+	if copyErr != nil && ctx.Err() == nil {
+		return CatchupRecordedItem{}, copyErr
+	}
+	return CatchupRecordedItem{
+		CapsuleID:  capsule.CapsuleID,
+		Lane:       capsule.Lane,
+		Title:      capsule.Title,
+		ChannelID:  capsule.ChannelID,
+		OutputPath: path,
+		SourceURL:  sourceURL,
+		Bytes:      n,
+	}, nil
+}
+
 func RecordCatchupCapsules(ctx context.Context, preview CatchupCapsulePreview, streamBaseURL, outDir string, maxDuration time.Duration, client *http.Client) (CatchupRecordManifest, error) {
 	streamBaseURL = strings.TrimRight(strings.TrimSpace(streamBaseURL), "/")
 	outDir = strings.TrimSpace(outDir)
@@ -53,54 +114,17 @@ func RecordCatchupCapsules(ctx context.Context, preview CatchupCapsulePreview, s
 		if strings.ToLower(strings.TrimSpace(capsule.State)) != "in_progress" {
 			continue
 		}
-		sourceURL := strings.TrimSpace(capsule.ReplayURL)
-		if sourceURL == "" {
-			sourceURL = streamBaseURL + "/stream/" + capsule.ChannelID
-		}
 		reqCtx := ctx
 		if maxDuration > 0 {
 			var cancel context.CancelFunc
 			reqCtx, cancel = context.WithTimeout(ctx, maxDuration)
 			defer cancel()
 		}
-		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, sourceURL, nil)
+		item, err := RecordCatchupCapsule(reqCtx, capsule, streamBaseURL, outDir, client)
 		if err != nil {
 			return manifest, err
 		}
-		resp, err := client.Do(req)
-		if err != nil {
-			return manifest, err
-		}
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			return manifest, fmt.Errorf("record %s status=%d", capsule.CapsuleID, resp.StatusCode)
-		}
-		laneDir := filepath.Join(outDir, firstNonEmptyString(capsule.Lane, "general"))
-		if err := os.MkdirAll(laneDir, 0o755); err != nil {
-			resp.Body.Close()
-			return manifest, err
-		}
-		path := filepath.Join(laneDir, sanitizeCatchupName(capsule.CapsuleID)+".ts")
-		f, err := os.Create(path)
-		if err != nil {
-			resp.Body.Close()
-			return manifest, err
-		}
-		n, copyErr := io.Copy(f, resp.Body)
-		_ = f.Close()
-		resp.Body.Close()
-		if copyErr != nil && reqCtx.Err() == nil {
-			return manifest, copyErr
-		}
-		manifest.Recorded = append(manifest.Recorded, CatchupRecordedItem{
-			CapsuleID:  capsule.CapsuleID,
-			Lane:       capsule.Lane,
-			Title:      capsule.Title,
-			ChannelID:  capsule.ChannelID,
-			OutputPath: path,
-			SourceURL:  sourceURL,
-			Bytes:      n,
-		})
+		manifest.Recorded = append(manifest.Recorded, item)
 	}
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {

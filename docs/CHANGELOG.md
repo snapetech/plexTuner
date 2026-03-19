@@ -18,6 +18,16 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Structured stream-attempt export**: added `/debug/stream-attempts.json`, which exposes recent gateway decisions, per-upstream outcomes, effective URLs, and redacted request/ffmpeg header summaries for debugging direct-vs-Tunerr mismatches.
 - **Troubleshooting workflow update**: the runbook now documents the new comparison harness, including header-file inputs, pcap generation, and how to inspect the resulting artifacts in Wireshark or `tshark`.
 
+### Catch-up recording
+- **Recorder daemon MVP**: added `iptv-tunerr catchup-daemon`, which continuously scans guide-derived capsules, records eligible `in_progress` / `starting_soon` items, dedupes by capsule identity, enforces a max-concurrency budget, and persists `active` / `completed` / `failed` state to JSON.
+- **Recorder publish/retention hooks**: completed daemon recordings can now be published into a media-server-friendly directory layout with `.nfo` sidecars, and expired or over-retained recordings are pruned automatically.
+- **Recorder publish-time library registration**: `catchup-daemon` can now reuse the same lane library workflow as `catchup-publish`, creating/reusing Plex, Emby, and Jellyfin libraries and triggering targeted refreshes as completed recordings land under `-publish-dir`.
+- **Recorder policy filters and duplicate suppression**: `catchup-daemon` now supports channel-level allow/deny filters (`-channels`, `-exclude-channels`) and suppresses duplicate recordings by programme identity (`dna_id`/channel + start + title), not only by exact `capsule_id`.
+- **Recorder status/reporting surface**: added `catchup-recorder-report` plus `/recordings/recorder.json`, which summarize recorder state, per-lane counts, published item totals, and recent active/completed/failed items from the persistent daemon state file.
+- **Lane-specific retention and storage budgets**: `catchup-daemon` now supports per-lane completed/failed retention counts and per-lane completed-item storage budgets, pruning older items first within each lane before global retention limits are applied.
+- **Interrupted-recording recovery semantics**: daemon restarts now preserve unfinished recordings as explicit failed `status=interrupted` items with recovery metadata and partial byte counts when available, and the scheduler can automatically retry the same programme window if it is still eligible after restart.
+- **Better ffmpeg HLS request parity**: ffmpeg relay inputs now inherit the effective upstream `User-Agent`, `Referer`, and cookie-jar cookies more faithfully, and enable persistent/multi-request HLS HTTP input by default to better match successful direct `ffplay` behavior on legitimate CDN/HLS paths.
+
 ---
 
 ## [v0.1.12] — 2026-03-19

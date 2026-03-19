@@ -68,3 +68,29 @@ func TestSaveCatchupCapsuleLibraryLayout(t *testing.T) {
 		t.Fatalf("libraries=%d want %d", len(parsed.Libraries), len(DefaultCatchupCapsuleLanes()))
 	}
 }
+
+func TestBuildRecordedCatchupPublishManifest(t *testing.T) {
+	manifest := BuildRecordedCatchupPublishManifest("/tmp/catchup", "Recorder", []CatchupRecordedPublishedItem{{
+		CapsuleID: "dna:1",
+		Lane:      "sports",
+		Title:     "Live Game",
+		Directory: "/tmp/catchup/sports/live-game",
+		MediaPath: "/tmp/catchup/sports/live-game/live-game.ts",
+		NFOPath:   "/tmp/catchup/sports/live-game/live-game.nfo",
+	}})
+	if manifest.ReplayMode != "recorded" {
+		t.Fatalf("replay_mode=%q want recorded", manifest.ReplayMode)
+	}
+	if len(manifest.Libraries) != 1 {
+		t.Fatalf("libraries=%d want 1", len(manifest.Libraries))
+	}
+	if manifest.Libraries[0].Name != "Recorder Sports" {
+		t.Fatalf("library name=%q want %q", manifest.Libraries[0].Name, "Recorder Sports")
+	}
+	if manifest.Libraries[0].Path != "/tmp/catchup/sports" {
+		t.Fatalf("library path=%q want /tmp/catchup/sports", manifest.Libraries[0].Path)
+	}
+	if len(manifest.Items) != 1 || manifest.Items[0].StreamPath != "/tmp/catchup/sports/live-game/live-game.ts" {
+		t.Fatalf("items=%+v", manifest.Items)
+	}
+}

@@ -83,6 +83,7 @@ func main() {
 	commands = append(commands, opsCommands()...)
 	commands = append(commands, catchupOpsCommands()...)
 	commands = append(commands, oracleOpsCommands()...)
+	commands = append(commands, cookieImportCommands()...)
 	commandByName := make(map[string]commandSpec, len(commands))
 	sections := []string{"Core", "Guide/EPG", "VOD (Linux)", "Lab/ops"}
 	for _, cmd := range commands {

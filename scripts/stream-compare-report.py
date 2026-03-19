@@ -34,12 +34,31 @@ def preview(path: Path, limit: int = 30) -> list[str]:
     return path.read_text(encoding="utf-8", errors="replace").splitlines()[:limit]
 
 
+def extract_user_agent_from_ff_stderr(path: Path) -> str:
+    """Parse ffplay/ffprobe verbose stderr to find the User-Agent sent in HTTP requests."""
+    if not path.is_file():
+        return ""
+    # libavformat logs request headers at verbose level, e.g.:
+    #   [http @ 0x...] request: GET /path HTTP/1.1\r\nUser-Agent: Lavf62.12.100\r\n...
+    # or on a separate line after the request line.
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    for line in lines:
+        if "User-Agent:" in line:
+            idx = line.index("User-Agent:")
+            ua = line[idx + len("User-Agent:"):].strip().rstrip("\\r").rstrip("\\n").strip()
+            if ua:
+                return ua
+    return ""
+
+
 def summarize_target(base: Path, label: str) -> dict[str, Any]:
     target = base / label
     curl_meta = read_json(target / "curl.meta.json")
     ffprobe_data = read_json(target / "ffprobe.json")
     streams = ffprobe_data.get("streams") if isinstance(ffprobe_data.get("streams"), list) else []
     format_data = ffprobe_data.get("format") if isinstance(ffprobe_data.get("format"), dict) else {}
+    ffplay_ua = extract_user_agent_from_ff_stderr(target / "ffplay.stderr")
+    ffprobe_ua = extract_user_agent_from_ff_stderr(target / "ffprobe.stderr")
     return {
         "label": label,
         "meta": read_json(target / "meta.json"),
@@ -71,6 +90,8 @@ def summarize_target(base: Path, label: str) -> dict[str, Any]:
         "ffprobe_stderr": preview(target / "ffprobe.stderr", 40),
         "ffplay_exit": read_int(target / "ffplay.exit"),
         "ffplay_stderr": preview(target / "ffplay.stderr", 60),
+        "ffplay_user_agent": ffplay_ua,
+        "ffprobe_user_agent": ffprobe_ua,
         "stream_attempts": read_json(target / "stream-attempts.json"),
     }
 
@@ -96,9 +117,22 @@ def compare(data: dict[str, Any]) -> dict[str, Any]:
         findings.append(
             f"ffprobe stream count differs: direct={direct['ffprobe_stream_count']} tunerr={tunerr['ffprobe_stream_count']}"
         )
+    # User-Agent comparison: if direct succeeds and they use different UAs, this is often the CF cause.
+    d_ua = direct.get("ffplay_user_agent") or direct.get("ffprobe_user_agent") or ""
+    t_ua = tunerr.get("ffplay_user_agent") or tunerr.get("ffprobe_user_agent") or ""
+    if d_ua and t_ua and d_ua != t_ua:
+        findings.append(
+            f"User-Agent differs: direct={d_ua!r} tunerr={t_ua!r} — "
+            "if the stream is Cloudflare-protected, try: IPTV_TUNERR_UPSTREAM_USER_AGENT=lavf"
+        )
+    elif d_ua and not t_ua:
+        findings.append(
+            f"User-Agent visible for direct ({d_ua!r}) but not tunerr — "
+            "run with FFPLAY_LOGLEVEL=verbose to capture tunerr UA"
+        )
     if not findings:
         findings.append("No top-level status mismatch detected; inspect ffplay/ffprobe stderr and the packet capture for lower-level differences.")
-    return {"findings": findings}
+    return {"findings": findings, "direct_ua": d_ua, "tunerr_ua": t_ua}
 
 
 def render_text(data: dict[str, Any]) -> str:
@@ -116,7 +150,8 @@ def render_text(data: dict[str, Any]) -> str:
         lines.append(
             f"  ffprobe: exit={target['ffprobe_exit']} streams={target['ffprobe_stream_count']} format={fmt.get('format_name', '')} bitrate={fmt.get('bit_rate', '')}"
         )
-        lines.append(f"  ffplay: exit={target['ffplay_exit']}")
+        ua = target.get("ffplay_user_agent") or target.get("ffprobe_user_agent") or "(not captured — use FFPLAY_LOGLEVEL=verbose)"
+        lines.append(f"  ffplay: exit={target['ffplay_exit']} ua={ua}")
         if target["ffprobe_error"]:
             lines.append(f"  ffprobe error: {target['ffprobe_error']}")
         if target["curl_preview"]:

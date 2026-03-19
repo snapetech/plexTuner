@@ -68,6 +68,17 @@ func providerAutotuneEnabled() bool {
 	return envBool("IPTV_TUNERR_PROVIDER_AUTOTUNE", true)
 }
 
+func (g *Gateway) noteUpstreamCFBlock(rawURL string) {
+	if g == nil {
+		return
+	}
+	g.providerStateMu.Lock()
+	defer g.providerStateMu.Unlock()
+	g.cfBlockHits++
+	g.lastCFBlockAt = time.Now().UTC()
+	g.lastCFBlockURL = safeurl.RedactURL(rawURL)
+}
+
 func (g *Gateway) noteUpstreamFailure(rawURL string, status int, kind string) {
 	if g == nil || !providerAutotuneEnabled() {
 		return
