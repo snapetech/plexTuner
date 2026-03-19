@@ -23,6 +23,21 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Recorder resilient HTTP (Range resume, Retry-After backoff, metrics) + CF ops
+  Summary:
+    - Recorder: `RecordCatchupCapsuleResilient` / `spoolCopyFromHTTP` with 200 vs 206 append (seek-to-EOF before copy on 206), `recordHTTPStatusError`, `parseRetryAfterHeader`, status backoff multipliers; `catchup-record` stays one-shot via thin wrapper; daemon uses `-record-resume-partial` (default true).
+    - Recorder observability: per-item `capture_http_attempts`, `capture_transient_retries`, `capture_bytes_resumed` and statistics `sum_*` fields on `CatchupRecorderItem` / `CatchupRecorderStatistics`.
+    - Upstream/CF: persisted `cf-learned.json` + startup restore, `IPTV_TUNERR_HOST_UA`, `cf-status` CLI, CF bootstrap browser headers + optional clearance freshness monitor; gateway/learned UA wiring.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Resume requires upstream support for Range/206; otherwise behavior falls back to full re-fetch semantics.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/catchup_record_resilient.go`, `internal/tuner/catchup_record_retry.go`, `internal/tuner/catchup_daemon.go`, `internal/tuner/cf_learned_store.go`, `cmd/iptv-tunerr/cmd_cf_status.go`, `docs/CHANGELOG.md`
+
+- Date: 2026-03-19
   Title: Recorder retries, lane budget stats, deferred library refresh
   Summary:
     - Added transient error classification and exponential-backoff retries for `catchup-daemon` captures (`RecordMaxAttempts`, `RecordRetryInitial`, `RecordRetryMax`).

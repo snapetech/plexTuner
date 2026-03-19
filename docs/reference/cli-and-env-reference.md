@@ -541,6 +541,7 @@ Common flags:
 - `-record-max-attempts` — max capture tries per programme when failures look transient (default `1`)
 - `-record-retry-backoff` — initial backoff between transient retries (default `5s`)
 - `-record-retry-backoff-max` — max backoff between transient retries (default `2m`)
+- `-record-resume-partial` — after transient mid-stream failures, retry with HTTP `Range` against the same `.partial.ts` spool when the server supports partial responses (default `true`)
 - `-once`
 - `-run-for`
 
@@ -555,6 +556,8 @@ State file model:
 - `completed` — finished recordings
 - `failed` — interrupted or failed recordings
 - `statistics.lane_storage` — optional per-lane `used_bytes` plus `budget_bytes` / `headroom_bytes` when byte budgets are configured
+- `statistics.sum_capture_http_attempts`, `sum_capture_transient_retries`, `sum_capture_bytes_resumed` — aggregate capture churn and bytes appended via HTTP Range resume (when enabled)
+- per completed/failed item: optional `capture_http_attempts`, `capture_transient_retries`, `capture_bytes_resumed` for that programme’s capture path
 
 Operational notes:
 - this MVP dedupes by `capsule_id`, which already collapses duplicate programme variants built from the same `dna_id + start + title`
@@ -590,6 +593,15 @@ Returned fields include:
 - `interrupted_count`
 - per-lane counts
 - recent `active`, `completed`, and `failed` items
+
+## `iptv-tunerr cf-status`
+
+Lab/ops helper: show per-host Cloudflare-related state from the persisted cookie jar and Tunerr’s CF learned file (`cf_clearance` freshness, working UA, CF-tagged flag). Use after UA cycling or when debugging clearance expiry.
+
+Common flags:
+- `-jar` — cookie jar JSON path (default: `IPTV_TUNERR_COOKIE_JAR_FILE`)
+- `-learned` — CF learned JSON path (default: `IPTV_TUNERR_CF_LEARNED_FILE` or `cf-learned.json` beside the jar)
+- `-json` — machine-readable output
 
 ## `iptv-tunerr probe`
 
@@ -751,6 +763,8 @@ Probe method:
 - `IPTV_TUNERR_UPSTREAM_ADD_SEC_FETCH` — add `Sec-Fetch-Site: cross-site` and `Sec-Fetch-Mode: cors` on upstream requests and ffmpeg inputs.
 - `IPTV_TUNERR_UPSTREAM_USER_AGENT` — override the upstream `User-Agent` while leaving downstream client detection untouched.
 - `IPTV_TUNERR_COOKIE_JAR_FILE` — persist upstream cookies learned during playback so provider/CDN clearance tokens can survive restarts.
+- `IPTV_TUNERR_CF_LEARNED_FILE` — optional JSON path for per-host CF learned state (working UA, CF-tagged flag). When unset, Tunerr may derive `cf-learned.json` next to the cookie jar path.
+- `IPTV_TUNERR_HOST_UA` — comma-separated `host:preset` pairs (preset names match UA cycling presets) to pin a resolved upstream `User-Agent` per hostname without waiting for automatic cycling.
 - `IPTV_TUNERR_AUTOPILOT_STATE_FILE` — optional JSON file for remembered playback decisions keyed by `dna_id + client_class`; when enabled, successful stream choices can be reused on later requests before generic adaptation rules, including the last known-good upstream URL/host.
 - `IPTV_TUNERR_AUTOPILOT_MAX_FAILURE_STREAK` — maximum remembered failure streak before a stored Autopilot decision stops being reused automatically (default `2`)
 - `IPTV_TUNERR_HOT_START_ENABLED` — enable hot-start tuning for favorite/high-hit channels (default `true`)

@@ -4,6 +4,8 @@
 
 **Goal:** Start the new Live TV Intelligence product track: map the multi-PR roadmap, then ship the first visible foundation feature so IPTV Tunerr feels like an intelligent control plane instead of only a tuner bridge.
 
+**Shipped 2026-03-19 (recorder + CF ops bundle):** Same-spool HTTP Range resume for `catchup-daemon`, Retry-After + status-aware transient backoff, capture metrics on items and in `recorder-state.json` statistics; CF learned persistence, `cf-status`, host UA override, CF bootstrap header parity + freshness monitor. Docs: `docs/CHANGELOG.md` [Unreleased], `docs/features.md`, `docs/reference/cli-and-env-reference.md`; history: `memory-bank/task_history.md`.
+
 **Scope:** In: roadmap/epic documentation, channel intelligence reporting (`channel-report` + `/channels/report.json`), EPG match provenance visibility, lineup recipes, Channel DNA foundation, Autopilot decision-memory foundation, Ghost Hunter visible-session foundation, provider behavior profile foundation, README/features/reference/changelog updates, memory-bank updates, local verification. Out: catch-up capsules, active provider self-tuning defaults, hidden-grab Ghost Hunter automation, and a complete cross-provider identity graph in one patch.
 
 **Last updated:** 2026-03-19
