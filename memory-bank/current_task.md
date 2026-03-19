@@ -8,6 +8,12 @@
 
 **Last updated:** 2026-03-19
 
+**Recorder follow-on slices (2026-03-19):**
+- Transient capture retries: `recordCatchupCapsuleWithRetries` + `IsTransientRecordError`, CLI `-record-max-attempts` / `-record-retry-backoff` / `-record-retry-backoff-max` (defaults 1 / 5s / 2m).
+- Budget visibility: `statistics.lane_storage` on `recorder-state.json` with `used_bytes` and optional `budget_bytes` / `headroom_bytes`.
+- Publish ops: `-defer-library-refresh` + `OnManifestSaved` runs full-manifest library refresh after `recorded-publish-manifest.json` write; `LoadRecordedCatchupPublishManifest` for the hook path.
+- Docs/changelog/features updated; tests for retry classification, backoff, daemon retry integration, lane stats, manifest load, and CLI hooks.
+
 **Recorder spool/finalize (2026-03-19):**
 - `RecordCatchupCapsule` streams to `<lane>/<sanitized-capsule-id>.partial.ts`, removes stale spool, then `Rename`s to `.ts` only after HTTP 200, successful `io.Copy`, and a clean context (no more half-written “final” assets on failure).
 - Exported `CatchupRecordArtifactPaths`; `catchup-daemon` sets active `output_path` to the spool file while recording so restarts and pruning align with on-disk bytes.

@@ -79,6 +79,23 @@ func SaveRecordedCatchupPublishManifest(rootDir string, items []CatchupRecordedP
 	return os.WriteFile(filepath.Join(rootDir, "recorded-publish-manifest.json"), data, 0o600)
 }
 
+// LoadRecordedCatchupPublishManifest reads recorded-publish-manifest.json from a publish root directory.
+func LoadRecordedCatchupPublishManifest(rootDir string) ([]CatchupRecordedPublishedItem, error) {
+	rootDir = strings.TrimSpace(rootDir)
+	if rootDir == "" {
+		return nil, fmt.Errorf("publish root required")
+	}
+	data, err := os.ReadFile(filepath.Join(rootDir, "recorded-publish-manifest.json"))
+	if err != nil {
+		return nil, err
+	}
+	var body CatchupRecordedPublishManifest
+	if err := json.Unmarshal(data, &body); err != nil {
+		return nil, err
+	}
+	return body.Items, nil
+}
+
 func BuildRecordedCatchupPublishManifest(rootDir, libraryPrefix string, items []CatchupRecordedPublishedItem) CatchupPublishManifest {
 	rootDir = strings.TrimSpace(rootDir)
 	now := time.Now().UTC().Format(time.RFC3339)

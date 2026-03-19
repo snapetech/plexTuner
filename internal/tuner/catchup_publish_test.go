@@ -94,3 +94,24 @@ func TestBuildRecordedCatchupPublishManifest(t *testing.T) {
 		t.Fatalf("items=%+v", manifest.Items)
 	}
 }
+
+func TestLoadRecordedCatchupPublishManifest(t *testing.T) {
+	dir := t.TempDir()
+	items := []CatchupRecordedPublishedItem{{
+		CapsuleID: "a",
+		Lane:      "sports",
+		Title:     "Game",
+		Directory: filepath.Join(dir, "sports", "x"),
+		MediaPath: filepath.Join(dir, "sports", "x", "x.ts"),
+	}}
+	if err := SaveRecordedCatchupPublishManifest(dir, items); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	got, err := LoadRecordedCatchupPublishManifest(dir)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(got) != 1 || got[0].CapsuleID != "a" {
+		t.Fatalf("got %+v", got)
+	}
+}

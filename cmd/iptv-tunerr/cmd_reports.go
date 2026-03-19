@@ -107,6 +107,10 @@ func reportCommands() []commandSpec {
 	catchupDaemonJellyfinHost := catchupDaemonCmd.String("jellyfin-host", "", "Jellyfin base URL (default: IPTV_TUNERR_JELLYFIN_HOST)")
 	catchupDaemonJellyfinToken := catchupDaemonCmd.String("jellyfin-token", "", "Jellyfin API key (default: IPTV_TUNERR_JELLYFIN_TOKEN)")
 	catchupDaemonRefresh := catchupDaemonCmd.Bool("refresh", true, "Trigger a library refresh/scan after publish-time library create or reuse")
+	catchupDaemonDeferLibraryRefresh := catchupDaemonCmd.Bool("defer-library-refresh", false, "When using -register-* with -refresh, register/reuse libraries per recording but defer the library scan/refresh until after recorded-publish-manifest.json is updated (one refresh per completion)")
+	catchupDaemonRecordMaxAttempts := catchupDaemonCmd.Int("record-max-attempts", 1, "Max capture attempts per programme when upstream errors look transient (>=1)")
+	catchupDaemonRecordRetryBackoff := catchupDaemonCmd.Duration("record-retry-backoff", 5*time.Second, "Initial backoff between transient capture retries")
+	catchupDaemonRecordRetryBackoffMax := catchupDaemonCmd.Duration("record-retry-backoff-max", 2*time.Minute, "Max backoff between transient capture retries")
 	catchupDaemonOnce := catchupDaemonCmd.Bool("once", false, "Run one scheduler pass, wait for any scheduled recordings to finish, then exit")
 	catchupDaemonRunFor := catchupDaemonCmd.Duration("run-for", 0, "Optional overall runtime limit; 0 means run until interrupted")
 
@@ -146,7 +150,7 @@ func reportCommands() []commandSpec {
 		}},
 		{Name: "catchup-daemon", Section: "Guide/EPG", Summary: "Continuously schedule and record eligible catch-up capsules with concurrency/state control", FlagSet: catchupDaemonCmd, Run: func(cfg *config.Config, args []string) {
 			_ = catchupDaemonCmd.Parse(args)
-			handleCatchupDaemon(cfg, *catchupDaemonCatalog, *catchupDaemonXMLTV, *catchupDaemonHorizon, *catchupDaemonLimit, *catchupDaemonOutDir, *catchupDaemonPublishDir, *catchupDaemonLibraryPrefix, *catchupDaemonStreamBaseURL, *catchupDaemonPollInterval, *catchupDaemonLeadTime, *catchupDaemonMaxDuration, *catchupDaemonMaxConcurrency, *catchupDaemonStateFile, *catchupDaemonRetainCompleted, *catchupDaemonRetainFailed, *catchupDaemonRetainCompletedPerLane, *catchupDaemonRetainFailedPerLane, *catchupDaemonBudgetBytesPerLane, *catchupDaemonGuidePolicy, *catchupDaemonReplayTemplate, *catchupDaemonIncludeLanes, *catchupDaemonExcludeLanes, *catchupDaemonIncludeChannels, *catchupDaemonExcludeChannels, *catchupDaemonRegisterPlex, *catchupDaemonPlexURL, *catchupDaemonPlexToken, *catchupDaemonRegisterEmby, *catchupDaemonEmbyHost, *catchupDaemonEmbyToken, *catchupDaemonRegisterJellyfin, *catchupDaemonJellyfinHost, *catchupDaemonJellyfinToken, *catchupDaemonRefresh, *catchupDaemonOnce, *catchupDaemonRunFor)
+			handleCatchupDaemon(cfg, *catchupDaemonCatalog, *catchupDaemonXMLTV, *catchupDaemonHorizon, *catchupDaemonLimit, *catchupDaemonOutDir, *catchupDaemonPublishDir, *catchupDaemonLibraryPrefix, *catchupDaemonStreamBaseURL, *catchupDaemonPollInterval, *catchupDaemonLeadTime, *catchupDaemonMaxDuration, *catchupDaemonMaxConcurrency, *catchupDaemonStateFile, *catchupDaemonRetainCompleted, *catchupDaemonRetainFailed, *catchupDaemonRetainCompletedPerLane, *catchupDaemonRetainFailedPerLane, *catchupDaemonBudgetBytesPerLane, *catchupDaemonGuidePolicy, *catchupDaemonReplayTemplate, *catchupDaemonIncludeLanes, *catchupDaemonExcludeLanes, *catchupDaemonIncludeChannels, *catchupDaemonExcludeChannels, *catchupDaemonRegisterPlex, *catchupDaemonPlexURL, *catchupDaemonPlexToken, *catchupDaemonRegisterEmby, *catchupDaemonEmbyHost, *catchupDaemonEmbyToken, *catchupDaemonRegisterJellyfin, *catchupDaemonJellyfinHost, *catchupDaemonJellyfinToken, *catchupDaemonRefresh, *catchupDaemonDeferLibraryRefresh, *catchupDaemonRecordMaxAttempts, *catchupDaemonRecordRetryBackoff, *catchupDaemonRecordRetryBackoffMax, *catchupDaemonOnce, *catchupDaemonRunFor)
 		}},
 		{Name: "catchup-recorder-report", Section: "Guide/EPG", Summary: "Summarize the persistent catch-up recorder state file", FlagSet: catchupRecorderReportCmd, Run: func(_ *config.Config, args []string) {
 			_ = catchupRecorderReportCmd.Parse(args)
@@ -335,7 +339,7 @@ func handleCatchupRecord(cfg *config.Config, catalogPath, xmltvRef string, horiz
 	fmt.Println(string(data))
 }
 
-func handleCatchupDaemon(cfg *config.Config, catalogPath, xmltvRef string, horizon time.Duration, limit int, outDir, publishDir, libraryPrefix, streamBaseURL string, pollInterval, leadTime, maxDuration time.Duration, maxConcurrency int, stateFile string, retainCompleted, retainFailed int, retainCompletedPerLane, retainFailedPerLane, budgetBytesPerLane, guidePolicy, replayTemplate, includeLanes, excludeLanes, includeChannels, excludeChannels string, registerPlex bool, plexURL, plexToken string, registerEmby bool, embyHost, embyToken string, registerJellyfin bool, jellyfinHost, jellyfinToken string, refresh bool, once bool, runFor time.Duration) {
+func handleCatchupDaemon(cfg *config.Config, catalogPath, xmltvRef string, horizon time.Duration, limit int, outDir, publishDir, libraryPrefix, streamBaseURL string, pollInterval, leadTime, maxDuration time.Duration, maxConcurrency int, stateFile string, retainCompleted, retainFailed int, retainCompletedPerLane, retainFailedPerLane, budgetBytesPerLane, guidePolicy, replayTemplate, includeLanes, excludeLanes, includeChannels, excludeChannels string, registerPlex bool, plexURL, plexToken string, registerEmby bool, embyHost, embyToken string, registerJellyfin bool, jellyfinHost, jellyfinToken string, refresh bool, deferLibraryRefresh bool, recordMaxAttempts int, recordRetryBackoff, recordRetryBackoffMax time.Duration, once bool, runFor time.Duration) {
 	path := strings.TrimSpace(catalogPath)
 	if path == "" {
 		path = cfg.CatalogPath
@@ -369,10 +373,13 @@ func handleCatchupDaemon(cfg *config.Config, catalogPath, xmltvRef string, horiz
 		log.Printf("Parse -budget-bytes-per-lane failed: %v", err)
 		os.Exit(1)
 	}
-	onPublished, err := buildCatchupDaemonPublishHook(cfg, strings.TrimSpace(publishDir), strings.TrimSpace(libraryPrefix), registerPlex, plexURL, plexToken, registerEmby, embyHost, embyToken, registerJellyfin, jellyfinHost, jellyfinToken, refresh)
+	onPublished, onManifestSaved, err := buildCatchupDaemonPublishHooks(cfg, strings.TrimSpace(publishDir), strings.TrimSpace(libraryPrefix), registerPlex, plexURL, plexToken, registerEmby, embyHost, embyToken, registerJellyfin, jellyfinHost, jellyfinToken, refresh, deferLibraryRefresh)
 	if err != nil {
 		log.Print(err)
 		os.Exit(1)
+	}
+	if recordMaxAttempts < 1 {
+		recordMaxAttempts = 1
 	}
 	ctx := context.Background()
 	if runFor > 0 {
@@ -397,6 +404,9 @@ func handleCatchupDaemon(cfg *config.Config, catalogPath, xmltvRef string, horiz
 		LeadTime:            leadTime,
 		MaxConcurrency:      maxConcurrency,
 		MaxRecordDuration:   maxDuration,
+		RecordMaxAttempts:   recordMaxAttempts,
+		RecordRetryInitial:  recordRetryBackoff,
+		RecordRetryMax:      recordRetryBackoffMax,
 		RetainCompleted:     retainCompleted,
 		RetainFailed:        retainFailed,
 		LaneRetainCompleted: laneRetainCompleted,
@@ -407,6 +417,7 @@ func handleCatchupDaemon(cfg *config.Config, catalogPath, xmltvRef string, horiz
 		IncludeChannels:     splitCSVList(includeChannels),
 		ExcludeChannels:     splitCSVList(excludeChannels),
 		OnPublished:         onPublished,
+		OnManifestSaved:     onManifestSaved,
 		Once:                once,
 	}, repFn, nil)
 	if err != nil {
@@ -556,20 +567,20 @@ func parseHumanBytes(raw string) (int64, error) {
 	return int64(value * multiplier), nil
 }
 
-func buildCatchupDaemonPublishHook(cfg *config.Config, publishDir, libraryPrefix string, registerPlex bool, plexURL, plexToken string, registerEmby bool, embyHost, embyToken string, registerJellyfin bool, jellyfinHost, jellyfinToken string, refresh bool) (func(tuner.CatchupRecordedPublishedItem) error, error) {
+func buildCatchupDaemonPublishHooks(cfg *config.Config, publishDir, libraryPrefix string, registerPlex bool, plexURL, plexToken string, registerEmby bool, embyHost, embyToken string, registerJellyfin bool, jellyfinHost, jellyfinToken string, refresh bool, deferRefresh bool) (func(tuner.CatchupRecordedPublishedItem) error, func(string) error, error) {
 	publishDir = strings.TrimSpace(publishDir)
 	if !registerPlex && !registerEmby && !registerJellyfin {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if publishDir == "" {
-		return nil, fmt.Errorf("-publish-dir is required when media-server registration is enabled")
+		return nil, nil, fmt.Errorf("-publish-dir is required when media-server registration is enabled")
 	}
 	libraryPrefix = firstNonEmptyCLIString(libraryPrefix, "Catchup")
 	plexBaseURL, plexAccessToken := "", ""
 	if registerPlex {
 		plexBaseURL, plexAccessToken = resolvePlexAccess(plexURL, plexToken)
 		if plexBaseURL == "" || plexAccessToken == "" {
-			return nil, fmt.Errorf("need Plex API access for -register-plex: set -plex-url/-token or IPTV_TUNERR_PMS_URL+IPTV_TUNERR_PMS_TOKEN")
+			return nil, nil, fmt.Errorf("need Plex API access for -register-plex: set -plex-url/-token or IPTV_TUNERR_PMS_URL+IPTV_TUNERR_PMS_TOKEN")
 		}
 	}
 	embyAccessHost, embyAccessToken := "", ""
@@ -577,7 +588,7 @@ func buildCatchupDaemonPublishHook(cfg *config.Config, publishDir, libraryPrefix
 		embyAccessHost = firstNonEmpty(embyHost, cfg.EmbyHost)
 		embyAccessToken = firstNonEmpty(embyToken, cfg.EmbyToken)
 		if embyAccessHost == "" || embyAccessToken == "" {
-			return nil, fmt.Errorf("need Emby API access for -register-emby: set -emby-host/-emby-token or IPTV_TUNERR_EMBY_HOST+IPTV_TUNERR_EMBY_TOKEN")
+			return nil, nil, fmt.Errorf("need Emby API access for -register-emby: set -emby-host/-emby-token or IPTV_TUNERR_EMBY_HOST+IPTV_TUNERR_EMBY_TOKEN")
 		}
 	}
 	jellyfinAccessHost, jellyfinAccessToken := "", ""
@@ -585,26 +596,54 @@ func buildCatchupDaemonPublishHook(cfg *config.Config, publishDir, libraryPrefix
 		jellyfinAccessHost = firstNonEmpty(jellyfinHost, cfg.JellyfinHost)
 		jellyfinAccessToken = firstNonEmpty(jellyfinToken, cfg.JellyfinToken)
 		if jellyfinAccessHost == "" || jellyfinAccessToken == "" {
-			return nil, fmt.Errorf("need Jellyfin API access for -register-jellyfin: set -jellyfin-host/-jellyfin-token or IPTV_TUNERR_JELLYFIN_HOST+IPTV_TUNERR_JELLYFIN_TOKEN")
+			return nil, nil, fmt.Errorf("need Jellyfin API access for -register-jellyfin: set -jellyfin-host/-jellyfin-token or IPTV_TUNERR_JELLYFIN_HOST+IPTV_TUNERR_JELLYFIN_TOKEN")
 		}
 	}
-	return func(item tuner.CatchupRecordedPublishedItem) error {
+	refreshPerItem := refresh && !deferRefresh
+	onPublished := func(item tuner.CatchupRecordedPublishedItem) error {
 		manifest := tuner.BuildRecordedCatchupPublishManifest(publishDir, libraryPrefix, []tuner.CatchupRecordedPublishedItem{item})
 		if registerPlex {
-			if err := registerCatchupPlexLibraries(plexBaseURL, plexAccessToken, manifest, refresh); err != nil {
+			if err := registerCatchupPlexLibraries(plexBaseURL, plexAccessToken, manifest, refreshPerItem); err != nil {
 				return err
 			}
 		}
 		if registerEmby {
-			if err := registerCatchupMediaServerLibraries("emby", embyAccessHost, embyAccessToken, manifest, refresh); err != nil {
+			if err := registerCatchupMediaServerLibraries("emby", embyAccessHost, embyAccessToken, manifest, refreshPerItem); err != nil {
 				return err
 			}
 		}
 		if registerJellyfin {
-			if err := registerCatchupMediaServerLibraries("jellyfin", jellyfinAccessHost, jellyfinAccessToken, manifest, refresh); err != nil {
+			if err := registerCatchupMediaServerLibraries("jellyfin", jellyfinAccessHost, jellyfinAccessToken, manifest, refreshPerItem); err != nil {
 				return err
 			}
 		}
 		return nil
-	}, nil
+	}
+	var onManifestSaved func(string) error
+	if deferRefresh && refresh {
+		onManifestSaved = func(root string) error {
+			items, err := tuner.LoadRecordedCatchupPublishManifest(root)
+			if err != nil {
+				return err
+			}
+			manifest := tuner.BuildRecordedCatchupPublishManifest(root, libraryPrefix, items)
+			if registerPlex {
+				if err := registerCatchupPlexLibraries(plexBaseURL, plexAccessToken, manifest, true); err != nil {
+					return err
+				}
+			}
+			if registerEmby {
+				if err := registerCatchupMediaServerLibraries("emby", embyAccessHost, embyAccessToken, manifest, true); err != nil {
+					return err
+				}
+			}
+			if registerJellyfin {
+				if err := registerCatchupMediaServerLibraries("jellyfin", jellyfinAccessHost, jellyfinAccessToken, manifest, true); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}
+	return onPublished, onManifestSaved, nil
 }

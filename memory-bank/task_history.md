@@ -23,6 +23,22 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Recorder retries, lane budget stats, deferred library refresh
+  Summary:
+    - Added transient error classification and exponential-backoff retries for `catchup-daemon` captures (`RecordMaxAttempts`, `RecordRetryInitial`, `RecordRetryMax`).
+    - Extended `recorder-state.json` statistics with `lane_storage` (used vs budget headroom) when per-lane byte budgets apply.
+    - Added optional `-defer-library-refresh` with `OnManifestSaved` to refresh Plex/Emby/Jellyfin once after `recorded-publish-manifest.json` updates; added `LoadRecordedCatchupPublishManifest`.
+    - Tests: retry helpers, daemon 503→200 integration, lane stats, manifest round-trip, CLI hook wiring.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Non-transient failures (e.g. HTTP 404) do not loop; context cancel/deadline still fail fast without “retry success” semantics.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/catchup_daemon.go`, `internal/tuner/catchup_record_retry.go`, `internal/tuner/catchup_record_publish.go`, `cmd/iptv-tunerr/cmd_reports.go`
+
+- Date: 2026-03-19
   Title: Catch-up recorder spool/finalize (.partial.ts → .ts)
   Summary:
     - `RecordCatchupCapsule` writes to a spool file and renames to the final `.ts` only after a complete, successful transfer; added `CatchupRecordArtifactPaths`.

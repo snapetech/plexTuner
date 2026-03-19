@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -625,5 +626,98 @@ func TestRunCatchupRecorderDaemon_RetriesInterruptedProgrammeWithinWindow(t *tes
 	}
 	if got := state.Statistics.FailedCount; got != 0 {
 		t.Fatalf("failed=%d want 0 after retryable interruption consumed", got)
+	}
+}
+
+func TestRunCatchupRecorderDaemon_RetriesTransientHTTP(t *testing.T) {
+	var n atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if n.Add(1) <= 2 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("okdata"))
+	}))
+	defer srv.Close()
+
+	now := time.Now().UTC()
+	dir := t.TempDir()
+	state, err := RunCatchupRecorderDaemon(context.Background(), CatchupRecorderDaemonConfig{
+		StreamBaseURL:      srv.URL,
+		OutDir:             dir,
+		PollInterval:       10 * time.Millisecond,
+		MaxConcurrency:     1,
+		RecordMaxAttempts:  5,
+		RecordRetryInitial: 5 * time.Millisecond,
+		RecordRetryMax:     100 * time.Millisecond,
+		Once:               true,
+		Now:                func() time.Time { return now },
+	}, func(time.Time) (CatchupCapsulePreview, error) {
+		return CatchupCapsulePreview{
+			Capsules: []CatchupCapsule{{
+				CapsuleID: "dna:retry:http",
+				ChannelID: "101",
+				Title:     "Show",
+				Lane:      "sports",
+				State:     "in_progress",
+				Start:     now.Add(-time.Minute).Format(time.RFC3339),
+				Stop:      now.Add(time.Minute).Format(time.RFC3339),
+			}},
+		}, nil
+	}, srv.Client())
+	if err != nil {
+		t.Fatalf("RunCatchupRecorderDaemon: %v", err)
+	}
+	if state.Statistics.CompletedCount != 1 {
+		t.Fatalf("completed=%d want 1", state.Statistics.CompletedCount)
+	}
+	if n.Load() != 3 {
+		t.Fatalf("requests=%d want 3", n.Load())
+	}
+}
+
+func TestRunCatchupRecorderDaemon_LaneStorageStats(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("abcdef"))
+	}))
+	defer srv.Close()
+
+	now := time.Now().UTC()
+	dir := t.TempDir()
+	state, err := RunCatchupRecorderDaemon(context.Background(), CatchupRecorderDaemonConfig{
+		StreamBaseURL:   srv.URL,
+		OutDir:          dir,
+		PollInterval:    10 * time.Millisecond,
+		MaxConcurrency:  1,
+		LaneBudgetBytes: map[string]int64{"sports": 1000},
+		Once:            true,
+		Now:             func() time.Time { return now },
+	}, func(time.Time) (CatchupCapsulePreview, error) {
+		return CatchupCapsulePreview{
+			Capsules: []CatchupCapsule{{
+				CapsuleID: "dna:lane:stat",
+				ChannelID: "101",
+				Title:     "Show",
+				Lane:      "sports",
+				State:     "in_progress",
+				Start:     now.Add(-time.Minute).Format(time.RFC3339),
+				Stop:      now.Add(time.Minute).Format(time.RFC3339),
+			}},
+		}, nil
+	}, srv.Client())
+	if err != nil {
+		t.Fatalf("RunCatchupRecorderDaemon: %v", err)
+	}
+	ls := state.Statistics.LaneStorage
+	if ls == nil {
+		t.Fatal("expected lane storage stats")
+	}
+	st, ok := ls["sports"]
+	if !ok {
+		t.Fatalf("missing sports lane: %+v", ls)
+	}
+	if st.UsedBytes != 6 || st.BudgetBytes != 1000 || st.HeadroomBytes != 994 {
+		t.Fatalf("unexpected storage: %+v", st)
 	}
 }

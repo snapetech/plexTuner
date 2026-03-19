@@ -24,6 +24,9 @@ type CatchupRecorderDaemonConfig struct {
 	LeadTime              time.Duration
 	MaxConcurrency        int
 	MaxRecordDuration     time.Duration
+	RecordMaxAttempts     int
+	RecordRetryInitial    time.Duration
+	RecordRetryMax        time.Duration
 	RetainCompleted       int
 	RetainFailed          int
 	LaneRetainCompleted   map[string]int
@@ -35,8 +38,10 @@ type CatchupRecorderDaemonConfig struct {
 	ExcludeChannels       []string
 	AllowRetryInterrupted bool
 	OnPublished           func(CatchupRecordedPublishedItem) error
-	Once                  bool
-	Now                   func() time.Time
+	// OnManifestSaved runs after a successful recording and recorded-publish-manifest.json write, without holding the recorder mutex.
+	OnManifestSaved func(publishRootDir string) error
+	Once            bool
+	Now             func() time.Time
 }
 
 type CatchupRecorderState struct {
@@ -53,6 +58,15 @@ type CatchupRecorderStatistics struct {
 	ActiveCount    int `json:"active_count"`
 	CompletedCount int `json:"completed_count"`
 	FailedCount    int `json:"failed_count"`
+	// LaneStorage summarizes completed bytes per lane and headroom against LaneBudgetBytes (when configured).
+	LaneStorage map[string]CatchupRecorderLaneStorage `json:"lane_storage,omitempty"`
+}
+
+// CatchupRecorderLaneStorage is derived from completed items plus optional per-lane byte budgets.
+type CatchupRecorderLaneStorage struct {
+	UsedBytes     int64 `json:"used_bytes"`
+	BudgetBytes   int64 `json:"budget_bytes,omitempty"`
+	HeadroomBytes int64 `json:"headroom_bytes,omitempty"`
 }
 
 type CatchupRecorderItem struct {
@@ -223,6 +237,18 @@ func normalizeCatchupRecorderDaemonConfig(cfg CatchupRecorderDaemonConfig) Catch
 	}
 	if !cfg.AllowRetryInterrupted {
 		cfg.AllowRetryInterrupted = true
+	}
+	if cfg.RecordMaxAttempts <= 0 {
+		cfg.RecordMaxAttempts = 1
+	}
+	if cfg.RecordRetryInitial <= 0 {
+		cfg.RecordRetryInitial = 5 * time.Second
+	}
+	if cfg.RecordRetryMax <= 0 {
+		cfg.RecordRetryMax = 2 * time.Minute
+	}
+	if cfg.RecordRetryMax < cfg.RecordRetryInitial {
+		cfg.RecordRetryMax = cfg.RecordRetryInitial
 	}
 	cfg.LaneRetainCompleted = normalizeLaneIntLimits(cfg.LaneRetainCompleted)
 	cfg.LaneRetainFailed = normalizeLaneIntLimits(cfg.LaneRetainFailed)
@@ -415,7 +441,7 @@ func (m *catchupRecorderManager) runCapsule(c CatchupCapsule) {
 		ctx, cancel = context.WithDeadline(context.Background(), deadline)
 		defer cancel()
 	}
-	recorded, err := RecordCatchupCapsule(ctx, c, m.cfg.StreamBaseURL, m.cfg.OutDir, m.client)
+	recorded, err := m.recordCatchupCapsuleWithRetries(ctx, c)
 	if err != nil {
 		item.Status = "failed"
 		item.Error = err.Error()
@@ -465,7 +491,6 @@ func (m *catchupRecorderManager) updateActive(item CatchupRecorderItem) {
 
 func (m *catchupRecorderManager) finish(item CatchupRecorderItem, success bool) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	active := m.state.Active[:0]
 	for _, existing := range m.state.Active {
 		if existing.CapsuleID != item.CapsuleID {
@@ -494,7 +519,53 @@ func (m *catchupRecorderManager) finish(item CatchupRecorderItem, success bool) 
 		}
 	}
 	m.trimLocked()
-	_ = m.persistLocked()
+	manifestRoot := ""
+	var onManifestSaved func(string) error
+	if success && strings.TrimSpace(m.cfg.PublishDir) != "" && m.cfg.OnManifestSaved != nil {
+		manifestRoot = strings.TrimSpace(m.cfg.PublishDir)
+		onManifestSaved = m.cfg.OnManifestSaved
+	}
+	data, err := json.MarshalIndent(m.state, "", "  ")
+	m.mu.Unlock()
+	if err != nil {
+		return
+	}
+	if err := os.WriteFile(m.stateFile, data, 0o600); err != nil {
+		return
+	}
+	if onManifestSaved != nil && manifestRoot != "" {
+		_ = onManifestSaved(manifestRoot)
+	}
+}
+
+func (m *catchupRecorderManager) recordCatchupCapsuleWithRetries(ctx context.Context, c CatchupCapsule) (CatchupRecordedItem, error) {
+	maxAttempts := m.cfg.RecordMaxAttempts
+	initial := m.cfg.RecordRetryInitial
+	maxB := m.cfg.RecordRetryMax
+	var errs []string
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if attempt > 0 {
+			d := recordRetryBackoffDuration(attempt-1, initial, maxB)
+			t := time.NewTimer(d)
+			select {
+			case <-t.C:
+			case <-ctx.Done():
+				if !t.Stop() {
+					<-t.C
+				}
+				return CatchupRecordedItem{}, ctx.Err()
+			}
+		}
+		rec, err := RecordCatchupCapsule(ctx, c, m.cfg.StreamBaseURL, m.cfg.OutDir, m.client)
+		if err == nil {
+			return rec, nil
+		}
+		errs = append(errs, fmt.Sprintf("attempt %d: %v", attempt+1, err))
+		if attempt+1 >= maxAttempts || !IsTransientRecordError(err) {
+			return CatchupRecordedItem{}, fmt.Errorf("%s", strings.Join(errs, " | "))
+		}
+	}
+	return CatchupRecordedItem{}, fmt.Errorf("%s", strings.Join(errs, " | "))
 }
 
 func (m *catchupRecorderManager) trimLocked() {
@@ -535,12 +606,54 @@ func (m *catchupRecorderManager) trimLocked() {
 		ActiveCount:    len(m.state.Active),
 		CompletedCount: len(m.state.Completed),
 		FailedCount:    len(m.state.Failed),
+		LaneStorage:    m.computeLaneStorageStatsLocked(),
 	}
 	sort.SliceStable(m.state.Active, func(i, j int) bool { return m.state.Active[i].EligibleAt > m.state.Active[j].EligibleAt })
 }
 
+func (m *catchupRecorderManager) computeLaneStorageStatsLocked() map[string]CatchupRecorderLaneStorage {
+	out := map[string]CatchupRecorderLaneStorage{}
+	for _, item := range m.state.Completed {
+		lane := strings.ToLower(firstNonEmptyString(item.Lane, "general"))
+		size := catchupRecorderItemSize(item)
+		if size <= 0 {
+			continue
+		}
+		s := out[lane]
+		s.UsedBytes += size
+		out[lane] = s
+	}
+	for lane, budget := range m.cfg.LaneBudgetBytes {
+		lane = strings.ToLower(strings.TrimSpace(lane))
+		if budget <= 0 {
+			continue
+		}
+		s := out[lane]
+		s.BudgetBytes = budget
+		if s.UsedBytes >= budget {
+			s.HeadroomBytes = 0
+		} else {
+			s.HeadroomBytes = budget - s.UsedBytes
+		}
+		out[lane] = s
+	}
+	for lane, s := range out {
+		if s.BudgetBytes == 0 && s.UsedBytes == 0 {
+			delete(out, lane)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 func (m *catchupRecorderManager) persistLocked() error {
 	m.trimLocked()
+	return m.persistStateFileLocked()
+}
+
+func (m *catchupRecorderManager) persistStateFileLocked() error {
 	data, err := json.MarshalIndent(m.state, "", "  ")
 	if err != nil {
 		return err

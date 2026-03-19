@@ -27,6 +27,9 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Lane-specific retention and storage budgets**: `catchup-daemon` now supports per-lane completed/failed retention counts and per-lane completed-item storage budgets, pruning older items first within each lane before global retention limits are applied.
 - **Interrupted-recording recovery semantics**: daemon restarts now preserve unfinished recordings as explicit failed `status=interrupted` items with recovery metadata and partial byte counts when available, and the scheduler can automatically retry the same programme window if it is still eligible after restart.
 - **Recorder spool/finalize**: `catchup-record` / `catchup-daemon` capture streams to `<lane>/<sanitized-capsule-id>.partial.ts` first and rename to the final `.ts` only after a clean HTTP 200 + body copy; interrupted or failed runs no longer leave a finished-looking `.ts` on disk.
+- **Recorder transient retry/backoff**: `catchup-daemon` can retry a capture when errors look transient (typical 5xx/429/408-style HTTP failures, timeouts, connection resets) with exponential backoff capped by `-record-retry-backoff-max`, up to `-record-max-attempts`.
+- **Recorder lane budget visibility**: `recorder-state.json` statistics now include `lane_storage` with per-lane `used_bytes` and optional `budget_bytes` / `headroom_bytes` when `-budget-bytes-per-lane` is set.
+- **Deferred library refresh**: with `-register-*` and `-refresh`, `-defer-library-refresh` registers/reuses libraries per recording but runs the media-server library scan once after `recorded-publish-manifest.json` is updated for that completion.
 - **Better ffmpeg HLS request parity**: ffmpeg relay inputs now inherit the effective upstream `User-Agent`, `Referer`, and cookie-jar cookies more faithfully, and enable persistent/multi-request HLS HTTP input by default to better match successful direct `ffplay` behavior on legitimate CDN/HLS paths.
 
 ---

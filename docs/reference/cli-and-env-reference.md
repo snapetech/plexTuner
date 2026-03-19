@@ -537,6 +537,10 @@ Common flags:
 - `-register-emby`
 - `-register-jellyfin`
 - `-refresh`
+- `-defer-library-refresh` — with `-register-*` and `-refresh`, defer the library scan until after `recorded-publish-manifest.json` is written for each successful completion
+- `-record-max-attempts` — max capture tries per programme when failures look transient (default `1`)
+- `-record-retry-backoff` — initial backoff between transient retries (default `5s`)
+- `-record-retry-backoff-max` — max backoff between transient retries (default `2m`)
 - `-once`
 - `-run-for`
 
@@ -550,6 +554,7 @@ State file model:
 - `active` — currently scheduled or recording items
 - `completed` — finished recordings
 - `failed` — interrupted or failed recordings
+- `statistics.lane_storage` — optional per-lane `used_bytes` plus `budget_bytes` / `headroom_bytes` when byte budgets are configured
 
 Operational notes:
 - this MVP dedupes by `capsule_id`, which already collapses duplicate programme variants built from the same `dna_id + start + title`
@@ -561,7 +566,7 @@ Operational notes:
 - `-once` is useful for cron-style “scan, record what is live/starting now, then exit”
 - without `-once`, the command keeps polling until interrupted or until `-run-for` elapses
 - completed and failed recorder state is pruned by retention count, and expired completed items are deleted automatically based on capsule expiry
-- when `-publish-dir` is combined with media-server registration flags, each completed recording can create/reuse the matching lane library and trigger a targeted refresh for that lane
+- when `-publish-dir` is combined with media-server registration flags, each completed recording can create/reuse the matching lane library and trigger a targeted refresh for that lane (or use `-defer-library-refresh` to refresh once after the publish manifest updates)
 - daemon publish-time registration reuses the same lane naming as `catchup-publish` (`<library-prefix> Sports`, `<library-prefix> Movies`, etc.)
 
 Relevant streaming env knobs for tricky HLS/CDN paths:
