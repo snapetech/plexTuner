@@ -150,7 +150,7 @@ Common flags:
 - `-catalog`
 - `-xmltv` (required; file path or `http(s)` URL)
 - `-aliases` (optional JSON alias override file)
-- `-out` (optional JSON full report)
+- `-out` (optional JSON full report; default is stdout)
 - `-unmatched-out` (optional JSON unmatched-only list)
 
 Alias override JSON shape:

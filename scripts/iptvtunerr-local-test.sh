@@ -11,7 +11,8 @@ HOST_DEFAULT="$(hostname -s 2>/dev/null || hostname)"
 BASE_URL="${IPTV_TUNERR_BASE_URL:-http://${HOST_DEFAULT}:5004}"
 ADDR="${IPTV_TUNERR_ADDR:-:5004}"
 CATALOG_PATH="${IPTV_TUNERR_CATALOG_PATH:-./catalog.json}"
-WAIT_SECS="${WAIT_SECS:-20}"
+WAIT_SECS="${WAIT_SECS:-60}"
+LOCAL_GUIDE_FETCH="${IPTV_TUNERR_LOCAL_TEST_FETCH_GUIDE:-false}"
 
 load_env() {
   local base_set="${IPTV_TUNERR_BASE_URL+x}" base_val="${IPTV_TUNERR_BASE_URL-}"
@@ -59,9 +60,18 @@ Env overrides:
   IPTV_TUNERR_BASE_URL     Default: ${BASE_URL}
   IPTV_TUNERR_ADDR        Default: ${ADDR}
   IPTV_TUNERR_CATALOG_PATH  Default: ${CATALOG_PATH}
+  IPTV_TUNERR_LOCAL_TEST_FETCH_GUIDE  Default: ${LOCAL_GUIDE_FETCH} (set true to keep provider/external XMLTV fetches during local smoke)
   PLEX_DATA_DIR          Plex Media Server data root (required for zero-touch; stop Plex first)
   WAIT_SECS              Default: ${WAIT_SECS}
 EOF
+}
+
+prepare_local_smoke_env() {
+  if [[ "${LOCAL_GUIDE_FETCH,,}" == "true" || "${LOCAL_GUIDE_FETCH,,}" == "1" || "${LOCAL_GUIDE_FETCH,,}" == "yes" ]]; then
+    return
+  fi
+  export IPTV_TUNERR_PROVIDER_EPG_ENABLED=false
+  export IPTV_TUNERR_XMLTV_URL=
 }
 
 qa() {
@@ -77,6 +87,7 @@ qa() {
 
 start_serve() {
   [[ -f "$CATALOG_PATH" ]] || die "catalog not found: $CATALOG_PATH"
+  prepare_local_smoke_env
   log "starting serve on $ADDR with base-url $BASE_URL (catalog=$CATALOG_PATH)"
   exec go run ./cmd/iptv-tunerr serve -catalog "$CATALOG_PATH" -addr "$ADDR" -base-url "$BASE_URL"
 }
@@ -126,6 +137,7 @@ wait_ready() {
 all() {
   qa
   load_env
+  prepare_local_smoke_env
 
   local mode
   if [[ -f "$CATALOG_PATH" ]]; then
@@ -163,6 +175,7 @@ EOF
 
 zero_touch() {
   load_env
+  prepare_local_smoke_env
   local plex_dir="${PLEX_DATA_DIR:-}"
   [[ -n "$plex_dir" ]] || die "PLEX_DATA_DIR is required for zero-touch (path to Plex Media Server data root; stop Plex first)"
   [[ -d "$plex_dir" ]] || die "PLEX_DATA_DIR is not a directory: $plex_dir"

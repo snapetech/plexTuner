@@ -73,13 +73,15 @@ func handleEPGLinkReport(cfg *config.Config, catalogPath, xmltvRef, aliasesRef, 
 		log.Printf("UNMATCHED #%s %-40s tvg-id=%q norm=%q reason=%s",
 			row.GuideNumber, row.GuideName, row.TVGID, row.Normalized, row.Reason)
 	}
+	data, _ := json.MarshalIndent(rep, "", "  ")
 	if p := strings.TrimSpace(outPath); p != "" {
-		data, _ := json.MarshalIndent(rep, "", "  ")
 		if err := os.WriteFile(p, data, 0o600); err != nil {
 			log.Printf("Write report %s: %v", p, err)
 			os.Exit(1)
 		}
 		log.Printf("Wrote report: %s", p)
+	} else {
+		fmt.Println(string(data))
 	}
 	if p := strings.TrimSpace(unmatchedOut); p != "" {
 		data, _ := json.MarshalIndent(rep.UnmatchedRows(), "", "  ")

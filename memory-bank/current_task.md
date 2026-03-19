@@ -41,6 +41,17 @@
   2. `IPTV_TUNERR_BASE_URL=http://127.0.0.1:5015 IPTV_TUNERR_ADDR=:5015 ./scripts/iptvtunerr-local-test.sh all` now succeeds
   3. full `./scripts/verify` still passes
 
+**Current focus shift (continued local audit hardening, 2026-03-19):**
+- Continuing beyond the second-pass fixes with more local end-to-end proof and UX cleanup.
+- This pass covers:
+  1. make the local smoke harness deterministic by default instead of depending on remote provider/XMLTV guide fetches from `.env`
+  2. exercise guide-backed commands against a real local `guide.xml`
+  3. normalize `epg-link-report` so it writes JSON to stdout by default like the other report commands
+- Result:
+  1. `scripts/iptvtunerr-local-test.sh all` now disables remote guide fetches unless `IPTV_TUNERR_LOCAL_TEST_FETCH_GUIDE=true` is set
+  2. local loopback smoke on `127.0.0.1:5019` succeeded consistently
+  3. `guide-health`, `epg-doctor`, `catchup-capsules`, and `epg-link-report` all ran end-to-end against the served local `guide.xml`
+
 **Current focus shift (intelligence cross-wiring epic, 2026-03-18):**
 - User requested the full next wave from the audit: structural cleanup plus runtime cross-wiring so the newer intelligence/reporting work actually changes behavior.
 - This is now tracked as a multi-PR epic in `memory-bank/work_breakdown.md` under `INT-001` through `INT-007`.

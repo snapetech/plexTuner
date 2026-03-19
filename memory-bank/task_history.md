@@ -23,6 +23,25 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Harden local smoke harness and normalize epg-link-report output
+  Summary:
+    - Updated `scripts/iptvtunerr-local-test.sh` so its default smoke path no longer depends on remote provider/XMLTV fetches from `.env`, making local loopback readiness deterministic.
+    - Validated `guide-health`, `epg-doctor`, `catchup-capsules`, and `epg-link-report` against a real locally served `guide.xml`.
+    - Changed `epg-link-report` to emit full JSON to stdout when `-out` is not provided, matching the rest of the report commands.
+  Verification:
+    - `IPTV_TUNERR_BASE_URL=http://127.0.0.1:5019 IPTV_TUNERR_ADDR=:5019 ./scripts/iptvtunerr-local-test.sh all`
+    - `go run ./cmd/iptv-tunerr guide-health -catalog ./catalog.json -guide http://127.0.0.1:5019/guide.xml`
+    - `go run ./cmd/iptv-tunerr epg-doctor -catalog ./catalog.json -guide http://127.0.0.1:5019/guide.xml`
+    - `go run ./cmd/iptv-tunerr catchup-capsules -catalog ./catalog.json -xmltv http://127.0.0.1:5019/guide.xml`
+    - `go run ./cmd/iptv-tunerr epg-link-report -catalog ./catalog.json -xmltv http://127.0.0.1:5019/guide.xml`
+  Notes:
+    - `epg-link-report` still logs its summary and unmatched rows to stderr; this pass only made the full report available on stdout by default.
+  Opportunities filed:
+    - none
+  Links:
+    - scripts/iptvtunerr-local-test.sh, cmd/iptv-tunerr/cmd_guide_reports.go, docs/reference/cli-and-env-reference.md
+
+- Date: 2026-03-19
   Title: Fix second-pass audit CLI and local-test harness issues
   Summary:
     - Adjusted the top-level usage path so `iptv-tunerr help` behaves like a normal help request and exits successfully.
