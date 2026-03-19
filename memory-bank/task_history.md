@@ -23,6 +23,21 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-18
+  Title: Split VOD commands out of cmd_core.go
+  Summary:
+    - Moved `mount`, `plex-vod-register`, and `vod-split` into `cmd/iptv-tunerr/cmd_vod.go`.
+    - Kept `cmd_core.go` focused on core live-TV commands (`run`, `serve`, `index`, `probe`, `supervise`).
+  Verification:
+    - `go test ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - This is structural only; VOD command flags and behavior were preserved.
+  Opportunities filed:
+    - none
+  Links:
+    - cmd/iptv-tunerr/cmd_core.go, cmd/iptv-tunerr/cmd_vod.go, cmd/iptv-tunerr/main.go
+
+- Date: 2026-03-18
   Title: Split shared runtime server helpers out of cmd_runtime.go
   Summary:
     - Added `cmd/iptv-tunerr/cmd_runtime_server.go` for shared live-channel load/repair/DNA setup and shared `tuner.Server` construction.

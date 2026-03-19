@@ -168,6 +168,14 @@
   3. keep `cmd_runtime.go` focused on the real differences between serve and run flows
   4. verify and push if green
 
+**Current focus shift (VOD command split, 2026-03-18):**
+- Finishing the remaining mechanical CLI family cleanup.
+- This pass covers:
+  1. move `mount`, `plex-vod-register`, and `vod-split` out of `cmd_core.go`
+  2. keep `cmd_core.go` focused on core live-TV commands only
+  3. preserve command behavior while giving VOD its own command file
+  4. verify and push if green
+
 **Current focus shift (EPG doctor operator docs, 2026-03-18):**
 - Follow-on docs cleanup after shipping `guide-health` and `epg-doctor`: make the new guide-diagnostics workflow discoverable from the how-to and runbook indexes so operators have one documented path from symptom to fix.
 - This pass adds:

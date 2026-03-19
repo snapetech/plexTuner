@@ -37,6 +37,7 @@ func main() {
 
 	commands := append(coreCommands(), reportCommands()...)
 	commands = append(commands, guideReportCommands()...)
+	commands = append(commands, vodCommands()...)
 	commands = append(commands, opsCommands()...)
 	commands = append(commands, catchupOpsCommands()...)
 	commands = append(commands, oracleOpsCommands()...)
