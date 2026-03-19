@@ -24,47 +24,15 @@ func handleServe(cfg *config.Config, catalogPath, addr, baseURL, deviceID, frien
 	if path == "" {
 		path = cfg.CatalogPath
 	}
-	c := catalog.New()
-	if err := c.Load(path); err != nil {
+	live, err := loadRuntimeLiveChannels(cfg, path, cfg.ProviderBaseURL, cfg.ProviderUser, cfg.ProviderPass)
+	if err != nil {
 		log.Printf("Load catalog (live channels): %v; serving with no channels", err)
 	}
-	live := c.SnapshotLive()
-	applyRuntimeEPGRepairs(cfg, live, cfg.ProviderBaseURL, cfg.ProviderUser, cfg.ProviderPass)
-	channeldna.Assign(live)
-	log.Printf("Loaded %d live channels from %s", len(live), path)
 	serveLineupCap := cfg.LineupMaxChannels
 	if mode == "easy" {
 		serveLineupCap = tuner.PlexDVRWizardSafeMax
 	}
-	if deviceID == "" {
-		deviceID = cfg.DeviceID
-	}
-	if friendlyName == "" {
-		friendlyName = cfg.FriendlyName
-	}
-	srv := &tuner.Server{
-		Addr:                addr,
-		BaseURL:             baseURL,
-		TunerCount:          cfg.TunerCount,
-		LineupMaxChannels:   serveLineupCap,
-		GuideNumberOffset:   cfg.GuideNumberOffset,
-		DeviceID:            deviceID,
-		FriendlyName:        friendlyName,
-		StreamBufferBytes:   cfg.StreamBufferBytes,
-		StreamTranscodeMode: cfg.StreamTranscodeMode,
-		AutopilotStateFile:  cfg.AutopilotStateFile,
-		ProviderUser:        cfg.ProviderUser,
-		ProviderPass:        cfg.ProviderPass,
-		ProviderBaseURL:     cfg.ProviderBaseURL,
-		XMLTVSourceURL:      cfg.XMLTVURL,
-		XMLTVTimeout:        cfg.XMLTVTimeout,
-		XMLTVCacheTTL:       cfg.XMLTVCacheTTL,
-		EpgPruneUnlinked:    cfg.EpgPruneUnlinked,
-		FetchCFReject:       cfg.FetchCFReject,
-		ProviderEPGEnabled:  cfg.ProviderEPGEnabled,
-		ProviderEPGTimeout:  cfg.ProviderEPGTimeout,
-		ProviderEPGCacheTTL: cfg.ProviderEPGCacheTTL,
-	}
+	srv := newRuntimeServer(cfg, addr, baseURL, deviceID, friendlyName, serveLineupCap, cfg.ProviderBaseURL, cfg.ProviderUser, cfg.ProviderPass)
 	srv.UpdateChannels(live)
 	if cfg.XMLTVURL != "" {
 		log.Printf("External XMLTV enabled: %s (timeout %v)", cfg.XMLTVURL, cfg.XMLTVTimeout)
@@ -165,24 +133,19 @@ func handleRun(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendl
 		log.Print("Provider OK")
 	}
 
-	c := catalog.New()
-	if err := c.Load(path); err != nil {
-		log.Printf("Load catalog failed: %v", err)
-		os.Exit(1)
+	if baseURL == "http://localhost:5004" && cfg.BaseURL != "" {
+		baseURL = cfg.BaseURL
 	}
-	live := c.SnapshotLive()
-	applyRuntimeEPGRepairs(
+	live, err := loadRuntimeLiveChannels(
 		cfg,
-		live,
+		path,
 		firstNonEmpty(runProviderBase, cfg.ProviderBaseURL),
 		firstNonEmpty(runProviderUser, cfg.ProviderUser),
 		firstNonEmpty(runProviderPass, cfg.ProviderPass),
 	)
-	channeldna.Assign(live)
-	log.Printf("Loaded %d live channels from %s", len(live), path)
-
-	if baseURL == "http://localhost:5004" && cfg.BaseURL != "" {
-		baseURL = cfg.BaseURL
+	if err != nil {
+		log.Printf("Load catalog failed: %v", err)
+		os.Exit(1)
 	}
 	lineupCap := cfg.LineupMaxChannels
 	switch mode {
@@ -195,35 +158,17 @@ func handleRun(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendl
 	default:
 		log.Printf("Unknown -mode=%q; use easy or full", mode)
 	}
-	if deviceID == "" {
-		deviceID = cfg.DeviceID
-	}
-	if friendlyName == "" {
-		friendlyName = cfg.FriendlyName
-	}
-	srv := &tuner.Server{
-		Addr:                addr,
-		BaseURL:             baseURL,
-		TunerCount:          cfg.TunerCount,
-		LineupMaxChannels:   lineupCap,
-		GuideNumberOffset:   cfg.GuideNumberOffset,
-		DeviceID:            deviceID,
-		FriendlyName:        friendlyName,
-		StreamBufferBytes:   cfg.StreamBufferBytes,
-		StreamTranscodeMode: cfg.StreamTranscodeMode,
-		AutopilotStateFile:  cfg.AutopilotStateFile,
-		ProviderUser:        firstNonEmpty(runProviderUser, cfg.ProviderUser),
-		ProviderPass:        firstNonEmpty(runProviderPass, cfg.ProviderPass),
-		ProviderBaseURL:     firstNonEmpty(runProviderBase, cfg.ProviderBaseURL),
-		XMLTVSourceURL:      cfg.XMLTVURL,
-		XMLTVTimeout:        cfg.XMLTVTimeout,
-		XMLTVCacheTTL:       cfg.XMLTVCacheTTL,
-		EpgPruneUnlinked:    cfg.EpgPruneUnlinked,
-		FetchCFReject:       cfg.FetchCFReject,
-		ProviderEPGEnabled:  cfg.ProviderEPGEnabled,
-		ProviderEPGTimeout:  cfg.ProviderEPGTimeout,
-		ProviderEPGCacheTTL: cfg.ProviderEPGCacheTTL,
-	}
+	srv := newRuntimeServer(
+		cfg,
+		addr,
+		baseURL,
+		deviceID,
+		friendlyName,
+		lineupCap,
+		firstNonEmpty(runProviderBase, cfg.ProviderBaseURL),
+		firstNonEmpty(runProviderUser, cfg.ProviderUser),
+		firstNonEmpty(runProviderPass, cfg.ProviderPass),
+	)
 	srv.UpdateChannels(live)
 	if cfg.XMLTVURL != "" {
 		log.Printf("External XMLTV enabled: %s (timeout %v)", cfg.XMLTVURL, cfg.XMLTVTimeout)

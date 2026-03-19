@@ -160,6 +160,14 @@
   3. preserve runtime behavior while shrinking the last mixed helper block in the gateway entrypoint
   4. verify and push if green
 
+**Current focus shift (runtime server helper split, 2026-03-18):**
+- Continuing the cleanup after the gateway helper split.
+- This pass covers:
+  1. extract shared live-channel load/repair/DNA setup for `serve` and `run`
+  2. extract shared `tuner.Server` construction
+  3. keep `cmd_runtime.go` focused on the real differences between serve and run flows
+  4. verify and push if green
+
 **Current focus shift (EPG doctor operator docs, 2026-03-18):**
 - Follow-on docs cleanup after shipping `guide-health` and `epg-doctor`: make the new guide-diagnostics workflow discoverable from the how-to and runbook indexes so operators have one documented path from symptom to fix.
 - This pass adds:

@@ -23,6 +23,21 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-18
+  Title: Split shared runtime server helpers out of cmd_runtime.go
+  Summary:
+    - Added `cmd/iptv-tunerr/cmd_runtime_server.go` for shared live-channel load/repair/DNA setup and shared `tuner.Server` construction.
+    - Reduced `cmd_runtime.go` to the actual serve/run lifecycle differences instead of rebuilding the same runtime setup twice.
+  Verification:
+    - `go test ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - This is structural only; serve/run behavior was preserved.
+  Opportunities filed:
+    - none
+  Links:
+    - cmd/iptv-tunerr/cmd_runtime.go, cmd/iptv-tunerr/cmd_runtime_server.go
+
+- Date: 2026-03-18
   Title: Split generic gateway support helpers into a focused file
   Summary:
     - Moved request-id, env parsing, disconnect detection, and path parsing helpers into `internal/tuner/gateway_support.go`.
