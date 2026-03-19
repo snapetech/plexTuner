@@ -468,6 +468,7 @@ IPTV_TUNERR_LINEUP_RECIPE=resilient        # rank by backup-stream resilience fi
 IPTV_TUNERR_LINEUP_RECIPE=sports_now       # keep sports-heavy channels only
 IPTV_TUNERR_LINEUP_RECIPE=kids_safe        # keep kid/family-safe channels only
 IPTV_TUNERR_LINEUP_RECIPE=locals_first     # bubble likely local/regional channels to the top
+IPTV_TUNERR_DNA_POLICY=prefer_best         # collapse duplicate dna_id variants to the strongest candidate
 IPTV_TUNERR_GUIDE_POLICY=healthy           # keep only channels with real programme blocks once guide cache is ready
 IPTV_TUNERR_REGISTER_RECIPE=healthy        # use channel-intelligence scoring to prune/reorder channels before Plex/Emby/Jellyfin registration
 ```

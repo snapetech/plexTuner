@@ -14,6 +14,7 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/config"
 	"github.com/snapetech/iptvtunerr/internal/emby"
 	"github.com/snapetech/iptvtunerr/internal/plex"
+	"github.com/snapetech/iptvtunerr/internal/tuner"
 )
 
 func registerRunPlex(ctx context.Context, cfg *config.Config, live []catalog.LiveChannel, baseURL, registerPlex string, registerOnly bool, registerInterval time.Duration, mode string) bool {
@@ -160,6 +161,7 @@ func registerRunMediaServers(ctx context.Context, cfg *config.Config, live []cat
 
 func applyRegistrationRecipe(live []catalog.LiveChannel, recipe string) []catalog.LiveChannel {
 	recipe = strings.ToLower(strings.TrimSpace(recipe))
+	live = tuner.ApplyDNAPolicyForRegistration(live, os.Getenv("IPTV_TUNERR_DNA_POLICY"))
 	switch recipe {
 	case "", "off", "none":
 		return live

@@ -218,6 +218,14 @@
   7. cached live match-provenance reuse so repeated guide diagnostics do not rebuild the same source-XMLTV match analysis on every request
 
 **Current focus shift (README feature-story rewrite, 2026-03-18):**
+
+**Current focus shift (Channel DNA runtime policy, 2026-03-18):**
+- Continuing the documented backlog after the intelligence/reporting and Autopilot slices: make `dna_id` affect real runtime decisions instead of only powering reports.
+- This pass covers:
+  1. add `IPTV_TUNERR_DNA_POLICY=off|prefer_best|prefer_resilient`
+  2. apply the policy in runtime lineup shaping so duplicate variants can collapse to one preferred winner
+  3. apply the same policy in media-server registration so Plex/Emby/Jellyfin sync a cleaner lineup
+  4. update docs/changelog/env examples and verify before pushing
 - README was rewritten so the front page explains why the features matter operationally, not just that they exist.
 
 **Current focus shift (remaining product-facing intelligence surfaces, 2026-03-18):**

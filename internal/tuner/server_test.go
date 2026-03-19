@@ -743,6 +743,23 @@ func TestApplyLineupPreCapFilters_lineupRecipeLocalsFirst(t *testing.T) {
 	}
 }
 
+func TestUpdateChannels_appliesDNAPolicyPreferBest(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_DNA_POLICY", "prefer_best")
+	s := &Server{LineupMaxChannels: NoLineupCap}
+	live := []catalog.LiveChannel{
+		{ChannelID: "1", GuideNumber: "101", GuideName: "FOX News", TVGID: "foxnews.us", DNAID: "dna-fox", EPGLinked: true, StreamURL: "http://a/1", StreamURLs: []string{"http://a/1", "http://b/1"}},
+		{ChannelID: "2", GuideNumber: "9101", GuideName: "FOX News Backup", TVGID: "foxnews.us", DNAID: "dna-fox", StreamURL: "http://a/2"},
+		{ChannelID: "3", GuideNumber: "102", GuideName: "CNN", TVGID: "cnn.us", DNAID: "dna-cnn", StreamURL: "http://a/3"},
+	}
+	s.UpdateChannels(live)
+	if len(s.Channels) != 2 {
+		t.Fatalf("len=%d want 2", len(s.Channels))
+	}
+	if s.Channels[0].ChannelID != "1" {
+		t.Fatalf("kept channel=%q want 1", s.Channels[0].ChannelID)
+	}
+}
+
 func TestApplyLineupPreCapFilters_regex(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_LINEUP_DROP_MUSIC", "false")
 	t.Setenv("IPTV_TUNERR_LINEUP_EXCLUDE_REGEX", "shopping|adult")

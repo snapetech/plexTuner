@@ -76,6 +76,7 @@ func (s *Server) UpdateChannels(live []catalog.LiveChannel) {
 	if s.xmltv != nil {
 		live = s.xmltv.applyGuidePolicyToChannels(live, os.Getenv("IPTV_TUNERR_GUIDE_POLICY"))
 	}
+	live = applyDNAPolicy(live, os.Getenv("IPTV_TUNERR_DNA_POLICY"))
 	if s.LineupMaxChannels == NoLineupCap {
 		// Full lineup for programmatic sync; do not cap.
 	} else {

@@ -33,3 +33,19 @@ func TestApplyRegistrationRecipe_ResilientSortsBackupFirst(t *testing.T) {
 		t.Fatalf("first channel=%q want 2", got[0].ChannelID)
 	}
 }
+
+func TestApplyRegistrationRecipe_AppliesDNAPolicy(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_DNA_POLICY", "prefer_resilient")
+	live := []catalog.LiveChannel{
+		{ChannelID: "1", DNAID: "dna:fox", GuideNumber: "101", GuideName: "FOX News", TVGID: "foxnews.us", EPGLinked: true, StreamURL: "http://a/1"},
+		{ChannelID: "2", DNAID: "dna:fox", GuideNumber: "102", GuideName: "FOX News Backup", TVGID: "foxnews.us", EPGLinked: true, StreamURL: "http://a/2", StreamURLs: []string{"http://a/2", "http://b/2"}},
+		{ChannelID: "3", DNAID: "dna:cnn", GuideNumber: "103", GuideName: "CNN", TVGID: "cnn.us", EPGLinked: true, StreamURL: "http://a/3"},
+	}
+	got := applyRegistrationRecipe(live, "off")
+	if len(got) != 2 {
+		t.Fatalf("len=%d want 2", len(got))
+	}
+	if got[0].ChannelID != "2" {
+		t.Fatalf("expected resilient duplicate winner, got %q", got[0].ChannelID)
+	}
+}

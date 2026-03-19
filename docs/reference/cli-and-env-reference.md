@@ -578,6 +578,10 @@ Probe method:
   - `sports_now` = keep sports-heavy channels only
   - `kids_safe` = keep kid/family channels while excluding obvious unsafe/adult/news matches
   - `locals_first` = bubble likely local/regional channels to the top using the same North-American lineup-shape heuristics
+- `IPTV_TUNERR_DNA_POLICY` — optional duplicate-variant policy keyed by `dna_id`:
+  - `off` = keep all variants
+  - `prefer_best` = keep the strongest duplicate by combined channel-intelligence score
+  - `prefer_resilient` = keep the most backup-stream-resilient duplicate first
 - `IPTV_TUNERR_GUIDE_POLICY` — optional runtime guide-quality policy:
   - `off` = current permissive behavior
   - `healthy` = keep only channels with real programme rows once cached guide-health is available

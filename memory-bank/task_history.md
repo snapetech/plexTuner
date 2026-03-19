@@ -23,6 +23,22 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-18
+  Title: Apply Channel DNA policy to lineup and registration
+  Summary:
+    - Added `IPTV_TUNERR_DNA_POLICY=off|prefer_best|prefer_resilient` so duplicate channels that share a `dna_id` can collapse to a single preferred winner.
+    - Applied the policy in runtime lineup shaping and registration flows so Channel DNA affects real server behavior instead of only powering reports.
+    - Updated README, features, reference docs, changelog, and env examples for the new policy surface.
+  Verification:
+    - `go test ./internal/tuner ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - `prefer_best` favors overall intelligence score and guide quality; `prefer_resilient` favors backup depth and stream resilience first.
+  Opportunities filed:
+    - none
+  Links:
+    - internal/tuner/dna_policy.go, internal/tuner/server.go, cmd/iptv-tunerr/cmd_runtime_register.go, docs/reference/cli-and-env-reference.md
+
+- Date: 2026-03-18
   Title: Add Autopilot hot-start and reporting
   Summary:
     - Added `autopilot-report` plus `/autopilot/report.json` so operators can inspect remembered decisions and the hottest channels by hit count.
