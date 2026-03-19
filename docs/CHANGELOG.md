@@ -13,6 +13,10 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+### Streaming
+- **Provider/CDN compatibility controls**: added `IPTV_TUNERR_UPSTREAM_HEADERS`, `IPTV_TUNERR_UPSTREAM_ADD_SEC_FETCH`, `IPTV_TUNERR_UPSTREAM_USER_AGENT`, `IPTV_TUNERR_COOKIE_JAR_FILE`, `IPTV_TUNERR_FFMPEG_DISABLED`, and `IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE` so operators can match stricter upstream header/cookie expectations and disable ffmpeg-side host rewriting when necessary.
+- **Redirect-safe HLS relay**: HLS playlist rewriting and refresh now track the effective post-redirect playlist URL, so relative segment or nested playlist paths keep resolving correctly after CDN redirects.
+
 ### Guide / intelligence
 - **Guide health report**: added `guide-health` plus `/guide/health.json` to combine XMLTV match status with actual merged-guide coverage, including detection of placeholder-only channel rows versus real programme blocks.
 - **EPG doctor workflow**: added `epg-doctor` plus `/guide/doctor.json` as the combined top-level diagnosis path, and cached live guide match provenance so repeated guide diagnostics do not rebuild the same match analysis on every request.

@@ -8,6 +8,18 @@
 
 **Last updated:** 2026-03-18
 
+**Current focus shift (tester fork assessment, 2026-03-19):**
+- User asked for a review of the tester fork at `https://github.com/rkdavies/iptvtunerr` to decide which submitted fixes should be integrated upstream.
+- Review scope:
+  1. fetch the fork tip and compare it against `origin/main`
+  2. classify the changes into safe-to-integrate vs useful-but-needs-adjustment vs do-not-merge-yet
+  3. record any material risks discovered during review
+- Landed result:
+  1. integrated the redirected-HLS effective-URL rewrite so nested playlists and relative segments keep resolving correctly after upstream redirects
+  2. integrated upstream header / User-Agent overrides, plus optional `Sec-Fetch-*` headers, with proper Go `req.Host` handling instead of header-only pseudo-overrides
+  3. integrated persistent upstream cookie storage, but rewrote it so newly learned cookies are actually tracked and saved across restarts
+  4. added regression tests, updated env/docs/changelog, and ran full `scripts/verify`
+
 **Current focus shift (intelligence cross-wiring epic, 2026-03-18):**
 - User requested the full next wave from the audit: structural cleanup plus runtime cross-wiring so the newer intelligence/reporting work actually changes behavior.
 - This is now tracked as a multi-PR epic in `memory-bank/work_breakdown.md` under `INT-001` through `INT-007`.

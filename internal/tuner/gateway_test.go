@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -807,5 +808,246 @@ func TestPickPreferredResolvedIPPrefersIPv4(t *testing.T) {
 func TestPickPreferredResolvedIPFallsBack(t *testing.T) {
 	if got := pickPreferredResolvedIP([]string{"2606:4700::1", "::"}); got != "2606:4700::1" {
 		t.Fatalf("got %q, want first entry", got)
+	}
+}
+
+func TestParseCustomHeaders(t *testing.T) {
+	tests := []struct {
+		name   string
+		raw    string
+		expect map[string]string
+	}{
+		{
+			name:   "empty",
+			raw:    "",
+			expect: map[string]string{},
+		},
+		{
+			name:   "single header",
+			raw:    "Referer: http://example.com",
+			expect: map[string]string{"Referer": "http://example.com"},
+		},
+		{
+			name:   "multiple headers",
+			raw:    "Referer: http://example.com,Origin: http://example.com,X-Custom: value",
+			expect: map[string]string{"Referer": "http://example.com", "Origin": "http://example.com", "X-Custom": "value"},
+		},
+		{
+			name:   "with spaces",
+			raw:    "  Referer :  http://example.com  ,  Origin :  http://example.com  ",
+			expect: map[string]string{"Referer": "http://example.com", "Origin": "http://example.com"},
+		},
+		{
+			name:   "value with colon",
+			raw:    "Authorization: Bearer token:with:colons",
+			expect: map[string]string{"Authorization": "Bearer token:with:colons"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseCustomHeaders(tt.raw)
+			if len(got) != len(tt.expect) {
+				t.Fatalf("parseCustomHeaders(%q): got %d headers, want %d", tt.raw, len(got), len(tt.expect))
+			}
+			for k, v := range tt.expect {
+				if got[k] != v {
+					t.Errorf("parseCustomHeaders(%q)[%q] = %q, want %q", tt.raw, k, got[k], v)
+				}
+			}
+		})
+	}
+}
+
+func TestGateway_applyUpstreamRequestHeaders_customHeaders(t *testing.T) {
+	g := &Gateway{
+		CustomHeaders: map[string]string{
+			"Referer":  "http://smarter8k.ru",
+			"Origin":   "http://smarter8k.ru",
+			"X-Custom": "custom-value",
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/segment.ts", nil)
+	g.applyUpstreamRequestHeaders(req, nil)
+	if req.Header.Get("Referer") != "http://smarter8k.ru" {
+		t.Errorf("Referer = %q, want http://smarter8k.ru", req.Header.Get("Referer"))
+	}
+	if req.Header.Get("Origin") != "http://smarter8k.ru" {
+		t.Errorf("Origin = %q, want http://smarter8k.ru", req.Header.Get("Origin"))
+	}
+	if req.Header.Get("X-Custom") != "custom-value" {
+		t.Errorf("X-Custom = %q, want custom-value", req.Header.Get("X-Custom"))
+	}
+	if req.Header.Get("User-Agent") != "IptvTunerr/1.0" {
+		t.Errorf("User-Agent = %q, want IptvTunerr/1.0", req.Header.Get("User-Agent"))
+	}
+}
+
+func TestGateway_applyUpstreamRequestHeaders_customUserAgent(t *testing.T) {
+	g := &Gateway{
+		CustomUserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/segment.ts", nil)
+	g.applyUpstreamRequestHeaders(req, nil)
+	if req.Header.Get("User-Agent") != "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" {
+		t.Errorf("User-Agent = %q, want custom UA", req.Header.Get("User-Agent"))
+	}
+}
+
+func TestGateway_applyUpstreamRequestHeaders_customUserAgentAndHeaders(t *testing.T) {
+	g := &Gateway{
+		CustomUserAgent: "CustomUA/1.0",
+		CustomHeaders: map[string]string{
+			"Referer": "http://example.com",
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/segment.ts", nil)
+	g.applyUpstreamRequestHeaders(req, nil)
+	if req.Header.Get("User-Agent") != "CustomUA/1.0" {
+		t.Errorf("User-Agent = %q, want CustomUA/1.0", req.Header.Get("User-Agent"))
+	}
+	if req.Header.Get("Referer") != "http://example.com" {
+		t.Errorf("Referer = %q, want http://example.com", req.Header.Get("Referer"))
+	}
+}
+
+func TestGateway_applyUpstreamRequestHeaders_customHostOverride(t *testing.T) {
+	g := &Gateway{
+		CustomHeaders: map[string]string{
+			"Host": "cdn.example",
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://origin.example/segment.ts", nil)
+	g.applyUpstreamRequestHeaders(req, nil)
+	if req.Host != "cdn.example" {
+		t.Fatalf("Host = %q, want cdn.example", req.Host)
+	}
+}
+
+func TestGateway_ffmpegInputHeaderBlock_includesCustomHeaders(t *testing.T) {
+	g := &Gateway{
+		CustomHeaders: map[string]string{
+			"Referer":  "http://smarter8k.ru",
+			"Origin":   "http://smarter8k.ru",
+			"X-Custom": "custom-value",
+		},
+	}
+	block := g.ffmpegInputHeaderBlock(nil, "cdn.example")
+	if !strings.Contains(block, "Referer: http://smarter8k.ru") {
+		t.Fatalf("missing custom Referer in block: %q", block)
+	}
+	if !strings.Contains(block, "Origin: http://smarter8k.ru") {
+		t.Fatalf("missing custom Origin in block: %q", block)
+	}
+	if !strings.Contains(block, "X-Custom: custom-value") {
+		t.Fatalf("missing X-Custom in block: %q", block)
+	}
+	if !strings.Contains(block, "User-Agent: IptvTunerr/1.0") {
+		t.Fatalf("missing User-Agent in block: %q", block)
+	}
+}
+
+func TestGateway_ffmpegInputHeaderBlock_customHostOverridesResolvedHost(t *testing.T) {
+	g := &Gateway{
+		CustomHeaders: map[string]string{
+			"Host": "edge.example",
+		},
+	}
+	block := g.ffmpegInputHeaderBlock(nil, "resolved.example")
+	if !strings.Contains(block, "Host: edge.example") {
+		t.Fatalf("missing custom Host in block: %q", block)
+	}
+	if strings.Contains(block, "Host: resolved.example") {
+		t.Fatalf("resolved host should be overridden: %q", block)
+	}
+}
+
+func TestGateway_fetchAndRewritePlaylist_usesRedirectedURLAsBase(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/start.m3u8":
+			http.Redirect(w, r, "/nested/playlist.m3u8", http.StatusFound)
+		case "/nested/playlist.m3u8":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("#EXTM3U\nsegment.ts\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	g := &Gateway{}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/1", nil)
+	body, effectiveURL, err := g.fetchAndRewritePlaylist(req, srv.Client(), srv.URL+"/start.m3u8")
+	if err != nil {
+		t.Fatalf("fetchAndRewritePlaylist: %v", err)
+	}
+	if effectiveURL != srv.URL+"/nested/playlist.m3u8" {
+		t.Fatalf("effectiveURL = %q, want redirected playlist URL", effectiveURL)
+	}
+	if got := string(body); !strings.Contains(got, srv.URL+"/nested/segment.ts") {
+		t.Fatalf("rewritten playlist = %q, want redirected base URL", got)
+	}
+}
+
+func TestPersistentCookieJarPersistsNewCookies(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/cookies.json"
+	jar, err := newPersistentCookieJar(path)
+	if err != nil {
+		t.Fatalf("newPersistentCookieJar: %v", err)
+	}
+	u, err := url.Parse("https://cdn.example/playlist.m3u8")
+	if err != nil {
+		t.Fatalf("url.Parse: %v", err)
+	}
+	jar.SetCookies(u, []*http.Cookie{{
+		Name:    "cf_clearance",
+		Value:   "token123",
+		Domain:  "cdn.example",
+		Path:    "/",
+		Secure:  true,
+		Expires: time.Now().Add(time.Hour).Round(time.Second),
+	}})
+	if err := jar.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := newPersistentCookieJar(path)
+	if err != nil {
+		t.Fatalf("newPersistentCookieJar(load): %v", err)
+	}
+	got := loaded.Cookies(u)
+	if len(got) != 1 || got[0].Name != "cf_clearance" || got[0].Value != "token123" {
+		t.Fatalf("loaded cookies = %#v, want cf_clearance token", got)
+	}
+}
+
+func TestPersistentCookieJarRemovesExpiredCookies(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/cookies.json"
+	jar, err := newPersistentCookieJar(path)
+	if err != nil {
+		t.Fatalf("newPersistentCookieJar: %v", err)
+	}
+	u, err := url.Parse("https://cdn.example/playlist.m3u8")
+	if err != nil {
+		t.Fatalf("url.Parse: %v", err)
+	}
+	jar.SetCookies(u, []*http.Cookie{{
+		Name:    "expired",
+		Value:   "gone",
+		Domain:  "cdn.example",
+		Path:    "/",
+		Secure:  true,
+		Expires: time.Now().Add(-time.Minute),
+	}})
+	if err := jar.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if strings.Contains(string(data), "expired") {
+		t.Fatalf("cookie file still contains expired cookie: %s", string(data))
 	}
 }

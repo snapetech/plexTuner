@@ -629,8 +629,14 @@ Probe method:
 - `IPTV_TUNERR_STREAM_TRANSCODE` (`off|on|auto`) — `off` remuxes only; `on` always transcodes with libx264/AAC; `auto` probes the codec with ffprobe and transcodes only if Plex can't handle it natively (e.g. HEVC, VP9).
 - `IPTV_TUNERR_STREAM_BUFFER_BYTES` (`0|auto|<bytes>`) — `auto` enables adaptive buffering when transcoding; `0` disables; a fixed integer (e.g. `2097152`) sets a 2 MiB buffer.
 - `IPTV_TUNERR_FFMPEG_PATH` — override the ffmpeg binary path (e.g. `/opt/ffmpeg-static/current/ffmpeg`).
+- `IPTV_TUNERR_FFMPEG_DISABLED` — disable ffmpeg entirely for HLS relay and stay on the Go playlist/segment fetch path. Useful when ffmpeg cannot satisfy provider header/cookie requirements.
+- `IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE` — keep the original ffmpeg input hostname instead of rewriting it to a resolved IP. Useful for CDNs that validate the hostname against `Host` or TLS state.
 - `IPTV_TUNERR_FFMPEG_HLS_RECONNECT` — when `true`, adds HLS reconnect flags to ffmpeg (`-reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1`). Helps with providers whose HLS segment URLs expire mid-stream.
 - `IPTV_TUNERR_CLIENT_ADAPT` — when `true`, resolve the Plex client from the active session and force websafe (transcode + MP3 audio) for web/browser clients and for internal fetchers (Lavf/PMS). Ensures Chrome and Firefox get compatible audio without transcoding non-browser clients.
+- `IPTV_TUNERR_UPSTREAM_HEADERS` — comma-separated extra headers applied to upstream playlist and segment requests, for example `Referer`, `Origin`, or `Host`.
+- `IPTV_TUNERR_UPSTREAM_ADD_SEC_FETCH` — add `Sec-Fetch-Site: cross-site` and `Sec-Fetch-Mode: cors` on upstream requests and ffmpeg inputs.
+- `IPTV_TUNERR_UPSTREAM_USER_AGENT` — override the upstream `User-Agent` while leaving downstream client detection untouched.
+- `IPTV_TUNERR_COOKIE_JAR_FILE` — persist upstream cookies learned during playback so provider/CDN clearance tokens can survive restarts.
 - `IPTV_TUNERR_AUTOPILOT_STATE_FILE` — optional JSON file for remembered playback decisions keyed by `dna_id + client_class`; when enabled, successful stream choices can be reused on later requests before generic adaptation rules, including the last known-good upstream URL/host.
 - `IPTV_TUNERR_AUTOPILOT_MAX_FAILURE_STREAK` — maximum remembered failure streak before a stored Autopilot decision stops being reused automatically (default `2`)
 - `IPTV_TUNERR_HOT_START_ENABLED` — enable hot-start tuning for favorite/high-hit channels (default `true`)

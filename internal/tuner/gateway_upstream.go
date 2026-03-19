@@ -21,6 +21,9 @@ func cloneClientWithCookieJar(src *http.Client) *http.Client {
 		src = httpclient.ForStreaming()
 	}
 	out := *src
+	if out.Jar != nil {
+		return &out
+	}
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return &out
@@ -56,6 +59,21 @@ func appendFFmpegHeaderLine(lines []string, name, value string) []string {
 	return append(lines, name+": "+value)
 }
 
+func (g *Gateway) customHeaderValue(name string) (string, bool) {
+	if g == nil {
+		return "", false
+	}
+	for k, v := range g.CustomHeaders {
+		if strings.EqualFold(strings.TrimSpace(k), name) {
+			v = strings.TrimSpace(v)
+			if v != "" {
+				return v, true
+			}
+		}
+	}
+	return "", false
+}
+
 func (g *Gateway) applyUpstreamRequestHeaders(req *http.Request, incoming *http.Request) {
 	if req == nil {
 		return
@@ -79,7 +97,36 @@ func (g *Gateway) applyUpstreamRequestHeaders(req *http.Request, incoming *http.
 	if g.ProviderUser != "" || g.ProviderPass != "" {
 		req.SetBasicAuth(g.ProviderUser, g.ProviderPass)
 	}
-	req.Header.Set("User-Agent", "IptvTunerr/1.0")
+	if host, ok := g.customHeaderValue("Host"); ok {
+		req.Host = host
+	}
+	if ua, ok := g.customHeaderValue("User-Agent"); ok {
+		req.Header.Set("User-Agent", ua)
+	} else if g.CustomUserAgent != "" {
+		req.Header.Set("User-Agent", g.CustomUserAgent)
+	} else {
+		req.Header.Set("User-Agent", "IptvTunerr/1.0")
+	}
+	if site, ok := g.customHeaderValue("Sec-Fetch-Site"); ok {
+		req.Header.Set("Sec-Fetch-Site", site)
+	} else if g.AddSecFetchHeaders {
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+	}
+	if mode, ok := g.customHeaderValue("Sec-Fetch-Mode"); ok {
+		req.Header.Set("Sec-Fetch-Mode", mode)
+	} else if g.AddSecFetchHeaders {
+		req.Header.Set("Sec-Fetch-Mode", "cors")
+	}
+	for name, value := range g.CustomHeaders {
+		switch {
+		case strings.EqualFold(name, "Host"),
+			strings.EqualFold(name, "User-Agent"),
+			strings.EqualFold(name, "Sec-Fetch-Site"),
+			strings.EqualFold(name, "Sec-Fetch-Mode"):
+			continue
+		}
+		req.Header.Set(name, value)
+	}
 }
 
 func (g *Gateway) newUpstreamRequest(ctx context.Context, incoming *http.Request, rawURL string) (*http.Request, error) {
@@ -93,7 +140,9 @@ func (g *Gateway) newUpstreamRequest(ctx context.Context, incoming *http.Request
 
 func (g *Gateway) ffmpegInputHeaderBlock(incoming *http.Request, hostOverride string) string {
 	lines := make([]string, 0, 8)
-	if hostOverride != "" {
+	if host, ok := g.customHeaderValue("Host"); ok {
+		lines = appendFFmpegHeaderLine(lines, "Host", host)
+	} else if hostOverride != "" {
 		lines = appendFFmpegHeaderLine(lines, "Host", hostOverride)
 	}
 	if incoming != nil {
@@ -111,6 +160,33 @@ func (g *Gateway) ffmpegInputHeaderBlock(incoming *http.Request, hostOverride st
 	if g.ProviderUser != "" || g.ProviderPass != "" {
 		auth := base64.StdEncoding.EncodeToString([]byte(g.ProviderUser + ":" + g.ProviderPass))
 		lines = appendFFmpegHeaderLine(lines, "Authorization", "Basic "+auth)
+	}
+	if ua, ok := g.customHeaderValue("User-Agent"); ok {
+		lines = appendFFmpegHeaderLine(lines, "User-Agent", ua)
+	} else if g.CustomUserAgent != "" {
+		lines = appendFFmpegHeaderLine(lines, "User-Agent", g.CustomUserAgent)
+	} else {
+		lines = appendFFmpegHeaderLine(lines, "User-Agent", "IptvTunerr/1.0")
+	}
+	if site, ok := g.customHeaderValue("Sec-Fetch-Site"); ok {
+		lines = appendFFmpegHeaderLine(lines, "Sec-Fetch-Site", site)
+	} else if g.AddSecFetchHeaders {
+		lines = appendFFmpegHeaderLine(lines, "Sec-Fetch-Site", "cross-site")
+	}
+	if mode, ok := g.customHeaderValue("Sec-Fetch-Mode"); ok {
+		lines = appendFFmpegHeaderLine(lines, "Sec-Fetch-Mode", mode)
+	} else if g.AddSecFetchHeaders {
+		lines = appendFFmpegHeaderLine(lines, "Sec-Fetch-Mode", "cors")
+	}
+	for name, value := range g.CustomHeaders {
+		switch {
+		case strings.EqualFold(name, "Host"),
+			strings.EqualFold(name, "User-Agent"),
+			strings.EqualFold(name, "Sec-Fetch-Site"),
+			strings.EqualFold(name, "Sec-Fetch-Mode"):
+			continue
+		}
+		lines = appendFFmpegHeaderLine(lines, name, value)
 	}
 	if len(lines) == 0 {
 		return ""

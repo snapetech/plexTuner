@@ -36,7 +36,14 @@ type Gateway struct {
 	TranscodeOverrides   map[string]bool
 	DefaultProfile       string
 	ProfileOverrides     map[string]string
+	CustomHeaders        map[string]string // extra headers to send on all upstream requests (e.g. Referer, Origin)
+	CustomUserAgent      string            // override User-Agent sent to upstream (empty = default "IptvTunerr/1.0")
+	AddSecFetchHeaders   bool
+	DisableFFmpeg        bool
+	DisableFFmpegDNS     bool
 	Client               *http.Client
+	CookieJarFile        string // path to persist cookies for Cloudflare clearance
+	persistentCookieJar  *persistentCookieJar
 	FetchCFReject        bool // abort HLS stream on segment redirected to CF abuse page
 	PlexPMSURL           string
 	PlexPMSToken         string
@@ -151,6 +158,11 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	g.mu.Unlock()
 	log.Printf("gateway: req=%s channel=%q id=%s acquire inuse=%d/%d", reqID, channel.GuideName, channelID, inUseNow, limit)
 	defer func() {
+		if g.persistentCookieJar != nil {
+			if err := g.persistentCookieJar.Save(); err != nil {
+				log.Printf("gateway: req=%s cookie jar save failed: %v", reqID, err)
+			}
+		}
 		g.mu.Lock()
 		g.inUse--
 		inUseLeft := g.inUse
@@ -238,7 +250,11 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log.Printf("gateway: channel=%q id=%s read-playlist-failed err=%v", channel.GuideName, channelID, err)
 				continue
 			}
-			body = rewriteHLSPlaylist(body, streamURL)
+			effectiveURL := streamURL
+			if resp.Request != nil && resp.Request.URL != nil {
+				effectiveURL = resp.Request.URL.String()
+			}
+			body = rewriteHLSPlaylist(body, effectiveURL)
 			firstSeg := firstHLSMediaLine(body)
 			transcode := g.effectiveTranscodeForChannelMeta(r.Context(), channelID, channel.GuideNumber, channel.TVGID, streamURL)
 			if hasTranscodeOverride {
@@ -257,25 +273,29 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				channel.GuideName, channelID, len(body), firstSeg, time.Since(start).Round(time.Millisecond), mode, bufDesc)
 			log.Printf("gateway: channel=%q id=%s hls-mode transcode=%t mode=%q guide=%q tvg=%q", channel.GuideName, channelID, transcode, g.StreamTranscodeMode, channel.GuideNumber, channel.TVGID)
 			hotStart := g.hotStartConfig(channel, clientClass)
-			if ffmpegPath, ffmpegErr := resolveFFmpegPath(); ffmpegErr == nil {
-				if err := g.relayHLSWithFFmpeg(w, r, ffmpegPath, streamURL, channel.GuideName, channelID, channel.GuideNumber, channel.TVGID, start, transcode, bufferSize, forcedProfile, hotStart); err == nil {
-					g.rememberAutopilotDecision(channel, clientClass, transcode, effectiveProfileName(g, channel, channelID, forcedProfile), adaptReason, streamURL)
-					return
-				} else {
-					log.Printf("gateway: channel=%q id=%s ffmpeg-%s failed (falling back to go relay): %v",
-						channel.GuideName, channelID, mode, err)
+			if !g.DisableFFmpeg {
+				if ffmpegPath, ffmpegErr := resolveFFmpegPath(); ffmpegErr == nil {
+					if err := g.relayHLSWithFFmpeg(w, r, ffmpegPath, streamURL, channel.GuideName, channelID, channel.GuideNumber, channel.TVGID, start, transcode, bufferSize, forcedProfile, hotStart); err == nil {
+						g.rememberAutopilotDecision(channel, clientClass, transcode, effectiveProfileName(g, channel, channelID, forcedProfile), adaptReason, streamURL)
+						return
+					} else {
+						log.Printf("gateway: channel=%q id=%s ffmpeg-%s failed (falling back to go relay): %v",
+							channel.GuideName, channelID, mode, err)
+					}
+				} else if strings.TrimSpace(os.Getenv("IPTV_TUNERR_FFMPEG_PATH")) != "" {
+					log.Printf("gateway: channel=%q id=%s ffmpeg unavailable path=%q err=%v",
+						channel.GuideName, channelID, os.Getenv("IPTV_TUNERR_FFMPEG_PATH"), ffmpegErr)
+				} else if transcode {
+					log.Printf("gateway: channel=%q id=%s ffmpeg unavailable transcode-requested=true err=%v (falling back to go relay; web clients may get incompatible audio/video codecs)", channel.GuideName, channelID, ffmpegErr)
 				}
-			} else if strings.TrimSpace(os.Getenv("IPTV_TUNERR_FFMPEG_PATH")) != "" {
-				log.Printf("gateway: channel=%q id=%s ffmpeg unavailable path=%q err=%v",
-					channel.GuideName, channelID, os.Getenv("IPTV_TUNERR_FFMPEG_PATH"), ffmpegErr)
-			} else if transcode {
-				log.Printf("gateway: channel=%q id=%s ffmpeg unavailable transcode-requested=true err=%v (falling back to go relay; web clients may get incompatible audio/video codecs)", channel.GuideName, channelID, ffmpegErr)
+			} else {
+				log.Printf("gateway: channel=%q id=%s ffmpeg disabled by config (using go relay)", channel.GuideName, channelID)
 			}
 			if err := g.relayHLSAsTS(
 				w,
 				r,
 				client,
-				streamURL,
+				effectiveURL,
 				body,
 				channel.GuideName,
 				channelID,

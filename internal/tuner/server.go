@@ -28,6 +28,25 @@ const PlexDVRMaxChannels = 480
 // PlexDVRWizardSafeMax is used in "easy" mode: strip from end so lineup fits when Plex suggests a guide (e.g. Rogers West Canada ~680 ch); keep first N.
 const PlexDVRWizardSafeMax = 479
 
+func parseCustomHeaders(raw string) map[string]string {
+	headers := make(map[string]string)
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return headers
+	}
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if idx := strings.Index(part, ":"); idx > 0 {
+			name := strings.TrimSpace(part[:idx])
+			value := strings.TrimSpace(part[idx+1:])
+			if name != "" && value != "" {
+				headers[name] = value
+			}
+		}
+	}
+	return headers
+}
+
 // NoLineupCap disables the lineup cap (use when syncing lineup into Plex DB programmatically so users get full channel count).
 const NoLineupCap = -1
 
@@ -788,6 +807,12 @@ func (s *Server) Run(ctx context.Context) error {
 		TranscodeOverrides:  txOverrides,
 		DefaultProfile:      defaultProfile,
 		ProfileOverrides:    overrides,
+		CustomHeaders:       parseCustomHeaders(os.Getenv("IPTV_TUNERR_UPSTREAM_HEADERS")),
+		CustomUserAgent:     strings.TrimSpace(os.Getenv("IPTV_TUNERR_UPSTREAM_USER_AGENT")),
+		AddSecFetchHeaders:  envBool("IPTV_TUNERR_UPSTREAM_ADD_SEC_FETCH", false),
+		DisableFFmpeg:       getenvBool("IPTV_TUNERR_FFMPEG_DISABLED", false),
+		DisableFFmpegDNS:    getenvBool("IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE", false),
+		CookieJarFile:       strings.TrimSpace(os.Getenv("IPTV_TUNERR_COOKIE_JAR_FILE")),
 		FetchCFReject:       s.FetchCFReject,
 		PlexPMSURL:          strings.TrimSpace(os.Getenv("IPTV_TUNERR_PMS_URL")),
 		PlexPMSToken:        strings.TrimSpace(os.Getenv("IPTV_TUNERR_PMS_TOKEN")),
@@ -804,6 +829,32 @@ func (s *Server) Run(ctx context.Context) error {
 	log.Printf("Gateway stream mode: transcode=%q buffer_bytes=%d", gateway.StreamTranscodeMode, gateway.StreamBufferBytes)
 	if gateway.PlexClientAdapt {
 		log.Printf("Gateway Plex client adapt enabled: pms_url=%q token_set=%t", gateway.PlexPMSURL, gateway.PlexPMSToken != "")
+	}
+	if len(gateway.CustomHeaders) > 0 {
+		log.Printf("Gateway custom upstream headers enabled: %d headers", len(gateway.CustomHeaders))
+	}
+	if gateway.CustomUserAgent != "" {
+		log.Printf("Gateway custom upstream User-Agent: %s", gateway.CustomUserAgent)
+	}
+	if gateway.AddSecFetchHeaders {
+		log.Printf("Gateway upstream Sec-Fetch headers enabled")
+	}
+	if gateway.DisableFFmpeg {
+		log.Printf("Gateway ffmpeg relay disabled by config")
+	}
+	if gateway.DisableFFmpegDNS {
+		log.Printf("Gateway ffmpeg input DNS rewrite disabled")
+	}
+	if gateway.CookieJarFile != "" {
+		jar, err := newPersistentCookieJar(gateway.CookieJarFile)
+		if err != nil {
+			log.Printf("Gateway persistent cookie jar disabled: %v", err)
+		} else {
+			gateway.persistentCookieJar = jar
+			gateway.Client = httpclient.ForStreaming()
+			gateway.Client.Jar = jar
+			log.Printf("Gateway persistent cookie jar enabled: path=%q", gateway.CookieJarFile)
+		}
 	}
 	if gateway.Client == nil {
 		gateway.Client = httpclient.ForStreaming()

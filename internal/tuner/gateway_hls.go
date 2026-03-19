@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -28,24 +29,28 @@ func sleepHLSRefresh(playlistBody []byte) {
 	time.Sleep(time.Duration(half) * time.Second)
 }
 
-func (g *Gateway) fetchAndRewritePlaylist(r *http.Request, client *http.Client, playlistURL string) ([]byte, error) {
+func (g *Gateway) fetchAndRewritePlaylist(r *http.Request, client *http.Client, playlistURL string) ([]byte, string, error) {
 	req, err := g.newUpstreamRequest(r.Context(), r, playlistURL)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New("playlist http status " + strconv.Itoa(resp.StatusCode))
+		return nil, "", errors.New("playlist http status " + strconv.Itoa(resp.StatusCode))
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return rewriteHLSPlaylist(body, playlistURL), nil
+	effectiveURL := playlistURL
+	if resp.Request != nil && resp.Request.URL != nil {
+		effectiveURL = resp.Request.URL.String()
+	}
+	return rewriteHLSPlaylist(body, effectiveURL), effectiveURL, nil
 }
 
 func (g *Gateway) fetchAndWriteSegment(
@@ -62,6 +67,12 @@ func (g *Gateway) fetchAndWriteSegment(
 	req, err := g.newUpstreamRequest(r.Context(), r, segURL)
 	if err != nil {
 		return 0, err
+	}
+	if debugOpts := streamDebugOptionsFromEnv(); debugOpts.HTTPHeaders {
+		for _, line := range debugHeaderLines(req.Header) {
+			reqID := gatewayReqIDFromContext(r.Context())
+			log.Printf("gateway: req=%s segment-fetch > %s", reqID, line)
+		}
 	}
 	resp, err := client.Do(req)
 	if err != nil {

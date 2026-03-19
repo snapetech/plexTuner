@@ -344,7 +344,11 @@ func bootstrapAudioArgsForProfile(profile string) []string {
 // to a numeric host for ffmpeg. This avoids resolver differences where Go can
 // resolve a host (for example a k8s short service hostname) but the bundled
 // ffmpeg binary cannot.
-func canonicalizeFFmpegInputURL(ctx context.Context, raw string) (rewritten string, fromHost string, toHost string) {
+// Set IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE=1 to disable and keep original hostname.
+func canonicalizeFFmpegInputURL(ctx context.Context, raw string, disableResolve bool) (rewritten string, fromHost string, toHost string) {
+	if disableResolve {
+		return raw, "", ""
+	}
 	u, err := url.Parse(raw)
 	if err != nil || u == nil || u.Host == "" {
 		return raw, "", ""

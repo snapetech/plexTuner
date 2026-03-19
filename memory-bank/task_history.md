@@ -22,6 +22,41 @@ Append-only. One entry per completed task.
 
 ## Entries
 
+- Date: 2026-03-19
+  Title: Integrate tester gateway compatibility fixes
+  Summary:
+    - Integrated the tester fork's redirect-safe HLS playlist handling so playlist refreshes and nested relative segment paths keep using the effective post-redirect URL.
+    - Added upstream request controls for custom headers, custom User-Agent, optional `Sec-Fetch-*`, ffmpeg disable, and ffmpeg DNS-rewrite disable so stricter providers/CDNs can be matched without forking the relay path.
+    - Reworked the persistent cookie-jar contribution so newly learned cookies are tracked through `SetCookies` and really survive restarts, then documented the new operator knobs.
+  Verification:
+    - `go test ./internal/tuner`
+    - `./scripts/verify`
+  Notes:
+    - Credit preserved in the commit footer for RK Davies because the landed change is based on his forked gateway fix set, but not a verbatim cherry-pick.
+  Opportunities filed:
+    - none
+  Links:
+    - https://github.com/rkdavies/iptvtunerr, internal/tuner/gateway.go, internal/tuner/gateway_upstream.go, internal/tuner/gateway_cookiejar.go
+
+- Date: 2026-03-19
+  Title: Assess tester fork fixes for upstream integration
+  Summary:
+    - Fetched `rkdavies/iptvtunerr` `main` and compared its single ahead commit against local `origin/main`.
+    - Reviewed the tuner/gateway patch set, ran `go test ./internal/tuner/...` in a detached worktree at the fork tip, and classified the changes into recommended, conditional, and not-ready buckets.
+    - Recorded that the redirected-HLS effective-URL handling looks worth integrating, while the persistent cookie-jar path needs a follow-up fix before merge.
+  Verification:
+    - `git diff --stat HEAD...FETCH_HEAD`
+    - `git diff HEAD...FETCH_HEAD -- internal/tuner/... .env.example`
+    - `go test ./internal/tuner/...` (run in detached worktree at `15d7cff`)
+    - N/A (no local code change)
+  Notes:
+    - The fork patch is a single commit: `15d7cff It finally works... Codec issues in web player`.
+    - The persistent cookie jar only saves domains already present in the on-disk snapshot, so a fresh jar will not persist newly learned cookies.
+  Opportunities filed:
+    - none
+  Links:
+    - https://github.com/rkdavies/iptvtunerr, memory-bank/current_task.md
+
 - Date: 2026-03-18
   Title: Document always-on recorder daemon as a future feature
   Summary:
