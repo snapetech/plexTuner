@@ -23,6 +23,19 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: README refresh for catch-up recording (daemon, env, CLI)
+  Summary:
+    - README: What's New for `catchup-daemon`; After Catch-Up Publishing subsection (commands, fallbacks, deprioritize hosts, retention, observability, doc links); CLI table row for `catchup-record`; Key Environment Variables for catch-up guide/replay plus subsection **Catch-up recording (daemon / CLI)** with `IPTV_TUNERR_CATCHUP_RECORDER_STATE_FILE` and `IPTV_TUNERR_RECORD_DEPRIORITIZE_HOSTS`.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - `IPTV_TUNERR_CATCHUP_RECORDER_STATE_FILE` lives under the catch-up recording subsection (not the Guide/XMLTV table).
+  Opportunities filed:
+    - none
+  Links:
+    - `README.md`
+
+- Date: 2026-03-19
   Title: Release v0.1.14 (CF docs, debug-bundle, recorder deprioritize hosts)
   Summary:
     - Shipped `iptv-tunerr debug-bundle`, `scripts/analyze-bundle.py`, `docs/how-to/cloudflare-bypass.md`, `docs/how-to/debug-bundle.md`, README Cloudflare section; wired `debugBundleCommands()` in main.

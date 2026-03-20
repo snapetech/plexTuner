@@ -5,7 +5,8 @@
   <a href="https://github.com/snapetech/iptvtunerr/issues">Issues</a> •
   <a href="#core-capabilities">Features</a> •
   <a href="#quick-start">Quick Start</a> •
-  <a href="#kubernetes">Kubernetes</a>
+  <a href="#kubernetes">Kubernetes</a> •
+  <a href="#cloudflare-provider-support">Cloudflare</a>
 </p>
 <p align="center">
   <a href="https://github.com/snapetech/iptvtunerr/actions/workflows/docker.yml"><img src="https://github.com/snapetech/iptvtunerr/actions/workflows/docker.yml/badge.svg" alt="Docker Build"></a>
@@ -36,8 +37,6 @@ IPTV Tunerr sits in the middle and fixes those problems. It can:
 
 You can use it for just the tuner, just the guide, or as the full control plane in front of Plex, Emby, and Jellyfin.
 
-## Why People Use It
-
 ### It makes unreliable IPTV behave like a normal DVR source
 
 Instead of pointing Plex or Jellyfin directly at a fragile provider playlist, you give them one stable tuner endpoint. IPTV Tunerr handles probing, fallbacks, guide shaping, and client quirks upstream so your media server sees something boring and predictable.
@@ -50,32 +49,65 @@ If channels only show names and no programme blocks, if one provider host keeps 
 
 You can inspect channel health, guide confidence, provider behavior, stale Plex-session signals, and catch-up candidates directly. That turns "why is this channel bad?" into an answerable question.
 
-## What's New
+---
 
-Recent additions are aimed at one thing: making the system explain itself and recover better.
+## Contents
 
-- **Runtime EPG repair**: fixes bad or missing channel IDs before guide pruning, so "channel name only" guide entries stop surviving just because a source had a bogus `tvg-id`.
-- **Channel intelligence reports**: scores each channel by guide confidence, resilience, and backup depth so you can see which channels are strong, weak, or not worth exposing.
-- **Channel DNA**: gives channels a stable identity across provider variants and duplicates, so merged lineups and future automation have something more durable than a raw channel name.
-- **Channel DNA provider preference**: duplicate variants can now prefer trusted provider/CDN authorities first, so the winner can reflect operator preference as well as generic channel score.
-- **Autopilot memory**: remembers winning playback choices per channel and client class, including the upstream URL/host that actually worked, so the system can reuse what already worked instead of rediscovering it every time.
-- **Autopilot failure memory**: repeated failures now count too, so stale remembered decisions back off instead of forcing the same bad path forever.
-- **Ghost Hunter**: surfaces stale-session and hidden-grab clues for Plex instead of leaving operators to infer them from broken playback.
-- **Provider profile and autotune**: shows learned concurrency caps, instability signals, Cloudflare hits, penalized bad hosts, and cautious self-tuning decisions.
-- **Guide highlights and catch-up capsules**: turn raw XMLTV data into "what's on now", "starting soon", and publishable near-live programme blocks.
-- **Catch-up publishing**: writes real `.strm + .nfo` items and can register lane libraries in Plex, Emby, and Jellyfin. Emby and Jellyfin were live-validated in cluster.
-- **Guide-quality policy hooks**: can now use actual guide-health results, not just channel metadata, to suppress placeholder-only channels from runtime lineups and catch-up outputs.
-- **Cloudflare resilience**: automatic UA cycling (Lavf→VLC→mpv→Kodi→Firefox→Chrome), full browser header profiles alongside browser UAs, HLS segment-level CF detection, learned UA persistence across restarts, per-host UA pinning, and clearance freshness monitoring. Cookie import from browser (HAR, Netscape, inline). See [Cloudflare provider support](#cloudflare-provider-support).
-- **Debug bundle and log correlation**: `iptv-tunerr debug-bundle` collects Tunerr-side diagnostic state. `scripts/analyze-bundle.py` correlates stream attempts, Tunerr stdout, PMS.log, and pcap to produce a ranked findings report. See [docs/how-to/debug-bundle.md](docs/how-to/debug-bundle.md).
+- [Quick Start](#quick-start)
+- [Getting Your Binary](#getting-your-binary)
+- [Core Capabilities](#core-capabilities)
+- [Channel Intelligence](#channel-intelligence)
+- [Cloudflare Provider Support](#cloudflare-provider-support)
+- [Setup Paths](#setup-paths)
+- [Supervisor Mode](#supervisor-mode)
+- [VOD Filesystem](#vod-filesystem-linux-only)
+- [Kubernetes](#kubernetes)
+- [CLI Commands](#cli-commands)
+- [Key Environment Variables](#key-environment-variables)
+- [Platform Support](#platform-support)
+- [Repo Layout](#repo-layout)
+- [Security Notes](#security-notes)
+- [Documentation](#documentation)
+- [Recent Changes](#recent-changes)
 
-See:
-- [docs/features.md](docs/features.md)
-- [docs/CHANGELOG.md](docs/CHANGELOG.md)
-- [docs/how-to/cloudflare-bypass.md](docs/how-to/cloudflare-bypass.md)
-- [docs/how-to/debug-bundle.md](docs/how-to/debug-bundle.md)
-- [docs/epics/EPIC-live-tv-intelligence.md](docs/epics/EPIC-live-tv-intelligence.md)
+---
 
-## Release Channels
+## Quick Start
+
+### Build
+
+```bash
+go build -o iptv-tunerr ./cmd/iptv-tunerr
+```
+
+### Minimum Configuration
+
+```bash
+IPTV_TUNERR_PROVIDER_URL=https://your-provider.com
+IPTV_TUNERR_PROVIDER_USER=username
+IPTV_TUNERR_PROVIDER_PASS=password
+IPTV_TUNERR_BASE_URL=http://<this-host>:5004
+```
+
+### Run
+
+```bash
+./iptv-tunerr run
+```
+
+This fetches the catalog, checks provider health, and starts the tuner server on `:5004`.
+
+### Add to Plex (Wizard)
+
+Plex → Settings → Live TV & DVR → Set up
+Device URL: `http://<this-host>:5004`
+Guide URL: `http://<this-host>:5004/guide.xml`
+
+For Docker, systemd, and bare-metal setups: [`docs/how-to/deployment.md`](docs/how-to/deployment.md)
+
+---
+
+## Getting Your Binary
 
 | Channel | Image | Tags | Notes |
 |---------|-------|------|-------|
@@ -92,68 +124,6 @@ docker pull ghcr.io/snapetech/iptvtunerr:latest
 ```
 
 Images are multi-arch (`linux/amd64`, `linux/arm64`, `linux/arm/v7`). `latest` tracks `main`; versioned tags are cut from `v*` git tags alongside binary release archives.
-
----
-
-## Multi-provider support
-
-IPTV Tunerr can pull from multiple provider subscriptions simultaneously and merge them into one catalog.
-
-**Multiple hosts, one subscription** — failover across CDN endpoints for the same account:
-```bash
-IPTV_TUNERR_PROVIDER_URLS=http://host1.com,http://host2.com,http://backup.com
-```
-All hosts are probed at startup; the fastest/healthiest wins for catalog indexing. Every host's stream URLs are stored as per-channel fallbacks — so if CDN 1 goes down mid-stream, the gateway automatically retries on CDN 2 without re-indexing.
-
-**Multiple subscriptions** — merge channels from separate provider accounts:
-```bash
-IPTV_TUNERR_PROVIDER_URL=http://provider1.com
-IPTV_TUNERR_PROVIDER_USER=user1
-IPTV_TUNERR_PROVIDER_PASS=pass1
-
-IPTV_TUNERR_PROVIDER_URL_2=http://provider2.com
-IPTV_TUNERR_PROVIDER_USER_2=user2
-IPTV_TUNERR_PROVIDER_PASS_2=pass2
-# _3, _4, ... continue the pattern
-```
-Each numbered provider is independently probed. The best host indexes the catalog; all provider hosts become stream URL fallbacks per channel. Channels with duplicate `tvg-id` values across providers are deduplicated — one entry in the lineup with all matching stream URLs ranked and available for failover.
-
----
-
-## Post-index validation (smoketest)
-
-After indexing, IPTV Tunerr can optionally probe every channel's primary stream URL and drop channels that don't respond — so dead channels never appear in the lineup.
-
-```bash
-IPTV_TUNERR_SMOKETEST_ENABLED=true
-```
-
-What it does:
-- Probes each channel's primary stream URL concurrently
-- For MPEG-TS streams: sends an HTTP Range request for the first 4 KB (avoids pulling full streams)
-- For HLS streams: fetches the playlist and validates `#EXTM3U` / `#EXTINF` content
-- Channels that return a non-200/206 response or invalid content are dropped from the catalog
-
-To avoid re-probing thousands of channels on every restart, set a cache file:
-
-```bash
-IPTV_TUNERR_SMOKETEST_CACHE_FILE=/var/lib/iptvtunerr/smoketest-cache.json
-IPTV_TUNERR_SMOKETEST_CACHE_TTL=4h
-```
-
-Results are cached per URL. On the next index run, channels whose URLs have a fresh cache entry skip the probe entirely — only new or expired entries are re-checked.
-
-Key tuning variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `IPTV_TUNERR_SMOKETEST_ENABLED` | `false` | Enable post-index stream probing |
-| `IPTV_TUNERR_SMOKETEST_TIMEOUT` | `8s` | Per-channel probe timeout |
-| `IPTV_TUNERR_SMOKETEST_CONCURRENCY` | `10` | Parallel probes |
-| `IPTV_TUNERR_SMOKETEST_MAX_CHANNELS` | `0` (all) | Cap on channels probed (0 = unlimited) |
-| `IPTV_TUNERR_SMOKETEST_MAX_DURATION` | `5m` | Wall-clock cap for the full probe pass |
-| `IPTV_TUNERR_SMOKETEST_CACHE_FILE` | — | Path to persistent probe result cache |
-| `IPTV_TUNERR_SMOKETEST_CACHE_TTL` | `4h` | How long a cached result stays valid |
 
 ---
 
@@ -224,6 +194,64 @@ curl -s http://127.0.0.1:5004/guide/aliases.json | jq
 ```
 
 These two capabilities run from the same process. They can be used independently: point your media server at the tuner URL for streams and at a different guide source, or use IPTV Tunerr for both.
+
+### 3. Multi-provider and failover
+
+IPTV Tunerr can pull from multiple provider subscriptions simultaneously and merge them into one catalog.
+
+**Multiple hosts, one subscription** — failover across CDN endpoints for the same account:
+```bash
+IPTV_TUNERR_PROVIDER_URLS=http://host1.com,http://host2.com,http://backup.com
+```
+All hosts are probed at startup; the fastest/healthiest wins for catalog indexing. Every host's stream URLs are stored as per-channel fallbacks — so if CDN 1 goes down mid-stream, the gateway automatically retries on CDN 2 without re-indexing.
+
+**Multiple subscriptions** — merge channels from separate provider accounts:
+```bash
+IPTV_TUNERR_PROVIDER_URL=http://provider1.com
+IPTV_TUNERR_PROVIDER_USER=user1
+IPTV_TUNERR_PROVIDER_PASS=pass1
+
+IPTV_TUNERR_PROVIDER_URL_2=http://provider2.com
+IPTV_TUNERR_PROVIDER_USER_2=user2
+IPTV_TUNERR_PROVIDER_PASS_2=pass2
+# _3, _4, ... continue the pattern
+```
+Each numbered provider is independently probed. The best host indexes the catalog; all provider hosts become stream URL fallbacks per channel. Channels with duplicate `tvg-id` values across providers are deduplicated — one entry in the lineup with all matching stream URLs ranked and available for failover.
+
+### 4. Post-index stream validation
+
+After indexing, IPTV Tunerr can optionally probe every channel's primary stream URL and drop channels that don't respond — so dead channels never appear in the lineup.
+
+```bash
+IPTV_TUNERR_SMOKETEST_ENABLED=true
+```
+
+What it does:
+- Probes each channel's primary stream URL concurrently
+- For MPEG-TS streams: sends an HTTP Range request for the first 4 KB (avoids pulling full streams)
+- For HLS streams: fetches the playlist and validates `#EXTM3U` / `#EXTINF` content
+- Channels that return a non-200/206 response or invalid content are dropped from the catalog
+
+To avoid re-probing thousands of channels on every restart, set a cache file:
+
+```bash
+IPTV_TUNERR_SMOKETEST_CACHE_FILE=/var/lib/iptvtunerr/smoketest-cache.json
+IPTV_TUNERR_SMOKETEST_CACHE_TTL=4h
+```
+
+Results are cached per URL. On the next index run, channels whose URLs have a fresh cache entry skip the probe entirely — only new or expired entries are re-checked.
+
+Key tuning variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `IPTV_TUNERR_SMOKETEST_ENABLED` | `false` | Enable post-index stream probing |
+| `IPTV_TUNERR_SMOKETEST_TIMEOUT` | `8s` | Per-channel probe timeout |
+| `IPTV_TUNERR_SMOKETEST_CONCURRENCY` | `10` | Parallel probes |
+| `IPTV_TUNERR_SMOKETEST_MAX_CHANNELS` | `0` (all) | Cap on channels probed (0 = unlimited) |
+| `IPTV_TUNERR_SMOKETEST_MAX_DURATION` | `5m` | Wall-clock cap for the full probe pass |
+| `IPTV_TUNERR_SMOKETEST_CACHE_FILE` | — | Path to persistent probe result cache |
+| `IPTV_TUNERR_SMOKETEST_CACHE_TTL` | `4h` | How long a cached result stays valid |
 
 ---
 
@@ -434,7 +462,23 @@ Why this matters:
 - the same feed can be reused across Plex, Emby, and Jellyfin
 - when a replay-capable source exists, the same workflow can now publish real replay `.strm` targets instead of only live launchers
 - duplicate programme rows that share the same `dna_id + start + title` are now curated down to the richer capsule before export/publish
-- for sources without replay URLs, `catchup-record` can now record current in-progress capsules to local TS files and a record manifest
+- for sources without replay URLs, `catchup-record` can record current in-progress capsules to local TS files and `record-manifest.json`; `catchup-daemon` runs the same capture path continuously with scheduling, concurrency limits, and persistent state
+
+### Catch-up recording (daemon & one-shot)
+
+| Command | Purpose |
+|---------|---------|
+| `catchup-record` | One pass: record current `in_progress` capsules from the guide into `<out-dir>` |
+| `catchup-daemon` | Long-running: poll the guide, record eligible programmes, maintain `recorder-state.json` under `-out-dir` |
+| `catchup-recorder-report` | Print a JSON summary of the recorder state file (same model as `/recordings/recorder.json` when the server knows the path) |
+
+Highlights:
+- **Fallback URLs**: with `-record-upstream-fallback` (default on), capture tries the Tunerr `/stream/<channel>` URL first, then catalog stream fallbacks on failure.
+- **Deprioritize bad hosts**: set `IPTV_TUNERR_RECORD_DEPRIORITIZE_HOSTS=bad.cdn.example,slow.provider.com` so matching upstreams are tried after healthier catalog URLs (relay URL stays first).
+- **Retention**: count limits, per-lane byte budgets, and optional `-retain-completed-max-age` / `-retain-completed-max-age-per-lane` (e.g. `72h`, `7d`).
+- **Observability**: per-item and aggregate metrics for HTTP attempts, retries, bytes resumed, and upstream switches.
+
+Full flags: [docs/reference/cli-and-env-reference.md](docs/reference/cli-and-env-reference.md) · design context: [docs/explanations/always-on-recorder-daemon.md](docs/explanations/always-on-recorder-daemon.md)
 
 Live-validated on the cluster:
 - Emby catch-up publish created lane libraries and on-disk `.strm + .nfo` content on the server PVC
@@ -561,7 +605,7 @@ Full guide: [docs/how-to/cloudflare-bypass.md](docs/how-to/cloudflare-bypass.md)
 
 ---
 
-## Two Setup Paths (Registration)
+## Setup Paths
 
 How you connect IPTV Tunerr to your media server:
 
@@ -581,42 +625,7 @@ Reference: [`docs/reference/plex-dvr-lifecycle-and-api.md`](docs/reference/plex-
 
 ---
 
-## Quick Start
-
-### Build
-
-```bash
-go build -o iptv-tunerr ./cmd/iptv-tunerr
-```
-
-### Minimum Configuration
-
-```bash
-IPTV_TUNERR_PROVIDER_URL=https://your-provider.com
-IPTV_TUNERR_PROVIDER_USER=username
-IPTV_TUNERR_PROVIDER_PASS=password
-IPTV_TUNERR_BASE_URL=http://<this-host>:5004
-```
-
-### Run
-
-```bash
-./iptv-tunerr run
-```
-
-This fetches the catalog, checks provider health, and starts the tuner server on `:5004`.
-
-### Add to Plex (Wizard)
-
-Plex → Settings → Live TV & DVR → Set up
-Device URL: `http://<this-host>:5004`
-Guide URL: `http://<this-host>:5004/guide.xml`
-
-For Docker, systemd, and bare-metal setups: [`docs/how-to/deployment.md`](docs/how-to/deployment.md)
-
----
-
-## Supervisor Mode (Multi-DVR)
+## Supervisor Mode
 
 Run multiple virtual tuner instances from a single process — each on its own port, with independent provider credentials, lineup, and guide configuration.
 
@@ -629,6 +638,47 @@ Examples:
 - [`k8s/iptvtunerr-supervisor-singlepod.example.yaml`](k8s/iptvtunerr-supervisor-singlepod.example.yaml)
 
 Config reference: [`docs/reference/testing-and-supervisor-config.md`](docs/reference/testing-and-supervisor-config.md)
+
+---
+
+## VOD Filesystem (Linux Only)
+
+Mount IPTV VOD catalog as a browsable filesystem that Plex can index as libraries.
+
+```bash
+iptv-tunerr mount -catalog ./catalog.json -mount /srv/iptvtunerr-vodfs
+iptv-tunerr plex-vod-register \
+  -mount /srv/iptvtunerr-vodfs \
+  -plex-url http://127.0.0.1:32400 \
+  -token "$PLEX_TOKEN"
+```
+
+By default this creates `VOD` (TV) and `VOD-Movies` libraries. Use `-shows-only` or `-movies-only` to register one at a time.
+
+The mount path must be visible to the Plex server. In Kubernetes, VODFS mounts inside a helper container are not automatically visible to the Plex pod without host-level mounts or `MountPropagation`.
+
+Guide: [`docs/how-to/mount-vodfs-and-register-plex-libraries.md`](docs/how-to/mount-vodfs-and-register-plex-libraries.md)
+
+---
+
+## Kubernetes
+
+Single-command deployment:
+
+```bash
+./k8s/standup-local-cluster.sh
+```
+
+Or step-by-step with env-based credentials:
+
+```bash
+IPTV_TUNERR_PROVIDER_USER='user' \
+IPTV_TUNERR_PROVIDER_PASS='pass' \
+IPTV_TUNERR_PROVIDER_URL='https://provider.com' \
+./k8s/deploy-hdhr-one-shot.sh --static
+```
+
+Full K8s guide: [`k8s/README.md`](k8s/README.md)
 
 ---
 
@@ -650,7 +700,8 @@ Config reference: [`docs/reference/testing-and-supervisor-config.md`](docs/refer
 | `ghost-hunter` | Observe Plex Live TV sessions and classify stale/hidden-grab cases |
 | `catchup-capsules` | Export near-live capsule candidates from guide XMLTV |
 | `catchup-publish` | Publish catch-up capsules as `.strm + .nfo` libraries and optionally register them |
-| `catchup-daemon` | Continuously record guide-derived capsules with persistent state |
+| `catchup-record` | One-shot: record current in-progress capsules to local TS + record manifest |
+| `catchup-daemon` | Continuously record guide-derived capsules with persistent state and optional publish |
 | `catchup-recorder-report` | Summarize the persistent recorder state file |
 | `epg-link-report` | Report EPG coverage and unmatched channels |
 | `mount` | Mount VODFS (Linux only) |
@@ -721,6 +772,15 @@ Full reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-a
 | `IPTV_TUNERR_EPG_PRUNE_UNLINKED` | Exclude unlinked channels from guide and lineup |
 | `IPTV_TUNERR_XMLTV_PREFER_LANGS` | Language preference for programme titles (e.g. `en,eng`) |
 | `IPTV_TUNERR_XMLTV_PREFER_LATIN` | Prefer Latin script when multilingual data is available |
+| `IPTV_TUNERR_CATCHUP_GUIDE_POLICY` | `off` \| `healthy` \| `strict` for catch-up capsule / publish filtering |
+| `IPTV_TUNERR_CATCHUP_REPLAY_URL_TEMPLATE` | Source-backed replay URLs for capsules/publish when the provider supports it |
+
+### Catch-up recording (daemon / CLI)
+
+| Variable | Description |
+|----------|-------------|
+| `IPTV_TUNERR_CATCHUP_RECORDER_STATE_FILE` | Path to `recorder-state.json` so `serve` can expose `/recordings/recorder.json` |
+| `IPTV_TUNERR_RECORD_DEPRIORITIZE_HOSTS` | Comma-separated hostnames; catalog capture fallbacks on these hosts are tried after other URLs (Tunerr `/stream/<id>` stays first) when building previews for `catchup-daemon` / `catchup-record` with upstream fallback enabled. |
 
 ### Plex Session Reaper (Optional)
 
@@ -755,47 +815,6 @@ Full variable reference: [`docs/reference/cli-and-env-reference.md`](docs/refere
 | `mount` / VODFS (FUSE) | ✓ | — | — |
 
 Platform requirements: [`docs/how-to/platform-requirements.md`](docs/how-to/platform-requirements.md)
-
----
-
-## VOD Filesystem (Linux Only)
-
-Mount IPTV VOD catalog as a browsable filesystem that Plex can index as libraries.
-
-```bash
-iptv-tunerr mount -catalog ./catalog.json -mount /srv/iptvtunerr-vodfs
-iptv-tunerr plex-vod-register \
-  -mount /srv/iptvtunerr-vodfs \
-  -plex-url http://127.0.0.1:32400 \
-  -token "$PLEX_TOKEN"
-```
-
-By default this creates `VOD` (TV) and `VOD-Movies` libraries. Use `-shows-only` or `-movies-only` to register one at a time.
-
-The mount path must be visible to the Plex server. In Kubernetes, VODFS mounts inside a helper container are not automatically visible to the Plex pod without host-level mounts or `MountPropagation`.
-
-Guide: [`docs/how-to/mount-vodfs-and-register-plex-libraries.md`](docs/how-to/mount-vodfs-and-register-plex-libraries.md)
-
----
-
-## Kubernetes
-
-Single-command deployment:
-
-```bash
-./k8s/standup-local-cluster.sh
-```
-
-Or step-by-step with env-based credentials:
-
-```bash
-IPTV_TUNERR_PROVIDER_USER='user' \
-IPTV_TUNERR_PROVIDER_PASS='pass' \
-IPTV_TUNERR_PROVIDER_URL='https://provider.com' \
-./k8s/deploy-hdhr-one-shot.sh --static
-```
-
-Full K8s guide: [`k8s/README.md`](k8s/README.md)
 
 ---
 
@@ -840,6 +859,8 @@ docs/                 Reference, how-to guides, runbooks
 - [`docs/how-to/deployment.md`](docs/how-to/deployment.md) — Binary, Docker, systemd deployment
 - [`docs/how-to/platform-requirements.md`](docs/how-to/platform-requirements.md) — FFmpeg, FUSE, platform notes
 - [`docs/how-to/mount-vodfs-and-register-plex-libraries.md`](docs/how-to/mount-vodfs-and-register-plex-libraries.md) — VOD filesystem setup
+- [`docs/how-to/cloudflare-bypass.md`](docs/how-to/cloudflare-bypass.md) — Cloudflare bypass guide
+- [`docs/how-to/debug-bundle.md`](docs/how-to/debug-bundle.md) — Debug bundle and log correlation
 
 **Runbooks**
 - [`docs/runbooks/iptvtunerr-troubleshooting.md`](docs/runbooks/iptvtunerr-troubleshooting.md)
@@ -855,3 +876,24 @@ Verify the build:
 ```bash
 ./scripts/verify
 ```
+
+---
+
+## Recent Changes
+
+- **Runtime EPG repair**: fixes bad or missing channel IDs before guide pruning, so "channel name only" guide entries stop surviving just because a source had a bogus `tvg-id`.
+- **Channel intelligence reports**: scores each channel by guide confidence, resilience, and backup depth so you can see which channels are strong, weak, or not worth exposing.
+- **Channel DNA**: gives channels a stable identity across provider variants and duplicates, so merged lineups and future automation have something more durable than a raw channel name.
+- **Channel DNA provider preference**: duplicate variants can now prefer trusted provider/CDN authorities first, so the winner can reflect operator preference as well as generic channel score.
+- **Autopilot memory**: remembers winning playback choices per channel and client class, including the upstream URL/host that actually worked, so the system can reuse what already worked instead of rediscovering it every time.
+- **Autopilot failure memory**: repeated failures now count too, so stale remembered decisions back off instead of forcing the same bad path forever.
+- **Ghost Hunter**: surfaces stale-session and hidden-grab clues for Plex instead of leaving operators to infer them from broken playback.
+- **Provider profile and autotune**: shows learned concurrency caps, instability signals, Cloudflare hits, penalized bad hosts, and cautious self-tuning decisions.
+- **Guide highlights and catch-up capsules**: turn raw XMLTV data into "what's on now", "starting soon", and publishable near-live programme blocks.
+- **Catch-up publishing**: writes real `.strm + .nfo` items and can register lane libraries in Plex, Emby, and Jellyfin. Emby and Jellyfin were live-validated in cluster.
+- **Guide-quality policy hooks**: can now use actual guide-health results, not just channel metadata, to suppress placeholder-only channels from runtime lineups and catch-up outputs.
+- **Cloudflare resilience**: automatic UA cycling (Lavf→VLC→mpv→Kodi→Firefox→Chrome), full browser header profiles alongside browser UAs, HLS segment-level CF detection, learned UA persistence across restarts, per-host UA pinning, and clearance freshness monitoring. Cookie import from browser (HAR, Netscape, inline). See [Cloudflare provider support](#cloudflare-provider-support).
+- **Debug bundle and log correlation**: `iptv-tunerr debug-bundle` collects Tunerr-side diagnostic state. `scripts/analyze-bundle.py` correlates stream attempts, Tunerr stdout, PMS.log, and pcap to produce a ranked findings report. See [docs/how-to/debug-bundle.md](docs/how-to/debug-bundle.md).
+- **Catch-up recording (headless)**: `catchup-daemon` continuously schedules guide-derived programmes, records to `.ts` with spool-then-finalize, persists `recorder-state.json`, supports publish + optional Plex/Emby/Jellyfin lane registration, lane/channel filters, transient retries with optional HTTP `Range` resume on the same `.partial.ts`, and multi-upstream failover (Tunerr relay URL first, then catalog `stream_url` / `stream_urls`). **`IPTV_TUNERR_RECORD_DEPRIORITIZE_HOSTS`** pushes named bad CDN hosts to the end of the fallback list. Time-based completed retention and `scripts/recorder-daemon-soak.sh` for bounded soak runs. See [docs/reference/cli-and-env-reference.md](docs/reference/cli-and-env-reference.md) (`catchup-daemon`, `catchup-record`).
+
+See [docs/CHANGELOG.md](docs/CHANGELOG.md) for the full version history.
