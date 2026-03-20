@@ -176,6 +176,26 @@ func TestRunCatchupRecorderDaemon_OnPublishedHookErrorMarksCompletedItem(t *test
 	}
 }
 
+func TestPruneCatchupRecorderCompletedMaxAge(t *testing.T) {
+	now := time.Now().UTC()
+	items := []CatchupRecorderItem{
+		{CapsuleID: "old", StoppedAt: now.Add(-3 * time.Hour).Format(time.RFC3339), Lane: "sports"},
+		{CapsuleID: "new", StoppedAt: now.Add(-time.Hour).Format(time.RFC3339), Lane: "sports"},
+	}
+	out := pruneCatchupRecorderCompletedMaxAge(items, 2*time.Hour, nil, now)
+	if len(out) != 1 || out[0].CapsuleID != "new" {
+		t.Fatalf("got %+v", out)
+	}
+	laneItems := []CatchupRecorderItem{
+		{CapsuleID: "old", StoppedAt: now.Add(-3 * time.Hour).Format(time.RFC3339), Lane: "sports"},
+		{CapsuleID: "new", StoppedAt: now.Add(-time.Hour).Format(time.RFC3339), Lane: "sports"},
+	}
+	out2 := pruneCatchupRecorderCompletedMaxAge(laneItems, 0, map[string]time.Duration{"sports": 2 * time.Hour}, now)
+	if len(out2) != 1 || out2[0].CapsuleID != "new" {
+		t.Fatalf("lane got %+v", out2)
+	}
+}
+
 func TestRunCatchupRecorderDaemon_PrunesExpiredCompleted(t *testing.T) {
 	now := time.Now().UTC()
 	dir := t.TempDir()

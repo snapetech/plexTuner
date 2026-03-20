@@ -273,7 +273,7 @@ func streamAuthPrefix(rawURL string) string {
 	return prefix + path
 }
 
-func buildCatchupCapsulePreviewFromRef(path, xmltvRef string, horizon time.Duration, limit int, guidePolicy string) (tuner.CatchupCapsulePreview, error) {
+func buildCatchupCapsulePreviewFromRef(path, xmltvRef string, horizon time.Duration, limit int, guidePolicy, streamBaseURL string, recordUpstreamFallback bool) (tuner.CatchupCapsulePreview, error) {
 	c := catalog.New()
 	if err := c.Load(path); err != nil {
 		return tuner.CatchupCapsulePreview{}, fmt.Errorf("load catalog %s: %w", path, err)
@@ -293,6 +293,9 @@ func buildCatchupCapsulePreviewFromRef(path, xmltvRef string, horizon time.Durat
 			return tuner.CatchupCapsulePreview{}, fmt.Errorf("build guide health for catchup policy: %w", err)
 		}
 		rep = tuner.FilterCatchupCapsulesByGuidePolicy(rep, gh, policy)
+	}
+	if recordUpstreamFallback && strings.TrimSpace(streamBaseURL) != "" {
+		tuner.EnrichCatchupCapsulesRecordURLs(&rep, live, streamBaseURL)
 	}
 	return rep, nil
 }

@@ -31,6 +31,10 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Recorder same-spool HTTP Range resume**: after transient mid-stream failures, `catchup-daemon` can retry with `Range` against the existing `.partial.ts` spool when the upstream supports partial content (206), avoiding a full re-download when possible (`-record-resume-partial`, default on).
 - **Recorder smarter backoff**: transient retries honor `Retry-After` when present and apply HTTP-status-aware backoff multipliers (e.g. 429/502/503/504) on top of exponential backoff.
 - **Recorder capture observability**: per-item fields `capture_http_attempts`, `capture_transient_retries`, and `capture_bytes_resumed`, plus aggregate `sum_*` fields in `recorder-state.json` statistics, summarize HTTP attempts, retry churn, and bytes appended via resume.
+- **Recorder multi-upstream failover**: catalog `stream_url` / `stream_urls` are merged (after the Tunerr `/stream/<id>` URL) into `record_source_urls` when `-record-upstream-fallback` is enabled (default on for `catchup-daemon` / `catchup-record`); capture advances to the next URL after non-transient failures or exhausted transient retries, with `capture_upstream_switches` / `sum_capture_upstream_switches` metrics.
+- **Recorder catalog UA on capture**: `preferred_ua` from the live channel is sent as `User-Agent` on capture HTTP requests when present.
+- **Recorder time-based completed retention**: `-retain-completed-max-age` and `-retain-completed-max-age-per-lane` (e.g. `sports=72h`, `7d`) prune old completed items from state and delete associated files.
+- **Recorder soak helper**: `scripts/recorder-daemon-soak.sh` wraps `catchup-daemon -run-for` for bounded soak runs.
 
 ### Upstream / Cloudflare hardening
 - **`cf-status` CLI**: inspect per-host Cloudflare state from the cookie jar and persisted learned file (`cf_clearance` freshness, working UA, CF-tagged flag); JSON output supported.

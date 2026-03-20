@@ -25,7 +25,7 @@ func TestSpoolCopyFromHTTP_206Append(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	resumed, _, err := spoolCopyFromHTTP(context.Background(), srv.Client(), srv.URL, "c", spool, 3)
+	resumed, _, err := spoolCopyFromHTTP(context.Background(), srv.Client(), srv.URL, "c", spool, 3, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,5 +82,47 @@ func TestRecordCatchupCapsuleResilient_Retries503ThenOK(t *testing.T) {
 	}
 	if metrics.TransientRetries != 1 {
 		t.Fatalf("transient_retries=%d want 1", metrics.TransientRetries)
+	}
+}
+
+func TestRecordCatchupCapsuleResilient_Upstream404ThenOK(t *testing.T) {
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.NotFound(w, nil)
+	}))
+	defer bad.Close()
+	good := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("from-backup"))
+	}))
+	defer good.Close()
+
+	dir := t.TempDir()
+	now := time.Now().UTC()
+	capsule := CatchupCapsule{
+		CapsuleID:        "dna:failover",
+		ChannelID:        "101",
+		Lane:             "sports",
+		State:            "in_progress",
+		Start:            now.Add(-time.Minute).Format(time.RFC3339),
+		Stop:             now.Add(time.Minute).Format(time.RFC3339),
+		RecordSourceURLs: []string{bad.URL, good.URL},
+	}
+	item, metrics, err := RecordCatchupCapsuleResilient(context.Background(), capsule, "http://unused", dir, good.Client(), ResilientRecordOptions{
+		MaxAttempts:    1,
+		InitialBackoff: time.Millisecond,
+		MaxBackoff:     10 * time.Millisecond,
+		ResumePartial:  false,
+	})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if item.SourceURL != good.URL {
+		t.Fatalf("source=%q want %q", item.SourceURL, good.URL)
+	}
+	if metrics.UpstreamSwitches != 1 {
+		t.Fatalf("upstream_switches=%d want 1", metrics.UpstreamSwitches)
+	}
+	if metrics.HTTPAttempts != 2 {
+		t.Fatalf("http_attempts=%d want 2", metrics.HTTPAttempts)
 	}
 }

@@ -16,29 +16,33 @@ import (
 )
 
 type CatchupRecorderDaemonConfig struct {
-	StreamBaseURL         string
-	OutDir                string
-	PublishDir            string
-	StateFile             string
-	PollInterval          time.Duration
-	LeadTime              time.Duration
-	MaxConcurrency        int
-	MaxRecordDuration     time.Duration
-	RecordMaxAttempts     int
-	RecordRetryInitial    time.Duration
-	RecordRetryMax        time.Duration
-	RecordResumePartial   bool // HTTP Range resume on same spool after transient mid-stream failures
-	RetainCompleted       int
-	RetainFailed          int
-	LaneRetainCompleted   map[string]int
-	LaneRetainFailed      map[string]int
-	LaneBudgetBytes       map[string]int64
-	IncludeLanes          []string
-	ExcludeLanes          []string
-	IncludeChannels       []string
-	ExcludeChannels       []string
-	AllowRetryInterrupted bool
-	OnPublished           func(CatchupRecordedPublishedItem) error
+	StreamBaseURL       string
+	OutDir              string
+	PublishDir          string
+	StateFile           string
+	PollInterval        time.Duration
+	LeadTime            time.Duration
+	MaxConcurrency      int
+	MaxRecordDuration   time.Duration
+	RecordMaxAttempts   int
+	RecordRetryInitial  time.Duration
+	RecordRetryMax      time.Duration
+	RecordResumePartial bool // HTTP Range resume on same spool after transient mid-stream failures
+	RetainCompleted     int
+	// RetainCompletedMaxAge drops completed items (and files) when StoppedAt is older than this (0 = off).
+	RetainCompletedMaxAge time.Duration
+	// LaneRetainCompletedMaxAge is per-lane max age for completed items; overrides global when set for that lane.
+	LaneRetainCompletedMaxAge map[string]time.Duration
+	RetainFailed              int
+	LaneRetainCompleted       map[string]int
+	LaneRetainFailed          map[string]int
+	LaneBudgetBytes           map[string]int64
+	IncludeLanes              []string
+	ExcludeLanes              []string
+	IncludeChannels           []string
+	ExcludeChannels           []string
+	AllowRetryInterrupted     bool
+	OnPublished               func(CatchupRecordedPublishedItem) error
 	// OnManifestSaved runs after a successful recording and recorded-publish-manifest.json write, without holding the recorder mutex.
 	OnManifestSaved func(publishRootDir string) error
 	Once            bool
@@ -65,6 +69,7 @@ type CatchupRecorderStatistics struct {
 	SumCaptureHTTPAttempts     int   `json:"sum_capture_http_attempts,omitempty"`
 	SumCaptureTransientRetries int   `json:"sum_capture_transient_retries,omitempty"`
 	SumCaptureBytesResumed     int64 `json:"sum_capture_bytes_resumed,omitempty"`
+	SumCaptureUpstreamSwitches int   `json:"sum_capture_upstream_switches,omitempty"`
 }
 
 // CatchupRecorderLaneStorage is derived from completed items plus optional per-lane byte budgets.
@@ -110,6 +115,7 @@ type CatchupRecorderItem struct {
 	CaptureHTTPAttempts     int   `json:"capture_http_attempts,omitempty"`
 	CaptureTransientRetries int   `json:"capture_transient_retries,omitempty"`
 	CaptureBytesResumed     int64 `json:"capture_bytes_resumed,omitempty"`
+	CaptureUpstreamSwitches int   `json:"capture_upstream_switches,omitempty"`
 }
 
 type CatchupRecorderPreviewFunc func(time.Time) (CatchupCapsulePreview, error)
@@ -262,6 +268,7 @@ func normalizeCatchupRecorderDaemonConfig(cfg CatchupRecorderDaemonConfig) Catch
 	cfg.LaneRetainCompleted = normalizeLaneIntLimits(cfg.LaneRetainCompleted)
 	cfg.LaneRetainFailed = normalizeLaneIntLimits(cfg.LaneRetainFailed)
 	cfg.LaneBudgetBytes = normalizeLaneByteLimits(cfg.LaneBudgetBytes)
+	cfg.LaneRetainCompletedMaxAge = normalizeLaneDurationLimits(cfg.LaneRetainCompletedMaxAge)
 	return cfg
 }
 
@@ -462,6 +469,7 @@ func (m *catchupRecorderManager) runCapsule(c CatchupCapsule) {
 		item.CaptureHTTPAttempts = capMetrics.HTTPAttempts
 		item.CaptureTransientRetries = capMetrics.TransientRetries
 		item.CaptureBytesResumed = capMetrics.BytesResumed
+		item.CaptureUpstreamSwitches = capMetrics.UpstreamSwitches
 		item.StoppedAt = m.now().UTC().Format(time.RFC3339)
 		m.finish(item, false)
 		return
@@ -473,6 +481,7 @@ func (m *catchupRecorderManager) runCapsule(c CatchupCapsule) {
 	item.CaptureHTTPAttempts = capMetrics.HTTPAttempts
 	item.CaptureTransientRetries = capMetrics.TransientRetries
 	item.CaptureBytesResumed = capMetrics.BytesResumed
+	item.CaptureUpstreamSwitches = capMetrics.UpstreamSwitches
 	item.StoppedAt = m.now().UTC().Format(time.RFC3339)
 	if strings.TrimSpace(m.cfg.PublishDir) != "" {
 		pub, pubErr := PublishRecordedCatchupItem(m.cfg.PublishDir, c, recorded)
@@ -574,6 +583,7 @@ func (m *catchupRecorderManager) trimLocked() {
 		return out
 	}
 	m.state.Completed = filterExpired(m.state.Completed)
+	m.state.Completed = pruneCatchupRecorderCompletedMaxAge(m.state.Completed, m.cfg.RetainCompletedMaxAge, m.cfg.LaneRetainCompletedMaxAge, now)
 	m.state.Completed = pruneCatchupRecorderLaneRetention(m.state.Completed, m.cfg.LaneRetainCompleted, nil)
 	m.state.Completed = pruneCatchupRecorderLaneRetention(m.state.Completed, nil, m.cfg.LaneBudgetBytes)
 	if max := m.cfg.RetainCompleted; max > 0 && len(m.state.Completed) > max {
@@ -592,7 +602,7 @@ func (m *catchupRecorderManager) trimLocked() {
 	}
 	m.rebuildIndexesLocked()
 	m.state.UpdatedAt = m.now().UTC().Format(time.RFC3339)
-	sumHTTP, sumRetry, sumRes := sumCaptureObservability(m.state.Completed, m.state.Failed)
+	sumHTTP, sumRetry, sumRes, sumUp := sumCaptureObservability(m.state.Completed, m.state.Failed)
 	m.state.Statistics = CatchupRecorderStatistics{
 		ActiveCount:                len(m.state.Active),
 		CompletedCount:             len(m.state.Completed),
@@ -601,22 +611,58 @@ func (m *catchupRecorderManager) trimLocked() {
 		SumCaptureHTTPAttempts:     sumHTTP,
 		SumCaptureTransientRetries: sumRetry,
 		SumCaptureBytesResumed:     sumRes,
+		SumCaptureUpstreamSwitches: sumUp,
 	}
 	sort.SliceStable(m.state.Active, func(i, j int) bool { return m.state.Active[i].EligibleAt > m.state.Active[j].EligibleAt })
 }
 
-func sumCaptureObservability(completed, failed []CatchupRecorderItem) (httpN, retryN int, resumed int64) {
+// pruneCatchupRecorderCompletedMaxAge removes completed items whose StoppedAt is older than the configured max age.
+func pruneCatchupRecorderCompletedMaxAge(items []CatchupRecorderItem, global time.Duration, lane map[string]time.Duration, now time.Time) []CatchupRecorderItem {
+	if global <= 0 && len(lane) == 0 {
+		return items
+	}
+	out := items[:0]
+	for _, item := range items {
+		maxAge := global
+		if lane != nil {
+			lk := strings.ToLower(firstNonEmptyString(item.Lane, "general"))
+			if d, ok := lane[lk]; ok && d > 0 {
+				maxAge = d
+			}
+		}
+		if maxAge <= 0 {
+			out = append(out, item)
+			continue
+		}
+		stopped := strings.TrimSpace(item.StoppedAt)
+		if stopped == "" {
+			out = append(out, item)
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, stopped)
+		if err != nil || now.Sub(t) <= maxAge {
+			out = append(out, item)
+			continue
+		}
+		_ = removeCatchupRecorderItemFiles(item)
+	}
+	return out
+}
+
+func sumCaptureObservability(completed, failed []CatchupRecorderItem) (httpN, retryN int, resumed int64, upstream int) {
 	for _, it := range completed {
 		httpN += it.CaptureHTTPAttempts
 		retryN += it.CaptureTransientRetries
 		resumed += it.CaptureBytesResumed
+		upstream += it.CaptureUpstreamSwitches
 	}
 	for _, it := range failed {
 		httpN += it.CaptureHTTPAttempts
 		retryN += it.CaptureTransientRetries
 		resumed += it.CaptureBytesResumed
+		upstream += it.CaptureUpstreamSwitches
 	}
-	return httpN, retryN, resumed
+	return httpN, retryN, resumed, upstream
 }
 
 func (m *catchupRecorderManager) computeLaneStorageStatsLocked() map[string]CatchupRecorderLaneStorage {
@@ -905,6 +951,24 @@ func normalizeLaneByteLimits(in map[string]int64) map[string]int64 {
 		return nil
 	}
 	out := make(map[string]int64, len(in))
+	for lane, v := range in {
+		lane = strings.ToLower(strings.TrimSpace(lane))
+		if lane == "" || v <= 0 {
+			continue
+		}
+		out[lane] = v
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func normalizeLaneDurationLimits(in map[string]time.Duration) map[string]time.Duration {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]time.Duration, len(in))
 	for lane, v := range in {
 		lane = strings.ToLower(strings.TrimSpace(lane))
 		if lane == "" || v <= 0 {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/config"
 	"github.com/snapetech/iptvtunerr/internal/tuner"
@@ -117,5 +118,26 @@ func TestParseLaneByteLimits(t *testing.T) {
 func TestParseLaneByteLimits_BadInput(t *testing.T) {
 	if _, err := parseLaneByteLimits("sports=nope"); err == nil {
 		t.Fatal("expected parse error")
+	}
+}
+
+func TestParseHumanDuration(t *testing.T) {
+	d, err := parseHumanDuration("72h")
+	if err != nil || d != 72*time.Hour {
+		t.Fatalf("got %v %v", d, err)
+	}
+	d2, err := parseHumanDuration("7d")
+	if err != nil || d2 != 7*24*time.Hour {
+		t.Fatalf("got %v %v", d2, err)
+	}
+}
+
+func TestParseLaneDurationLimits(t *testing.T) {
+	got, err := parseLaneDurationLimits("sports=72h,general=24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["sports"] != 72*time.Hour || got["general"] != 24*time.Hour {
+		t.Fatalf("%+v", got)
 	}
 }

@@ -64,7 +64,7 @@ func handleCatchupPublish(cfg *config.Config, catalogPath, xmltvRef string, hori
 		log.Print("Set -stream-base-url or IPTV_TUNERR_BASE_URL so generated .strm files can reach this tuner")
 		os.Exit(1)
 	}
-	rep, err := buildCatchupCapsulePreviewFromRef(path, xmltvRef, horizon, limit, guidePolicy)
+	rep, err := buildCatchupCapsulePreviewFromRef(path, xmltvRef, horizon, limit, guidePolicy, "", false)
 	if err != nil {
 		log.Printf("Build catchup capsule preview failed: %v", err)
 		os.Exit(1)

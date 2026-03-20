@@ -356,6 +356,11 @@ type CatchupCapsule struct {
 	DurationMins int      `json:"duration_mins"`
 	ReplayMode   string   `json:"replay_mode,omitempty"`
 	ReplayURL    string   `json:"replay_url,omitempty"`
+	// RecordSourceURLs is an ordered capture URL list (Tunerr relay first, then catalog fallbacks).
+	// When empty, recording resolves a single URL from ReplayURL or stream base + channel id.
+	RecordSourceURLs []string `json:"record_source_urls,omitempty"`
+	// PreferredStreamUA is copied from catalog (e.g. CF-cleared UA) and applied to capture HTTP requests when set.
+	PreferredStreamUA string `json:"preferred_stream_ua,omitempty"`
 }
 
 type CatchupCapsulePreview struct {

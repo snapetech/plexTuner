@@ -26,9 +26,11 @@ type RecordCaptureMetrics struct {
 	HTTPAttempts     int   `json:"http_attempts"`
 	TransientRetries int   `json:"transient_retries"`
 	BytesResumed     int64 `json:"bytes_resumed"`
+	UpstreamSwitches int   `json:"upstream_switches,omitempty"` // advances to the next URL after failures on the prior URL
 }
 
-// RecordCatchupCapsuleResilient captures a capsule with transient retries and optional Range resume on the same spool file.
+// RecordCatchupCapsuleResilient captures a capsule with transient retries, optional Range resume on the same URL,
+// and optional fallback to the next URL in RecordSourceURLs (or catalog-enriched URLs) after exhausting retries or on non-transient errors.
 func RecordCatchupCapsuleResilient(ctx context.Context, capsule CatchupCapsule, streamBaseURL, outDir string, client *http.Client, opts ResilientRecordOptions) (CatchupRecordedItem, RecordCaptureMetrics, error) {
 	outDir = strings.TrimSpace(outDir)
 	if outDir == "" {
@@ -38,7 +40,7 @@ func RecordCatchupCapsuleResilient(ctx context.Context, capsule CatchupCapsule, 
 		client = httpclient.ForStreaming()
 	}
 	opts = normalizeResilientRecordOptions(opts)
-	sourceURL, err := ResolveCatchupRecordSourceURL(capsule, streamBaseURL)
+	sourceURLs, err := ResolveCatchupRecordSourceURLList(capsule, streamBaseURL)
 	if err != nil {
 		return CatchupRecordedItem{}, RecordCaptureMetrics{}, err
 	}
@@ -47,73 +49,86 @@ func RecordCatchupCapsuleResilient(ctx context.Context, capsule CatchupCapsule, 
 		return CatchupRecordedItem{}, RecordCaptureMetrics{}, err
 	}
 	spoolPath, finalPath := CatchupRecordArtifactPaths(capsule, outDir)
+	ua := strings.TrimSpace(capsule.PreferredStreamUA)
 
 	var metrics RecordCaptureMetrics
 	var errs []string
 	var lastErr error
 
-	for attempt := 0; attempt < opts.MaxAttempts; attempt++ {
-		if attempt > 0 {
-			d := BackoffAfterRecordError(lastErr, attempt-1, opts.InitialBackoff, opts.MaxBackoff)
-			t := time.NewTimer(d)
-			select {
-			case <-t.C:
-			case <-ctx.Done():
-				if !t.Stop() {
-					<-t.C
+	for urlIdx, sourceURL := range sourceURLs {
+		for attempt := 0; attempt < opts.MaxAttempts; attempt++ {
+			if attempt > 0 {
+				d := BackoffAfterRecordError(lastErr, attempt-1, opts.InitialBackoff, opts.MaxBackoff)
+				t := time.NewTimer(d)
+				select {
+				case <-t.C:
+				case <-ctx.Done():
+					if !t.Stop() {
+						<-t.C
+					}
+					return CatchupRecordedItem{}, metrics, ctx.Err()
 				}
-				return CatchupRecordedItem{}, metrics, ctx.Err()
 			}
-		}
 
-		if attempt == 0 {
-			_ = os.Remove(spoolPath)
-		}
+			if attempt == 0 && urlIdx == 0 {
+				_ = os.Remove(spoolPath)
+			}
+			if attempt == 0 && urlIdx > 0 {
+				_ = os.Remove(spoolPath)
+				metrics.UpstreamSwitches++
+			}
+			if attempt > 0 && opts.ResumePartial {
+				// keep spool; offset below
+			} else if attempt > 0 && !opts.ResumePartial {
+				_ = os.Remove(spoolPath)
+			}
 
-		offset := int64(0)
-		if attempt > 0 && opts.ResumePartial {
-			if st, err := os.Stat(spoolPath); err == nil && st.Size() > 0 {
-				offset = st.Size()
+			offset := int64(0)
+			if attempt > 0 && opts.ResumePartial {
+				if st, err := os.Stat(spoolPath); err == nil && st.Size() > 0 {
+					offset = st.Size()
+				}
 			}
-		} else if attempt > 0 && !opts.ResumePartial {
-			_ = os.Remove(spoolPath)
-		}
 
-		metrics.HTTPAttempts++
-		resumed, rAfter, err := spoolCopyFromHTTP(ctx, client, sourceURL, capsule.CapsuleID, spoolPath, offset)
-		_ = rAfter
-		if err == nil {
-			metrics.BytesResumed += resumed
-			metrics.TransientRetries = attempt
-			if err := ctx.Err(); err != nil {
-				return CatchupRecordedItem{}, metrics, err
+			metrics.HTTPAttempts++
+			resumed, _, err := spoolCopyFromHTTP(ctx, client, sourceURL, capsule.CapsuleID, spoolPath, offset, ua)
+			if err == nil {
+				metrics.BytesResumed += resumed
+				metrics.TransientRetries = attempt
+				if err := ctx.Err(); err != nil {
+					return CatchupRecordedItem{}, metrics, err
+				}
+				_ = os.Remove(finalPath)
+				if err := os.Rename(spoolPath, finalPath); err != nil {
+					return CatchupRecordedItem{}, metrics, err
+				}
+				var total int64
+				if st, err := os.Stat(finalPath); err == nil {
+					total = st.Size()
+				}
+				return CatchupRecordedItem{
+					CapsuleID:  capsule.CapsuleID,
+					Lane:       capsule.Lane,
+					Title:      capsule.Title,
+					ChannelID:  capsule.ChannelID,
+					OutputPath: finalPath,
+					SourceURL:  sourceURL,
+					Bytes:      total,
+				}, metrics, nil
 			}
-			_ = os.Remove(finalPath)
-			if err := os.Rename(spoolPath, finalPath); err != nil {
-				return CatchupRecordedItem{}, metrics, err
+			lastErr = err
+			errs = append(errs, fmt.Sprintf("url[%d] attempt %d: %v", urlIdx, attempt+1, err))
+			if attempt+1 >= opts.MaxAttempts || !IsTransientRecordError(err) {
+				break
 			}
-			var total int64
-			if st, err := os.Stat(finalPath); err == nil {
-				total = st.Size()
+			if !opts.ResumePartial {
+				_ = os.Remove(spoolPath)
 			}
-			return CatchupRecordedItem{
-				CapsuleID:  capsule.CapsuleID,
-				Lane:       capsule.Lane,
-				Title:      capsule.Title,
-				ChannelID:  capsule.ChannelID,
-				OutputPath: finalPath,
-				SourceURL:  sourceURL,
-				Bytes:      total,
-			}, metrics, nil
 		}
-		lastErr = err
-		errs = append(errs, fmt.Sprintf("attempt %d: %v", attempt+1, err))
-		if attempt+1 >= opts.MaxAttempts || !IsTransientRecordError(err) {
-			return CatchupRecordedItem{}, metrics, fmt.Errorf("%s", strings.Join(errs, " | "))
+		if urlIdx+1 < len(sourceURLs) {
+			continue
 		}
-		if !opts.ResumePartial {
-			_ = os.Remove(spoolPath)
-		}
+		return CatchupRecordedItem{}, metrics, fmt.Errorf("%s", strings.Join(errs, " | "))
 	}
 	return CatchupRecordedItem{}, metrics, fmt.Errorf("%s", strings.Join(errs, " | "))
 }
@@ -135,10 +150,13 @@ func normalizeResilientRecordOptions(o ResilientRecordOptions) ResilientRecordOp
 }
 
 // spoolCopyFromHTTP performs one GET (optionally with Range) into spoolPath. resumedBytes counts bytes appended from a 206 response.
-func spoolCopyFromHTTP(ctx context.Context, client *http.Client, url string, capsuleID string, spoolPath string, offset int64) (resumedBytes int64, retryAfter string, err error) {
+func spoolCopyFromHTTP(ctx context.Context, client *http.Client, url string, capsuleID string, spoolPath string, offset int64, userAgent string) (resumedBytes int64, retryAfter string, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return 0, "", err
+	}
+	if ua := strings.TrimSpace(userAgent); ua != "" {
+		req.Header.Set("User-Agent", ua)
 	}
 	if offset > 0 {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))

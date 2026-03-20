@@ -23,6 +23,22 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Recorder multi-upstream failover, catalog UA on capture, time-based retention, soak script
+  Summary:
+    - `CatchupCapsule` gains `record_source_urls` / `preferred_stream_ua`; `EnrichCatchupCapsulesRecordURLs` merges Tunerr `/stream/<id>` with catalog stream URLs when `-record-upstream-fallback` is on (default for daemon/catchup-record).
+    - `RecordCatchupCapsuleResilient` loops URLs: resets spool on upstream switch; `spoolCopyFromHTTP` sends optional UA; metrics `upstream_switches` + state `sum_capture_upstream_switches`.
+    - Daemon: `-retain-completed-max-age`, `-retain-completed-max-age-per-lane` (`72h`, `7d`, …); `pruneCatchupRecorderCompletedMaxAge`.
+    - `scripts/recorder-daemon-soak.sh`; tests for URL build, failover 404→200, max-age prune, duration parsing.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Fallback order follows catalog stream URL list, not live host-penalty autotune.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/catchup_record_urls.go`, `internal/tuner/catchup_record_resilient.go`, `cmd/iptv-tunerr/cmd_catalog.go`, `cmd/iptv-tunerr/cmd_reports.go`
+
+- Date: 2026-03-19
   Title: Recorder resilient HTTP (Range resume, Retry-After backoff, metrics) + CF ops
   Summary:
     - Recorder: `RecordCatchupCapsuleResilient` / `spoolCopyFromHTTP` with 200 vs 206 append (seek-to-EOF before copy on 206), `recordHTTPStatusError`, `parseRetryAfterHeader`, status backoff multipliers; `catchup-record` stays one-shot via thin wrapper; daemon uses `-record-resume-partial` (default true).

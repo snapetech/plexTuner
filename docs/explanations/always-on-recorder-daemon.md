@@ -283,8 +283,8 @@ Original recommended order:
 2. **Done** — single-process scheduler + worker MVP (`catchup-daemon`)
 3. **Done** — publish completed recordings through the catch-up style publisher path (plus optional media-server registration)
 4. **Done** — retention pruning and storage budgets (count- and byte-based)
-5. **Open** — upstream failover *during* a single capture (multi-URL / provider switch without abandoning the window)
-6. **Partially done** — lane/channel policy (`-lanes`, `-channels`, guide policy); richer prioritization remains future work
+5. **Done (MVP)** — multi-URL capture failover: Tunerr relay URL first, then catalog `stream_url` / `stream_urls` in order (`-record-upstream-fallback`, default on); spool resets when switching URLs; metrics track upstream switches.
+6. **Partially done** — lane/channel policy (`-lanes`, `-channels`, guide policy); **host-penalty reordering** of fallback URLs (vs catalog order) remains future work; **Autopilot** does not drive URL pick yet, but **Preferred UA** from catalog is applied to capture requests.
 
 ## Current status
 
@@ -296,10 +296,9 @@ Original recommended order:
 - shared primitives with `catchup-record` and replay-template-aware URLs when configured
 
 **Still aspirational / partial relative to this doc’s “full vision”:**
-- **Mid-recording upstream switching** (fail over to another provider URL mid-capture without restarting the programme window) — not the same as HTTP retry/`Range` resume on the **same** URL
-- **Tight integration** with every intelligence signal listed below (Autopilot, host penalties) **during** capture selection — policy today is guide/capsule/lane/channel oriented
-- **Time-based retention strings** like `sports=12h` in one flag — retention is count- and budget-oriented; expiry still ties to programme/capsule semantics
-- **Soak/regression harness** for DVR-style multi-hour reliability (see work breakdown `HR-009`-style items)
+- **Smarter upstream ordering** — failover uses **catalog URL order** (after Tunerr), not live gateway host-penalty scores.
+- **Autopilot-driven capture path selection** — not wired; **Preferred UA** from catalog **is** applied to capture HTTP requests.
+- **CI multi-hour soak** — still manual / `scripts/recorder-daemon-soak.sh`; no hours-long automated scheduler test in CI.
 
 See also
 --------
