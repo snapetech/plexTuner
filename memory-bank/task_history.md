@@ -23,6 +23,38 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Mux toolkit follow-up — runtime.json echo, fuzz seeds, how-to + repo_map
+  Summary:
+    - **`buildRuntimeSnapshot`**: **`tuner.hls_mux_dash_expand_segment_template`**, **`tuner.hls_mux_dash_expand_max_segments`** (raw env strings).
+    - **Fuzz:** HLS merged **EXTINF/BYTERANGE** seed; DASH **SegmentTemplate** MPD seed (expand still default off during fuzz).
+    - **Docs:** **`docs/how-to/hls-mux-proxy.md`**, **`docs/CHANGELOG.md`**; **`memory-bank/repo_map.md`** links **`gateway_dash_expand.go`**.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - none
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/cmd_runtime_server.go`, `internal/tuner/gateway_fuzz_test.go`
+
+- Date: 2026-03-19
+  Title: Mux toolkit — DASH SegmentTemplate→SegmentList (opt-in), HLS merged EXTINF+BYTERANGE
+  Summary:
+    - **DASH:** **`expandDASHSegmentTemplatesToSegmentList`** (**`internal/tuner/gateway_dash_expand.go`**) behind **`IPTV_TUNERR_HLS_MUX_DASH_EXPAND_SEGMENT_TEMPLATE`** + **`IPTV_TUNERR_HLS_MUX_DASH_EXPAND_MAX_SEGMENTS`**; **`rewriteDASHManifestToGatewayProxy`** calls it first when enabled.
+    - **HLS:** **`parseExtInfMergedByteRange`** normalizes same-line **`BYTERANGE=`** to **`#EXT-X-BYTERANGE`**.
+    - **Tests:** **`gateway_dash_expand_test.go`**, **`gateway_test.go`** cases for expand + merged EXTINF + env-gated rewrite.
+    - **Docs:** **`docs/reference/hls-mux-toolkit.md`**, **`hls-mux-ll-hls-tags.md`**, **`cli-and-env-reference.md`**, **`.env.example`**, **`docs/CHANGELOG.md`** [Unreleased].
+  Verification:
+    - `./scripts/verify`
+    - `go test ./internal/tuner/ -count=1`
+  Notes:
+    - Expansion skips **`$Time$`**, missing template duration, **`SegmentTimeline`** in attr scan only (non–self-closing templates not matched by expand regex).
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway_dash_expand.go`, `internal/tuner/gateway_hls.go`
+
+- Date: 2026-03-19
   Title: Native mux nice-to-haves — DASH $ in seg=, LL-HLS tags, Brotli, Prometheus histogram/channel labels, Autopilot seg bonus
   Summary:
     - **DASH:** **`dashSegQueryEscape`** preserves **`$`** in **`seg=`** for **SegmentTemplate**; **`gatewayDashMuxProxyURL`**; **`<BaseURL>`** chain includes **`$`** paths.

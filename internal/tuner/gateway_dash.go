@@ -1,6 +1,7 @@
 package tuner
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -14,8 +15,12 @@ import (
 // dashBaseURLPair matches element-style <BaseURL>...</BaseURL> (common in ISO MPDs).
 var dashBaseURLPair = regexp.MustCompile(`(?i)<BaseURL([^>]*)>([^<]*)</BaseURL>`)
 
-// dashAttrURL matches common DASH attributes that carry segment or init URLs.
-var dashAttrURL = regexp.MustCompile(`(?i)\b(media|initialization|sourceURL|url|segmentURL)="([^"]*)"`)
+// dashAttrURL matches common DASH attributes that carry segment or init URLs (double or single quotes).
+var dashAttrURL = regexp.MustCompile(`(?is)\b(media|initialization|sourceURL|url|segmentURL)\s*=\s*(?:"([^"]*)"|'([^']*)')`)
+
+// reDashSegEscapedPad matches $Number%2505d$ / $Time%2509d$ after url.QueryEscape + %24→$ (ISO 23009-1 printf-style width).
+var reDashSegEscapedNumPad = regexp.MustCompile(`\$Number(%25[0-9]*[dD])\$`)
+var reDashSegEscapedTimePad = regexp.MustCompile(`\$Time(%25[0-9]*[dD])\$`)
 
 type dashRepl struct {
 	a, b int
@@ -44,11 +49,33 @@ func dashResolveRef(baseStr, refStr string) string {
 	return baseU.ResolveReference(refU).String()
 }
 
+// dashRestoreSegTemplatePercents turns $Number%2505d$ back into $Number%05d$ after QueryEscape (% → %25).
+func dashRestoreSegTemplatePercents(s string) string {
+	s = reDashSegEscapedNumPad.ReplaceAllStringFunc(s, func(m string) string {
+		sm := reDashSegEscapedNumPad.FindStringSubmatch(m)
+		if len(sm) < 2 {
+			return m
+		}
+		return "$Number" + strings.Replace(sm[1], "%25", "%", 1) + "$"
+	})
+	s = reDashSegEscapedTimePad.ReplaceAllStringFunc(s, func(m string) string {
+		sm := reDashSegEscapedTimePad.FindStringSubmatch(m)
+		if len(sm) < 2 {
+			return m
+		}
+		return "$Time" + strings.Replace(sm[1], "%25", "%", 1) + "$"
+	})
+	return s
+}
+
 // dashSegQueryEscape is like url.QueryEscape but leaves '$' unescaped so DASH SegmentTemplate
 // identifiers ($Number$, $RepresentationID$, …) survive in ?mux=dash&seg= until the player substitutes them.
+// Width forms like $Number%05d$ survive because only the literal '%' was encoded as %25.
 func dashSegQueryEscape(s string) string {
 	q := url.QueryEscape(s)
-	return strings.ReplaceAll(q, "%24", "$")
+	q = strings.ReplaceAll(q, "%24", "$")
+	q = dashRestoreSegTemplatePercents(q)
+	return q
 }
 
 // gatewayDashMuxProxyURL builds /stream?mux=dash&seg= with dashSegQueryEscape (template-safe).
@@ -104,8 +131,12 @@ func dashAlreadyMuxProxy(val string) bool {
 
 // rewriteDASHManifestToGatewayProxy rewrites http(s) and resolvable-relative URLs in an MPD to Tunerr /stream?mux=dash&seg= proxies.
 // Relative values use the running <BaseURL> chain (document order) and the manifest URL as the initial base.
-// SegmentTemplate placeholders ($Number$, …) are preserved in seg= (see dashSegQueryEscape).
+// SegmentTemplate placeholders ($Number$, …) are preserved in seg= (see dashSegQueryEscape) unless
+// IPTV_TUNERR_HLS_MUX_DASH_EXPAND_SEGMENT_TEMPLATE expands uniform templates to SegmentList first.
 func rewriteDASHManifestToGatewayProxy(body []byte, upstreamURL, channelID string) []byte {
+	if dashExpandSegmentTemplatesEnabled() {
+		body = expandDASHSegmentTemplatesToSegmentList(body)
+	}
 	ev := dashBaseURLChain(body, upstreamURL)
 	var repls []dashRepl
 
@@ -129,7 +160,7 @@ func rewriteDASHManifestToGatewayProxy(body []byte, upstreamURL, channelID strin
 	}
 
 	for _, loc := range dashAttrURL.FindAllSubmatchIndex(body, -1) {
-		val := string(body[loc[4]:loc[5]])
+		val := dashAttrURLValue(loc, body)
 		if strings.TrimSpace(val) == "" {
 			continue
 		}
@@ -140,7 +171,8 @@ func rewriteDASHManifestToGatewayProxy(body []byte, upstreamURL, channelID strin
 			continue
 		}
 		matchStart := loc[0]
-		prefix := string(body[loc[2]:loc[4]])
+		name := string(body[loc[2]:loc[3]])
+		prefix := name + `="`
 		var abs string
 		if safeurl.IsHTTPOrHTTPS(val) {
 			abs = val

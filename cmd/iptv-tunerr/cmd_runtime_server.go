@@ -100,6 +100,8 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"hls_mux_deny_resolved_private_upstream": strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_DENY_RESOLVED_PRIVATE_UPSTREAM")),
 			"hls_mux_seg_rps_per_ip":                 strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_SEG_RPS_PER_IP")),
 			"hls_mux_web_demo":                       strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_WEB_DEMO")),
+			"hls_mux_dash_expand_segment_template":   strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_DASH_EXPAND_SEGMENT_TEMPLATE")),
+			"hls_mux_dash_expand_max_segments":       strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_DASH_EXPAND_MAX_SEGMENTS")),
 			"metrics_enable":                         strings.TrimSpace(os.Getenv("IPTV_TUNERR_METRICS_ENABLE")),
 			"metrics_mux_channel_labels":             strings.TrimSpace(os.Getenv("IPTV_TUNERR_METRICS_MUX_CHANNEL_LABELS")),
 			"http_accept_brotli":                     strings.TrimSpace(os.Getenv("IPTV_TUNERR_HTTP_ACCEPT_BROTLI")),

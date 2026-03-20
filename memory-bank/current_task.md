@@ -2,6 +2,10 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-19, mux toolkit follow-up):** **`/debug/runtime.json`** echoes **`hls_mux_dash_expand_*`**; fuzz corpus seeds for merged **EXTINF/BYTERANGE** + **SegmentTemplate** MPD; **`hls-mux-proxy` how-to** + **`repo_map`** pointer to **`gateway_dash_expand.go`**. **`./scripts/verify`** OK.
+
+**Latest (2026-03-19, mux toolkit backlog):** **DASH** optional **`IPTV_TUNERR_HLS_MUX_DASH_EXPAND_SEGMENT_TEMPLATE`** expands uniform self-closing **`SegmentTemplate`** → **`SegmentList`** (**`gateway_dash_expand.go`**, wired in **`rewriteDASHManifestToGatewayProxy`**). **HLS** splits non-standard **`#EXTINF:...,BYTERANGE=...`** into **`#EXTINF`** + **`#EXT-X-BYTERANGE`**. Docs (toolkit, LL-HLS tags, CLI/env, **`.env.example`**, CHANGELOG), unit tests. **`./scripts/verify`** OK.
+
 **Latest (2026-03-19, mux nice-to-haves):** **DASH** **`$Number$`** preserved in **`seg=`** (**`dashSegQueryEscape`** / **`gatewayDashMuxProxyURL`**); **LL-HLS** **`URI=`** tags + conservative same-line **`#EXTINF`** (**`docs/reference/hls-mux-ll-hls-tags.md`**); **`IPTV_TUNERR_HTTP_ACCEPT_BROTLI`**; Prometheus **`iptv_tunerr_mux_seg_request_duration_seconds`** + optional **`IPTV_TUNERR_METRICS_MUX_CHANNEL_LABELS`**; **Autopilot** **`IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_BONUS`**; runtime snapshot keys; **andybalholm/brotli** vendored. **`./scripts/verify`** OK.
 
 **Latest (2026-03-19, native mux closure):** **Redirect-hop** validation on **`seg=`** (`mux_http_client` + **`safeurl.ValidateMuxSegTarget`**), richer **DASH** rewrite (relative **`media=`** / **`init=`** / **`<BaseURL>`** chain; skip **`$`** templates), **`IPTV_TUNERR_HLS_MUX_SEG_SLOTS_AUTO`** adaptive bonus, **`IPTV_TUNERR_HLS_MUX_ACCESS_LOG`**, golden **`testdata/hls_mux_small_playlist.golden`**, integration tests (**302→private**, chunked), **ADR 0005** (no disk packager), **OTEL** explanation doc (Prometheus scrape via collector). **`./scripts/verify`** OK.

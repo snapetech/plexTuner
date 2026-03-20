@@ -26,6 +26,44 @@ var hlsQuotedURIAttr = regexp.MustCompile(`(?i)(URI=")([^"]*)(")`)
 // duration (some LL-HLS / packager variants). Conservative: requires a known media extension.
 var extInfSameLineMedia = regexp.MustCompile(`^(?i)#EXTINF:([\d.]+),\s*([^",\s][^",\n]*?\.(?:m4s|ts|mp4|mp2t|aac|webvtt|vtt))(?:\?[^",\s]*)?\s*$`)
 
+// extInfMergedByteRangeTail matches a same-line BYTERANGE= tail (non-standard; RFC 8216 bis uses #EXT-X-BYTERANGE).
+var extInfMergedByteRangeTail = regexp.MustCompile(`(?i)^byterange=(?:"([^"]+)"|([^\s"]+))\s*$`)
+
+// extInfHead parses #EXTINF duration and optional title (everything after the first comma).
+var extInfHead = regexp.MustCompile(`(?i)^#EXTINF:([\d.]+)(?:,(.*))?$`)
+
+// parseExtInfMergedByteRange detects "#EXTINF:...,...,BYTERANGE=..." and returns pieces for spec-style split tags.
+func parseExtInfMergedByteRange(line string) (duration, title, byteRange string, ok bool) {
+	trim := strings.TrimSpace(line)
+	low := strings.ToLower(trim)
+	idx := strings.Index(low, ",byterange=")
+	if idx < 0 || !strings.HasPrefix(low, "#extinf:") {
+		return "", "", "", false
+	}
+	head := strings.TrimSpace(trim[:idx])
+	tail := strings.TrimSpace(trim[idx+1:])
+	sm := extInfHead.FindStringSubmatch(head)
+	if len(sm) < 2 {
+		return "", "", "", false
+	}
+	duration = sm[1]
+	if len(sm) >= 3 {
+		title = strings.TrimSpace(sm[2])
+	}
+	bm := extInfMergedByteRangeTail.FindStringSubmatch(tail)
+	if len(bm) < 3 {
+		return "", "", "", false
+	}
+	byteRange = bm[1]
+	if byteRange == "" {
+		byteRange = bm[2]
+	}
+	if strings.TrimSpace(byteRange) == "" {
+		return "", "", "", false
+	}
+	return duration, title, byteRange, true
+}
+
 var errHLSMuxUnsupportedTargetScheme = errors.New("unsupported hls mux target URL scheme")
 
 var errHLSMuxSegParamTooLarge = errors.New("hls mux seg parameter too large")
@@ -456,6 +494,17 @@ func rewriteHLSPlaylistToGatewayProxy(body []byte, upstreamURL string, channelID
 			continue
 		}
 		if strings.HasPrefix(trim, "#") {
+			if dur, extTitle, br, ok := parseExtInfMergedByteRange(trim); ok {
+				out.WriteString("#EXTINF:" + dur)
+				if extTitle != "" {
+					out.WriteString("," + extTitle)
+				} else {
+					out.WriteString(",")
+				}
+				out.WriteByte('\n')
+				out.WriteString("#EXT-X-BYTERANGE:" + br)
+				continue
+			}
 			if sm := extInfSameLineMedia.FindStringSubmatch(trim); len(sm) == 3 {
 				resolved := resolveHLSMediaRef(sm[2], base)
 				if strings.TrimSpace(resolved) != "" {

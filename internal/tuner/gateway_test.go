@@ -117,6 +117,56 @@ func TestRewriteHLSPlaylistToGatewayProxy_extInfSameLineMedia(t *testing.T) {
 	}
 }
 
+func TestParseExtInfMergedByteRange(t *testing.T) {
+	d, title, br, ok := parseExtInfMergedByteRange(`#EXTINF:9.009,BYTERANGE="128@448"`)
+	if !ok || d != "9.009" || title != "" || br != "128@448" {
+		t.Fatalf("quoted: ok=%v d=%q title=%q br=%q", ok, d, title, br)
+	}
+	d, title, br, ok = parseExtInfMergedByteRange(`#EXTINF:10.0,My Title,BYTERANGE=2048@0`)
+	if !ok || d != "10.0" || title != "My Title" || br != "2048@0" {
+		t.Fatalf("with title: ok=%v d=%q title=%q br=%q", ok, d, title, br)
+	}
+	_, _, _, ok = parseExtInfMergedByteRange(`#EXTINF:4,\n`)
+	if ok {
+		t.Fatal("expected false for normal EXTINF")
+	}
+}
+
+func TestRewriteHLSPlaylistToGatewayProxy_extInfMergedByteRange(t *testing.T) {
+	in := "#EXTM3U\n#EXTINF:9.009,BYTERANGE=\"128@448\"\nseg.ts\n"
+	out := rewriteHLSPlaylistToGatewayProxy([]byte(in), "http://up.example/live/index.m3u8", "cid")
+	s := string(out)
+	if !strings.Contains(s, "#EXTINF:9.009,") || !strings.Contains(s, "#EXT-X-BYTERANGE:128@448") {
+		t.Fatalf("expected split EXTINF + EXT-X-BYTERANGE: %q", s)
+	}
+	for _, line := range strings.Split(s, "\n") {
+		tline := strings.TrimSpace(line)
+		if strings.HasPrefix(tline, "#EXTINF:") && strings.Contains(strings.ToUpper(tline), "BYTERANGE") {
+			t.Fatalf("EXTINF line still merged: %q", s)
+		}
+	}
+	if !strings.Contains(s, "/stream/cid?mux=hls&seg=") {
+		t.Fatalf("expected proxied segment URL: %q", s)
+	}
+}
+
+func TestRewriteDASHManifestToGatewayProxy_expandSegmentTemplate(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_HLS_MUX_DASH_EXPAND_SEGMENT_TEMPLATE", "true")
+	t.Setenv("IPTV_TUNERR_HLS_MUX_DASH_EXPAND_MAX_SEGMENTS", "100")
+	mpd := `<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" mediaPresentationDuration="PT12S">
+<Period duration="PT12S"><AdaptationSet><Representation id="v1" bandwidth="1">
+<SegmentTemplate timescale="1" duration="6" startNumber="1" media="https://cdn.example/a-$Number$.m4s" initialization="https://cdn.example/init.mp4"/>
+</Representation></AdaptationSet></Period></MPD>`
+	out := rewriteDASHManifestToGatewayProxy([]byte(mpd), "http://up.example/m.mpd", "ch1")
+	s := string(out)
+	if !strings.Contains(s, "<SegmentList") || strings.Contains(s, "$Number$") {
+		t.Fatalf("expected expanded SegmentList without $Number$: %q", s)
+	}
+	if !strings.Contains(s, "mux=dash&seg=") {
+		t.Fatalf("expected dash mux proxies: %q", s)
+	}
+}
+
 func TestRewriteHLSPlaylistToGatewayProxy_preloadHintUri(t *testing.T) {
 	in := "#EXTM3U\n#EXT-X-PRELOAD-HINT:TYPE=PART,URI=\"https://cdn.example/hint.m4s\"\n"
 	out := rewriteHLSPlaylistToGatewayProxy([]byte(in), "http://up.example/x.m3u8", "a")

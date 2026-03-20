@@ -14,7 +14,7 @@ Dense reference for **Tunerr-native HLS** and **experimental DASH MPD** proxying
 | Area | Behavior |
 |------|-----------|
 | Entry URL (HLS) | `GET /stream/<channel>?mux=hls` — rewritten **M3U8**; media uses `?mux=hls&seg=<url-encoded-upstream>` |
-| Entry URL (DASH) | `GET /stream/<channel>?mux=dash` on **DASH** upstream — rewritten **MPD** (`application/dash+xml`); **`media=`** / **`initialization=`** / **`BaseURL`**: absolute **http(s)** and **plain relative** values (resolved with a running **`<BaseURL>`** chain + manifest URL) → `?mux=dash&seg=` (**experimental**); **`SegmentTemplate`** identifiers (**`$Number$`**, **`$RepresentationID$`**, …) stay **literal in `seg=`** (query encoding does not escape `$`) so players can substitute before fetching |
+| Entry URL (DASH) | `GET /stream/<channel>?mux=dash` on **DASH** upstream — rewritten **MPD** (`application/dash+xml`); **`media=`** / **`initialization=`** / **`BaseURL`**: absolute **http(s)** and **plain relative** values (resolved with a running **`<BaseURL>`** chain + manifest URL) → `?mux=dash&seg=` (**experimental**). By default **`SegmentTemplate`** placeholders (**`$Number$`**, **`$RepresentationID$`**, …) stay **literal in `seg=`** (query encoding does not escape `$`). Optional **`IPTV_TUNERR_HLS_MUX_DASH_EXPAND_SEGMENT_TEMPLATE`** expands some uniform self-closing **`SegmentTemplate`** elements (fixed **`duration`** / **`timescale`**, **`$Number$`** in **`media`**, no **`$Time$`**) into **`<SegmentList>`** using **Period** or **MPD** XSD **`mediaPresentationDuration`** / **`duration`** (ISO 23009-1–style); capped by **`IPTV_TUNERR_HLS_MUX_DASH_EXPAND_MAX_SEGMENTS`** (default **10000**, hard max **500000**) |
 | Upstream auth | Same **`Cookie`**, **`Referer`**, **`Origin`**, **`Authorization`**, correlation IDs as **`/stream`** |
 | Playlist `URI="..."` | Rewritten on HLS tag lines (keys, maps, variants, media, **`EXT-X-PART`** `URI=`, case-insensitive **`uri=`**) |
 | **Range / If-Range** | Forwarded; **206** + **Content-Range** for binary |
@@ -30,7 +30,7 @@ Dense reference for **Tunerr-native HLS** and **experimental DASH MPD** proxying
 | DNS-assisted SSRF guard | **`IPTV_TUNERR_HLS_MUX_DENY_RESOLVED_PRIVATE_UPSTREAM`** — **A/AAAA** lookup; block if any addr is private/link-local/loopback (**fail-open** on DNS errors; combine with literal deny) |
 | gzip | Go’s **`http.Transport`** negotiates **gzip** and **decompresses** unless disabled — segments/playlists are usually already decoded when handlers run |
 | Brotli | Optional **`IPTV_TUNERR_HTTP_ACCEPT_BROTLI`**: **`Accept-Encoding`** includes **`br`** and **`Content-Encoding: br`** responses are decompressed (`internal/httpclient`) |
-| LL-HLS-style tags | **`URI="..."`** on **`#EXT-X-PRELOAD-HINT`**, **`#EXT-X-RENDITION-REPORT`**, **`#EXT-X-PART`**, etc.; optional same-line **`#EXTINF`** segment URI (conservative) — see [hls-mux-ll-hls-tags](hls-mux-ll-hls-tags.md) |
+| LL-HLS-style tags | **`URI="..."`** on **`#EXT-X-PRELOAD-HINT`**, **`#EXT-X-RENDITION-REPORT`**, **`#EXT-X-PART`**, etc.; optional same-line **`#EXTINF`** segment URI (conservative); non-standard **`#EXTINF:...,BYTERANGE=...`** on one line is split into **`#EXTINF`** + **`#EXT-X-BYTERANGE`** — see [hls-mux-ll-hls-tags](hls-mux-ll-hls-tags.md) |
 | Metrics | **`iptv_tunerr_mux_seg_request_duration_seconds`** histogram (when **`IPTV_TUNERR_METRICS_ENABLE`**); optional per-channel counter/histogram labels (**`IPTV_TUNERR_METRICS_MUX_CHANNEL_LABELS`**, high cardinality) |
 | Autopilot | Optional **`IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_BONUS`**: extra **`seg=`** slots for channels whose **`dna_id`** has hot Autopilot memory (see env table) |
 
@@ -90,6 +90,8 @@ Dense reference for **Tunerr-native HLS** and **experimental DASH MPD** proxying
 | `IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_MIN_HITS` | Minimum Autopilot **Hits** (best row per **`dna_id`**) before bonus applies (default **3**) |
 | `IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_BONUS_PER_STEP` | Bonus slots × (**maxHits − minHits + 1**), capped (default **4** per step) |
 | `IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_BONUS_CAP` | Max autopilot bonus slots (default **32**) |
+| `IPTV_TUNERR_HLS_MUX_DASH_EXPAND_SEGMENT_TEMPLATE` | When **true**, expand uniform **`SegmentTemplate`** → **`SegmentList`** before MPD URL rewrite (default **off**) |
+| `IPTV_TUNERR_HLS_MUX_DASH_EXPAND_MAX_SEGMENTS` | Max segments emitted per expanded template (default **10000**, hard cap **500000**) |
 
 See [cli-and-env-reference](cli-and-env-reference.md#stream-behavior).
 
@@ -119,14 +121,14 @@ curl -sS 'http://127.0.0.1:5004/provider_profile.json' | jq '.hls_mux_seg_succes
 
 ## Enhancement backlog (remaining)
 
-- **DASH:** numeric **enumeration** of **`SegmentTemplate`** into explicit segment lists (VoD math); today templates proxy with **`$`** preserved for client substitution.
-- **HLS:** **`#EXTINF`** + **`BYTERANGE=`** on the **same** tag line (non-standard); unusual tags that carry URLs outside **`URI="`**.
+- **HLS / DASH:** unusual tags that carry URLs outside **`URI="`** / attribute **`media=`** patterns not covered above (open an issue with a sample).
 
 ## Related code
 
 - `internal/tuner/gateway_hls.go` — HLS rewrite, **`serveNativeMuxTarget`**, CORS, diagnostics, access log
 - `internal/tuner/mux_http_client.go` — **`seg=`** HTTP client with redirect validation
 - `internal/tuner/gateway_dash.go` — MPD rewrite
+- `internal/tuner/gateway_dash_expand.go` — optional **`SegmentTemplate`** → **`SegmentList`** expansion
 - `internal/tuner/gateway.go` — **`seg=`** policy, **`dash` / `hls`** modes, main loop **`dash_native_mux`**
 - `internal/tuner/gateway_policy.go` — **`effectiveHLSMuxSegLimitLocked`**, adaptive bonus
 - `internal/tuner/prometheus_mux.go` — Prometheus counters
