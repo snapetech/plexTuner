@@ -1,0 +1,7 @@
+#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-KEY:METHOD=AES-128,URI="https://provider.example/key.bin?token=abc123"
+#EXTINF:6,
+https://provider.example/seg-1.ts?username=u&password=p
+#EXTINF:6,
+https://provider.example/seg-2.ts?token=secret

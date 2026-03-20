@@ -128,6 +128,7 @@ catalog.json
 *.m3u
 *.m3u8
 !testdata/**
+!internal/tuner/testdata/*.m3u8
 
 # =========================
 # Secrets — never commit these

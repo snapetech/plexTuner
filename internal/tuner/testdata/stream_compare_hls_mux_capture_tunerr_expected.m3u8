@@ -1,0 +1,7 @@
+#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-KEY:METHOD=AES-128,URI="http://127.0.0.1:18080/stream/demo?mux=hls&seg=https%3A%2F%2Fprovider.example%2Fkey.bin%3Ftoken%3Dabc123"
+#EXTINF:6,
+http://127.0.0.1:18080/stream/demo?mux=hls&seg=https%3A%2F%2Fprovider.example%2Fseg-1.ts%3Fusername%3Du%26password%3Dp
+#EXTINF:6,
+http://127.0.0.1:18080/stream/demo?mux=hls&seg=https%3A%2F%2Fprovider.example%2Fseg-2.ts%3Ftoken%3Dsecret
