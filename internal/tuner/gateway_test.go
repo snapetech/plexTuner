@@ -72,6 +72,33 @@ func TestGateway_stream_primaryThenBackup(t *testing.T) {
 	}
 }
 
+func TestRewriteHLSPlaylistToGatewayProxy_stripsUTF8BOM(t *testing.T) {
+	in := append([]byte{0xEF, 0xBB, 0xBF}, []byte("#EXTM3U\n#EXTINF:4,\nseg-1.ts\n")...)
+	out := rewriteHLSPlaylistToGatewayProxy(in, "http://up.example/live/index.m3u8", "bom")
+	s := string(out)
+	if strings.HasPrefix(s, "\ufeff") {
+		t.Fatalf("BOM should be stripped from rewrite output: %q", s)
+	}
+	if len(out) >= 3 && out[0] == 0xEF && out[1] == 0xBB && out[2] == 0xBF {
+		t.Fatalf("raw UTF-8 BOM bytes should not prefix output")
+	}
+	if !strings.Contains(s, "/stream/bom?mux=hls&seg=") {
+		t.Fatalf("expected proxied segment: %q", s)
+	}
+}
+
+func TestRewriteDASHManifestToGatewayProxy_stripsUTF8BOM(t *testing.T) {
+	in := append([]byte{0xEF, 0xBB, 0xBF}, []byte(`<MPD><Period><SegmentURL media="https://cdn.example/x.mp4"/></Period></MPD>`)...)
+	out := rewriteDASHManifestToGatewayProxy(in, "http://up.example/m.mpd", "c")
+	s := string(out)
+	if strings.HasPrefix(s, "\ufeff") {
+		t.Fatalf("BOM should be stripped: %q", s)
+	}
+	if !strings.Contains(s, "mux=dash&seg=") {
+		t.Fatalf("expected dash proxy: %q", s)
+	}
+}
+
 func TestRewriteHLSPlaylistToGatewayProxy(t *testing.T) {
 	in := []byte("#EXTM3U\n#EXTINF:4,\nseg-1.ts\n")
 	out := rewriteHLSPlaylistToGatewayProxy(in, "http://up.example/live/index.m3u8", "abc")
@@ -93,6 +120,18 @@ func TestRewriteHLSPlaylistToGatewayProxy_extXPartURI(t *testing.T) {
 	}
 }
 
+func TestRewriteHLSPlaylistToGatewayProxy_extXMapURISingleQuoted(t *testing.T) {
+	in := "#EXTM3U\n#EXT-X-MAP:URI='https://cdn.example/init.mp4'\n"
+	out := rewriteHLSPlaylistToGatewayProxy([]byte(in), "http://up.example/live.m3u8", "q")
+	s := string(out)
+	if !strings.Contains(s, `URI='`) || !strings.Contains(s, "/stream/q?mux=hls&seg=") {
+		t.Fatalf("expected single-quoted URI= rewrite: %q", s)
+	}
+	if strings.Contains(s, "https://cdn.example/init.mp4") {
+		t.Fatalf("raw upstream init URL should not remain: %q", s)
+	}
+}
+
 func TestRewriteDASHManifestToGatewayProxy(t *testing.T) {
 	in := []byte(`<MPD><Period><AdaptationSet><Representation><SegmentTemplate media="https://cdn.example/seg-$Number$.m4s" initialization="https://cdn.example/init.mp4"/></Representation></AdaptationSet></Period></MPD>`)
 	out := rewriteDASHManifestToGatewayProxy(in, "http://up.example/master.mpd", "ch9")
@@ -102,6 +141,29 @@ func TestRewriteDASHManifestToGatewayProxy(t *testing.T) {
 	}
 	if !strings.Contains(s, "$Number$") {
 		t.Fatalf("expected SegmentTemplate $Number$ preserved for player substitution: %q", s)
+	}
+}
+
+func TestRewriteDASHManifestToGatewayProxy_singleQuotedMedia(t *testing.T) {
+	in := []byte(`<MPD><Period><SegmentURL media='https://cdn.example/clip.mp4'/></Period></MPD>`)
+	out := rewriteDASHManifestToGatewayProxy(in, "http://up.example/m.mpd", "cid")
+	s := string(out)
+	if !strings.Contains(s, `media="`) || !strings.Contains(s, "mux=dash&seg=") {
+		t.Fatalf("expected single-quoted media rewritten to double-quoted proxy URL: %q", s)
+	}
+	if strings.Contains(s, `'https://cdn.example/clip.mp4'`) {
+		t.Fatalf("raw single-quoted upstream URL should not remain: %q", s)
+	}
+}
+
+func TestDashSegQueryEscape_paddedNumberInTemplate(t *testing.T) {
+	in := "https://cdn.example/v-$Number%05d$.m4s"
+	q := dashSegQueryEscape(in)
+	if strings.Contains(q, "%2505") {
+		t.Fatalf("printf width token broken (double %%25): %q", q)
+	}
+	if !strings.Contains(q, "%05") && !strings.Contains(q, "05d") {
+		t.Fatalf("expected restorable %%05d-style width in escaped form: %q", q)
 	}
 }
 
@@ -212,6 +274,47 @@ func TestRewriteHLSPlaylistToGatewayProxy_matchesGolden(t *testing.T) {
 	}
 	if !bytes.Equal(got, want) {
 		t.Fatalf("golden mismatch\ngot:\n%q\nwant:\n%q", got, want)
+	}
+}
+
+// TestRewriteHLSPlaylistToGatewayProxy_streamCompareCaptureGolden locks a stream-compare harness snapshot:
+// upstream playlist (testdata/stream_compare_hls_mux_capture_upstream.m3u8) rewrites to the expected
+// Tunerr playlist (testdata/stream_compare_hls_mux_capture_tunerr_expected.m3u8). Regenerate expected when
+// mux URL shape intentionally changes. Source: .diag/stream-compare/synthetic-mux-capture/ (not committed).
+func TestRewriteHLSPlaylistToGatewayProxy_streamCompareCaptureGolden(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_STREAM_PUBLIC_BASE_URL", "http://127.0.0.1:18080")
+	upstream, err := os.ReadFile("testdata/stream_compare_hls_mux_capture_upstream.m3u8")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile("testdata/stream_compare_hls_mux_capture_tunerr_expected.m3u8")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := rewriteHLSPlaylistToGatewayProxy(upstream, "http://127.0.0.1:18080/direct.m3u8", "demo")
+	if !bytes.Equal(got, want) {
+		t.Fatalf("stream-compare golden mismatch\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// TestRewriteDASHManifestToGatewayProxy_streamCompareCaptureGolden mirrors the HLS stream-compare promotion:
+// synthetic upstream MPD (testdata/stream_compare_dash_mux_capture_upstream.mpd) is expanded with
+// IPTV_TUNERR_HLS_MUX_DASH_EXPAND_SEGMENT_TEMPLATE (uniform SegmentTemplate → SegmentList), then URLs are
+// rewritten to Tunerr proxies. Regenerate expected if expand output or proxy URL shape changes.
+func TestRewriteDASHManifestToGatewayProxy_streamCompareCaptureGolden(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_STREAM_PUBLIC_BASE_URL", "http://127.0.0.1:18080")
+	t.Setenv("IPTV_TUNERR_HLS_MUX_DASH_EXPAND_SEGMENT_TEMPLATE", "1")
+	upstream, err := os.ReadFile("testdata/stream_compare_dash_mux_capture_upstream.mpd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile("testdata/stream_compare_dash_mux_capture_tunerr_expected.mpd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := rewriteDASHManifestToGatewayProxy(upstream, "http://127.0.0.1:18080/direct.mpd", "demo")
+	if !bytes.Equal(got, want) {
+		t.Fatalf("stream-compare DASH golden mismatch\ngot:\n%s\nwant:\n%s", got, want)
 	}
 }
 

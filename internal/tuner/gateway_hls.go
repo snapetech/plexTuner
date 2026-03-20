@@ -22,6 +22,9 @@ import (
 // hlsQuotedURIAttr matches URI="..." in HLS tag lines (#EXT-X-KEY, #EXT-X-MAP, #EXT-X-STREAM-INF, …).
 var hlsQuotedURIAttr = regexp.MustCompile(`(?i)(URI=")([^"]*)(")`)
 
+// hlsQuotedURIAttrSingle matches non-standard URI='...' (some packagers emit single quotes).
+var hlsQuotedURIAttrSingle = regexp.MustCompile(`(?i)(URI=')([^']*)(')`)
+
 // extInfSameLineMedia matches non-standard #EXTINF where a segment-like URI appears on the same line as the
 // duration (some LL-HLS / packager variants). Conservative: requires a known media extension.
 var extInfSameLineMedia = regexp.MustCompile(`^(?i)#EXTINF:([\d.]+),\s*([^",\s][^",\n]*?\.(?:m4s|ts|mp4|mp2t|aac|webvtt|vtt))(?:\?[^",\s]*)?\s*$`)
@@ -146,6 +149,11 @@ func muxSegRPSPerIP() float64 {
 func splitHLSLines(body []byte) []string {
 	norm := bytes.ReplaceAll(body, []byte("\r\n"), []byte("\n"))
 	parts := bytes.Split(norm, []byte("\n"))
+	// A single trailing newline produces an extra empty Split segment; drop trailing empties only
+	// (interior blank lines are preserved as empty strings between non-empty parts).
+	for len(parts) > 0 && len(parts[len(parts)-1]) == 0 {
+		parts = parts[:len(parts)-1]
+	}
 	out := make([]string, len(parts))
 	for i, p := range parts {
 		out[i] = string(p)
@@ -457,27 +465,33 @@ func resolveHLSMediaRef(raw string, base *url.URL) string {
 	return base.ResolveReference(ref).String()
 }
 
-// rewriteHLSQuotedURIAttrs replaces each URI="…" in an HLS tag line with a Tunerr /stream proxy URL (same as media lines).
+// rewriteHLSQuotedURIAttrs replaces each URI="…" or URI='…' in an HLS tag line with a Tunerr /stream proxy URL (same as media lines).
 func rewriteHLSQuotedURIAttrs(line string, base *url.URL, channelID string) string {
-	return hlsQuotedURIAttr.ReplaceAllStringFunc(line, func(full string) string {
-		sm := hlsQuotedURIAttr.FindStringSubmatch(full)
-		if len(sm) < 4 {
-			return full
-		}
-		prefix, inner, suffix := sm[1], sm[2], sm[3]
-		if strings.TrimSpace(inner) == "" {
-			return full
-		}
-		resolved := resolveHLSMediaRef(inner, base)
-		if strings.TrimSpace(resolved) == "" {
-			return full
-		}
-		proxied := gatewayHLSProxyMediaURL(channelID, resolved)
-		return prefix + proxied + suffix
-	})
+	rewrite := func(re *regexp.Regexp, s string) string {
+		return re.ReplaceAllStringFunc(s, func(full string) string {
+			sm := re.FindStringSubmatch(full)
+			if len(sm) < 4 {
+				return full
+			}
+			prefix, inner, suffix := sm[1], sm[2], sm[3]
+			if strings.TrimSpace(inner) == "" {
+				return full
+			}
+			resolved := resolveHLSMediaRef(inner, base)
+			if strings.TrimSpace(resolved) == "" {
+				return full
+			}
+			proxied := gatewayHLSProxyMediaURL(channelID, resolved)
+			return prefix + proxied + suffix
+		})
+	}
+	line = rewrite(hlsQuotedURIAttr, line)
+	line = rewrite(hlsQuotedURIAttrSingle, line)
+	return line
 }
 
 func rewriteHLSPlaylistToGatewayProxy(body []byte, upstreamURL string, channelID string) []byte {
+	body = stripLeadingUTF8BOM(body)
 	base, err := url.Parse(upstreamURL)
 	if err != nil || base == nil {
 		return body
@@ -515,7 +529,8 @@ func rewriteHLSPlaylistToGatewayProxy(body []byte, upstreamURL string, channelID
 			}
 			// Attribute name is usually URI= but some generators use uri=; regex rewrite is case-insensitive.
 			// Covers #EXT-X-PART, #EXT-X-PRELOAD-HINT, #EXT-X-RENDITION-REPORT, keys, maps, variants, etc.
-			if strings.Contains(strings.ToUpper(trim), `URI="`) {
+			up := strings.ToUpper(trim)
+			if strings.Contains(up, `URI="`) || strings.Contains(up, `URI='`) {
 				out.WriteString(rewriteHLSQuotedURIAttrs(line, base, channelID))
 			} else {
 				out.WriteString(line)

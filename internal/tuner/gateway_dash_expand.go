@@ -1,6 +1,7 @@
 package tuner
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"regexp"
@@ -86,10 +87,15 @@ func parseXsdDurationSeconds(s string) (float64, bool) {
 }
 
 var (
-	reSegmentTemplateSelf = regexp.MustCompile(`(?is)<SegmentTemplate\s+([^>]*)/\s*>`)
-	reMPDOpen             = regexp.MustCompile(`(?is)<MPD(?:\s+([^>]*))?>`)
-	rePeriodOpen          = regexp.MustCompile(`(?is)<Period(?:\s+([^>]*))?>`)
-	reRepresentationOpen  = regexp.MustCompile(`(?is)<Representation\s+([^>]*)/?>`)
+	reSegmentTemplateSelf   = regexp.MustCompile(`(?is)<SegmentTemplate\s+([^>]*)/\s*>`)
+	reSegmentTemplatePaired = regexp.MustCompile(`(?is)<SegmentTemplate\s+([^>]*)>([\s\S]*?)</SegmentTemplate>`)
+	reNumberWidth           = regexp.MustCompile(`(?i)\$Number(%\d+[dD])\$`)
+	reTimeWidth             = regexp.MustCompile(`(?i)\$Time(%\d+[dD])\$`)
+	reNumberBare            = regexp.MustCompile(`(?i)\$Number\$`)
+	reTimeBare              = regexp.MustCompile(`(?i)\$Time\$`)
+	reMPDOpen               = regexp.MustCompile(`(?is)<MPD(?:\s+([^>]*))?>`)
+	rePeriodOpen            = regexp.MustCompile(`(?is)<Period(?:\s+([^>]*))?>`)
+	reRepresentationOpen    = regexp.MustCompile(`(?is)<Representation\s+([^>]*)/?>`)
 )
 
 func dashMPDPresentationDurationSec(body []byte) float64 {
@@ -163,17 +169,443 @@ func dashSubstituteIdentExceptNumber(media, repID, bw string) string {
 }
 
 func dashSubstituteNumber(media string, n int) string {
-	return strings.ReplaceAll(media, "$Number$", strconv.Itoa(n))
+	return dashSubstituteNumberTemplate(media, n)
 }
 
-// expandDASHSegmentTemplatesToSegmentList replaces self-closing SegmentTemplate elements that use a fixed
-// duration/timescale with an explicit SegmentList (VoD-style). Requires Period or MPD presentation duration.
-// Gated by IPTV_TUNERR_HLS_MUX_DASH_EXPAND_SEGMENT_TEMPLATE. See AWS/ISO notes on SegmentTemplate+duration.
-func expandDASHSegmentTemplatesToSegmentList(body []byte) []byte {
+// dashMediaUsesNumber reports whether media uses $Number$ or ISO 23009 $Number%0Nd$ identifiers.
+func dashMediaUsesNumber(media string) bool {
+	if strings.Contains(media, "$Number$") {
+		return true
+	}
+	return reNumberWidth.MatchString(media)
+}
+
+// dashMediaUsesTime reports whether media uses $Time$ or $Time%0Nd$ identifiers.
+func dashMediaUsesTime(media string) bool {
+	if strings.Contains(media, "$Time$") {
+		return true
+	}
+	return reTimeWidth.MatchString(media)
+}
+
+func dashPrintfWidthFromToken(tok string) int {
+	tok = strings.ToLower(tok)
+	// tok like %05d or %5d
+	if !strings.HasPrefix(tok, "%") || len(tok) < 3 {
+		return 0
+	}
+	tok = strings.TrimSuffix(tok, "d")
+	tok = strings.TrimPrefix(tok, "%")
+	width := 0
+	for _, c := range tok {
+		if c < '0' || c > '9' {
+			return 0
+		}
+		width = width*10 + int(c-'0')
+	}
+	return width
+}
+
+// dashSubstituteNumberTemplate replaces $Number%0Nd$ then $Number$.
+func dashSubstituteNumberTemplate(media string, n int) string {
+	out := reNumberWidth.ReplaceAllStringFunc(media, func(m string) string {
+		sm := reNumberWidth.FindStringSubmatch(m)
+		if len(sm) < 2 {
+			return m
+		}
+		w := dashPrintfWidthFromToken(sm[1])
+		if w <= 0 {
+			return strconv.Itoa(n)
+		}
+		return fmt.Sprintf("%0*d", w, n)
+	})
+	return reNumberBare.ReplaceAllString(out, strconv.Itoa(n))
+}
+
+// dashSubstituteTimeTemplate replaces $Time%0Nd$ then $Time$.
+func dashSubstituteTimeTemplate(media string, t uint64) string {
+	out := reTimeWidth.ReplaceAllStringFunc(media, func(m string) string {
+		sm := reTimeWidth.FindStringSubmatch(m)
+		if len(sm) < 2 {
+			return m
+		}
+		w := dashPrintfWidthFromToken(sm[1])
+		if w <= 0 {
+			return strconv.FormatUint(t, 10)
+		}
+		return fmt.Sprintf("%0*d", w, t)
+	})
+	return reTimeBare.ReplaceAllString(out, strconv.FormatUint(t, 10))
+}
+
+// dashIsTimelineOpenSTag reports whether low[i:] begins a timeline <S …> start tag (not </S>, not <Segment…>).
+func dashIsTimelineOpenSTag(low string, i int) bool {
+	if i+2 >= len(low) || low[i] != '<' || low[i+1] != 's' {
+		return false
+	}
+	c := low[i+2]
+	// <SegmentTimeline…> has <s then 'e', not space / / / >
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '/' || c == '>'
+}
+
+// dashMatchCloseSTag returns the byte offset after '>' for a closing </S> (case-insensitive).
+func dashMatchCloseSTag(low string, i int) (end int, ok bool) {
+	if i+3 > len(low) || low[i] != '<' || low[i+1] != '/' || low[i+2] != 's' {
+		return 0, false
+	}
+	j := i + 3
+	for j < len(low) && (low[j] == ' ' || low[j] == '\t' || low[j] == '\n' || low[j] == '\r') {
+		j++
+	}
+	if j < len(low) && low[j] == '>' {
+		return j + 1, true
+	}
+	return 0, false
+}
+
+// dashFindSTagGT finds the closing '>' of a <S opening tag (quote-aware). selfClose is true for <S …/>.
+func dashFindSTagGT(block string, tagStart int) (gt int, selfClose bool, ok bool) {
+	if tagStart+2 > len(block) {
+		return 0, false, false
+	}
+	pos := tagStart + 2
+	var inQuote byte
+	for pos < len(block) {
+		c := block[pos]
+		if inQuote != 0 {
+			if c == inQuote {
+				inQuote = 0
+			}
+			pos++
+			continue
+		}
+		if c == '"' || c == '\'' {
+			inQuote = c
+			pos++
+			continue
+		}
+		if c == '>' {
+			p := pos - 1
+			for p >= tagStart && (block[p] == ' ' || block[p] == '\t' || block[p] == '\n' || block[p] == '\r') {
+				p--
+			}
+			return pos, p >= tagStart && block[p] == '/', true
+		}
+		pos++
+	}
+	return 0, false, false
+}
+
+// dashFindMatchingCloseS scans from contentStart for the </S> that closes the current <S>…</S>, skipping nested <S>…</S>.
+func dashFindMatchingCloseS(block string, contentStart int) (end int, ok bool) {
+	low := strings.ToLower(block)
+	i := contentStart
+	for i < len(block) {
+		if e, ok := dashMatchCloseSTag(low, i); ok {
+			return e, true
+		}
+		if dashIsTimelineOpenSTag(low, i) {
+			_, after, ok2 := dashConsumeSTag(block, i)
+			if !ok2 {
+				return 0, false
+			}
+			i = after
+			continue
+		}
+		i++
+	}
+	return 0, false
+}
+
+// dashConsumeSTag parses one <S …/> or <S …>…</S> starting at tagStart ('<' of <S). Returns attribute text and index after the element.
+func dashConsumeSTag(block string, tagStart int) (attrs string, after int, ok bool) {
+	low := strings.ToLower(block)
+	if tagStart+2 > len(block) || block[tagStart] != '<' || low[tagStart+1] != 's' {
+		return "", tagStart, false
+	}
+	if !dashIsTimelineOpenSTag(low, tagStart) {
+		return "", tagStart, false
+	}
+	gt, selfClose, ok2 := dashFindSTagGT(block, tagStart)
+	if !ok2 {
+		return "", tagStart, false
+	}
+	if selfClose {
+		p := gt - 1
+		for p > tagStart && (block[p] == ' ' || block[p] == '\t' || block[p] == '\n' || block[p] == '\r') {
+			p--
+		}
+		if p <= tagStart+1 || block[p] != '/' {
+			return "", tagStart, false
+		}
+		return strings.TrimSpace(block[tagStart+2 : p]), gt + 1, true
+	}
+	attrStr := strings.TrimSpace(block[tagStart+2 : gt])
+	closeEnd, ok3 := dashFindMatchingCloseS(block, gt+1)
+	if !ok3 {
+		return "", tagStart, false
+	}
+	return attrStr, closeEnd, true
+}
+
+// dashParseSegmentTimeline returns presentation start time and duration (timescale units) per segment from
+// each top-level <S/> or <S>…</S> in document order. Nested <S> inside another <S> is skipped for segment
+// rows (only the outer element’s attributes matter). Element body text is ignored (ISO 23009-1 uses attrs).
+func dashParseSegmentTimeline(block string) (starts []uint64, durs []uint64) {
+	low := strings.ToLower(block)
+	var cur uint64
+	first := true
+	i := 0
+	for i < len(block) {
+		j := strings.Index(low[i:], "<s")
+		if j < 0 {
+			break
+		}
+		j += i
+		if !dashIsTimelineOpenSTag(low, j) {
+			i = j + 1
+			continue
+		}
+		attrStr, after, ok := dashConsumeSTag(block, j)
+		if !ok {
+			i = j + 1
+			continue
+		}
+		attrs := dashParseXMLAttrString(attrStr)
+		dStr := attrs["d"]
+		if dStr == "" {
+			i = after
+			continue
+		}
+		d, err := strconv.ParseUint(dStr, 10, 64)
+		if err != nil || d == 0 {
+			i = after
+			continue
+		}
+		if tStr := attrs["t"]; tStr != "" {
+			if v, err := strconv.ParseUint(tStr, 10, 64); err == nil {
+				cur = v
+				first = false
+			}
+		} else if first {
+			cur = 0
+			first = false
+		}
+		r := 0
+		if rStr := attrs["r"]; rStr != "" {
+			r, _ = strconv.Atoi(rStr)
+			if r < 0 {
+				r = 0
+			}
+		}
+		count := r + 1
+		for k := 0; k < count; k++ {
+			starts = append(starts, cur)
+			durs = append(durs, d)
+			cur += d
+		}
+		i = after
+	}
+	return starts, durs
+}
+
+func dashExtractSegmentTimelineFragment(inner string) (frag string, starts, durs []uint64, ok bool) {
+	low := strings.ToLower(inner)
+	i := strings.Index(low, "<segmenttimeline")
+	if i < 0 {
+		return "", nil, nil, false
+	}
+	j := strings.Index(low[i:], "</segmenttimeline>")
+	if j < 0 {
+		return "", nil, nil, false
+	}
+	j += i
+	end := j + len("</segmenttimeline>")
+	frag = inner[i:end]
+	starts, durs = dashParseSegmentTimeline(frag)
+	if len(starts) == 0 {
+		return "", nil, nil, false
+	}
+	return frag, starts, durs, true
+}
+
+func dashRebuildSegmentTimelineXML(starts, durs []uint64) string {
+	var b strings.Builder
+	b.WriteString("<SegmentTimeline>")
+	for i := range starts {
+		b.WriteString(`<S t="`)
+		b.WriteString(strconv.FormatUint(starts[i], 10))
+		b.WriteString(`" d="`)
+		b.WriteString(strconv.FormatUint(durs[i], 10))
+		b.WriteString(`"/>`)
+	}
+	b.WriteString("</SegmentTimeline>")
+	return b.String()
+}
+
+func dashExpandSegmentTemplateToList(body []byte, tplStart int, attrStr, innerXML string) (string, bool) {
+	attrs := dashParseXMLAttrString(attrStr)
+	media := attrs["media"]
+	if media == "" {
+		return "", false
+	}
+	useNum := dashMediaUsesNumber(media)
+	useTime := dashMediaUsesTime(media)
+	if !useNum && !useTime {
+		return "", false
+	}
+
+	ts := uint64(1)
+	if t := attrs["timescale"]; t != "" {
+		if v, err := strconv.ParseUint(t, 10, 64); err == nil && v > 0 {
+			ts = v
+		}
+	}
+	sn := 1
+	if s := attrs["startnumber"]; s != "" {
+		if v, err := strconv.Atoi(s); err == nil && v > 0 {
+			sn = v
+		}
+	}
+	repID, bw := dashLastRepresentationAttrsBefore(body, tplStart)
+	mediaTpl := dashSubstituteIdentExceptNumber(media, repID, bw)
+	init := attrs["initialization"]
+	initTpl := init
+	if init != "" {
+		initTpl = dashSubstituteIdentExceptNumber(init, repID, bw)
+	}
+
 	maxN := dashExpandMaxSegments()
+
+	if strings.Contains(strings.ToLower(innerXML), "<segmenttimeline") {
+		frag, starts, durs, ok := dashExtractSegmentTimelineFragment(innerXML)
+		if !ok {
+			return "", false
+		}
+		if len(starts) > maxN {
+			starts = starts[:maxN]
+			durs = durs[:maxN]
+			frag = dashRebuildSegmentTimelineXML(starts, durs)
+		}
+		var b strings.Builder
+		b.WriteString(`<SegmentList timescale="`)
+		b.WriteString(strconv.FormatUint(ts, 10))
+		b.WriteString(`"`)
+		if d := attrs["duration"]; d != "" {
+			b.WriteString(` duration="`)
+			b.WriteString(d)
+			b.WriteString(`"`)
+		}
+		b.WriteString(` startNumber="`)
+		b.WriteString(strconv.Itoa(sn))
+		b.WriteString(`">`)
+		if initTpl != "" {
+			b.WriteString(`<Initialization sourceURL="`)
+			b.WriteString(dashXMLAttrEscape(initTpl))
+			b.WriteString(`"/>`)
+		}
+		b.WriteString(frag)
+		for i := range starts {
+			idx := sn + i
+			m := mediaTpl
+			if useNum {
+				m = dashSubstituteNumberTemplate(m, idx)
+			}
+			if useTime {
+				m = dashSubstituteTimeTemplate(m, starts[i])
+			}
+			b.WriteString(`<SegmentURL media="`)
+			b.WriteString(dashXMLAttrEscape(m))
+			b.WriteString(`"/>`)
+		}
+		b.WriteString(`</SegmentList>`)
+		return b.String(), true
+	}
+
+	// Uniform SegmentTemplate (no SegmentTimeline): only $Number$ / padded forms, fixed duration.
+	if useTime {
+		return "", false
+	}
+	if !useNum {
+		return "", false
+	}
+	durStr := attrs["duration"]
+	if durStr == "" {
+		return "", false
+	}
+	durU, err := strconv.ParseUint(durStr, 10, 64)
+	if err != nil || durU == 0 {
+		return "", false
+	}
+	periodSec := dashLastPeriodDurationBefore(body, tplStart)
+	if periodSec <= 0 {
+		periodSec = dashMPDPresentationDurationSec(body)
+	}
+	if periodSec <= 0 {
+		return "", false
+	}
+	segSec := float64(durU) / float64(ts)
+	if segSec <= 0 {
+		return "", false
+	}
+	n := int(math.Ceil(periodSec / segSec))
+	if n < 1 {
+		n = 1
+	}
+	if n > maxN {
+		n = maxN
+	}
+	var b strings.Builder
+	b.WriteString(`<SegmentList`)
+	b.WriteString(` timescale="`)
+	b.WriteString(strconv.FormatUint(ts, 10))
+	b.WriteString(`" duration="`)
+	b.WriteString(strconv.FormatUint(durU, 10))
+	b.WriteString(`" startNumber="`)
+	b.WriteString(strconv.Itoa(sn))
+	b.WriteString(`">`)
+	if initTpl != "" {
+		b.WriteString(`<Initialization sourceURL="`)
+		b.WriteString(dashXMLAttrEscape(initTpl))
+		b.WriteString(`"/>`)
+	}
+	for i := 0; i < n; i++ {
+		num := sn + i
+		m := dashSubstituteNumberTemplate(mediaTpl, num)
+		b.WriteString(`<SegmentURL media="`)
+		b.WriteString(dashXMLAttrEscape(m))
+		b.WriteString(`"/>`)
+	}
+	b.WriteString(`</SegmentList>`)
+	return b.String(), true
+}
+
+type dashXMLSpan struct {
+	s, e int
+}
+
+func dashSpanInsideAny(start, end int, outers []dashXMLSpan) bool {
+	for _, o := range outers {
+		if o.s <= start && end <= o.e {
+			return true
+		}
+	}
+	return false
+}
+
+// expandDASHSegmentTemplatesToSegmentList replaces SegmentTemplate elements (self-closing or paired) with
+// SegmentList when expansion is possible: uniform duration + $Number$, or SegmentTimeline + $Number$ / $Time$.
+// Gated by IPTV_TUNERR_HLS_MUX_DASH_EXPAND_SEGMENT_TEMPLATE.
+func expandDASHSegmentTemplatesToSegmentList(body []byte) []byte {
 	type repl struct {
 		start, end int
 		text       string
+	}
+	var pairedSpans []dashXMLSpan
+	for _, loc := range reSegmentTemplatePaired.FindAllSubmatchIndex(body, -1) {
+		if loc != nil {
+			pairedSpans = append(pairedSpans, dashXMLSpan{loc[0], loc[1]})
+		}
 	}
 	var reps []repl
 	for _, loc := range reSegmentTemplateSelf.FindAllSubmatchIndex(body, -1) {
@@ -181,85 +613,24 @@ func expandDASHSegmentTemplatesToSegmentList(body []byte) []byte {
 			continue
 		}
 		start, end := loc[0], loc[1]
-		inner := string(body[loc[2]:loc[3]])
-		if strings.Contains(strings.ToLower(inner), "segmenttimeline") {
+		if dashSpanInsideAny(start, end, pairedSpans) {
 			continue
 		}
-		attrs := dashParseXMLAttrString(inner)
-		media := attrs["media"]
-		if media == "" || !strings.Contains(media, "$Number$") {
+		attrStr := string(body[loc[2]:loc[3]])
+		if text, ok := dashExpandSegmentTemplateToList(body, start, attrStr, ""); ok {
+			reps = append(reps, repl{start: start, end: end, text: text})
+		}
+	}
+	for _, loc := range reSegmentTemplatePaired.FindAllSubmatchIndex(body, -1) {
+		if loc == nil {
 			continue
 		}
-		if strings.Contains(media, "$Time$") {
-			continue
+		start, end := loc[0], loc[1]
+		attrStr := string(body[loc[2]:loc[3]])
+		inner := string(body[loc[4]:loc[5]])
+		if text, ok := dashExpandSegmentTemplateToList(body, start, attrStr, inner); ok {
+			reps = append(reps, repl{start: start, end: end, text: text})
 		}
-		durStr := attrs["duration"]
-		if durStr == "" {
-			continue
-		}
-		durU, err := strconv.ParseUint(durStr, 10, 64)
-		if err != nil || durU == 0 {
-			continue
-		}
-		ts := uint64(1)
-		if t := attrs["timescale"]; t != "" {
-			if v, err := strconv.ParseUint(t, 10, 64); err == nil && v > 0 {
-				ts = v
-			}
-		}
-		sn := 1
-		if s := attrs["startnumber"]; s != "" {
-			if v, err := strconv.Atoi(s); err == nil && v > 0 {
-				sn = v
-			}
-		}
-		periodSec := dashLastPeriodDurationBefore(body, start)
-		if periodSec <= 0 {
-			periodSec = dashMPDPresentationDurationSec(body)
-		}
-		if periodSec <= 0 {
-			continue
-		}
-		segSec := float64(durU) / float64(ts)
-		if segSec <= 0 {
-			continue
-		}
-		n := int(math.Ceil(periodSec / segSec))
-		if n < 1 {
-			n = 1
-		}
-		if n > maxN {
-			n = maxN
-		}
-		repID, bw := dashLastRepresentationAttrsBefore(body, start)
-		mediaTpl := dashSubstituteIdentExceptNumber(media, repID, bw)
-		init := attrs["initialization"]
-		if init != "" {
-			init = dashSubstituteIdentExceptNumber(init, repID, bw)
-		}
-		var b strings.Builder
-		b.WriteString(`<SegmentList`)
-		b.WriteString(` timescale="`)
-		b.WriteString(strconv.FormatUint(ts, 10))
-		b.WriteString(`" duration="`)
-		b.WriteString(strconv.FormatUint(durU, 10))
-		b.WriteString(`" startNumber="`)
-		b.WriteString(strconv.Itoa(sn))
-		b.WriteString(`">`)
-		if init != "" {
-			b.WriteString(`<Initialization sourceURL="`)
-			b.WriteString(dashXMLAttrEscape(init))
-			b.WriteString(`"/>`)
-		}
-		for i := 0; i < n; i++ {
-			num := sn + i
-			m := dashSubstituteNumber(mediaTpl, num)
-			b.WriteString(`<SegmentURL media="`)
-			b.WriteString(dashXMLAttrEscape(m))
-			b.WriteString(`"/>`)
-		}
-		b.WriteString(`</SegmentList>`)
-		reps = append(reps, repl{start: start, end: end, text: b.String()})
 	}
 	if len(reps) == 0 {
 		return body

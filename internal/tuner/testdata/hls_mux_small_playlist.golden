@@ -1,4 +1,3 @@
 #EXTM3U
 #EXTINF:4,
 /stream/abc?mux=hls&seg=http%3A%2F%2Fup.example%2Flive%2Fseg-1.ts
-

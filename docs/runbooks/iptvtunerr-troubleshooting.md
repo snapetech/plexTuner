@@ -296,6 +296,8 @@ The useful payloads are:
 
 That gives us something we can diff, redact, and later turn into a focused regression sample instead of guessing which playlist construct broke the rewrite.
 
+**CI fixtures:** after redaction, copy `direct/curl.body` to `internal/tuner/testdata/<name>_upstream.m3u8` (or `.mpd`) and either capture the Tunerr-rewritten body as `<name>_tunerr_expected.m3u8` / `.mpd` or assert on substrings. See `TestRewriteHLSPlaylistToGatewayProxy_streamCompareCaptureGolden` (AES-128 + absolute segment URLs) and `TestRewriteDASHManifestToGatewayProxy_streamCompareCaptureGolden` (expands uniform **SegmentTemplate** to **SegmentList** with **`IPTV_TUNERR_HLS_MUX_DASH_EXPAND_SEGMENT_TEMPLATE=1`**, then golden matches fully rewritten **Initialization** / **SegmentURL** lines). Both use `IPTV_TUNERR_STREAM_PUBLIC_BASE_URL` so golden files match absolute `/stream/...` lines. `.diag/` is gitignored so harness output stays local until promoted.
+
 ### App-side debug export
 
 Tunerr now exposes recent structured gateway attempts at:

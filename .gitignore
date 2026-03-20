@@ -82,6 +82,7 @@ trace.out
 # =========================
 # Logs / temp files
 # =========================
+.diag/
 *.log
 *.tmp
 *.swp

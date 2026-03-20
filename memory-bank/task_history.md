@@ -23,6 +23,91 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Close mux regression-fixture backlog with committed HLS and DASH captures
+  Summary:
+    - Added committed stream-compare fixture docs in **`internal/tuner/testdata/README.md`**, tracked DASH upstream/expected MPD goldens, and gitignored **`.diag/`** so local harness captures stay disposable until promoted.
+    - Finished the native mux regression slice around those fixtures: HLS BOM stripping and **`URI='...'`** rewrite, DASH quote-aware **`SegmentTimeline`** parsing, paired **`SegmentTemplate`**, **`$Time$`** / padded **`$Number%0Nd$`**, fuzz seeds, and full-body HLS/DASH golden tests.
+    - Aligned operator/release docs and cleaned the active handoff summary so the repo reflects one coherent “capture -> fixture -> regression test” workflow instead of scattered notes.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - The DASH stream-compare golden intentionally enables **`IPTV_TUNERR_HLS_MUX_DASH_EXPAND_SEGMENT_TEMPLATE=1`**, so the expected MPD is post-expand **`SegmentList`** output rather than raw **`SegmentTemplate`**.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/testdata/README.md`, `internal/tuner/gateway_test.go`, `docs/runbooks/iptvtunerr-troubleshooting.md`
+
+- Date: 2026-03-19
+  Title: DASH stream-compare golden — SegmentTemplate expansion enabled
+  Summary:
+    - **`TestRewriteDASHManifestToGatewayProxy_streamCompareCaptureGolden`** sets **`IPTV_TUNERR_HLS_MUX_DASH_EXPAND_SEGMENT_TEMPLATE=1`**; expected MPD is expanded **SegmentList** + proxy URLs (**3** segments for **`PT6S`** / 2s @ timescale **600**).
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Upstream fixture unchanged (**SegmentTemplate** with **`$Number$`**); golden encodes post-expand Tunerr output.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/testdata/stream_compare_dash_mux_capture_tunerr_expected.mpd`, `docs/CHANGELOG.md`, runbook
+
+- Date: 2026-03-19
+  Title: DASH stream-compare golden + strict HLS stream-compare golden
+  Summary:
+    - **`testdata/stream_compare_dash_mux_capture_{upstream,tunerr_expected}.mpd`** + **`TestRewriteDASHManifestToGatewayProxy_streamCompareCaptureGolden`** with **`IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`** (DASH expansion policy: see the newer entry above).
+    - **`TestRewriteHLSPlaylistToGatewayProxy_streamCompareCaptureGolden`** now **`bytes.Equal`** full bodies ( **`splitHLSLines`** trailing-empty drop + upstream newline shape align with expected).
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Regenerate DASH expected if **`gatewayDashMuxProxyURL`** / **`dashSegQueryEscape`** or **SegmentList** expansion output changes.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway_test.go`, `docs/CHANGELOG.md`, `docs/runbooks/iptvtunerr-troubleshooting.md`
+
+- Date: 2026-03-19
+  Title: Stream-compare HLS capture → testdata golden + .diag gitignore
+  Summary:
+    - **`testdata/stream_compare_hls_mux_capture_upstream.m3u8`** / **`_tunerr_expected.m3u8`** from harness synthetic run; **`TestRewriteHLSPlaylistToGatewayProxy_streamCompareCaptureGolden`** with **`IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`**.
+    - **`.diag/`** in **`.gitignore`**; runbook “Turning a failing provider stream…” + **CHANGELOG** [Unreleased].
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Compare **`bytes.TrimRight(..., \"\\n\")`** so playlist trailing-newline quirks don’t flake.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway_test.go`, `docs/runbooks/iptvtunerr-troubleshooting.md`
+
+- Date: 2026-03-19
+  Title: SegmentTimeline <S> — quote-aware scanner, nested balance, no regex
+  Summary:
+    - Replaced **`reSegmentTimelineS`** with **`dashConsumeSTag`**, **`dashFindMatchingCloseS`**, **`dashParseSegmentTimeline`** ( **`dashIsTimelineOpenSTag`** avoids **`<SegmentTimeline>`** false positives).
+    - Tests: nested **`<S>`**, quoted **`>`** in attrs, **`hls-mux-proxy`** note on **testdata** fixtures for harness captures.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Nested **`<S>`** still yields one segment row from outer **`<S>`** only (invalid MPD).
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway_dash_expand.go`
+
+- Date: 2026-03-19
+  Title: Mux gateway — SegmentTimeline <S>inner</S> (attrs-only), harness coordination note
+  Summary:
+    - **`reSegmentTimelineS`:** second branch **`>[\s\S]*?</S\s*>`** so comments/text inside **`S`** do not block expansion.
+    - **`current_task.md`**: handoff line—harness captures fixtures; gateway owns rewrite/expand in **`gateway_dash_expand.go`**.
+    - Docs: toolkit table row, backlog (nested **`S`**, **`>`** in quoted attrs); CHANGELOG folded into mux polish bullet; fuzz seed.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Nested **`<S>`** inside **`<S>`** still unsupported (invalid MPD; document only).
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway_dash_expand.go`, `memory-bank/current_task.md`
+
+- Date: 2026-03-19
   Title: Mux toolkit — SegmentTimeline <S></S>, UTF-8 BOM strip on mux rewrite
   Summary:
     - **`reSegmentTimelineS`:** alternation for **`<S …/>`** and empty **`<S …></S>`**.

@@ -1,0 +1,1 @@
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" mediaPresentationDuration="PT6S"><Period duration="PT6S"><AdaptationSet><Representation id="v1" bandwidth="800000"><SegmentTemplate timescale="600" duration="1200" startNumber="1" media="https://provider.example/video-$Number$.m4s" initialization="https://provider.example/init.mp4"/></Representation></AdaptationSet></Period></MPD>
