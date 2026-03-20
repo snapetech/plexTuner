@@ -23,6 +23,63 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Supersede stale XMLTV **`/guide.xml`** cache opportunities
+  Summary:
+    - [opportunities.md](opportunities.md): **2026-02-24** and **2026-02-25** performance rows marked **superseded** — merged guide caching + **`IPTV_TUNERR_XMLTV_CACHE_TTL`** + **`TestXMLTV_cacheHit`** already live in **`internal/tuner/xmltv.go`**.
+    - [CHANGELOG](../docs/CHANGELOG.md) **[Unreleased]** maintainability note; [repo_map](repo_map.md) **`xmltv.go`** row calls out merged-guide cache + test pointer.
+  Verification:
+    - `rg -n 'cachedXML|CacheTTL|TestXMLTV_cacheHit' internal/tuner/xmltv.go internal/tuner/xmltv_test.go`
+    - `./scripts/verify`
+  Links:
+    - `memory-bank/opportunities.md`, `memory-bank/repo_map.md`, `internal/tuner/xmltv.go`, `internal/tuner/xmltv_test.go`, `docs/CHANGELOG.md`
+
+- Date: 2026-03-19
+  Title: LP-010 / LP-011 named profile matrix + mux-aware ffmpeg defaults
+  Summary:
+    - **`IPTV_TUNERR_STREAM_PROFILES_FILE`** now loads named stream profiles with **`base_profile`**, **`transcode`**, and preferred **`output_mux`** so operators can define product-facing profile names without editing code.
+    - Query-profile selection, default profile env, and profile override maps can reference those names; ffmpeg HLS relay now honors a named profile’s preferred output mux when no explicit **`?mux=`** is supplied.
+    - Runtime snapshot echoes **`tuner.stream_profiles_file`**; docs updated in [transcode-profiles](../docs/reference/transcode-profiles.md) and [CHANGELOG](../docs/CHANGELOG.md).
+  Verification:
+    - `go test ./internal/tuner -run 'Test(NormalizeProfileName_HDHRStyleAliases|BuildFFmpegStreamOutputArgs_fmp4|LoadNamedProfilesFile|PreferredOutputMuxForProfile_namedProfile|Gateway_requestAdaptation_queryProfile(NamedProfile|HDHRAlias|PMSXcode))'`
+    - `./scripts/verify`
+  Links:
+    - `internal/tuner/gateway_profiles.go`, `internal/tuner/gateway_relay.go`, `internal/tuner/server.go`, `cmd/iptv-tunerr/cmd_runtime_server.go`, `docs/reference/transcode-profiles.md`
+
+- Date: 2026-03-19
+  Title: **`gateway_profiles`** tests + supersede wget runbook opportunity
+  Summary:
+    - **`internal/tuner/gateway_profiles_test.go`**: **`loadNamedProfilesFile`** (empty path, bad JSON, default **`base_profile`**) + **`resolveProfileSelection`** (named **`transcode`** default **`true`**, explicit remux, HDHR alias **`internet360`**, unknown label) — locks **`IPTV_TUNERR_STREAM_PROFILES_FILE`** behavior.
+    - [opportunities.md](opportunities.md): **`plex-reload-guides-batched.py`** **`wget`** item marked **superseded** ( **`curl`** is the tracked fix).
+    - [CHANGELOG](../docs/CHANGELOG.md) **[Unreleased]** testing note.
+  Verification:
+    - `go test ./internal/tuner -run 'Test(LoadNamedProfilesFile|ResolveProfileSelection|PreferredOutputMuxForProfile)'`
+    - `./scripts/verify`
+  Links:
+    - `internal/tuner/gateway_profiles_test.go`, `memory-bank/opportunities.md`, `docs/CHANGELOG.md`
+
+- Date: 2026-03-19
+  Title: Named stream profiles env + doc closure (LP-010) + **`potential_fixes`** link
+  Summary:
+    - **`IPTV_TUNERR_STREAM_PROFILES_FILE`**: optional JSON named profile matrix (**`base_profile`**, **`transcode`**, **`output_mux`**, **`description`**) documented in [cli-and-env-reference](../docs/reference/cli-and-env-reference.md), [transcode-profiles](../docs/reference/transcode-profiles.md), [CHANGELOG](../docs/CHANGELOG.md) (transcode section), **`.env.example`**; [repo_map](repo_map.md) points at **`gateway_profiles.go`**.
+    - [potential_fixes](../docs/potential_fixes.md): fixed relative link to **`gateway_adapt.go`**; [docs index](../docs/index.md) lists the doc.
+    - [CHANGELOG](../docs/CHANGELOG.md) **Maintainability**: restored **`HTTP_*`** idle-pool scope bullet alongside architecture note; **`potential_fixes`** refresh called out.
+  Verification:
+    - `./scripts/verify`
+  Links:
+    - `internal/tuner/gateway_profiles.go`, `internal/tuner/server.go`, `cmd/iptv-tunerr/cmd_runtime_server.go`, `docs/reference/cli-and-env-reference.md`, `docs/reference/transcode-profiles.md`, `docs/potential_fixes.md`, `docs/index.md`, `memory-bank/repo_map.md`
+
+- Date: 2026-03-19
+  Title: Architecture + reference index + opportunities hygiene
+  Summary:
+    - [architecture](../docs/explanations/architecture.md): ingest/lineup/catch-up primary-code links → **`cmd_*`** / **`cmd/iptv-tunerr/`**; runtime learning → **`gateway_servehttp`**, **`gateway_provider_profile`**; “design tension” reflects split CLI layout.
+    - [reference index](../docs/reference/index.md): **`cli-and-env-reference`** described as canonical.
+    - [opportunities.md](opportunities.md): superseded “missing official CLI reference” and 2025 **`internal/indexer`** dependency notes.
+  Verification:
+    - `./scripts/verify`
+  Links:
+    - `docs/explanations/architecture.md`, `docs/reference/index.md`, `memory-bank/opportunities.md`, `docs/CHANGELOG.md`
+
+- Date: 2026-03-19
   Title: Docs + backlog — **`HTTP_*`** scope in cli-and-env; supersede stale **`main.go`** split opportunity
   Summary:
     - [cli-and-env-reference](../docs/reference/cli-and-env-reference.md): paragraph under **`IPTV_TUNERR_HTTP_MAX_IDLE_*`** / idle timeout listing **`httpclient`** consumers and mux **`seg=`** exception.

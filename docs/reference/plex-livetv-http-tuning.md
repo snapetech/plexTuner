@@ -13,7 +13,19 @@ This page ties **work breakdown** stories **HR-010** (connection pooling), **HR-
 
 ## Shared upstream HTTP client (`internal/httpclient`)
 
-The indexer, gateway, materializer, and probe share a tuned `http.Transport`. Process-start environment variables:
+The same tuned `http.Transport` (idle pool + optional brotli) backs **timeout-scoped** clients via `httpclient.WithTimeout` and the global `httpclient.Default()` / `ForStreaming()` entrypoints. Besides the **indexer**, **stream gateway**, **materializer**, and **VOD FUSE**, integration code paths include:
+
+- **Plex** — DVR + library HTTP (`internal/plex`)
+- **Emby / Jellyfin** — registration (`internal/emby`)
+- **Provider ranking** — M3U probes (`internal/provider`)
+- **Physical HDHomeRun** — `discover.json` / `lineup.json` / `guide.xml` (`internal/hdhomerun`) and `iptv-tunerr hdhr-scan`
+- **Guide / EPG fetches** — `httpClientOrDefault` in `internal/tuner/epg_pipeline.go`
+- **Health checks** — `internal/health`
+- **Stream sniff** — `internal/probe.Probe` when `client == nil`
+
+Mux **`seg=`** still builds a dedicated `http.Client` with redirect validation (`internal/tuner/mux_http_client.go`).
+
+Process-start environment variables:
 
 | Variable | Default | Role |
 |----------|---------|------|
@@ -45,7 +57,7 @@ On **`index` / catalog refresh**, **`live_channels`** are stored in **sorted ord
 
 **Per-channel file** (`IPTV_TUNERR_TRANSCODE_OVERRIDES_FILE`): JSON map; each key is matched against **`channel_id`**, then **`guide_number`**, then **`tvg_id`**. For **`off` / `on` / `auto`**, the file **overrides** the global mode for hits (e.g. force remux for one hot channel while `on` everywhere else, or force transcode for a single bad feed under `off`). Logs: `gateway: transcode policy mode=...` when an override **differs** from the computed base (and always for `auto_cached` hits/misses).
 
-**Later precedence:** **`requestAdaptation`** (Plex client class / `?profile=` / Autopilot) can still force transcode + profile **after** this policy — see `internal/tuner/gateway.go`.
+**Later precedence:** **`requestAdaptation`** (Plex client class / `?profile=` / Autopilot) can still force transcode + profile **after** this policy — see `internal/tuner/gateway_adapt.go` (and policy computation in `gateway_policy.go`).
 
 ## Sticky WebSafe fallback after adaptation (HR-004)
 

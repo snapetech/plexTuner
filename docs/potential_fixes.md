@@ -9,17 +9,15 @@ tags: [startup-race, plex-live-tv, troubleshooting, improvements]
 
 This document catalogs potential solutions for the **Plex Live TV startup race** issue, where Plex opens a tuner session but fails to find the consumer (`dash_init_404`, `Failed to find consumer`). The core problem is that Plex's internal DASH/HLS packager cannot instantiate its consumer before receiving valid MPEG-TS bytes.
 
-## Current Implementation
+> **Note:** Gateway code is split across many **`gateway_*.go`** files. Sections below may still mention historical **`gateway.go`** line numbers; treat those as **conceptual** and follow symbols in the tree (or [plex-livetv-http-tuning](reference/plex-livetv-http-tuning.md) **HR-001**).
 
-The existing solution in [`internal/tuner/gateway.go`](internal/tuner/gateway.go) includes:
+## Current implementation (where the code lives today)
 
-1. **Startup Gate** (lines 1762-1917): Buffers `startupMin` bytes (default 64KB) before streaming to Plex, waiting up to `startupTimeoutMs` (default 12s) for "good" TS (contains IDR frame + AAC audio)
-
-2. **Bootstrap TS**: Generates deterministic MPEG-TS with ffmpeg as a fallback when startup gate times out
-
-3. **Null TS Keepalive**: Sends null packets (PID 0x1FFF) while waiting for upstream to produce valid bytes
-
-4. **PAT+PMT Keepalive**: Sends real program structure packets (PAT PID 0x0000, PMT PID 0x1000) so Plex's DASH packager has program map info
+1. **WebSafe startup gate** — sliding window, IDR / HEVC IRAP + AAC detection, **`release=`** logging: [`internal/tuner/gateway_stream_helpers.go`](../internal/tuner/gateway_stream_helpers.go) (with [`gateway_relay.go`](../internal/tuner/gateway_relay.go) for ffmpeg TS relay).
+2. **Bootstrap TS** — ffmpeg-generated fallback: [`writeBootstrapTS`](../internal/tuner/gateway_ffmpeg_relay.go) in **`gateway_ffmpeg_relay.go`**.
+3. **Null / PAT+PMT keepalives** — same helper / relay layer as the startup gate (see **`gateway_stream_helpers.go`**).
+4. **Plex client hints** — [`plexRequestHints`](../internal/tuner/gateway_adapt.go) in **`gateway_adapt.go`**.
+5. **Serve path** — [`ServeHTTP`](../internal/tuner/gateway_servehttp.go) in **`gateway_servehttp.go`** → upstream walk in **`gateway_stream_upstream.go`** / response relay in **`gateway_stream_response.go`**.
 
 ## Potential Fixes
 
@@ -30,7 +28,7 @@ The existing solution in [`internal/tuner/gateway.go`](internal/tuner/gateway.go
 **Description**: Detect Plex client type via User-Agent header and dynamically adjust startup parameters.
 
 **Current Code Evidence**:
-- Plex client hints are already parsed in [`gateway.go`](internal/tuner/gateway.go:670-683):
+- Plex client hints are parsed in [`gateway_adapt.go`](../internal/tuner/gateway_adapt.go) (`plexRequestHints`):
   ```go
   SessionIdentifier: get("X-Plex-Session-Identifier", ...)
   ClientIdentifier:  get("X-Plex-Client-Identifier", ...)
@@ -39,7 +37,7 @@ The existing solution in [`internal/tuner/gateway.go`](internal/tuner/gateway.go
   Device:            get("X-Plex-Device", "X-Plex-Device-Name"),
   ```
 
-- Client resolution exists at lines 688-820 with `resolvePlexClient()` and `looksLikePlexWeb()`
+- Client class resolution: `requestAdaptation` / `resolvePlexClient` in the same package (**`gateway_adapt.go`** and tests in **`gateway_test.go`**)
 
 **Implementation**:
 - Map known Plex clients to timing profiles:
@@ -277,7 +275,7 @@ Priority chain:
 **Description**: Enhance the deterministic bootstrap TS generation for timeout fallback.
 
 **Current Implementation**:
-- [`writeBootstrapTS()`](internal/tuner/gateway.go:1689-1713) generates basic MPEG-TS
+- [`writeBootstrapTS()`](../internal/tuner/gateway_ffmpeg_relay.go) (**`gateway_ffmpeg_relay.go`**) generates basic MPEG-TS
 - Uses ffmpeg with `-f mpegts` and null input
 
 **Improvements**:
@@ -333,6 +331,7 @@ The PAT+PMT keepalive feature (already implemented) is theoretically the most pr
 
 ## References
 
-- [`docs/runbooks/iptvtunerr-troubleshooting.md`](docs/runbooks/iptvtunerr-troubleshooting.md) - Full troubleshooting guide
-- [`internal/tuner/gateway.go`](internal/tuner/gateway.go:1724-1737) - Current startup parameters
-- [.env.example](.env.example) - All configuration options
+- [`docs/runbooks/iptvtunerr-troubleshooting.md`](runbooks/iptvtunerr-troubleshooting.md) — troubleshooting guide
+- [`docs/reference/plex-livetv-http-tuning.md`](reference/plex-livetv-http-tuning.md) — **HR-001** WebSafe startup gate + env table
+- [`internal/tuner/gateway_stream_helpers.go`](../internal/tuner/gateway_stream_helpers.go) — prefetch / keyframe gate
+- [`.env.example`](../.env.example) — configuration options

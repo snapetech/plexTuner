@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
+	"github.com/snapetech/iptvtunerr/internal/httpclient"
 )
 
 // LineupItem is one channel in the HDHomeRun-style lineup.json.
@@ -42,7 +43,7 @@ func Probe(streamURL string, client *http.Client) (StreamType, error) {
 		return t, nil
 	}
 	if client == nil {
-		client = &http.Client{Timeout: 8 * time.Second}
+		client = httpclient.WithTimeout(8 * time.Second)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()

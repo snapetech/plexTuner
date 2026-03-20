@@ -8,6 +8,8 @@ import (
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/snapetech/iptvtunerr/internal/httpclient"
 )
 
 // Config holds the parameters for registering with an Emby or Jellyfin server.
@@ -51,7 +53,7 @@ func authHeader(token string) string {
 }
 
 func newHTTPClient() *http.Client {
-	return &http.Client{Timeout: 30 * time.Second}
+	return httpclient.WithTimeout(30 * time.Second)
 }
 
 // apiRequest performs a JSON API request with the MediaBrowser auth header.

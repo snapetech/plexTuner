@@ -11,7 +11,7 @@ Dense and factual. Add CLI reference, env vars, API docs as needed.
 
 | Doc | Description |
 |-----|-------------|
-| [cli-and-env-reference](cli-and-env-reference.md) | Commands, common flags, and key environment variables (including multi-DVR/testing options). |
+| [cli-and-env-reference](cli-and-env-reference.md) | Canonical hand-maintained commands, flags, and environment variables (multi-DVR, mux, HTTP pool, web UI, recorder, …). |
 | [transcode-profiles](transcode-profiles.md) | Gateway transcode profile names, HDHR-style aliases, `?profile=`, optional `?mux=fmp4` / `?mux=hls`. |
 | [hls-mux-toolkit](hls-mux-toolkit.md) | Native **`?mux=hls`** / **`?mux=dash`** mux: diagnostics, Prometheus, DNS SSRF options, operator **`curl`**, remaining backlog. |
 | [hls-mux-ll-hls-tags](hls-mux-ll-hls-tags.md) | LL-HLS / low-latency HLS tag rewrite coverage for **`?mux=hls`**. |

@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/snapetech/iptvtunerr/internal/httpclient"
 )
 
 // CheckProvider fetches the M3U URL (HEAD or GET). Returns nil if OK, error with message if not.
@@ -18,7 +20,7 @@ func CheckProvider(ctx context.Context, m3uURL string) error {
 	if err != nil {
 		return err
 	}
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := httpclient.WithTimeout(15 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("provider unreachable: %w", err)
@@ -33,7 +35,7 @@ func CheckProvider(ctx context.Context, m3uURL string) error {
 
 // CheckEndpoints hits discover, lineup, guide at baseURL and returns the first error or nil.
 func CheckEndpoints(ctx context.Context, baseURL string) error {
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := httpclient.WithTimeout(5 * time.Second)
 	for _, path := range []string{"/discover.json", "/lineup.json", "/guide.xml"} {
 		url := baseURL + path
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)

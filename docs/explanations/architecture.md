@@ -74,7 +74,7 @@ This is the original product foundation and it is still the backbone.
 - write the catalog as the runtime source of truth
 
 Primary code:
-- [main.go](../../cmd/iptv-tunerr/main.go)
+- [main.go](../../cmd/iptv-tunerr/main.go) (dispatcher); [cmd_registry.go](../../cmd/iptv-tunerr/cmd_registry.go); handlers such as [cmd_catalog.go](../../cmd/iptv-tunerr/cmd_catalog.go)
 - [indexer](../../internal/indexer)
 - [catalog](../../internal/catalog)
 - [provider](../../internal/provider)
@@ -92,7 +92,7 @@ Primary code:
 
 Primary code:
 - [server.go](../../internal/tuner/server.go)
-- [gateway.go](../../internal/tuner/gateway.go)
+- [gateway_servehttp.go](../../internal/tuner/gateway_servehttp.go) (+ [`gateway_*.go`](../../internal/tuner/) — stream, HLS/DASH, adaptation, relay)
 - [xmltv.go](../../internal/tuner/xmltv.go)
 
 ### Lineup shaping and category fleets
@@ -109,7 +109,7 @@ This matters especially for Plex-heavy multi-DVR setups.
 
 Primary code:
 - [server.go](../../internal/tuner/server.go)
-- [main.go](../../cmd/iptv-tunerr/main.go)
+- [cmd/iptv-tunerr/](../../cmd/iptv-tunerr/) (`main`, `cmd_*` for flags shaping)
 - [supervisor](../../internal/supervisor)
 
 ---
@@ -175,7 +175,7 @@ These are layered additions. They do not replace the tuner/gateway/guide core.
 Primary code:
 - [autopilot.go](../../internal/tuner/autopilot.go)
 - [ghost_hunter.go](../../internal/tuner/ghost_hunter.go)
-- [gateway.go](../../internal/tuner/gateway.go)
+- [gateway.go](../../internal/tuner/gateway.go) (**Gateway** struct); live **`ServeHTTP`**: [gateway_servehttp.go](../../internal/tuner/gateway_servehttp.go); provider profile / caps: [gateway_provider_profile.go](../../internal/tuner/gateway_provider_profile.go)
 - [xmltv.go](../../internal/tuner/xmltv.go)
 
 ---
@@ -194,7 +194,7 @@ The app still supports:
 - watchdog repair loops
 
 Primary code:
-- [main.go](../../cmd/iptv-tunerr/main.go)
+- [cmd/iptv-tunerr/](../../cmd/iptv-tunerr/) (registration subcommands)
 - [dvr.go](../../internal/plex/dvr.go)
 - [emby](../../internal/emby)
 
@@ -210,7 +210,7 @@ The catch-up path is now a real publishing subsystem:
 Primary code:
 - [catchup_publish.go](../../internal/tuner/catchup_publish.go)
 - [catchup_capsules_export.go](../../internal/tuner/catchup_capsules_export.go)
-- [main.go](../../cmd/iptv-tunerr/main.go)
+- [cmd/iptv-tunerr/](../../cmd/iptv-tunerr/) (`catchup-publish`, `catchup-capsules`, …)
 
 ---
 
@@ -229,17 +229,9 @@ The newer intelligence work depends on these layers. It did not replace them.
 
 ---
 
-## Current Design Tension
+## Current design tension
 
-The main architectural tension now is that the product has outgrown the original code and doc shape:
-- the runtime is still cleanly layered in packages
-- but the CLI wiring in `cmd/iptv-tunerr` has carried many unrelated flows in one place
-- and some docs still describe the pre-intelligence system more than the current one
-
-That is why recent cleanup work is focused on:
-- splitting command execution paths by concern
-- updating repo navigation docs
-- documenting core runtime vs intelligence vs publishing separately
+The product spans **ingest**, **tuner/guide runtime**, **intelligence**, and **publishing**, so the primary tension is **keeping seams clear** as features accumulate. The Go runtime remains layered by package; **CLI** concerns are split across **`cmd_registry.go`** and many **`cmd_*.go`** files under **[cmd/iptv-tunerr](../../cmd/iptv-tunerr/)** (no longer a single oversized `main.go`). Ongoing work is incremental: navigation docs (e.g. [repo map](../../memory-bank/repo_map.md)), reference pages, and tests around the hottest paths.
 
 See also
 --------

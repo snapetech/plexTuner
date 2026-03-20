@@ -2,9 +2,17 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-19):** **`opportunities.md`**: superseded duplicate **XMLTV `/guide.xml` cache** backlog items (**2026-02-24** / **2026-02-25**) — behavior is **`xmltv.go`** merged-guide **`cachedXML`** + TTL + **`TestXMLTV_cacheHit`**. **CHANGELOG** note. **`./scripts/verify`** OK.
+
+**Latest (2026-03-19):** **`gateway_profiles_test.go`** expanded: **`loadNamedProfilesFile`** + **`resolveProfileSelection`** coverage for **`STREAM_PROFILES_FILE`**; **`opportunities.md`** wget item superseded. **`./scripts/verify`** OK.
+
+**Latest (2026-03-19):** **`IPTV_TUNERR_STREAM_PROFILES_FILE`** documented (named profile matrix, **LP-010**); **`potential_fixes.md`** link + docs index; **CHANGELOG** restore **`HTTP_*`** scope line; **`repo_map`** → **`gateway_profiles.go`**. **`gofmt`** on **`gateway_profiles.go`**. **`./scripts/verify`** OK.
+
 **Latest (2026-03-19, low-overlap follow-up):** Continued on the non-epic lane alongside parallel product work. **`gateway_stream_upstream.go`** is slimmer again: non-OK upstream handling + success relay branches moved into **`gateway_stream_response.go`**. Native mux operability also improved: **`/provider_profile.json`** now exposes **`last_hls_mux_outcome`** / **`last_dash_mux_outcome`** with redacted target URLs + timestamps so operators can see the latest mux failure/success reason without scraping logs. **`./scripts/verify`** OK.
 
 **Latest (2026-03-19, HR-002 harnessing):** Bridging the repo-local proof gap for Plex Web startup validation. Current slice wires the optional external **`plex-web-livetv-probe.py`** into **`scripts/live-race-harness.sh`** via **`PWPROBE_SCRIPT`** / **`PWPROBE_ARGS`**, captures probe JSON/log/exit code in the harness bundle, and teaches **`live-race-harness-report.py`** to summarize those artifacts when present.
+
+**Latest (2026-03-19):** **architecture.md** + **reference/index.md** aligned with **`cmd_*`** / **`gateway_*`** layout; **`opportunities.md`** clears two obsolete doc/indexer tickets. **`./scripts/verify`** OK.
 
 **Latest (2026-03-19):** **cli-and-env** documents **`IPTV_TUNERR_HTTP_*`** scope across subsystems; **`opportunities.md`** drops duplicate **`main.go`** split ticket (superseded by **INT-005**). **`./scripts/verify`** OK.
 
@@ -74,7 +82,7 @@
 
 **Scope:** In: roadmap/epic documentation, channel intelligence reporting (`channel-report` + `/channels/report.json`), EPG match provenance visibility, lineup recipes, Channel DNA foundation, Autopilot decision-memory foundation, Ghost Hunter visible-session foundation, provider behavior profile foundation, README/features/reference/changelog updates, memory-bank updates, local verification. Out: catch-up capsules, active provider self-tuning defaults, hidden-grab Ghost Hunter automation, and a complete cross-provider identity graph in one patch.
 
-**Last updated:** 2026-03-19
+**Last updated:** 2026-03-19 (named profiles doc + **`potential_fixes`** hygiene)
 
 **Recorder follow-on slices (2026-03-19):**
 - Transient capture retries: `recordCatchupCapsuleWithRetries` + `IsTransientRecordError`, CLI `-record-max-attempts` / `-record-retry-backoff` / `-record-retry-backoff-max` (defaults 1 / 5s / 2m).

@@ -30,6 +30,7 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[reference/hls-mux-ll-hls-tags.md](reference/hls-mux-ll-hls-tags.md)** | LL-HLS / low-latency tag coverage for **`?mux=hls`** playlist rewrite. |
 | **[reference/cli-and-env-reference.md](reference/cli-and-env-reference.md)** | Commands, flags, and key env vars (including supervisor/testing knobs). |
 | **[reference/plex-livetv-http-tuning.md](reference/plex-livetv-http-tuning.md)** | Plex/Lavf parallel HTTP vs Tunerr’s shared **`httpclient`** pool; mux concurrency; live-path failover (**work breakdown HR-008 / HR-010**). |
+| **[potential_fixes.md](potential_fixes.md)** | Draft: Plex Live TV startup-race mitigations; code pointers follow **`gateway_*`** layout (**HR-001** context). |
 | **[reference/plex-client-compatibility-matrix.md](reference/plex-client-compatibility-matrix.md)** | Tier-1 Plex Live TV clients, **`CLIENT_ADAPT`** classes, automated + manual validation (**HR-003**). |
 | **[reference/lineup-epg-hygiene.md](reference/lineup-epg-hygiene.md)** | Built-in lineup/EPG hygiene defaults: dedupe, strip hosts, guide policy, stable catalog order (**HR-005** / **HR-006**). |
 | **[reference/transcode-profiles.md](reference/transcode-profiles.md)** | Gateway ffmpeg profile names, HDHR-style aliases, `?profile=`, `?mux=fmp4` / `?mux=hls` / `?mux=dash`. |

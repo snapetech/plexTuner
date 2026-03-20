@@ -103,24 +103,12 @@ It exists to encourage quality gains without derailing the current task.
   If yes: 2–3 options + recommended default + what you will do if no answer
   Recommended default: keep the current near-live publisher, label it clearly as a launcher, and only pursue true replay once there is a real time-shift source.
 
-- Date: 2026-03-18
+- Date: 2026-03-19
   Category: maintainability
-  Title: Reconcile repo navigation docs with the actual remote setup and current product surfaces
-  Context: Architecture review after the Live TV intelligence and catch-up work.
-  Why it matters: `memory-bank/repo_map.md` still says to push to both `origin` and `plex`, but the active repo setup in this workspace only uses `origin`. The same file also under-describes newer product areas such as channel intelligence, Ghost Hunter, provider profile, and catch-up publishing.
-  Evidence: `memory-bank/repo_map.md` remote table and entrypoint list do not match the current repo/workflow used in recent release work.
-  Suggested fix: Update `repo_map.md` so remotes, entrypoints, and key modules reflect the current repo reality and include the intelligence/catch-up subsystems.
-  Risk/Scope: low | fits current scope? no
-  User decision needed?: no
-
-- Date: 2026-03-18
-  Category: maintainability
-  Title: Refresh architecture docs to reflect the post-integration system, not only the original tuner pipeline
-  Context: Review requested for sorting/categories/guide builder/DVR builder after major feature integration.
-  Why it matters: `docs/explanations/architecture.md` still presents IPTV Tunerr mostly as `Indexer -> Catalog -> Tuner Server`, but the runtime now also includes deterministic EPG repair, channel intelligence, provider profiles/autotune, Ghost Hunter, catch-up capsule generation, and multi-server catch-up publishing.
-  Evidence: `docs/explanations/architecture.md` overview and package map do not mention `internal/channelreport`, `internal/channeldna`, or the catch-up publishing surfaces, even though they are shipped and user-facing.
-  Suggested fix: Add an updated architecture diagram and a "core runtime vs intelligence layer vs publishing layer" section so future contributors can see which flows are foundational and which are layered additions.
-  Risk/Scope: low-med | fits current scope? no
+  Title: (superseded) **`repo_map`** remotes + under-described modules; stale **`architecture.md`**
+  Context: 2026-03-18 audit claimed **`repo_map`** still told users to push **`plex`** and skipped intelligence/catch-up; **`architecture.md`** allegedly lacked layered view.
+  Status: **`repo_map`** documents **`origin`-only** push + **`channelreport`/`channeldna`** + **`webui`** + HTTP client map + **`architecture.md`** link. **`docs/explanations/architecture.md`** has three-layer overview + **`channeldna`/`channelreport`** + catch-up publishing + post-**INT-005** CLI note. Re-open only after a real regression audit.
+  Risk/Scope: n/a
   User decision needed?: no
 
 - Date: 2026-03-19
@@ -152,14 +140,12 @@ It exists to encourage quality gains without derailing the current task.
   Risk/Scope: med | fits current scope: no (Plex internals / ops tooling)
   User decision needed?: no
 
-- Date: 2026-02-26
+- Date: 2026-03-19
   Category: maintainability
-  Title: Add official command/config reference pages for new envs and supervisor mode (beyond testing doc)
-  Context: Added `docs/reference/testing-and-supervisor-config.md` as a practical tester reference.
-  Why it matters: Recent features (`supervise`, guide offsets, reaper, XMLTV language normalization, HDHR shaping) now exist but are not yet in a canonical exhaustive CLI/env reference.
-  Evidence: `docs/reference/index.md` was effectively empty before this session; README lists only core envs.
-  Suggested fix: Add a proper generated or hand-maintained CLI + env reference page (all commands/flags/envs), and cross-link from README and `docs/index.md`.
-  Risk/Scope: med | fits current scope: no (docs expansion)
+  Title: (superseded) “Official” CLI/env reference page missing
+  Context: Older note predates [cli-and-env-reference](../docs/reference/cli-and-env-reference.md) and [reference index](../docs/reference/index.md).
+  Status: **`docs/reference/cli-and-env-reference.md`** is the canonical env/flag map; **`testing-and-supervisor-config.md`** remains lab/supervisor-focused. Optional future: auto-generate fragments from code — not required for operators today.
+  Risk/Scope: n/a
   User decision needed?: no
 
 - Date: 2026-02-25
@@ -174,11 +160,10 @@ It exists to encourage quality gains without derailing the current task.
 
 - Date: 2026-02-25
   Category: reliability
-  Title: plex-reload-guides-batched.py uses wget (not in Plex container)
-  Context: k3s/plex/scripts/plex-reload-guides-batched.py was fixed wget→curl this session but the configmap version may still use wget if re-applied
-  Why it matters: Script will fail if Plex container only has curl
-  Suggested fix: File is local-only (not a configmap); already fixed this session. No action needed unless file is re-applied from a pre-fix copy.
-  Risk/Scope: low | fits current scope: done
+  Title: (superseded 2026-03-19) plex-reload-guides-batched.py used wget (not in Plex container)
+  Context: k3s/plex `plex-reload-guides-batched.py` historically used `wget`; Plex images typically ship `curl` only.
+  Status: Tracked copy is **`curl`**-based; re-open only if an old ConfigMap/script reintroduces **`wget`**.
+  Risk/Scope: n/a (historical)
   User decision needed?: no
 
 - Date: 2026-02-24
@@ -191,25 +176,21 @@ It exists to encourage quality gains without derailing the current task.
   Risk/Scope: low | fits current scope: no (logged only).
   User decision needed?: no
 
-- Date: 2025-02-23
+- Date: 2026-03-19
   Category: maintainability
-  Title: Add or document internal/indexer dependency
-  Context: README/docs pass; build fails without indexer.
-  Why it matters: New clones cannot build; unclear whether indexer is external or missing.
-  Evidence: `go build ./cmd/iptv-tunerr` → "no required module provides package .../internal/indexer".
-  Suggested fix: Either add the indexer package to the repo (from another branch/repo) or document the dependency and build steps in README/reference.
-  Risk/Scope: low | fits current scope: no (documented in docs-gaps).
-  User decision needed?: yes (whether indexer lives in-repo or separate).
+  Title: (superseded 2025 note) **`internal/indexer`** missing from clone
+  Context: Historical opportunity when indexer lived outside tree or branch was incomplete.
+  Status: **`internal/indexer`** is in-repo; **`go build ./cmd/iptv-tunerr`** succeeds on **main**.
+  Risk/Scope: n/a
+  User decision needed?: no
 
 - Date: 2026-02-24
   Category: performance
-  Title: Cache remapped external XMLTV for `/guide.xml` (and fast-fallback on timeout)
-  Context: Live Plex integration testing against `iptvtunerr-websafe` in k3s (`plex.home`).
-  Why it matters: `guide.xml` is fetched by Plex metadata flows; external XMLTV remap currently runs per request and took ~45s, which stalls Plex DVR channel metadata APIs.
-  Evidence: `internal/tuner/xmltv.go` fetches external XMLTV every request (no cache); live measurement from Plex pod: `guide.xml` ~45.15s with external XMLTV enabled, ~0.19s with placeholder guide (XMLTV disabled).
-  Suggested fix: Add in-memory/on-disk XMLTV cache with TTL + stale-while-revalidate; on timeout/error serve last good cached remap immediately, otherwise placeholder as fallback.
-  Risk/Scope: med | fits current scope: no (code + behavior design)
-  User decision needed?: yes (cache TTL/size and whether stale guide is preferred over placeholder on source failures).
+  Title: (superseded 2026-03-19) `/guide.xml` external XMLTV was per-request / high latency
+  Context: Feb 2026 k3s runs showed multi-second **`/guide.xml`** when the merged guide pipeline did work inline with Plex metadata traffic.
+  Status: **`internal/tuner/xmltv.go`** caches the **merged** guide (**`cachedXML`** / **`cacheExp`**), honors **`IPTV_TUNERR_XMLTV_CACHE_TTL`** (default **10m**), refreshes in the background (**`StartRefresh`**), and keeps the last good bytes on fetch failure (no guide “outage” on transient upstream errors). **`TestXMLTV_cacheHit`** ( **`xmltv_test.go`** ) guards single-fetch behavior. Re-open only with evidence the **current** path still piles up concurrent pipeline runs.
+  Risk/Scope: n/a (historical)
+  User decision needed?: no
 
 - Date: 2026-02-24
   Category: operability
@@ -293,14 +274,11 @@ It exists to encourage quality gains without derailing the current task.
 
 - Date: 2026-02-25
   Category: performance
-  Title: XMLTV external fetch blocks every concurrent /guide.xml request for up to 45s
-  Context: internal/tuner/xmltv.go serveExternalXMLTV — synchronous HTTP fetch on every request, no caching.
-  Why it matters: Plex metadata refresh and DVR guide sync send concurrent /guide.xml requests. Each one blocks for up to 45s (SourceTimeout default). Under normal Plex usage this causes request pile-ups, server memory growth, and downstream API timeouts in Plex DVR channel enumeration.
-  Evidence: xmltv.go:60-88 — no cache; new HTTP request created and awaited per handler call. Live measurement: ~45.15s with external XMLTV vs ~0.19s placeholder. Confirmed via existing opportunity entry 2026-02-24.
-  Suggested fix: Add an in-memory XMLTV cache with a configurable TTL (e.g. 10m default via IPTV_TUNERR_XMLTV_CACHE_TTL). Background goroutine refreshes asynchronously; requests return the last good cached bytes immediately. On first startup: block until first fetch completes or falls back to placeholder. Serialize with a sync.RWMutex — reads never block once cache is warm.
-  Implementation notes: (1) Add `cachedXML []byte`, `cacheExpiry time.Time`, `mu sync.RWMutex` to XMLTV struct. (2) `ServeHTTP` acquires read lock; if cache hit, write cached bytes and return. (3) Cache miss or expiry: acquire write lock, re-check (double-checked locking), fetch, store, release. (4) New IPTV_TUNERR_XMLTV_CACHE_TTL env (default 10m). (5) Unit test: inject two calls; assert only one fetch. No behavior change for placeholder path (remains per-request).
-  Risk/Scope: low-med (adds concurrency; mutex must be held correctly) | fits current scope: no (separate PR)
-  User decision needed?: yes (TTL default; stale-serve-on-error vs fallback-to-placeholder preference).
+  Title: (superseded 2026-03-19 — duplicate) XMLTV fetch storm on concurrent `/guide.xml`
+  Context: Same concern as **2026-02-24** opportunity (pre-merge-cache behavior).
+  Status: Resolved with the same **`XMLTV`** merged-guide cache + TTL + background refresh described in the **2026-02-24** superseded row.
+  Risk/Scope: n/a (historical)
+  User decision needed?: no
 
 - Date: 2026-02-25
   Category: maintainability

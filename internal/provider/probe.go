@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/snapetech/iptvtunerr/internal/httpclient"
 )
 
 // Entry is a provider base URL with its own credentials.
@@ -74,7 +76,7 @@ var probeUACandidates = []string{
 // since many providers configure CF to pass known media clients while blocking others.
 func ProbeOne(ctx context.Context, m3uURL string, client *http.Client) Result {
 	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
+		client = httpclient.WithTimeout(15 * time.Second)
 	}
 	start := time.Now()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m3uURL, nil)
@@ -184,7 +186,7 @@ func ProbePlayerAPI(ctx context.Context, baseURL, user, pass string, client *htt
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	probeURL := baseURL + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass)
 	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
+		client = httpclient.WithTimeout(15 * time.Second)
 	}
 	start := time.Now()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, probeURL, nil)

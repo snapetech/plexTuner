@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
+	"github.com/snapetech/iptvtunerr/internal/httpclient"
 )
 
 // timeWindow is a half-open [start, stop) interval from an XMLTV programme element.
@@ -57,12 +58,13 @@ func parseXMLTVTime(s string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// httpClientOrDefault returns c when non-nil; otherwise a client with the given timeout.
+// httpClientOrDefault returns c when non-nil; otherwise a client with the given timeout
+// using the same transport stack as Default (idle pool / optional brotli).
 func httpClientOrDefault(c *http.Client, timeout time.Duration) *http.Client {
 	if c != nil {
 		return c
 	}
-	return &http.Client{Timeout: timeout}
+	return httpclient.WithTimeout(timeout)
 }
 
 // parseXMLTVProgrammes stream-parses XMLTV from r. Only programme nodes whose channel

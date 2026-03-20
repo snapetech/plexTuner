@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/snapetech/iptvtunerr/internal/httpclient"
 )
 
 type LibrarySection struct {
@@ -49,7 +51,7 @@ type LibraryCreateSpec struct {
 }
 
 func plexHTTPClient() *http.Client {
-	return &http.Client{Timeout: 60 * time.Second}
+	return httpclient.WithTimeout(60 * time.Second)
 }
 
 func plexURL(baseURL, path, token string, q url.Values) (string, error) {

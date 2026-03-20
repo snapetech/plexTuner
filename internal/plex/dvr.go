@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/snapetech/iptvtunerr/internal/httpclient"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -67,7 +69,7 @@ func RegisterTunerViaAPI(cfg PlexAPIConfig) (*DeviceInfo, error) {
 	//
 	// After trying all paths, if no device is found in any response we fall back to
 	// synthesising the device UUID from DeviceID (last resort; see below).
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := httpclient.WithTimeout(30 * time.Second)
 	var body []byte
 	devicePaths := []string{
 		"/media/grabbers/tv.plex.grabbers.hdhomerun/devices", // probes the uri= correctly
@@ -197,7 +199,7 @@ func CreateDVRViaAPI(cfg PlexAPIConfig, deviceInfo *DeviceInfo) (dvrKey int, dvr
 	dvrURL := fmt.Sprintf("http://%s/livetv/dvrs?language=eng&device=%s&lineup=%s",
 		cfg.PlexHost, url.QueryEscape(deviceInfo.UUID), url.QueryEscape(lineup))
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := httpclient.WithTimeout(30 * time.Second)
 
 	for attempt := 0; attempt < 2; attempt++ {
 		fmt.Printf("[PLEX-REG] Creating DVR (attempt %d): url=%s\n", attempt+1, dvrURL)
@@ -295,7 +297,7 @@ func ReloadGuideAPI(plexHost, token string, dvrKey int) error {
 
 	fmt.Printf("[PLEX-REG] Reloading guide: url=%s\n", reloadURL)
 
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := httpclient.WithTimeout(60 * time.Second)
 	resp, err := client.Post(reloadURL, "", nil)
 	if err != nil {
 		return err
@@ -323,7 +325,7 @@ func GetChannelMap(plexHost, token, deviceUUID string, lineupIDs []string) ([]Ch
 
 	fmt.Printf("[PLEX-REG] Getting channel map: url=%s\n", chMapURL)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := httpclient.WithTimeout(30 * time.Second)
 	resp, err := client.Get(chMapURL)
 	if err != nil {
 		return nil, err
@@ -397,7 +399,7 @@ func ActivateChannelsAPI(cfg PlexAPIConfig, deviceKey string, channels []Channel
 	}
 
 	const batchSize = 100
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := httpclient.WithTimeout(60 * time.Second)
 
 	for i := 0; i < len(channels); i += batchSize {
 		end := i + batchSize
@@ -420,7 +422,7 @@ func ListDVRsAPI(plexHost, token string) ([]DVRInfo, error) {
 		return nil, err
 	}
 	req.Header.Set("X-Plex-Token", token)
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := httpclient.WithTimeout(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -466,7 +468,7 @@ func ListDevicesAPI(plexHost, token string) ([]Device, error) {
 		"/media/grabbers/devices",
 		"/media/grabbers/tv.plex.grabbers.hdhomerun/devices",
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := httpclient.WithTimeout(30 * time.Second)
 	var lastErr error
 	for _, p := range paths {
 		u := fmt.Sprintf("http://%s%s", plexHost, p)
@@ -513,7 +515,7 @@ func DeleteDVRAPI(plexHost, token string, dvrKey int) error {
 		return err
 	}
 	req.Header.Set("X-Plex-Token", token)
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := httpclient.WithTimeout(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -531,7 +533,7 @@ func DeleteDeviceAPI(plexHost, token, deviceKey string) error {
 		fmt.Sprintf("/media/grabbers/devices/%s", url.PathEscape(deviceKey)),
 		fmt.Sprintf("/media/grabbers/tv.plex.grabbers.hdhomerun/devices/%s", url.PathEscape(deviceKey)),
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := httpclient.WithTimeout(30 * time.Second)
 	var lastErr error
 	for _, p := range paths {
 		u := fmt.Sprintf("http://%s%s", plexHost, p)
@@ -663,7 +665,7 @@ func FullRegisterPlex(baseURL, plexHost, plexToken, friendlyName, deviceID strin
 // of ChannelMapping entries with enabled="1". Returns 0 on any error (treated as "unknown").
 func dvrEnabledChannelCount(plexHost, token string, dvrKey int) int {
 	u := fmt.Sprintf("http://%s/livetv/dvrs/%d?X-Plex-Token=%s", plexHost, dvrKey, token)
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := httpclient.WithTimeout(15 * time.Second)
 	resp, err := client.Get(u)
 	if err != nil {
 		return 0
