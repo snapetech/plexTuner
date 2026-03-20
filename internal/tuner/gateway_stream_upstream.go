@@ -115,5 +115,16 @@ func (g *Gateway) filterQuarantinedUpstreams(urls []string) []string {
 	if len(out) == 0 {
 		return urls
 	}
+	g.noteUpstreamQuarantineFilterSkipped(len(quarantined))
 	return out
+}
+
+// noteUpstreamQuarantineFilterSkipped records quarantined upstream URLs removed from the walk list
+// while at least one backup remained (see filterQuarantinedUpstreams).
+func (g *Gateway) noteUpstreamQuarantineFilterSkipped(n int) {
+	if g == nil || n <= 0 {
+		return
+	}
+	g.upstreamQuarantineSkips.Add(uint64(n))
+	promNoteUpstreamQuarantineSkips(n)
 }

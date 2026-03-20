@@ -1117,6 +1117,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/debug/hls-mux-demo.html", s.serveHlsMuxWebDemo())
 	if metricsEnableFromEnv() {
 		promRegisterAutopilotMetrics(gateway)
+		promRegisterUpstreamMetrics()
 		mux.Handle("/metrics", promhttp.Handler())
 	}
 	mux.Handle("/ops/actions/mux-seg-decode", s.serveMuxSegDecodeAction())

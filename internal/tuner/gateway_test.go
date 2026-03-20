@@ -1503,6 +1503,84 @@ func TestGateway_filterQuarantinedUpstreams_keepsOnlyChoice(t *testing.T) {
 	}
 }
 
+func TestGateway_filterQuarantinedUpstreams_respectsAutotuneOff(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE", "false")
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE", "true")
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_AFTER", "1")
+	g := &Gateway{TunerCount: 4}
+	g.noteUpstreamFailure("http://bad.example/live/1.m3u8", 502, "http_status")
+	got := g.filterQuarantinedUpstreams([]string{
+		"http://bad.example/live/1.m3u8",
+		"http://good.example/live/1.m3u8",
+	})
+	if len(got) != 2 {
+		t.Fatalf("got %v want both URLs when autotune is off", got)
+	}
+}
+
+func TestGateway_filterQuarantinedUpstreams_dropsMultipleQuarantined(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE", "true")
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_AFTER", "1")
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_SEC", "900")
+	g := &Gateway{TunerCount: 4}
+	for _, u := range []string{
+		"http://bad-a.example/live/1.m3u8",
+		"http://bad-b.example/live/1.m3u8",
+	} {
+		g.noteUpstreamFailure(u, 502, "http_status")
+	}
+	got := g.filterQuarantinedUpstreams([]string{
+		"http://bad-a.example/live/1.m3u8",
+		"http://bad-b.example/live/1.m3u8",
+		"http://ok.example/live/1.m3u8",
+	})
+	if len(got) != 1 || got[0] != "http://ok.example/live/1.m3u8" {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestGateway_stream_skipsQuarantinedPrimaryUsesBackup(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE", "true")
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE", "true")
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_AFTER", "3")
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_SEC", "900")
+
+	var primaryHits int32
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&primaryHits, 1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer primary.Close()
+	backup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("backup"))
+	}))
+	defer backup.Close()
+
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "1", GuideName: "Ch1", StreamURLs: []string{primary.URL, backup.URL}},
+		},
+		TunerCount: 2,
+	}
+	for i := 0; i < 3; i++ {
+		g.noteUpstreamFailure(primary.URL, 502, "http_status")
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code: %d", w.Code)
+	}
+	if w.Body.String() != "backup" {
+		t.Fatalf("body: %q", w.Body.String())
+	}
+	if atomic.LoadInt32(&primaryHits) != 0 {
+		t.Fatalf("primary upstream was hit %d times; want 0 when quarantined", primaryHits)
+	}
+}
+
 func TestGateway_learnsUpstreamConcurrencyLimitAndRejectsLocally(t *testing.T) {
 	hits := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1569,6 +1647,24 @@ func TestGateway_ProviderBehaviorProfile_quarantinedHosts(t *testing.T) {
 	}
 	if p.QuarantinedHosts[0].QuarantinedUntil == "" {
 		t.Fatalf("missing quarantined_until: %#v", p.QuarantinedHosts[0])
+	}
+}
+
+func TestGateway_ProviderBehaviorProfile_upstreamQuarantineSkipsTotal(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE", "true")
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_AFTER", "3")
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_SEC", "900")
+	g := &Gateway{TunerCount: 4}
+	for i := 0; i < 3; i++ {
+		g.noteUpstreamFailure("http://bad.example/live/1.m3u8", 502, "http_status")
+	}
+	g.filterQuarantinedUpstreams([]string{
+		"http://bad.example/live/1.m3u8",
+		"http://good.example/live/1.m3u8",
+	})
+	p := g.ProviderBehaviorProfile()
+	if p.UpstreamQuarantineSkipsTotal != 1 {
+		t.Fatalf("upstream_quarantine_skips_total=%d want 1", p.UpstreamQuarantineSkipsTotal)
 	}
 }
 

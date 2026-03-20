@@ -352,7 +352,7 @@ What it exposes:
 
 Related env:
 - `IPTV_TUNERR_PROVIDER_AUTOTUNE` — default `true`; enables conservative provider-aware runtime tuning when the operator has not explicitly set the relevant knob
-- `IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE` — when `true`/`1`/`on` **and** autotune is on, upstream hosts that exceed **`IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_AFTER`** consecutive failure signals are **skipped** in **`walkStreamUpstreams`** while at least one non-quarantined backup URL remains (per-host cooldown **`IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_SEC`**, default **900**). Surfaced on **`/provider/profile.json`** as **`auto_host_quarantine`**, **`penalized_hosts[].quarantined_until`**, **`quarantined_hosts`**, and **`remediation_hints`** (`host_quarantine_active`).
+- `IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE` — when `true`/`1`/`on` **and** autotune is on, upstream hosts that exceed **`IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_AFTER`** consecutive failure signals are **skipped** in **`walkStreamUpstreams`** while at least one non-quarantined backup URL remains (per-host cooldown **`IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_SEC`**, default **900**). Surfaced on **`/provider/profile.json`** as **`auto_host_quarantine`**, **`upstream_quarantine_skips_total`** (cumulative), **`penalized_hosts[].quarantined_until`**, **`quarantined_hosts`**, and **`remediation_hints`** (`host_quarantine_active`). With **`IPTV_TUNERR_METRICS_ENABLE`**, Prometheus **`iptv_tunerr_upstream_quarantine_skips_total`** matches the same events.
 
 ## Guide highlights endpoint
 
@@ -973,7 +973,7 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
 - `IPTV_TUNERR_HLS_MUX_DENY_RESOLVED_PRIVATE_UPSTREAM` — when enabled, resolve **`seg=`** host (**A/AAAA**) and block if any IP is loopback/private/link-local/unspecified (**DNS failure** → allow, with a warning log).
 - `IPTV_TUNERR_HLS_MUX_SEG_RPS_PER_IP` — optional per–source-IP rate limit (token bucket) for **`seg=`** on **`mux=hls`** and **`mux=dash`**; exceeded → **429** with diagnostic **`seg_rate_limited`**.
 - `IPTV_TUNERR_HLS_MUX_WEB_DEMO` — when true, serve **`/debug/hls-mux-demo.html`** (static **hls.js** sample; still enable **`IPTV_TUNERR_HLS_MUX_CORS`** for cross-origin playlists).
-- `IPTV_TUNERR_METRICS_ENABLE` — when true/`1`/on, register Prometheus mux counters + **`iptv_tunerr_mux_seg_request_duration_seconds`** histogram, **Autopilot consensus** gauges (**`iptv_tunerr_autopilot_consensus_*`**), and expose **`GET /metrics`**.
+- `IPTV_TUNERR_METRICS_ENABLE` — when true/`1`/on, register Prometheus mux counters + **`iptv_tunerr_mux_seg_request_duration_seconds`** histogram, **Autopilot consensus** gauges (**`iptv_tunerr_autopilot_consensus_*`**), **upstream host quarantine** counter (**`iptv_tunerr_upstream_quarantine_skips_total`**), and expose **`GET /metrics`**.
 - `IPTV_TUNERR_METRICS_MUX_CHANNEL_LABELS` — when enabled, add **`channel_id`** to mux metric labels (**very high Prometheus cardinality**; default off).
 - `IPTV_TUNERR_HTTP_ACCEPT_BROTLI` — when enabled, send **`br`** in **`Accept-Encoding`** and transparently decompress **`Content-Encoding: br`** on the shared HTTP client (including **`?mux=*&seg=`** fetches).
 - `IPTV_TUNERR_HLS_MUX_DASH_EXPAND_SEGMENT_TEMPLATE` — when enabled, expand uniform self-closing DASH **`SegmentTemplate`** (**`duration`** / **`timescale`**, **`$Number$`** in **`media`**, no **`$Time$`**) into **`SegmentList`** before MPD URL rewrite (default off; large manifests possible).

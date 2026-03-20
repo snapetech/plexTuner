@@ -23,6 +23,21 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Host quarantine tests + Prometheus upstream_quarantine_skips_total
+  Summary:
+    - **`internal/tuner/prometheus_upstream.go`**: **`iptv_tunerr_upstream_quarantine_skips_total`**; **`promNoteUpstreamQuarantineSkips`** from **`filterQuarantinedUpstreams`** when backups remain.
+    - **`internal/tuner/server.go`**: register upstream metrics when **`IPTV_TUNERR_METRICS_ENABLE`**.
+    - **`internal/tuner/gateway_test.go`**: **`TestGateway_stream_skipsQuarantinedPrimaryUsesBackup`**, autotune-off + multi-quarantine filter tests.
+    - **`internal/tuner/prometheus_upstream_test.go`**: smoke + counter test.
+    - **Docs:** **CHANGELOG**, **cli-and-env**, **features**, **observability-prometheus-and-otel**.
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+  Links:
+    - INT-010 observability hardening
+
+- Date: 2026-03-19
   Title: Autopilot global preferred hosts (IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS)
   Summary:
     - **`internal/tuner/gateway_adapt.go`**: **`parseAutopilotGlobalPreferredHosts`**, **`pickFirstURLMatchingGlobalPreferredHosts`**; **`autopilotPreferredStreamURL`** order: per-DNA memory → global hosts → consensus.
