@@ -415,6 +415,26 @@ func TestGateway_requestAdaptation_unknownDefaultsWebsafe(t *testing.T) {
 	}
 }
 
+func TestGateway_requestAdaptation_queryProfilePMSXcode(t *testing.T) {
+	g := &Gateway{PlexClientAdapt: true}
+	ch := &catalog.LiveChannel{GuideName: "Test"}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/test?profile=pmsxcode", nil)
+	hasOverride, transcode, profile, reason, _ := g.requestAdaptation(context.Background(), req, ch, "test")
+	if !hasOverride || !transcode || profile != profilePMSXcode || reason != "query-profile" {
+		t.Fatalf("override=%v trans=%v profile=%q reason=%q", hasOverride, transcode, profile, reason)
+	}
+}
+
+func TestGateway_requestAdaptation_queryProfileHDHRAlias(t *testing.T) {
+	g := &Gateway{PlexClientAdapt: true}
+	ch := &catalog.LiveChannel{GuideName: "Test"}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/test?profile=internet360", nil)
+	_, transcode, profile, reason, _ := g.requestAdaptation(context.Background(), req, ch, "test")
+	if !transcode || profile != profileAACCFR || reason != "query-profile" {
+		t.Fatalf("trans=%v profile=%q reason=%q", transcode, profile, reason)
+	}
+}
+
 func TestGateway_requestAdaptation_resolvedNonWebGetsFull(t *testing.T) {
 	pms := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/status/sessions" {

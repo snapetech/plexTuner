@@ -25,6 +25,7 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[how-to/cloudflare-bypass.md](how-to/cloudflare-bypass.md)** | Cloudflare-protected providers: UA cycling, cookies, headers, troubleshooting. |
 | **[how-to/debug-bundle.md](how-to/debug-bundle.md)** | Collect a shareable `debug-bundle` and analyze with `scripts/analyze-bundle.py`. |
 | **[reference/cli-and-env-reference.md](reference/cli-and-env-reference.md)** | Commands, flags, and key env vars (including supervisor/testing knobs). |
+| **[reference/transcode-profiles.md](reference/transcode-profiles.md)** | Gateway ffmpeg profile names, HDHR-style aliases, `?profile=` usage. |
 | **[explanations/media-server-integration-modes.md](explanations/media-server-integration-modes.md)** | Where the common tuner story ends and Plex-heavy ops begin. |
 | **[explanations/always-on-recorder-daemon.md](explanations/always-on-recorder-daemon.md)** | Rolling catch-up recorder daemon (`catchup-daemon`): MVP shipped, extensions noted. |
 | **[k8s/README.md](../k8s/README.md)** | Kubernetes deployment (HDHR in cluster). |

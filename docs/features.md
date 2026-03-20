@@ -56,7 +56,7 @@ See also:
 | Feature | Description |
 |---------|-------------|
 | **HLS -> MPEG-TS relay** | Native relay path for HLS inputs to Plex-facing TS output. |
-| **ffmpeg transcode path** | Optional ffmpeg-based remux/transcode for web-safe / Plex-friendly output. |
+| **ffmpeg transcode path** | Optional ffmpeg-based remux/transcode for web-safe / Plex-friendly output; named profiles + HDHR-style aliases — [transcode-profiles](reference/transcode-profiles.md). |
 | **Transcode modes** | `off`, `on`, `auto` (codec/probe-driven behavior depending config/runtime). |
 | **Startup/bootstrap controls** | Web-safe bootstrap and startup-gate tuning for Plex web playback behavior. |
 | **Client disconnect handling** | Better classification of downstream disconnects to avoid false relay errors. |

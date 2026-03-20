@@ -22,8 +22,22 @@ const (
 	profilePMSXcode   = "pmsxcode"
 )
 
+// compactProfileKey strips non-alphanumeric characters for HDHR-style labels
+// (e.g. "Internet-1080" → "internet1080") so aliases match SiliconDust spellings.
+func compactProfileKey(lower string) string {
+	var b strings.Builder
+	b.Grow(len(lower))
+	for _, r := range lower {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 func normalizeProfileName(v string) string {
-	switch strings.ToLower(strings.TrimSpace(v)) {
+	lower := strings.ToLower(strings.TrimSpace(v))
+	switch lower {
 	case "", "default":
 		return profileDefault
 	case "plexsafe", "plex-safe", "safe":
@@ -38,8 +52,29 @@ func normalizeProfileName(v string) string {
 		return profileDashFast
 	case "pmsxcode", "pms-xcode", "pmsforce", "pms-force":
 		return profilePMSXcode
-	default:
+	// HDHomeRun / SiliconDust-style transcode preset names (Lineup parity LP-010): map to our ffmpeg TS profiles.
+	case "native", "heavy", "max", "super":
 		return profileDefault
+	case "internet", "internet720", "internet1080", "hd":
+		return profileDashFast
+	case "internet240", "internet360", "internet480":
+		return profileAACCFR
+	case "mobile", "cell", "light":
+		return profileLowBitrate
+	default:
+		// Hyphen/underscore variants: internet-1080, internet_360, etc.
+		switch compactProfileKey(lower) {
+		case "native", "heavy", "max", "super":
+			return profileDefault
+		case "internet", "internet720", "internet1080", "hd":
+			return profileDashFast
+		case "internet240", "internet360", "internet480":
+			return profileAACCFR
+		case "mobile", "cell", "light":
+			return profileLowBitrate
+		default:
+			return profileDefault
+		}
 	}
 }
 

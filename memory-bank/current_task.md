@@ -2,7 +2,7 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Latest (2026-03-19):** **`LP-009` (partial)** — `IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS` post-sync prune + orphan channels; **`IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX`** for optional `xmltv.php` params; `SyncMergedGuideXML` returns prune count. **Next:** **`LP-010`/`LP-011`** transcode profiles, deeper LP-009 (quotas/VACUUM), or HDHR **LP-003** merge.
+**Latest (2026-03-19):** **`LP-010` / `LP-011` (partial)** — HDHR-style **transcode profile name aliases** (`normalizeProfileName`), **`?profile=pmsxcode`** forces transcode; doc [docs/reference/transcode-profiles.md](../docs/reference/transcode-profiles.md). **Next:** HLS/fMP4 outputs (epic), deeper **LP-009**, or HDHR **LP-003** merge.
 
 **Goal:** Start the new Live TV Intelligence product track: map the multi-PR roadmap, then ship the first visible foundation feature so IPTV Tunerr feels like an intelligent control plane instead of only a tuner bridge.
 

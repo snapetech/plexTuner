@@ -23,6 +23,21 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: LP-010/LP-011 partial — transcode profile aliases + pmsxcode query
+  Summary:
+    - `normalizeProfileName`: HDHR/SiliconDust-style labels (`native`, `internet360`, `mobile`, …) map to existing TS profiles.
+    - `requestAdaptation`: explicit `?profile=pmsxcode` uses transcode=true with other named profiles.
+    - Tests: `gateway_profiles_test.go`, `gateway_test.go` query cases; doc `docs/reference/transcode-profiles.md`.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - HLS/fMP4 container outputs still out of scope; epic documents future work.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway_profiles.go`, `internal/tuner/gateway_adapt.go`
+
+- Date: 2026-03-19
   Title: LP-009 partial — SQLite retain prune + provider EPG URL suffix
   Summary:
     - `SyncMergedGuideXML(data, retainPastHours)` prunes programmes with `stop_unix` before cutoff; orphan `epg_channel` rows; returns pruned row count.

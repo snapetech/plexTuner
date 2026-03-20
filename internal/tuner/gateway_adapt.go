@@ -253,7 +253,7 @@ func (g *Gateway) requestAdaptation(ctx context.Context, r *http.Request, channe
 	explicitProfile := normalizeProfileName(r.URL.Query().Get("profile"))
 	if strings.TrimSpace(r.URL.Query().Get("profile")) != "" {
 		switch explicitProfile {
-		case profilePlexSafe, profileAACCFR, profileVideoOnly, profileLowBitrate, profileDashFast:
+		case profilePlexSafe, profileAACCFR, profileVideoOnly, profileLowBitrate, profileDashFast, profilePMSXcode:
 			return true, true, explicitProfile, "query-profile", "manual"
 		default:
 			return true, false, explicitProfile, "query-profile", "manual"

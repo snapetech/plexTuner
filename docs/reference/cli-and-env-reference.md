@@ -741,6 +741,8 @@ Merge semantics for HDHR + IPTV catalogs: [adr/0002-hdhr-hardware-iptv-merge.md]
 
 Browser URLs (same env as above): `http://127.0.0.1:<port>/ui/` (home), `/ui/guide/` (merged guide preview from cache), `/ui/guide-preview.json` (JSON; optional `?limit=`). Also linked from `/ui/`: `/healthz`, `/guide/health.json`, `/guide/epg-store.json` (SQLite EPG stats when `IPTV_TUNERR_EPG_SQLITE_PATH` is set), `/channels/report.json`.
 
+Transcode profile names, HDHomeRun-style aliases, and `?profile=` on `/stream/<id>`: [transcode-profiles.md](transcode-profiles.md).
+
 ## `iptv-tunerr probe`
 
 Probe provider URLs and print ranked results (best host first).

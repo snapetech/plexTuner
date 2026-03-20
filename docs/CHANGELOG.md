@@ -13,6 +13,11 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+### Transcode profiles (LP-010 / LP-011 partial)
+- **HDHR-style profile aliases** in `normalizeProfileName` (`native`, `heavy`, `internet360`, `mobile`, … → existing ffmpeg TS presets); **hyphen/punctuation variants** match the same presets (e.g. `Internet-1080` → `dashfast`).
+- **Explicit `?profile=pmsxcode`** now forces transcode (same as other named profiles).
+- **Reference:** [docs/reference/transcode-profiles.md](reference/transcode-profiles.md). Separate HLS/fMP4 packaging remains future epic work.
+
 ### EPG SQLite foundation (LP-007 partial)
 - **`internal/epgstore`**: optional SQLite file (`IPTV_TUNERR_EPG_SQLITE_PATH`), WAL + migrations (`epg_channel`, `epg_programme`); opened during `serve` / `run` when set.
 - **ADR 0003** ([docs/adr/0003-epg-sqlite-vs-postgres.md](adr/0003-epg-sqlite-vs-postgres.md)): SQLite default for Tunerr-local EPG; Postgres only for explicit multi-writer/shared-state requirements.
