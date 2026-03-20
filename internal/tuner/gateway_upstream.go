@@ -82,7 +82,8 @@ func resolveUserAgentPreset(raw, detectedLavfUA string) string {
 }
 
 // Range/If-Range: HLS byte-range segments (#EXT-X-BYTERANGE) and partial fetches through ?mux=hls&seg=.
-var forwardedUpstreamHeaderNames = []string{"Cookie", "Referer", "Origin", "Range", "If-Range"}
+// If-None-Match / If-Modified-Since: conditional GET for cached segments (304 Not Modified).
+var forwardedUpstreamHeaderNames = []string{"Cookie", "Referer", "Origin", "Range", "If-Range", "If-None-Match", "If-Modified-Since"}
 
 func cloneClientWithCookieJar(src *http.Client) *http.Client {
 	if src == nil {

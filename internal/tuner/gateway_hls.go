@@ -309,9 +309,21 @@ func (g *Gateway) serveHLSMuxTarget(w http.ResponseWriter, r *http.Request, clie
 	defer resp.Body.Close()
 
 	switch resp.StatusCode {
-	case http.StatusOK, http.StatusPartialContent:
+	case http.StatusOK, http.StatusPartialContent, http.StatusNotModified:
 	default:
 		return errors.New("hls target http status " + strconv.Itoa(resp.StatusCode))
+	}
+
+	if resp.StatusCode == http.StatusNotModified {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		for _, h := range []string{"ETag", "Last-Modified", "Cache-Control", "Expires", "Vary"} {
+			if v := resp.Header.Get(h); v != "" {
+				w.Header().Set(h, v)
+			}
+		}
+		applyHLSMuxCORS(w)
+		w.WriteHeader(http.StatusNotModified)
+		return nil
 	}
 
 	effectiveURL := targetURL

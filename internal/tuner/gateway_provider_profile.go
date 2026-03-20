@@ -50,6 +50,8 @@ type ProviderBehaviorProfile struct {
 	HLSSegmentFailures     int                   `json:"hls_segment_failures"`
 	LastHLSSegmentAt       string                `json:"last_hls_segment_at,omitempty"`
 	LastHLSSegmentURL      string                `json:"last_hls_segment_url,omitempty"`
+	HlsMuxSegInUse         int                   `json:"hls_mux_seg_in_use"`
+	HlsMuxSegLimit         int                   `json:"hls_mux_seg_limit"`
 	PenalizedHosts         []ProviderHostPenalty `json:"penalized_hosts,omitempty"`
 }
 
@@ -190,6 +192,8 @@ func (g *Gateway) ProviderBehaviorProfile() ProviderBehaviorProfile {
 	configured := g.configuredTunerLimit()
 	learned := g.learnedUpstreamLimit
 	effective := g.effectiveTunerLimitLocked()
+	hlsMuxSegInUse := g.hlsMuxSegInUse
+	hlsMuxSegLimit := g.effectiveHLSMuxSegLimitLocked()
 	g.mu.Unlock()
 
 	g.providerStateMu.Lock()
@@ -228,6 +232,8 @@ func (g *Gateway) ProviderBehaviorProfile() ProviderBehaviorProfile {
 		LastHLSPlaylistURL:     lastHLSPlaylistURL,
 		HLSSegmentFailures:     hlsSegmentFailures,
 		LastHLSSegmentURL:      lastHLSSegmentURL,
+		HlsMuxSegInUse:         hlsMuxSegInUse,
+		HlsMuxSegLimit:         hlsMuxSegLimit,
 		PenalizedHosts:         penalizedHosts,
 	}
 	if !lastConcurrencyAt.IsZero() {

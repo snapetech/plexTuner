@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/base64"
 	"log"
+	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,6 +43,28 @@ func (g *Gateway) effectiveTunerLimitLocked() int {
 	limit := g.configuredTunerLimit()
 	if g.learnedUpstreamLimit > 0 && g.learnedUpstreamLimit < limit {
 		limit = g.learnedUpstreamLimit
+	}
+	return limit
+}
+
+// effectiveHLSMuxSegLimitLocked caps concurrent ?mux=hls&seg= proxy requests (short-lived HTTP relays).
+// Default: effective tuner limit × IPTV_TUNERR_HLS_MUX_SEG_SLOTS_PER_TUNER (default 8). Override with IPTV_TUNERR_HLS_MUX_MAX_CONCURRENT.
+func (g *Gateway) effectiveHLSMuxSegLimitLocked() int {
+	if v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_MAX_CONCURRENT")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	base := g.effectiveTunerLimitLocked()
+	mult := 8
+	if v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_SEG_SLOTS_PER_TUNER")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			mult = n
+		}
+	}
+	limit := base * mult
+	if limit < 1 {
+		limit = 1
 	}
 	return limit
 }

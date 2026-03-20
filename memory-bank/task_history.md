@@ -2763,3 +2763,15 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
   Verification:
     - `go test ./...`
     - `./scripts/verify`
+
+---
+
+- Date: 2026-03-20
+  Title: Add shared deck telemetry memory and tighten HLS mux controls
+  Summary:
+    - Added a server-backed `/deck/telemetry.json` endpoint in the dedicated web UI so trend cards can use shared in-process operator memory instead of only per-browser local storage.
+    - Switched the deck trend/history surfaces to prefer shared web UI memory while keeping personal UI preferences local to the browser, making the page behave more like a shared cockpit.
+    - Tightened the HLS mux path with explicit segment-proxy concurrency limits and 304/conditional-fetch handling, while keeping the browser-facing CORS/preflight support for `?mux=hls`.
+  Verification:
+    - `go test ./...`
+    - `./scripts/verify`

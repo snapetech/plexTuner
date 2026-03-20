@@ -1113,6 +1113,7 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
 
 <script>
 const endpoints = {
+  deckTelemetry: "/deck/telemetry.json",
   runtime: "/api/debug/runtime.json",
   health: "/api/healthz",
   guideHealth: "/api/guide/health.json",
@@ -1177,11 +1178,13 @@ const state = {
   telemetry: {
     samples: [],
     maxSamples: 18
+  },
+  sharedTelemetry: {
+    samples: []
   }
 };
 const storageKeys = {
-  prefs: "iptvtunerr.deck.prefs.v1",
-  telemetry: "iptvtunerr.deck.telemetry.v1"
+  prefs: "iptvtunerr.deck.prefs.v1"
 };
 
 const healthPill = document.getElementById("health-pill");
@@ -1329,16 +1332,7 @@ function loadPersistedState() {
       if (Number.isFinite(Number(prefs.refreshRateSec))) state.refreshRateSec = Number(prefs.refreshRateSec);
       if (prefs.selectedRaw && endpoints[prefs.selectedRaw]) state.selectedRaw = prefs.selectedRaw;
     }
-    const rawTelemetry = storage.getItem(storageKeys.telemetry);
-    if (rawTelemetry) {
-      const parsed = JSON.parse(rawTelemetry);
-      const samples = Array.isArray(parsed?.samples) ? parsed.samples : [];
-      state.telemetry.samples = samples
-        .filter((item) => item && Number.isFinite(Number(item.guidePercent)) && Number.isFinite(Number(item.streamPercent)))
-        .slice(-state.telemetry.maxSamples);
-    }
   } catch {
-    state.telemetry.samples = [];
   }
 }
 
@@ -1350,16 +1344,6 @@ function persistPrefs() {
       mode: state.mode,
       refreshRateSec: state.refreshRateSec,
       selectedRaw: state.selectedRaw
-    }));
-  } catch {}
-}
-
-function persistTelemetry() {
-  const storage = safeLocalStorage();
-  if (!storage) return;
-  try {
-    storage.setItem(storageKeys.telemetry, JSON.stringify({
-      samples: state.telemetry.samples.slice(-state.telemetry.maxSamples)
     }));
   } catch {}
 }
@@ -1608,9 +1592,10 @@ function fillRawSelectors() {
 }
 
 function renderFilters() {
+  const deckHistoryCount = state.sharedTelemetry.samples.length || state.telemetry.samples.length;
   activeFilters.innerHTML = state.filter
     ? `<span class="pill">Filter active: ${esc(state.filter)}</span>`
-    : `<span class="pill">Mode: ${esc(modeTitles[state.mode][0])}</span><span class="pill">Deck target: [[.TunerBase]]</span><span class="pill">Deck memory: ${state.telemetry.samples.length} samples</span>`;
+    : `<span class="pill">Mode: ${esc(modeTitles[state.mode][0])}</span><span class="pill">Deck target: [[.TunerBase]]</span><span class="pill">Shared memory: ${deckHistoryCount} samples</span>`;
 }
 
 function deriveMetrics(payloads) {
@@ -1665,7 +1650,46 @@ function recordTelemetry(metrics) {
   if (samples.length > state.telemetry.maxSamples) {
     samples.splice(0, samples.length - state.telemetry.maxSamples);
   }
-  persistTelemetry();
+}
+
+async function syncDeckTelemetry(metrics) {
+  recordTelemetry(metrics);
+  const sample = {
+    sampled_at: new Date().toISOString(),
+    health_ok: metrics.healthOK,
+    guide_percent: metrics.guidePercent,
+    stream_percent: metrics.streamPercent,
+    recorder_percent: metrics.recorderPercent,
+    ops_percent: metrics.opsPercent
+  };
+  try {
+    const res = await fetch(endpoints.deckTelemetry, {
+      method: "POST",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(sample)
+    });
+    const text = await res.text();
+    const body = text ? JSON.parse(text) : {};
+    state.sharedTelemetry.samples = normalizeArray(body.samples);
+  } catch {
+    state.sharedTelemetry.samples = [];
+  }
+}
+
+async function clearDeckTelemetry() {
+  state.telemetry.samples = [];
+  try {
+    const res = await fetch(endpoints.deckTelemetry, { method: "DELETE", headers: { "Accept": "application/json" } });
+    const text = await res.text();
+    const body = text ? JSON.parse(text) : {};
+    state.sharedTelemetry.samples = normalizeArray(body.samples);
+  } catch {
+    state.sharedTelemetry.samples = [];
+  }
+  renderDeck();
 }
 
 function renderDeck() {
@@ -1751,23 +1775,24 @@ function renderDeck() {
     createSignalCard("Ops Cleanliness", `${clampPercent(metrics.opsPercent)}%`, metrics.opsPercent, metrics.opsRisk > 0 ? `${metrics.opsRisk} active ops recovery signals need attention.` : "No recorder/ghost recovery pressure in the current snapshot.", metrics.opsPercent >= 85 ? "good" : metrics.opsPercent >= 55 ? "warn" : "bad")
   ].join("");
 
-  const firstSample = state.telemetry.samples.length ? state.telemetry.samples[0] : null;
-  const lastSample = state.telemetry.samples.length ? state.telemetry.samples[state.telemetry.samples.length - 1] : null;
+  const trendSamples = state.sharedTelemetry.samples.length ? state.sharedTelemetry.samples : state.telemetry.samples;
+  const firstSample = trendSamples.length ? trendSamples[0] : null;
+  const lastSample = trendSamples.length ? trendSamples[trendSamples.length - 1] : null;
   historyBar.innerHTML = `
     <div>
       <strong>Deck Memory</strong>
-      <div class="history-copy">${state.telemetry.samples.length} persisted samples in this browser. ${firstSample ? `Oldest: ${esc(formatWhen(firstSample.at))}.` : "No saved history yet."} ${lastSample ? `Latest: ${esc(formatWhen(lastSample.at))}.` : ""}</div>
+      <div class="history-copy">${trendSamples.length} samples in shared web UI memory. ${firstSample ? `Oldest: ${esc(formatWhen(firstSample.sampled_at || firstSample.at))}.` : "No saved history yet."} ${lastSample ? `Latest: ${esc(formatWhen(lastSample.sampled_at || lastSample.at))}.` : ""}</div>
     </div>
     <div class="controls">
-      <button id="history-reset" type="button">Clear Deck Memory</button>
+      <button id="history-reset" type="button">Clear Shared Memory</button>
     </div>
   `;
 
   trendGrid.innerHTML = [
-    createTrendCard("Guide Trend", `${clampPercent(metrics.guidePercent)}%`, state.telemetry.samples.map((item) => ({ value: item.guidePercent })), `${state.telemetry.samples.length} refresh samples in this browser.`),
-    createTrendCard("Stream Trend", `${clampPercent(metrics.streamPercent)}%`, state.telemetry.samples.map((item) => ({ value: item.streamPercent })), `${metrics.failedAttemptCount} failures in the current attempt window.`),
-    createTrendCard("Recorder Trend", recorder.summary ? `${clampPercent(metrics.recorderPercent)}%` : "n/a", state.telemetry.samples.map((item) => ({ value: item.recorderPercent })), recorder.summary ? "Completion ratio across the current loaded recorder summary." : "Recorder not configured in this process."),
-    createTrendCard("Ops Trend", `${clampPercent(metrics.opsPercent)}%`, state.telemetry.samples.map((item) => ({ value: item.opsPercent })), metrics.opsRisk > 0 ? "Recovery pressure is rising inside persisted deck memory." : "Recovery pressure is flat or absent.")
+    createTrendCard("Guide Trend", `${clampPercent(metrics.guidePercent)}%`, trendSamples.map((item) => ({ value: item.guidePercent || item.guide_percent })), `${trendSamples.length} refresh samples in shared deck memory.`),
+    createTrendCard("Stream Trend", `${clampPercent(metrics.streamPercent)}%`, trendSamples.map((item) => ({ value: item.streamPercent || item.stream_percent })), `${metrics.failedAttemptCount} failures in the current attempt window.`),
+    createTrendCard("Recorder Trend", recorder.summary ? `${clampPercent(metrics.recorderPercent)}%` : "n/a", trendSamples.map((item) => ({ value: item.recorderPercent || item.recorder_percent })), recorder.summary ? "Completion ratio across the current loaded recorder summary." : "Recorder not configured in this process."),
+    createTrendCard("Ops Trend", `${clampPercent(metrics.opsPercent)}%`, trendSamples.map((item) => ({ value: item.opsPercent || item.ops_percent })), metrics.opsRisk > 0 ? "Recovery pressure is rising inside shared deck memory." : "Recovery pressure is flat or absent.")
   ].join("");
 
   decisionBoard.innerHTML = filterCards([
@@ -1898,7 +1923,7 @@ async function reloadDeck() {
     fetchJSON(key, path).catch((error) => ({ label: key, path, ok: false, status: 0, body: { error: String(error) } }))
   ));
   state.payloads = Object.fromEntries(entries.map((item) => [item.label, item]));
-  recordTelemetry(deriveMetrics(state.payloads));
+  await syncDeckTelemetry(deriveMetrics(state.payloads));
   renderDeck();
   rawSelect.value = state.selectedRaw;
   await renderRaw();
@@ -2015,9 +2040,7 @@ function bindUI() {
   });
   document.addEventListener("click", (event) => {
     if (event.target && event.target.id === "history-reset") {
-      state.telemetry.samples = [];
-      persistTelemetry();
-      renderDeck();
+      clearDeckTelemetry();
     }
   });
   window.deckMode = (mode) => applyMode(mode);

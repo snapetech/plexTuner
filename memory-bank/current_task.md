@@ -4,7 +4,7 @@
 
 **Latest (2026-03-19, gateway):** Shipped optional **`IPTV_TUNERR_HLS_MUX_CORS`** for `?mux=hls` playlist + `seg=` responses and `OPTIONS` preflight; runtime snapshot `tuner.hls_mux_cors`; tests + docs + `./scripts/verify` OK.
 
-**Latest (2026-03-20):** Continuing the web UI from “guided control plane” toward “sticky operator cockpit.” Current slice adds browser-local persistence for deck telemetry and UI preferences so the dashboard keeps short-term memory across reloads instead of forgetting mode/refresh/history every time the page refreshes. Assumption: keep this storage entirely client-side (`localStorage`) rather than introducing a new server-side state service just for operator preferences.
+**Latest (2026-03-20):** Continuing the web UI from “sticky operator cockpit” toward shared operator memory. Current slice adds a server-backed deck telemetry endpoint in `internal/webui` so trend cards can use shared in-process history across reloads and browsers hitting the same deck, while leaving per-user UI prefs in client-side `localStorage`. In the same cleanup pass, the gateway HLS mux path now has explicit browser/CORS hooks and bounded segment-proxy concurrency knobs instead of treating every `?mux=hls&seg=` request as unbounded.
 
 **Goal:** Start the new Live TV Intelligence product track: map the multi-PR roadmap, then ship the first visible foundation feature so IPTV Tunerr feels like an intelligent control plane instead of only a tuner bridge.
 

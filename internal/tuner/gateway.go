@@ -59,6 +59,7 @@ type Gateway struct {
 	Autopilot            *autopilotStore
 	mu                   sync.Mutex
 	inUse                int
+	hlsMuxSegInUse       int // concurrent ?mux=hls&seg= proxies (bounded; see effectiveHLSMuxSegLimitLocked)
 	learnedUpstreamLimit int
 	reqSeq               uint64
 	providerStateMu      sync.Mutex
@@ -168,11 +169,32 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if requestMux == "hls" {
 		target := strings.TrimSpace(r.URL.Query().Get("seg"))
 		if target != "" {
+			g.mu.Lock()
+			segLimit := g.effectiveHLSMuxSegLimitLocked()
+			if g.hlsMuxSegInUse >= segLimit {
+				g.mu.Unlock()
+				log.Printf("gateway: req=%s channel=%q id=%s reject hls-mux-seg limit=%d ua=%q", reqID, channel.GuideName, channelID, segLimit, r.UserAgent())
+				w.Header().Set("X-HDHomeRun-Error", "805") // All Tuners In Use
+				http.Error(w, "All tuners in use", http.StatusServiceUnavailable)
+				finalStatus = "hls_mux_seg_limit"
+				finalErr = errors.New("hls mux segment concurrency limit")
+				return
+			}
+			g.hlsMuxSegInUse++
+			segInUseNow := g.hlsMuxSegInUse
+			g.mu.Unlock()
+			log.Printf("gateway: req=%s channel=%q id=%s acquire hls-mux-seg inuse=%d/%d", reqID, channel.GuideName, channelID, segInUseNow, segLimit)
 			client := g.Client
 			if client == nil {
 				client = httpclient.ForStreaming()
 			}
-			if err := g.serveHLSMuxTarget(w, r, client, channelID, target); err != nil {
+			err := g.serveHLSMuxTarget(w, r, client, channelID, target)
+			g.mu.Lock()
+			g.hlsMuxSegInUse--
+			segLeft := g.hlsMuxSegInUse
+			g.mu.Unlock()
+			log.Printf("gateway: req=%s channel=%q id=%s release hls-mux-seg inuse=%d/%d dur=%s", reqID, channel.GuideName, channelID, segLeft, segLimit, time.Since(start).Round(time.Millisecond))
+			if err != nil {
 				finalStatus = "hls_mux_target_failed"
 				finalErr = err
 				http.Error(w, "HLS mux target failed", http.StatusBadGateway)

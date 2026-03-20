@@ -5,19 +5,23 @@ package webui
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
 // DefaultPort is 0xBEEF in decimal.
 const DefaultPort = 48879
+const defaultTelemetryHistoryLimit = 96
 
 //go:embed index.html
 var indexHTML string
@@ -31,6 +35,24 @@ type Server struct {
 
 	tunerBase string
 	tmpl      *template.Template
+
+	telemetryMu      sync.Mutex
+	telemetrySamples []DeckTelemetrySample
+}
+
+type DeckTelemetrySample struct {
+	SampledAt       string  `json:"sampled_at"`
+	HealthOK        bool    `json:"health_ok"`
+	GuidePercent    float64 `json:"guide_percent"`
+	StreamPercent   float64 `json:"stream_percent"`
+	RecorderPercent float64 `json:"recorder_percent"`
+	OpsPercent      float64 `json:"ops_percent"`
+}
+
+type DeckTelemetryReport struct {
+	GeneratedAt string                `json:"generated_at"`
+	Count       int                   `json:"count"`
+	Samples     []DeckTelemetrySample `json:"samples"`
 }
 
 // New constructs a dedicated dashboard server.
@@ -56,6 +78,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/api/", http.StatusSeeOther)
 	})
+	mux.HandleFunc("/deck/telemetry.json", s.telemetry)
 	mux.HandleFunc("/", s.index)
 
 	handler := http.Handler(mux)
@@ -90,6 +113,58 @@ func (s *Server) Run(ctx context.Context) error {
 		<-serverErr
 		return nil
 	}
+}
+
+func (s *Server) telemetry(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	switch r.Method {
+	case http.MethodGet:
+		s.writeTelemetry(w)
+	case http.MethodPost:
+		var sample DeckTelemetrySample
+		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if err != nil {
+			http.Error(w, `{"error":"read telemetry body"}`, http.StatusBadRequest)
+			return
+		}
+		if err := json.Unmarshal(body, &sample); err != nil {
+			http.Error(w, `{"error":"invalid telemetry json"}`, http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(sample.SampledAt) == "" {
+			sample.SampledAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		s.telemetryMu.Lock()
+		s.telemetrySamples = append(s.telemetrySamples, sample)
+		if len(s.telemetrySamples) > defaultTelemetryHistoryLimit {
+			s.telemetrySamples = append([]DeckTelemetrySample(nil), s.telemetrySamples[len(s.telemetrySamples)-defaultTelemetryHistoryLimit:]...)
+		}
+		s.telemetryMu.Unlock()
+		s.writeTelemetry(w)
+	case http.MethodDelete:
+		s.telemetryMu.Lock()
+		s.telemetrySamples = nil
+		s.telemetryMu.Unlock()
+		s.writeTelemetry(w)
+	default:
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) writeTelemetry(w http.ResponseWriter) {
+	s.telemetryMu.Lock()
+	rep := DeckTelemetryReport{
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		Count:       len(s.telemetrySamples),
+		Samples:     append([]DeckTelemetrySample(nil), s.telemetrySamples...),
+	}
+	s.telemetryMu.Unlock()
+	body, err := json.MarshalIndent(rep, "", "  ")
+	if err != nil {
+		http.Error(w, `{"error":"encode telemetry"}`, http.StatusInternalServerError)
+		return
+	}
+	_, _ = w.Write(body)
 }
 
 func (s *Server) proxy(w http.ResponseWriter, r *http.Request) {
