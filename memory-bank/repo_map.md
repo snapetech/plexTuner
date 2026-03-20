@@ -23,6 +23,7 @@ Normal push path from this checkout: `git push origin main`. Never `git push git
 | **`internal/catalog/`** | Movie/Series/LiveChannel types; Save (snapshot then encode), Load. |
 | **`internal/tuner/`** | HDHR endpoints, stream gateway, XMLTV/guide pipeline, Autopilot, Ghost Hunter, provider profile, catch-up publishing. |
 | **`internal/epgstore/`** | Optional SQLite EPG file (`IPTV_TUNERR_EPG_SQLITE_PATH`): migrations, `SyncMergedGuideXML` (optional retain-past prune), max-stop queries; `/guide/epg-store.json`. |
+| **HDHR hardware EPG** | Optional `IPTV_TUNERR_HDHR_GUIDE_URL` merges device `guide.xml` in `internal/tuner/epg_pipeline.go` ([ADR 0004](../docs/adr/0004-hdhr-guide-epg-merge.md)). |
 | **`internal/channelreport/`** | Channel intelligence scoring and report building. |
 | **`internal/channeldna/`** | Stable per-channel identity (`dna_id`) and grouping/report surfaces. |
 | **`internal/emby/`** | Emby/Jellyfin tuner registration plus catch-up library registration helpers. |

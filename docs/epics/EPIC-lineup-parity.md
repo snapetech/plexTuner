@@ -85,7 +85,7 @@ IPTV Tunerr’s mission stays **IPTV/Xtream → HDHR-shaped bridge for Plex/Emby
 ## Current status
 
 - **PR-1**: `LP-001`, `LP-002` spike, ADR 0002, docs.
-- **PR-2 (partial)**: **`LP-003`** — `FetchGuideXML`, `AnalyzeGuideXMLStats`, `hdhr-scan -guide-xml` (device XMLTV fetch + stats; **no merge** into Tunerr guide pipeline).
+- **PR-2 (partial)**: **`LP-003`** — `FetchGuideXML`, `AnalyzeGuideXMLStats`, `hdhr-scan -guide-xml` (device probe). **`IPTV_TUNERR_HDHR_GUIDE_URL`** merges hardware `guide.xml` into `/guide.xml` after provider + external gap-fill ([ADR 0004](../adr/0004-hdhr-guide-epg-merge.md)); identity is `tvg-id` string match only.
 - **PR-3 (partial)**: **`LP-004`/`LP-005`** — embedded `/ui/` with health/guide/report links; `IPTV_TUNERR_UI_DISABLED` / `IPTV_TUNERR_UI_ALLOW_LAN`; `AppVersion` on server.
 - **PR-4 (partial)**: **`LP-006`** — `/ui/guide/` + `/ui/guide-preview.json` read-only merged cached guide preview (`XMLTV.GuidePreview`); shared `operatorUIAllowed` helper.
 - **PR-5 (partial)**: **`LP-007`** — `internal/epgstore` schema v1 + migrations + `IPTV_TUNERR_EPG_SQLITE_PATH`; runtime open on `serve`/`run`; [ADR 0003](../adr/0003-epg-sqlite-vs-postgres.md) (SQLite vs Postgres).

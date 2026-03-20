@@ -345,6 +345,15 @@ func TestXMLTVEnv(t *testing.T) {
 	if c.XMLTVTimeout != 9*time.Second {
 		t.Errorf("XMLTVTimeout: got %v", c.XMLTVTimeout)
 	}
+	os.Setenv("IPTV_TUNERR_HDHR_GUIDE_URL", "http://example/hdhr/guide.xml")
+	os.Setenv("IPTV_TUNERR_HDHR_GUIDE_TIMEOUT", "33s")
+	c = Load()
+	if c.HDHRGuideURL != "http://example/hdhr/guide.xml" {
+		t.Errorf("HDHRGuideURL: got %q", c.HDHRGuideURL)
+	}
+	if c.HDHRGuideTimeout != 33*time.Second {
+		t.Errorf("HDHRGuideTimeout: got %v", c.HDHRGuideTimeout)
+	}
 }
 
 func TestStreamTranscodeMode(t *testing.T) {

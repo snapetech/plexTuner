@@ -87,6 +87,10 @@ type Server struct {
 	EpgSQLiteRetainPastHours int
 	// ProviderEPGURLSuffix is appended to provider xmltv.php URL (optional; e.g. panel-specific date params).
 	ProviderEPGURLSuffix string
+	// HDHRGuideURL is an optional device guide.xml URL (LP-003); merged after provider + external gap-fill.
+	HDHRGuideURL string
+	// HDHRGuideTimeout for guide.xml fetch; 0 = default 90s.
+	HDHRGuideTimeout time.Duration
 
 	// health state updated by UpdateChannels; read by /healthz.
 	healthMu       sync.RWMutex
@@ -983,6 +987,8 @@ func (s *Server) Run(ctx context.Context) error {
 		EpgStore:             s.EpgStore,
 		EpgRetainPastHours:   s.EpgSQLiteRetainPastHours,
 		ProviderEPGURLSuffix: s.ProviderEPGURLSuffix,
+		HDHRGuideURL:         s.HDHRGuideURL,
+		HDHRGuideTimeout:     s.HDHRGuideTimeout,
 	}
 	s.xmltv = xmltv
 	xmltv.StartRefresh(ctx)

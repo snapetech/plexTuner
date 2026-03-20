@@ -13,6 +13,9 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+### HDHR EPG merge (LP-003 partial)
+- **`IPTV_TUNERR_HDHR_GUIDE_URL`** / **`IPTV_TUNERR_HDHR_GUIDE_TIMEOUT`**: optional fetch of a physical HDHomeRun-style `guide.xml`, merged after provider + external EPG; non-overlapping programmes per `tvg-id`. See [ADR 0004](adr/0004-hdhr-guide-epg-merge.md).
+
 ### Transcode profiles (LP-010 / LP-011 partial)
 - **HDHR-style profile aliases** in `normalizeProfileName` (`native`, `heavy`, `internet360`, `mobile`, … → existing ffmpeg TS presets); **hyphen/punctuation variants** match the same presets (e.g. `Internet-1080` → `dashfast`).
 - **Explicit `?profile=pmsxcode`** now forces transcode (same as other named profiles).

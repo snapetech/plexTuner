@@ -22,9 +22,10 @@ import (
 )
 
 // XMLTV serves /guide.xml using a layered EPG pipeline:
-//  1. Placeholder (always) — fallback for unmatched channels
-//  2. External XMLTV (SourceURL) — supersedes placeholder per channel
-//  3. Provider XMLTV via xmltv.php — supersedes external per channel; external gap-fills provider
+//  1. Placeholder — fallback when no programme sources match a channel
+//  2. External XMLTV (SourceURL) — gap-fills or replaces placeholder per channel
+//  3. Provider XMLTV via xmltv.php — primary when enabled; external gap-fills provider holes
+//  4. Optional HDHR device guide.xml (HDHRGuideURL) — gap-fills after provider+external (LP-003)
 //
 // The merged result is cached for CacheTTL (default 10m) and refreshed by StartRefresh in the
 // background. ServeHTTP reads from the cache; the pipeline runs asynchronously.
@@ -49,6 +50,10 @@ type XMLTV struct {
 	EpgRetainPastHours int
 	// ProviderEPGURLSuffix is appended to provider xmltv.php URL (optional; panel-specific query params). LP-008 follow-on.
 	ProviderEPGURLSuffix string
+	// HDHRGuideURL is an optional http(s) URL to a physical HDHomeRun-style guide.xml (LP-003).
+	HDHRGuideURL string
+	// HDHRGuideTimeout for fetching HDHRGuideURL; 0 = default 90s.
+	HDHRGuideTimeout time.Duration
 
 	mu        sync.RWMutex
 	cachedXML []byte

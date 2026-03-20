@@ -23,6 +23,21 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: LP-003 partial — HDHR guide.xml merge into /guide.xml
+  Summary:
+    - Config: `IPTV_TUNERR_HDHR_GUIDE_URL`, `IPTV_TUNERR_HDHR_GUIDE_TIMEOUT`; `Server` / `XMLTV` / `newRuntimeServer` wiring.
+    - `buildMergedEPG` fetches HDHR XMLTV; `mergeChannelProgrammes` adds non-overlapping hardware programmes after provider+external; HDHR-only path when no provider/external for a `tvg-id`.
+    - ADR [docs/adr/0004-hdhr-guide-epg-merge.md](../docs/adr/0004-hdhr-guide-epg-merge.md); cli/features/changelog/epic updates.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Matching is strict `tvg-id` equality with device `guide.xml` programme `channel` attrs; catalog alignment is operator responsibility.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/epg_pipeline.go`, `internal/config/config.go`
+
+- Date: 2026-03-19
   Title: LP-010/LP-011 partial — transcode profile aliases + pmsxcode query
   Summary:
     - `normalizeProfileName`: HDHR/SiliconDust-style labels (`native`, `internet360`, `mobile`, …) map to existing TS profiles.

@@ -62,6 +62,10 @@ type Config struct {
 	EpgSQLiteRetainPastHours int
 	// ProviderEPGURLSuffix is appended to provider xmltv.php URL (e.g. panel-specific query params). Empty = default URL only.
 	ProviderEPGURLSuffix string
+	// HDHRGuideURL is an optional http(s) URL to a SiliconDust-style device guide.xml (LP-003). Empty = disabled.
+	HDHRGuideURL string
+	// HDHRGuideTimeout is the HTTP timeout for HDHRGuideURL. 0 = default 90s.
+	HDHRGuideTimeout time.Duration
 	// Provider ingest policy: when true, reject any provider URL that is Cloudflare-proxied.
 	// The ranker will skip CF URLs and try alternates; if all URLs are CF-proxied, ingest is
 	// blocked with an alert log. Off by default. Enable with IPTV_TUNERR_BLOCK_CF_PROVIDERS=true.
@@ -167,6 +171,8 @@ func Load() *Config {
 		EpgSQLitePath:               strings.TrimSpace(os.Getenv("IPTV_TUNERR_EPG_SQLITE_PATH")),
 		EpgSQLiteRetainPastHours:    getEnvInt("IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS", 0),
 		ProviderEPGURLSuffix:        strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX")),
+		HDHRGuideURL:                getEnvURL("IPTV_TUNERR_HDHR_GUIDE_URL"),
+		HDHRGuideTimeout:            getEnvDuration("IPTV_TUNERR_HDHR_GUIDE_TIMEOUT", 90*time.Second),
 		BlockCFProviders:            getEnvBool("IPTV_TUNERR_BLOCK_CF_PROVIDERS", false),
 		FetchCFReject:               getEnvBool("IPTV_TUNERR_FETCH_CF_REJECT", false),
 		StripStreamHosts:            getEnvHosts("IPTV_TUNERR_STRIP_STREAM_HOSTS"),

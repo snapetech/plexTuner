@@ -398,3 +398,41 @@ func TestXMLTV_buildMergedEPG_UsesRealProgrammeBlocksNotPlaceholder(t *testing.T
 		}
 	}
 }
+
+func TestXMLTV_buildMergedEPG_HDHRGuideURL(t *testing.T) {
+	hdhrXML := `<?xml version="1.0" encoding="utf-8"?>
+<tv>
+  <programme start="20300101000000 +0000" stop="20300101010000 +0000" channel="ota-hdhr-1">
+    <title>OTA Morning</title>
+  </programme>
+</tv>`
+	hdhr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(hdhrXML))
+	}))
+	defer hdhr.Close()
+
+	x := &XMLTV{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "12", GuideName: "Local OTA", TVGID: "ota-hdhr-1", EPGLinked: true},
+		},
+		ProviderEPGEnabled: false,
+		HDHRGuideURL:       hdhr.URL,
+		HDHRGuideTimeout:   5 * time.Second,
+	}
+	x.refresh()
+
+	req := httptest.NewRequest(http.MethodGet, "/guide.xml", nil)
+	w := httptest.NewRecorder()
+	x.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code: %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "OTA Morning") {
+		t.Fatalf("expected HDHR programme title in guide: %s", body)
+	}
+	if !strings.Contains(body, `channel="12"`) {
+		t.Fatalf("expected remap to guide number 12: %s", body)
+	}
+}

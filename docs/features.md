@@ -42,13 +42,13 @@ See also:
 |---------|-------------|
 | **`discover.json`** | HDHR discovery endpoint (Plex-compatible). |
 | **`lineup.json` / `lineup_status.json`** | Tuner channel lineup and status endpoints. |
-| **`guide.xml`** | Layered XMLTV guide output (provider `xmltv.php` > external XMLTV > placeholder fallback). |
+| **`guide.xml`** | Layered XMLTV guide output (provider `xmltv.php` > external XMLTV > optional HDHR device `guide.xml` gap-fill > placeholder). |
 | **`live.m3u`** | Live channel M3U export. |
 | **`/stream/<id>`** | Stream gateway with provider auth/failover and tuner count limiting. |
 | **Tuner count limit** | Configurable concurrent streams, HDHR-style “all tuners in use” behavior. |
 | **HDHR metadata controls** | Per-instance discover metadata (manufacturer/model/fw/device auth) and `ScanPossible` control for wizard-lane vs category tuners. |
 | **Physical HDHomeRun client (spike)** | `hdhr-scan` discovers real tuners on the LAN (UDP) or fetches `discover.json` / `lineup.json` via HTTP; catalog merge is **not** automatic — see [ADR 0002](adr/0002-hdhr-hardware-iptv-merge.md). |
-| **HDHR `guide.xml` probe** | `hdhr-scan -guide-xml` downloads device XMLTV and counts channels/programmes (observability only; no pipeline merge yet). |
+| **HDHR `guide.xml`** | `hdhr-scan -guide-xml` probes device XMLTV (counts). **`IPTV_TUNERR_HDHR_GUIDE_URL`** merges that feed into `/guide.xml` when `tvg-id` values match ([ADR 0004](adr/0004-hdhr-guide-epg-merge.md)). |
 | **Operator `/ui/` shell** | Embedded static pages on `serve`/`run`: home (`/ui/`) links to health and JSON reports; **`/ui/guide/`** shows a read-only preview of the merged cached guide; localhost-only unless `IPTV_TUNERR_UI_ALLOW_LAN=1`. |
 
 ## 4. Stream gateway and transcoding
@@ -72,6 +72,7 @@ Optional **SQLite EPG file** (`IPTV_TUNERR_EPG_SQLITE_PATH`) stores merged guide
 |---------|-------------|
 | **Provider EPG via `xmltv.php`** | Fetches EPG directly from Xtream provider using existing credentials (`IPTV_TUNERR_PROVIDER_EPG_ENABLED`). No third-party EPG source required for Xtream providers. |
 | **External XMLTV fetch/remap** | Fetch external XMLTV, filter to current lineup, remap programme channel IDs to local guide numbers. Gap-fills provider EPG for uncovered time windows. |
+| **HDHR hardware EPG (optional)** | When `IPTV_TUNERR_HDHR_GUIDE_URL` is set, fetch device `guide.xml` and add non-overlapping programmes per `tvg-id` after provider + external. |
 | **Deterministic runtime EPG repair** | During catalog build, channels can have missing/wrong `TVGID`s repaired from provider/external XMLTV channel metadata before `LIVE_EPG_ONLY` filtering. |
 | **Alias override source** | Optional alias file/URL (`IPTV_TUNERR_XMLTV_ALIASES`) supplies manual channel-name to XMLTV-ID mappings for long-tail repairs. |
 | **Placeholder XMLTV** | Valid XMLTV output always available — per-channel fallback when neither provider nor external has data. |

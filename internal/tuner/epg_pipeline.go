@@ -184,13 +184,46 @@ func windowsOverlap(w timeWindow, wins []timeWindow) bool {
 	return false
 }
 
+// programmeNodesToWindows extracts start/stop windows from programme nodes (for overlap checks).
+func programmeNodesToWindows(nodes []xmlRawNode) []timeWindow {
+	wins := make([]timeWindow, 0, len(nodes))
+	for _, n := range nodes {
+		startStr := strings.TrimSpace(xmlAttr(n.Attrs, "start"))
+		stopStr := strings.TrimSpace(xmlAttr(n.Attrs, "stop"))
+		st, ok1 := parseXMLTVTime(startStr)
+		et, ok2 := parseXMLTVTime(stopStr)
+		if !ok1 || !ok2 {
+			continue
+		}
+		wins = append(wins, timeWindow{start: st, stop: et})
+	}
+	return wins
+}
+
+func placeholderProgrammeNodes(tvgID, channelName string) []xmlRawNode {
+	now := time.Now()
+	startStr := now.Add(-24 * time.Hour).UTC().Format("20060102150405 +0000")
+	stopStr := now.Add(7 * 24 * time.Hour).UTC().Format("20060102150405 +0000")
+	placeholder := xmlRawNode{
+		XMLName: xml.Name{Local: "programme"},
+		Attrs: []xml.Attr{
+			{Name: xml.Name{Local: "start"}, Value: startStr},
+			{Name: xml.Name{Local: "stop"}, Value: stopStr},
+			{Name: xml.Name{Local: "channel"}, Value: tvgID},
+		},
+		InnerXML: "<title>" + xmlEscapeText(channelName) + "</title>",
+	}
+	return []xmlRawNode{placeholder}
+}
+
 // mergeChannelProgrammes returns the merged programme nodes for a single channel.
 //
 // Priority:
 //  1. Provider programmes (if any)
 //  2. External programmes that gap-fill provider (or all external when provider empty)
-//  3. Single placeholder programme spanning -24h to +7d when both sources empty
-func mergeChannelProgrammes(tvgID string, provEPG *parsedEPG, extEPG *parsedEPG, channelName string) []xmlRawNode {
+//  3. HDHR device programmes (optional) that gap-fill remaining holes vs the union of (1)+(2)
+//  4. Single placeholder programme spanning -24h to +7d when (1)–(3) all empty
+func mergeChannelProgrammes(tvgID string, provEPG, extEPG, hdhrEPG *parsedEPG, channelName string) []xmlRawNode {
 	var provNodes []xmlRawNode
 	var provWindows []timeWindow
 	if provEPG != nil {
@@ -209,50 +242,71 @@ func mergeChannelProgrammes(tvgID string, provEPG *parsedEPG, extEPG *parsedEPG,
 		}
 	}
 
+	var hdhrNodes []xmlRawNode
+	var hdhrWindows []timeWindow
+	if hdhrEPG != nil {
+		if cepg, ok := hdhrEPG.programmes[tvgID]; ok {
+			hdhrNodes = cepg.nodes
+			hdhrWindows = cepg.windows
+		}
+	}
+
 	hasProvider := len(provNodes) > 0
 	hasExternal := len(extNodes) > 0
+	hasHDHR := len(hdhrNodes) > 0
 
-	if !hasProvider && !hasExternal {
-		// Placeholder: single wide programme.
-		now := time.Now()
-		startStr := now.Add(-24 * time.Hour).UTC().Format("20060102150405 +0000")
-		stopStr := now.Add(7 * 24 * time.Hour).UTC().Format("20060102150405 +0000")
-		placeholder := xmlRawNode{
-			XMLName: xml.Name{Local: "programme"},
-			Attrs: []xml.Attr{
-				{Name: xml.Name{Local: "start"}, Value: startStr},
-				{Name: xml.Name{Local: "stop"}, Value: stopStr},
-				{Name: xml.Name{Local: "channel"}, Value: tvgID},
-			},
-			InnerXML: "<title>" + xmlEscapeText(channelName) + "</title>",
-		}
-		return []xmlRawNode{placeholder}
+	if !hasProvider && !hasExternal && !hasHDHR {
+		return placeholderProgrammeNodes(tvgID, channelName)
 	}
 
+	// Hardware-only path: no provider and no external data for this tvg-id.
+	if !hasProvider && !hasExternal && hasHDHR {
+		return hdhrNodes
+	}
+
+	var baseNodes []xmlRawNode
 	if !hasProvider {
-		// No provider data: use all external.
-		return extNodes
-	}
-
-	// Provider has data. Start with provider, then gap-fill from external.
-	merged := make([]xmlRawNode, len(provNodes))
-	copy(merged, provNodes)
-
-	if hasExternal {
-		// Sort provider windows for consistent gap detection.
-		sortedProvWindows := make([]timeWindow, len(provWindows))
-		copy(sortedProvWindows, provWindows)
-		sort.Slice(sortedProvWindows, func(i, j int) bool {
-			return sortedProvWindows[i].start.Before(sortedProvWindows[j].start)
-		})
-		for i, extNode := range extNodes {
-			if !windowsOverlap(extWindows[i], sortedProvWindows) {
-				merged = append(merged, extNode)
+		baseNodes = append([]xmlRawNode{}, extNodes...)
+	} else {
+		merged := make([]xmlRawNode, len(provNodes))
+		copy(merged, provNodes)
+		if hasExternal {
+			sortedProvWindows := make([]timeWindow, len(provWindows))
+			copy(sortedProvWindows, provWindows)
+			sort.Slice(sortedProvWindows, func(i, j int) bool {
+				return sortedProvWindows[i].start.Before(sortedProvWindows[j].start)
+			})
+			for i, extNode := range extNodes {
+				if !windowsOverlap(extWindows[i], sortedProvWindows) {
+					merged = append(merged, extNode)
+				}
 			}
 		}
+		baseNodes = merged
 	}
 
-	return merged
+	if !hasHDHR {
+		return baseNodes
+	}
+
+	baseWins := programmeNodesToWindows(baseNodes)
+	sort.Slice(baseWins, func(i, j int) bool {
+		return baseWins[i].start.Before(baseWins[j].start)
+	})
+
+	out := append([]xmlRawNode{}, baseNodes...)
+	for i := range hdhrNodes {
+		var w timeWindow
+		if i < len(hdhrWindows) {
+			w = hdhrWindows[i]
+		} else {
+			continue
+		}
+		if !windowsOverlap(w, baseWins) {
+			out = append(out, hdhrNodes[i])
+		}
+	}
+	return out
 }
 
 // buildMergedEPG constructs the complete merged XMLTV guide XML for all channels.
@@ -301,6 +355,25 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 			provEPG = nil
 		} else {
 			log.Printf("xmltv: provider XMLTV fetched: %d channels with programmes", len(provEPG.programmes))
+		}
+	}
+
+	var hdhrEPG *parsedEPG
+	hdhrURL := strings.TrimSpace(x.HDHRGuideURL)
+	if hdhrURL != "" {
+		hdTimeout := x.HDHRGuideTimeout
+		if hdTimeout <= 0 {
+			hdTimeout = 90 * time.Second
+		}
+		hdCtx, hdCancel := context.WithTimeout(context.Background(), hdTimeout+5*time.Second)
+		var err error
+		hdhrEPG, err = fetchAndParseXMLTV(hdCtx, hdhrURL, hdTimeout, x.Client, allowedTVGIDs)
+		hdCancel()
+		if err != nil {
+			log.Printf("xmltv: HDHR guide.xml fetch failed (%v); continuing without hardware EPG", err)
+			hdhrEPG = nil
+		} else {
+			log.Printf("xmltv: HDHR guide.xml fetched: %d channels with programmes", len(hdhrEPG.programmes))
 		}
 	}
 
@@ -384,7 +457,7 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 				InnerXML: "<title>" + xmlEscapeText(ref.GuideName) + "</title>",
 			}}
 		} else {
-			nodes = mergeChannelProgrammes(tvgID, provEPG, extEPG, ref.GuideName)
+			nodes = mergeChannelProgrammes(tvgID, provEPG, extEPG, hdhrEPG, ref.GuideName)
 		}
 
 		for i := range nodes {
