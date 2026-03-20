@@ -49,8 +49,10 @@ Append-only. One entry per completed task.
     - **`509`** now counts as an upstream concurrency signal, and HLS playlist refreshes learn provider limits just like stream-open failures do.
     - HLS playlist refreshes now use bounded retry/backoff on concurrency-style failures, which helps short-lived provider contention recover without immediately killing the stream.
     - Non-transcode HLS now prefers the Go relay over **ffmpeg remux** once provider pressure is already known, reducing extra upstream request churn on fragile providers.
+    - Added an integration-style relay test proving **`relayHLSAsTS`** survives a transient **`509`** playlist refresh and keeps writing bytes instead of aborting the stream immediately.
   Verification:
     - `go test ./internal/tuner -run 'Test(IsUpstreamConcurrencyLimit_509|Gateway_shouldPreferGoRelayForHLSRemux|Gateway_fetchAndRewritePlaylist_retriesConcurrencyLimit|Gateway_learnsUpstreamConcurrencyLimitAndRejectsLocally|ParseUpstreamConcurrencyLimit)'`
+    - `go test ./internal/tuner -run 'TestGateway_relayHLSAsTS_survivesPlaylistConcurrencyRetry'`
     - `./scripts/verify`
   Opportunities filed:
     - none
