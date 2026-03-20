@@ -538,3 +538,53 @@ func TestTopLevelUsageRequested(t *testing.T) {
 		}
 	}
 }
+
+func TestMergeHDHRCatalogChannels_keepsTVGIDCollisionsAsSeparateSources(t *testing.T) {
+	base := []catalog.LiveChannel{
+		{
+			ChannelID:   "iptv:fox",
+			GuideNumber: "42",
+			GuideName:   "FOX News IPTV",
+			TVGID:       "42",
+			StreamURL:   "http://iptv/fox.m3u8",
+			StreamURLs:  []string{"http://iptv/fox.m3u8"},
+			EPGLinked:   true,
+			SourceTag:   "iptv",
+		},
+	}
+	hd := []catalog.LiveChannel{
+		{
+			ChannelID:   "hdhr:42",
+			GuideNumber: "42",
+			GuideName:   "FOX News OTA",
+			TVGID:       "42",
+			StreamURL:   "http://hdhr/auto/v42",
+			StreamURLs:  []string{"http://hdhr/auto/v42"},
+			EPGLinked:   true,
+			SourceTag:   "hdhr",
+		},
+	}
+	got := mergeHDHRCatalogChannels(base, hd)
+	if len(got) != 2 {
+		t.Fatalf("len=%d want 2", len(got))
+	}
+	if got[1].ChannelID != "hdhr:42" {
+		t.Fatalf("ChannelID=%q", got[1].ChannelID)
+	}
+	if got[1].SourceTag != "hdhr" {
+		t.Fatalf("SourceTag=%q", got[1].SourceTag)
+	}
+}
+
+func TestMergeHDHRCatalogChannels_skipsExactChannelIDDuplicate(t *testing.T) {
+	base := []catalog.LiveChannel{
+		{ChannelID: "hdhr:10", TVGID: "10", StreamURL: "http://a", StreamURLs: []string{"http://a"}},
+	}
+	hd := []catalog.LiveChannel{
+		{ChannelID: "hdhr:10", TVGID: "10", StreamURL: "http://b", StreamURLs: []string{"http://b"}},
+	}
+	got := mergeHDHRCatalogChannels(base, hd)
+	if len(got) != 1 {
+		t.Fatalf("len=%d want 1", len(got))
+	}
+}

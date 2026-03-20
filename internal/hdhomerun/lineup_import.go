@@ -40,6 +40,7 @@ func LiveChannelsFromLineupDoc(doc *LineupDoc, idPrefix string) []catalog.LiveCh
 			EPGLinked:   true,
 			TVGID:       gn,
 			GroupTitle:  "HDHomeRun",
+			SourceTag:   prefix,
 		})
 	}
 	return out

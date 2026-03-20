@@ -45,7 +45,7 @@ IPTV Tunerr’s mission stays **IPTV/Xtream → HDHR-shaped bridge for Plex/Emby
 
 ## Implementation status (repo snapshot)
 
-- **LP-001 (MVP shipped):** `internal/hdhomerun` implements **`DiscoverLAN`** (UDP broadcast), **`ParseDiscoverReply`**, **`FetchDiscoverJSON`**, **`FetchLineupJSON`**, **`FetchGuideXML`**. Operators run **`iptv-tunerr hdhr-scan`** (LAN discovery or **`-addr http://device`**). Further work = polish (multicast subnets, IPv6) and **LP-002** merge ADR.
+- **LP-001 (MVP shipped):** `internal/hdhomerun` implements **`DiscoverLAN`** (UDP broadcast), **`ParseDiscoverReply`**, **`FetchDiscoverJSON`**, **`FetchLineupJSON`**, **`FetchGuideXML`**. Operators run **`iptv-tunerr hdhr-scan`** (LAN discovery or **`-addr http://device`**). Further work = polish (multicast subnets, IPv6) and continued **LP-002** merge ADR alignment.
 - **LP-010 (partial):** Hardware-style profile aliases (**`internet720`**, **`mobile`**, …) map to ffmpeg TS profiles in **`internal/tuner/gateway_profiles.go`**; see [transcode-profiles](../reference/transcode-profiles.md). Remaining LP-010 scope = explicit config file / env matrix and optional **HLS/fMP4 output** profiles (**LP-011**).
 - **LP-004–LP-006:** Substantial dashboard work lives in **`internal/webui`** + tuner JSON APIs; treat epic rows as iterative hardening, not empty.
 - **Not started here (multi-PR):** **LP-007–LP-009** (SQLite schema, incremental fetch, cleanup), **Postgres**, always-on recorder daemon — track in [memory-bank/work_breakdown.md](../../memory-bank/work_breakdown.md) when scheduled.
@@ -91,7 +91,7 @@ IPTV Tunerr’s mission stays **IPTV/Xtream → HDHR-shaped bridge for Plex/Emby
 
 ## Current status
 
-- **PR-1**: **`LP-001`** discovery; **`LP-002`** — **`IPTV_TUNERR_HDHR_LINEUP_URL`** merges device **`lineup.json`** at **index** time (`IPTV_TUNERR_HDHR_LINEUP_ID_PREFIX`); ADR 0002; [how-to hybrid HDHR+IPTV](../how-to/hybrid-hdhr-iptv.md).
+- **PR-1**: **`LP-001`** discovery; **`LP-002`** — **`IPTV_TUNERR_HDHR_LINEUP_URL`** merges device **`lineup.json`** at **index** time (`IPTV_TUNERR_HDHR_LINEUP_ID_PREFIX`); imported rows are source-tagged and no longer dropped just because an IPTV row already uses the same **`tvg_id`**; ADR 0002; [how-to hybrid HDHR+IPTV](../how-to/hybrid-hdhr-iptv.md).
 - **PR-2**: **`LP-003`** — `hdhr-scan`, **`IPTV_TUNERR_HDHR_GUIDE_URL`** runtime merge into `/guide.xml` ([ADR 0004](../adr/0004-hdhr-guide-epg-merge.md)); `tvg-id` string match.
 - **PR-3**: **`LP-004`/`LP-005`** — `/ui/`, health links, `IPTV_TUNERR_UI_*`, `AppVersion`.
 - **PR-4**: **`LP-006`** — `/ui/guide/`, `guide-preview.json`, `GuidePreview`.

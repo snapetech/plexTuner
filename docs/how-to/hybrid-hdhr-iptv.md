@@ -29,7 +29,7 @@ export IPTV_TUNERR_HDHR_LINEUP_ID_PREFIX=hdhr   # optional; default hdhr
 iptv-tunerr index
 ```
 
-Hardware channels get `channel_id` like `hdhr:10`, **`tvg_id` = guide number** (string), and `group_title` **HDHomeRun**. Duplicates are skipped if the same `channel_id` or `tvg_id` already exists from IPTV.
+Hardware channels get `channel_id` like `hdhr:10`, **`tvg_id` = guide number** (string), `group_title` **HDHomeRun**, and `source_tag` matching the configured HDHR prefix (default `hdhr`). Exact `channel_id` duplicates are skipped, but `tvg_id` collisions are now kept as separate source-tagged rows so OTA and IPTV do not silently collapse into one channel.
 
 ## 3. Merge device EPG into `/guide.xml` (serve / run)
 

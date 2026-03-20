@@ -19,4 +19,7 @@ func TestLiveChannelsFromLineupDoc(t *testing.T) {
 	if ch[0].ChannelID != "hdhr:10" || ch[0].TVGID != "10" || ch[0].StreamURL != "http://hdhr/auto/v10" {
 		t.Fatalf("unexpected: %+v", ch[0])
 	}
+	if ch[0].SourceTag != "hdhr" {
+		t.Fatalf("SourceTag=%q want hdhr", ch[0].SourceTag)
+	}
 }

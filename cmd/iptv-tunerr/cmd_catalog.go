@@ -597,27 +597,33 @@ func configuredDirectM3UURLs(cfg *config.Config) []string {
 
 func mergeHDHRCatalogChannels(base, hd []catalog.LiveChannel) []catalog.LiveChannel {
 	seen := make(map[string]struct{}, len(base)+len(hd))
+	existingTVG := make(map[string]int, len(base))
 	for _, c := range base {
 		seen[c.ChannelID] = struct{}{}
 		if c.TVGID != "" {
-			seen["tvg:"+c.TVGID] = struct{}{}
+			existingTVG[c.TVGID]++
 		}
 	}
 	out := append([]catalog.LiveChannel(nil), base...)
+	collisions := 0
 	for _, c := range hd {
 		if _, ok := seen[c.ChannelID]; ok {
 			continue
 		}
-		if c.TVGID != "" {
-			if _, ok := seen["tvg:"+c.TVGID]; ok {
-				continue
-			}
-		}
 		seen[c.ChannelID] = struct{}{}
 		if c.TVGID != "" {
-			seen["tvg:"+c.TVGID] = struct{}{}
+			if existingTVG[c.TVGID] > 0 {
+				collisions++
+			}
+			existingTVG[c.TVGID]++
+		}
+		if strings.TrimSpace(c.SourceTag) == "" {
+			c.SourceTag = "hdhr"
 		}
 		out = append(out, c)
+	}
+	if collisions > 0 {
+		log.Printf("hdhr-lineup: kept %d hardware channel(s) despite tvg-id collisions with existing IPTV rows (sources stay separate)", collisions)
 	}
 	return out
 }
