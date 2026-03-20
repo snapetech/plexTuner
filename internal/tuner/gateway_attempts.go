@@ -294,6 +294,17 @@ func (g *Gateway) RecentStreamAttempts(limit int) StreamAttemptReport {
 	return rep
 }
 
+func (g *Gateway) ClearRecentStreamAttempts() int {
+	if g == nil {
+		return 0
+	}
+	g.attemptsMu.Lock()
+	defer g.attemptsMu.Unlock()
+	n := len(g.recentAttempts)
+	g.recentAttempts = nil
+	return n
+}
+
 func streamAttemptLimitFromQuery(raw string, def int) int {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {

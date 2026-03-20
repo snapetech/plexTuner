@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -158,6 +159,19 @@ func rewriteHLSPlaylist(body []byte, upstreamURL string) []byte {
 	return out.Bytes()
 }
 
+// gatewayHLSProxyMediaURL builds a Tunerr /stream URL that proxies an upstream HLS segment or sub-playlist.
+// When IPTV_TUNERR_STREAM_PUBLIC_BASE_URL is set (e.g. http://192.168.1.10:5004), media lines use an absolute URL
+// so clients that do not resolve relative playlist URLs correctly still work.
+func gatewayHLSProxyMediaURL(channelID, resolvedSegURL string) string {
+	q := url.QueryEscape(resolvedSegURL)
+	rel := "/stream/" + url.PathEscape(channelID) + "?mux=hls&seg=" + q
+	base := strings.TrimRight(strings.TrimSpace(os.Getenv("IPTV_TUNERR_STREAM_PUBLIC_BASE_URL")), "/")
+	if base == "" {
+		return rel
+	}
+	return base + rel
+}
+
 func rewriteHLSPlaylistToGatewayProxy(body []byte, upstreamURL string, channelID string) []byte {
 	base, err := url.Parse(upstreamURL)
 	if err != nil || base == nil {
@@ -188,7 +202,7 @@ func rewriteHLSPlaylistToGatewayProxy(body []byte, upstreamURL string, channelID
 		} else if !ref.IsAbs() {
 			resolved = base.ResolveReference(ref).String()
 		}
-		out.WriteString("/stream/" + url.PathEscape(channelID) + "?mux=hls&seg=" + url.QueryEscape(resolved))
+		out.WriteString(gatewayHLSProxyMediaURL(channelID, resolved))
 	}
 	if len(body) > 0 && body[len(body)-1] == '\n' {
 		out.WriteByte('\n')

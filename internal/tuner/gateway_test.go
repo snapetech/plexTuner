@@ -81,6 +81,16 @@ func TestRewriteHLSPlaylistToGatewayProxy(t *testing.T) {
 	}
 }
 
+func TestRewriteHLSPlaylistToGatewayProxy_usesPublicBaseURLWhenConfigured(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_STREAM_PUBLIC_BASE_URL", "http://deck.example:5004/")
+	in := []byte("#EXTM3U\n#EXTINF:4,\nseg-1.ts\n")
+	out := rewriteHLSPlaylistToGatewayProxy(in, "http://up.example/live/index.m3u8", "abc")
+	s := string(out)
+	if !strings.Contains(s, "http://deck.example:5004/stream/abc?mux=hls&seg=") {
+		t.Fatalf("missing absolute proxy url: %q", s)
+	}
+}
+
 func TestGateway_stream_invalidHLSPlaylistFallsBackToBackup(t *testing.T) {
 	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=UTF-8")

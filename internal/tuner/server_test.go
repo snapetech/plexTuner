@@ -479,6 +479,215 @@ func TestServer_operatorGuidePreview_forbiddenNonLoopback(t *testing.T) {
 	}
 }
 
+func TestServer_operatorActionStatus(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
+	s := &Server{
+		xmltv: &XMLTV{
+			cachedXML: []byte(`<?xml version="1.0"?><tv></tv>`),
+		},
+		gateway: &Gateway{
+			Autopilot: &autopilotStore{byKey: map[string]autopilotDecision{}},
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/ops/actions/status.json", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	s.serveOperatorActionStatus().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body struct {
+		GuideRefresh struct {
+			Available bool               `json:"available"`
+			Status    XMLTVRefreshStatus `json:"status"`
+		} `json:"guide_refresh"`
+		AutopilotReset struct {
+			Available bool `json:"available"`
+		} `json:"autopilot_reset"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !body.GuideRefresh.Available {
+		t.Fatal("expected guide_refresh available")
+	}
+	if !body.GuideRefresh.Status.CachePopulated {
+		t.Fatal("expected cached XML to mark cache_populated")
+	}
+	if !body.AutopilotReset.Available {
+		t.Fatal("expected autopilot_reset available")
+	}
+}
+
+func TestServer_guideRefreshAction(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
+	s := &Server{xmltv: &XMLTV{}}
+	req := httptest.NewRequest(http.MethodPost, "/ops/actions/guide-refresh", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	s.serveGuideRefreshAction().ServeHTTP(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body struct {
+		OK     bool               `json:"ok"`
+		Action string             `json:"action"`
+		Detail XMLTVRefreshStatus `json:"detail"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !body.OK || body.Action != "guide_refresh" {
+		t.Fatalf("unexpected body=%+v", body)
+	}
+	if !body.Detail.InFlight {
+		t.Fatalf("expected in-flight refresh detail, got %+v", body.Detail)
+	}
+}
+
+func TestServer_streamAttemptsClearAction(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
+	gw := &Gateway{}
+	gw.appendStreamAttempt(StreamAttemptRecord{ReqID: "r1"})
+	s := &Server{gateway: gw}
+	req := httptest.NewRequest(http.MethodPost, "/ops/actions/stream-attempts-clear", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	s.serveStreamAttemptsClearAction().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body struct {
+		OK     bool `json:"ok"`
+		Detail struct {
+			Cleared int `json:"cleared"`
+		} `json:"detail"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !body.OK || body.Detail.Cleared != 1 {
+		t.Fatalf("unexpected body=%+v", body)
+	}
+	if rep := gw.RecentStreamAttempts(5); rep.Count != 0 {
+		t.Fatalf("expected cleared attempt buffer, got %+v", rep)
+	}
+}
+
+func TestServer_providerProfileResetAction(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
+	s := &Server{
+		gateway: &Gateway{
+			TunerCount:           4,
+			learnedUpstreamLimit: 2,
+			concurrencyHits:      3,
+			cfBlockHits:          1,
+			hlsPlaylistFailures:  2,
+			hostFailures: map[string]hostFailureStat{
+				"bad.example": {Host: "bad.example", Failures: 2},
+			},
+		},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/ops/actions/provider-profile-reset", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	s.serveProviderProfileResetAction().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body struct {
+		OK     bool                    `json:"ok"`
+		Action string                  `json:"action"`
+		Detail ProviderBehaviorProfile `json:"detail"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !body.OK || body.Action != "provider_profile_reset" {
+		t.Fatalf("unexpected body=%+v", body)
+	}
+	if body.Detail.ConcurrencySignalsSeen != 0 || body.Detail.CFBlockHits != 0 {
+		t.Fatalf("expected reset profile detail, got %+v", body.Detail)
+	}
+}
+
+func TestServer_autopilotResetAction(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
+	path := filepath.Join(t.TempDir(), "autopilot.json")
+	store, err := loadAutopilotStore(path)
+	if err != nil {
+		t.Fatalf("loadAutopilotStore: %v", err)
+	}
+	store.byKey[autopilotKey("dna:fox", "web")] = autopilotDecision{
+		DNAID:       "dna:fox",
+		ClientClass: "web",
+		Hits:        3,
+	}
+	if err := store.saveLocked(); err != nil {
+		t.Fatalf("saveLocked: %v", err)
+	}
+	s := &Server{gateway: &Gateway{Autopilot: store}}
+	req := httptest.NewRequest(http.MethodPost, "/ops/actions/autopilot-reset", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	s.serveAutopilotResetAction().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := len(store.byKey); got != 0 {
+		t.Fatalf("store entries=%d want 0", got)
+	}
+	reloaded, err := loadAutopilotStore(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got := len(reloaded.byKey); got != 0 {
+		t.Fatalf("reloaded entries=%d want 0", got)
+	}
+}
+
+func TestServer_guideRepairWorkflow(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
+	s := &Server{
+		xmltv: &XMLTV{cachedGuideHealth: &guidehealth.Report{}},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/ops/workflows/guide-repair.json", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	s.serveGuideRepairWorkflow().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body OperatorWorkflowReport
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body.Name != "guide_repair" || len(body.Steps) == 0 || len(body.Actions) == 0 {
+		t.Fatalf("unexpected workflow=%+v", body)
+	}
+}
+
+func TestServer_streamInvestigateWorkflow(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
+	gw := &Gateway{TunerCount: 2}
+	gw.appendStreamAttempt(StreamAttemptRecord{ReqID: "r1", ChannelName: "ESPN"})
+	s := &Server{gateway: gw}
+	req := httptest.NewRequest(http.MethodGet, "/ops/workflows/stream-investigate.json", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	s.serveStreamInvestigateWorkflow().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body OperatorWorkflowReport
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body.Name != "stream_investigate" || len(body.Steps) == 0 || len(body.Actions) == 0 {
+		t.Fatalf("unexpected workflow=%+v", body)
+	}
+}
+
 func TestServer_guideHealth(t *testing.T) {
 	s := &Server{
 		xmltv: &XMLTV{

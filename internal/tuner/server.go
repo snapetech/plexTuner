@@ -135,6 +135,21 @@ type RuntimeSnapshot struct {
 	URLs          map[string]string      `json:"urls,omitempty"`
 }
 
+type OperatorActionResponse struct {
+	OK      bool        `json:"ok"`
+	Action  string      `json:"action"`
+	Message string      `json:"message,omitempty"`
+	Detail  interface{} `json:"detail,omitempty"`
+}
+
+type OperatorWorkflowReport struct {
+	GeneratedAt string                 `json:"generated_at"`
+	Name        string                 `json:"name"`
+	Summary     map[string]interface{} `json:"summary,omitempty"`
+	Steps       []string               `json:"steps,omitempty"`
+	Actions     []string               `json:"actions,omitempty"`
+}
+
 // UpdateChannels updates the channel list for all handlers so -refresh can serve new lineup without restart.
 // Caps at LineupMaxChannels (default PlexDVRMaxChannels) so Plex DVR can save the lineup when using the wizard (Plex fails above ~480).
 // When LineupMaxChannels is NoLineupCap, no cap is applied (for programmatic lineup sync; see -register-plex).
@@ -1086,6 +1101,13 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/recordings/recorder.json", s.serveCatchupRecorderReport())
 	mux.Handle("/debug/stream-attempts.json", s.serveRecentStreamAttempts())
 	mux.Handle("/debug/runtime.json", s.serveRuntimeSnapshot())
+	mux.Handle("/ops/actions/status.json", s.serveOperatorActionStatus())
+	mux.Handle("/ops/workflows/guide-repair.json", s.serveGuideRepairWorkflow())
+	mux.Handle("/ops/workflows/stream-investigate.json", s.serveStreamInvestigateWorkflow())
+	mux.Handle("/ops/actions/guide-refresh", s.serveGuideRefreshAction())
+	mux.Handle("/ops/actions/stream-attempts-clear", s.serveStreamAttemptsClearAction())
+	mux.Handle("/ops/actions/provider-profile-reset", s.serveProviderProfileResetAction())
+	mux.Handle("/ops/actions/autopilot-reset", s.serveAutopilotResetAction())
 
 	srv := &http.Server{Addr: addr, Handler: logRequests(mux)}
 
@@ -1197,6 +1219,10 @@ type epgStoreReportJSON struct {
 	MaxBytes           int64            `json:"max_bytes,omitempty"`
 	DbFileBytes        int64            `json:"db_file_bytes,omitempty"`
 	DbFileModifiedUTC  string           `json:"db_file_modified_utc,omitempty"`
+	// IncrementalUpsert reflects IPTV_TUNERR_EPG_SQLITE_INCREMENTAL_UPSERT (overlap-window sync).
+	IncrementalUpsert bool `json:"incremental_upsert,omitempty"`
+	// ProviderEPGIncremental reflects IPTV_TUNERR_PROVIDER_EPG_INCREMENTAL (suffix token rendering).
+	ProviderEPGIncremental bool `json:"provider_epg_incremental,omitempty"`
 }
 
 func (s *Server) serveEpgStoreReport() http.Handler {
@@ -1223,15 +1249,17 @@ func (s *Server) serveEpgStoreReport() http.Handler {
 			detail = true
 		}
 		rep := epgStoreReportJSON{
-			SchemaVersion:     s.EpgStore.SchemaVersion(),
-			SourceReady:       prog > 0 || ch > 0,
-			LastSyncUTC:       lastSync,
-			ProgrammeCount:    prog,
-			ChannelCount:      ch,
-			GlobalMaxStopUnix: gmax,
-			RetainPastHours:   s.EpgSQLiteRetainPastHours,
-			VacuumAfterPrune:  s.EpgSQLiteVacuumAfterPrune,
-			MaxBytes:          s.EpgSQLiteMaxBytes,
+			SchemaVersion:          s.EpgStore.SchemaVersion(),
+			SourceReady:            prog > 0 || ch > 0,
+			LastSyncUTC:            lastSync,
+			ProgrammeCount:         prog,
+			ChannelCount:           ch,
+			GlobalMaxStopUnix:      gmax,
+			RetainPastHours:        s.EpgSQLiteRetainPastHours,
+			VacuumAfterPrune:       s.EpgSQLiteVacuumAfterPrune,
+			MaxBytes:               s.EpgSQLiteMaxBytes,
+			IncrementalUpsert:      s.EpgSQLiteIncrementalUpsert,
+			ProviderEPGIncremental: s.ProviderEPGIncremental,
 		}
 		if sz, mod, err := s.EpgStore.DBFileStat(); err == nil {
 			rep.DbFileBytes = sz
@@ -1463,6 +1491,214 @@ func (s *Server) serveRecentStreamAttempts() http.Handler {
 			return
 		}
 		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveOperatorActionStatus() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		detail := map[string]interface{}{
+			"guide_refresh": map[string]interface{}{
+				"available": s.xmltv != nil,
+				"status":    s.xmltv.RefreshStatus(),
+			},
+			"stream_attempts_clear": map[string]interface{}{
+				"available": s.gateway != nil,
+			},
+			"provider_profile_reset": map[string]interface{}{
+				"available": s.gateway != nil,
+			},
+			"autopilot_reset": map[string]interface{}{
+				"available": s.gateway != nil && s.gateway.Autopilot != nil,
+			},
+		}
+		body, err := json.MarshalIndent(detail, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode operator actions"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveGuideRepairWorkflow() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		gh := map[string]interface{}{}
+		if s.xmltv != nil {
+			if rep, err := s.xmltv.GuideHealth(time.Now(), ""); err == nil {
+				gh["guide_health"] = rep.Summary
+			}
+		}
+		report := OperatorWorkflowReport{
+			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+			Name:        "guide_repair",
+			Summary:     gh,
+			Steps: []string{
+				"Inspect guide health and doctor output for stale or placeholder-only channels.",
+				"Run a manual guide refresh if the cache or upstream source looks stale.",
+				"Check provider EPG incremental/disk-cache settings in runtime snapshot.",
+				"Inspect alias and doctor payloads before changing XMLTV matching inputs.",
+			},
+			Actions: []string{
+				"/ops/actions/guide-refresh",
+				"/guide/health.json",
+				"/guide/doctor.json",
+				"/guide/aliases.json",
+				"/debug/runtime.json",
+			},
+		}
+		body, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode guide workflow"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveStreamInvestigateWorkflow() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		attempts := StreamAttemptReport{}
+		providerProfile := ProviderBehaviorProfile{}
+		if s.gateway != nil {
+			attempts = s.gateway.RecentStreamAttempts(5)
+			providerProfile = s.gateway.ProviderBehaviorProfile()
+		}
+		report := OperatorWorkflowReport{
+			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+			Name:        "stream_investigate",
+			Summary: map[string]interface{}{
+				"recent_attempt_count": attempts.Count,
+				"provider_profile":     providerProfile,
+			},
+			Steps: []string{
+				"Start from recent stream attempts and identify the failing host, profile, and outcome.",
+				"Check provider profile penalties, CF hits, and learned tuner limits.",
+				"Inspect runtime settings for transcode mode, strip-hosts, and provider blocking policy.",
+				"Clear volatile attempt history or provider penalties only when you want a fresh comparison pass.",
+			},
+			Actions: []string{
+				"/ops/actions/stream-attempts-clear",
+				"/ops/actions/provider-profile-reset",
+				"/debug/stream-attempts.json",
+				"/provider/profile.json",
+				"/debug/runtime.json",
+			},
+		}
+		body, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode stream workflow"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
+func writeOperatorActionJSON(w http.ResponseWriter, status int, rep OperatorActionResponse) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	body, _ := json.MarshalIndent(rep, "", "  ")
+	_, _ = w.Write(body)
+}
+
+func (s *Server) serveGuideRefreshAction() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
+		if s.xmltv == nil {
+			writeOperatorActionJSON(w, http.StatusServiceUnavailable, OperatorActionResponse{OK: false, Action: "guide_refresh", Message: "xmltv unavailable"})
+			return
+		}
+		if !s.xmltv.TriggerRefresh("operator_action") {
+			writeOperatorActionJSON(w, http.StatusConflict, OperatorActionResponse{OK: false, Action: "guide_refresh", Message: "refresh already in progress", Detail: s.xmltv.RefreshStatus()})
+			return
+		}
+		writeOperatorActionJSON(w, http.StatusAccepted, OperatorActionResponse{OK: true, Action: "guide_refresh", Message: "guide refresh started", Detail: s.xmltv.RefreshStatus()})
+	})
+}
+
+func (s *Server) serveStreamAttemptsClearAction() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
+		if s.gateway == nil {
+			writeOperatorActionJSON(w, http.StatusServiceUnavailable, OperatorActionResponse{OK: false, Action: "stream_attempts_clear", Message: "gateway unavailable"})
+			return
+		}
+		n := s.gateway.ClearRecentStreamAttempts()
+		writeOperatorActionJSON(w, http.StatusOK, OperatorActionResponse{OK: true, Action: "stream_attempts_clear", Message: "recent stream attempts cleared", Detail: map[string]int{"cleared": n}})
+	})
+}
+
+func (s *Server) serveProviderProfileResetAction() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
+		if s.gateway == nil {
+			writeOperatorActionJSON(w, http.StatusServiceUnavailable, OperatorActionResponse{OK: false, Action: "provider_profile_reset", Message: "gateway unavailable"})
+			return
+		}
+		s.gateway.ResetProviderBehaviorProfile()
+		writeOperatorActionJSON(w, http.StatusOK, OperatorActionResponse{OK: true, Action: "provider_profile_reset", Message: "provider behavior profile reset", Detail: s.gateway.ProviderBehaviorProfile()})
+	})
+}
+
+func (s *Server) serveAutopilotResetAction() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
+		if s.gateway == nil || s.gateway.Autopilot == nil {
+			writeOperatorActionJSON(w, http.StatusServiceUnavailable, OperatorActionResponse{OK: false, Action: "autopilot_reset", Message: "autopilot unavailable"})
+			return
+		}
+		if err := s.gateway.Autopilot.reset(); err != nil {
+			writeOperatorActionJSON(w, http.StatusInternalServerError, OperatorActionResponse{OK: false, Action: "autopilot_reset", Message: err.Error()})
+			return
+		}
+		writeOperatorActionJSON(w, http.StatusOK, OperatorActionResponse{OK: true, Action: "autopilot_reset", Message: "autopilot memory cleared"})
 	})
 }
 

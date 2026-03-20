@@ -239,6 +239,16 @@ func (s *autopilotStore) report(limit int) AutopilotReport {
 	return rep
 }
 
+func (s *autopilotStore) reset() error {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.byKey = map[string]autopilotDecision{}
+	return s.saveLocked()
+}
+
 func LoadAutopilotReport(path string, limit int) (AutopilotReport, error) {
 	store, err := loadAutopilotStore(strings.TrimSpace(path))
 	if err != nil {

@@ -642,7 +642,7 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 // re-fetches the merged EPG on every CacheTTL interval (default 10m).
 func (x *XMLTV) StartRefresh(ctx context.Context) {
 	// Synchronous warm-up so cache is populated before HTTP server starts.
-	x.refresh()
+	x.runRefresh("startup")
 
 	ttl := x.CacheTTL
 	if ttl <= 0 {
@@ -657,19 +657,34 @@ func (x *XMLTV) StartRefresh(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				x.refresh()
+				x.runRefresh("ticker")
 			}
 		}
 	}()
 }
 
-// refresh rebuilds the merged EPG and updates the cache.
+// runRefresh rebuilds the merged EPG and updates the cache.
 // On error the existing cache is preserved (serve stale on failure).
-func (x *XMLTV) refresh() {
+func (x *XMLTV) runRefresh(trigger string) {
+	if x == nil {
+		return
+	}
+	started := time.Now().UTC()
+	x.refreshStateMu.Lock()
+	if !x.refreshInFlight {
+		x.refreshInFlight = true
+		x.lastRefreshStartedAt = started
+	}
+	if strings.TrimSpace(trigger) != "" {
+		x.lastRefreshTrigger = strings.TrimSpace(trigger)
+	}
+	x.refreshStateMu.Unlock()
+
 	channels := x.filteredChannels()
 	data, err := x.buildMergedEPG(channels)
 	if err != nil {
 		log.Printf("xmltv: EPG refresh failed: %v (serving stale cache if available)", err)
+		x.finishRefresh(started, err)
 		return
 	}
 
@@ -724,4 +739,22 @@ func (x *XMLTV) refresh() {
 			}
 		}
 	}
+	x.finishRefresh(started, nil)
+}
+
+func (x *XMLTV) finishRefresh(started time.Time, err error) {
+	x.refreshStateMu.Lock()
+	defer x.refreshStateMu.Unlock()
+	x.refreshInFlight = false
+	x.lastRefreshEndedAt = time.Now().UTC()
+	x.lastRefreshDuration = time.Since(started)
+	if err != nil {
+		x.lastRefreshError = err.Error()
+	} else {
+		x.lastRefreshError = ""
+	}
+}
+
+func (x *XMLTV) refresh() {
+	x.runRefresh("manual")
 }

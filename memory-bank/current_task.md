@@ -2,7 +2,7 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Latest (2026-03-19):** Integrated web UI slice landed and verification is green: dedicated dashboard listener on **port `48879` (`0xBEEF`)** via `internal/webui/`, single-origin `/api/*` proxy over tuner JSON/debug endpoints, new read-only runtime/settings snapshot at **`/debug/runtime.json`**, and full repo verification now passing again (`go test ./...` and `./scripts/verify`). Existing lightweight `/ui/` pages remain on the tuner port for backward compatibility.
+**Latest (2026-03-20):** Operator-control slice landed on top of the integrated web UI. The deck now exposes safe backend-backed actions (manual guide refresh, recent-attempt clear, provider-profile reset, Autopilot reset), workflow playbooks (`guide-repair`, `stream-investigate`), action-status surfaces, richer action/result UX in `internal/webui/index.html`, and regression coverage for the new handlers plus the HLS public-base rewrite helper. Verification passed again with `go test ./...` and `./scripts/verify`.
 
 **Goal:** Start the new Live TV Intelligence product track: map the multi-PR roadmap, then ship the first visible foundation feature so IPTV Tunerr feels like an intelligent control plane instead of only a tuner bridge.
 

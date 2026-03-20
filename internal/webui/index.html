@@ -422,6 +422,98 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
   flex-wrap: wrap;
   margin-top: 10px;
 }
+.action-dock {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+.action-banner {
+  padding: 14px 18px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.78);
+  box-shadow: var(--shadow);
+}
+.action-banner strong {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+.action-banner.ok {
+  background: rgba(243,251,245,0.94);
+  border-color: rgba(29,115,72,0.2);
+}
+.action-banner.warn {
+  background: rgba(255,249,237,0.94);
+  border-color: rgba(155,107,18,0.2);
+}
+.action-banner.bad {
+  background: rgba(255,244,241,0.94);
+  border-color: rgba(141,45,45,0.2);
+}
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.action-panel {
+  padding: 18px;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.76);
+  box-shadow: var(--shadow);
+}
+.action-panel h3 {
+  margin: 0 0 0.45rem;
+  font-family: Georgia, "Times New Roman", serif;
+  letter-spacing: -0.02em;
+}
+.action-panel p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.93rem;
+}
+.action-panel .meta {
+  margin-top: 0.8rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.action-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.workflow-box {
+  display: grid;
+  gap: 14px;
+}
+.workflow-summary {
+  display: grid;
+  gap: 10px;
+}
+.workflow-steps {
+  display: grid;
+  gap: 10px;
+}
+.workflow-step {
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.74);
+}
+.workflow-step strong {
+  display: inline-flex;
+  width: 1.5rem;
+}
+.workflow-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.workflow-note {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
 .tiny {
   padding: 0.45rem 0.75rem;
   font-size: 0.82rem;
@@ -589,7 +681,7 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
 @media (max-width: 860px) {
   .content { padding: 16px; }
   .hero { padding: 22px; border-radius: 26px; }
-  .hero-grid, .panel-grid, .stats, .story-grid, .route-grid, .index-grid {
+  .hero-grid, .panel-grid, .stats, .story-grid, .route-grid, .index-grid, .action-grid {
     grid-template-columns: 1fr;
   }
   .hero-meta, .alert-board {
@@ -716,6 +808,7 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
 
     <section class="stats" id="stats"></section>
     <section class="alert-board" id="alert-board"></section>
+    <section class="action-dock" id="action-dock"></section>
 
     <div class="surface">
       <section class="section active" data-mode="overview">
@@ -875,6 +968,7 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
       </div>
     </div>
     <div class="modal-body">
+      <div id="modal-rich"></div>
       <pre class="raw-inline" id="modal-output">Loading...</pre>
     </div>
   </div>
@@ -896,7 +990,33 @@ const endpoints = {
   ghost: "/api/plex/ghost-report.json?observe=0s",
   provider: "/api/provider/profile.json",
   recorder: "/api/recordings/recorder.json?limit=8",
-  attempts: "/api/debug/stream-attempts.json?limit=8"
+  attempts: "/api/debug/stream-attempts.json?limit=8",
+  operatorActionsStatus: "/api/ops/actions/status.json",
+  guideWorkflow: "/api/ops/workflows/guide-repair.json",
+  streamWorkflow: "/api/ops/workflows/stream-investigate.json"
+};
+
+const actionDefinitions = {
+  guide_refresh: {
+    path: "/api/ops/actions/guide-refresh",
+    label: "Run Guide Refresh",
+    confirm: "Start a manual guide refresh now?"
+  },
+  stream_attempts_clear: {
+    path: "/api/ops/actions/stream-attempts-clear",
+    label: "Clear Attempt History",
+    confirm: "Clear the volatile recent stream-attempt history?"
+  },
+  provider_profile_reset: {
+    path: "/api/ops/actions/provider-profile-reset",
+    label: "Reset Provider Penalties",
+    confirm: "Reset learned provider behavior penalties and recent host failure state?"
+  },
+  autopilot_reset: {
+    path: "/api/ops/actions/autopilot-reset",
+    label: "Reset Autopilot Memory",
+    confirm: "Clear remembered Autopilot playback decisions?"
+  }
 };
 
 const modeTitles = {
@@ -912,8 +1032,10 @@ const state = {
   filter: "",
   payloads: {},
   selectedRaw: "runtime",
+  modalView: { kind: "raw", key: "runtime" },
   refreshTimer: null,
-  refreshRateSec: 30
+  refreshRateSec: 30,
+  actionFeedback: null
 };
 
 const healthPill = document.getElementById("health-pill");
@@ -923,6 +1045,7 @@ const crumbFocus = document.getElementById("crumb-focus");
 const activeFilters = document.getElementById("active-filters");
 const heroMeta = document.getElementById("hero-meta");
 const alertBoard = document.getElementById("alert-board");
+const actionDock = document.getElementById("action-dock");
 const sessionKV = document.getElementById("session-kv");
 const decisionBoard = document.getElementById("decision-board");
 const postureCopy = document.getElementById("posture-copy");
@@ -941,6 +1064,7 @@ const endpointGrid = document.getElementById("endpoint-grid");
 const rawSelect = document.getElementById("raw-select");
 const rawOutput = document.getElementById("raw-output");
 const rawModal = document.getElementById("raw-modal");
+const modalRich = document.getElementById("modal-rich");
 const modalOutput = document.getElementById("modal-output");
 const modalTitle = document.getElementById("modal-title");
 const modalLabel = document.getElementById("modal-label");
@@ -967,9 +1091,22 @@ function normalizeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
-function createCard(title, body, meta = "", tone = "", endpointKey = "") {
-  const actions = endpointKey
-    ? `<div class="card-actions"><button class="tiny" type="button" data-inspect="${esc(endpointKey)}">Inspect Payload</button></div>`
+function createActionButton(actionKey, label = "") {
+  const def = actionDefinitions[actionKey];
+  if (!def) return "";
+  return `<button class="tiny" type="button" data-action="${esc(actionKey)}">${esc(label || def.label)}</button>`;
+}
+
+function createWorkflowButton(workflowKey, label) {
+  return `<button class="tiny" type="button" data-workflow="${esc(workflowKey)}">${esc(label)}</button>`;
+}
+
+function createCard(title, body, meta = "", tone = "", endpointKey = "", extraActions = "") {
+  const inspectAction = endpointKey
+    ? `<button class="tiny" type="button" data-inspect="${esc(endpointKey)}">Inspect Payload</button>`
+    : "";
+  const actions = inspectAction || extraActions
+    ? `<div class="card-actions">${extraActions}${inspectAction}</div>`
     : "";
   return `<div class="card ${tone}"><strong>${esc(title)}</strong><div>${body}</div>${meta ? `<div class="meta">${meta}</div>` : ""}${actions}</div>`;
 }
@@ -984,6 +1121,44 @@ function createTimeline(title, body, tone = "") {
 
 function createAlertCard(kind, title, items) {
   return `<article class="alert-card ${kind}"><h3>${esc(title)}</h3><ul>${items.map((item) => `<li>${esc(item)}</li>`).join("")}</ul></article>`;
+}
+
+function formatWhen(value) {
+  if (!value) return "n/a";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+}
+
+function summarizeGuideRefresh(status) {
+  if (!status) return "Guide refresh status unavailable.";
+  if (status.in_flight) {
+    return `Refresh in flight since ${formatWhen(status.last_started_at)}.`;
+  }
+  if (status.last_error) {
+    return `Last refresh failed after ${pretty(status.last_duration_ms ? `${status.last_duration_ms} ms` : "unknown duration")}: ${status.last_error}.`;
+  }
+  if (status.last_ended_at) {
+    return `Last refresh finished ${formatWhen(status.last_ended_at)}; cache ${status.cache_populated ? "populated" : "empty"}.`;
+  }
+  return "Guide refresh has not run yet in this process.";
+}
+
+function actionKind(result) {
+  if (!result) return "";
+  if (result.ok === true) return "ok";
+  if (result.ok === false) return "bad";
+  return "warn";
+}
+
+function setActionFeedback(result) {
+  state.actionFeedback = {
+    ok: result?.ok,
+    action: result?.action || "operator_action",
+    message: result?.message || "No response body returned.",
+    detail: result?.detail || null,
+    at: new Date().toISOString()
+  };
 }
 
 function scheduleRefresh() {
@@ -1022,6 +1197,119 @@ function setHealth(ok, label) {
   sidebarHealth.innerHTML = ok
     ? `<strong>System State</strong><p>Deck can reach the tuner. This is a live operator surface, not a static shell.</p>`
     : `<strong>System State</strong><p>Tuner is not reachable right now. The deck stays up, but payload cards reflect degraded state.</p>`;
+}
+
+function showModalRaw(text, title, label) {
+  modalRich.hidden = true;
+  modalRich.innerHTML = "";
+  modalOutput.hidden = false;
+  modalTitle.textContent = title;
+  modalLabel.textContent = label;
+  modalOutput.textContent = text;
+}
+
+function openModal() {
+  rawModal.classList.add("open");
+  rawModal.setAttribute("aria-hidden", "false");
+}
+
+function closeModal() {
+  rawModal.classList.remove("open");
+  rawModal.setAttribute("aria-hidden", "true");
+}
+
+function actionPathToKey(path) {
+  const clean = String(path || "").replace(/^\/api/, "");
+  return Object.keys(actionDefinitions).find((key) => actionDefinitions[key].path.replace(/^\/api/, "") === clean) || "";
+}
+
+function renderWorkflowAction(path) {
+  const actionKey = actionPathToKey(path);
+  if (actionKey) {
+    return createActionButton(actionKey);
+  }
+  const endpointKey = Object.keys(endpoints).find((key) => endpoints[key].replace(/^\/api/, "") === path.replace(/^\/api/, ""));
+  if (endpointKey) {
+    return `<button class="tiny" type="button" data-inspect="${esc(endpointKey)}">Inspect ${esc(path)}</button>`;
+  }
+  return `<button class="tiny" type="button" data-open-path="${esc(`/api${path}`)}" data-open-title="${esc(path)}">Open ${esc(path)}</button>`;
+}
+
+function renderWorkflowModal(workflowKey) {
+  const payload = state.payloads[workflowKey]?.body || {};
+  const steps = normalizeArray(payload.steps);
+  const actions = normalizeArray(payload.actions);
+  const summary = payload.summary && typeof payload.summary === "object" ? payload.summary : {};
+  modalOutput.hidden = true;
+  modalOutput.textContent = "";
+  modalRich.hidden = false;
+  modalTitle.textContent = `Workflow · ${payload.name || workflowKey}`;
+  modalLabel.textContent = endpoints[workflowKey] || "Workflow";
+  modalRich.innerHTML = `
+    <div class="workflow-box">
+      <div class="workflow-summary">
+        ${Object.keys(summary).length
+          ? Object.entries(summary).map(([key, value]) =>
+            `<div class="detail-line"><dt>${esc(key)}</dt><dd>${esc(pretty(value))}</dd></div>`
+          ).join("")
+          : `<div class="workflow-note">No summary payload returned.</div>`}
+      </div>
+      <div class="workflow-steps">
+        ${steps.length
+          ? steps.map((step, index) => `<div class="workflow-step"><strong>${index + 1}.</strong> ${esc(step)}</div>`).join("")
+          : `<div class="workflow-note">No workflow steps returned.</div>`}
+      </div>
+      <div>
+        <div class="workflow-note">Recommended controls and evidence surfaces</div>
+        <div class="workflow-actions">${actions.length ? actions.map(renderWorkflowAction).join("") : `<span class="workflow-note">No workflow actions returned.</span>`}</div>
+      </div>
+    </div>
+  `;
+  state.modalView = { kind: "workflow", key: workflowKey };
+  openModal();
+}
+
+function renderActionDock(operatorStatus, guideWorkflow, streamWorkflow) {
+  const refreshStatus = operatorStatus.guide_refresh?.status || {};
+  const banner = state.actionFeedback
+    ? `<div class="action-banner ${actionKind(state.actionFeedback)}"><strong>${esc(state.actionFeedback.action)}</strong><div>${esc(state.actionFeedback.message)}</div><div class="meta">${esc(formatWhen(state.actionFeedback.at))}${state.actionFeedback.detail ? ` · detail: ${esc(pretty(state.actionFeedback.detail))}` : ""}</div></div>`
+    : "";
+
+  actionDock.innerHTML = `
+    ${banner}
+    <div class="action-grid">
+      <article class="action-panel">
+        <h3>Guide Recovery</h3>
+        <p>When listings look stale or placeholder-heavy, start with the playbook and then run a manual refresh if needed.</p>
+        <div class="meta">${esc(summarizeGuideRefresh(refreshStatus))}</div>
+        <div class="action-row">
+          ${createWorkflowButton("guideWorkflow", "Open Guide Workflow")}
+          ${createActionButton("guide_refresh")}
+          <button class="tiny" type="button" data-inspect="guideHealth">Inspect Guide Health</button>
+        </div>
+      </article>
+      <article class="action-panel">
+        <h3>Stream Triage</h3>
+        <p>Use the failure workflow first, then clear volatile evidence or reset penalties when you want a clean retry lane.</p>
+        <div class="meta">${esc(pretty(streamWorkflow.summary?.recent_attempt_count || 0))} recent attempts in the workflow snapshot.</div>
+        <div class="action-row">
+          ${createWorkflowButton("streamWorkflow", "Open Stream Workflow")}
+          ${createActionButton("stream_attempts_clear")}
+          ${createActionButton("provider_profile_reset")}
+        </div>
+      </article>
+      <article class="action-panel">
+        <h3>Automation Memory</h3>
+        <p>Autopilot memory is useful when it is helping and dangerous when it is stale. Reset it deliberately, not casually.</p>
+        <div class="meta">${operatorStatus.autopilot_reset?.available ? "Autopilot actions are available." : "Autopilot state is not configured in this process."}</div>
+        <div class="action-row">
+          ${createActionButton("autopilot_reset")}
+          <button class="tiny" type="button" data-inspect="autopilot">Inspect Autopilot</button>
+          <button class="tiny" type="button" data-inspect="operatorActionsStatus">Inspect Action Status</button>
+        </div>
+      </article>
+    </div>
+  `;
 }
 
 function applyMode(mode) {
@@ -1082,6 +1370,9 @@ function renderDeck() {
   const provider = state.payloads.provider?.body || {};
   const recorder = state.payloads.recorder?.body || {};
   const attempts = normalizeArray(state.payloads.attempts?.body);
+  const operatorStatus = state.payloads.operatorActionsStatus?.body || {};
+  const guideWorkflow = state.payloads.guideWorkflow?.body || {};
+  const streamWorkflow = state.payloads.streamWorkflow?.body || {};
   const failedAttempts = attempts.filter((item) => {
     const val = `${item.reason || item.result || item.status || ""}`.toLowerCase();
     return val && val !== "ok";
@@ -1135,12 +1426,13 @@ function renderDeck() {
     createAlertCard("watch", "Watch Items", watchItems),
     createAlertCard("win", "Confirmed Wins", wins)
   ].join("");
+  renderActionDock(operatorStatus, guideWorkflow, streamWorkflow);
 
   decisionBoard.innerHTML = filterCards([
-    createCard("Is the guide believable?", `${pretty(guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes)} channels have programme data; ${pretty(guideHealth.summary?.placeholder_only_channels)} are placeholder-only.`, "", (guideHealth.summary?.placeholder_only_channels || 0) > 0 ? "tone-warn" : "tone-good", "guideHealth"),
-    createCard("Are streams falling back?", `${attempts.length} recent attempts tracked; ${attempts.slice(0, 2).map((item) => item.reason || item.result || item.status || "unknown").join(" | ") || "no recent evidence"}`, "", failedAttempts.length > 0 ? "tone-warn" : "tone-good", "attempts"),
+    createCard("Is the guide believable?", `${pretty(guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes)} channels have programme data; ${pretty(guideHealth.summary?.placeholder_only_channels)} are placeholder-only.`, "", (guideHealth.summary?.placeholder_only_channels || 0) > 0 ? "tone-warn" : "tone-good", "guideHealth", `${createWorkflowButton("guideWorkflow", "Guide Playbook")}${createActionButton("guide_refresh", "Refresh Now")}`),
+    createCard("Are streams falling back?", `${attempts.length} recent attempts tracked; ${attempts.slice(0, 2).map((item) => item.reason || item.result || item.status || "unknown").join(" | ") || "no recent evidence"}`, "", failedAttempts.length > 0 ? "tone-warn" : "tone-good", "attempts", `${createWorkflowButton("streamWorkflow", "Investigate")}${createActionButton("stream_attempts_clear", "Clear History")}`),
     createCard("Is recording alive?", recorder.summary ? `${pretty(recorder.summary.active_count)} active, ${pretty(recorder.summary.failed_count)} failed, ${pretty(recorder.summary.completed_count)} completed.` : pretty(recorder.error || "No recorder state file configured"), "", (recorder.summary?.failed_count || 0) > 0 ? "tone-warn" : "", "recorder"),
-    createCard("What config am I really running?", `Read-only snapshot exposed at /api/debug/runtime.json and summarized in the Settings lane.`, "", "", "runtime")
+    createCard("What config am I really running?", `Read-only snapshot exposed at /api/debug/runtime.json and summarized in the Settings lane.`, "", "", "runtime", `<button class="tiny" type="button" data-inspect="operatorActionsStatus">Action Status</button>`)
   ]).join("");
 
   statsEl.innerHTML = filterCards([
@@ -1172,9 +1464,9 @@ function renderDeck() {
   ]).join("");
 
   guideList.innerHTML = filterCards([
-    createCard("Guide health", `${pretty(guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes)} channels with real listings, ${pretty(guideHealth.summary?.placeholder_only_channels)} placeholder-only, ${pretty(guideHealth.summary?.stale_channels)} stale.`, "", (guideHealth.summary?.stale_channels || 0) > 0 ? "tone-warn" : "tone-good", "guideHealth"),
+    createCard("Guide health", `${pretty(guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes)} channels with real listings, ${pretty(guideHealth.summary?.placeholder_only_channels)} placeholder-only, ${pretty(guideHealth.summary?.stale_channels)} stale.`, "", (guideHealth.summary?.stale_channels || 0) > 0 ? "tone-warn" : "tone-good", "guideHealth", `${createWorkflowButton("guideWorkflow", "Guide Workflow")}${createActionButton("guide_refresh", "Refresh Guide")}`),
     createCard("Guide doctor", guideDoctor.summary ? `${pretty(guideDoctor.summary.channel_count)} channels inspected, ${pretty(guideDoctor.summary.programme_count)} programmes parsed.` : pretty(guideDoctor.error), "", "", "guideDoctor"),
-    createCard("SQLite horizon", epgStore.source_ready ? `${pretty(epgStore.programme_count)} programmes, DB file ${pretty(epgStore.db_file_bytes)} bytes, max stop ${pretty(epgStore.global_max_stop_unix)}.` : pretty(epgStore.error || "SQLite disabled"), "", "", "epgStore"),
+    createCard("SQLite horizon", epgStore.source_ready ? `${pretty(epgStore.programme_count)} programmes, DB file ${pretty(epgStore.db_file_bytes)} bytes, max stop ${pretty(epgStore.global_max_stop_unix)}.` : pretty(epgStore.error || "SQLite disabled"), "", "", "epgStore", `<button class="tiny" type="button" data-inspect="guideWorkflow">Open Workflow Payload</button>`),
     createCard("Provider EPG mode", `enabled=${pretty(runtime.guide?.provider_epg_enabled)}, incremental=${pretty(runtime.guide?.provider_epg_incremental)}, disk_cache=${pretty(runtime.guide?.provider_epg_disk_cache_path)}`, "", "", "runtime"),
     createCard("Guide shaping", `xmltv=${pretty(runtime.guide?.xmltv_url)}, prune_unlinked=${pretty(runtime.tuner?.epg_prune_unlinked)}, suffix=${pretty(runtime.guide?.provider_epg_url_suffix)}`, "", "", "runtime")
   ]).join("");
@@ -1187,9 +1479,9 @@ function renderDeck() {
   ]).join("");
 
   routingList.innerHTML = filterCards([
-    createCard("Provider profile", provider.summary ? esc(JSON.stringify(provider.summary)) : esc(pretty(provider.error)), provider.client_behavior ? `client_behavior=${esc(JSON.stringify(provider.client_behavior))}` : "", "", "provider"),
-    createCard("Attempt volume", `${attempts.length} recent attempts in buffer. Top host pressure: ${attempts.slice(0, 3).map((item) => item.upstream_url_host || item.upstream_host || "unknown").join(", ") || "none"}`, "", failedAttempts.length > 0 ? "tone-warn" : "", "attempts"),
-    createCard("Fallback evidence", attempts.slice(0, 4).map((item) => `${item.channel_name || item.channel_id || "channel"} -> ${item.reason || item.result || item.status || "unknown"}`).join(" | ") || "No fallback evidence", "", "", "attempts"),
+    createCard("Provider profile", provider.summary ? esc(JSON.stringify(provider.summary)) : esc(pretty(provider.error)), provider.client_behavior ? `client_behavior=${esc(JSON.stringify(provider.client_behavior))}` : "", "", "provider", `${createActionButton("provider_profile_reset")}`),
+    createCard("Attempt volume", `${attempts.length} recent attempts in buffer. Top host pressure: ${attempts.slice(0, 3).map((item) => item.upstream_url_host || item.upstream_host || "unknown").join(", ") || "none"}`, "", failedAttempts.length > 0 ? "tone-warn" : "", "attempts", `${createWorkflowButton("streamWorkflow", "Failure Workflow")}${createActionButton("stream_attempts_clear")}`),
+    createCard("Fallback evidence", attempts.slice(0, 4).map((item) => `${item.channel_name || item.channel_id || "channel"} -> ${item.reason || item.result || item.status || "unknown"}`).join(" | ") || "No fallback evidence", "", "", "attempts", `<button class="tiny" type="button" data-inspect="streamWorkflow">Workflow Payload</button>`),
     createCard("HDHR contract", "discover.json, lineup.json, lineup_status.json, device.xml, and guide.xml still live on the tuner and are proxied here under /api.", "", "", "runtime"),
     createCard("Mux choices", "Native TS/fMP4/HLS surfaces exist; the deck is a supervisor over those capabilities, not a stream path itself.", "", "", "provider")
   ]).join("");
@@ -1203,10 +1495,10 @@ function renderDeck() {
 
   opsList.innerHTML = filterCards([
     createCard("Recorder state", recorder.summary ? `${pretty(recorder.summary.active_count)} active, ${pretty(recorder.summary.completed_count)} completed, ${pretty(recorder.summary.failed_count)} failed.` : pretty(recorder.error || "Recorder not configured"), "", (recorder.summary?.failed_count || 0) > 0 ? "tone-warn" : "", "recorder"),
-    createCard("Autopilot memory", autopilot.hot_channels ? `${autopilot.hot_channels.length} hot channels with remembered preferences.` : pretty(autopilot.error || "Autopilot memory unavailable"), "", "", "autopilot"),
+    createCard("Autopilot memory", autopilot.hot_channels ? `${autopilot.hot_channels.length} hot channels with remembered preferences.` : pretty(autopilot.error || "Autopilot memory unavailable"), "", "", "autopilot", `${createActionButton("autopilot_reset")}`),
     createCard("Ghost hunter", ghost.summary ? esc(JSON.stringify(ghost.summary)) : esc(pretty(ghost.error || "Plex report unavailable")), "", "", "ghost"),
     createCard("Media hooks", runtime.media_servers ? `Emby host=${pretty(runtime.media_servers.emby_host_configured)}, Jellyfin host=${pretty(runtime.media_servers.jellyfin_host_configured)}` : "No runtime snapshot", "", "", "runtime"),
-    createCard("Recorder files", `state=${pretty(runtime.recorder?.state_file)}, autopilot=${pretty(runtime.tuner?.autopilot_state_file)}`, "", "", "runtime")
+    createCard("Recorder files", `state=${pretty(runtime.recorder?.state_file)}, autopilot=${pretty(runtime.tuner?.autopilot_state_file)}`, "", "", "runtime", `<button class="tiny" type="button" data-inspect="operatorActionsStatus">Control Status</button>`)
   ]).join("");
 
   channelList.innerHTML = filterCards([
@@ -1230,28 +1522,31 @@ async function renderRaw() {
   const key = rawSelect.value || state.selectedRaw;
   state.selectedRaw = key;
   rawOutput.textContent = "Loading...";
-  modalOutput.textContent = "Loading...";
-  modalTitle.textContent = `Endpoint Viewer · ${key}`;
-  modalLabel.textContent = endpoints[key] || "Raw Payload";
   try {
     const payload = await fetchJSON(key, endpoints[key]);
     const text = JSON.stringify(payload.body, null, 2);
     rawOutput.textContent = text;
-    modalOutput.textContent = text;
+    if (state.modalView.kind === "raw" && state.modalView.key === key) {
+      showModalRaw(text, `Endpoint Viewer · ${key}`, endpoints[key] || "Raw Payload");
+    }
   } catch (err) {
     rawOutput.textContent = String(err);
-    modalOutput.textContent = String(err);
+    if (state.modalView.kind === "raw" && state.modalView.key === key) {
+      showModalRaw(String(err), `Endpoint Viewer · ${key}`, endpoints[key] || "Raw Payload");
+    }
   }
 }
 
-function openModal() {
-  rawModal.classList.add("open");
-  rawModal.setAttribute("aria-hidden", "false");
-}
-
-function closeModal() {
-  rawModal.classList.remove("open");
-  rawModal.setAttribute("aria-hidden", "true");
+async function openAdHocPayload(path, title = "Endpoint Viewer", label = path) {
+  state.modalView = { kind: "adhoc", key: path, title, label };
+  openModal();
+  showModalRaw("Loading...", title, label);
+  try {
+    const payload = await fetchJSON(title, path);
+    showModalRaw(JSON.stringify(payload.body, null, 2), title, label);
+  } catch (err) {
+    showModalRaw(String(err), title, label);
+  }
 }
 
 async function reloadDeck() {
@@ -1264,6 +1559,52 @@ async function reloadDeck() {
   await renderRaw();
 }
 
+async function postAction(actionKey) {
+  const def = actionDefinitions[actionKey];
+  if (!def) return;
+  if (def.confirm && !window.confirm(def.confirm)) return;
+  setActionFeedback({ ok: undefined, action: actionKey, message: "Submitting operator action..." });
+  renderDeck();
+  try {
+    const res = await fetch(def.path, { method: "POST", headers: { "Accept": "application/json" } });
+    const text = await res.text();
+    let body;
+    try {
+      body = text ? JSON.parse(text) : {};
+    } catch {
+      body = { ok: res.ok, action: actionKey, message: text || `HTTP ${res.status}` };
+    }
+    if (body.ok === undefined) body.ok = res.ok;
+    if (!body.action) body.action = actionKey;
+    if (!body.message) body.message = text || `HTTP ${res.status}`;
+    setActionFeedback(body);
+    await reloadDeck();
+    state.modalView = { kind: "static", key: actionKey };
+    openModal();
+    showModalRaw(JSON.stringify(body, null, 2), `Action Result · ${actionKey}`, def.path);
+  } catch (err) {
+    setActionFeedback({ ok: false, action: actionKey, message: String(err) });
+    renderDeck();
+  }
+}
+
+async function refreshModal() {
+  if (state.modalView.kind === "workflow") {
+    await reloadDeck();
+    renderWorkflowModal(state.modalView.key);
+    return;
+  }
+  if (state.modalView.kind === "adhoc") {
+    await openAdHocPayload(state.modalView.key, state.modalView.title, state.modalView.label);
+    return;
+  }
+  if (state.modalView.kind === "static") {
+    return;
+  }
+  await renderRaw();
+  openModal();
+}
+
 function bindUI() {
   fillRawSelectors();
   document.querySelectorAll("#mode-nav button").forEach((button) => {
@@ -1274,8 +1615,24 @@ function bindUI() {
     if (inspect) {
       state.selectedRaw = inspect.getAttribute("data-inspect");
       rawSelect.value = state.selectedRaw;
+      state.modalView = { kind: "raw", key: state.selectedRaw };
       renderRaw();
       openModal();
+      return;
+    }
+    const action = event.target.closest("[data-action]");
+    if (action) {
+      postAction(action.getAttribute("data-action"));
+      return;
+    }
+    const workflow = event.target.closest("[data-workflow]");
+    if (workflow) {
+      renderWorkflowModal(workflow.getAttribute("data-workflow"));
+      return;
+    }
+    const openPath = event.target.closest("[data-open-path]");
+    if (openPath) {
+      openAdHocPayload(openPath.getAttribute("data-open-path"), openPath.getAttribute("data-open-title") || "Endpoint Viewer", openPath.getAttribute("data-open-path"));
       return;
     }
     const jump = event.target.closest("[data-mode-jump]");
@@ -1284,9 +1641,13 @@ function bindUI() {
     }
   });
   document.getElementById("reload-all").addEventListener("click", reloadDeck);
-  document.getElementById("open-modal").addEventListener("click", openModal);
+  document.getElementById("open-modal").addEventListener("click", () => {
+    state.modalView = { kind: "raw", key: state.selectedRaw };
+    openModal();
+    renderRaw();
+  });
   document.getElementById("modal-close").addEventListener("click", closeModal);
-  document.getElementById("modal-refresh").addEventListener("click", renderRaw);
+  document.getElementById("modal-refresh").addEventListener("click", refreshModal);
   rawSelect.addEventListener("change", renderRaw);
   refreshRate.addEventListener("change", (event) => {
     state.refreshRateSec = Number(event.target.value || 0);

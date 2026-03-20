@@ -78,6 +78,76 @@ type XMLTV struct {
 	cachedMatchAliases string
 	cachedMatchExp     time.Time
 	cachedGuideHealth  *guidehealth.Report
+
+	refreshStateMu       sync.Mutex
+	refreshInFlight      bool
+	lastRefreshStartedAt time.Time
+	lastRefreshEndedAt   time.Time
+	lastRefreshTrigger   string
+	lastRefreshError     string
+	lastRefreshDuration  time.Duration
+}
+
+type XMLTVRefreshStatus struct {
+	InFlight       bool   `json:"in_flight"`
+	LastStartedAt  string `json:"last_started_at,omitempty"`
+	LastEndedAt    string `json:"last_ended_at,omitempty"`
+	LastTrigger    string `json:"last_trigger,omitempty"`
+	LastError      string `json:"last_error,omitempty"`
+	LastDurationMS int64  `json:"last_duration_ms,omitempty"`
+	CacheExpiresAt string `json:"cache_expires_at,omitempty"`
+	CachePopulated bool   `json:"cache_populated"`
+}
+
+func (x *XMLTV) RefreshStatus() XMLTVRefreshStatus {
+	if x == nil {
+		return XMLTVRefreshStatus{}
+	}
+	x.refreshStateMu.Lock()
+	rep := XMLTVRefreshStatus{
+		InFlight:       x.refreshInFlight,
+		LastTrigger:    x.lastRefreshTrigger,
+		LastError:      x.lastRefreshError,
+		LastDurationMS: x.lastRefreshDuration.Milliseconds(),
+	}
+	if !x.lastRefreshStartedAt.IsZero() {
+		rep.LastStartedAt = x.lastRefreshStartedAt.UTC().Format(time.RFC3339)
+	}
+	if !x.lastRefreshEndedAt.IsZero() {
+		rep.LastEndedAt = x.lastRefreshEndedAt.UTC().Format(time.RFC3339)
+	}
+	x.refreshStateMu.Unlock()
+
+	x.mu.RLock()
+	rep.CachePopulated = len(x.cachedXML) > 0
+	if !x.cacheExp.IsZero() {
+		rep.CacheExpiresAt = x.cacheExp.UTC().Format(time.RFC3339)
+	}
+	x.mu.RUnlock()
+	return rep
+}
+
+func (x *XMLTV) TriggerRefresh(trigger string) bool {
+	if x == nil {
+		return false
+	}
+	trigger = strings.TrimSpace(trigger)
+	if trigger == "" {
+		trigger = "manual"
+	}
+	x.refreshStateMu.Lock()
+	if x.refreshInFlight {
+		x.refreshStateMu.Unlock()
+		return false
+	}
+	x.refreshInFlight = true
+	x.lastRefreshStartedAt = time.Now().UTC()
+	x.lastRefreshTrigger = trigger
+	x.lastRefreshError = ""
+	x.refreshStateMu.Unlock()
+
+	go x.runRefresh(trigger)
+	return true
 }
 
 type xmltvTextPolicy struct {

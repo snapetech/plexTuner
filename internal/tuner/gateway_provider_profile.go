@@ -244,3 +244,29 @@ func (g *Gateway) ProviderBehaviorProfile() ProviderBehaviorProfile {
 	}
 	return prof
 }
+
+func (g *Gateway) ResetProviderBehaviorProfile() {
+	if g == nil {
+		return
+	}
+	g.mu.Lock()
+	g.learnedUpstreamLimit = 0
+	g.mu.Unlock()
+
+	g.providerStateMu.Lock()
+	g.concurrencyHits = 0
+	g.lastConcurrencyAt = time.Time{}
+	g.lastConcurrencyBody = ""
+	g.lastConcurrencyCode = 0
+	g.cfBlockHits = 0
+	g.lastCFBlockAt = time.Time{}
+	g.lastCFBlockURL = ""
+	g.hlsPlaylistFailures = 0
+	g.lastHLSPlaylistAt = time.Time{}
+	g.lastHLSPlaylistURL = ""
+	g.hlsSegmentFailures = 0
+	g.lastHLSSegmentAt = time.Time{}
+	g.lastHLSSegmentURL = ""
+	g.hostFailures = nil
+	g.providerStateMu.Unlock()
+}

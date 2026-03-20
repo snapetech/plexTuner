@@ -2643,3 +2643,16 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - `go test ./internal/webui ./internal/config ./cmd/iptv-tunerr ./internal/tuner -run 'TestProxyBase|TestProxyForwardsAPIPath|TestServer_runtimeSnapshot|TestServer_operatorGuidePreviewJSON|TestServer_epgStoreReport_disabled|TestServer_epgStoreReport_fileStatsAndVacuumFlag|TestWebUIConfig'`
     - `go test ./...`
     - `./scripts/verify`
+
+---
+
+- Date: 2026-03-20
+  Title: Turn the web UI into an actionable operator control surface
+  Summary:
+    - Added safe operator actions on the tuner side for manual guide refresh, recent stream-attempt buffer clearing, provider-profile penalty reset, and Autopilot memory reset, plus status/workflow JSON surfaces for the deck.
+    - Extended XMLTV refresh tracking so the UI can show real guide-refresh state instead of blind buttons, and kept the older synchronous `refresh()` helper as a compatibility wrapper for existing tests.
+    - Reworked the integrated dashboard with an action dock, playbook/workflow modals, inline action feedback, and embedded action buttons inside guide/routing/ops cards so the UX reads like a control plane rather than a passive report wall.
+    - Added regression coverage for the new operator endpoints and the HLS playlist public-base rewrite helper.
+  Verification:
+    - `go test ./...`
+    - `./scripts/verify`
