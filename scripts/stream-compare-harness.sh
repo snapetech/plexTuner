@@ -288,6 +288,11 @@ payload = {
     "size_download": lines[2] if len(lines) > 2 else "",
     "url_effective": lines[3] if len(lines) > 3 else "",
 }
+with open(sys.argv[3], "w", encoding="utf-8") as fh:
+    json.dump(payload, fh, indent=2, sort_keys=True)
+    fh.write("\n")
+PY
+}
 
 analyze_manifest_artifact() {
   local label="$1"
@@ -302,11 +307,6 @@ analyze_manifest_artifact() {
     --curl-meta "$artifact_dir/curl.meta.json" \
     --out "$artifact_dir/manifest.json" \
     --ref-limit "$MANIFEST_REF_LIMIT"
-}
-with open(sys.argv[3], "w", encoding="utf-8") as fh:
-    json.dump(payload, fh, indent=2, sort_keys=True)
-    fh.write("\n")
-PY
 }
 
 run_ffprobe_probe() {
