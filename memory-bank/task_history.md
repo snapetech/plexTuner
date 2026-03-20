@@ -23,6 +23,22 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: LP-007 partial — epgstore schema + ADR 0003 (SQLite vs Postgres)
+  Summary:
+    - `internal/epgstore`: open SQLite with WAL, `PRAGMA user_version` migrations, tables `epg_channel` / `epg_programme`.
+    - `IPTV_TUNERR_EPG_SQLITE_PATH` + `config.EpgSQLitePath`; `maybeOpenEpgStore` in `serve`/`run`.
+    - ADR [docs/adr/0003-epg-sqlite-vs-postgres.md](../docs/adr/0003-epg-sqlite-vs-postgres.md); docs: CHANGELOG, features, CLI ref, epic, README, `.env.example`, `docs/adr/index.md`.
+    - No write path from XMLTV yet — **LP-008**.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Postgres intentionally out of scope until multi-writer/shared EPG is a product requirement; see `memory-bank/opportunities.md`.
+  Opportunities filed:
+    - `memory-bank/opportunities.md` (Postgres optional backend)
+  Links:
+    - `internal/epgstore/`, `docs/adr/0003-epg-sqlite-vs-postgres.md`
+
+- Date: 2026-03-19
   Title: LP-006 operator guide preview (/ui/guide/)
   Summary:
     - `XMLTV.GuidePreview(limit)` + `GuidePreview` / `GuidePreviewRow` types: sorted programmes from merged cached XMLTV, cache expiry metadata.

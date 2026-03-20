@@ -56,6 +56,8 @@ type Config struct {
 	LiveOnly            bool // if true, only fetch live channels from API (skip VOD and series; faster)
 	// EPG prune: when true, guide.xml and M3U export only include channels with tvg-id set (reduces noise).
 	EpgPruneUnlinked bool
+	// EpgSQLitePath is an optional path to a SQLite file for durable EPG storage (LP-007+). Empty = disabled.
+	EpgSQLitePath string
 	// Provider ingest policy: when true, reject any provider URL that is Cloudflare-proxied.
 	// The ranker will skip CF URLs and try alternates; if all URLs are CF-proxied, ingest is
 	// blocked with an alert log. Off by default. Enable with IPTV_TUNERR_BLOCK_CF_PROVIDERS=true.
@@ -158,6 +160,7 @@ func Load() *Config {
 		LiveEPGOnly:                 getEnvBool("IPTV_TUNERR_LIVE_EPG_ONLY", false),
 		LiveOnly:                    getEnvBool("IPTV_TUNERR_LIVE_ONLY", false),
 		EpgPruneUnlinked:            getEnvBool("IPTV_TUNERR_EPG_PRUNE_UNLINKED", false),
+		EpgSQLitePath:               strings.TrimSpace(os.Getenv("IPTV_TUNERR_EPG_SQLITE_PATH")),
 		BlockCFProviders:            getEnvBool("IPTV_TUNERR_BLOCK_CF_PROVIDERS", false),
 		FetchCFReject:               getEnvBool("IPTV_TUNERR_FETCH_CF_REJECT", false),
 		StripStreamHosts:            getEnvHosts("IPTV_TUNERR_STRIP_STREAM_HOSTS"),

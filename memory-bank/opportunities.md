@@ -22,6 +22,16 @@ It exists to encourage quality gains without derailing the current task.
 
 ## Entries
 
+- Date: 2026-03-19
+  Category: operability
+  Title: Optional PostgreSQL backend for shared multi-writer EPG
+  Context: Lineup parity track uses SQLite file (`internal/epgstore`) by default; operators with HA / multiple Tunerr instances may ask for Postgres.
+  Why it matters: SQLite fits single-writer + local file; clustered deployments may want a networked DB (see [ADR 0003](../docs/adr/0003-epg-sqlite-vs-postgres.md)).
+  Evidence: ADR documents when to reconsider; no Postgres code path exists today.
+  Suggested fix: Only if product requires multi-instance shared EPG — add explicit epic, connection config, and migration story; do not “accidentally” grow Postgres for a single-binary bridge.
+  Risk/Scope: high | fits current scope? no
+  User decision needed?: yes (only if multi-writer EPG becomes a requirement)
+
 - Date: 2026-03-18
   Category: other
   Title: Build an always-on recorder daemon for non-replay catch-up

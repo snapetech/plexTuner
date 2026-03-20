@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"net/url"
@@ -14,10 +15,29 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/catalog"
 	"github.com/snapetech/iptvtunerr/internal/channeldna"
 	"github.com/snapetech/iptvtunerr/internal/config"
+	"github.com/snapetech/iptvtunerr/internal/epgstore"
 	"github.com/snapetech/iptvtunerr/internal/hdhomerun"
 	"github.com/snapetech/iptvtunerr/internal/health"
 	"github.com/snapetech/iptvtunerr/internal/tuner"
 )
+
+// maybeOpenEpgStore opens the optional on-disk EPG SQLite file (LP-007). Returns (nil, nil) when disabled.
+func maybeOpenEpgStore(cfg *config.Config) (func(), error) {
+	p := strings.TrimSpace(cfg.EpgSQLitePath)
+	if p == "" {
+		return nil, nil
+	}
+	st, err := epgstore.Open(p)
+	if err != nil {
+		return nil, fmt.Errorf("open EPG SQLite %q: %w", p, err)
+	}
+	log.Printf("EPG SQLite store: %s (schema_version=%d)", p, st.SchemaVersion())
+	return func() {
+		if err := st.Close(); err != nil {
+			log.Printf("EPG SQLite close: %v", err)
+		}
+	}, nil
+}
 
 func handleServe(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendlyName, mode string) {
 	path := catalogPath
@@ -34,6 +54,14 @@ func handleServe(cfg *config.Config, catalogPath, addr, baseURL, deviceID, frien
 	}
 	srv := newRuntimeServer(cfg, addr, baseURL, deviceID, friendlyName, serveLineupCap, cfg.ProviderBaseURL, cfg.ProviderUser, cfg.ProviderPass)
 	srv.UpdateChannels(live)
+	closeEpg, err := maybeOpenEpgStore(cfg)
+	if err != nil {
+		log.Printf("%v", err)
+		os.Exit(1)
+	}
+	if closeEpg != nil {
+		defer closeEpg()
+	}
 	if cfg.XMLTVURL != "" {
 		log.Printf("External XMLTV enabled: %s (timeout %v)", cfg.XMLTVURL, cfg.XMLTVTimeout)
 	}
@@ -170,6 +198,14 @@ func handleRun(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendl
 		firstNonEmpty(runProviderPass, cfg.ProviderPass),
 	)
 	srv.UpdateChannels(live)
+	closeEpg, err := maybeOpenEpgStore(cfg)
+	if err != nil {
+		log.Printf("%v", err)
+		os.Exit(1)
+	}
+	if closeEpg != nil {
+		defer closeEpg()
+	}
 	if cfg.XMLTVURL != "" {
 		log.Printf("External XMLTV enabled: %s (timeout %v)", cfg.XMLTVURL, cfg.XMLTVTimeout)
 	}

@@ -66,6 +66,8 @@ See also:
 
 The guide pipeline merges three sources in priority order per channel: provider XMLTV > external XMLTV > placeholder. External gap-fills provider. Cache is pre-warmed at startup; stale data served on fetch error.
 
+Optional **SQLite EPG file** (`IPTV_TUNERR_EPG_SQLITE_PATH`) stores a normalized programme schema for future incremental fetch and retention ([ADR 0003](adr/0003-epg-sqlite-vs-postgres.md)); wiring from the merged guide cache is tracked as **LP-008** / **LP-009**.
+
 | Feature | Description |
 |---------|-------------|
 | **Provider EPG via `xmltv.php`** | Fetches EPG directly from Xtream provider using existing credentials (`IPTV_TUNERR_PROVIDER_EPG_ENABLED`). No third-party EPG source required for Xtream providers. |
