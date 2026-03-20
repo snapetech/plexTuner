@@ -427,6 +427,54 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
   gap: 14px;
   margin-top: 18px;
 }
+.signal-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.signal-card {
+  padding: 16px;
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.76);
+  box-shadow: var(--shadow);
+}
+.signal-card strong {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+.signal-card .meta {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.signal-value {
+  margin: 0.75rem 0 0.45rem;
+  font-size: 1.9rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.signal-bar {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(60, 46, 32, 0.1);
+}
+.signal-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-cool));
+}
+.signal-fill.good {
+  background: linear-gradient(90deg, rgba(29,115,72,0.9), rgba(46,147,95,0.9));
+}
+.signal-fill.warn {
+  background: linear-gradient(90deg, rgba(155,107,18,0.9), rgba(210,148,30,0.9));
+}
+.signal-fill.bad {
+  background: linear-gradient(90deg, rgba(141,45,45,0.92), rgba(200,81,81,0.92));
+}
 .action-banner {
   padding: 14px 18px;
   border-radius: 20px;
@@ -681,7 +729,7 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
 @media (max-width: 860px) {
   .content { padding: 16px; }
   .hero { padding: 22px; border-radius: 26px; }
-  .hero-grid, .panel-grid, .stats, .story-grid, .route-grid, .index-grid, .action-grid {
+  .hero-grid, .panel-grid, .stats, .story-grid, .route-grid, .index-grid, .action-grid, .signal-grid {
     grid-template-columns: 1fr;
   }
   .hero-meta, .alert-board {
@@ -809,6 +857,7 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
     <section class="stats" id="stats"></section>
     <section class="alert-board" id="alert-board"></section>
     <section class="action-dock" id="action-dock"></section>
+    <section class="signal-grid" id="signal-grid"></section>
 
     <div class="surface">
       <section class="section active" data-mode="overview">
@@ -993,7 +1042,8 @@ const endpoints = {
   attempts: "/api/debug/stream-attempts.json?limit=8",
   operatorActionsStatus: "/api/ops/actions/status.json",
   guideWorkflow: "/api/ops/workflows/guide-repair.json",
-  streamWorkflow: "/api/ops/workflows/stream-investigate.json"
+  streamWorkflow: "/api/ops/workflows/stream-investigate.json",
+  opsWorkflow: "/api/ops/workflows/ops-recovery.json"
 };
 
 const actionDefinitions = {
@@ -1046,6 +1096,7 @@ const activeFilters = document.getElementById("active-filters");
 const heroMeta = document.getElementById("hero-meta");
 const alertBoard = document.getElementById("alert-board");
 const actionDock = document.getElementById("action-dock");
+const signalGrid = document.getElementById("signal-grid");
 const sessionKV = document.getElementById("session-kv");
 const decisionBoard = document.getElementById("decision-board");
 const postureCopy = document.getElementById("posture-copy");
@@ -1161,6 +1212,24 @@ function setActionFeedback(result) {
   };
 }
 
+function clampPercent(value) {
+  if (!Number.isFinite(value)) return 0;
+  if (value < 0) return 0;
+  if (value > 100) return 100;
+  return Math.round(value);
+}
+
+function createSignalCard(title, value, percent, meta, tone = "") {
+  return `
+    <article class="signal-card">
+      <strong>${esc(title)}</strong>
+      <div class="signal-value">${esc(value)}</div>
+      <div class="signal-bar"><div class="signal-fill ${tone}" style="width:${clampPercent(percent)}%"></div></div>
+      <div class="meta">${esc(meta)}</div>
+    </article>
+  `;
+}
+
 function scheduleRefresh() {
   if (state.refreshTimer) {
     clearInterval(state.refreshTimer);
@@ -1269,7 +1338,7 @@ function renderWorkflowModal(workflowKey) {
   openModal();
 }
 
-function renderActionDock(operatorStatus, guideWorkflow, streamWorkflow) {
+function renderActionDock(operatorStatus, guideWorkflow, streamWorkflow, opsWorkflow) {
   const refreshStatus = operatorStatus.guide_refresh?.status || {};
   const banner = state.actionFeedback
     ? `<div class="action-banner ${actionKind(state.actionFeedback)}"><strong>${esc(state.actionFeedback.action)}</strong><div>${esc(state.actionFeedback.message)}</div><div class="meta">${esc(formatWhen(state.actionFeedback.at))}${state.actionFeedback.detail ? ` · detail: ${esc(pretty(state.actionFeedback.detail))}` : ""}</div></div>`
@@ -1303,6 +1372,7 @@ function renderActionDock(operatorStatus, guideWorkflow, streamWorkflow) {
         <p>Autopilot memory is useful when it is helping and dangerous when it is stale. Reset it deliberately, not casually.</p>
         <div class="meta">${operatorStatus.autopilot_reset?.available ? "Autopilot actions are available." : "Autopilot state is not configured in this process."}</div>
         <div class="action-row">
+          ${createWorkflowButton("opsWorkflow", "Open Ops Workflow")}
           ${createActionButton("autopilot_reset")}
           <button class="tiny" type="button" data-inspect="autopilot">Inspect Autopilot</button>
           <button class="tiny" type="button" data-inspect="operatorActionsStatus">Inspect Action Status</button>
@@ -1373,6 +1443,7 @@ function renderDeck() {
   const operatorStatus = state.payloads.operatorActionsStatus?.body || {};
   const guideWorkflow = state.payloads.guideWorkflow?.body || {};
   const streamWorkflow = state.payloads.streamWorkflow?.body || {};
+  const opsWorkflow = state.payloads.opsWorkflow?.body || {};
   const failedAttempts = attempts.filter((item) => {
     const val = `${item.reason || item.result || item.status || ""}`.toLowerCase();
     return val && val !== "ok";
@@ -1426,12 +1497,28 @@ function renderDeck() {
     createAlertCard("watch", "Watch Items", watchItems),
     createAlertCard("win", "Confirmed Wins", wins)
   ].join("");
-  renderActionDock(operatorStatus, guideWorkflow, streamWorkflow);
+  renderActionDock(operatorStatus, guideWorkflow, streamWorkflow, opsWorkflow);
+
+  const totalGuideChannels = Number(guideHealth.summary?.total_channels || guideHealth.channel_count || 0);
+  const guideReal = Number(guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes || 0);
+  const guidePercent = totalGuideChannels > 0 ? (guideReal / totalGuideChannels) * 100 : 0;
+  const streamPercent = attempts.length > 0 ? ((attempts.length - failedAttempts.length) / attempts.length) * 100 : 100;
+  const recorderTotal = Number((recorder.summary?.completed_count || 0) + (recorder.summary?.failed_count || 0));
+  const recorderPercent = recorderTotal > 0 ? ((recorder.summary?.completed_count || 0) / recorderTotal) * 100 : (recorder.summary ? 100 : 0);
+  const opsRisk = Number((opsWorkflow.summary?.ghost?.stale_count || 0) + (opsWorkflow.summary?.recorder?.failed_count || 0) + (opsWorkflow.summary?.recorder?.interrupted_count || 0));
+  const opsPercent = opsRisk > 0 ? Math.max(15, 100 - (opsRisk * 20)) : 100;
+
+  signalGrid.innerHTML = [
+    createSignalCard("Guide Confidence", `${clampPercent(guidePercent)}%`, guidePercent, `${guideReal} of ${totalGuideChannels || 0} channels carry listings.`, guidePercent >= 85 ? "good" : guidePercent >= 55 ? "warn" : "bad"),
+    createSignalCard("Stream Stability", `${clampPercent(streamPercent)}%`, streamPercent, `${failedAttempts.length} non-OK outcomes across ${attempts.length} recent attempts.`, streamPercent >= 85 ? "good" : streamPercent >= 55 ? "warn" : "bad"),
+    createSignalCard("Recorder Yield", recorder.summary ? `${clampPercent(recorderPercent)}%` : "n/a", recorderPercent, recorder.summary ? `${recorder.summary.completed_count || 0} completed vs ${recorder.summary.failed_count || 0} failed.` : "Recorder state is not configured.", recorder.summary ? (recorderPercent >= 85 ? "good" : recorderPercent >= 55 ? "warn" : "bad") : "warn"),
+    createSignalCard("Ops Cleanliness", `${clampPercent(opsPercent)}%`, opsPercent, opsRisk > 0 ? `${opsRisk} active ops recovery signals need attention.` : "No recorder/ghost recovery pressure in the current snapshot.", opsPercent >= 85 ? "good" : opsPercent >= 55 ? "warn" : "bad")
+  ].join("");
 
   decisionBoard.innerHTML = filterCards([
     createCard("Is the guide believable?", `${pretty(guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes)} channels have programme data; ${pretty(guideHealth.summary?.placeholder_only_channels)} are placeholder-only.`, "", (guideHealth.summary?.placeholder_only_channels || 0) > 0 ? "tone-warn" : "tone-good", "guideHealth", `${createWorkflowButton("guideWorkflow", "Guide Playbook")}${createActionButton("guide_refresh", "Refresh Now")}`),
     createCard("Are streams falling back?", `${attempts.length} recent attempts tracked; ${attempts.slice(0, 2).map((item) => item.reason || item.result || item.status || "unknown").join(" | ") || "no recent evidence"}`, "", failedAttempts.length > 0 ? "tone-warn" : "tone-good", "attempts", `${createWorkflowButton("streamWorkflow", "Investigate")}${createActionButton("stream_attempts_clear", "Clear History")}`),
-    createCard("Is recording alive?", recorder.summary ? `${pretty(recorder.summary.active_count)} active, ${pretty(recorder.summary.failed_count)} failed, ${pretty(recorder.summary.completed_count)} completed.` : pretty(recorder.error || "No recorder state file configured"), "", (recorder.summary?.failed_count || 0) > 0 ? "tone-warn" : "", "recorder"),
+    createCard("Is recording alive?", recorder.summary ? `${pretty(recorder.summary.active_count)} active, ${pretty(recorder.summary.failed_count)} failed, ${pretty(recorder.summary.completed_count)} completed.` : pretty(recorder.error || "No recorder state file configured"), "", (recorder.summary?.failed_count || 0) > 0 ? "tone-warn" : "", "recorder", `${createWorkflowButton("opsWorkflow", "Ops Recovery")}`),
     createCard("What config am I really running?", `Read-only snapshot exposed at /api/debug/runtime.json and summarized in the Settings lane.`, "", "", "runtime", `<button class="tiny" type="button" data-inspect="operatorActionsStatus">Action Status</button>`)
   ]).join("");
 
@@ -1494,9 +1581,10 @@ function renderDeck() {
   )).join("") || createTimeline("Attempts", "No recent stream attempts recorded.");
 
   opsList.innerHTML = filterCards([
-    createCard("Recorder state", recorder.summary ? `${pretty(recorder.summary.active_count)} active, ${pretty(recorder.summary.completed_count)} completed, ${pretty(recorder.summary.failed_count)} failed.` : pretty(recorder.error || "Recorder not configured"), "", (recorder.summary?.failed_count || 0) > 0 ? "tone-warn" : "", "recorder"),
+    createCard("Ops recovery workflow", `${pretty(opsWorkflow.summary?.recorder?.failed_count || 0)} recorder failures, ${pretty(opsWorkflow.summary?.ghost?.stale_count || 0)} ghost-stale sessions, ${pretty(opsWorkflow.summary?.autopilot?.decision_count || 0)} autopilot decisions in memory.`, "", ((opsWorkflow.summary?.ghost?.stale_count || 0) + (opsWorkflow.summary?.recorder?.failed_count || 0)) > 0 ? "tone-warn" : "tone-good", "opsWorkflow", `${createWorkflowButton("opsWorkflow", "Open Ops Workflow")}`),
+    createCard("Recorder state", recorder.summary ? `${pretty(recorder.summary.active_count)} active, ${pretty(recorder.summary.completed_count)} completed, ${pretty(recorder.summary.failed_count)} failed.` : pretty(recorder.error || "Recorder not configured"), "", (recorder.summary?.failed_count || 0) > 0 ? "tone-warn" : "", "recorder", `${createWorkflowButton("opsWorkflow", "Recovery Playbook")}`),
     createCard("Autopilot memory", autopilot.hot_channels ? `${autopilot.hot_channels.length} hot channels with remembered preferences.` : pretty(autopilot.error || "Autopilot memory unavailable"), "", "", "autopilot", `${createActionButton("autopilot_reset")}`),
-    createCard("Ghost hunter", ghost.summary ? esc(JSON.stringify(ghost.summary)) : esc(pretty(ghost.error || "Plex report unavailable")), "", "", "ghost"),
+    createCard("Ghost hunter", ghost.summary ? esc(JSON.stringify(ghost.summary)) : esc(pretty(ghost.error || "Plex report unavailable")), "", "", "ghost", `<button class="tiny" type="button" data-inspect="opsWorkflow">Workflow Payload</button>`),
     createCard("Media hooks", runtime.media_servers ? `Emby host=${pretty(runtime.media_servers.emby_host_configured)}, Jellyfin host=${pretty(runtime.media_servers.jellyfin_host_configured)}` : "No runtime snapshot", "", "", "runtime"),
     createCard("Recorder files", `state=${pretty(runtime.recorder?.state_file)}, autopilot=${pretty(runtime.tuner?.autopilot_state_file)}`, "", "", "runtime", `<button class="tiny" type="button" data-inspect="operatorActionsStatus">Control Status</button>`)
   ]).join("");

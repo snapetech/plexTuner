@@ -964,6 +964,7 @@ Full reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-a
 |----------|-------------|
 | `IPTV_TUNERR_STREAM_TRANSCODE` | `off` \| `on` \| `auto` (probe codec, transcode if needed) |
 | `IPTV_TUNERR_STREAM_BUFFER_BYTES` | `0` \| `auto` \| `<bytes>` |
+| `IPTV_TUNERR_STREAM_PUBLIC_BASE_URL` | Optional base URL for absolute `?mux=hls` playlist lines (no trailing slash) |
 | `IPTV_TUNERR_FFMPEG_PATH` | Custom ffmpeg binary path |
 | `IPTV_TUNERR_FFMPEG_DISABLED` | Disable ffmpeg relay and use the Go HLS relay path only |
 | `IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE` | Keep the original ffmpeg input hostname instead of rewriting it to an IP |
@@ -1000,6 +1001,8 @@ Full reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-a
 | `IPTV_TUNERR_PROVIDER_EPG_TIMEOUT` | Provider EPG fetch timeout (default `90s`) |
 | `IPTV_TUNERR_PROVIDER_EPG_CACHE_TTL` | Provider EPG refresh interval (default `10m`) |
 | `IPTV_TUNERR_PROVIDER_EPG_DISK_CACHE` | Optional path: cache provider `xmltv.php` on disk + conditional HTTP when supported |
+| `IPTV_TUNERR_PROVIDER_EPG_INCREMENTAL` | Tokenized `PROVIDER_EPG_URL_SUFFIX` using SQLite horizon (`{from_unix}`, etc.) |
+| `IPTV_TUNERR_EPG_SQLITE_INCREMENTAL_UPSERT` | Overlap-window SQLite sync instead of full replace |
 | `IPTV_TUNERR_XMLTV_URL` | External XMLTV source — gap-fills provider EPG |
 | `IPTV_TUNERR_XMLTV_CACHE_TTL` | External XMLTV refresh interval (default `10m`) |
 | `IPTV_TUNERR_EPG_PRUNE_UNLINKED` | Exclude unlinked channels from guide and lineup |

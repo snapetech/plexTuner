@@ -2,7 +2,7 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Latest (2026-03-20):** Operator-control slice landed on top of the integrated web UI. The deck now exposes safe backend-backed actions (manual guide refresh, recent-attempt clear, provider-profile reset, Autopilot reset), workflow playbooks (`guide-repair`, `stream-investigate`), action-status surfaces, richer action/result UX in `internal/webui/index.html`, and regression coverage for the new handlers plus the HLS public-base rewrite helper. Verification passed again with `go test ./...` and `./scripts/verify`.
+**Latest (2026-03-20):** Shipped the next web UI “guided control plane” slice plus the still-dirty HLS mux docs/runtime follow-up. The deck now has an `ops-recovery` workflow, a visual signal board, and a more guided operations lane on top of the existing operator actions. In the same cleanup pass, HLS mux proxy docs/runtime surfacing (`docs/how-to/hls-mux-proxy.md`, `IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`, `?mux=hls`, runtime snapshot/index docs) were folded in so the repo can end clean instead of leaving partially documented behavior behind. Verification passed with `go test ./...` and `./scripts/verify`.
 
 **Goal:** Start the new Live TV Intelligence product track: map the multi-PR roadmap, then ship the first visible foundation feature so IPTV Tunerr feels like an intelligent control plane instead of only a tuner bridge.
 

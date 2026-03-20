@@ -90,7 +90,7 @@ IPTV Tunerr’s mission stays **IPTV/Xtream → HDHR-shaped bridge for Plex/Emby
 - **PR-4**: **`LP-006`** — `/ui/guide/`, `guide-preview.json`, `GuidePreview`.
 - **PR-5**: **`LP-007`** — `internal/epgstore`, [ADR 0003](../adr/0003-epg-sqlite-vs-postgres.md).
 - **PR-6**: **`LP-008`/`LP-009`** — SQLite sync, retain/VACUUM/max-bytes, `/guide/epg-store.json`. Full **provider** incremental fetch (not pulling whole `xmltv.php`) is still a future optimization; Tunerr SQLite remains snapshot replace per refresh.
-- **PR-7**: **`LP-010`/`LP-011`** — profiles + ffmpeg TS default; optional **`?mux=fmp4`** (transcode). *Tunerr-generated HLS segment playlists* not implemented.
+- **PR-7**: **`LP-010`/`LP-011`** — profiles + ffmpeg TS default; optional **`?mux=fmp4`** (transcode). **Update (2026-03):** Tunerr-native **HLS playlist proxy** via **`?mux=hls`** (rewrite + proxy; not ffmpeg segment packaging). *Optional* separate **ffmpeg-generated** multi-file HLS packaging remains future if product needs it.
 - **`LP-012`**: [how-to/hybrid-hdhr-iptv.md](../how-to/hybrid-hdhr-iptv.md), env/docs sweep.
 
 ## Coordination with other epics

@@ -438,6 +438,35 @@ func TestServer_epgStoreReport_fileStatsAndVacuumFlag(t *testing.T) {
 	}
 }
 
+func TestServer_epgStoreReport_incrementalFlags(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "epg.db")
+	st, err := epgstore.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = st.Close() }()
+
+	s := &Server{
+		EpgStore:                   st,
+		EpgSQLiteIncrementalUpsert: true,
+		ProviderEPGIncremental:     true,
+	}
+	req := httptest.NewRequest(http.MethodGet, "/guide/epg-store.json", nil)
+	w := httptest.NewRecorder()
+	s.serveEpgStoreReport().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var rep epgStoreReportJSON
+	if err := json.Unmarshal(w.Body.Bytes(), &rep); err != nil {
+		t.Fatal(err)
+	}
+	if !rep.IncrementalUpsert || !rep.ProviderEPGIncremental {
+		t.Fatalf("want incremental flags set: %+v", rep)
+	}
+}
+
 func TestServer_runtimeSnapshot(t *testing.T) {
 	s := &Server{
 		RuntimeSnapshot: &RuntimeSnapshot{
@@ -685,6 +714,57 @@ func TestServer_streamInvestigateWorkflow(t *testing.T) {
 	}
 	if body.Name != "stream_investigate" || len(body.Steps) == 0 || len(body.Actions) == 0 {
 		t.Fatalf("unexpected workflow=%+v", body)
+	}
+}
+
+func TestServer_opsRecoveryWorkflow(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
+	dir := t.TempDir()
+	stateFile := filepath.Join(dir, "recorder-state.json")
+	state := CatchupRecorderState{
+		UpdatedAt: "2026-03-20T00:00:00Z",
+		Failed: []CatchupRecorderItem{{
+			CapsuleID: "failed-1",
+			Status:    "interrupted",
+		}},
+	}
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal state: %v", err)
+	}
+	if err := os.WriteFile(stateFile, data, 0o600); err != nil {
+		t.Fatalf("write state: %v", err)
+	}
+	s := &Server{
+		RecorderStateFile: stateFile,
+		gateway: &Gateway{
+			Autopilot: &autopilotStore{
+				byKey: map[string]autopilotDecision{
+					autopilotKey("dna:fox", "web"): {DNAID: "dna:fox", ClientClass: "web", Hits: 2},
+				},
+			},
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/ops/workflows/ops-recovery.json", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	s.serveOpsRecoveryWorkflow().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body OperatorWorkflowReport
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body.Name != "ops_recovery" || len(body.Steps) == 0 || len(body.Actions) == 0 {
+		t.Fatalf("unexpected workflow=%+v", body)
+	}
+	recorder, ok := body.Summary["recorder"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected recorder summary map, got %#v", body.Summary["recorder"])
+	}
+	if recorder["failed_count"] == nil {
+		t.Fatalf("expected failed_count in recorder summary, got %+v", recorder)
 	}
 }
 

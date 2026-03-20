@@ -23,6 +23,35 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: HLS mux proxy how-to + doc/index sweep
+  Summary:
+    - New `docs/how-to/hls-mux-proxy.md`; `docs/reference/transcode-profiles.md` and `docs/epics/EPIC-lineup-parity.md` updated (proxy vs ffmpeg packaging).
+    - Linked from docs index, how-to index, reference index; CHANGELOG [Unreleased]; `memory-bank/repo_map.md` gateway_hls note; opportunities entry refreshed.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Docs-only; behavior unchanged.
+  Opportunities filed:
+    - Updated incremental XMLTV entry
+  Links:
+    - `docs/how-to/hls-mux-proxy.md`
+
+- Date: 2026-03-19
+  Title: HLS mux + incremental EPG — docs, runtime field, epg-store flags, tests
+  Summary:
+    - `/debug/runtime.json` tuner: `stream_public_base_url`; `/guide/epg-store.json`: `incremental_upsert`, `provider_epg_incremental`.
+    - Docs: CHANGELOG, features, README, cli-and-env-reference, `.env.example` for `?mux=hls` and `IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`.
+    - Tests: `TestGateway_stream_hlsMux_returnsRewrittenPlaylist`, `TestServer_epgStoreReport_incrementalFlags`.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Completes documentation/tests pass started in the same session.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/cmd_runtime_server.go`, `internal/tuner/server.go`, `internal/tuner/gateway_test.go`
+
+- Date: 2026-03-19
   Title: Provider incremental suffix tokens, SQLite upsert mode, native HLS mux proxy
   Summary:
     - Provider EPG: `IPTV_TUNERR_PROVIDER_EPG_INCREMENTAL` + suffix tokens `{from_unix}`/`{to_unix}`/`{from_ymd}`/`{to_ymd}` using SQLite horizon.
@@ -2653,6 +2682,18 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - Extended XMLTV refresh tracking so the UI can show real guide-refresh state instead of blind buttons, and kept the older synchronous `refresh()` helper as a compatibility wrapper for existing tests.
     - Reworked the integrated dashboard with an action dock, playbook/workflow modals, inline action feedback, and embedded action buttons inside guide/routing/ops cards so the UX reads like a control plane rather than a passive report wall.
     - Added regression coverage for the new operator endpoints and the HLS playlist public-base rewrite helper.
+  Verification:
+    - `go test ./...`
+    - `./scripts/verify`
+
+---
+
+- Date: 2026-03-20
+  Title: Add ops-recovery workflow and close out HLS mux docs/runtime surfacing
+  Summary:
+    - Added a third operator workflow (`ops-recovery`) that summarizes recorder, ghost-hunter, and Autopilot state into a guided recovery playbook instead of leaving operations as disconnected cards.
+    - Reworked the deck with a visual signal board and stronger ops affordances so the surface leads with operator judgment and lane health, not only text summaries.
+    - Folded in the previously dirty HLS mux follow-up work: `?mux=hls` docs/how-to, `IPTV_TUNERR_STREAM_PUBLIC_BASE_URL` runtime snapshot exposure, README/reference/features/index updates, and regression coverage for the HLS playlist path.
   Verification:
     - `go test ./...`
     - `./scripts/verify`

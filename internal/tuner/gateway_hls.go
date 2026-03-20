@@ -9,12 +9,16 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/safeurl"
 )
+
+// hlsQuotedURIAttr matches URI="..." in HLS tag lines (#EXT-X-KEY, #EXT-X-MAP, #EXT-X-STREAM-INF, …).
+var hlsQuotedURIAttr = regexp.MustCompile(`(?i)(URI=")([^"]*)(")`)
 
 // sleepHLSRefresh sleeps based on playlist EXT-X-TARGETDURATION to avoid hammering upstream (1-10s).
 func sleepHLSRefresh(playlistBody []byte) {
@@ -172,6 +176,39 @@ func gatewayHLSProxyMediaURL(channelID, resolvedSegURL string) string {
 	return base + rel
 }
 
+// resolveHLSMediaRef resolves a playlist-relative or absolute URL against the effective playlist URL.
+func resolveHLSMediaRef(raw string, base *url.URL) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || base == nil {
+		return raw
+	}
+	if strings.HasPrefix(raw, "//") {
+		return base.Scheme + ":" + raw
+	}
+	ref, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	if ref.IsAbs() {
+		return raw
+	}
+	return base.ResolveReference(ref).String()
+}
+
+// rewriteHLSQuotedURIAttrs replaces each URI="…" in an HLS tag line with a Tunerr /stream proxy URL (same as media lines).
+func rewriteHLSQuotedURIAttrs(line string, base *url.URL, channelID string) string {
+	return hlsQuotedURIAttr.ReplaceAllStringFunc(line, func(full string) string {
+		sm := hlsQuotedURIAttr.FindStringSubmatch(full)
+		if len(sm) < 4 {
+			return full
+		}
+		prefix, inner, suffix := sm[1], sm[2], sm[3]
+		resolved := resolveHLSMediaRef(inner, base)
+		proxied := gatewayHLSProxyMediaURL(channelID, resolved)
+		return prefix + proxied + suffix
+	})
+}
+
 func rewriteHLSPlaylistToGatewayProxy(body []byte, upstreamURL string, channelID string) []byte {
 	base, err := url.Parse(upstreamURL)
 	if err != nil || base == nil {
@@ -187,8 +224,16 @@ func rewriteHLSPlaylistToGatewayProxy(body []byte, upstreamURL string, channelID
 		first = false
 		line := sc.Text()
 		trim := strings.TrimSpace(line)
-		if trim == "" || strings.HasPrefix(trim, "#") {
+		if trim == "" {
 			out.WriteString(line)
+			continue
+		}
+		if strings.HasPrefix(trim, "#") {
+			if strings.Contains(trim, `URI="`) {
+				out.WriteString(rewriteHLSQuotedURIAttrs(line, base, channelID))
+			} else {
+				out.WriteString(line)
+			}
 			continue
 		}
 		ref, perr := url.Parse(trim)

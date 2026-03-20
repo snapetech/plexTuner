@@ -54,6 +54,7 @@ Normal push path from this checkout: `git push origin main`. Never `git push git
 - **`internal/httpclient`** — Shared tuned HTTP client; used by indexer, gateway, materializer, vodfs.
 - **`internal/materializer`** — Download: single GET or range (16 MiB, 206 when off>0); env `IPTV_TUNERR_RANGE_DOWNLOAD=1`.
 - **`internal/tuner/gateway.go`** — Stream gateway with fallback URLs, provider-cap learning, auth-context forwarding, and autotune hooks.
+- **`internal/tuner/gateway_hls.go`** — HLS helpers: playlist rewrite, **`?mux=hls`** Tunerr-native playlist proxy (`gatewayHLSProxyMediaURL`, `serveHLSMuxTarget`).
 - **`internal/tuner/xmltv.go` + `internal/tuner/epg_pipeline.go`** — Layered guide builder: provider XMLTV (optional **`IPTV_TUNERR_PROVIDER_EPG_DISK_CACHE`** + HTTP 304), external XMLTV, placeholder fallback, highlights, capsules.
 - **`internal/webui/webui.go`** — Dedicated dashboard listener + `/api/*` reverse proxy; main page is embedded from `internal/webui/index.html`.
 - **`internal/tuner/server.go` + `internal/tuner/operator_ui.go`** — Operator/report JSON surfaces plus safe action/workflow endpoints (`/ops/actions/*`, `/ops/workflows/*`) guarded by the localhost/LAN UI policy.

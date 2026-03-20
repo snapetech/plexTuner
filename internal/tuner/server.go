@@ -1104,6 +1104,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/ops/actions/status.json", s.serveOperatorActionStatus())
 	mux.Handle("/ops/workflows/guide-repair.json", s.serveGuideRepairWorkflow())
 	mux.Handle("/ops/workflows/stream-investigate.json", s.serveStreamInvestigateWorkflow())
+	mux.Handle("/ops/workflows/ops-recovery.json", s.serveOpsRecoveryWorkflow())
 	mux.Handle("/ops/actions/guide-refresh", s.serveGuideRefreshAction())
 	mux.Handle("/ops/actions/stream-attempts-clear", s.serveStreamAttemptsClearAction())
 	mux.Handle("/ops/actions/provider-profile-reset", s.serveProviderProfileResetAction())
@@ -1611,6 +1612,84 @@ func (s *Server) serveStreamInvestigateWorkflow() http.Handler {
 		body, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
 			http.Error(w, `{"error":"encode stream workflow"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveOpsRecoveryWorkflow() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+
+		recorderSummary := map[string]interface{}{}
+		if stateFile := strings.TrimSpace(firstNonEmptyString(s.RecorderStateFile, os.Getenv("IPTV_TUNERR_CATCHUP_RECORDER_STATE_FILE"))); stateFile != "" {
+			if rep, err := LoadCatchupRecorderReport(stateFile, 5); err == nil {
+				recorderSummary["active_count"] = len(rep.Active)
+				recorderSummary["completed_count"] = len(rep.Completed)
+				recorderSummary["failed_count"] = len(rep.Failed)
+				recorderSummary["interrupted_count"] = rep.InterruptedCount
+				recorderSummary["published_count"] = rep.PublishedCount
+				recorderSummary["state_file"] = rep.StateFile
+			} else {
+				recorderSummary["error"] = err.Error()
+			}
+		} else {
+			recorderSummary["state_file"] = ""
+		}
+
+		ghostSummary := map[string]interface{}{}
+		if rep, err := RunGhostHunter(r.Context(), NewGhostHunterConfigFromEnv(), false, nil); err == nil {
+			ghostSummary["session_count"] = rep.SessionCount
+			ghostSummary["stale_count"] = rep.StaleCount
+			ghostSummary["hidden_grab_suspected"] = rep.HiddenGrabSuspected
+			ghostSummary["recommended_action"] = rep.RecommendedAction
+		} else {
+			ghostSummary["error"] = err.Error()
+		}
+
+		autopilotSummary := map[string]interface{}{}
+		if s.gateway != nil && s.gateway.Autopilot != nil {
+			rep := s.gateway.Autopilot.report(5)
+			autopilotSummary["decision_count"] = rep.DecisionCount
+			autopilotSummary["hot_channel_count"] = len(rep.HotChannels)
+			autopilotSummary["state_file"] = rep.StateFile
+		} else {
+			autopilotSummary["decision_count"] = 0
+		}
+
+		report := OperatorWorkflowReport{
+			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+			Name:        "ops_recovery",
+			Summary: map[string]interface{}{
+				"recorder":  recorderSummary,
+				"ghost":     ghostSummary,
+				"autopilot": autopilotSummary,
+			},
+			Steps: []string{
+				"Check recorder failures and interrupted items before assuming the recording lane is healthy.",
+				"Inspect Ghost Hunter when playback symptoms smell like stale Plex session state rather than upstream failures.",
+				"Review Autopilot memory when the gateway keeps preferring a stale profile or host path.",
+				"Reset Autopilot memory only after you have captured the current evidence and want a clean learning pass.",
+			},
+			Actions: []string{
+				"/ops/actions/autopilot-reset",
+				"/recordings/recorder.json",
+				"/plex/ghost-report.json?observe=0s",
+				"/autopilot/report.json",
+				"/debug/runtime.json",
+			},
+		}
+		body, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode ops workflow"}`, http.StatusInternalServerError)
 			return
 		}
 		_, _ = w.Write(body)

@@ -28,7 +28,7 @@ It exists to encourage quality gains without derailing the current task.
   Context: `fetchProviderXMLTV` in `internal/tuner/epg_pipeline.go` pulls the whole provider XMLTV when HTTP conditional GET cannot short-circuit; SQLite `GlobalMaxStopUnix` could bound a smaller window **if** the provider supports date-range parameters (non-standard; panel-specific).
   Why it matters: Large provider guides waste bandwidth/CPU on every cache tick.
   Evidence: Epic PR-6 notes “incremental-only ingest” as future; Tunerr SQLite sync remains full replace per refresh.
-  Suggested fix: **`IPTV_TUNERR_PROVIDER_EPG_DISK_CACHE`** (2026-03-19) implements on-disk body + **`If-None-Match`** / **`If-Modified-Since`** when upstream sends validators. Still need panel-specific window params via **`IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX`** where documented; consider partial merge instead of DELETE-all in `SyncMergedGuideXML` only if product requires it.
+  Suggested fix: **`IPTV_TUNERR_PROVIDER_EPG_DISK_CACHE`** (2026-03-19) implements on-disk body + **`If-None-Match`** / **`If-Modified-Since`** when upstream sends validators. **`IPTV_TUNERR_PROVIDER_EPG_INCREMENTAL`** + suffix tokens + **`IPTV_TUNERR_EPG_SQLITE_INCREMENTAL_UPSERT`** reduce full-table churn when panels support window params / overlap sync. Remaining: provider-specific param names still manual via suffix; true ffmpeg-only incremental **xmltv.php** pulls not applicable server-side without provider contract.
   Risk/Scope: high | fits current scope? no
   User decision needed?: yes (provider contract / compatibility)
 

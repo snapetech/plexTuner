@@ -91,6 +91,61 @@ func TestRewriteHLSPlaylistToGatewayProxy_usesPublicBaseURLWhenConfigured(t *tes
 	}
 }
 
+func TestRewriteHLSPlaylistToGatewayProxy_rewritesExtXKeyAndStreamInfURI(t *testing.T) {
+	in := `#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=1280000,URI="low/index.m3u8"
+#EXT-X-KEY:METHOD=AES-128,URI="https://keys.example.com/secret.key"
+#EXT-X-MAP:URI="init.mp4"
+#EXTINF:4,
+seg.ts
+`
+	out := rewriteHLSPlaylistToGatewayProxy([]byte(in), "http://up.example/live/master.m3u8", "abc")
+	s := string(out)
+	if !strings.Contains(s, `URI="/stream/abc?mux=hls&seg=`) {
+		t.Fatalf("missing proxied URI= on tag lines: %q", s)
+	}
+	if !strings.Contains(s, "http%3A%2F%2Fup.example%2Flive%2Flow%2Findex.m3u8") {
+		t.Fatalf("missing variant stream rewrite: %q", s)
+	}
+	if !strings.Contains(s, "http%3A%2F%2Fkeys.example.com%2Fsecret.key") {
+		t.Fatalf("missing AES key rewrite: %q", s)
+	}
+	if !strings.Contains(s, "http%3A%2F%2Fup.example%2Flive%2Finit.mp4") {
+		t.Fatalf("missing map rewrite: %q", s)
+	}
+}
+
+func TestGateway_stream_hlsMux_returnsRewrittenPlaylist(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("#EXTM3U\n#EXTINF:4,\nseg.ts\n"))
+	}))
+	defer up.Close()
+
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "0", GuideName: "Ch", StreamURL: up.URL + "/live.m3u8"},
+		},
+		TunerCount:    2,
+		DisableFFmpeg: true,
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0?mux=hls", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code=%d body=%s", w.Code, w.Body.String())
+	}
+	ct := w.Header().Get("Content-Type")
+	if !strings.Contains(ct, "mpegurl") || !strings.Contains(ct, "application/") {
+		t.Fatalf("content-type=%q", ct)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "/stream/0?mux=hls&seg=") {
+		t.Fatalf("missing proxy line: %q", body)
+	}
+}
+
 func TestGateway_stream_invalidHLSPlaylistFallsBackToBackup(t *testing.T) {
 	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=UTF-8")

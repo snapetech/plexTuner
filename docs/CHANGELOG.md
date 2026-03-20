@@ -17,6 +17,17 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Dedicated control deck (`internal/webui`)**: `serve` / `run` now start a separate operator dashboard on **`48879`** by default (`0xBEEF`), with a single-origin `/api/*` proxy over the tuner server.
 - **Runtime settings snapshot**: added **`/debug/runtime.json`** so operators can inspect effective tuner/guide/provider/HDHR/web UI settings without spelunking env files or logs.
 - **Web UI envs**: added **`IPTV_TUNERR_WEBUI_DISABLED`**, **`IPTV_TUNERR_WEBUI_PORT`**, and **`IPTV_TUNERR_WEBUI_ALLOW_LAN`**. The older `/ui/` pages on the tuner port remain available.
+- **Operator actions + workflows**: the deck now drives safe control endpoints under **`/ops/actions/*`** plus workflow/playbook endpoints under **`/ops/workflows/*`** (`guide-repair`, `stream-investigate`, `ops-recovery`), and the UI exposes them with action docks, workflow modals, and signal boards instead of treating operations as raw payloads only.
+
+### Streaming / HLS (Tunerr-native mux)
+- **`?mux=hls`** on **`/stream/<channel>`**: returns a rewritten **HLS playlist** whose media lines point back through Tunerr (`/stream/<id>?mux=hls&seg=<encoded-upstream-url>`), and fetches segments/variants through the same proxy. **MPEG-TS relay** remains the default when `mux` is omitted or set to `mpegts`.
+- **`IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`**: optional prefix (e.g. `http://192.168.1.10:5004`) so playlist lines use **absolute** Tunerr URLs; exposed in **`/debug/runtime.json`** (`tuner.stream_public_base_url`).
+- **How-to:** [docs/how-to/hls-mux-proxy.md](how-to/hls-mux-proxy.md); transcode reference updated in [transcode-profiles.md](reference/transcode-profiles.md).
+
+### Provider EPG + SQLite (incremental follow-ups)
+- **`IPTV_TUNERR_PROVIDER_EPG_INCREMENTAL`** + suffix tokens `{from_unix}` / `{to_unix}` / `{from_ymd}` / `{to_ymd}` on **`IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX`** (horizon from SQLite when available).
+- **`IPTV_TUNERR_EPG_SQLITE_INCREMENTAL_UPSERT`**: overlap-window upsert sync instead of full table replace.
+- **`/guide/epg-store.json`**: includes **`incremental_upsert`** and **`provider_epg_incremental`** when SQLite is enabled.
 
 ### Lineup parity — remaining LP stories (LP-002 / LP-009 / LP-010 / LP-011 / LP-012)
 
