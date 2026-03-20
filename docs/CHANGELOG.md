@@ -15,6 +15,11 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 - *(none)*
 
+## [v0.1.16] — 2026-03-20
+
+### Reliability
+- **Windows release-build portability:** **`internal/hdhomerun/client.go`** no longer hard-casts the UDP socket fd to an **`int`** for **`SO_BROADCAST`**. OS-specific helpers now use the right handle type on Windows, so cross-builds for **`windows-amd64`** and **`windows-arm64`** succeed again in the release workflow.
+
 ## [v0.1.15] — 2026-03-20
 
 ### Web UI (Control Deck)

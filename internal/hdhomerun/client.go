@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
@@ -214,7 +213,7 @@ func enableBroadcast(c *net.UDPConn) error {
 	}
 	var opErr error
 	err = raw.Control(func(fd uintptr) {
-		opErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_BROADCAST, 1)
+		opErr = setSocketBroadcast(fd)
 	})
 	if err != nil {
 		return err
