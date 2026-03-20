@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-20):** Closed test gaps: **`internal/probe/probe_test.go`** (~92% stmts) + **`internal/materializer/materializer_test.go`** (~71% stmts; HLS/ffmpeg still integration-only); **`CHANGELOG`**, **`commands.yml`** note; **`./scripts/verify`** OK.
+
 **Latest (2026-03-20):** Documented **`GET /readyz`** (already in **`server.go`**); **k8s** examples use **`/readyz`** for **`readinessProbe`**; runbook §8, architecture, static UI, **`CHANGELOG`**, **LP-012**, opportunities superseded row, **`work_breakdown`**. **`./scripts/verify`** OK.
 
 **Latest (2026-03-20):** Superseded **smoketest disk cache** opportunity (already shipped); **plex-livetv-http-tuning** + **hybrid-hdhr** + **k8s/README** cross-links; **repo_map** indexer smoketest note. **`./scripts/verify`** OK.

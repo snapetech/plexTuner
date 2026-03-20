@@ -13,6 +13,10 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+### Testing
+- **`internal/probe`**: unit tests for **`Probe`** (path classification, HTTP content-types, body sniff, redirects) plus **`Lineup`**, **`LineupHandler`**, **`DiscoveryHandler`** (`probe_test.go`).
+- **`internal/materializer`**: unit tests for **`Stub`**, **`DownloadToFile`** (SSRF guard, full GET, ranged GET, HTTP errors), **`DirectFile`**, and **`Cache`** materialization (`materializer_test.go`). HLS/ffmpeg paths remain integration-only.
+
 ### Operability
 - **`GET /readyz`**: Kubernetes-oriented readiness JSON — **503** `not_ready` until **`UpdateChannels`** has live channels, then **200** `ready` (same gate as **`/healthz`**, which returns **`loading`** / **`ok`** plus **`source_ready`**). Example **`k8s/`** manifests probe **`/readyz`** for **`readinessProbe`**; **`/discover.json`** remains a better **liveness** target during long first catalog builds. See runbook §8 and **`TestServer_readyz`**.
 

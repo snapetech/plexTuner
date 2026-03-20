@@ -23,6 +23,17 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-20
+  Title: Unit tests for **`internal/probe`** and **`internal/materializer`**
+  Summary:
+    - **`probe_test.go`**: path-only **`Probe`**, HTTP content-type + body sniff, redirect final URL, unknown type; **`Lineup`** / **`LineupHandler`** / **`DiscoveryHandler`**.
+    - **`materializer_test.go`**: **`ErrNotReady`**, **`Stub`**, **`DownloadToFile`** (scheme guard, full + ranged download, HTTP error), **`DirectFile`** + concurrent dedup, **`Cache`** hit + direct MP4 + probe failure.
+    - **`docs/CHANGELOG.md`**, **`memory-bank/commands.yml`** (**integration_test** clarification).
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+
+- Date: 2026-03-20
   Title: **`/readyz`** operability docs + **k8s** readiness alignment
   Summary:
     - Code already exposed **`GET /readyz`** + richer **`/healthz`** (`internal/tuner/server.go`, **`TestServer_readyz`**). This slice documents both and points example **`readinessProbe`** paths at **`/readyz`** (`k8s/iptvtunerr-hdhr-test.yaml`, `k8s/iptvtunerr-supervisor-singlepod.example.yaml`).

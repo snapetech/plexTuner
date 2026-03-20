@@ -7,7 +7,7 @@ format: "gofmt -s -l .  # fail if any file needs formatting; fix with: gofmt -s 
 lint: "go vet ./..."
 typecheck: "N/A  # Go is compiled"
 test: "go test -count=1 ./..."
-integration_test: "N/A  # unit tests only; probe/index need .env"
+integration_test: "N/A  # default verify is unit tests; real probe/index runs need .env; materializer HLS uses ffmpeg (not in verify)"
 build: "go build -o /dev/null ./cmd/iptv-tunerr"
 run: "go run ./cmd/iptv-tunerr run  # needs .env; or: serve / index / mount / probe"
 run_single_test: "go test -v -run <TestName> ./internal/<pkg>"
