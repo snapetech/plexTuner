@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -96,6 +97,9 @@ func prepareRemoteGuideRef(ref string) (refio.RemoteHTTPRef, bool, error) {
 	if err != nil {
 		return refio.RemoteHTTPRef{}, false, err
 	}
+	if !guideInputRemoteHostAllowed(remote) {
+		return refio.RemoteHTTPRef{}, false, fmt.Errorf("remote ref host not in guide allowlist")
+	}
 	return remote, true, nil
 }
 
@@ -134,4 +138,62 @@ func (r *guideInputReadCloser) Close() error {
 		r.cancel()
 	}
 	return err
+}
+
+func guideInputRemoteHostAllowed(ref refio.RemoteHTTPRef) bool {
+	host := ref.Hostname()
+	if host == "" {
+		return false
+	}
+	allowed := map[string]bool{}
+	for _, raw := range configuredGuideInputRefsFromEnv() {
+		u, err := url.Parse(strings.TrimSpace(raw))
+		if err != nil || u == nil {
+			continue
+		}
+		if h := strings.ToLower(strings.TrimSpace(u.Hostname())); h != "" {
+			allowed[h] = true
+		}
+	}
+	for _, raw := range strings.Split(os.Getenv("IPTV_TUNERR_GUIDE_INPUT_ALLOWED_HOSTS"), ",") {
+		raw = strings.ToLower(strings.TrimSpace(raw))
+		if raw != "" {
+			allowed[raw] = true
+		}
+	}
+	return allowed[host]
+}
+
+func configuredGuideInputRefsFromEnv() []string {
+	refs := []string{
+		os.Getenv("IPTV_TUNERR_XMLTV_URL"),
+		os.Getenv("IPTV_TUNERR_XMLTV_ALIASES"),
+		os.Getenv("IPTV_TUNERR_HDHR_GUIDE_URL"),
+		os.Getenv("IPTV_TUNERR_PROVIDER_URL"),
+	}
+	refs = append(refs, strings.Split(os.Getenv("IPTV_TUNERR_PROVIDER_URLS"), ",")...)
+	for _, kv := range os.Environ() {
+		key, value, ok := strings.Cut(kv, "=")
+		if !ok {
+			continue
+		}
+		if strings.HasPrefix(key, "IPTV_TUNERR_PROVIDER_URL_") {
+			refs = append(refs, value)
+		}
+	}
+	out := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		ref = strings.TrimSpace(ref)
+		if ref == "" {
+			continue
+		}
+		if strings.HasPrefix(ref, ".") {
+			if abs, err := filepath.Abs(ref); err == nil {
+				out = append(out, abs)
+				continue
+			}
+		}
+		out = append(out, ref)
+	}
+	return out
 }

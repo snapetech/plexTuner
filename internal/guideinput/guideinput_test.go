@@ -39,6 +39,7 @@ func TestLoadGuideData_LocalAndHTTP(t *testing.T) {
 		_, _ = w.Write([]byte(body))
 	}))
 	defer srv.Close()
+	t.Setenv("IPTV_TUNERR_XMLTV_URL", srv.URL)
 
 	got, err = LoadGuideData(srv.URL)
 	if err != nil {
@@ -55,6 +56,7 @@ func TestLoadOptionalMatchReport(t *testing.T) {
 		_, _ = w.Write([]byte(`<?xml version="1.0"?><tv><channel id="id.1"><display-name>Alpha</display-name></channel></tv>`))
 	}))
 	defer srv.Close()
+	t.Setenv("IPTV_TUNERR_XMLTV_URL", srv.URL)
 
 	live := []catalog.LiveChannel{{
 		ChannelID:   "ch1",

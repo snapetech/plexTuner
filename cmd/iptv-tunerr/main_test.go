@@ -391,6 +391,7 @@ func TestApplyRuntimeEPGRepairs_ExternalRepairsIncorrectTVGID(t *testing.T) {
 		XMLTVURL:         xmltv.URL,
 		XMLTVMatchEnable: true,
 	}
+	t.Setenv("IPTV_TUNERR_XMLTV_URL", xmltv.URL)
 	live := []catalog.LiveChannel{
 		{ChannelID: "1", GuideName: "FOX News Channel US", TVGID: "wrong.id", EPGLinked: true},
 	}
@@ -424,6 +425,8 @@ func TestApplyRuntimeEPGRepairs_PrefersProviderBeforeExternal(t *testing.T) {
 		XMLTVURL:           externalXMLTV.URL,
 		XMLTVMatchEnable:   true,
 	}
+	t.Setenv("IPTV_TUNERR_XMLTV_URL", externalXMLTV.URL)
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL", providerXMLTV.URL)
 	live := []catalog.LiveChannel{
 		{ChannelID: "1", GuideName: "FOX News Channel US", TVGID: "wrong.id", EPGLinked: true},
 	}
@@ -446,6 +449,7 @@ func TestChannelDNAStableAfterRuntimeEPGRepair(t *testing.T) {
 		XMLTVURL:         xmltv.URL,
 		XMLTVMatchEnable: true,
 	}
+	t.Setenv("IPTV_TUNERR_XMLTV_URL", xmltv.URL)
 	live := []catalog.LiveChannel{
 		{ChannelID: "1", GuideName: "FOX News Channel US", TVGID: "wrong.id", EPGLinked: true},
 	}

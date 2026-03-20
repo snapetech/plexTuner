@@ -66,6 +66,14 @@ func (r LocalFileRef) Path() string {
 	return strings.TrimSpace(string(r))
 }
 
+func (r RemoteHTTPRef) Hostname() string {
+	u, err := url.Parse(strings.TrimSpace(r.raw))
+	if err != nil || u == nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(u.Hostname()))
+}
+
 func resolveGuideInputPath(raw string) (string, error) {
 	absPath, err := filepath.Abs(filepath.Clean(raw))
 	if err != nil {
