@@ -23,6 +23,55 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Native mux epic — DASH MPD proxy, DNS SSRF option, Prometheus, rate limit, demo, fuzz, soak, ops decode
+  Summary:
+    - **`?mux=dash`** (**experimental**): **`rewriteDASHManifestToGatewayProxy`**, **`serveNativeMuxTarget`** / shared **`seg=`** pool with HLS; main loop **`dash_native_mux`** / passthrough; profile **`dash_mux_seg_*`** atomics.
+    - **`IPTV_TUNERR_HLS_MUX_DENY_RESOLVED_PRIVATE_UPSTREAM`** + **`safeurl.HTTPURLHostResolvesToBlockedPrivate`**; per-IP **`IPTV_TUNERR_HLS_MUX_SEG_RPS_PER_IP`** (**429** **`seg_rate_limited`**); stream-attempt prefixes **`hls_`** / **`dash_`**.
+    - **Prometheus** **`iptv_tunerr_mux_seg_outcomes_total{mux,outcome}`** + **`GET /metrics`** when **`IPTV_TUNERR_METRICS_ENABLE`**; **`IPTV_TUNERR_HTTP_MAX_IDLE_CONNS_PER_HOST`** in **`httpclient`**; logs **`hls_mux_diag`** on client/upstream mux errors.
+    - **`POST /ops/actions/mux-seg-decode`**, **`/debug/hls-mux-demo.html`** (**`IPTV_TUNERR_HLS_MUX_WEB_DEMO`**), **`scripts/hls-mux-soak.sh`**, fuzz tests, **EXT-X-PART** regression, **`go mod vendor`** (+ **client_golang**, **x/time/rate**).
+    - Docs/toolkit/how-to/index/features/CHANGELOG/cli/.env.example/runtime URLs; **`operator_ui` embed** includes demo HTML.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Redirect-chain SSRF and full DASH relative URL resolution remain open; DNS deny fails open on lookup errors.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway_dash.go`, `internal/tuner/gateway_hls.go`, `internal/tuner/gateway.go`, `internal/tuner/prometheus_mux.go`, `internal/safeurl/privateresolve.go`, `docs/reference/hls-mux-toolkit.md`
+
+- Date: 2026-03-19
+  Title: HLS mux backlog slice — limits, SSRF-ish literal-private block, JSON errors, HEAD, counters, docs
+  Summary:
+    - **`safeurl.HTTPURLHostIsLiteralBlockedPrivate`**; gateway validates **`seg=`** order: length → scheme → optional literal-private deny → concurrency → proxy.
+    - **`newUpstreamRequestMethod`**: **`HEAD`** preserved only for **`serveHLSMuxTarget`**; main **`/stream`** stays **GET**. Forward **`X-Request-Id`**, **`X-Correlation-Id`**, **`X-Trace-Id`** on upstream requests.
+    - Atomic **`hls_mux_seg_*`** counters on **`Gateway`** + **`provider_profile.json`** fields; **`/debug/runtime.json`** **`tuner.hls_mux_*`** env echo for new knobs.
+    - Tests: safeurl private IP helper; tuner tests for JSON **400**, param max, **403** private, **HEAD** upstream, success counter, correlation headers.
+    - Docs: CHANGELOG, CLI/env, hls-mux-toolkit (status table + backlog ticks), how-to, **`.env.example`**.
+    - **`internal/webui`**: fix **`logout`** / **`strconv`** / test **`Server`** literals so **`go vet`** + tests pass.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Hostname SSRF (DNS → internal IP) not addressed; counters are in-process only (no Prometheus).
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway.go`, `internal/tuner/gateway_hls.go`, `internal/tuner/gateway_upstream.go`, `internal/tuner/gateway_provider_profile.go`, `internal/safeurl/safeurl.go`, `cmd/iptv-tunerr/cmd_runtime_server.go`
+
+- Date: 2026-03-19
+  Title: HLS mux — operator toolkit reference + large enhancement backlog list
+  Summary:
+    - New **`docs/reference/hls-mux-toolkit.md`**: shipped-behavior table, **`X-IptvTunerr-Hls-Mux-Error`** values, stream-attempt statuses, env quick list, **`curl`**/jq snippets, categorized backlog (protocol, security, perf, DRM, observability, testing, ecosystem).
+    - Linked from **`docs/index.md`**, **`docs/reference/index.md`**, **`docs/how-to/hls-mux-proxy.md`**, **`docs/reference/transcode-profiles.md`**, **`memory-bank/repo_map.md`**; **`[Unreleased]`** CHANGELOG bullet; **`memory-bank/opportunities.md`** entry (docs-only).
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Backlog rows are planning prompts; promote to **`opportunities.md`** with evidence when starting a slice.
+  Opportunities filed:
+    - none (toolkit is the umbrella; see opportunities entry “consolidated operator toolkit”)
+  Links:
+    - `docs/reference/hls-mux-toolkit.md`
+
+- Date: 2026-03-19
   Title: HLS mux — pass through upstream 4xx/5xx for seg= (vs always 502)
   Summary:
     - `hlsMuxUpstreamHTTPError` + `respondHLSMuxUpstreamHTTP`; preview body up to **8 KiB**; diagnostic **`X-IptvTunerr-Hls-Mux-Error: upstream_http_<status>`**; **`finalStatus`** **`hls_mux_upstream_http_<status>`**; playlist branch uses same type for unexpected non-200 HLS responses.
@@ -2885,3 +2934,16 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - `go test ./internal/webui`
     - `go test ./...`
     - `./scripts/verify`
+
+---
+
+- Date: 2026-03-20
+  Title: Harden deck mutations and expand the settings control surface
+  Summary:
+    - Added session-bound CSRF protection for state-changing requests on the dedicated deck origin, including deck memory/activity/settings writes and proxied operator actions, while keeping HTTP Basic auth usable for script clients.
+    - Switched sign-out to a deliberate POST flow and exposed the CSRF header/runtime posture in the deck snapshot so auth/session behavior is operator-visible instead of implicit.
+    - Expanded the Settings lane into a fuller control surface with grouped endpoint inventory, richer runtime/config posture cards, and a clearer atlas of actions, workflows, persistence, and security state.
+  Verification:
+    - `node --check internal/webui/deck.js`
+    - `GOFLAGS=-mod=mod go test ./internal/webui`
+    - `GOFLAGS=-mod=mod go test ./cmd/iptv-tunerr ./internal/tuner`

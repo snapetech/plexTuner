@@ -2,6 +2,12 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-19, native mux epic):** Shipped **`?mux=dash`** (experimental MPD rewrite), DNS **`IPTV_TUNERR_HLS_MUX_DENY_RESOLVED_PRIVATE_UPSTREAM`**, per-IP **`IPTV_TUNERR_HLS_MUX_SEG_RPS_PER_IP`**, Prometheus **`/metrics`** + **`iptv_tunerr_mux_seg_outcomes_total`**, **`hls_mux_diag`** logs, **`POST /ops/actions/mux-seg-decode`**, **`/debug/hls-mux-demo.html`**, **`IPTV_TUNERR_HTTP_MAX_IDLE_CONNS_PER_HOST`**, fuzz/soak/docs/vendor; webui tests aligned with **`deckSession`** + POST logout.
+
+**Latest (2026-03-19, HLS mux):** Implemented toolkit backlog slice: **`seg=`** length cap, optional literal-private IP block, JSON mux errors, line splitting without scanner limits, CORS allow **correlation** headers, upstream **HEAD** for **`seg=`**, **`hls_mux_seg_*`** counters on **`provider_profile.json`** + runtime env echo, **`safeurl`** tests; fixed **`internal/webui`** **`go vet`**/test break (**`logout`**, **`strconv`**, test **`Server`** setup). **`./scripts/verify`** OK.
+
+**Latest (2026-03-19, docs):** Added **`docs/reference/hls-mux-toolkit.md`** — operator quick map, **`X-IptvTunerr-Hls-Mux-Error`**, stream-attempt statuses, **`curl`** recipes, and a **large categorized enhancement backlog** (LL-HLS, SSRF, metrics, DRM policy, tests, …); linked from index, how-to, transcode ref, **repo_map**, CHANGELOG **[Unreleased]**; **opportunities.md** meta entry.
+
 **Latest (2026-03-19, gateway):** HLS mux: **`IPTV_TUNERR_HLS_MUX_CORS`**, segment concurrency caps, SAMPLE-AES/SESSION-KEY rewrite hardening, **400** + **`hls_mux_unsupported_target_scheme`** for non-http(s) **`seg=`** (e.g. **`skd://`**) before acquiring seg slots; tests + docs + **`./scripts/verify`** OK.
 
 **Latest (2026-03-20):** Continuing the web UI from “sticky operator cockpit” toward shared operator memory. Current slice adds a server-backed deck telemetry endpoint in `internal/webui` so trend cards can use shared in-process history across reloads and browsers hitting the same deck, while leaving per-user UI prefs in client-side `localStorage`. In the same cleanup pass, the gateway HLS mux path now has explicit browser/CORS hooks and bounded segment-proxy concurrency knobs instead of treating every `?mux=hls&seg=` request as unbounded.
@@ -11,6 +17,8 @@
 **Latest (2026-03-20, session UX):** Replaced the bare browser auth prompt with a dedicated deck login page and cookie-backed session flow on the `internal/webui` origin, while keeping direct HTTP Basic auth as a fallback for scripts and API clients. The deck now has an explicit sign-out control and redirects back to `/login` if the session expires during live use, so the front door finally feels like product UX instead of infra chrome.
 
 **Latest (2026-03-20, operator activity):** Added shared deck activity memory on the dedicated web UI side so the control plane records operator behavior, not only system state. The deck now exposes `/deck/activity.json`, persists that activity alongside deck telemetry when `IPTV_TUNERR_WEBUI_STATE_FILE` is configured, records login/logout/memory-clear/action events, and surfaces the shared activity timeline in overview + ops.
+
+**Latest (2026-03-20, deck productization pass):** Continuing the dedicated web UI from “credible internal control deck” toward a safer, fuller operator console. Current slice is deliberately not another cosmetic pass: it adds CSRF/session hardening for state-changing deck flows and expands the Settings lane into a more comprehensive control surface using the existing runtime/action/endpoint data instead of leaving it as a thin summary list.
 
 **Goal:** Start the new Live TV Intelligence product track: map the multi-PR roadmap, then ship the first visible foundation feature so IPTV Tunerr feels like an intelligent control plane instead of only a tuner bridge.
 

@@ -141,7 +141,10 @@ func TestActivityPOSTGETAndDELETE(t *testing.T) {
 }
 
 func TestSessionAuthOnlyRedirectsBrowserRequests(t *testing.T) {
-	s := &Server{User: "admin", Pass: "admin", sessions: map[string]time.Time{}}
+	s := &Server{
+		settings: DeckSettings{AuthUser: "admin", AuthPass: "admin"},
+		sessions: map[string]deckSession{},
+	}
 	protected := s.sessionAuthOnly(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -158,7 +161,10 @@ func TestSessionAuthOnlyRedirectsBrowserRequests(t *testing.T) {
 }
 
 func TestSessionAuthOnlyRejectsAPIsWithoutSession(t *testing.T) {
-	s := &Server{User: "admin", Pass: "admin", sessions: map[string]time.Time{}}
+	s := &Server{
+		settings: DeckSettings{AuthUser: "admin", AuthPass: "admin"},
+		sessions: map[string]deckSession{},
+	}
 	protected := s.sessionAuthOnly(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -172,7 +178,10 @@ func TestSessionAuthOnlyRejectsAPIsWithoutSession(t *testing.T) {
 }
 
 func TestSessionAuthOnlyAllowsBasicAuthFallback(t *testing.T) {
-	s := &Server{User: "admin", Pass: "admin", sessions: map[string]time.Time{}}
+	s := &Server{
+		settings: DeckSettings{AuthUser: "admin", AuthPass: "admin"},
+		sessions: map[string]deckSession{},
+	}
 	protected := s.sessionAuthOnly(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -191,18 +200,18 @@ func TestSessionAuthOnlyAllowsBasicAuthFallback(t *testing.T) {
 
 func TestLoginAndLogoutFlow(t *testing.T) {
 	s := &Server{
-		User:      "admin",
-		Pass:      "admin",
-		Version:   "test",
-		loginTmpl: templateMustLogin(t),
-		sessions:  map[string]time.Time{},
+		Version:         "test",
+		loginTmpl:       templateMustLogin(t),
+		sessions:        map[string]deckSession{},
+		failedLoginByIP: map[string][]time.Time{},
+		settings:        DeckSettings{AuthUser: "admin", AuthPass: "admin"},
 	}
 
 	badReq := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("username=admin&password=nope"))
 	badReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	badW := httptest.NewRecorder()
 	s.login(badW, badReq)
-	if badW.Code != http.StatusOK {
+	if badW.Code != http.StatusUnauthorized {
 		t.Fatalf("bad login status=%d", badW.Code)
 	}
 	if !strings.Contains(badW.Body.String(), "Wrong username or password.") {
@@ -224,7 +233,8 @@ func TestLoginAndLogoutFlow(t *testing.T) {
 		t.Fatal("expected session cookie")
 	}
 
-	logoutReq := httptest.NewRequest(http.MethodGet, "/logout", nil)
+	logoutReq := httptest.NewRequest(http.MethodPost, "/logout", nil)
+	logoutReq.Header.Set(csrfHeaderName, s.sessions[cookies[0].Value].CSRFToken)
 	logoutReq.AddCookie(cookies[0])
 	logoutW := httptest.NewRecorder()
 	s.logout(logoutW, logoutReq)
@@ -233,6 +243,83 @@ func TestLoginAndLogoutFlow(t *testing.T) {
 	}
 	if len(s.activityEntries) < 2 {
 		t.Fatalf("activity entries=%d want login/logout entries", len(s.activityEntries))
+	}
+}
+
+func TestDeckSettingsGETAndPOST(t *testing.T) {
+	s := &Server{
+		settings: DeckSettings{AuthUser: "admin", AuthPass: "admin", DefaultRefreshSec: 30},
+	}
+	getReq := httptest.NewRequest(http.MethodGet, "/deck/settings.json", nil)
+	getW := httptest.NewRecorder()
+	s.deckSettings(getW, getReq)
+	if getW.Code != http.StatusOK {
+		t.Fatalf("get status=%d body=%s", getW.Code, getW.Body.String())
+	}
+	if !bytes.Contains(getW.Body.Bytes(), []byte(`"default_refresh_sec": 30`)) {
+		t.Fatalf("unexpected get body=%s", getW.Body.String())
+	}
+
+	postReq := httptest.NewRequest(http.MethodPost, "/deck/settings.json", bytes.NewBufferString(`{"auth_user":"ops","auth_pass":"secret123","default_refresh_sec":60}`))
+	postW := httptest.NewRecorder()
+	s.deckSettings(postW, postReq)
+	if postW.Code != http.StatusOK {
+		t.Fatalf("post status=%d body=%s", postW.Code, postW.Body.String())
+	}
+	if s.settings.AuthUser != "ops" || s.settings.DefaultRefreshSec != 60 {
+		t.Fatalf("unexpected settings %+v", s.settings)
+	}
+}
+
+func TestLoginBlockedAfterRepeatedFailures(t *testing.T) {
+	s := &Server{
+		loginTmpl:       templateMustLogin(t),
+		failedLoginByIP: map[string][]time.Time{},
+		settings:        DeckSettings{AuthUser: "admin", AuthPass: "admin", DefaultRefreshSec: 30},
+	}
+	for i := 0; i < failedLoginLimit; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("username=admin&password=wrong"))
+		req.RemoteAddr = "127.0.0.1:1234"
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		w := httptest.NewRecorder()
+		s.login(w, req)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("username=admin&password=admin"))
+	req.RemoteAddr = "127.0.0.1:1234"
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	s.login(w, req)
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("status=%d want 429 body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestSessionAuthOnlyRejectsMutationsWithoutCSRF(t *testing.T) {
+	s := &Server{
+		settings: DeckSettings{AuthUser: "admin", AuthPass: "admin"},
+		sessions: map[string]deckSession{
+			"abc": {ExpiresAt: time.Now().Add(time.Hour), CSRFToken: "csrf123"},
+		},
+	}
+	protected := s.sessionAuthOnly(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/deck/settings.json", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "abc"})
+	w := httptest.NewRecorder()
+	protected.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status=%d want 403 body=%s", w.Code, w.Body.String())
+	}
+
+	okReq := httptest.NewRequest(http.MethodPost, "/deck/settings.json", nil)
+	okReq.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "abc"})
+	okReq.Header.Set(csrfHeaderName, "csrf123")
+	okW := httptest.NewRecorder()
+	protected.ServeHTTP(okW, okReq)
+	if okW.Code != http.StatusNoContent {
+		t.Fatalf("status=%d want 204 body=%s", okW.Code, okW.Body.String())
 	}
 }
 

@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -29,11 +30,21 @@ import (
 const DefaultPort = 48879
 const defaultTelemetryHistoryLimit = 96
 const defaultActivityHistoryLimit = 64
+const defaultDeckRefreshSec = 30
 const sessionCookieName = "iptvtunerr_deck_session"
+const csrfHeaderName = "X-IPTVTunerr-Deck-CSRF"
 const sessionTTL = 12 * time.Hour
+const failedLoginLimit = 8
+const failedLoginWindow = 15 * time.Minute
 
 //go:embed index.html
 var indexHTML string
+
+//go:embed deck.css
+var deckCSS string
+
+//go:embed deck.js
+var deckJS string
 
 //go:embed login.html
 var loginHTML string
@@ -45,19 +56,32 @@ type Server struct {
 	Version   string
 	AllowLAN  bool
 	StateFile string
-	User      string
-	Pass      string
 
 	tunerBase string
 	tmpl      *template.Template
 	loginTmpl *template.Template
 
+	settingsMu       sync.RWMutex
+	settings         DeckSettings
 	telemetryMu      sync.Mutex
 	telemetrySamples []DeckTelemetrySample
 	activityMu       sync.Mutex
 	activityEntries  []DeckActivityEntry
 	sessionMu        sync.Mutex
-	sessions         map[string]time.Time
+	sessions         map[string]deckSession
+	failedLoginMu    sync.Mutex
+	failedLoginByIP  map[string][]time.Time
+}
+
+type deckSession struct {
+	ExpiresAt time.Time
+	CSRFToken string
+}
+
+type DeckSettings struct {
+	AuthUser          string `json:"auth_user"`
+	AuthPass          string `json:"auth_pass,omitempty"`
+	DefaultRefreshSec int    `json:"default_refresh_sec"`
 }
 
 type DeckTelemetrySample struct {
@@ -90,10 +114,22 @@ type DeckActivityReport struct {
 	Entries     []DeckActivityEntry `json:"entries"`
 }
 
+type DeckSettingsReport struct {
+	GeneratedAt            string `json:"generated_at"`
+	AuthUser               string `json:"auth_user"`
+	AuthDefaultPassword    bool   `json:"auth_default_password"`
+	DefaultRefreshSec      int    `json:"default_refresh_sec"`
+	StatePersisted         bool   `json:"state_persisted"`
+	EffectiveSessionTTLMin int    `json:"effective_session_ttl_minutes"`
+	LoginFailureWindowMin  int    `json:"login_failure_window_minutes"`
+	LoginFailureLimit      int    `json:"login_failure_limit"`
+}
+
 type persistedDeckState struct {
 	SavedAt  string                `json:"saved_at"`
 	Samples  []DeckTelemetrySample `json:"samples"`
 	Activity []DeckActivityEntry   `json:"activity,omitempty"`
+	Settings *DeckSettings         `json:"settings,omitempty"`
 }
 
 // New constructs a dedicated dashboard server.
@@ -115,8 +151,11 @@ func New(port int, tunerAddr, version string, allowLAN bool, stateFile, user, pa
 		Version:   version,
 		AllowLAN:  allowLAN,
 		StateFile: strings.TrimSpace(stateFile),
-		User:      user,
-		Pass:      pass,
+		settings: DeckSettings{
+			AuthUser:          user,
+			AuthPass:          pass,
+			DefaultRefreshSec: defaultDeckRefreshSec,
+		},
 	}
 }
 
@@ -125,14 +164,18 @@ func (s *Server) Run(ctx context.Context) error {
 	s.tunerBase = proxyBase(s.TunerAddr)
 	s.tmpl = template.Must(template.New("webui").Delims("[[", "]]").Parse(indexHTML))
 	s.loginTmpl = template.Must(template.New("login").Delims("[[", "]]").Parse(loginHTML))
-	s.sessions = make(map[string]time.Time)
+	s.sessions = make(map[string]deckSession)
+	s.failedLoginByIP = make(map[string][]time.Time)
 	if err := s.loadState(); err != nil {
 		log.Printf("webui state load: %v", err)
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/assets/deck.css", s.assetCSS)
+	mux.HandleFunc("/assets/deck.js", s.assetJS)
 	mux.HandleFunc("/login", s.login)
 	mux.HandleFunc("/logout", s.logout)
+	mux.HandleFunc("/deck/settings.json", s.deckSettings)
 	mux.HandleFunc("/api/", s.proxy)
 	mux.HandleFunc("/api", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/api/", http.StatusSeeOther)
@@ -145,6 +188,7 @@ func (s *Server) Run(ctx context.Context) error {
 	if !s.AllowLAN {
 		handler = localhostOnly(mux)
 	}
+	handler = securityHeaders(handler)
 	handler = s.sessionAuthOnly(handler)
 
 	srv := &http.Server{
@@ -282,6 +326,83 @@ func (s *Server) writeActivity(w http.ResponseWriter) {
 	_, _ = w.Write(body)
 }
 
+func (s *Server) deckSettings(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	switch r.Method {
+	case http.MethodGet:
+		s.writeDeckSettings(w)
+	case http.MethodPost:
+		var req DeckSettings
+		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if err != nil {
+			http.Error(w, `{"error":"read settings body"}`, http.StatusBadRequest)
+			return
+		}
+		if err := json.Unmarshal(body, &req); err != nil {
+			http.Error(w, `{"error":"invalid settings json"}`, http.StatusBadRequest)
+			return
+		}
+		req.AuthUser = strings.TrimSpace(req.AuthUser)
+		req.AuthPass = strings.TrimSpace(req.AuthPass)
+		if req.AuthUser == "" {
+			http.Error(w, `{"error":"auth_user required"}`, http.StatusBadRequest)
+			return
+		}
+		if req.AuthPass == "" {
+			s.settingsMu.RLock()
+			req.AuthPass = s.settings.AuthPass
+			s.settingsMu.RUnlock()
+		}
+		if len(req.AuthPass) < 3 {
+			http.Error(w, `{"error":"auth_pass must be at least 3 characters"}`, http.StatusBadRequest)
+			return
+		}
+		if req.DefaultRefreshSec < 0 || req.DefaultRefreshSec > 3600 {
+			http.Error(w, `{"error":"default_refresh_sec must be between 0 and 3600"}`, http.StatusBadRequest)
+			return
+		}
+		s.settingsMu.Lock()
+		s.settings.AuthUser = req.AuthUser
+		s.settings.AuthPass = req.AuthPass
+		s.settings.DefaultRefreshSec = req.DefaultRefreshSec
+		s.settingsMu.Unlock()
+		s.recordActivity("settings", "deck_settings_updated", "Deck settings were updated.", map[string]interface{}{
+			"auth_user":           req.AuthUser,
+			"default_refresh_sec": req.DefaultRefreshSec,
+			"persisted":           strings.TrimSpace(s.StateFile) != "",
+		})
+		s.writeDeckSettings(w)
+	default:
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) writeDeckSettings(w http.ResponseWriter) {
+	rep := s.deckSettingsReport()
+	body, err := json.MarshalIndent(rep, "", "  ")
+	if err != nil {
+		http.Error(w, `{"error":"encode deck settings"}`, http.StatusInternalServerError)
+		return
+	}
+	_, _ = w.Write(body)
+}
+
+func (s *Server) deckSettingsReport() DeckSettingsReport {
+	s.settingsMu.RLock()
+	settings := s.settings
+	s.settingsMu.RUnlock()
+	return DeckSettingsReport{
+		GeneratedAt:            time.Now().UTC().Format(time.RFC3339),
+		AuthUser:               settings.AuthUser,
+		AuthDefaultPassword:    settings.AuthUser == "admin" && settings.AuthPass == "admin",
+		DefaultRefreshSec:      settings.DefaultRefreshSec,
+		StatePersisted:         strings.TrimSpace(s.StateFile) != "",
+		EffectiveSessionTTLMin: int(sessionTTL / time.Minute),
+		LoginFailureWindowMin:  int(failedLoginWindow / time.Minute),
+		LoginFailureLimit:      failedLoginLimit,
+	}
+}
+
 func (s *Server) trimTelemetryLocked() {
 	if len(s.telemetrySamples) > defaultTelemetryHistoryLimit {
 		s.telemetrySamples = append([]DeckTelemetrySample(nil), s.telemetrySamples[len(s.telemetrySamples)-defaultTelemetryHistoryLimit:]...)
@@ -311,6 +432,19 @@ func (s *Server) loadState() error {
 	s.activityEntries = append([]DeckActivityEntry(nil), state.Activity...)
 	s.trimActivityLocked()
 	s.activityMu.Unlock()
+	if state.Settings != nil {
+		s.settingsMu.Lock()
+		if strings.TrimSpace(state.Settings.AuthUser) != "" {
+			s.settings.AuthUser = strings.TrimSpace(state.Settings.AuthUser)
+		}
+		if strings.TrimSpace(state.Settings.AuthPass) != "" {
+			s.settings.AuthPass = strings.TrimSpace(state.Settings.AuthPass)
+		}
+		if state.Settings.DefaultRefreshSec >= 0 {
+			s.settings.DefaultRefreshSec = state.Settings.DefaultRefreshSec
+		}
+		s.settingsMu.Unlock()
+	}
 	return nil
 }
 
@@ -320,11 +454,18 @@ func (s *Server) persistState() error {
 	}
 	s.telemetryMu.Lock()
 	s.activityMu.Lock()
+	s.settingsMu.RLock()
 	state := persistedDeckState{
 		SavedAt:  time.Now().UTC().Format(time.RFC3339),
 		Samples:  append([]DeckTelemetrySample(nil), s.telemetrySamples...),
 		Activity: append([]DeckActivityEntry(nil), s.activityEntries...),
+		Settings: &DeckSettings{
+			AuthUser:          s.settings.AuthUser,
+			AuthPass:          s.settings.AuthPass,
+			DefaultRefreshSec: s.settings.DefaultRefreshSec,
+		},
 	}
+	s.settingsMu.RUnlock()
 	s.activityMu.Unlock()
 	s.telemetryMu.Unlock()
 	body, err := json.MarshalIndent(state, "", "  ")
@@ -384,32 +525,52 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	if err := s.tmpl.Execute(w, map[string]interface{}{
-		"Version":   fallbackVersion(s.Version),
-		"Port":      s.Port,
-		"TunerBase": s.tunerBase,
-		"Now":       time.Now().UTC().Format(time.RFC3339),
+		"Version":           fallbackVersion(s.Version),
+		"Port":              s.Port,
+		"TunerBase":         s.tunerBase,
+		"Now":               time.Now().UTC().Format(time.RFC3339),
+		"DefaultRefreshSec": s.deckSettingsReport().DefaultRefreshSec,
+		"CSRFToken":         s.csrfTokenForRequest(r),
 	}); err != nil {
 		log.Printf("webui template: %v", err)
 	}
 }
 
+func (s *Server) assetCSS(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = io.WriteString(w, deckCSS)
+}
+
+func (s *Server) assetJS(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = io.WriteString(w, deckJS)
+}
+
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		s.renderLogin(w, r, "")
+		s.renderLogin(w, r, http.StatusOK, "")
 	case http.MethodPost:
+		if s.loginBlocked(r) {
+			s.renderLogin(w, r, http.StatusTooManyRequests, "Too many login attempts. Wait a few minutes and try again.")
+			return
+		}
 		if err := r.ParseForm(); err != nil {
-			s.renderLogin(w, r, "Invalid login form.")
+			s.renderLogin(w, r, http.StatusBadRequest, "Invalid login form.")
 			return
 		}
 		user := strings.TrimSpace(r.Form.Get("username"))
 		pass := r.Form.Get("password")
 		if !s.validCredentials(user, pass) {
+			s.noteFailedLogin(r)
 			s.recordActivity("auth", "login_failed", "Deck login failed.", map[string]interface{}{"username": user})
-			s.renderLogin(w, r, "Wrong username or password.")
+			s.renderLogin(w, r, http.StatusUnauthorized, "Wrong username or password.")
 			return
 		}
-		s.startSession(w)
+		s.clearFailedLogins(r)
+		s.startSession(w, r)
 		s.recordActivity("auth", "login", "Deck session opened.", map[string]interface{}{"username": user})
 		next := strings.TrimSpace(r.Form.Get("next"))
 		if next == "" || !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
@@ -422,12 +583,16 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	if cookie, err := r.Cookie(sessionCookieName); err == nil {
 		s.sessionMu.Lock()
 		delete(s.sessions, cookie.Value)
 		s.sessionMu.Unlock()
 	}
-	s.recordActivity("auth", "logout", "Deck session closed.", map[string]interface{}{"username": s.User})
+	s.recordActivity("auth", "logout", "Deck session closed.", map[string]interface{}{})
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    "",
@@ -439,7 +604,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
-func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, errText string) {
+func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, status int, errText string) {
 	next := strings.TrimSpace(r.URL.Query().Get("next"))
 	if next == "" {
 		next = strings.TrimSpace(r.Form.Get("next"))
@@ -449,13 +614,16 @@ func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, errText str
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
+	if status > 0 {
+		w.WriteHeader(status)
+	}
 	_ = s.loginTmpl.Execute(w, map[string]interface{}{
 		"Version":         fallbackVersion(s.Version),
 		"Now":             time.Now().UTC().Format(time.RFC3339),
 		"Next":            next,
 		"Error":           errText,
-		"User":            s.User,
-		"DefaultPassword": s.User == "admin" && s.Pass == "admin",
+		"User":            s.deckSettingsReport().AuthUser,
+		"DefaultPassword": s.deckSettingsReport().AuthDefaultPassword,
 	})
 }
 
@@ -466,26 +634,41 @@ func (s *Server) sessionAuthOnly(h http.Handler) http.Handler {
 			return
 		}
 		if r.URL.Path == "/logout" {
+			if s.hasValidSession(r) && !s.requireCSRF(w, r) {
+				return
+			}
 			h.ServeHTTP(w, r)
 			return
 		}
-		if s.hasValidSession(r) {
+		if token, ok := s.validSessionToken(r); ok {
+			if requiresCSRF(r.Method) && !s.requireCSRFForToken(w, r, token) {
+				return
+			}
 			h.ServeHTTP(w, r)
 			return
 		}
 		user, pass, ok := r.BasicAuth()
 		if ok && s.validCredentials(user, pass) {
-			s.startSession(w)
+			s.clearFailedLogins(r)
+			s.startSession(w, r)
 			s.recordActivity("auth", "basic_auth", "Deck session opened via HTTP Basic auth.", map[string]interface{}{"username": user})
 			h.ServeHTTP(w, r)
 			return
+		}
+		if ok {
+			s.noteFailedLogin(r)
 		}
 		s.handleUnauthorized(w, r)
 	})
 }
 
 func (s *Server) handleUnauthorized(w http.ResponseWriter, r *http.Request) {
-	if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api" || r.URL.Path == "/deck/telemetry.json" {
+	if s.loginBlocked(r) {
+		w.Header().Set("Retry-After", strconv.Itoa(int(failedLoginWindow/time.Second)))
+		http.Error(w, `{"error":"too many login attempts"}`, http.StatusTooManyRequests)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/deck/") {
 		w.Header().Set("WWW-Authenticate", `Basic realm="IPTV Tunerr Deck"`)
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
@@ -499,36 +682,56 @@ func (s *Server) handleUnauthorized(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) validCredentials(user, pass string) bool {
-	return subtle.ConstantTimeCompare([]byte(user), []byte(s.User)) == 1 &&
-		subtle.ConstantTimeCompare([]byte(pass), []byte(s.Pass)) == 1
+	s.settingsMu.RLock()
+	defer s.settingsMu.RUnlock()
+	return subtle.ConstantTimeCompare([]byte(user), []byte(s.settings.AuthUser)) == 1 &&
+		subtle.ConstantTimeCompare([]byte(pass), []byte(s.settings.AuthPass)) == 1
 }
 
 func (s *Server) hasValidSession(r *http.Request) bool {
+	_, ok := s.validSessionToken(r)
+	return ok
+}
+
+func (s *Server) validSessionToken(r *http.Request) (string, bool) {
 	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil || strings.TrimSpace(cookie.Value) == "" {
-		return false
+		return "", false
 	}
+	token := strings.TrimSpace(cookie.Value)
 	s.sessionMu.Lock()
 	defer s.sessionMu.Unlock()
 	s.pruneSessionsLocked()
-	expiry, ok := s.sessions[cookie.Value]
-	if !ok || time.Now().After(expiry) {
-		delete(s.sessions, cookie.Value)
-		return false
+	session, ok := s.sessions[token]
+	if !ok || time.Now().After(session.ExpiresAt) {
+		delete(s.sessions, token)
+		return "", false
 	}
-	s.sessions[cookie.Value] = time.Now().Add(sessionTTL)
-	return true
+	session.ExpiresAt = time.Now().Add(sessionTTL)
+	s.sessions[token] = session
+	return token, true
 }
 
-func (s *Server) startSession(w http.ResponseWriter) {
+func (s *Server) startSession(w http.ResponseWriter, r *http.Request) {
 	token, err := newSessionToken()
 	if err != nil {
-		sum := sha256.Sum256([]byte(fmt.Sprintf("%d-%s-%s", time.Now().UnixNano(), s.User, s.Pass)))
+		s.settingsMu.RLock()
+		authUser, authPass := s.settings.AuthUser, s.settings.AuthPass
+		s.settingsMu.RUnlock()
+		sum := sha256.Sum256([]byte(fmt.Sprintf("%d-%s-%s", time.Now().UnixNano(), authUser, authPass)))
 		token = hex.EncodeToString(sum[:])
+	}
+	csrfToken, err := newSessionToken()
+	if err != nil {
+		sum := sha256.Sum256([]byte(fmt.Sprintf("csrf-%d-%s", time.Now().UnixNano(), token)))
+		csrfToken = hex.EncodeToString(sum[:])
 	}
 	s.sessionMu.Lock()
 	s.pruneSessionsLocked()
-	s.sessions[token] = time.Now().Add(sessionTTL)
+	s.sessions[token] = deckSession{
+		ExpiresAt: time.Now().Add(sessionTTL),
+		CSRFToken: csrfToken,
+	}
 	s.sessionMu.Unlock()
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
@@ -537,24 +740,83 @@ func (s *Server) startSession(w http.ResponseWriter) {
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(sessionTTL.Seconds()),
+		Secure:   r != nil && r.TLS != nil,
 	})
 }
 
 func (s *Server) pruneSessionsLocked() {
 	now := time.Now()
-	for token, expiry := range s.sessions {
-		if now.After(expiry) {
+	for token, session := range s.sessions {
+		if now.After(session.ExpiresAt) {
 			delete(s.sessions, token)
 		}
 	}
 }
 
+func (s *Server) csrfTokenForRequest(r *http.Request) string {
+	token, ok := s.validSessionToken(r)
+	if !ok {
+		return ""
+	}
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+	session, ok := s.sessions[token]
+	if !ok {
+		return ""
+	}
+	return session.CSRFToken
+}
+
+func requiresCSRF(method string) bool {
+	switch method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) requireCSRF(w http.ResponseWriter, r *http.Request) bool {
+	token, ok := s.validSessionToken(r)
+	if !ok {
+		s.handleUnauthorized(w, r)
+		return false
+	}
+	return s.requireCSRFForToken(w, r, token)
+}
+
+func (s *Server) requireCSRFForToken(w http.ResponseWriter, r *http.Request, token string) bool {
+	if !requiresCSRF(r.Method) {
+		return true
+	}
+	header := strings.TrimSpace(r.Header.Get(csrfHeaderName))
+	if header == "" {
+		http.Error(w, `{"error":"missing csrf token"}`, http.StatusForbidden)
+		return false
+	}
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+	session, ok := s.sessions[token]
+	if !ok || strings.TrimSpace(session.CSRFToken) == "" {
+		http.Error(w, `{"error":"invalid session"}`, http.StatusUnauthorized)
+		return false
+	}
+	if subtle.ConstantTimeCompare([]byte(header), []byte(session.CSRFToken)) != 1 {
+		http.Error(w, `{"error":"invalid csrf token"}`, http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
 func (s *Server) recordActivity(kind, title, message string, detail map[string]interface{}) {
+	s.settingsMu.RLock()
+	actor := s.settings.AuthUser
+	s.settingsMu.RUnlock()
 	s.recordActivityWithEntry(DeckActivityEntry{
 		Kind:    kind,
 		Title:   title,
 		Message: message,
-		Actor:   s.User,
+		Actor:   actor,
 		Detail:  detail,
 	})
 }
@@ -578,6 +840,65 @@ func newSessionToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(buf[:]), nil
+}
+
+func (s *Server) loginBlocked(r *http.Request) bool {
+	ip := remoteHost(r)
+	if ip == "" {
+		return false
+	}
+	s.failedLoginMu.Lock()
+	defer s.failedLoginMu.Unlock()
+	s.trimFailedLoginsLocked(ip)
+	return len(s.failedLoginByIP[ip]) >= failedLoginLimit
+}
+
+func (s *Server) noteFailedLogin(r *http.Request) {
+	ip := remoteHost(r)
+	if ip == "" {
+		return
+	}
+	s.failedLoginMu.Lock()
+	defer s.failedLoginMu.Unlock()
+	s.trimFailedLoginsLocked(ip)
+	s.failedLoginByIP[ip] = append(s.failedLoginByIP[ip], time.Now())
+}
+
+func (s *Server) clearFailedLogins(r *http.Request) {
+	ip := remoteHost(r)
+	if ip == "" {
+		return
+	}
+	s.failedLoginMu.Lock()
+	delete(s.failedLoginByIP, ip)
+	s.failedLoginMu.Unlock()
+}
+
+func (s *Server) trimFailedLoginsLocked(ip string) {
+	cutoff := time.Now().Add(-failedLoginWindow)
+	entries := s.failedLoginByIP[ip]
+	kept := entries[:0]
+	for _, at := range entries {
+		if at.After(cutoff) {
+			kept = append(kept, at)
+		}
+	}
+	if len(kept) == 0 {
+		delete(s.failedLoginByIP, ip)
+		return
+	}
+	s.failedLoginByIP[ip] = kept
+}
+
+func remoteHost(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err == nil {
+		return host
+	}
+	return strings.TrimSpace(r.RemoteAddr)
 }
 
 func fallbackVersion(v string) string {
@@ -610,6 +931,25 @@ func localhostOnly(h http.Handler) http.Handler {
 			http.Error(w, "forbidden: webui is localhost-only (set IPTV_TUNERR_WEBUI_ALLOW_LAN=1)", http.StatusForbidden)
 			return
 		}
+		h.ServeHTTP(w, r)
+	})
+}
+
+func securityHeaders(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Content-Security-Policy", strings.Join([]string{
+			"default-src 'self'",
+			"base-uri 'none'",
+			"frame-ancestors 'none'",
+			"form-action 'self'",
+			"img-src 'self' data:",
+			"style-src 'self' 'unsafe-inline'",
+			"script-src 'self'",
+			"connect-src 'self'",
+		}, "; "))
 		h.ServeHTTP(w, r)
 	})
 }
