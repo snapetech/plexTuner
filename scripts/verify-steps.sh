@@ -26,6 +26,17 @@ if ! go vet ./...; then
   err "vet failed"
 fi
 
+# --- Harness / helper script syntax (no network; catches edit typos in CI) ---
+step "script syntax (bash -n + py_compile on scripts/*)"
+shopt -s nullglob
+for f in "$ROOT"/scripts/*.sh; do
+  bash -n "$f" || err "bash -n failed on $f"
+done
+command -v python3 >/dev/null 2>&1 || err "python3 required for scripts/*.py syntax check (py_compile)"
+for f in "$ROOT"/scripts/*.py; do
+  python3 -m py_compile "$f" || err "py_compile failed on $f"
+done
+
 # --- Test ---
 step "test (go test ./...)"
 # -count=1 avoids cache so CI always runs tests; -short allows skipping slow tests later

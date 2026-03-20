@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-21):** **Verify hygiene:** **`scripts/verify-steps.sh`** runs **`bash -n`** on **`scripts/*.sh`** and **`python3 -m py_compile`** on **`scripts/*.py`** ( **`commands.yml`** **`verify_steps`**, **`repo_map`**). **`./scripts/verify`** OK.
+
 **Latest (2026-03-21):** **Two-stream collapse harness:** adding **`scripts/multi-stream-harness.sh`** + **`scripts/multi-stream-harness-report.py`** so “load one channel, start another, first dies” reports turn into a reproducible bundle with staggered live pulls, provider/runtime/attempt snapshots, optional Plex session evidence, and a compact sustained-vs-premature report.
 
 **Latest (2026-03-21):** **Test hardening:** **`TestGateway_relayHLSAsTS_survivesPlaylistConcurrencyRetry`** uses completion signal (no **1.5s** sleep); **`TestGateway_shouldPreferGoRelayForHLSRemux_hostPenalty`** **`autotune_off`** subtest. **`./scripts/verify`** OK.

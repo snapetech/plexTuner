@@ -72,7 +72,7 @@ Normal push path from this checkout: `git push origin main`. Never `git push git
 
 ## Verification and QA
 
-- **`scripts/verify`** — Full check: format (gofmt) → vet → test → build. Fail fast, same as CI.
+- **`scripts/verify`** — Full check: format (gofmt) → vet → **`bash -n` / `py_compile` on `scripts/*.sh` + `scripts/*.py`** → test → build. Fail fast, same as CI.
 - **`scripts/quick-check.sh`** — Tests only; use for short feedback when iterating.
 - **Troubleshooting:** [docs/runbooks/iptvtunerr-troubleshooting.md](docs/runbooks/iptvtunerr-troubleshooting.md) — fail-fast checklist, probe, logs, common failures.
 - CI runs only `scripts/verify`.

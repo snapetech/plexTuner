@@ -29,6 +29,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **`GET /provider/profile.json`**: includes **`intelligence.autopilot`** (`enabled`, `state_file`, `decision_count`, `hot_channels` sample) when Autopilot memory is configured — aggregates provider-runtime + learned playback signals for operator UIs. **`stream-investigate`** workflow actions include **`/autopilot/report.json`** and **`/ops/actions/autopilot-reset`**.
 
 ### Testing
+- **CI / verify:** **`scripts/verify-steps.sh`** now runs **`bash -n`** on **`scripts/*.sh`** and **`python3 -m py_compile`** on **`scripts/*.py`** so harness/report syntax errors fail **`./scripts/verify`** before **`go test`**.
 - **`internal/tuner`**: **`TestGateway_relayHLSAsTS_survivesPlaylistConcurrencyRetry`** waits on a playlist **509→retry→OK** signal instead of a fixed sleep; **`TestGateway_shouldPreferGoRelayForHLSRemux_hostPenalty`** adds **`autotune_off_no_penalty_signal`** subtest.
 - **`internal/probe`**: unit tests for **`Probe`** (path classification, HTTP content-types, body sniff, redirects) plus **`Lineup`**, **`LineupHandler`**, **`DiscoveryHandler`** (`probe_test.go`).
 - **`internal/materializer`**: unit tests for **`Stub`**, **`DownloadToFile`** (SSRF guard, full GET, ranged GET, HTTP errors), **`DirectFile`**, and **`Cache`** materialization (`materializer_test.go`). HLS/ffmpeg paths remain integration-only.

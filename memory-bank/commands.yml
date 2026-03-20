@@ -17,6 +17,7 @@ clean: "go clean -cache  # optional; rm -f iptv-tunerr if built to repo root"
 verify_steps:
   - format
   - vet
+  - script_syntax  # bash -n scripts/*.sh; python3 -m py_compile scripts/*.py
   - test
   - build
 

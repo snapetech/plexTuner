@@ -23,6 +23,16 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: Verify — bash -n + py_compile for scripts/*.sh and scripts/*.py
+  Summary:
+    - **`scripts/verify-steps.sh`**: new step after **vet**, before **go test**.
+    - **`memory-bank/commands.yml`** **`verify_steps`**, **`repo_map`** QA line, **CHANGELOG** Testing.
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+
+- Date: 2026-03-21
   Title: Tests — deterministic HLS playlist retry wait + autotune-off host penalty subtest
   Summary:
     - **`TestGateway_relayHLSAsTS_survivesPlaylistConcurrencyRetry`**: **`sync.Once`** + channel when third playlist response succeeds (after **509** retry); **30s** timeout; atomic playlist hit count.
