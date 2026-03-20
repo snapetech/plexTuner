@@ -7,21 +7,26 @@ tags: [how-to, release-notes, testing]
 
 # Tester release notes (draft)
 
-Use this as a handoff note for testers validating the recent Plex Live TV/DVR fixes and packaging changes.
+Use this as a handoff note for testers validating the release candidate after `v0.1.14`.
 
 ## Summary
 
-This build significantly improves Plex Live TV/DVR behavior for multi-DVR IPTV setups and adds a packaged test workflow for Linux/macOS/Windows.
+This build is much broader than a playback-only patch. It adds the dedicated operator deck, the Tunerr-native HLS/DASH mux toolkit and observability work, plus the HDHR/EPG lineup-parity slices that landed after `v0.1.14`.
 
 Highlights:
-- fixed multi-DVR guide collisions in Plex clients (distinct guides per DVR)
-- restored stable playback after guide remap/channelmap rebuilds
-- added single-app supervisor mode (many tuners in one process/container)
-- added built-in Plex stale-session reaper (optional)
-- improved HDHR wizard-lane shaping controls and HDHR metadata signaling
-- added cross-platform tester package + handoff bundle scripts
+- dedicated web UI on `:48879` with login/session flow, shared deck memory/activity, actions/workflows, and richer settings/runtime inspection
+- Tunerr-native `?mux=hls` and experimental `?mux=dash` got stronger redirect/SSRF policy, browser/CORS support, diagnostics, Prometheus metrics, and soak/demo tooling
+- HDHR lineup import, HDHR guide merge, EPG SQLite durability/retention/max-bytes, and fMP4/transcode-profile follow-ons landed
+- repo-wide verification is green (`./scripts/verify`, `go test ./...`) on the release-prep state
 
 ## What testers should focus on
+
+### Dedicated deck / operator UX
+
+- Does the dedicated deck at `http://127.0.0.1:48879/` feel complete and coherent, not like a debug slab?
+- Can you log in, navigate between lanes, run safe actions, and inspect grouped runtime/settings surfaces without getting lost?
+- Do deck trends, shared operator activity, and deck settings survive reloads or restarts when `IPTV_TUNERR_WEBUI_STATE_FILE` is configured?
+- Do sign-out and other state-changing controls behave normally with the new session/CSRF guardrails?
 
 ### Live TV / DVR behavior
 
@@ -29,6 +34,13 @@ Highlights:
 - Can you tune channels reliably after guide refreshes/remaps?
 - Does Plex Web playback start and keep audio/video in sync on common channels?
 - Do closed tabs / switched-away clients leave stale sessions running too long?
+
+### HLS / DASH mux behavior
+
+- Does `?mux=hls` still play correctly for variant playlists, keys, and segments behind real provider auth/cookies?
+- If you test browser playback, do CORS/preflight and the demo/tooling behave as expected?
+- Do mux failures now expose clearer diagnostics (`X-IptvTunerr-Hls-Mux-Error`, `/metrics`, stream attempts, provider profile) instead of collapsing into vague 502s?
+- If testing experimental DASH, do rewritten MPDs and `?mux=dash&seg=` behave sensibly on a known-good source?
 
 ### Multi-DVR / supervisor behavior
 
@@ -46,26 +58,21 @@ If testing a supervisor build (single app managing multiple child tuners):
 
 ## Notable changes in this test build
 
-### Plex behavior / playback
+### Operator deck
 
-- Added per-instance guide-number offsets to avoid cross-DVR guide collisions in Plex clients.
-- Added tooling and runbooks for Plex stale session / hidden-grab recovery.
-- Added optional built-in Plex session reaper in the app (Plex-side session based, not raw socket based).
+- Added the dedicated deck on `:48879` with its own login/session flow, shared operator activity, shared telemetry memory, safe actions/workflows, richer settings/runtime inspection, and grouped endpoint drill-down.
+- Deck mutations now use a session-bound CSRF header, and sign-out is a deliberate POST instead of a GET side effect.
 
-### HDHR and lineup behavior
+### HLS / DASH / observability
 
-- Added richer HDHR `discover.json` metadata controls for wizard lanes.
-- Added `ScanPossible` control so category tuners can be de-emphasized in HDHR setup flows.
-- Added lineup shaping/filtering controls (wizard-safe caps, music/radio drops, region/profile ordering).
+- Added and hardened the Tunerr-native HLS mux toolkit (`?mux=hls`) with redirect validation, private-upstream guards, browser/CORS support, per-IP limits, clearer upstream error passthrough, and a dedicated operator reference.
+- Added experimental DASH rewrite/proxying (`?mux=dash`) for MPD sources.
+- Added Prometheus `/metrics`, mux-specific counters, a browser demo page, and `scripts/hls-mux-soak.sh`.
 
-### XMLTV / guide behavior
+### HDHR / EPG / lineup parity
 
-- Added optional XMLTV language/Latin preference normalization and non-Latin title fallback.
-
-### Packaging and docs
-
-- Added cross-platform package builder and staged tester handoff bundle builder.
-- Added CLI/env reference and Plex DVR lifecycle/API reference docs.
+- Added HDHR lineup import during indexing, optional HDHR `guide.xml` merge, EPG SQLite sync/retention/max-bytes/incremental upsert, and follow-on transcode/fMP4 profile work.
+- Added docs/ADR coverage for the no-disk-packager mux stance and observability posture.
 
 ---
 

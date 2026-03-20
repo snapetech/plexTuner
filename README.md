@@ -119,7 +119,7 @@ Three ways to add IPTV Tunerr to Plex, Emby, or Jellyfin — pick the one that f
 > Then: Dashboard → Live TV → + (guide) → XMLTV
 > Guide URL: `http://<this-host>:5004/guide.xml`
 
-Dedicated web UI: `http://127.0.0.1:48879/` by default (`0xBEEF`) with integrated health, guide, channel, recorder, provider, debug, and runtime-settings views. It now opens on a dedicated login page and creates a cookie-backed deck session, defaulting to `admin` / `admin` unless `IPTV_TUNERR_WEBUI_USER` / `IPTV_TUNERR_WEBUI_PASS` override it; direct HTTP Basic auth still works for scripts. It stays localhost-only unless `IPTV_TUNERR_WEBUI_ALLOW_LAN=1`, optional `IPTV_TUNERR_WEBUI_STATE_FILE` persists shared deck telemetry/history across web UI restarts, and the deck now keeps a shared operator activity log for login/logout/action history as part of that same control-plane memory.
+Dedicated web UI: `http://127.0.0.1:48879/` by default (`0xBEEF`) with integrated health, guide, channel, recorder, provider, debug, and runtime-settings views. It opens on a dedicated login page and creates a cookie-backed deck session, defaulting to `admin` / `admin` unless `IPTV_TUNERR_WEBUI_USER` / `IPTV_TUNERR_WEBUI_PASS` override it; direct HTTP Basic auth still works for scripts. It stays localhost-only unless `IPTV_TUNERR_WEBUI_ALLOW_LAN=1`, optional `IPTV_TUNERR_WEBUI_STATE_FILE` persists shared deck telemetry/history/settings across web UI restarts, and the deck now includes shared operator activity, safe operator actions/workflows, grouped raw-endpoint indexing, and session-bound CSRF protection for state-changing controls.
 
 **Programmatic (all servers, headless):**
 ```bash
@@ -1123,6 +1123,8 @@ Verify the build:
 
 ## Recent Changes
 
+- **Dedicated control deck**: `run` / `serve` now launch a real operator console on `:48879` with its own login/session flow, runtime snapshot, grouped settings lane, shared deck memory/activity, safe actions/workflows, and CSRF-protected state changes instead of a thin JSON/debug wrapper.
+- **HLS mux toolkit and observability**: Tunerr-native `?mux=hls` / experimental `?mux=dash` now have stronger SSRF/redirect policy, grouped diagnostics, Prometheus `/metrics`, soak/demo tooling, and a dedicated operator reference at [docs/reference/hls-mux-toolkit.md](docs/reference/hls-mux-toolkit.md).
 - **Runtime EPG repair**: fixes bad or missing channel IDs before guide pruning, so "channel name only" guide entries stop surviving just because a source had a bogus `tvg-id`.
 - **Channel intelligence reports**: scores each channel by guide confidence, resilience, and backup depth so you can see which channels are strong, weak, or not worth exposing.
 - **Channel DNA**: gives channels a stable identity across provider variants and duplicates, so merged lineups and future automation have something more durable than a raw channel name.

@@ -50,7 +50,9 @@ See also:
 | **Physical HDHomeRun client (spike)** | `hdhr-scan` discovers real tuners on the LAN (UDP) or fetches `discover.json` / `lineup.json` via HTTP; catalog merge is **not** automatic — see [ADR 0002](adr/0002-hdhr-hardware-iptv-merge.md). |
 | **HDHR `guide.xml`** | `hdhr-scan -guide-xml` probes device XMLTV (counts). **`IPTV_TUNERR_HDHR_GUIDE_URL`** merges that feed into `/guide.xml` when `tvg-id` values match ([ADR 0004](adr/0004-hdhr-guide-epg-merge.md)). |
 | **HDHR `lineup.json` → catalog** | **`IPTV_TUNERR_HDHR_LINEUP_URL`** merges hardware channels during **`iptv-tunerr index`** ([how-to](how-to/hybrid-hdhr-iptv.md)). |
-| **Dedicated web UI (`:48879` / `0xBEEF`)** | Separate operator dashboard on `serve`/`run` with a single-origin proxy over tuner JSON/debug endpoints plus a runtime-settings snapshot (`/debug/runtime.json`). Default: `http://127.0.0.1:48879/`; opens on a dedicated login page with cookie-backed deck sessions, while direct HTTP Basic auth still works for scripts; defaults to `admin` / `admin` unless `IPTV_TUNERR_WEBUI_USER` / `IPTV_TUNERR_WEBUI_PASS` override it; localhost-only unless `IPTV_TUNERR_WEBUI_ALLOW_LAN=1`; optional `IPTV_TUNERR_WEBUI_STATE_FILE` persists shared trend memory and operator activity history across web UI restarts. |
+| **Dedicated web UI (`:48879` / `0xBEEF`)** | Separate operator dashboard on `serve`/`run` with a single-origin proxy over tuner JSON/debug endpoints plus a runtime-settings snapshot (`/debug/runtime.json`). Default: `http://127.0.0.1:48879/`; opens on a dedicated login page with cookie-backed deck sessions, while direct HTTP Basic auth still works for scripts; defaults to `admin` / `admin` unless `IPTV_TUNERR_WEBUI_USER` / `IPTV_TUNERR_WEBUI_PASS` override it; localhost-only unless `IPTV_TUNERR_WEBUI_ALLOW_LAN=1`; optional `IPTV_TUNERR_WEBUI_STATE_FILE` persists shared trend memory, operator activity history, and deck settings across web UI restarts. |
+| **Deck actions / workflows / memory** | The deck exposes safe operator actions (`/ops/actions/*`), workflow/playbook endpoints (`/ops/workflows/*`), shared telemetry (`/deck/telemetry.json`), shared operator activity (`/deck/activity.json`), and editable deck controls (`/deck/settings.json`) with grouped endpoint indexing, trends, and a runtime-backed settings lane. |
+| **Deck session hardening** | Cookie-backed deck sessions use a session-bound `X-IPTVTunerr-Deck-CSRF` token for state-changing requests, plus login failure rate limiting and explicit POST sign-out. |
 | **Legacy `/ui/` shell** | Embedded lightweight pages remain on the tuner port: home (`/ui/`) links to health and JSON reports; **`/ui/guide/`** shows a read-only preview of the merged cached guide; localhost-only unless `IPTV_TUNERR_UI_ALLOW_LAN=1`. |
 
 ## 4. Stream gateway and transcoding
@@ -202,6 +204,7 @@ Supplement or enrich the paid catalog with public M3U feeds fetched at index tim
 |---------|-------------|
 | **`debug-bundle`** | `iptv-tunerr debug-bundle` collects stream attempts, provider profile, CF learned, cookie metadata, env (redacted). See [how-to/debug-bundle.md](how-to/debug-bundle.md). |
 | **`analyze-bundle.py`** | Correlates bundle artifacts with PMS.log, Tunerr stdout, and optional pcap. |
+| **HLS mux toolkit docs** | [reference/hls-mux-toolkit](reference/hls-mux-toolkit.md) plus [observability-prometheus-and-otel](explanations/observability-prometheus-and-otel.md) document mux diagnostics, soak helpers, `/metrics`, and OTEL bridge posture. |
 
 ## 15. Packaging, testing, and ops tooling
 
@@ -225,6 +228,6 @@ Supplement or enrich the paid catalog with public M3U feeds fetched at index tim
 
 ## 17. Not supported / limits (current)
 
-- **Web UI** (by design; CLI/env only)
+- **Public-grade multi-user admin plane** (the dedicated deck is a strong operator console, but it is not a hardened internet-facing admin product with roles/SSO/audit persistence)
 - **Plex wizard checkbox preselection for >479 channels** (HDHR protocol/wizard limitation; serve only the channels you want selectable)
 - **VODFS on non-Linux** (current platform scope)
