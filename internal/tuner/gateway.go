@@ -124,6 +124,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = r.WithContext(context.WithValue(r.Context(), gatewayChannelKey{}, channel))
+	if maybeServeHLSMuxOPTIONS(w, r) {
+		return
+	}
 	log.Printf("gateway: req=%s recv path=%q channel=%q remote=%q ua=%q", reqID, r.URL.Path, channelID, r.RemoteAddr, r.UserAgent())
 	debugOpts := streamDebugOptionsFromEnv()
 	if debugOpts.HTTPHeaders {
@@ -371,6 +374,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				out := rewriteHLSPlaylistToGatewayProxy(body, effectiveURL, channelID)
 				w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 				w.Header().Set("Cache-Control", "no-store")
+				applyHLSMuxCORS(w)
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write(out)
 				finalStatus = "ok"

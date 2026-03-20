@@ -148,6 +148,89 @@ func TestGateway_serveHLSMuxTarget_forwardsRangeAndPartialContent(t *testing.T) 
 	}
 }
 
+func TestMaybeServeHLSMuxOPTIONS(t *testing.T) {
+	t.Run("enabled", func(t *testing.T) {
+		t.Setenv("IPTV_TUNERR_HLS_MUX_CORS", "1")
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodOptions, "http://x/stream/1?mux=hls", nil)
+		if !maybeServeHLSMuxOPTIONS(w, r) {
+			t.Fatal("expected handled")
+		}
+		if w.Code != http.StatusNoContent {
+			t.Fatalf("code=%d want 204", w.Code)
+		}
+		if w.Header().Get("Access-Control-Allow-Origin") != "*" {
+			t.Fatalf("missing cors: %v", w.Header())
+		}
+	})
+	t.Run("wrong_method", func(t *testing.T) {
+		t.Setenv("IPTV_TUNERR_HLS_MUX_CORS", "1")
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "http://x/stream/1?mux=hls", nil)
+		if maybeServeHLSMuxOPTIONS(w, r) {
+			t.Fatal("expected not handled")
+		}
+	})
+	t.Run("disabled", func(t *testing.T) {
+		t.Setenv("IPTV_TUNERR_HLS_MUX_CORS", "0")
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodOptions, "http://x/stream/1?mux=hls", nil)
+		if maybeServeHLSMuxOPTIONS(w, r) {
+			t.Fatal("expected not handled when disabled")
+		}
+	})
+	t.Run("wrong_mux", func(t *testing.T) {
+		t.Setenv("IPTV_TUNERR_HLS_MUX_CORS", "1")
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodOptions, "http://x/stream/1?mux=fmp4", nil)
+		if maybeServeHLSMuxOPTIONS(w, r) {
+			t.Fatal("expected not handled")
+		}
+	})
+}
+
+func TestGateway_serveHLSMuxTarget_CORSWhenConfigured(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_HLS_MUX_CORS", "true")
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/mp2t")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("x"))
+	}))
+	defer up.Close()
+	g := &Gateway{}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/ch1?mux=hls&seg="+url.QueryEscape(up.URL+"/seg.ts"), nil)
+	w := httptest.NewRecorder()
+	if err := g.serveHLSMuxTarget(w, req, up.Client(), "ch1", up.URL+"/seg.ts"); err != nil {
+		t.Fatal(err)
+	}
+	if w.Header().Get("Access-Control-Allow-Origin") != "*" {
+		t.Fatal("expected CORS on seg response")
+	}
+}
+
+func TestGateway_stream_hlsMux_CORSHeadersWhenConfigured(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_HLS_MUX_CORS", "on")
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("#EXTM3U\n#EXTINF:4,\nseg.ts\n"))
+	}))
+	defer up.Close()
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "0", GuideName: "Ch", StreamURL: up.URL + "/live.m3u8"},
+		},
+		TunerCount:    2,
+		DisableFFmpeg: true,
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0?mux=hls", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Header().Get("Access-Control-Allow-Origin") != "*" {
+		t.Fatal("expected CORS on playlist")
+	}
+}
+
 func TestGateway_stream_hlsMux_returnsRewrittenPlaylist(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")

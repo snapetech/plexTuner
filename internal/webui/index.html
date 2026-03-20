@@ -437,6 +437,27 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
+.history-shell {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+.history-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.76);
+  box-shadow: var(--shadow);
+}
+.history-copy {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
 .signal-card {
   padding: 16px;
   border-radius: 22px;
@@ -921,7 +942,10 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
     <section class="alert-board" id="alert-board"></section>
     <section class="action-dock" id="action-dock"></section>
     <section class="signal-grid" id="signal-grid"></section>
-    <section class="trend-grid" id="trend-grid"></section>
+    <section class="history-shell">
+      <div class="history-bar" id="history-bar"></div>
+      <section class="trend-grid" id="trend-grid"></section>
+    </section>
 
     <div class="surface">
       <section class="section active" data-mode="overview">
@@ -1155,6 +1179,10 @@ const state = {
     maxSamples: 18
   }
 };
+const storageKeys = {
+  prefs: "iptvtunerr.deck.prefs.v1",
+  telemetry: "iptvtunerr.deck.telemetry.v1"
+};
 
 const healthPill = document.getElementById("health-pill");
 const sidebarHealth = document.getElementById("sidebar-health");
@@ -1165,6 +1193,7 @@ const heroMeta = document.getElementById("hero-meta");
 const alertBoard = document.getElementById("alert-board");
 const actionDock = document.getElementById("action-dock");
 const signalGrid = document.getElementById("signal-grid");
+const historyBar = document.getElementById("history-bar");
 const trendGrid = document.getElementById("trend-grid");
 const sessionKV = document.getElementById("session-kv");
 const decisionBoard = document.getElementById("decision-board");
@@ -1279,6 +1308,60 @@ function setActionFeedback(result) {
     detail: result?.detail || null,
     at: new Date().toISOString()
   };
+}
+
+function safeLocalStorage() {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function loadPersistedState() {
+  const storage = safeLocalStorage();
+  if (!storage) return;
+  try {
+    const rawPrefs = storage.getItem(storageKeys.prefs);
+    if (rawPrefs) {
+      const prefs = JSON.parse(rawPrefs);
+      if (prefs.mode && modeTitles[prefs.mode]) state.mode = prefs.mode;
+      if (Number.isFinite(Number(prefs.refreshRateSec))) state.refreshRateSec = Number(prefs.refreshRateSec);
+      if (prefs.selectedRaw && endpoints[prefs.selectedRaw]) state.selectedRaw = prefs.selectedRaw;
+    }
+    const rawTelemetry = storage.getItem(storageKeys.telemetry);
+    if (rawTelemetry) {
+      const parsed = JSON.parse(rawTelemetry);
+      const samples = Array.isArray(parsed?.samples) ? parsed.samples : [];
+      state.telemetry.samples = samples
+        .filter((item) => item && Number.isFinite(Number(item.guidePercent)) && Number.isFinite(Number(item.streamPercent)))
+        .slice(-state.telemetry.maxSamples);
+    }
+  } catch {
+    state.telemetry.samples = [];
+  }
+}
+
+function persistPrefs() {
+  const storage = safeLocalStorage();
+  if (!storage) return;
+  try {
+    storage.setItem(storageKeys.prefs, JSON.stringify({
+      mode: state.mode,
+      refreshRateSec: state.refreshRateSec,
+      selectedRaw: state.selectedRaw
+    }));
+  } catch {}
+}
+
+function persistTelemetry() {
+  const storage = safeLocalStorage();
+  if (!storage) return;
+  try {
+    storage.setItem(storageKeys.telemetry, JSON.stringify({
+      samples: state.telemetry.samples.slice(-state.telemetry.maxSamples)
+    }));
+  } catch {}
 }
 
 function clampPercent(value) {
@@ -1498,6 +1581,7 @@ function applyMode(mode) {
   const pair = modeTitles[mode] || ["Deck", "View"];
   crumbMode.textContent = pair[0];
   crumbFocus.textContent = pair[1];
+  persistPrefs();
 }
 
 function fillRawSelectors() {
@@ -1526,7 +1610,7 @@ function fillRawSelectors() {
 function renderFilters() {
   activeFilters.innerHTML = state.filter
     ? `<span class="pill">Filter active: ${esc(state.filter)}</span>`
-    : `<span class="pill">Mode: ${esc(modeTitles[state.mode][0])}</span><span class="pill">Deck target: [[.TunerBase]]</span><span class="pill">Session memory: ${state.telemetry.samples.length} samples</span>`;
+    : `<span class="pill">Mode: ${esc(modeTitles[state.mode][0])}</span><span class="pill">Deck target: [[.TunerBase]]</span><span class="pill">Deck memory: ${state.telemetry.samples.length} samples</span>`;
 }
 
 function deriveMetrics(payloads) {
@@ -1581,6 +1665,7 @@ function recordTelemetry(metrics) {
   if (samples.length > state.telemetry.maxSamples) {
     samples.splice(0, samples.length - state.telemetry.maxSamples);
   }
+  persistTelemetry();
 }
 
 function renderDeck() {
@@ -1666,11 +1751,23 @@ function renderDeck() {
     createSignalCard("Ops Cleanliness", `${clampPercent(metrics.opsPercent)}%`, metrics.opsPercent, metrics.opsRisk > 0 ? `${metrics.opsRisk} active ops recovery signals need attention.` : "No recorder/ghost recovery pressure in the current snapshot.", metrics.opsPercent >= 85 ? "good" : metrics.opsPercent >= 55 ? "warn" : "bad")
   ].join("");
 
+  const firstSample = state.telemetry.samples.length ? state.telemetry.samples[0] : null;
+  const lastSample = state.telemetry.samples.length ? state.telemetry.samples[state.telemetry.samples.length - 1] : null;
+  historyBar.innerHTML = `
+    <div>
+      <strong>Deck Memory</strong>
+      <div class="history-copy">${state.telemetry.samples.length} persisted samples in this browser. ${firstSample ? `Oldest: ${esc(formatWhen(firstSample.at))}.` : "No saved history yet."} ${lastSample ? `Latest: ${esc(formatWhen(lastSample.at))}.` : ""}</div>
+    </div>
+    <div class="controls">
+      <button id="history-reset" type="button">Clear Deck Memory</button>
+    </div>
+  `;
+
   trendGrid.innerHTML = [
-    createTrendCard("Guide Trend", `${clampPercent(metrics.guidePercent)}%`, state.telemetry.samples.map((item) => ({ value: item.guidePercent })), `${state.telemetry.samples.length} refresh samples in this browser session.`),
+    createTrendCard("Guide Trend", `${clampPercent(metrics.guidePercent)}%`, state.telemetry.samples.map((item) => ({ value: item.guidePercent })), `${state.telemetry.samples.length} refresh samples in this browser.`),
     createTrendCard("Stream Trend", `${clampPercent(metrics.streamPercent)}%`, state.telemetry.samples.map((item) => ({ value: item.streamPercent })), `${metrics.failedAttemptCount} failures in the current attempt window.`),
     createTrendCard("Recorder Trend", recorder.summary ? `${clampPercent(metrics.recorderPercent)}%` : "n/a", state.telemetry.samples.map((item) => ({ value: item.recorderPercent })), recorder.summary ? "Completion ratio across the current loaded recorder summary." : "Recorder not configured in this process."),
-    createTrendCard("Ops Trend", `${clampPercent(metrics.opsPercent)}%`, state.telemetry.samples.map((item) => ({ value: item.opsPercent })), metrics.opsRisk > 0 ? "Recovery pressure is rising inside this session." : "Recovery pressure is flat or absent.")
+    createTrendCard("Ops Trend", `${clampPercent(metrics.opsPercent)}%`, state.telemetry.samples.map((item) => ({ value: item.opsPercent })), metrics.opsRisk > 0 ? "Recovery pressure is rising inside persisted deck memory." : "Recovery pressure is flat or absent.")
   ].join("");
 
   decisionBoard.innerHTML = filterCards([
@@ -1767,6 +1864,7 @@ function renderDeck() {
 async function renderRaw() {
   const key = rawSelect.value || state.selectedRaw;
   state.selectedRaw = key;
+  persistPrefs();
   rawOutput.textContent = "Loading...";
   try {
     const payload = await fetchJSON(key, endpoints[key]);
@@ -1853,7 +1951,9 @@ async function refreshModal() {
 }
 
 function bindUI() {
+  loadPersistedState();
   fillRawSelectors();
+  refreshRate.value = String(state.refreshRateSec);
   document.querySelectorAll("#mode-nav button").forEach((button) => {
     button.addEventListener("click", () => applyMode(button.dataset.mode));
   });
@@ -1899,6 +1999,7 @@ function bindUI() {
   refreshRate.addEventListener("change", (event) => {
     state.refreshRateSec = Number(event.target.value || 0);
     scheduleRefresh();
+    persistPrefs();
     renderFilters();
   });
   document.getElementById("deck-search").addEventListener("input", (event) => {
@@ -1912,12 +2013,20 @@ function bindUI() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeModal();
   });
+  document.addEventListener("click", (event) => {
+    if (event.target && event.target.id === "history-reset") {
+      state.telemetry.samples = [];
+      persistTelemetry();
+      renderDeck();
+    }
+  });
   window.deckMode = (mode) => applyMode(mode);
 }
 
 async function boot() {
   bindUI();
   applyMode(state.mode);
+  persistPrefs();
   scheduleRefresh();
   await reloadDeck();
 }

@@ -22,6 +22,20 @@ Append-only. One entry per completed task.
 
 ## Entries
 
+- Date: 2026-03-19
+  Title: HLS mux — optional CORS for ?mux=hls (playlist + seg + OPTIONS)
+  Summary:
+    - `IPTV_TUNERR_HLS_MUX_CORS` + `config.HlsMuxCORS`; `applyHLSMuxCORS` / `maybeServeHLSMuxOPTIONS` in `gateway_hls.go`; gateway calls OPTIONS handler after channel resolve.
+    - `/debug/runtime.json` `tuner.hls_mux_cors`; docs (CHANGELOG, how-to, cli ref, README, `.env.example`); tests for OPTIONS, playlist, and seg responses.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Off by default; permissive `Access-Control-Allow-Origin: *` when enabled.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway_hls.go`, `internal/tuner/gateway.go`, `internal/config/config.go`, `cmd/iptv-tunerr/cmd_runtime_server.go`
+
 - Date: 2026-03-20
   Title: HLS mux — forward Range/If-Range; preserve 206 + Content-Range on seg=
   Summary:
@@ -2734,6 +2748,18 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - Added browser-session telemetry sampling in the integrated web UI so the deck keeps a rolling memory of key signals instead of re-rendering each fetch as an isolated snapshot.
     - Introduced trend cards and lightweight sparkline visuals for guide confidence, stream stability, recorder yield, and ops cleanliness, making the page read more like an active control room than a static report.
     - Kept telemetry capture tied to the fetch/reload path rather than the render path so searches, mode changes, and modal interactions do not distort the sampled history.
+  Verification:
+    - `go test ./...`
+    - `./scripts/verify`
+
+---
+
+- Date: 2026-03-20
+  Title: Persist deck memory and add optional HLS mux browser CORS
+  Summary:
+    - Added browser-local persistence for deck mode, refresh cadence, selected raw endpoint, and recent telemetry samples so the dashboard behaves like a sticky operator cockpit instead of a disposable page.
+    - Added an explicit “Clear Deck Memory” control and adjusted the trend/history copy to reflect persisted browser-local history rather than per-tab ephemeral state.
+    - Folded in the pending HLS mux browser support slice: `IPTV_TUNERR_HLS_MUX_CORS`, `OPTIONS` preflight handling, CORS headers on `?mux=hls` playlist/segment responses, runtime snapshot exposure, and regression tests.
   Verification:
     - `go test ./...`
     - `./scripts/verify`

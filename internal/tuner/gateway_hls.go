@@ -21,6 +21,44 @@ import (
 // hlsQuotedURIAttr matches URI="..." in HLS tag lines (#EXT-X-KEY, #EXT-X-MAP, #EXT-X-STREAM-INF, …).
 var hlsQuotedURIAttr = regexp.MustCompile(`(?i)(URI=")([^"]*)(")`)
 
+func hlsMuxCORSEnabled() bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("IPTV_TUNERR_HLS_MUX_CORS")))
+	switch v {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+// applyHLSMuxCORS sets permissive CORS headers for browser/devtools clients hitting ?mux=hls (off by default).
+func applyHLSMuxCORS(w http.ResponseWriter) {
+	if !hlsMuxCORSEnabled() {
+		return
+	}
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Range, If-Range, Content-Type, Accept, Authorization")
+	w.Header().Set("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges, Cache-Control, Content-Type")
+}
+
+// maybeServeHLSMuxOPTIONS handles CORS preflight for HLS mux URLs when IPTV_TUNERR_HLS_MUX_CORS is enabled.
+func maybeServeHLSMuxOPTIONS(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method != http.MethodOptions {
+		return false
+	}
+	if strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mux"))) != "hls" {
+		return false
+	}
+	if !hlsMuxCORSEnabled() {
+		return false
+	}
+	applyHLSMuxCORS(w)
+	w.Header().Set("Access-Control-Max-Age", "86400")
+	w.WriteHeader(http.StatusNoContent)
+	return true
+}
+
 // sleepHLSRefresh sleeps based on playlist EXT-X-TARGETDURATION to avoid hammering upstream (1-10s).
 func sleepHLSRefresh(playlistBody []byte) {
 	sec := hlsTargetDurationSeconds(playlistBody)
@@ -292,6 +330,7 @@ func (g *Gateway) serveHLSMuxTarget(w http.ResponseWriter, r *http.Request, clie
 		out := rewriteHLSPlaylistToGatewayProxy(body, effectiveURL, channelID)
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 		w.Header().Set("Cache-Control", "no-store")
+		applyHLSMuxCORS(w)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(out)
 		return nil
@@ -308,6 +347,7 @@ func (g *Gateway) serveHLSMuxTarget(w http.ResponseWriter, r *http.Request, clie
 		w.Header().Set("Content-Type", "video/mp2t")
 	}
 	w.Header().Set("Cache-Control", "no-store")
+	applyHLSMuxCORS(w)
 	w.WriteHeader(resp.StatusCode)
 	_, err = io.Copy(w, resp.Body)
 	return err

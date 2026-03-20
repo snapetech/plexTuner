@@ -15,6 +15,7 @@ This mode is **not** ffmpeg segment packaging: Tunerr **rewrites** playlist line
 
 - You want **M3U8 in / M3U8 out** through Tunerr (e.g. testing with `ffplay` or an HLS-aware player) without transcoding to TS first.
 - A client mishandles **relative** URLs inside playlists: set **`IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`** so media lines use **absolute** Tunerr URLs.
+- A **browser** or **devtools** page loads the playlist from a different origin than Tunerr: set **`IPTV_TUNERR_HLS_MUX_CORS`**. Tunerr then adds permissive CORS headers on **`?mux=hls`** playlist and segment responses and answers **`OPTIONS`** preflight for the same query pattern.
 
 ## Preconditions
 
@@ -36,7 +37,9 @@ This mode is **not** ffmpeg segment packaging: Tunerr **rewrites** playlist line
 
 4. Optional: set **`IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`** to `http://192.168.1.10:5004` (no trailing slash) so those lines are **absolute** (`http://192.168.1.10:5004/stream/...`).
 
-5. Inspect effective settings at **`/debug/runtime.json`** (`tuner.stream_public_base_url`) and SQLite/EPG flags at **`/guide/epg-store.json`** when using incremental provider suffixes.
+5. Optional: set **`IPTV_TUNERR_HLS_MUX_CORS=true`** when a web client needs CORS on the playlist and segment URLs.
+
+6. Inspect effective settings at **`/debug/runtime.json`** (`tuner.stream_public_base_url`, **`tuner.hls_mux_cors`**) and SQLite/EPG flags at **`/guide/epg-store.json`** when using incremental provider suffixes.
 
 Byte-range HLS (**`#EXT-X-BYTERANGE`**) requires the player’s **`Range`** request to reach the CDN: Tunerr forwards **`Range`** / **`If-Range`** on upstream fetches and returns **`206 Partial Content`** with **`Content-Range`** when the CDN responds that way.
 
@@ -54,5 +57,5 @@ See also
 --------
 
 - [Transcode profiles](../reference/transcode-profiles.md) — `?mux=fmp4`, `?profile=`, TS defaults.
-- [CLI and env reference](../reference/cli-and-env-reference.md) — `IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`, streaming envs.
+- [CLI and env reference](../reference/cli-and-env-reference.md) — `IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`, `IPTV_TUNERR_HLS_MUX_CORS`, streaming envs.
 - [Features](../features.md) — gateway overview.

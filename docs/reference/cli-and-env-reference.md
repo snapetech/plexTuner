@@ -951,6 +951,7 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
 - `IPTV_TUNERR_STREAM_TRANSCODE` (`off|on|auto`) — `off` remuxes only; `on` always transcodes with libx264/AAC; `auto` probes the codec with ffprobe and transcodes only if Plex can't handle it natively (e.g. HEVC, VP9).
 - `IPTV_TUNERR_STREAM_BUFFER_BYTES` (`0|auto|<bytes>`) — `auto` enables adaptive buffering when transcoding; `0` disables; a fixed integer (e.g. `2097152`) sets a 2 MiB buffer.
 - `IPTV_TUNERR_STREAM_PUBLIC_BASE_URL` — optional **no-trailing-slash** base URL (e.g. `http://192.168.1.10:5004`) prepended to **`?mux=hls`** playlist media lines so clients that mishandle relative URLs still resolve Tunerr. Empty = relative `/stream/...` lines only.
+- `IPTV_TUNERR_HLS_MUX_CORS` — when `true`/`1`/`on`, add CORS headers on **`?mux=hls`** playlist and **`?mux=hls&seg=`** responses and handle **`OPTIONS`** preflight for those URLs (for browser-based players or devtools). Default off.
 - **HLS mux query** — `GET /stream/<channel>?mux=hls` on an **HLS** upstream returns an **MPEG-URL playlist** proxied through Tunerr (not MPEG-TS). Nested playlists and segments use `?mux=hls&seg=<url>`. Default stream behavior remains TS remux/transcode when `mux` is omitted.
 - **Byte-range segments:** client **`Range`** / **`If-Range`** headers are forwarded to upstream playlist/segment/key fetches; **`206`** + **`Content-Range`** are passed back for **`?mux=hls&seg=`** binary responses (e.g. **`#EXT-X-BYTERANGE`**).
 - `IPTV_TUNERR_FFMPEG_PATH` — override the ffmpeg binary path (e.g. `/opt/ffmpeg-static/current/ffmpeg`).

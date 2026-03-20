@@ -93,6 +93,7 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"stream_buffer_bytes":    cfg.StreamBufferBytes,
 			"stream_transcode":       cfg.StreamTranscodeMode,
 			"stream_public_base_url": strings.TrimSpace(os.Getenv("IPTV_TUNERR_STREAM_PUBLIC_BASE_URL")),
+			"hls_mux_cors":           cfg.HlsMuxCORS,
 			"fetch_cf_reject":        cfg.FetchCFReject,
 			"epg_prune_unlinked":     cfg.EpgPruneUnlinked,
 			"autopilot_state_file":   cfg.AutopilotStateFile,

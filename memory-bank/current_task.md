@@ -2,7 +2,9 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Latest (2026-03-20):** Shipped the next web UI “guided control plane” slice plus the still-dirty HLS mux docs/runtime follow-up. The deck now has an `ops-recovery` workflow, a visual signal board, and a more guided operations lane on top of the existing operator actions. In the same cleanup pass, HLS mux proxy docs/runtime surfacing (`docs/how-to/hls-mux-proxy.md`, `IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`, `?mux=hls`, runtime snapshot/index docs) were folded in so the repo can end clean instead of leaving partially documented behavior behind. Verification passed with `go test ./...` and `./scripts/verify`.
+**Latest (2026-03-19, gateway):** Shipped optional **`IPTV_TUNERR_HLS_MUX_CORS`** for `?mux=hls` playlist + `seg=` responses and `OPTIONS` preflight; runtime snapshot `tuner.hls_mux_cors`; tests + docs + `./scripts/verify` OK.
+
+**Latest (2026-03-20):** Continuing the web UI from “guided control plane” toward “sticky operator cockpit.” Current slice adds browser-local persistence for deck telemetry and UI preferences so the dashboard keeps short-term memory across reloads instead of forgetting mode/refresh/history every time the page refreshes. Assumption: keep this storage entirely client-side (`localStorage`) rather than introducing a new server-side state service just for operator preferences.
 
 **Goal:** Start the new Live TV Intelligence product track: map the multi-PR roadmap, then ship the first visible foundation feature so IPTV Tunerr feels like an intelligent control plane instead of only a tuner bridge.
 

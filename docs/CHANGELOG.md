@@ -19,6 +19,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Web UI envs**: added **`IPTV_TUNERR_WEBUI_DISABLED`**, **`IPTV_TUNERR_WEBUI_PORT`**, and **`IPTV_TUNERR_WEBUI_ALLOW_LAN`**. The older `/ui/` pages on the tuner port remain available.
 - **Operator actions + workflows**: the deck now drives safe control endpoints under **`/ops/actions/*`** plus workflow/playbook endpoints under **`/ops/workflows/*`** (`guide-repair`, `stream-investigate`, `ops-recovery`), and the UI exposes them with action docks, workflow modals, and signal boards instead of treating operations as raw payloads only.
 - **Session telemetry**: the deck now keeps a browser-local rolling history of key signals (guide, stream, recorder, ops) and renders trend cards/sparklines so operators can see direction of travel instead of only the latest snapshot.
+- **Sticky deck prefs**: the integrated dashboard now persists mode, refresh cadence, selected raw endpoint, and recent telemetry samples in browser-local storage, with an explicit “Clear Deck Memory” control.
 
 ### Streaming / HLS (Tunerr-native mux)
 - **`?mux=hls`** on **`/stream/<channel>`**: returns a rewritten **HLS playlist** whose media lines point back through Tunerr (`/stream/<id>?mux=hls&seg=<encoded-upstream-url>`), and fetches segments/variants through the same proxy. **MPEG-TS relay** remains the default when `mux` is omitted or set to `mpegts`.
@@ -26,6 +27,8 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **How-to:** [docs/how-to/hls-mux-proxy.md](how-to/hls-mux-proxy.md); transcode reference updated in [transcode-profiles.md](reference/transcode-profiles.md).
 - **`?mux=hls` playlist rewrite:** tag lines with **`URI="..."`** (e.g. **`#EXT-X-KEY`**, **`#EXT-X-MAP`**, **`#EXT-X-STREAM-INF`**) are rewritten through the same Tunerr proxy as media lines so keys/init/variant playlists can use upstream auth and cookies.
 - **Upstream forwarding:** **`Range`** / **`If-Range`** are forwarded on gateway upstream requests (with **`Cookie`**, **`Referer`**, **`Origin`**). **`?mux=hls&seg=`** segment/key responses preserve **`206 Partial Content`** and **`Content-Range`** when the CDN uses byte ranges.
+- **Optional browser CORS for HLS mux:** **`IPTV_TUNERR_HLS_MUX_CORS`** adds permissive CORS headers for **`?mux=hls`** playlist/segment URLs and answers **`OPTIONS`** preflight when you intentionally use the HLS mux path from browser-native players or devtools.
+- **`IPTV_TUNERR_HLS_MUX_CORS`**: when enabled, Tunerr adds permissive CORS headers on **`?mux=hls`** playlist and segment responses and answers **`OPTIONS`** preflight for the same URLs (browser/devtools). Exposed in **`/debug/runtime.json`** as **`tuner.hls_mux_cors`**.
 
 ### Provider EPG + SQLite (incremental follow-ups)
 - **`IPTV_TUNERR_PROVIDER_EPG_INCREMENTAL`** + suffix tokens `{from_unix}` / `{to_unix}` / `{from_ymd}` / `{to_ymd}` on **`IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX`** (horizon from SQLite when available).
