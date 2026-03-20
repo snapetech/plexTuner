@@ -121,6 +121,13 @@ type Config struct {
 	FreeSourceIptvOrgCountries  []string
 	FreeSourceIptvOrgCategories []string
 	FreeSourceIptvOrgAll        bool
+	// Content cache: avoid re-fetching large M3U files on every index run.
+	FreeSourceCacheTTL time.Duration // default 6h; 0 = disable cache
+	FreeSourceCacheDir string        // default: CacheDir/free-sources
+	// Safety filters applied by tvg-id against iptv-org blocklist + channels.json metadata.
+	// Fetching these is skipped if no iptv-org sources are configured and FilterNSFW/FilterClosed are both false.
+	FreeSourceFilterNSFW   bool // default true — exclude nsfw/legally-blocked channels
+	FreeSourceFilterClosed bool // default true — exclude channels with a closed date
 }
 
 // Load reads config from environment. Call LoadEnvFile(".env") before Load() to use a .env file.
@@ -182,6 +189,10 @@ func Load() *Config {
 		FreeSourceIptvOrgCountries:  getEnvCSV("IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_COUNTRIES"),
 		FreeSourceIptvOrgCategories: getEnvCSV("IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_CATEGORIES"),
 		FreeSourceIptvOrgAll:        getEnvBool("IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_ALL", false),
+		FreeSourceCacheTTL:          getEnvDuration("IPTV_TUNERR_FREE_SOURCE_CACHE_TTL", 6*time.Hour),
+		FreeSourceCacheDir:          os.Getenv("IPTV_TUNERR_FREE_SOURCE_CACHE_DIR"),
+		FreeSourceFilterNSFW:        getEnvBool("IPTV_TUNERR_FREE_SOURCE_FILTER_NSFW", true),
+		FreeSourceFilterClosed:      getEnvBool("IPTV_TUNERR_FREE_SOURCE_FILTER_CLOSED", true),
 	}
 	if c.TunerCount <= 0 {
 		c.TunerCount = 2

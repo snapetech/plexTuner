@@ -2,6 +2,7 @@ package indexer
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"net/http"
 	"strconv"
@@ -37,6 +38,11 @@ func ParseM3U(m3uURL string, client *http.Client) (movies []catalog.Movie, serie
 	series = []catalog.Series{}
 	live = parseM3UBody(resp.Body)
 	return movies, series, live, nil
+}
+
+// ParseM3UFromBytes parses pre-fetched M3U content (e.g. from a local cache).
+func ParseM3UFromBytes(data []byte) []catalog.LiveChannel {
+	return parseM3UBody(bytes.NewReader(data))
 }
 
 type m3uError struct {
