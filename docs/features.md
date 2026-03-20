@@ -174,14 +174,32 @@ Operator-oriented summary; full guide: [how-to/cloudflare-bypass.md](how-to/clou
 | **Cookie import** | `import-cookies` from HAR, Netscape, or inline (`cf_clearance`). |
 | **`cf-status`** | CLI view of per-host CF state, clearance TTL, working UA. |
 
-## 13. Diagnostics and debug tooling
+## 13. Free public source integration
+
+Supplement or enrich the paid catalog with public M3U feeds fetched at index time. No redistribution — sources are fetched fresh on each catalog build.
+
+| Feature | Description |
+|---------|-------------|
+| **Custom M3U URLs** | `IPTV_TUNERR_FREE_SOURCES=url1,url2` — any public M3U URL is fetched and merged. |
+| **iptv-org preset** | Built-in support for `iptv-org/iptv` per-country/per-category feeds via `IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_COUNTRIES=us,gb`, `_CATEGORIES=news,sports`, or `_ALL=true`. |
+| **Merge modes** | `supplement` (default) — add channels absent from paid lineup; `merge` — append free URLs as paid-channel fallbacks; `full` — deduplicate combined catalog, paid takes precedence. |
+| **M3U content caching** | Downloaded playlists cached on disk (default 6 h TTL via `IPTV_TUNERR_FREE_SOURCE_CACHE_TTL`). Avoids re-downloading large feeds on every index run. |
+| **Guide number collision fix** | Free channels are re-numbered starting at `maxPaidGuideNumber + 1` so they never collide with paid lineup numbers in Plex/Emby/Jellyfin. |
+| **iptv-org blocklist filter** | Fetches `iptv-org/api` `blocklist.json` at index time; channels flagged nsfw/legal/geo are dropped or tagged. Also cached. |
+| **iptv-org NSFW tagging** | `IPTV_TUNERR_FREE_SOURCE_FILTER_NSFW=false` keeps NSFW channels but prefixes `GroupTitle` with `[NSFW] <category>` for supervisor-based routing to an adult lineup. |
+| **Closed channel filter** | `IPTV_TUNERR_FREE_SOURCE_FILTER_CLOSED=true` (default) drops channels with a closure date in `channels.json`. |
+| **Require tvg-id** | `IPTV_TUNERR_FREE_SOURCE_REQUIRE_TVG_ID=true` limits free channels to those with a EPG-linkable `tvg-id`. |
+| **Smoketest integration** | `IPTV_TUNERR_FREE_SOURCE_SMOKETEST=true` runs a probe pass on free channels; reuses `IPTV_TUNERR_SMOKETEST_CACHE_FILE` so results persist across runs. |
+| **`free-sources` CLI** | `iptv-tunerr free-sources` — fetch, probe, by-group summary, catalog diff, JSON output. |
+
+## 14. Diagnostics and debug tooling
 
 | Feature | Description |
 |---------|-------------|
 | **`debug-bundle`** | `iptv-tunerr debug-bundle` collects stream attempts, provider profile, CF learned, cookie metadata, env (redacted). See [how-to/debug-bundle.md](how-to/debug-bundle.md). |
 | **`analyze-bundle.py`** | Correlates bundle artifacts with PMS.log, Tunerr stdout, and optional pcap. |
 
-## 14. Packaging, testing, and ops tooling
+## 15. Packaging, testing, and ops tooling
 
 | Feature | Description |
 |---------|-------------|
@@ -193,7 +211,7 @@ Operator-oriented summary; full guide: [how-to/cloudflare-bypass.md](how-to/clou
 | **Plex stream override analysis helper** | `scripts/plex-generate-stream-overrides.py` for feed/profile override candidate generation. |
 | **Live TV provider label rewrite proxy** | `scripts/plex-media-providers-label-proxy.py` + k8s deploy helper to rewrite `/media/providers` labels (client-dependent effect). |
 
-## 15. Platform support summary
+## 16. Platform support summary
 
 | Platform | Core app (`run/serve/index/probe/supervise`) | HDHR HTTP endpoints | HDHR network mode | `mount` / VODFS |
 |----------|----------------------------------------------|---------------------|-------------------|-----------------|
@@ -201,7 +219,7 @@ Operator-oriented summary; full guide: [how-to/cloudflare-bypass.md](how-to/clou
 | macOS | Yes | Yes | Compiles (runtime validation depends on environment) | No |
 | Windows | Yes | Yes | Compiles (native validation recommended; `wine` smoke not authoritative) | No |
 
-## 16. Not supported / limits (current)
+## 17. Not supported / limits (current)
 
 - **Web UI** (by design; CLI/env only)
 - **Plex wizard checkbox preselection for >479 channels** (HDHR protocol/wizard limitation; serve only the channels you want selectable)

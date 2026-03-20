@@ -681,6 +681,38 @@ iptv-tunerr debug-bundle --out ./debug-scratch --tar
 
 See also: [debug-bundle.md](../how-to/debug-bundle.md)
 
+## `iptv-tunerr free-sources`
+
+Fetch and inspect free public IPTV channels from configured sources without affecting the running catalog. Useful for exploring feeds before enabling them in production.
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `-by-group` | false | Print channel count summary grouped by `group-title` |
+| `-catalog` | — | Path to a catalog JSON file; prints what would be added (channels not already present) |
+| `-probe` | false | Run a live HTTP probe pass on fetched channels |
+| `-probe-concurrency` | 10 | Parallel probe workers |
+| `-probe-timeout` | 8s | Per-channel probe timeout |
+| `-probe-max` | 0 | Cap number of channels probed (0 = all) |
+| `-require-tvgid` | false | Only include channels that have a `tvg-id` |
+| `-limit` | 0 | Print only first N results (0 = all) |
+| `-json` | false | JSON output for scripting |
+
+Examples:
+
+```sh
+# What groups are in the iptv-org US feed?
+IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_COUNTRIES=us \
+  iptv-tunerr free-sources -by-group
+
+# What would be added to an existing catalog?
+IPTV_TUNERR_FREE_SOURCES=https://m3u.prigoana.com/all.m3u \
+  iptv-tunerr free-sources -catalog ./catalog.json
+
+# Probe a sample of 50 channels to check live pass rate
+IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_ALL=true \
+  iptv-tunerr free-sources -probe -probe-max 50
+```
+
 ## `iptv-tunerr hdhr-scan`
 
 Discover **physical** SiliconDust HDHomeRun tuners on the local network, or query a device by HTTP only.
@@ -809,6 +841,57 @@ Optional: probe each channel's primary stream URL at index time and drop channel
 Probe method:
 - MPEG-TS: HTTP Range request for first 4 KB (avoids pulling full streams); 200 or 206 = pass
 - HLS (`.m3u8`): GET playlist; validates `#EXTM3U` / `#EXTINF` or a non-comment segment URI
+
+## Free public sources
+
+Supplement or enrich the paid catalog with public M3U feeds at index time. No redistribution — sources are fetched fresh per catalog build.
+
+### Source selection
+
+| Env | Default | Meaning |
+|-----|---------|---------|
+| `IPTV_TUNERR_FREE_SOURCES` | — | Comma-separated public M3U URLs |
+| `IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_COUNTRIES` | — | Country codes (`us,gb,ca`) — uses iptv-org per-country feeds |
+| `IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_CATEGORIES` | — | Category slugs (`news,sports`) — uses iptv-org per-category feeds |
+| `IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_ALL` | `false` | `true` — use iptv-org combined all-channels feed |
+
+### Merge mode
+
+| Env | Default | Meaning |
+|-----|---------|---------|
+| `IPTV_TUNERR_FREE_SOURCE_MODE` | `supplement` | `supplement` — add channels absent from paid lineup; `merge` — append free URLs as paid-channel fallbacks; `full` — deduplicate combined catalog, paid takes precedence |
+
+### Content cache
+
+| Env | Default | Meaning |
+|-----|---------|---------|
+| `IPTV_TUNERR_FREE_SOURCE_CACHE_TTL` | `6h` | How long downloaded M3U and iptv-org API files are cached on disk |
+| `IPTV_TUNERR_FREE_SOURCE_CACHE_DIR` | `<CacheDir>/free-sources` | Override disk cache directory |
+
+### Safety filters
+
+| Env | Default | Meaning |
+|-----|---------|---------|
+| `IPTV_TUNERR_FREE_SOURCE_FILTER_NSFW` | `true` | Drop NSFW channels (from iptv-org blocklist/channels.json); `false` = keep but tag `GroupTitle` with `[NSFW] <category>` |
+| `IPTV_TUNERR_FREE_SOURCE_FILTER_CLOSED` | `true` | Drop channels with a closure date in iptv-org `channels.json` |
+| `IPTV_TUNERR_FREE_SOURCE_REQUIRE_TVG_ID` | `false` | Drop channels without a `tvg-id` (EPG-linkable channels only) |
+| `IPTV_TUNERR_FREE_SOURCE_SMOKETEST` | `false` | Probe free channels at index time; reuses `IPTV_TUNERR_SMOKETEST_CACHE_FILE` |
+
+Quick-start examples:
+
+```sh
+# Add US/GB news & sports to paid lineup (supplement mode)
+IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_COUNTRIES=us,gb
+IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_CATEGORIES=news,sports
+
+# Use a custom public feed, keep NSFW but route via supervisor
+IPTV_TUNERR_FREE_SOURCES=https://m3u.prigoana.com/all.m3u
+IPTV_TUNERR_FREE_SOURCE_FILTER_NSFW=false
+
+# Append free URLs as fallbacks behind paid channels
+IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_ALL=true
+IPTV_TUNERR_FREE_SOURCE_MODE=merge
+```
 
 ## Paths
 
