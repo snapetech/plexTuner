@@ -22,6 +22,20 @@ Append-only. One entry per completed task.
 
 ## Entries
 
+- Date: 2026-03-19
+  Title: Doc/epic backlog validation (docs-gaps, epics, opportunities)
+  Summary:
+    - **`docs/docs-gaps.md`**: removed stale gap rows; **Resolved** expanded; optional Mermaid for **architecture** remains one medium row.
+    - **`docs/epics/EPIC-live-tv-intelligence.md`**, **`EPIC-lineup-parity.md`**, **`memory-bank/work_breakdown.md`**: aligned “next” / EPG notes with shipped policy + **`IPTV_TUNERR_PROVIDER_EPG_*`**.
+    - **`memory-bank/opportunities.md`**: guide-health→publishing entry partially superseded.
+    - **`docs/how-to/index.md`**: VODFS how-to row; **`docs/CHANGELOG.md`** **[Unreleased]**.
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+  Links:
+    - [docs-gaps.md](../../docs/docs-gaps.md)
+
 - Date: 2026-03-20
   Title: LP-010 / LP-011 packaged HLS profile mode
   Summary:
