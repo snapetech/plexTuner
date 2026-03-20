@@ -89,6 +89,8 @@ export PWPROBE_ARGS='--dvr 138 --channel-id 112'
 
 The harness will capture **`plex-web-probe.json`**, **`plex-web-probe.log`**, and exit code in the same bundle, and [live-race-harness-report.py](../../scripts/live-race-harness-report.py) will summarize the probe result when present.
 
+If the same harness run also has Plex API access (`PMS_URL` + `PMS_TOKEN`, or `IPTV_TUNERR_PMS_URL` + `IPTV_TUNERR_PMS_TOKEN` / `PLEX_HOST` + `PLEX_TOKEN`), it now snapshots **`/status/sessions`** during the run window and summarizes observed **Player** titles/products/platforms plus live session IDs. That makes it easier to prove whether Tunerr resolved the same class of Plex client you thought you were testing.
+
 ## Plex Web regression sample (HR-002)
 
 **Goal:** reproducible proof that **Plex Web** can complete **`start.mpd`** / DASH init on a **small agreed channel set** through Tunerr’s **direct WebSafe** path (real XMLTV + deduped lineup as deployed), with logs that explain startup.

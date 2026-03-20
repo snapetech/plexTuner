@@ -188,6 +188,9 @@ cd /path/to/iptvtunerr
 # export USE_TCPDUMP=true
 # export TCPDUMP_IFACE=lo
 # export PMS_LOG_DIR="/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Logs"
+# export PMS_URL="http://127.0.0.1:32400"        # or IPTV_TUNERR_PMS_URL / PLEX_HOST
+# export PMS_TOKEN="..."                         # or IPTV_TUNERR_PMS_TOKEN / PLEX_TOKEN
+# export PMS_SESSION_POLL_SECS=3                # optional /status/sessions snapshot cadence
 
 # Optional: use a recorded TS file instead of auto-generated replay input
 # export REPLAY_TS_FILE=/path/to/capture.ts
@@ -204,6 +207,7 @@ Artifacts are written under `.diag/live-race/<timestamp>/` and include:
 - `summary.txt`
 - optional `tuner-loopback.pcap`
 - optional PMS log snapshot directory
+- optional `pms-sessions/*.xml` snapshots when Plex API access is configured
 - optional `plex-web-probe.json` / `plex-web-probe.log` / exit code when `PWPROBE_SCRIPT` is set
 
 Start one or more real Plex clients during the harness run window to correlate PMS + tuner behavior against the synthetic/replay probes.
@@ -216,7 +220,7 @@ export PWPROBE_ARGS='--dvr 138 --channel-id 112'
 RUN_SECONDS=30 CONCURRENCY=6 ./scripts/live-race-harness.sh
 ```
 
-The harness stores the probe artifacts in the same output directory, and `live-race-harness-report.py` prints a compact probe summary when those files are present.
+The harness stores the probe artifacts in the same output directory, and `live-race-harness-report.py` prints a compact probe summary when those files are present. When Plex API access is configured, that summary also includes `/status/sessions` snapshots so you can see actual player products, platforms, and live session IDs for the run window.
 
 ### HR-002 — closing a Plex Web `start.mpd` / startup regression
 

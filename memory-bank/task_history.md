@@ -23,6 +23,20 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-20
+  Title: Capture Plex session snapshots in the live-race harness (**HR-002** / **HR-003**)
+  Summary:
+    - [live-race-harness.sh](../scripts/live-race-harness.sh) now polls Plex **`/status/sessions`** during the run window when **`PMS_URL`** + **`PMS_TOKEN`** (or Tunerr/Plex env aliases) are configured, storing XML snapshots under **`pms-sessions/`**.
+    - [live-race-harness-report.py](../scripts/live-race-harness-report.py) now summarizes observed player titles/products/platforms and live session IDs from those snapshots, not just PMS log patterns.
+    - [iptvtunerr-troubleshooting](../docs/runbooks/iptvtunerr-troubleshooting.md), [plex-client-compatibility-matrix](../docs/reference/plex-client-compatibility-matrix.md), and [CHANGELOG](../docs/CHANGELOG.md) document the new evidence bundle.
+  Verification:
+    - `bash -n scripts/live-race-harness.sh`
+    - `python3 -m py_compile scripts/live-race-harness-report.py`
+    - synthetic `scripts/live-race-harness-report.py --dir <tmpdir>`
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+
+- Date: 2026-03-20
   Title: Unit tests for **`internal/probe`** and **`internal/materializer`**
   Summary:
     - **`probe_test.go`**: path-only **`Probe`**, HTTP content-type + body sniff, redirect final URL, unknown type; **`Lineup`** / **`LineupHandler`** / **`DiscoveryHandler`**.

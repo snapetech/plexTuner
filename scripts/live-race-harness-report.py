@@ -14,6 +14,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+import xml.etree.ElementTree as ET
 
 
 PLEX_PREFIX_RE = re.compile(r"^\[iptv-tunerr\]\s+\d{4}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2}\s+(.*)$")
@@ -108,6 +109,11 @@ class Parser:
         self.pms_counts: Counter = Counter()
         self.pms_session_ids: Counter = Counter()
         self.pms_samples: dict[str, list[str]] = defaultdict(list)
+        self.pms_snapshot_players: Counter = Counter()
+        self.pms_snapshot_products: Counter = Counter()
+        self.pms_snapshot_platforms: Counter = Counter()
+        self.pms_snapshot_session_ids: Counter = Counter()
+        self.pms_snapshot_video_counts: list[int] = []
         self.plex_web_probe: dict[str, Any] = {}
 
     def req(self, req_id: str) -> ReqTrace:
@@ -317,6 +323,31 @@ class Parser:
             probe["log_tail"] = lines[-5:]
         self.plex_web_probe = probe
 
+    def parse_pms_session_snapshots(self, out_dir: Path) -> None:
+        snap_dir = out_dir / "pms-sessions"
+        if not snap_dir.is_dir():
+            return
+        for path in sorted(snap_dir.glob("*.xml")):
+            try:
+                root = ET.fromstring(path.read_text(encoding="utf-8", errors="replace"))
+            except Exception:
+                continue
+            videos = list(root.findall(".//Video"))
+            self.pms_snapshot_video_counts.append(len(videos))
+            for video in videos:
+                player = video.find("Player")
+                session = video.find("Session")
+                if player is not None:
+                    if title := (player.get("title") or "").strip():
+                        self.pms_snapshot_players[title] += 1
+                    if product := (player.get("product") or "").strip():
+                        self.pms_snapshot_products[product] += 1
+                    if platform := (player.get("platform") or "").strip():
+                        self.pms_snapshot_platforms[platform] += 1
+                if session is not None:
+                    if sid := (session.get("id") or "").strip():
+                        self.pms_snapshot_session_ids[sid] += 1
+
     def build_report(self, out_dir: Path) -> dict[str, Any]:
         reqs = []
         for req_id in sorted(self.reqs):
@@ -375,6 +406,12 @@ class Parser:
             "limit_seen": max(self.limit_samples) if self.limit_samples else None,
             "pms_counts": {k: int(v) for k, v in self.pms_counts.items()},
             "pms_session_ids_top": self.pms_session_ids.most_common(10),
+            "pms_snapshot_count": len(self.pms_snapshot_video_counts),
+            "pms_snapshot_video_count_stats": stats([float(n) for n in self.pms_snapshot_video_counts]),
+            "pms_snapshot_players_top": self.pms_snapshot_players.most_common(10),
+            "pms_snapshot_products_top": self.pms_snapshot_products.most_common(10),
+            "pms_snapshot_platforms_top": self.pms_snapshot_platforms.most_common(10),
+            "pms_snapshot_session_ids_top": self.pms_snapshot_session_ids.most_common(10),
         }
         if self.plex_web_probe:
             synopsis["plex_web_probe"] = self.plex_web_probe
@@ -460,6 +497,24 @@ def write_text_report(report: dict[str, Any], out_path: Path) -> None:
     lines.append(f"- livetv_session_404: {pms_counts.get('livetv_session_404', 0)}")
     lines.append("")
 
+    lines.append("PMS Session Snapshots")
+    lines.append(f"- snapshots: {syn.get('pms_snapshot_count', 0)}")
+    snap_stats = syn.get("pms_snapshot_video_count_stats")
+    if snap_stats:
+        lines.append(
+            f"- live videos per snapshot: count={int(snap_stats['count'])} min={snap_stats['min']:.0f} avg={snap_stats['avg']:.1f} max={snap_stats['max']:.0f}"
+        )
+    for label, key in (
+        ("players", "pms_snapshot_players_top"),
+        ("products", "pms_snapshot_products_top"),
+        ("platforms", "pms_snapshot_platforms_top"),
+        ("session ids", "pms_snapshot_session_ids_top"),
+    ):
+        rows = syn.get(key) or []
+        if rows:
+            lines.append(f"- top {label}: " + ", ".join(f"{name} ({count})" for name, count in rows[:5]))
+    lines.append("")
+
     lines.append("Null Keepalive Stop Reasons")
     stops = syn.get("null_keepalive_stops", {}) or {}
     if stops:
@@ -510,6 +565,7 @@ def main() -> int:
     pms_dir = out_dir / "pms-logs"
     if pms_dir.is_dir():
         parser.parse_pms_logs(pms_dir)
+    parser.parse_pms_session_snapshots(out_dir)
     parser.parse_plex_web_probe(out_dir)
 
     report = parser.build_report(out_dir)

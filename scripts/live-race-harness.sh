@@ -28,6 +28,7 @@ CURL_LOG="$OUT_DIR/curl.log"
 SUMMARY="$OUT_DIR/summary.txt"
 TCPDUMP_PCAP="$OUT_DIR/tuner-loopback.pcap"
 PMS_SNAPSHOT="$OUT_DIR/pms-logs"
+PMS_SESSION_DIR="$OUT_DIR/pms-sessions"
 PWPROBE_JSON="$OUT_DIR/plex-web-probe.json"
 PWPROBE_LOG="$OUT_DIR/plex-web-probe.log"
 PWPROBE_EXIT="$OUT_DIR/plex-web-probe.exitcode"
@@ -46,6 +47,9 @@ USE_TCPDUMP="${USE_TCPDUMP:-false}"
 TCPDUMP_IFACE="${TCPDUMP_IFACE:-lo}"
 TCPDUMP_USE_SUDO="${TCPDUMP_USE_SUDO:-auto}" # auto|true|false
 PMS_LOG_DIR="${PMS_LOG_DIR:-}"
+PMS_URL="${PMS_URL:-${IPTV_TUNERR_PMS_URL:-}}"
+PMS_TOKEN="${PMS_TOKEN:-${IPTV_TUNERR_PMS_TOKEN:-${PLEX_TOKEN:-}}}"
+PMS_SESSION_POLL_SECS="${PMS_SESSION_POLL_SECS:-3}"
 SYNTH_TS_FILE="${SYNTH_TS_FILE:-}"
 REPLAY_TS_FILE="${REPLAY_TS_FILE:-}"
 STATIC_HLS_FROM_TS="${STATIC_HLS_FROM_TS:-false}"
@@ -93,6 +97,18 @@ resolve_ffmpeg_bin() {
 
 can_sudo_nopasswd() {
   sudo -n true >/dev/null 2>&1
+}
+
+resolve_pms_url() {
+  if [[ -n "$PMS_URL" ]]; then
+    printf '%s\n' "${PMS_URL%/}"
+    return 0
+  fi
+  if [[ -n "${PLEX_HOST:-}" ]]; then
+    printf 'http://%s\n' "${PLEX_HOST%/}"
+    return 0
+  fi
+  return 1
 }
 
 port_in_use() {
@@ -356,6 +372,38 @@ snapshot_pms_logs() {
   warn "PMS_LOG_DIR not readable and sudo unavailable: $src"
 }
 
+snapshot_pms_sessions_once() {
+  local label="${1:-snapshot}" base
+  base="$(resolve_pms_url || true)"
+  [[ -n "$base" && -n "$PMS_TOKEN" ]] || return 0
+  mkdir -p "$PMS_SESSION_DIR"
+  local out="$PMS_SESSION_DIR/${label}.xml"
+  if ! curl -fsS "${base}/status/sessions?X-Plex-Token=${PMS_TOKEN}" -o "$out" 2>"$out.stderr"; then
+    warn "PMS session snapshot failed for ${label} (${base}/status/sessions)"
+    rm -f "$out"
+    return 0
+  fi
+  rm -f "$out.stderr"
+}
+
+poll_pms_sessions() {
+  local base
+  base="$(resolve_pms_url || true)"
+  [[ -n "$base" && -n "$PMS_TOKEN" ]] || return 0
+  local poll="${PMS_SESSION_POLL_SECS:-3}"
+  case "$poll" in
+    ''|*[!0-9.]*)
+      warn "invalid PMS_SESSION_POLL_SECS=$poll; using 3"
+      poll="3"
+      ;;
+  esac
+  log "Polling Plex /status/sessions every ${poll}s from ${base}"
+  while true; do
+    snapshot_pms_sessions_once "$(date +%Y%m%d-%H%M%S)"
+    sleep "$poll"
+  done
+}
+
 detect_pms_log_dir() {
   local d pid
   for d in \
@@ -457,14 +505,16 @@ write_summary() {
     echo "  2) Replay HLS source (local TS)   -> /stream/replay"
     echo "  3) Wire capture (optional)        -> $TCPDUMP_PCAP"
     echo "  4) PMS log snapshot (optional)    -> $PMS_SNAPSHOT"
-    echo "  5) Concurrent request probes      -> $CURL_LOG + req IDs in plex log"
-    [[ -f "$PWPROBE_JSON" || -f "$PWPROBE_LOG" ]] && echo "  6) Plex Web probe (optional)      -> $PWPROBE_JSON + $PWPROBE_LOG"
+    echo "  5) PMS session snapshots (opt)    -> $PMS_SESSION_DIR"
+    echo "  6) Concurrent request probes      -> $CURL_LOG + req IDs in plex log"
+    [[ -f "$PWPROBE_JSON" || -f "$PWPROBE_LOG" ]] && echo "  7) Plex Web probe (optional)      -> $PWPROBE_JSON + $PWPROBE_LOG"
     echo
     echo "Key files:"
     echo "  iptv-tunerr log: $PLEX_LOG"
     echo "  synth ffmpeg log: $SYN_LOG"
     echo "  replay ffmpeg log: $REPLAY_LOG"
     echo "  curl log: $CURL_LOG"
+    [[ -d "$PMS_SESSION_DIR" ]] && echo "  pms session snapshots: $PMS_SESSION_DIR"
     [[ -f "$PWPROBE_JSON" ]] && echo "  plex web probe json: $PWPROBE_JSON"
     [[ -f "$PWPROBE_LOG" ]] && echo "  plex web probe log: $PWPROBE_LOG"
     [[ -f "$TCPDUMP_PCAP" ]] && echo "  tcpdump pcap: $TCPDUMP_PCAP"
@@ -515,6 +565,9 @@ main() {
   snapshot_pms_logs
   start_iptvtunerr
   wait_for_tuner || die "iptv-tunerr did not start on $TUNER_BASE_URL"
+  snapshot_pms_sessions_once "before-clients"
+  poll_pms_sessions &
+  PIDS+=("$!")
 
   run_optional_plex_web_probe
   run_concurrent_clients
@@ -528,6 +581,7 @@ main() {
   done
 
   snapshot_pms_logs
+  snapshot_pms_sessions_once "after-window"
   write_summary
   if [[ -x "$ROOT/scripts/live-race-harness-report.py" ]] || [[ -f "$ROOT/scripts/live-race-harness-report.py" ]]; then
     python3 "$ROOT/scripts/live-race-harness-report.py" --dir "$OUT_DIR" >"$OUT_DIR/report.run.log" 2>&1 || \
