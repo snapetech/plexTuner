@@ -83,6 +83,8 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	limit := g.effectiveTunerLimitLocked()
 	if g.inUse >= limit {
 		g.mu.Unlock()
+		finalStatus = "all_tuners_in_use"
+		finalErr = errors.New("all tuners in use")
 		log.Printf("gateway: req=%s channel=%q id=%s reject all-tuners-in-use limit=%d ua=%q", reqID, channel.GuideName, channelID, limit, r.UserAgent())
 		w.Header().Set("X-HDHomeRun-Error", "805") // All Tuners In Use
 		http.Error(w, "All tuners in use", http.StatusServiceUnavailable)

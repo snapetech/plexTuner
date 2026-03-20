@@ -34,18 +34,21 @@ def summarize_channel(meta_path: Path, run_seconds: float, stagger: float, ordin
     time_total = float(meta.get("time_total") or 0.0)
     bytes_written = int(meta.get("bytes_written") or 0)
     exit_code = int(meta.get("exit_code") or 0)
+    http_code = int(meta.get("http_code") or 0)
+    open_path_failure = http_code >= 400 or bytes_written <= 32
     premature = False
-    if exit_code == 0 and time_total and time_total < expected * 0.75 and bytes_written > 0:
+    if not open_path_failure and exit_code == 0 and time_total and time_total < expected * 0.75 and bytes_written > 0:
         premature = True
-    sustained = bytes_written > 0 and (exit_code == 28 or time_total >= expected * 0.75)
+    sustained = not open_path_failure and bytes_written > 0 and (exit_code == 28 or time_total >= expected * 0.75)
     return {
         "label": meta.get("label"),
         "url": meta.get("url"),
-        "http_code": meta.get("http_code"),
+        "http_code": http_code,
         "exit_code": exit_code,
         "bytes_written": bytes_written,
         "time_total": time_total,
         "expected_window_s": expected,
+        "open_path_failure": open_path_failure,
         "premature_exit": premature,
         "sustained_read": sustained,
     }
@@ -89,7 +92,7 @@ def build_report(out_dir: Path) -> dict[str, Any]:
 
     sustained = sum(1 for row in channels if row.get("sustained_read"))
     premature = sum(1 for row in channels if row.get("premature_exit"))
-    zero = sum(1 for row in channels if not row.get("bytes_written"))
+    zero = sum(1 for row in channels if row.get("open_path_failure"))
 
     synopsis = {
         "channel_count": len(channels),
@@ -158,7 +161,7 @@ def write_text(report: dict[str, Any], path: Path) -> None:
             continue
         lines.append(
             f"- {row.get('label')}: bytes={row.get('bytes_written')} exit={row.get('exit_code')} "
-            f"http={row.get('http_code')} time_total={row.get('time_total')} sustained={row.get('sustained_read')} premature={row.get('premature_exit')}"
+            f"http={row.get('http_code')} time_total={row.get('time_total')} sustained={row.get('sustained_read')} premature={row.get('premature_exit')} open_fail={row.get('open_path_failure')}"
         )
     lines.append("")
     lines.append("Hypotheses")

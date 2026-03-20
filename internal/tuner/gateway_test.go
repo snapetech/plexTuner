@@ -1326,6 +1326,37 @@ func TestGateway_stream_upstreamConcurrencyLimitReturnsAllTunersInUse(t *testing
 	if !strings.Contains(w.Body.String(), "All tuners in use") {
 		t.Fatalf("body=%q", w.Body.String())
 	}
+	if len(g.recentAttempts) != 1 {
+		t.Fatalf("recentAttempts=%d", len(g.recentAttempts))
+	}
+	if got := g.recentAttempts[0].FinalStatus; got != "upstream_concurrency_limited" {
+		t.Fatalf("final status=%q", got)
+	}
+}
+
+func TestGateway_stream_localTunerLimitRecordsAttemptStatus(t *testing.T) {
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "1", GuideName: "Ch1", StreamURL: "http://provider.example/live/1.m3u8"},
+		},
+		TunerCount: 1,
+		inUse:      1,
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("code: %d", w.Code)
+	}
+	if got := w.Header().Get("X-HDHomeRun-Error"); got != "805" {
+		t.Fatalf("X-HDHomeRun-Error=%q", got)
+	}
+	if len(g.recentAttempts) != 1 {
+		t.Fatalf("recentAttempts=%d", len(g.recentAttempts))
+	}
+	if got := g.recentAttempts[0].FinalStatus; got != "all_tuners_in_use" {
+		t.Fatalf("final status=%q", got)
+	}
 }
 
 func TestParseUpstreamConcurrencyLimit(t *testing.T) {
