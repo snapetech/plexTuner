@@ -197,6 +197,10 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				finalStatus = "hls_mux_target_failed"
 				finalErr = err
+				if errors.Is(err, errHLSMuxUnsupportedTargetScheme) {
+					http.Error(w, "unsupported hls mux target URL scheme", http.StatusBadRequest)
+					return
+				}
 				http.Error(w, "HLS mux target failed", http.StatusBadGateway)
 				return
 			}

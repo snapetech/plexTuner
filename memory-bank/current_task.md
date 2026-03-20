@@ -8,6 +8,8 @@
 
 **Latest (2026-03-20, auth + persistence):** The dedicated deck now gates the whole `internal/webui` origin behind HTTP Basic auth, defaulting to `admin` / `admin` unless `IPTV_TUNERR_WEBUI_USER` / `IPTV_TUNERR_WEBUI_PASS` override it. Shared deck telemetry/history can also persist across web UI restarts with `IPTV_TUNERR_WEBUI_STATE_FILE`, and the runtime snapshot/UI now explicitly call out whether the deck is still on default creds and whether memory is durable or only process-local.
 
+**Latest (2026-03-20, session UX):** Replaced the bare browser auth prompt with a dedicated deck login page and cookie-backed session flow on the `internal/webui` origin, while keeping direct HTTP Basic auth as a fallback for scripts and API clients. The deck now has an explicit sign-out control and redirects back to `/login` if the session expires during live use, so the front door finally feels like product UX instead of infra chrome.
+
 **Goal:** Start the new Live TV Intelligence product track: map the multi-PR roadmap, then ship the first visible foundation feature so IPTV Tunerr feels like an intelligent control plane instead of only a tuner bridge.
 
 **Approved epic (2026-03-19):** User confirmed **all four** tracks in [docs/epics/EPIC-lineup-parity.md](../docs/epics/EPIC-lineup-parity.md) — real HDHomeRun **client**, **web dashboard**, **SQLite EPG** model, **HLS/fMP4 profiles** (see stories `LP-001`–`LP-012`). Implementation is multi-PR; do not scope-creep unrelated refactors.

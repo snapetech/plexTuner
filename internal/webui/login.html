@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IPTV Tunerr Deck Login</title>
+<style>
+:root {
+  --paper: #efe6d6;
+  --paper-deep: #ddcfb9;
+  --ink: #1d1915;
+  --muted: #6f6559;
+  --line: rgba(53, 40, 26, 0.15);
+  --panel: rgba(255, 251, 245, 0.88);
+  --accent: #b44e21;
+  --accent-cool: #115f67;
+  --warn: #8d2d2d;
+  --shadow: 0 22px 60px rgba(27, 18, 8, 0.18);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  font-family: "Segoe UI", "Avenir Next", sans-serif;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at top left, rgba(180,78,33,0.22), transparent 28%),
+    radial-gradient(circle at right center, rgba(17,95,103,0.18), transparent 32%),
+    linear-gradient(160deg, var(--paper), var(--paper-deep));
+}
+.shell {
+  width: min(960px, calc(100vw - 32px));
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  border: 1px solid var(--line);
+  border-radius: 32px;
+  overflow: hidden;
+  background: rgba(255, 251, 245, 0.72);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+}
+.story, .auth {
+  padding: 34px;
+}
+.story {
+  background:
+    linear-gradient(135deg, rgba(255,248,239,0.92), rgba(246,232,212,0.88)),
+    linear-gradient(160deg, rgba(180,78,33,0.08), rgba(17,95,103,0.08));
+}
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.74rem;
+}
+h1 {
+  margin: 18px 0 14px;
+  max-width: 10ch;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(2.7rem, 5vw, 4.8rem);
+  line-height: 0.92;
+  letter-spacing: -0.05em;
+}
+p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+.rails {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+}
+.mini {
+  padding: 16px 18px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.58);
+}
+.mini strong {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+.auth {
+  display: grid;
+  align-content: center;
+  gap: 18px;
+  background: var(--panel);
+}
+.card {
+  padding: 24px;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.7);
+}
+.card h2 {
+  margin: 0 0 0.45rem;
+  font-size: 1.25rem;
+}
+form {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+label {
+  display: grid;
+  gap: 0.45rem;
+  font-size: 0.95rem;
+}
+input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 0.92rem 1rem;
+  font: inherit;
+  color: inherit;
+  background: rgba(255,255,255,0.94);
+}
+button {
+  border: 1px solid rgba(180,78,33,0.34);
+  border-radius: 999px;
+  padding: 0.9rem 1.1rem;
+  font: inherit;
+  color: white;
+  background: linear-gradient(135deg, var(--accent), #d96a33);
+  cursor: pointer;
+}
+.error {
+  padding: 0.85rem 1rem;
+  border-radius: 16px;
+  border: 1px solid rgba(141,45,45,0.18);
+  background: rgba(141,45,45,0.08);
+  color: var(--warn);
+}
+.hint {
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+.foot {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+@media (max-width: 860px) {
+  .shell { grid-template-columns: 1fr; }
+  .story, .auth { padding: 24px; }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+  <section class="story">
+    <div class="eyebrow">IPTV Tunerr · Control Deck</div>
+    <h1>Operator access with a front door.</h1>
+    <p>The dedicated deck now carries its own session lane instead of dropping operators into a browser auth prompt. Same origin, same telemetry memory, cleaner entry.</p>
+    <div class="rails">
+      <div class="mini">
+        <strong>Deck user</strong>
+        <span>Username: <code>[[.User]]</code></span>
+      </div>
+      <div class="mini">
+        <strong>Credential posture</strong>
+        <span>[[if .DefaultPassword]]Default password is still active. Change it with <code>IPTV_TUNERR_WEBUI_PASS</code>.[[else]]Custom deck password is configured.[[end]]</span>
+      </div>
+      <div class="mini">
+        <strong>Target after login</strong>
+        <span><code>[[.Next]]</code></span>
+      </div>
+    </div>
+  </section>
+  <aside class="auth">
+    <div class="card">
+      <h2>Sign in</h2>
+      <p>Access is scoped to the dedicated deck origin. Tuner endpoints still stay behind the deck proxy.</p>
+      [[if .Error]]<div class="error">[[.Error]]</div>[[end]]
+      <form method="post" action="/login">
+        <input type="hidden" name="next" value="[[.Next]]">
+        <label>
+          Username
+          <input type="text" name="username" value="[[.User]]" autocomplete="username" required>
+        </label>
+        <label>
+          Password
+          <input type="password" name="password" autocomplete="current-password" required autofocus>
+        </label>
+        <button type="submit">Enter Deck</button>
+      </form>
+      <p class="hint">Browser/API clients can still use HTTP Basic auth directly if they need scriptable access.</p>
+    </div>
+    <div class="foot">Rendered [[.Now]] UTC · version [[.Version]]</div>
+  </aside>
+</div>
+</body>
+</html>

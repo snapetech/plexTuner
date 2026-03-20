@@ -891,6 +891,7 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
           </select>
           <button id="reload-all" type="button">Reload Deck</button>
           <button id="open-modal" type="button">Open Raw Modal</button>
+          <button id="sign-out" type="button">Sign Out</button>
         </div>
       </div>
 
@@ -1422,6 +1423,11 @@ function filterCards(items) {
 
 async function fetchJSON(label, path) {
   const res = await fetch(path, { headers: { "Accept": "application/json" } });
+  if (res.status === 401) {
+    const next = encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
+    window.location.assign(`/login?next=${next}`);
+    throw new Error("deck session expired");
+  }
   const text = await res.text();
   let body;
   try {
@@ -2021,6 +2027,9 @@ function bindUI() {
     state.modalView = { kind: "raw", key: state.selectedRaw };
     openModal();
     renderRaw();
+  });
+  document.getElementById("sign-out").addEventListener("click", () => {
+    window.location.assign("/logout");
   });
   document.getElementById("modal-close").addEventListener("click", closeModal);
   document.getElementById("modal-refresh").addEventListener("click", refreshModal);

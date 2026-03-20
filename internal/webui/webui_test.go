@@ -2,11 +2,14 @@ package webui
 
 import (
 	"bytes"
+	"html/template"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestProxyBase(t *testing.T) {
@@ -106,23 +109,100 @@ func TestTelemetryPersistsToStateFile(t *testing.T) {
 	}
 }
 
-func TestBasicAuthOnly(t *testing.T) {
-	protected := basicAuthOnly(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+func TestSessionAuthOnlyRedirectsBrowserRequests(t *testing.T) {
+	s := &Server{User: "admin", Pass: "admin", sessions: map[string]time.Time{}}
+	protected := s.sessionAuthOnly(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
-	}), "admin", "admin")
+	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	w := httptest.NewRecorder()
+	protected.ServeHTTP(w, req)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d want 303", w.Code)
+	}
+	if location := w.Header().Get("Location"); !strings.HasPrefix(location, "/login?next=") {
+		t.Fatalf("location=%q", location)
+	}
+}
+
+func TestSessionAuthOnlyRejectsAPIsWithoutSession(t *testing.T) {
+	s := &Server{User: "admin", Pass: "admin", sessions: map[string]time.Time{}}
+	protected := s.sessionAuthOnly(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/debug/runtime.json", nil)
 	w := httptest.NewRecorder()
 	protected.ServeHTTP(w, req)
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("status=%d want 401", w.Code)
 	}
+}
 
-	req = httptest.NewRequest(http.MethodGet, "/", nil)
+func TestSessionAuthOnlyAllowsBasicAuthFallback(t *testing.T) {
+	s := &Server{User: "admin", Pass: "admin", sessions: map[string]time.Time{}}
+	protected := s.sessionAuthOnly(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/debug/runtime.json", nil)
 	req.SetBasicAuth("admin", "admin")
-	w = httptest.NewRecorder()
+	w := httptest.NewRecorder()
 	protected.ServeHTTP(w, req)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status=%d want 204", w.Code)
 	}
+	if len(w.Result().Cookies()) == 0 {
+		t.Fatal("expected session cookie")
+	}
+}
+
+func TestLoginAndLogoutFlow(t *testing.T) {
+	s := &Server{
+		User:      "admin",
+		Pass:      "admin",
+		Version:   "test",
+		loginTmpl: templateMustLogin(t),
+		sessions:  map[string]time.Time{},
+	}
+
+	badReq := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("username=admin&password=nope"))
+	badReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	badW := httptest.NewRecorder()
+	s.login(badW, badReq)
+	if badW.Code != http.StatusOK {
+		t.Fatalf("bad login status=%d", badW.Code)
+	}
+	if !strings.Contains(badW.Body.String(), "Wrong username or password.") {
+		t.Fatalf("bad login body=%q", badW.Body.String())
+	}
+
+	okReq := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("username=admin&password=admin&next=%2Frouting"))
+	okReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	okW := httptest.NewRecorder()
+	s.login(okW, okReq)
+	if okW.Code != http.StatusSeeOther {
+		t.Fatalf("ok login status=%d", okW.Code)
+	}
+	if location := okW.Header().Get("Location"); location != "/routing" {
+		t.Fatalf("location=%q want /routing", location)
+	}
+	cookies := okW.Result().Cookies()
+	if len(cookies) == 0 {
+		t.Fatal("expected session cookie")
+	}
+
+	logoutReq := httptest.NewRequest(http.MethodGet, "/logout", nil)
+	logoutReq.AddCookie(cookies[0])
+	logoutW := httptest.NewRecorder()
+	s.logout(logoutW, logoutReq)
+	if logoutW.Code != http.StatusSeeOther {
+		t.Fatalf("logout status=%d", logoutW.Code)
+	}
+}
+
+func templateMustLogin(t *testing.T) *template.Template {
+	t.Helper()
+	return template.Must(template.New("login").Delims("[[", "]]").Parse(loginHTML))
 }

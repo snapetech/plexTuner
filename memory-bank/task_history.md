@@ -2816,3 +2816,16 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
   Verification:
     - `go test ./...`
     - `./scripts/verify`
+
+---
+
+- Date: 2026-03-20
+  Title: Replace browser auth prompt with a real deck session flow
+  Summary:
+    - Added a dedicated `internal/webui/login.html` entry page with operator-facing login UX instead of relying on the browser’s raw Basic-auth prompt as the deck front door.
+    - Switched the dedicated deck origin to cookie-backed sessions with explicit logout and session-expiry redirects, while keeping HTTP Basic auth as a compatibility fallback for scriptable clients.
+    - Added visible sign-out affordances in the deck and kept the auth story consistent with the persisted/shared deck memory work.
+  Verification:
+    - `go test ./internal/webui`
+    - `go test ./...`
+    - `./scripts/verify`

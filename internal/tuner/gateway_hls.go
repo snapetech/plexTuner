@@ -21,6 +21,8 @@ import (
 // hlsQuotedURIAttr matches URI="..." in HLS tag lines (#EXT-X-KEY, #EXT-X-MAP, #EXT-X-STREAM-INF, …).
 var hlsQuotedURIAttr = regexp.MustCompile(`(?i)(URI=")([^"]*)(")`)
 
+var errHLSMuxUnsupportedTargetScheme = errors.New("unsupported hls mux target URL scheme")
+
 func hlsMuxCORSEnabled() bool {
 	v := strings.TrimSpace(strings.ToLower(os.Getenv("IPTV_TUNERR_HLS_MUX_CORS")))
 	switch v {
@@ -303,7 +305,7 @@ func rewriteHLSPlaylistToGatewayProxy(body []byte, upstreamURL string, channelID
 
 func (g *Gateway) serveHLSMuxTarget(w http.ResponseWriter, r *http.Request, client *http.Client, channelID, targetURL string) error {
 	if !safeurl.IsHTTPOrHTTPS(targetURL) {
-		return errors.New("invalid hls target URL scheme")
+		return errHLSMuxUnsupportedTargetScheme
 	}
 	req, err := g.newUpstreamRequest(r.Context(), r, targetURL)
 	if err != nil {

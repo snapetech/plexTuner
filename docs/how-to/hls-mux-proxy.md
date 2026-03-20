@@ -54,6 +54,7 @@ Byte-range HLS (**`#EXT-X-BYTERANGE`**) requires the player’s **`Range`** requ
 
 - This path **does not** replace Plex’s usual **MPEG-TS** HDHR stream expectation; use it where HLS-through-Tunerr is intentional.
 - **AES-128 / SAMPLE-AES / init map:** Tunerr rewrites **`URI="..."`** (case-insensitive **`uri="`**) on common HLS tags—including **`#EXT-X-KEY`** (**`METHOD=AES-128`** or **`METHOD=SAMPLE-AES`** with optional **`KEYFORMAT`**), **`#EXT-X-SESSION-KEY`** on master playlists, **`#EXT-X-MAP`**, **`#EXT-X-MEDIA`**, variant **`#EXT-X-STREAM-INF`**—so keys, init segments, and renditions use the same **`?mux=hls&seg=`** proxy and upstream cookies. Empty **`URI=""`** is left unchanged. **Widevine / FairPlay** (e.g. non-HTTP **`skd://`** key delivery), PlayReady, and other full DRM stacks are **not** implemented here—test with your client.
+- For direct **`?mux=hls&seg=`** requests, non-HTTP target schemes are rejected early with **`400 Bad Request`** ("unsupported hls mux target URL scheme") instead of generic `502`.
 
 See also
 --------

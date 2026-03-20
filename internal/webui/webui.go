@@ -4,8 +4,11 @@ package webui
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -25,9 +28,14 @@ import (
 // DefaultPort is 0xBEEF in decimal.
 const DefaultPort = 48879
 const defaultTelemetryHistoryLimit = 96
+const sessionCookieName = "iptvtunerr_deck_session"
+const sessionTTL = 12 * time.Hour
 
 //go:embed index.html
 var indexHTML string
+
+//go:embed login.html
+var loginHTML string
 
 // Server is the dedicated web dashboard HTTP server.
 type Server struct {
@@ -41,9 +49,12 @@ type Server struct {
 
 	tunerBase string
 	tmpl      *template.Template
+	loginTmpl *template.Template
 
 	telemetryMu      sync.Mutex
 	telemetrySamples []DeckTelemetrySample
+	sessionMu        sync.Mutex
+	sessions         map[string]time.Time
 }
 
 type DeckTelemetrySample struct {
@@ -94,11 +105,15 @@ func New(port int, tunerAddr, version string, allowLAN bool, stateFile, user, pa
 func (s *Server) Run(ctx context.Context) error {
 	s.tunerBase = proxyBase(s.TunerAddr)
 	s.tmpl = template.Must(template.New("webui").Delims("[[", "]]").Parse(indexHTML))
+	s.loginTmpl = template.Must(template.New("login").Delims("[[", "]]").Parse(loginHTML))
+	s.sessions = make(map[string]time.Time)
 	if err := s.loadState(); err != nil {
 		log.Printf("webui state load: %v", err)
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/login", s.login)
+	mux.HandleFunc("/logout", s.logout)
 	mux.HandleFunc("/api/", s.proxy)
 	mux.HandleFunc("/api", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/api/", http.StatusSeeOther)
@@ -110,7 +125,7 @@ func (s *Server) Run(ctx context.Context) error {
 	if !s.AllowLAN {
 		handler = localhostOnly(mux)
 	}
-	handler = basicAuthOnly(handler, s.User, s.Pass)
+	handler = s.sessionAuthOnly(handler)
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", s.Port),
@@ -295,6 +310,166 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.renderLogin(w, r, "")
+	case http.MethodPost:
+		if err := r.ParseForm(); err != nil {
+			s.renderLogin(w, r, "Invalid login form.")
+			return
+		}
+		user := strings.TrimSpace(r.Form.Get("username"))
+		pass := r.Form.Get("password")
+		if !s.validCredentials(user, pass) {
+			s.renderLogin(w, r, "Wrong username or password.")
+			return
+		}
+		s.startSession(w)
+		next := strings.TrimSpace(r.Form.Get("next"))
+		if next == "" || !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
+			next = "/"
+		}
+		http.Redirect(w, r, next, http.StatusSeeOther)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	if cookie, err := r.Cookie(sessionCookieName); err == nil {
+		s.sessionMu.Lock()
+		delete(s.sessions, cookie.Value)
+		s.sessionMu.Unlock()
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, errText string) {
+	next := strings.TrimSpace(r.URL.Query().Get("next"))
+	if next == "" {
+		next = strings.TrimSpace(r.Form.Get("next"))
+	}
+	if next == "" || !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
+		next = "/"
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = s.loginTmpl.Execute(w, map[string]interface{}{
+		"Version":         fallbackVersion(s.Version),
+		"Now":             time.Now().UTC().Format(time.RFC3339),
+		"Next":            next,
+		"Error":           errText,
+		"User":            s.User,
+		"DefaultPassword": s.User == "admin" && s.Pass == "admin",
+	})
+}
+
+func (s *Server) sessionAuthOnly(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/login" {
+			h.ServeHTTP(w, r)
+			return
+		}
+		if r.URL.Path == "/logout" {
+			h.ServeHTTP(w, r)
+			return
+		}
+		if s.hasValidSession(r) {
+			h.ServeHTTP(w, r)
+			return
+		}
+		user, pass, ok := r.BasicAuth()
+		if ok && s.validCredentials(user, pass) {
+			s.startSession(w)
+			h.ServeHTTP(w, r)
+			return
+		}
+		s.handleUnauthorized(w, r)
+	})
+}
+
+func (s *Server) handleUnauthorized(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api" || r.URL.Path == "/deck/telemetry.json" {
+		w.Header().Set("WWW-Authenticate", `Basic realm="IPTV Tunerr Deck"`)
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	next := r.URL.RequestURI()
+	if next == "" {
+		next = "/"
+	}
+	http.Redirect(w, r, "/login?next="+url.QueryEscape(next), http.StatusSeeOther)
+}
+
+func (s *Server) validCredentials(user, pass string) bool {
+	return subtle.ConstantTimeCompare([]byte(user), []byte(s.User)) == 1 &&
+		subtle.ConstantTimeCompare([]byte(pass), []byte(s.Pass)) == 1
+}
+
+func (s *Server) hasValidSession(r *http.Request) bool {
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return false
+	}
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+	s.pruneSessionsLocked()
+	expiry, ok := s.sessions[cookie.Value]
+	if !ok || time.Now().After(expiry) {
+		delete(s.sessions, cookie.Value)
+		return false
+	}
+	s.sessions[cookie.Value] = time.Now().Add(sessionTTL)
+	return true
+}
+
+func (s *Server) startSession(w http.ResponseWriter) {
+	token, err := newSessionToken()
+	if err != nil {
+		sum := sha256.Sum256([]byte(fmt.Sprintf("%d-%s-%s", time.Now().UnixNano(), s.User, s.Pass)))
+		token = hex.EncodeToString(sum[:])
+	}
+	s.sessionMu.Lock()
+	s.pruneSessionsLocked()
+	s.sessions[token] = time.Now().Add(sessionTTL)
+	s.sessionMu.Unlock()
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(sessionTTL.Seconds()),
+	})
+}
+
+func (s *Server) pruneSessionsLocked() {
+	now := time.Now()
+	for token, expiry := range s.sessions {
+		if now.After(expiry) {
+			delete(s.sessions, token)
+		}
+	}
+}
+
+func newSessionToken() (string, error) {
+	var buf [32]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf[:]), nil
+}
+
 func fallbackVersion(v string) string {
 	v = strings.TrimSpace(v)
 	if v == "" {
@@ -326,20 +501,6 @@ func localhostOnly(h http.Handler) http.Handler {
 			return
 		}
 		h.ServeHTTP(w, r)
-	})
-}
-
-func basicAuthOnly(h http.Handler, wantUser, wantPass string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		user, pass, ok := r.BasicAuth()
-		if ok &&
-			subtle.ConstantTimeCompare([]byte(user), []byte(wantUser)) == 1 &&
-			subtle.ConstantTimeCompare([]byte(pass), []byte(wantPass)) == 1 {
-			h.ServeHTTP(w, r)
-			return
-		}
-		w.Header().Set("WWW-Authenticate", `Basic realm="IPTV Tunerr Deck"`)
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
 	})
 }
 

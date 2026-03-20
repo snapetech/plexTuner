@@ -275,6 +275,24 @@ func TestGateway_ProviderBehaviorProfile_hlsMuxSegLimit(t *testing.T) {
 	}
 }
 
+func TestGateway_hlsMuxSeg_unsupportedScheme_returnsBadRequest(t *testing.T) {
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "0", GuideName: "Ch", StreamURL: "http://up.example/live.m3u8"},
+		},
+		TunerCount: 2,
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0?mux=hls&seg="+url.QueryEscape("skd://key-server/example"), nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d body=%q", w.Code, w.Body.String())
+	}
+	if !strings.Contains(strings.ToLower(w.Body.String()), "unsupported hls mux target url scheme") {
+		t.Fatalf("unexpected body: %q", w.Body.String())
+	}
+}
+
 func TestMaybeServeHLSMuxOPTIONS(t *testing.T) {
 	t.Run("enabled", func(t *testing.T) {
 		t.Setenv("IPTV_TUNERR_HLS_MUX_CORS", "1")
