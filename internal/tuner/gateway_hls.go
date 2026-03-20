@@ -23,6 +23,7 @@ var hlsQuotedURIAttr = regexp.MustCompile(`(?i)(URI=")([^"]*)(")`)
 var errHLSMuxUnsupportedTargetScheme = errors.New("unsupported hls mux target URL scheme")
 
 // hlsMuxDiagnosticHeader is a non-HDHR response header for ?mux=hls tooling (debug / browser clients).
+// Values include unsupported_target_scheme and upstream_http_<status> (e.g. upstream_http_404).
 const hlsMuxDiagnosticHeader = "X-IptvTunerr-Hls-Mux-Error"
 
 // Diagnostic header values (stable tokens for scripts).
