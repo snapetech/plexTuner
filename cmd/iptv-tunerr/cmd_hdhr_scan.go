@@ -20,6 +20,7 @@ func hdhrScanCommands() []commandSpec {
 	timeout := fs.Duration("timeout", 3*time.Second, "UDP discovery listen duration (ignored when -addr is set)")
 	addr := fs.String("addr", "", "Skip UDP; fetch discover.json + optional lineup from this device base URL (e.g. http://192.168.1.100)")
 	lineup := fs.Bool("lineup", false, "After discovery, GET lineup.json for each device")
+	guideXML := fs.Bool("guide-xml", false, "GET guide.xml from each device base (XMLTV); counts channels/programmes (not merged into Tunerr)")
 	jsonOut := fs.Bool("json", false, "Print machine-readable JSON to stdout")
 
 	return []commandSpec{
@@ -31,7 +32,7 @@ func hdhrScanCommands() []commandSpec {
 			Run: func(cfg *config.Config, args []string) {
 				_ = cfg
 				_ = fs.Parse(args)
-				handleHdhrScan(*timeout, *addr, *lineup, *jsonOut)
+				handleHdhrScan(*timeout, *addr, *lineup, *guideXML, *jsonOut)
 			},
 		},
 	}
@@ -41,12 +42,33 @@ func httpClientDefault() *http.Client {
 	return &http.Client{Timeout: 30 * time.Second}
 }
 
-func handleHdhrScan(timeout time.Duration, addr string, wantLineup, jsonOut bool) {
+func httpClientGuide() *http.Client {
+	return &http.Client{Timeout: 90 * time.Second}
+}
+
+func guideXMLSummary(ctx context.Context, base string) map[string]any {
+	raw, err := hdhomerun.FetchGuideXML(ctx, httpClientGuide(), base)
+	if err != nil {
+		return map[string]any{"error": err.Error()}
+	}
+	st, err := hdhomerun.AnalyzeGuideXMLStats(raw)
+	if err != nil {
+		return map[string]any{"error": err.Error(), "bytes": len(raw)}
+	}
+	return map[string]any{
+		"url":        hdhomerun.GuideURLFromBase(base),
+		"bytes":      st.Bytes,
+		"channels":   st.ChannelTags,
+		"programmes": st.Programmes,
+	}
+}
+
+func handleHdhrScan(timeout time.Duration, addr string, wantLineup, wantGuideXML, jsonOut bool) {
 	ctx := context.Background()
 	hc := httpClientDefault()
 
 	if strings.TrimSpace(addr) != "" {
-		runHTTPOnly(ctx, hc, strings.TrimSpace(addr), wantLineup, jsonOut)
+		runHTTPOnly(ctx, hc, strings.TrimSpace(addr), wantLineup, wantGuideXML, jsonOut)
 		return
 	}
 
@@ -99,6 +121,16 @@ func handleHdhrScan(timeout time.Duration, addr string, wantLineup, jsonOut bool
 			}
 			payload["lineups"] = lineups
 		}
+		if wantGuideXML {
+			guides := []map[string]any{}
+			for _, d := range devs {
+				if d.BaseURL == "" {
+					continue
+				}
+				guides = append(guides, mergeMap(map[string]any{"base_url": d.BaseURL}, guideXMLSummary(ctx, d.BaseURL)))
+			}
+			payload["guide_xml"] = guides
+		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(payload); err != nil {
@@ -124,14 +156,33 @@ func handleHdhrScan(timeout time.Duration, addr string, wantLineup, jsonOut bool
 			doc, err := hdhomerun.FetchLineupJSON(ctx, hc, d.LineupURL)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "  lineup: %v\n", err)
-				continue
+			} else {
+				fmt.Printf("  channels=%d scan_in_progress=%d source=%q\n", len(doc.Channels), doc.ScanInProgress, doc.Source)
 			}
-			fmt.Printf("  channels=%d scan_in_progress=%d source=%q\n", len(doc.Channels), doc.ScanInProgress, doc.Source)
+		}
+		if wantGuideXML && d.BaseURL != "" {
+			g := guideXMLSummary(ctx, d.BaseURL)
+			if errStr, ok := g["error"].(string); ok {
+				fmt.Fprintf(os.Stderr, "  guide.xml: %s\n", errStr)
+			} else {
+				fmt.Printf("  guide.xml: bytes=%v channels=%v programmes=%v\n", g["bytes"], g["channels"], g["programmes"])
+			}
 		}
 	}
 }
 
-func runHTTPOnly(ctx context.Context, hc *http.Client, base string, wantLineup, jsonOut bool) {
+func mergeMap(a map[string]any, b map[string]any) map[string]any {
+	out := make(map[string]any, len(a)+len(b))
+	for k, v := range a {
+		out[k] = v
+	}
+	for k, v := range b {
+		out[k] = v
+	}
+	return out
+}
+
+func runHTTPOnly(ctx context.Context, hc *http.Client, base string, wantLineup, wantGuideXML, jsonOut bool) {
 	dj, err := hdhomerun.FetchDiscoverJSON(ctx, hc, base)
 	if err != nil {
 		log.Printf("hdhr-scan: discover.json: %v", err)
@@ -150,6 +201,9 @@ func runHTTPOnly(ctx context.Context, hc *http.Client, base string, wantLineup, 
 				os.Exit(1)
 			}
 			out["lineup"] = doc
+		}
+		if wantGuideXML {
+			out["guide_xml"] = guideXMLSummary(ctx, dj.BaseURL)
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -172,5 +226,13 @@ func runHTTPOnly(ctx context.Context, hc *http.Client, base string, wantLineup, 
 			os.Exit(1)
 		}
 		fmt.Printf("channels=%d scan_in_progress=%d source=%q\n", len(doc.Channels), doc.ScanInProgress, doc.Source)
+	}
+	if wantGuideXML {
+		g := guideXMLSummary(ctx, dj.BaseURL)
+		if errStr, ok := g["error"].(string); ok {
+			log.Printf("guide.xml: %v", errStr)
+		} else {
+			fmt.Printf("guide.xml: bytes=%v channels=%v programmes=%v\n", g["bytes"], g["channels"], g["programmes"])
+		}
 	}
 }

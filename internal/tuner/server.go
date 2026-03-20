@@ -54,13 +54,15 @@ const NoLineupCap = -1
 // Server runs the HDHR emulator + XMLTV + stream gateway.
 // Handlers are kept so UpdateChannels can refresh the channel list without restart.
 type Server struct {
-	Addr                string
-	BaseURL             string
-	TunerCount          int
-	LineupMaxChannels   int    // max channels in lineup/guide (default PlexDVRMaxChannels); 0 = use PlexDVRMaxChannels
-	GuideNumberOffset   int    // add offset to exposed GuideNumber values to avoid cross-DVR collisions in Plex clients
-	DeviceID            string // HDHomeRun discover.json; set from IPTV_TUNERR_DEVICE_ID
-	FriendlyName        string // HDHomeRun discover.json; set from IPTV_TUNERR_FRIENDLY_NAME
+	Addr              string
+	BaseURL           string
+	TunerCount        int
+	LineupMaxChannels int    // max channels in lineup/guide (default PlexDVRMaxChannels); 0 = use PlexDVRMaxChannels
+	GuideNumberOffset int    // add offset to exposed GuideNumber values to avoid cross-DVR collisions in Plex clients
+	DeviceID          string // HDHomeRun discover.json; set from IPTV_TUNERR_DEVICE_ID
+	FriendlyName      string // HDHomeRun discover.json; set from IPTV_TUNERR_FRIENDLY_NAME
+	// AppVersion is shown on /ui/ (optional; set from main.Version in cmd).
+	AppVersion          string
 	StreamBufferBytes   int    // 0 = no buffer; -1 = auto; e.g. 2097152 for 2 MiB
 	StreamTranscodeMode string // "off" | "on" | "auto"
 	AutopilotStateFile  string // optional JSON file for remembered dna_id+client_class playback decisions
@@ -1001,6 +1003,14 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/live.m3u", m3uServe)
 	mux.Handle("/stream/", gateway)
 	mux.Handle("/healthz", s.serveHealth())
+	mux.HandleFunc("/ui", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		http.Redirect(w, r, "/ui/", http.StatusSeeOther)
+	})
+	mux.Handle("/ui/", s.serveOperatorUI())
 	mux.Handle("/channels/report.json", s.serveChannelReport())
 	mux.Handle("/channels/leaderboard.json", s.serveChannelLeaderboard())
 	mux.Handle("/channels/dna.json", s.serveChannelDNAReport())

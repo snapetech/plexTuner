@@ -696,8 +696,18 @@ Flags:
 | `-addr` | Base URL of the device (e.g. `http://192.168.1.100`) — HTTP-only mode |
 | `-lineup` | Also GET `lineup.json` and print channel count / metadata |
 | `-json` | JSON output for scripting |
+| `-guide-xml` | GET `guide.xml` (XMLTV) from each device base; prints byte size and counts `<channel>` / `<programme>` elements (does **not** merge into Tunerr) |
 
 Merge semantics for HDHR + IPTV catalogs: [adr/0002-hdhr-hardware-iptv-merge.md](../adr/0002-hdhr-hardware-iptv-merge.md).
+
+### Operator web UI (`serve` / `run`)
+
+| Env | Meaning |
+|-----|---------|
+| `IPTV_TUNERR_UI_DISABLED` | If `1`, `/ui/` is not served. |
+| `IPTV_TUNERR_UI_ALLOW_LAN` | If `1`, allow non-loopback clients to open `/ui/` (default: **localhost only**). |
+
+Browser URL: `http://127.0.0.1:<port>/ui/` — links to `/healthz`, `/guide/health.json`, `/channels/report.json`.
 
 ## `iptv-tunerr probe`
 

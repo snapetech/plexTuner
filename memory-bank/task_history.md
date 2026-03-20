@@ -23,6 +23,21 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: PR-2/3 partial: HDHR guide.xml probe + operator /ui
+  Summary:
+    - `internal/hdhomerun/guide.go`: `FetchGuideXML`, `AnalyzeGuideXMLStats`, `GuideURLFromBase`; `hdhr-scan -guide-xml`.
+    - `internal/tuner/operator_ui.go` + `static/ui/index.html`: embedded `/ui/` dashboard; `Server.AppVersion`; `IPTV_TUNERR_UI_DISABLED` / `IPTV_TUNERR_UI_ALLOW_LAN`; `Version` wired in `newRuntimeServer`.
+    - Docs: CLI reference, CHANGELOG, features, epic status, README.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - No Tunerr EPG pipeline merge yet (LP-003 follow-on).
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/hdhomerun/guide.go`, `internal/tuner/operator_ui.go`, `docs/reference/cli-and-env-reference.md`
+
+- Date: 2026-03-19
   Title: PR-1 LP-001/LP-002: hdhr-scan + HDHR client + ADR 0002 merge semantics
   Summary:
     - Added `internal/hdhomerun/client.go`: `DiscoverLAN`, `ParseDiscoverReply`, `FetchDiscoverJSON`, `FetchLineupJSON`, URL helpers; `client_test.go` for TLV round-trip.

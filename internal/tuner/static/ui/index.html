@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<title>IPTV Tunerr</title>
+<style>
+body { font-family: system-ui, sans-serif; margin: 1.5rem; max-width: 42rem; line-height: 1.45; }
+a { color: #0b5; }
+code { font-size: 0.9em; }
+</style>
+</head>
+<body>
+<h1>IPTV Tunerr</h1>
+<p>Operator UI (restricted to <strong>localhost</strong> unless <code>IPTV_TUNERR_UI_ALLOW_LAN=1</code>).</p>
+<p>Version <strong>{{VERSION}}</strong></p>
+<ul>
+<li><a href="../healthz">/healthz</a> — tuner / catalog readiness</li>
+<li><a href="../guide/health.json">/guide/health.json</a> — merged guide quality</li>
+<li><a href="../channels/report.json">/channels/report.json</a> — channel intelligence</li>
+</ul>
+<p><small>Disable this page: <code>IPTV_TUNERR_UI_DISABLED=1</code></small></p>
+</body>
+</html>

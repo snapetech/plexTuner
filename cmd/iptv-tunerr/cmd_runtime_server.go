@@ -31,6 +31,7 @@ func newRuntimeServer(cfg *config.Config, addr, baseURL, deviceID, friendlyName 
 	}
 	return &tuner.Server{
 		Addr:                addr,
+		AppVersion:          Version,
 		BaseURL:             baseURL,
 		TunerCount:          cfg.TunerCount,
 		LineupMaxChannels:   lineupCap,
