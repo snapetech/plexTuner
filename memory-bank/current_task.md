@@ -2,7 +2,11 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Latest (2026-03-19):** **INT-006** gateway split landed: **`gateway_servehttp.go`** (**`ServeHTTP`** + upstream loop), **`gateway_mux_ratelimit.go`** (mux seg rate + **`note*MuxSeg`** helpers), slim **`gateway.go`**. **INT-001 tail:** **`internal/materializer`** nil-client paths and **`Server`** loopback stream fetch use **`httpclient`** (not **`http.DefaultClient`**). **`./scripts/verify`** OK.
+**Latest (2026-03-19, HR-002 harnessing):** Bridging the repo-local proof gap for Plex Web startup validation. Current slice wires the optional external **`plex-web-livetv-probe.py`** into **`scripts/live-race-harness.sh`** via **`PWPROBE_SCRIPT`** / **`PWPROBE_ARGS`**, captures probe JSON/log/exit code in the harness bundle, and teaches **`live-race-harness-report.py`** to summarize those artifacts when present.
+
+**Latest (2026-03-19):** Lineup-parity **documentation + hygiene slice:** **`gateway_upstream_cf.go`** (**`tryRecoverCFUpstream`**); **`internal/hdhomerun`** + **`hdhr-scan`** on **`httpclient`**; [EPIC-lineup-parity](docs/epics/EPIC-lineup-parity.md) **implementation status**; **`work_breakdown`** LP progress; **`opportunities.md`** superseded stale audit rows; **hls-mux-toolkit** related-code paths updated. **`./scripts/verify`** OK. *Deferred (multi-PR):* SQLite guide **LP-007–009**, Postgres, incremental XMLTV contract, always-on recorder.
+
+**Latest (2026-03-19):** **INT-006** follow-up: upstream URL loop + stream dispatch extracted to **`gateway_stream_upstream.go`** (**`walkStreamUpstreams`**); **`gateway_servehttp.go`** is tuner slot + **`ServeHTTP`** wiring only. **INT-001 tail** + prior **`gateway_*`** splits unchanged. **`./scripts/verify`** OK.
 
 **Latest (2026-03-19, work breakdown begin→end):** Working the intelligence cross-wiring epic from the **front** while another agent works the **back**. Current slice is **`INT-001`**: new shared **`internal/guideinput`** helpers centralize provider XMLTV URL generation plus local-file / URL loading for guide XML, XMLTV channels, alias overrides, and match reports on the repo’s shared HTTP path. Report tooling, catch-up preview helpers, and tuner guide-health callers are rewired; next is full **`./scripts/verify`**, then landing **`INT-001`** cleanly before moving into the first real **`INT-002`** gap.
 

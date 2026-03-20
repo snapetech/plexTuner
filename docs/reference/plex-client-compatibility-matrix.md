@@ -80,6 +80,15 @@ python3 /path/to/plex/scripts/plex-web-livetv-probe.py --dvr <id> --channel-id <
 
 **Evidence bundle:** save **probe JSON**, the matching **Tunerr log slice** (`gateway:` lines for the same wall time), and optionally **`/debug/stream-attempts.json`**. See [known_issues](../../memory-bank/known_issues.md) for probe/tuner correlation caveats (wrong log file inference on multi-instance deployments).
 
+If you already use [live-race-harness.sh](../../scripts/live-race-harness.sh), set:
+
+```bash
+export PWPROBE_SCRIPT=/path/to/plex-web-livetv-probe.py
+export PWPROBE_ARGS='--dvr 138 --channel-id 112'
+```
+
+The harness will capture **`plex-web-probe.json`**, **`plex-web-probe.log`**, and exit code in the same bundle, and [live-race-harness-report.py](../../scripts/live-race-harness-report.py) will summarize the probe result when present.
+
 ## Plex Web regression sample (HR-002)
 
 **Goal:** reproducible proof that **Plex Web** can complete **`start.mpd`** / DASH init on a **small agreed channel set** through Tunerr’s **direct WebSafe** path (real XMLTV + deduped lineup as deployed), with logs that explain startup.

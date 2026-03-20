@@ -108,6 +108,7 @@ class Parser:
         self.pms_counts: Counter = Counter()
         self.pms_session_ids: Counter = Counter()
         self.pms_samples: dict[str, list[str]] = defaultdict(list)
+        self.plex_web_probe: dict[str, Any] = {}
 
     def req(self, req_id: str) -> ReqTrace:
         if req_id not in self.reqs:
@@ -284,6 +285,38 @@ class Parser:
             except OSError:
                 continue
 
+    def parse_plex_web_probe(self, out_dir: Path) -> None:
+        json_path = out_dir / "plex-web-probe.json"
+        log_path = out_dir / "plex-web-probe.log"
+        exit_path = out_dir / "plex-web-probe.exitcode"
+        if not json_path.is_file() and not log_path.is_file() and not exit_path.is_file():
+            return
+        probe: dict[str, Any] = {"present": True}
+        if exit_path.is_file():
+            raw = exit_path.read_text(encoding="utf-8", errors="replace").strip()
+            try:
+                probe["exit_code"] = int(raw or "0")
+            except ValueError:
+                probe["exit_code"] = raw
+        if json_path.is_file():
+            try:
+                body = json.loads(json_path.read_text(encoding="utf-8", errors="replace"))
+                probe["json_ok"] = True
+                if isinstance(body, dict):
+                    for key in ("ok", "status", "detail", "dvr", "channel", "channel_id", "elapsed_s", "elapsed_ms", "start_mpd", "startmpd"):
+                        if key in body:
+                            probe[key] = body[key]
+                    probe["top_keys"] = sorted(body.keys())[:12]
+                else:
+                    probe["json_type"] = type(body).__name__
+            except Exception as exc:
+                probe["json_ok"] = False
+                probe["json_error"] = str(exc)
+        if log_path.is_file():
+            lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            probe["log_tail"] = lines[-5:]
+        self.plex_web_probe = probe
+
     def build_report(self, out_dir: Path) -> dict[str, Any]:
         reqs = []
         for req_id in sorted(self.reqs):
@@ -343,6 +376,8 @@ class Parser:
             "pms_counts": {k: int(v) for k, v in self.pms_counts.items()},
             "pms_session_ids_top": self.pms_session_ids.most_common(10),
         }
+        if self.plex_web_probe:
+            synopsis["plex_web_probe"] = self.plex_web_probe
 
         hypotheses = []
         if synopsis["synthetic_probe_nonzero"] and not synopsis["replay_probe_nonzero"]:
@@ -395,6 +430,28 @@ def write_text_report(report: dict[str, Any], out_path: Path) -> None:
             f"- Request duration (ms): count={int(rd['count'])} min={rd['min']:.1f} avg={rd['avg']:.1f} max={rd['max']:.1f}"
         )
     lines.append("")
+
+    probe = syn.get("plex_web_probe") or {}
+    if probe:
+        lines.append("Plex Web Probe")
+        lines.append(f"- Present: {probe.get('present')}")
+        if "exit_code" in probe:
+            lines.append(f"- Exit code: {probe.get('exit_code')}")
+        if "ok" in probe:
+            lines.append(f"- ok: {probe.get('ok')}")
+        if probe.get("status") is not None:
+            lines.append(f"- status: {probe.get('status')}")
+        if probe.get("detail") is not None:
+            lines.append(f"- detail: {probe.get('detail')}")
+        if probe.get("elapsed_s") is not None:
+            lines.append(f"- elapsed_s: {probe.get('elapsed_s')}")
+        elif probe.get("elapsed_ms") is not None:
+            lines.append(f"- elapsed_ms: {probe.get('elapsed_ms')}")
+        if probe.get("top_keys"):
+            lines.append(f"- top-level keys: {', '.join(str(x) for x in probe['top_keys'])}")
+        for row in probe.get("log_tail", []):
+            lines.append(f"  log: {row}")
+        lines.append("")
 
     pms_counts = syn.get("pms_counts", {}) or {}
     lines.append("PMS Signals")
@@ -453,6 +510,7 @@ def main() -> int:
     pms_dir = out_dir / "pms-logs"
     if pms_dir.is_dir():
         parser.parse_pms_logs(pms_dir)
+    parser.parse_plex_web_probe(out_dir)
 
     report = parser.build_report(out_dir)
     json_path = out_dir / "report.json"

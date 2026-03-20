@@ -204,8 +204,19 @@ Artifacts are written under `.diag/live-race/<timestamp>/` and include:
 - `summary.txt`
 - optional `tuner-loopback.pcap`
 - optional PMS log snapshot directory
+- optional `plex-web-probe.json` / `plex-web-probe.log` / exit code when `PWPROBE_SCRIPT` is set
 
 Start one or more real Plex clients during the harness run window to correlate PMS + tuner behavior against the synthetic/replay probes.
+
+To include an existing external Plex Web probe in the same bundle:
+
+```bash
+export PWPROBE_SCRIPT=/path/to/plex-web-livetv-probe.py
+export PWPROBE_ARGS='--dvr 138 --channel-id 112'
+RUN_SECONDS=30 CONCURRENCY=6 ./scripts/live-race-harness.sh
+```
+
+The harness stores the probe artifacts in the same output directory, and `live-race-harness-report.py` prints a compact probe summary when those files are present.
 
 ---
 

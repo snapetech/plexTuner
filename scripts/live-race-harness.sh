@@ -28,6 +28,9 @@ CURL_LOG="$OUT_DIR/curl.log"
 SUMMARY="$OUT_DIR/summary.txt"
 TCPDUMP_PCAP="$OUT_DIR/tuner-loopback.pcap"
 PMS_SNAPSHOT="$OUT_DIR/pms-logs"
+PWPROBE_JSON="$OUT_DIR/plex-web-probe.json"
+PWPROBE_LOG="$OUT_DIR/plex-web-probe.log"
+PWPROBE_EXIT="$OUT_DIR/plex-web-probe.exitcode"
 
 PORT_ALIAS="${PORT:-}"
 TUNER_HOST="${TUNER_HOST:-127.0.0.1}"
@@ -50,6 +53,9 @@ STATIC_HLS_EXTINF="${STATIC_HLS_EXTINF:-8.0}"
 STATIC_HLS_REPEAT="${STATIC_HLS_REPEAT:-20}"
 KEEP_WORKDIR="${KEEP_WORKDIR:-false}"
 HARNESS_FFMPEG_BIN="${HARNESS_FFMPEG_BIN:-${IPTV_TUNERR_FFMPEG_PATH:-ffmpeg}}"
+PWPROBE_PYTHON="${PWPROBE_PYTHON:-python3}"
+PWPROBE_SCRIPT="${PWPROBE_SCRIPT:-}"
+PWPROBE_ARGS="${PWPROBE_ARGS:-}"
 
 # Harness knobs for iptv-tunerr (race-focused defaults)
 export IPTV_TUNERR_STREAM_BUFFER_BYTES="${IPTV_TUNERR_STREAM_BUFFER_BYTES:-0}"
@@ -452,18 +458,33 @@ write_summary() {
     echo "  3) Wire capture (optional)        -> $TCPDUMP_PCAP"
     echo "  4) PMS log snapshot (optional)    -> $PMS_SNAPSHOT"
     echo "  5) Concurrent request probes      -> $CURL_LOG + req IDs in plex log"
+    [[ -f "$PWPROBE_JSON" || -f "$PWPROBE_LOG" ]] && echo "  6) Plex Web probe (optional)      -> $PWPROBE_JSON + $PWPROBE_LOG"
     echo
     echo "Key files:"
     echo "  iptv-tunerr log: $PLEX_LOG"
     echo "  synth ffmpeg log: $SYN_LOG"
     echo "  replay ffmpeg log: $REPLAY_LOG"
     echo "  curl log: $CURL_LOG"
+    [[ -f "$PWPROBE_JSON" ]] && echo "  plex web probe json: $PWPROBE_JSON"
+    [[ -f "$PWPROBE_LOG" ]] && echo "  plex web probe log: $PWPROBE_LOG"
     [[ -f "$TCPDUMP_PCAP" ]] && echo "  tcpdump pcap: $TCPDUMP_PCAP"
     echo
     echo "Suggested grep:"
     echo "  grep -E 'req=|startup-gate|null-ts-keepalive|bootstrap-ts|first-bytes|all-tuners-in-use|acquire|release' \"$PLEX_LOG\""
     echo "  python3 \"$ROOT/scripts/live-race-harness-report.py\" --dir \"$OUT_DIR\" --print"
   } >"$SUMMARY"
+}
+
+run_optional_plex_web_probe() {
+  [[ -n "$PWPROBE_SCRIPT" ]] || return 0
+  [[ -f "$PWPROBE_SCRIPT" ]] || die "PWPROBE_SCRIPT not found: $PWPROBE_SCRIPT"
+  log "Launching optional Plex Web probe via $PWPROBE_SCRIPT"
+  (
+    set +e
+    "$PWPROBE_PYTHON" "$PWPROBE_SCRIPT" --json-out "$PWPROBE_JSON" $PWPROBE_ARGS >"$PWPROBE_LOG" 2>&1
+    echo $? >"$PWPROBE_EXIT"
+  ) &
+  PIDS+=("$!")
 }
 
 main() {
@@ -495,6 +516,7 @@ main() {
   start_iptvtunerr
   wait_for_tuner || die "iptv-tunerr did not start on $TUNER_BASE_URL"
 
+  run_optional_plex_web_probe
   run_concurrent_clients
 
   log "Harness running for ${RUN_SECONDS}s (you can also trigger Plex clients during this window)"
