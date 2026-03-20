@@ -58,7 +58,7 @@ You can inspect channel health, guide confidence, provider behavior, stale Plex-
 - [Core Capabilities](#core-capabilities)
 - [Channel Intelligence](#channel-intelligence)
 - [Cloudflare Provider Support](#cloudflare-provider-support)
-- [Setup Paths](#setup-paths)
+- [Setup Paths](#setup-paths) — wizard · programmatic · supervisor · HDHR network mode
 - [Supervisor Mode](#supervisor-mode)
 - [VOD Filesystem](#vod-filesystem-linux-only)
 - [Kubernetes](#kubernetes)
@@ -97,13 +97,41 @@ IPTV_TUNERR_BASE_URL=http://<this-host>:5004
 
 This fetches the catalog, checks provider health, and starts the tuner server on `:5004`.
 
-### Add to Plex (Wizard)
+### Connect to your media server
 
-Plex → Settings → Live TV & DVR → Set up
-Device URL: `http://<this-host>:5004`
-Guide URL: `http://<this-host>:5004/guide.xml`
+Three ways to add IPTV Tunerr to Plex, Emby, or Jellyfin — pick the one that fits your setup:
 
-For Docker, systemd, and bare-metal setups: [`docs/how-to/deployment.md`](docs/how-to/deployment.md)
+| Method | Best for |
+|--------|----------|
+| **HDHR wizard** | Quick setup, all three servers, ≤480 channels |
+| **Programmatic registration** | Headless, large lineups, repeatable setup |
+| **Supervisor-level registration** | Multi-instance fleet (Emby/Jellyfin only) |
+
+**Plex — wizard:**
+> Plex → Settings → Live TV & DVR → Set up DVR
+> Device URL: `http://<this-host>:5004`
+> Guide URL: `http://<this-host>:5004/guide.xml`
+
+**Emby or Jellyfin — wizard:**
+> Dashboard → Live TV → + (tuner hosts) → HDHomeRun
+> Device URL: `http://<this-host>:5004`
+> Then: Dashboard → Live TV → + (guide) → XMLTV
+> Guide URL: `http://<this-host>:5004/guide.xml`
+
+**Programmatic (all servers, headless):**
+```bash
+# Plex
+./iptv-tunerr run -register-plex
+
+# Emby
+./iptv-tunerr run -register-emby -emby-state-file /var/lib/tunerr/emby-reg.json
+
+# Jellyfin
+./iptv-tunerr run -register-jellyfin -jellyfin-state-file /var/lib/tunerr/jf-reg.json
+```
+
+Full connection guide: [Setup Paths](#setup-paths)
+For Docker, systemd, and bare-metal: [`docs/how-to/deployment.md`](docs/how-to/deployment.md)
 
 ---
 
@@ -607,21 +635,155 @@ Full guide: [docs/how-to/cloudflare-bypass.md](docs/how-to/cloudflare-bypass.md)
 
 ## Setup Paths
 
-How you connect IPTV Tunerr to your media server:
+IPTV Tunerr supports three distinct registration methods. Choose by use case:
 
-### HDHR wizard
+| Use case | Recommended path |
+|----------|-----------------|
+| Personal setup, Plex, ≤480 channels | HDHR wizard |
+| Large lineup, headless / scripted | Programmatic registration |
+| Emby/Jellyfin with multi-instance fleet | Supervisor-level registration |
+| Media server on a different subnet that needs UDP discovery | HDHR network mode |
 
-IPTV Tunerr appears as an HDHomeRun device on your network. Add it through the standard Live TV wizard in Plex, Emby, or Jellyfin — no special steps.
+---
 
-- Device URL: `http://<host>:5004`
-- Guide URL: `http://<host>:5004/guide.xml`
-- Plex wizard caps lineup at 480 channels; use injection path to bypass
+### Path 1: HDHR Wizard (all three servers)
 
-### Programmatic / DVR injection
+IPTV Tunerr emulates an HDHomeRun network tuner. Add it via the standard Live TV wizard — no plugins or custom drivers required.
 
-IPTV Tunerr registers DVRs and guide data directly via the media server's API or database — no wizard, no UI interaction. Supports full channel counts, multi-DVR category fleets, repeatable headless setup, and guide reload workflows.
+**Plex:**
+1. Plex → Settings → Live TV & DVR → Set up DVR
+2. Device URL: `http://<host>:5004`
+3. Guide data URL: `http://<host>:5004/guide.xml`
+
+> Plex's wizard caps the visible lineup at 480 channels. If you have more, use programmatic registration instead.
+
+**Emby:**
+1. Dashboard → Live TV → Tuner Hosts → +
+2. Type: HDHomeRun → URL: `http://<host>:5004`
+3. Dashboard → Live TV → TV Guide Data Providers → +
+4. Type: XMLTV → URL: `http://<host>:5004/guide.xml`
+
+> Emby Live TV requires an [Emby Premiere](https://emby.media/premiere.html) subscription.
+
+**Jellyfin:**
+1. Dashboard → Live TV → Tuner Hosts → +
+2. Type: HDHomeRun → URL: `http://<host>:5004`
+3. Dashboard → Live TV → TV Guide Data Providers → +
+4. Type: XMLTV → URL: `http://<host>:5004/guide.xml`
+
+---
+
+### Path 2: Programmatic / Auto-Registration
+
+IPTV Tunerr registers the tuner and guide provider directly via the media server API — no UI interaction required. Useful for:
+- headless / automated deployments
+- lineups over 480 channels (bypasses Plex wizard cap)
+- repeatable setup in CI or container orchestration
+- a watchdog that re-registers if the channel count drops
+
+**Plex:**
+```bash
+IPTV_TUNERR_PLEX_URL=http://127.0.0.1:32400
+IPTV_TUNERR_PLEX_TOKEN=<your-plex-token>
+
+./iptv-tunerr run -register-plex
+```
+
+Plex registration injects a full DVR entry via the Plex API. The tuner and guide are registered in one pass.
 
 Reference: [`docs/reference/plex-dvr-lifecycle-and-api.md`](docs/reference/plex-dvr-lifecycle-and-api.md)
+
+**Emby:**
+```bash
+IPTV_TUNERR_EMBY_HOST=http://127.0.0.1:8096
+IPTV_TUNERR_EMBY_TOKEN=<admin-api-key>
+
+# One-shot registration
+./iptv-tunerr run -register-emby
+
+# With state file (prevents duplicate registrations across restarts)
+./iptv-tunerr run -register-emby -emby-state-file /var/lib/tunerr/emby-reg.json
+```
+
+**Jellyfin:**
+```bash
+IPTV_TUNERR_JELLYFIN_HOST=http://127.0.0.1:8096
+IPTV_TUNERR_JELLYFIN_TOKEN=<admin-api-key>
+
+# One-shot registration
+./iptv-tunerr run -register-jellyfin
+
+# With state file
+./iptv-tunerr run -register-jellyfin -jellyfin-state-file /var/lib/tunerr/jf-reg.json
+```
+
+The state file records the tuner host ID and listing provider ID assigned by Emby/Jellyfin. On restart, Tunerr reuses those IDs instead of creating duplicate entries.
+
+A watchdog goroutine monitors the registered channel count. If it drops (e.g., Emby/Jellyfin rescans and loses the provider), Tunerr re-registers automatically.
+
+You can register Emby and Jellyfin simultaneously alongside Plex:
+```bash
+./iptv-tunerr run \
+  -register-plex \
+  -register-emby  -emby-state-file  /var/lib/tunerr/emby-reg.json \
+  -register-jellyfin -jellyfin-state-file /var/lib/tunerr/jf-reg.json
+```
+
+Full reference: [`docs/emby-jellyfin-support.md`](docs/emby-jellyfin-support.md)
+
+---
+
+### Path 3: Supervisor-Level Registration (Emby / Jellyfin)
+
+When running multiple Tunerr instances under `supervise`, you can declare Emby or Jellyfin registration inside the instance block — no extra flags needed at the instance level:
+
+```json
+{
+  "instances": [
+    {
+      "name": "sports",
+      "port": 5004,
+      "env": { "IPTV_TUNERR_PROVIDER_URL": "..." },
+      "emby": {
+        "host": "http://127.0.0.1:8096",
+        "token": "...",
+        "state_file": "/var/lib/tunerr/emby-sports.json"
+      }
+    },
+    {
+      "name": "movies",
+      "port": 5005,
+      "env": { "IPTV_TUNERR_PROVIDER_URL": "..." },
+      "jellyfin": {
+        "host": "http://127.0.0.1:8096",
+        "token": "...",
+        "state_file": "/var/lib/tunerr/jf-movies.json"
+      }
+    }
+  ]
+}
+```
+
+Each instance registers independently. The watchdog and state-file deduplication apply per instance.
+
+Supervisor reference: [`docs/reference/testing-and-supervisor-config.md`](docs/reference/testing-and-supervisor-config.md)
+
+---
+
+### Path 4: HDHR Network Mode (opt-in)
+
+By default, IPTV Tunerr answers HDHomeRun discovery over HTTP only. Enabling network mode adds UDP broadcast discovery (port 65001) and TCP control (port 65001), which some media server configurations require when Tunerr and the media server are on different subnets.
+
+```bash
+IPTV_TUNERR_HDHR_NETWORK_MODE=true
+IPTV_TUNERR_HDHR_DEVICE_ID=DEADBEEF        # optional, auto-generated if unset
+IPTV_TUNERR_HDHR_DISCOVER_PORT=65001       # default
+IPTV_TUNERR_HDHR_CONTROL_PORT=65001        # default
+```
+
+Most single-host setups do not need this. Enable it only if wizard discovery fails when the media server is on a separate host or VLAN.
+
+Reference: [`docs/hdhomerun-network-emulation.md`](docs/hdhomerun-network-emulation.md)
 
 ---
 
