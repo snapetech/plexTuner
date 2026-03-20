@@ -24,5 +24,6 @@ Deploy, rollback, troubleshoot. Goal → preconditions → steps → verify → 
 See also
 --------
 - [How-to](../how-to/index.md).
+- [How-to: live-race harness](../how-to/live-race-harness.md) — synthetic/replay + concurrent probes (**§7**).
 - [How-to: multi-stream harness](../how-to/multi-stream-harness.md) — staggered live pulls + report for §10 triage.
 - [Reference](../reference/index.md).

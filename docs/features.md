@@ -223,8 +223,8 @@ Supplement or enrich the paid catalog with public M3U feeds fetched at index tim
 | **Hidden Plex grab recovery** | `scripts/plex-hidden-grab-recover.sh` + runbook for Plex Live TV hidden active-grab wedges. |
 | **Plex stream override analysis helper** | `scripts/plex-generate-stream-overrides.py` for feed/profile override candidate generation. |
 | **Live TV provider label rewrite proxy** | `scripts/plex-media-providers-label-proxy.py` + k8s deploy helper to rewrite `/media/providers` labels (client-dependent effect). |
-| **Live-race harness + Plex sessions** | With **`PMS_URL`** + **`PMS_TOKEN`** (or Tunerr/Plex env aliases), **`scripts/live-race-harness.sh`** can snapshot Plex **`/status/sessions`** into the bundle; **`live-race-harness-report.py`** summarizes players/products for **HR-002** / **HR-003** correlation. |
-| **Multi-stream contention harness** | **`scripts/multi-stream-harness.sh`** runs 2+ staggered live pulls against a real tuner, samples **`/provider/profile.json`** + **`/debug/stream-attempts.json`** + **`/debug/runtime.json`**, optionally snapshots Plex sessions, and emits **`report.txt`** / **`report.json`** for “second stream starts, first dies” regressions. |
+| **Live-race harness + Plex sessions** | With **`PMS_URL`** + **`PMS_TOKEN`** (or Tunerr/Plex env aliases), **`scripts/live-race-harness.sh`** can snapshot Plex **`/status/sessions`** into the bundle; **`live-race-harness-report.py`** summarizes players/products for **HR-002** / **HR-003** correlation. How-to: [live-race-harness.md](how-to/live-race-harness.md). |
+| **Multi-stream contention harness** | **`scripts/multi-stream-harness.sh`** runs 2+ staggered live pulls against a real tuner, samples **`/provider/profile.json`** + **`/debug/stream-attempts.json`** + **`/debug/runtime.json`**, optionally snapshots Plex sessions, and emits **`report.txt`** / **`report.json`** for “second stream starts, first dies” regressions. How-to: [multi-stream-harness.md](how-to/multi-stream-harness.md). |
 
 ## 16. Platform support summary
 

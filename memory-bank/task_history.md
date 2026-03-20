@@ -23,6 +23,17 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: How-to — live-race-harness.md + §7 wiring + multi-stream §7 fix
+  Summary:
+    - **`docs/how-to/live-race-harness.md`**: quick start, report, **runbook §7**, related harnesses, verify note.
+    - **Cross-links:** **`docs/how-to/index`**, **`docs/index`**, **`README`**, **runbooks index**, **troubleshooting §7** lead-in, **`repo_map`**, **`commands.yml`** **`live_race_harness`**.
+    - **`multi-stream-harness.md`**: related harness now points to **§7** (was **§6**).
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+
+- Date: 2026-03-21
   Title: How-to — multi-stream-harness.md + doc cross-links
   Summary:
     - **`docs/how-to/multi-stream-harness.md`**: quick start, report command, pointers to **runbook §10** / related harnesses / verify.

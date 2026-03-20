@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-21):** **Docs:** [how-to/live-race-harness.md](../docs/how-to/live-race-harness.md) (parity with multi-stream); **runbook §7** lead-in; **`commands.yml`** **`live_race_harness`**; **multi-stream** related-harness link **§6→§7** fix. **`./scripts/verify`** OK.
+
 **Latest (2026-03-21):** **Docs:** [how-to/multi-stream-harness.md](../docs/how-to/multi-stream-harness.md) + index/README/runbook §10/repo_map cross-links (**two-stream collapse** harness). **`./scripts/verify`** OK.
 
 **Latest (2026-03-21):** **Verify hygiene:** **`scripts/verify-steps.sh`** runs **`bash -n`** on **`scripts/*.sh`** and **`python3 -m py_compile`** on **`scripts/*.py`** ( **`commands.yml`** **`verify_steps`**, **`repo_map`**). **`./scripts/verify`** OK.

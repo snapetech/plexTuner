@@ -173,6 +173,8 @@ If keepalive is running but startup often times out, the bottleneck is usually u
 
 ## 7. Unified Diagnostics Harness (all five experiments in one run)
 
+Task-oriented entry (quick start + links): **[how-to: live-race harness](../how-to/live-race-harness.md)**.
+
 Use `scripts/live-race-harness.sh` to collect evidence for:
 
 - synthetic local source stability (no provider)
