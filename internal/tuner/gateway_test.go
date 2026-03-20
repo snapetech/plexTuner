@@ -2189,6 +2189,15 @@ func TestGateway_stream_rejectsNonHTTP(t *testing.T) {
 }
 
 func TestGateway_stream_rewritesHLSRelativeURLs(t *testing.T) {
+	prevTimeout := hlsRelayNoProgressTimeout
+	prevRefreshSleep := hlsRelayRefreshSleep
+	hlsRelayNoProgressTimeout = 50 * time.Millisecond
+	hlsRelayRefreshSleep = func([]byte) {}
+	t.Cleanup(func() {
+		hlsRelayNoProgressTimeout = prevTimeout
+		hlsRelayRefreshSleep = prevRefreshSleep
+	})
+
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/path/playlist.m3u8":

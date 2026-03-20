@@ -17,6 +17,9 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/safeurl"
 )
 
+var hlsRelayNoProgressTimeout = 12 * time.Second
+var hlsRelayRefreshSleep = sleepHLSRefresh
+
 func resolveFFmpegPath() (string, error) {
 	if v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_FFMPEG_PATH")); v != "" {
 		return exec.LookPath(v)
@@ -618,7 +621,7 @@ func (g *Gateway) relayHLSAsTS(
 			if !clientStarted() {
 				return errors.New("hls playlist has no media lines")
 			}
-			if time.Since(lastProgress) > 12*time.Second {
+			if time.Since(lastProgress) > hlsRelayNoProgressTimeout {
 				return errors.New("hls relay stalled (no media lines)")
 			}
 			time.Sleep(1 * time.Second)
@@ -715,7 +718,7 @@ func (g *Gateway) relayHLSAsTS(
 				}
 			}
 
-			if !progressThisPass && time.Since(lastProgress) > 12*time.Second {
+			if !progressThisPass && time.Since(lastProgress) > hlsRelayNoProgressTimeout {
 				if !clientStarted() {
 					return errors.New("hls relay stalled before first segment")
 				}
@@ -723,7 +726,7 @@ func (g *Gateway) relayHLSAsTS(
 					reqField, channelName, channelID, relayLogLabel, sentSegments, sentBytes, time.Since(start).Round(time.Millisecond))
 				return nil
 			}
-			sleepHLSRefresh(currentPlaylist)
+			hlsRelayRefreshSleep(currentPlaylist)
 		}
 
 		next, effectiveURL, err := g.fetchAndRewritePlaylist(r, client, currentPlaylistURL)
@@ -734,14 +737,14 @@ func (g *Gateway) relayHLSAsTS(
 			if r.Context().Err() != nil {
 				return nil
 			}
-			if time.Since(lastProgress) > 12*time.Second {
+			if time.Since(lastProgress) > hlsRelayNoProgressTimeout {
 				g.noteHLSPlaylistFailure(currentPlaylistURL)
 				return err
 			}
 			g.noteHLSPlaylistFailure(currentPlaylistURL)
 			log.Printf("gateway:%s channel=%q id=%s playlist refresh failed url=%s err=%v",
 				reqField, channelName, channelID, safeurl.RedactURL(currentPlaylistURL), err)
-			sleepHLSRefresh(currentPlaylist)
+			hlsRelayRefreshSleep(currentPlaylist)
 			continue
 		}
 		currentPlaylist = next

@@ -53,7 +53,21 @@ func (x *XMLTV) buildMatchReport(aliasesRef string) (*epglink.Report, error) {
 		rep := epglink.Report{TotalChannels: 0, Methods: map[string]int{}}
 		return &rep, nil
 	}
-	aliases, err := loadGuideHealthAliases(aliasesRef)
+	allowedRefs := []string{}
+	if aliasesRef != "" {
+		allowedRefs = append(allowedRefs, aliasesRef)
+	}
+	if ref := strings.TrimSpace(x.SourceURL); ref != "" {
+		allowedRefs = append(allowedRefs, ref)
+	}
+	providerRef := ""
+	if x.ProviderEPGEnabled {
+		providerRef = guideinput.ProviderXMLTVURL(x.ProviderBaseURL, x.ProviderUser, x.ProviderPass)
+		if providerRef != "" {
+			allowedRefs = append(allowedRefs, providerRef)
+		}
+	}
+	aliases, err := loadGuideHealthAliasesWithAllowed(aliasesRef, allowedRefs...)
 	if err != nil {
 		return nil, err
 	}
@@ -63,14 +77,14 @@ func (x *XMLTV) buildMatchReport(aliasesRef string) (*epglink.Report, error) {
 	}
 	var sources []source
 	if x.ProviderEPGEnabled {
-		if ref := guideinput.ProviderXMLTVURL(x.ProviderBaseURL, x.ProviderUser, x.ProviderPass); ref != "" {
-			if chans, err := loadGuideHealthXMLTVChannels(ref); err == nil && len(chans) > 0 {
+		if ref := providerRef; ref != "" {
+			if chans, err := loadGuideHealthXMLTVChannelsWithAllowed(ref, allowedRefs...); err == nil && len(chans) > 0 {
 				sources = append(sources, source{ref: ref, ch: chans})
 			}
 		}
 	}
 	if ref := strings.TrimSpace(x.SourceURL); ref != "" {
-		if chans, err := loadGuideHealthXMLTVChannels(ref); err == nil && len(chans) > 0 {
+		if chans, err := loadGuideHealthXMLTVChannelsWithAllowed(ref, allowedRefs...); err == nil && len(chans) > 0 {
 			sources = append(sources, source{ref: ref, ch: chans})
 		}
 	}
@@ -146,6 +160,14 @@ func loadGuideHealthAliases(ref string) (epglink.AliasOverrides, error) {
 
 func loadGuideHealthXMLTVChannels(ref string) ([]epglink.XMLTVChannel, error) {
 	return guideinput.LoadXMLTVChannels(ref)
+}
+
+func loadGuideHealthAliasesWithAllowed(ref string, extraAllowedRemoteRefs ...string) (epglink.AliasOverrides, error) {
+	return guideinput.LoadAliasOverridesWithAllowed(ref, extraAllowedRemoteRefs)
+}
+
+func loadGuideHealthXMLTVChannelsWithAllowed(ref string, extraAllowedRemoteRefs ...string) ([]epglink.XMLTVChannel, error) {
+	return guideinput.LoadXMLTVChannelsWithAllowed(ref, extraAllowedRemoteRefs)
 }
 
 func (s *Server) serveGuideHealth() http.Handler {

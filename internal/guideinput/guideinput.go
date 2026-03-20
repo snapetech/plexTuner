@@ -31,10 +31,14 @@ func ProviderXMLTVURL(baseURL, user, pass string) string {
 }
 
 func LoadGuideData(ref string) ([]byte, error) {
+	return LoadGuideDataWithAllowed(ref, nil)
+}
+
+func LoadGuideDataWithAllowed(ref string, extraAllowedRemoteRefs []string) ([]byte, error) {
 	if strings.TrimSpace(ref) == "" {
 		return nil, nil
 	}
-	if remote, ok, err := prepareRemoteGuideRef(ref); err != nil {
+	if remote, ok, err := prepareRemoteGuideRef(ref, extraAllowedRemoteRefs); err != nil {
 		return nil, err
 	} else if ok {
 		r, err := openRemoteGuideRef(context.Background(), remote)
@@ -52,10 +56,14 @@ func LoadGuideData(ref string) ([]byte, error) {
 }
 
 func LoadAliasOverrides(ref string) (epglink.AliasOverrides, error) {
+	return LoadAliasOverridesWithAllowed(ref, nil)
+}
+
+func LoadAliasOverridesWithAllowed(ref string, extraAllowedRemoteRefs []string) (epglink.AliasOverrides, error) {
 	if strings.TrimSpace(ref) == "" {
 		return epglink.AliasOverrides{NameToXMLTVID: map[string]string{}}, nil
 	}
-	data, err := LoadGuideData(ref)
+	data, err := LoadGuideDataWithAllowed(ref, extraAllowedRemoteRefs)
 	if err != nil {
 		return epglink.AliasOverrides{}, err
 	}
@@ -63,7 +71,11 @@ func LoadAliasOverrides(ref string) (epglink.AliasOverrides, error) {
 }
 
 func LoadXMLTVChannels(ref string) ([]epglink.XMLTVChannel, error) {
-	data, err := LoadGuideData(ref)
+	return LoadXMLTVChannelsWithAllowed(ref, nil)
+}
+
+func LoadXMLTVChannelsWithAllowed(ref string, extraAllowedRemoteRefs []string) ([]epglink.XMLTVChannel, error) {
+	data, err := LoadGuideDataWithAllowed(ref, extraAllowedRemoteRefs)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +99,7 @@ func LoadOptionalMatchReport(live []catalog.LiveChannel, xmltvRef, aliasesRef st
 	return &rep, nil
 }
 
-func prepareRemoteGuideRef(ref string) (refio.RemoteHTTPRef, bool, error) {
+func prepareRemoteGuideRef(ref string, extraAllowedRemoteRefs []string) (refio.RemoteHTTPRef, bool, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" || !strings.HasPrefix(strings.ToLower(ref), "http") {
 		return refio.RemoteHTTPRef{}, false, nil
@@ -96,7 +108,7 @@ func prepareRemoteGuideRef(ref string) (refio.RemoteHTTPRef, bool, error) {
 	if err != nil {
 		return refio.RemoteHTTPRef{}, false, err
 	}
-	for _, raw := range configuredGuideInputRemoteRefsFromEnv() {
+	for _, raw := range configuredGuideInputRemoteRefsFromEnv(extraAllowedRemoteRefs) {
 		allowed, err := refio.PrepareRemoteHTTPRef(context.Background(), raw)
 		if err != nil {
 			continue
@@ -145,7 +157,7 @@ func (r *guideInputReadCloser) Close() error {
 	return err
 }
 
-func configuredGuideInputRemoteRefsFromEnv() []string {
+func configuredGuideInputRemoteRefsFromEnv(extraAllowedRemoteRefs []string) []string {
 	refs := []string{
 		os.Getenv("IPTV_TUNERR_XMLTV_URL"),
 		os.Getenv("IPTV_TUNERR_XMLTV_ALIASES"),
@@ -153,6 +165,7 @@ func configuredGuideInputRemoteRefsFromEnv() []string {
 	}
 	refs = append(refs, providerXMLTVRefsFromEnv()...)
 	refs = append(refs, strings.Split(os.Getenv("IPTV_TUNERR_GUIDE_INPUT_ALLOWED_URLS"), ",")...)
+	refs = append(refs, extraAllowedRemoteRefs...)
 	out := make([]string, 0, len(refs))
 	seen := map[string]bool{}
 	for _, ref := range refs {

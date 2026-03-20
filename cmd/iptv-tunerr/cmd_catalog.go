@@ -700,8 +700,16 @@ func loadAliasOverrides(ref string) (epglink.AliasOverrides, error) {
 	return guideinput.LoadAliasOverrides(ref)
 }
 
+func loadAliasOverridesWithAllowed(ref string, extraAllowedRemoteRefs ...string) (epglink.AliasOverrides, error) {
+	return guideinput.LoadAliasOverridesWithAllowed(ref, extraAllowedRemoteRefs)
+}
+
 func loadXMLTVChannels(ref string) ([]epglink.XMLTVChannel, error) {
 	return guideinput.LoadXMLTVChannels(ref)
+}
+
+func loadXMLTVChannelsWithAllowed(ref string, extraAllowedRemoteRefs ...string) ([]epglink.XMLTVChannel, error) {
+	return guideinput.LoadXMLTVChannelsWithAllowed(ref, extraAllowedRemoteRefs)
 }
 
 func unresolvedLiveChannels(live []catalog.LiveChannel, protected map[string]bool) []catalog.LiveChannel {
@@ -719,7 +727,21 @@ func applyRuntimeEPGRepairs(cfg *config.Config, live []catalog.LiveChannel, prov
 	if cfg == nil || !cfg.XMLTVMatchEnable || len(live) == 0 {
 		return
 	}
-	aliases, err := loadAliasOverrides(cfg.XMLTVAliases)
+	allowedRefs := []string{}
+	if cfg.XMLTVAliases != "" {
+		allowedRefs = append(allowedRefs, cfg.XMLTVAliases)
+	}
+	if ref := strings.TrimSpace(cfg.XMLTVURL); ref != "" {
+		allowedRefs = append(allowedRefs, ref)
+	}
+	providerRef := ""
+	if cfg.ProviderEPGEnabled {
+		providerRef = guideinput.ProviderXMLTVURL(providerBase, providerUser, providerPass)
+		if providerRef != "" {
+			allowedRefs = append(allowedRefs, providerRef)
+		}
+	}
+	aliases, err := loadAliasOverridesWithAllowed(cfg.XMLTVAliases, allowedRefs...)
 	if err != nil {
 		log.Printf("EPG alias overrides disabled: %v", err)
 		aliases = epglink.AliasOverrides{NameToXMLTVID: map[string]string{}}
@@ -731,8 +753,8 @@ func applyRuntimeEPGRepairs(cfg *config.Config, live []catalog.LiveChannel, prov
 	}
 	var sources []xmltvSource
 	if cfg.ProviderEPGEnabled {
-		if ref := guideinput.ProviderXMLTVURL(providerBase, providerUser, providerPass); ref != "" {
-			if chans, err := loadXMLTVChannels(ref); err != nil {
+		if ref := providerRef; ref != "" {
+			if chans, err := loadXMLTVChannelsWithAllowed(ref, allowedRefs...); err != nil {
 				log.Printf("EPG repair provider source unavailable: %v", err)
 			} else if len(chans) > 0 {
 				sources = append(sources, xmltvSource{name: "provider", ref: ref, channels: chans})
@@ -740,7 +762,7 @@ func applyRuntimeEPGRepairs(cfg *config.Config, live []catalog.LiveChannel, prov
 		}
 	}
 	if ref := strings.TrimSpace(cfg.XMLTVURL); ref != "" {
-		if chans, err := loadXMLTVChannels(ref); err != nil {
+		if chans, err := loadXMLTVChannelsWithAllowed(ref, allowedRefs...); err != nil {
 			log.Printf("EPG repair external source unavailable: %v", err)
 		} else if len(chans) > 0 {
 			sources = append(sources, xmltvSource{name: "external", ref: ref, channels: chans})

@@ -3827,6 +3827,20 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
 ---
 
 - Date: 2026-03-20
+  Title: Restore first-run channel mapping after guide-input hardening
+  Summary:
+    - Fixed the post-hardening regression where runtime EPG repair and guide-health flows could no longer fetch provider-derived XMLTV on first run unless matching env vars were already populated.
+    - Added explicit trusted-ref plumbing so internal callers can allow their exact runtime provider/XMLTV/alias URLs without reopening generic remote guide fetches.
+    - Reduced the heaviest tuner test by overriding HLS relay timeout/sleep hooks inside the test, cutting the `internal/tuner` package from roughly 13.6s to 1.6s in local verification.
+  Verification:
+    - `go test ./cmd/iptv-tunerr -run 'TestApplyRuntimeEPGRepairs_(ExternalRepairsIncorrectTVGID|PrefersProviderBeforeExternal)|TestChannelDNAStableAfterRuntimeEPGRepair'`
+    - `time go test ./internal/tuner -run '^TestGateway_stream_rewritesHLSRelativeURLs$' -count=1`
+    - `go test ./internal/tuner`
+    - `./scripts/verify`
+
+---
+
+- Date: 2026-03-20
   Title: Constrain remote guide inputs to configured hosts
   Summary:
     - Tightened `internal/guideinput` so remote XMLTV and alias fetches only target exact URLs already declared in provider, XMLTV, or HDHomeRun guide config, with optional explicit additions via `IPTV_TUNERR_GUIDE_INPUT_ALLOWED_URLS`.
