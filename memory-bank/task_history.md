@@ -3791,6 +3791,18 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
 ---
 
 - Date: 2026-03-20
+  Title: Burn down high-risk CodeQL findings on ref loading, limits, logs, and deck redirects
+  Summary:
+    - Hardened `internal/refio` so local refs must be regular files and remote guide/alias `http(s)` refs reject private or loopback hosts by default unless `IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP=1` is set intentionally for localhost/LAN sources.
+    - Clamped oversized `limit=` handling in guide preview/capsule and stream-attempt report paths, reducing uncontrolled preallocation risk on operator/debug surfaces.
+    - Reduced raw request/header-derived logging in Plex adaptation and upstream concurrency paths, normalized deck login redirects to path-only targets, aligned logout cookie security flags, and added `X-Content-Type-Options: nosniff` plus default JSON HTML escaping on debug/operator surfaces.
+  Verification:
+    - `go test ./internal/refio ./internal/guideinput ./internal/webui ./internal/tuner`
+    - `./scripts/verify`
+
+---
+
+- Date: 2026-03-20
   Title: Add shared operator activity memory to the deck
   Summary:
     - Added `/deck/activity.json` on the dedicated web UI server and persisted it alongside deck telemetry so operator activity survives reloads and optional deck restarts.

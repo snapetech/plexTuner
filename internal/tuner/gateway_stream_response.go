@@ -53,6 +53,7 @@ func (g *Gateway) handleNonOKStreamUpstream(
 	resp *http.Response,
 ) (recovered *http.Response, effectiveURL string, upstreamConcurrencyLimited, ok bool) {
 	preview := readUpstreamErrorPreview(resp)
+	logPreview := sanitizeUpstreamPreviewForLog(preview)
 	resp.Body.Close()
 
 	if isCFLikeStatus(resp.StatusCode, preview) {
@@ -73,19 +74,19 @@ func (g *Gateway) handleNonOKStreamUpstream(
 		g.noteUpstreamConcurrencySignal(resp.StatusCode, preview)
 		if learned := g.learnUpstreamConcurrencyLimit(preview); learned > 0 {
 			log.Printf("gateway: channel=%q id=%s learned upstream concurrency limit=%d from status=%d body=%q",
-				channel.GuideName, channelID, learned, resp.StatusCode, preview)
+				channel.GuideName, channelID, learned, resp.StatusCode, logPreview)
 		}
 	}
 	switch {
 	case resp.StatusCode == http.StatusTooManyRequests:
 		log.Printf("gateway: channel=%q id=%s upstream[%d/%d] 429 rate limited url=%s body=%q",
-			channel.GuideName, channelID, upstreamIdx, upstreamTotal, safeurl.RedactURL(streamURL), preview)
+			channel.GuideName, channelID, upstreamIdx, upstreamTotal, safeurl.RedactURL(streamURL), logPreview)
 	case limited:
 		log.Printf("gateway: channel=%q id=%s upstream[%d/%d] concurrency-limited status=%d url=%s body=%q",
-			channel.GuideName, channelID, upstreamIdx, upstreamTotal, resp.StatusCode, safeurl.RedactURL(streamURL), preview)
+			channel.GuideName, channelID, upstreamIdx, upstreamTotal, resp.StatusCode, safeurl.RedactURL(streamURL), logPreview)
 	default:
 		log.Printf("gateway: channel=%q id=%s upstream[%d/%d] status=%d url=%s body=%q",
-			channel.GuideName, channelID, upstreamIdx, upstreamTotal, resp.StatusCode, safeurl.RedactURL(streamURL), preview)
+			channel.GuideName, channelID, upstreamIdx, upstreamTotal, resp.StatusCode, safeurl.RedactURL(streamURL), logPreview)
 	}
 	return nil, "", upstreamConcurrencyLimited, false
 }

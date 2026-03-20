@@ -15,6 +15,7 @@ import (
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
+	"github.com/snapetech/iptvtunerr/internal/safeurl"
 )
 
 // defaultLavfUA is the fallback Lavf User-Agent when ffmpeg is not installed or detection fails.
@@ -423,6 +424,28 @@ func readUpstreamErrorPreview(resp *http.Response) string {
 		text = text[:160]
 	}
 	return text
+}
+
+func sanitizeUpstreamPreviewForLog(preview string) string {
+	preview = strings.TrimSpace(preview)
+	if preview == "" {
+		return ""
+	}
+	fields := strings.Fields(preview)
+	for i, field := range fields {
+		if safeurl.IsHTTPOrHTTPS(field) {
+			fields[i] = safeurl.RedactURL(field)
+			continue
+		}
+		if safeurl.HasSensitive(field) {
+			fields[i] = "<redacted>"
+		}
+	}
+	out := strings.Join(fields, " ")
+	if len(out) > 160 {
+		out = out[:160]
+	}
+	return out
 }
 
 func isUpstreamConcurrencyLimit(status int, preview string) bool {

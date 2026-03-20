@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-20):** **Security / CodeQL burn-down:** hardened **`internal/refio`** against private-host HTTP guide/alias fetches (default deny unless **`IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP=1`**), rejected non-regular local refs, clamped oversized guide/stream-attempt limits, reduced request/header-derived logging in gateway adaptation + upstream concurrency paths, normalized deck login redirects to path-only targets, aligned logout cookie security flags, and added **`nosniff`** / default JSON escaping in debug/operator surfaces. Tests/docs updated; **`./scripts/verify`** pending final full run.
+
 **Latest (2026-03-20):** **INT-005/INT-010 bridge:** Autopilot now supports a JSON **host policy file** (**`IPTV_TUNERR_AUTOPILOT_HOST_POLICY_FILE`**) with **preferred** and **blocked** hosts. Preferred hosts merge with **`IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS`**; blocked hosts are skipped in **`reorderStreamURLs`** only when backups remain. Runtime/report/docs/tests updated.
 
 **Latest (2026-03-20):** **INT-008 follow-up:** Ghost Hunter now has first-class operator actions: **`POST /ops/actions/ghost-visible-stop`** and **`POST /ops/actions/ghost-hidden-recover?mode=dry-run|restart`**, reusing the guarded helper path (**`IPTV_TUNERR_GHOST_HUNTER_RECOVERY_HELPER`** override). Control-deck actions/workflows, tests, and docs updated.

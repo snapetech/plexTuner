@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -362,6 +363,32 @@ func TestServer_recentStreamAttempts(t *testing.T) {
 	}
 	if got := body.Attempts[0].Upstreams[0].RequestHeaders[0]; got != "Authorization: <redacted>" {
 		t.Fatalf("request header=%q want redacted authorization", got)
+	}
+}
+
+func TestServer_recentStreamAttempts_clampsLargeLimit(t *testing.T) {
+	s := &Server{gateway: &Gateway{}}
+	for i := 0; i < 3; i++ {
+		s.gateway.appendStreamAttempt(StreamAttemptRecord{
+			ReqID:       "r00012" + strconv.Itoa(i),
+			ChannelID:   "ch" + strconv.Itoa(i),
+			ChannelName: "Channel",
+			StartedAt:   time.Now().UTC().Format(time.RFC3339),
+			FinalStatus: "ok",
+		})
+	}
+	req := httptest.NewRequest(http.MethodGet, "/debug/stream-attempts.json?limit=999999", nil)
+	w := httptest.NewRecorder()
+	s.serveRecentStreamAttempts().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body StreamAttemptReport
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body.Limit != 3 || body.Count != 3 {
+		t.Fatalf("report=%+v want 3 attempts after clamp", body)
 	}
 }
 

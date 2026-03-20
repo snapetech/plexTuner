@@ -13,7 +13,8 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
-- *(none)*
+### Security
+- **Code-scanning hardening sweep:** local guide/alias refs now require a regular file path, while remote guide/alias `http(s)` refs reject private/loopback hosts by default unless **`IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP=1`** is set intentionally for localhost/LAN sources. Stream-attempt and guide preview endpoints now clamp oversized `limit=` requests, Plex adaptation / upstream concurrency logs avoid echoing raw header-derived values, deck login redirects are normalized to path-only targets, logout now mirrors the session cookie security flags, mux decode JSON re-enables default HTML escaping, and debug stream responses set **`X-Content-Type-Options: nosniff`**.
 
 ## [v0.1.16] — 2026-03-20
 

@@ -40,19 +40,19 @@ func (h plexForwardedHints) empty() bool {
 func (h plexForwardedHints) summary() string {
 	parts := []string{}
 	if h.SessionIdentifier != "" {
-		parts = append(parts, `sid="`+h.SessionIdentifier+`"`)
+		parts = append(parts, "sid=present")
 	}
 	if h.ClientIdentifier != "" {
-		parts = append(parts, `cid="`+h.ClientIdentifier+`"`)
+		parts = append(parts, "cid=present")
 	}
 	if h.Product != "" {
-		parts = append(parts, `product="`+h.Product+`"`)
+		parts = append(parts, "product=present")
 	}
 	if h.Platform != "" {
-		parts = append(parts, `platform="`+h.Platform+`"`)
+		parts = append(parts, "platform=present")
 	}
 	if h.Device != "" {
-		parts = append(parts, `device="`+h.Device+`"`)
+		parts = append(parts, "device=present")
 	}
 	if len(h.Raw) > 0 {
 		parts = append(parts, `raw=`+strconv.Itoa(len(h.Raw)))
@@ -280,8 +280,13 @@ func (g *Gateway) requestAdaptation(ctx context.Context, r *http.Request, channe
 	if info == nil {
 		return true, true, profilePlexSafe, "unknown-client-websafe", clientClass
 	}
-	log.Printf("gateway: channel=%q id=%s plex-client-resolved sid=%q cid=%q product=%q platform=%q title=%q",
-		channel.GuideName, channelID, info.SessionIdentifier, info.ClientIdentifier, info.Product, info.Platform, info.Title)
+	log.Printf("gateway: channel=%q id=%s plex-client-resolved class=%s sid=%t cid=%t product=%t platform=%t title=%t",
+		channel.GuideName, channelID, clientClass,
+		info.SessionIdentifier != "",
+		info.ClientIdentifier != "",
+		info.Product != "",
+		info.Platform != "",
+		info.Title != "")
 	if looksLikePlexWeb(info.Product) || looksLikePlexWeb(info.Platform) {
 		return true, true, profilePlexSafe, "resolved-web-client", clientClass
 	}

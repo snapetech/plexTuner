@@ -489,13 +489,20 @@ type CatchupCapsulePreview struct {
 	Capsules    []CatchupCapsule    `json:"capsules"`
 }
 
+const (
+	defaultGuideHighlightsLimit    = 12
+	defaultGuidePreviewLimit       = 50
+	defaultCatchupCapsuleLimit     = 20
+	maxGuidePreviewLimit           = 250
+	maxGuideAllocationChannelCount = 10000
+	maxGuideAllocationProgrammeCap = 20000
+)
+
 func (x *XMLTV) GuideHighlights(now time.Time, soonWindow time.Duration, limit int) (GuideHighlights, error) {
 	if soonWindow <= 0 {
 		soonWindow = 30 * time.Minute
 	}
-	if limit <= 0 {
-		limit = 12
-	}
+	limit = clampGuidePreviewLimit(limit, defaultGuideHighlightsLimit)
 	x.mu.RLock()
 	data := append([]byte(nil), x.cachedXML...)
 	x.mu.RUnlock()
@@ -510,7 +517,7 @@ func (x *XMLTV) GuideHighlights(now time.Time, soonWindow time.Duration, limit i
 	if err := xml.Unmarshal(data, &tv); err != nil {
 		return out, err
 	}
-	channelNames := make(map[string]string, len(tv.Channels))
+	channelNames := make(map[string]string, boundedGuideAlloc(len(tv.Channels), maxGuideAllocationChannelCount))
 	for _, ch := range tv.Channels {
 		channelNames[strings.TrimSpace(ch.ID)] = strings.TrimSpace(ch.Display)
 	}
@@ -565,9 +572,7 @@ func (x *XMLTV) GuideHighlights(now time.Time, soonWindow time.Duration, limit i
 // GuidePreview returns the first limit programmes from the cached merged guide, sorted by
 // start time ascending. Intended for the operator UI; it does not hit the network.
 func (x *XMLTV) GuidePreview(limit int) (GuidePreview, error) {
-	if limit <= 0 {
-		limit = 50
-	}
+	limit = clampGuidePreviewLimit(limit, defaultGuidePreviewLimit)
 	now := time.Now()
 	x.mu.RLock()
 	data := append([]byte(nil), x.cachedXML...)
@@ -591,7 +596,7 @@ func (x *XMLTV) GuidePreview(limit int) (GuidePreview, error) {
 	out.ChannelCount = len(tv.Channels)
 	out.ProgrammeCount = len(tv.Programmes)
 
-	channelNames := make(map[string]string, len(tv.Channels))
+	channelNames := make(map[string]string, boundedGuideAlloc(len(tv.Channels), maxGuideAllocationChannelCount))
 	for _, ch := range tv.Channels {
 		channelNames[strings.TrimSpace(ch.ID)] = strings.TrimSpace(ch.Display)
 	}
@@ -600,7 +605,7 @@ func (x *XMLTV) GuidePreview(limit int) (GuidePreview, error) {
 		start time.Time
 		row   GuidePreviewRow
 	}
-	var buf []keyed
+	buf := make([]keyed, 0, boundedGuideAlloc(limit, maxGuideAllocationProgrammeCap))
 	for _, p := range tv.Programmes {
 		start, okStart := parseXMLTVTime(p.Start)
 		stop, okStop := parseXMLTVTime(p.Stop)
@@ -716,9 +721,7 @@ func BuildCatchupCapsulePreview(channels []catalog.LiveChannel, data []byte, now
 	if horizon <= 0 {
 		horizon = 3 * time.Hour
 	}
-	if limit <= 0 {
-		limit = 20
-	}
+	limit = clampGuidePreviewLimit(limit, defaultCatchupCapsuleLimit)
 	out := CatchupCapsulePreview{
 		GeneratedAt: now.UTC().Format(time.RFC3339),
 		SourceReady: len(data) > 0,
@@ -734,7 +737,7 @@ func BuildCatchupCapsulePreview(channels []catalog.LiveChannel, data []byte, now
 	for _, ch := range channels {
 		byChannel[strings.TrimSpace(ch.GuideNumber)] = ch
 	}
-	channelNames := make(map[string]string, len(tv.Channels))
+	channelNames := make(map[string]string, boundedGuideAlloc(len(tv.Channels), maxGuideAllocationChannelCount))
 	for _, ch := range tv.Channels {
 		channelNames[strings.TrimSpace(ch.ID)] = strings.TrimSpace(ch.Display)
 	}
@@ -792,6 +795,29 @@ func BuildCatchupCapsulePreview(channels []catalog.LiveChannel, data []byte, now
 	}
 	out.Capsules = capsules
 	return out, nil
+}
+
+func clampGuidePreviewLimit(n, def int) int {
+	if def <= 0 {
+		def = defaultGuidePreviewLimit
+	}
+	if n <= 0 {
+		n = def
+	}
+	if n > maxGuidePreviewLimit {
+		n = maxGuidePreviewLimit
+	}
+	return n
+}
+
+func boundedGuideAlloc(n, max int) int {
+	if n <= 0 {
+		return 0
+	}
+	if max > 0 && n > max {
+		return max
+	}
+	return n
 }
 
 func ApplyCatchupReplayTemplate(preview CatchupCapsulePreview, tmpl string) CatchupCapsulePreview {

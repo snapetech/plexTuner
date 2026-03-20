@@ -2051,7 +2051,6 @@ func (s *Server) serveMuxSegDecodeAction() http.Handler {
 		u := strings.TrimSpace(string(raw))
 		w.Header().Set("Content-Type", "application/json")
 		enc := json.NewEncoder(w)
-		enc.SetEscapeHTML(false)
 		_ = enc.Encode(map[string]interface{}{
 			"redacted_url": safeurl.RedactURL(u),
 			"http_ok":      safeurl.IsHTTPOrHTTPS(u),

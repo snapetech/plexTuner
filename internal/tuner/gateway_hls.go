@@ -389,19 +389,20 @@ func (g *Gateway) fetchAndRewritePlaylist(r *http.Request, client *http.Client, 
 		}
 		if resp.StatusCode != http.StatusOK {
 			preview := readUpstreamErrorPreview(resp)
+			logPreview := sanitizeUpstreamPreviewForLog(preview)
 			resp.Body.Close()
 			limited := isUpstreamConcurrencyLimit(resp.StatusCode, preview)
 			if limited {
 				g.noteUpstreamConcurrencySignal(resp.StatusCode, preview)
 				if learned := g.learnUpstreamConcurrencyLimit(preview); learned > 0 {
 					log.Printf("gateway: req=%s playlist concurrency learned limit=%d status=%d url=%s body=%q",
-						reqID, learned, resp.StatusCode, safeurl.RedactURL(playlistURL), preview)
+						reqID, learned, resp.StatusCode, safeurl.RedactURL(playlistURL), logPreview)
 				}
 			}
 			if limited && attempt < retries {
 				backoff := hlsPlaylistRetryBackoff(attempt + 1)
 				log.Printf("gateway: req=%s playlist refresh concurrency-limited status=%d url=%s backoff=%s retry=%d/%d body=%q",
-					reqID, resp.StatusCode, safeurl.RedactURL(playlistURL), backoff, attempt+1, retries, preview)
+					reqID, resp.StatusCode, safeurl.RedactURL(playlistURL), backoff, attempt+1, retries, logPreview)
 				if err := sleepWithContext(ctx, backoff); err != nil {
 					return nil, "", err
 				}

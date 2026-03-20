@@ -13,6 +13,7 @@ import (
 )
 
 const defaultRecentStreamAttemptLimit = 50
+const maxRecentStreamAttemptQueryLimit = 250
 
 type StreamAttemptReport struct {
 	GeneratedAt string                `json:"generated_at"`
@@ -274,14 +275,12 @@ func (g *Gateway) appendAttemptToLog(rec StreamAttemptRecord) {
 func (g *Gateway) RecentStreamAttempts(limit int) StreamAttemptReport {
 	rep := StreamAttemptReport{
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-		Limit:       limit,
+		Limit:       clampStreamAttemptLimit(limit, 10),
 	}
 	if g == nil {
 		return rep
 	}
-	if limit <= 0 {
-		limit = 10
-	}
+	limit = clampStreamAttemptLimit(limit, 10)
 	g.attemptsMu.Lock()
 	defer g.attemptsMu.Unlock()
 	if limit > len(g.recentAttempts) {
@@ -308,11 +307,24 @@ func (g *Gateway) ClearRecentStreamAttempts() int {
 func streamAttemptLimitFromQuery(raw string, def int) int {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return def
+		return clampStreamAttemptLimit(def, defaultRecentStreamAttemptLimit)
 	}
 	n, err := strconv.Atoi(raw)
 	if err != nil || n <= 0 {
-		return def
+		return clampStreamAttemptLimit(def, defaultRecentStreamAttemptLimit)
+	}
+	return clampStreamAttemptLimit(n, defaultRecentStreamAttemptLimit)
+}
+
+func clampStreamAttemptLimit(n, def int) int {
+	if def <= 0 {
+		def = defaultRecentStreamAttemptLimit
+	}
+	if n <= 0 {
+		n = def
+	}
+	if n > maxRecentStreamAttemptQueryLimit {
+		n = maxRecentStreamAttemptQueryLimit
 	}
 	return n
 }

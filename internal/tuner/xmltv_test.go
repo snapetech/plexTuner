@@ -86,6 +86,42 @@ func TestXMLTV_GuidePreview_sortAndLimit(t *testing.T) {
 	}
 }
 
+func TestXMLTV_GuidePreview_clampsLargeLimit(t *testing.T) {
+	x := &XMLTV{
+		cachedXML: []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="A"><display-name>Alpha</display-name></channel>
+  <programme start="20260319100000 +0000" stop="20260319110000 +0000" channel="A">
+    <title>Only</title>
+  </programme>
+</tv>`),
+	}
+	gp, err := x.GuidePreview(5000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gp.Rows) != 1 {
+		t.Fatalf("rows=%d want 1", len(gp.Rows))
+	}
+}
+
+func TestBuildCatchupCapsulePreview_clampsLargeLimit(t *testing.T) {
+	now := time.Date(2026, 3, 20, 12, 0, 0, 0, time.UTC)
+	rep, err := BuildCatchupCapsulePreview([]catalog.LiveChannel{{GuideNumber: "A", GuideName: "Alpha"}}, []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="A"><display-name>Alpha</display-name></channel>
+  <programme start="20260320113000 +0000" stop="20260320123000 +0000" channel="A">
+    <title>Capsule</title>
+  </programme>
+</tv>`), now, time.Hour, 5000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Capsules) != 1 {
+		t.Fatalf("capsules=%d want 1", len(rep.Capsules))
+	}
+}
+
 func TestXMLTV_epgPruneUnlinked(t *testing.T) {
 	x := &XMLTV{
 		Channels: []catalog.LiveChannel{
@@ -124,6 +160,7 @@ func TestXMLTV_epgPruneUnlinked(t *testing.T) {
 }
 
 func TestXMLTV_cacheHit(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
 	// refresh() fetches once; subsequent ServeHTTP calls read from cache without re-fetching.
 	const srcXML = `<?xml version="1.0" encoding="utf-8"?>
 <tv>
@@ -166,6 +203,7 @@ func TestXMLTV_cacheHit(t *testing.T) {
 }
 
 func TestXMLTV_refreshFetchesEachCall(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
 	// Each call to refresh() fetches from upstream — the background ticker controls frequency.
 	const srcXML = `<?xml version="1.0" encoding="utf-8"?>
 <tv>
@@ -206,6 +244,7 @@ func TestXMLTV_refreshFetchesEachCall(t *testing.T) {
 }
 
 func TestXMLTV_externalSourceRemap(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
 	srcXML := `<?xml version="1.0" encoding="utf-8"?>
 <tv source-info-name="provider">
   <channel id="BBC1.uk"><display-name>BBC One</display-name></channel>
@@ -324,6 +363,7 @@ func TestXMLTV_externalSourceRemap_NonLatinTitleFallbackToChannel(t *testing.T) 
 }
 
 func TestXMLTV_buildMergedEPG_UsesRealProgrammeBlocksNotPlaceholder(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
 	providerXML := `<?xml version="1.0" encoding="utf-8"?>
 <tv>
   <channel id="foxnews.us"><display-name>FOX News Channel</display-name></channel>
@@ -400,6 +440,7 @@ func TestXMLTV_buildMergedEPG_UsesRealProgrammeBlocksNotPlaceholder(t *testing.T
 }
 
 func TestXMLTV_buildMergedEPG_HDHRGuideURL(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
 	hdhrXML := `<?xml version="1.0" encoding="utf-8"?>
 <tv>
   <programme start="20300101000000 +0000" stop="20300101010000 +0000" channel="ota-hdhr-1">

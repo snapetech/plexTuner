@@ -241,8 +241,50 @@ func TestLoginAndLogoutFlow(t *testing.T) {
 	if logoutW.Code != http.StatusSeeOther {
 		t.Fatalf("logout status=%d", logoutW.Code)
 	}
+	if cookies := logoutW.Result().Cookies(); len(cookies) == 0 || cookies[0].Name != sessionCookieName {
+		t.Fatalf("logout cookies=%v want cleared session cookie", cookies)
+	}
 	if len(s.activityEntries) < 2 {
 		t.Fatalf("activity entries=%d want login/logout entries", len(s.activityEntries))
+	}
+}
+
+func TestLoginRejectsUnsafeRedirectTargets(t *testing.T) {
+	s := &Server{
+		Version:         "test",
+		loginTmpl:       templateMustLogin(t),
+		sessions:        map[string]deckSession{},
+		failedLoginByIP: map[string][]time.Time{},
+		settings:        DeckSettings{AuthUser: "admin", AuthPass: "admin"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("username=admin&password=admin&next=https%3A%2F%2Fevil.example%2Fpwn"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	s.login(w, req)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d want 303", w.Code)
+	}
+	if got := w.Header().Get("Location"); got != "/" {
+		t.Fatalf("location=%q want /", got)
+	}
+}
+
+func TestNormalizeDeckRedirectTarget(t *testing.T) {
+	tests := []struct {
+		raw  string
+		want string
+	}{
+		{raw: "", want: "/"},
+		{raw: "/routing?mode=ops", want: "/routing?mode=ops"},
+		{raw: "https://evil.example/pwn", want: "/"},
+		{raw: "//evil.example/pwn", want: "/"},
+		{raw: "/../../ops", want: "/ops"},
+		{raw: "\\\\evil", want: "/"},
+	}
+	for _, tc := range tests {
+		if got := normalizeDeckRedirectTarget(tc.raw); got != tc.want {
+			t.Fatalf("normalizeDeckRedirectTarget(%q)=%q want %q", tc.raw, got, tc.want)
+		}
 	}
 }
 

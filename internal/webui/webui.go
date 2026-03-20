@@ -572,10 +572,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		s.clearFailedLogins(r)
 		s.startSession(w, r)
 		s.recordActivity("auth", "login", "Deck session opened.", map[string]interface{}{"username": user})
-		next := strings.TrimSpace(r.Form.Get("next"))
-		if next == "" || !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
-			next = "/"
-		}
+		next := normalizeDeckRedirectTarget(r.Form.Get("next"))
 		http.Redirect(w, r, next, http.StatusSeeOther)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -600,17 +597,15 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   -1,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
+		Secure:   requestCookieSecure(r),
 	})
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
 func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, status int, errText string) {
-	next := strings.TrimSpace(r.URL.Query().Get("next"))
+	next := normalizeDeckRedirectTarget(r.URL.Query().Get("next"))
 	if next == "" {
-		next = strings.TrimSpace(r.Form.Get("next"))
-	}
-	if next == "" || !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
-		next = "/"
+		next = normalizeDeckRedirectTarget(r.Form.Get("next"))
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
@@ -740,7 +735,7 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(sessionTTL.Seconds()),
-		Secure:   r != nil && r.TLS != nil,
+		Secure:   requestCookieSecure(r),
 	})
 }
 
@@ -806,6 +801,44 @@ func (s *Server) requireCSRFForToken(w http.ResponseWriter, r *http.Request, tok
 		return false
 	}
 	return true
+}
+
+func normalizeDeckRedirectTarget(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "/"
+	}
+	if strings.Contains(raw, "\\") {
+		return "/"
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u == nil {
+		return "/"
+	}
+	if u.IsAbs() || strings.TrimSpace(u.Host) != "" || strings.TrimSpace(u.Opaque) != "" {
+		return "/"
+	}
+	path := strings.TrimSpace(u.EscapedPath())
+	if path == "" {
+		path = strings.TrimSpace(u.Path)
+	}
+	if path == "" || !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
+		return "/"
+	}
+	if clean := filepath.Clean(path); clean != "" && clean != "." {
+		path = clean
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+	}
+	if u.RawQuery != "" {
+		path += "?" + u.RawQuery
+	}
+	return path
+}
+
+func requestCookieSecure(r *http.Request) bool {
+	return r != nil && r.TLS != nil
 }
 
 func (s *Server) recordActivity(kind, title, message string, detail map[string]interface{}) {

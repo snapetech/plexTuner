@@ -19,6 +19,7 @@ func TestProviderXMLTVURL(t *testing.T) {
 }
 
 func TestLoadGuideData_LocalAndHTTP(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
 	dir := t.TempDir()
 	path := filepath.Join(dir, "guide.xml")
 	const body = "<tv></tv>"
@@ -48,6 +49,7 @@ func TestLoadGuideData_LocalAndHTTP(t *testing.T) {
 }
 
 func TestLoadOptionalMatchReport(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`<?xml version="1.0"?><tv><channel id="id.1"><display-name>Alpha</display-name></channel></tv>`))
 	}))

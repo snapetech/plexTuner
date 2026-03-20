@@ -223,6 +223,7 @@ func (w *streamDebugResponseWriter) logResponseHeaders(implicit bool) {
 		return
 	}
 	w.headerLogged = true
+	w.ResponseWriter.Header().Set("X-Content-Type-Options", "nosniff")
 	status := w.status
 	if status == 0 {
 		status = http.StatusOK

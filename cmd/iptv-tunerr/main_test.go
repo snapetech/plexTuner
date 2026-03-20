@@ -379,6 +379,7 @@ func TestFetchCatalog_DirectPlayerAPIFallbackWhenProbeFindsNoOKHost(t *testing.T
 }
 
 func TestApplyRuntimeEPGRepairs_ExternalRepairsIncorrectTVGID(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
 	xmltv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`<?xml version="1.0"?><tv>
 <channel id="foxnews.us"><display-name>FOX News Channel</display-name></channel>
@@ -403,6 +404,7 @@ func TestApplyRuntimeEPGRepairs_ExternalRepairsIncorrectTVGID(t *testing.T) {
 }
 
 func TestApplyRuntimeEPGRepairs_PrefersProviderBeforeExternal(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
 	providerXMLTV := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`<?xml version="1.0"?><tv>
 <channel id="provider.foxnews"><display-name>FOX News Channel</display-name></channel>
@@ -432,6 +434,7 @@ func TestApplyRuntimeEPGRepairs_PrefersProviderBeforeExternal(t *testing.T) {
 }
 
 func TestChannelDNAStableAfterRuntimeEPGRepair(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
 	xmltv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`<?xml version="1.0"?><tv>
 <channel id="foxnews.us"><display-name>FOX News Channel</display-name></channel>
