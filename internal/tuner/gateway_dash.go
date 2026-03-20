@@ -3,6 +3,7 @@ package tuner
 import (
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -43,6 +44,24 @@ func dashResolveRef(baseStr, refStr string) string {
 	return baseU.ResolveReference(refU).String()
 }
 
+// dashSegQueryEscape is like url.QueryEscape but leaves '$' unescaped so DASH SegmentTemplate
+// identifiers ($Number$, $RepresentationID$, …) survive in ?mux=dash&seg= until the player substitutes them.
+func dashSegQueryEscape(s string) string {
+	q := url.QueryEscape(s)
+	return strings.ReplaceAll(q, "%24", "$")
+}
+
+// gatewayDashMuxProxyURL builds /stream?mux=dash&seg= with dashSegQueryEscape (template-safe).
+func gatewayDashMuxProxyURL(channelID, resolved string) string {
+	q := dashSegQueryEscape(resolved)
+	rel := "/stream/" + url.PathEscape(channelID) + "?mux=dash&seg=" + q
+	base := strings.TrimRight(strings.TrimSpace(os.Getenv("IPTV_TUNERR_STREAM_PUBLIC_BASE_URL")), "/")
+	if base == "" {
+		return rel
+	}
+	return base + rel
+}
+
 // dashBaseURLChain walks <BaseURL> elements in document order; each inner (possibly relative) URL updates a running absolute base.
 func dashBaseURLChain(body []byte, manifestURL string) []dashBaseEv {
 	var ev []dashBaseEv
@@ -57,7 +76,7 @@ func dashBaseURLChain(body []byte, manifestURL string) []dashBaseEv {
 		relEnd := idx + loc[5]
 		end := idx + loc[1]
 		inner := strings.TrimSpace(string(body[relStart:relEnd]))
-		if inner != "" && !strings.Contains(inner, "$") {
+		if inner != "" {
 			cum = dashResolveRef(cum, inner)
 		}
 		ev = append(ev, dashBaseEv{after: end, abs: cum})
@@ -85,11 +104,11 @@ func dashAlreadyMuxProxy(val string) bool {
 
 // rewriteDASHManifestToGatewayProxy rewrites http(s) and resolvable-relative URLs in an MPD to Tunerr /stream?mux=dash&seg= proxies.
 // Relative values use the running <BaseURL> chain (document order) and the manifest URL as the initial base.
+// SegmentTemplate placeholders ($Number$, …) are preserved in seg= (see dashSegQueryEscape).
 func rewriteDASHManifestToGatewayProxy(body []byte, upstreamURL, channelID string) []byte {
 	ev := dashBaseURLChain(body, upstreamURL)
 	var repls []dashRepl
 
-	// <BaseURL> inner text (relative or absolute)
 	cum := strings.TrimSpace(upstreamURL)
 	idx := 0
 	for {
@@ -100,10 +119,10 @@ func rewriteDASHManifestToGatewayProxy(body []byte, upstreamURL, channelID strin
 		relStart := idx + loc[4]
 		relEnd := idx + loc[5]
 		inner := strings.TrimSpace(string(body[relStart:relEnd]))
-		if inner != "" && !strings.Contains(inner, "$") {
+		if inner != "" {
 			cum = dashResolveRef(cum, inner)
 			if safeurl.IsHTTPOrHTTPS(cum) && !dashSkipURL(cum) && !dashAlreadyMuxProxy(cum) {
-				repls = append(repls, dashRepl{relStart, relEnd, gatewayNativeMuxProxyURL(channelID, cum, "dash")})
+				repls = append(repls, dashRepl{relStart, relEnd, gatewayDashMuxProxyURL(channelID, cum)})
 			}
 		}
 		idx = idx + loc[1]
@@ -111,10 +130,6 @@ func rewriteDASHManifestToGatewayProxy(body []byte, upstreamURL, channelID strin
 
 	for _, loc := range dashAttrURL.FindAllSubmatchIndex(body, -1) {
 		val := string(body[loc[4]:loc[5]])
-		if strings.Contains(val, "$") {
-			// SegmentTemplate-style identifiers; rewriting would break client-side substitution.
-			continue
-		}
 		if strings.TrimSpace(val) == "" {
 			continue
 		}
@@ -125,7 +140,7 @@ func rewriteDASHManifestToGatewayProxy(body []byte, upstreamURL, channelID strin
 			continue
 		}
 		matchStart := loc[0]
-		prefix := string(body[loc[2]:loc[4]]) // name + "=\""
+		prefix := string(body[loc[2]:loc[4]])
 		var abs string
 		if safeurl.IsHTTPOrHTTPS(val) {
 			abs = val
@@ -136,7 +151,7 @@ func rewriteDASHManifestToGatewayProxy(body []byte, upstreamURL, channelID strin
 		if !safeurl.IsHTTPOrHTTPS(abs) || dashSkipURL(abs) {
 			continue
 		}
-		repls = append(repls, dashRepl{loc[0], loc[1], prefix + gatewayNativeMuxProxyURL(channelID, abs, "dash") + `"`})
+		repls = append(repls, dashRepl{loc[0], loc[1], prefix + gatewayDashMuxProxyURL(channelID, abs) + `"`})
 	}
 
 	sort.Slice(repls, func(i, j int) bool {

@@ -176,6 +176,27 @@ func autopilotKey(dnaID, clientClass string) string {
 	return dnaID + "|" + clientClass
 }
 
+// muxAutopilotMaxHits returns the largest Hits among all client_class rows for this dna_id (for mux slot heuristics).
+func (s *autopilotStore) muxAutopilotMaxHits(dnaID string) int {
+	if s == nil {
+		return 0
+	}
+	dnaID = strings.TrimSpace(strings.ToLower(dnaID))
+	if dnaID == "" {
+		return 0
+	}
+	prefix := dnaID + "|"
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	max := 0
+	for k, row := range s.byKey {
+		if strings.HasPrefix(k, prefix) && row.Hits > max {
+			max = row.Hits
+		}
+	}
+	return max
+}
+
 func (s *autopilotStore) hotDecision(dnaID, clientClass string, minHits int) (autopilotDecision, bool) {
 	if s == nil || minHits <= 0 {
 		return autopilotDecision{}, false

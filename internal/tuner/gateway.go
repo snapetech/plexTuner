@@ -199,7 +199,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					reqID, channel.GuideName, channelID, nativeMux, len(target), maxSeg, r.UserAgent())
 				finalStatus = muxPrefix + "_seg_param_too_large"
 				finalErr = errHLSMuxSegParamTooLarge
-				g.noteMuxSegOutcome(nativeMux, "err_param")
+				g.noteMuxSegOutcome(nativeMux, "err_param", channelID, PromNoMuxSegHistogram)
 				respondHLSMuxClientError(w, r, http.StatusBadRequest, hlsMuxDiagSegParamTooLarge, nativeMux+" mux seg parameter too large")
 				return
 			}
@@ -208,7 +208,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					reqID, channel.GuideName, channelID, nativeMux, r.RemoteAddr)
 				finalStatus = muxPrefix + "_seg_rate_limited"
 				finalErr = errors.New("native mux segment rate limited")
-				g.noteMuxSegOutcome(nativeMux, "429_rate")
+				g.noteMuxSegOutcome(nativeMux, "429_rate", channelID, PromNoMuxSegHistogram)
 				respondHLSMuxClientError(w, r, http.StatusTooManyRequests, hlsMuxDiagSegRateLimited, "mux segment rate limit exceeded")
 				return
 			}
@@ -217,7 +217,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					reqID, channel.GuideName, channelID, nativeMux, safeurl.RedactURL(target), r.UserAgent())
 				finalStatus = muxPrefix + "_unsupported_target_scheme"
 				finalErr = errHLSMuxUnsupportedTargetScheme
-				g.noteMuxSegOutcome(nativeMux, "err_scheme")
+				g.noteMuxSegOutcome(nativeMux, "err_scheme", channelID, PromNoMuxSegHistogram)
 				respondHLSMuxUnsupportedTargetScheme(w, r)
 				return
 			}
@@ -226,7 +226,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					reqID, channel.GuideName, channelID, nativeMux, safeurl.RedactURL(target), r.UserAgent())
 				finalStatus = muxPrefix + "_blocked_private_upstream"
 				finalErr = errHLSMuxBlockedPrivateUpstream
-				g.noteMuxSegOutcome(nativeMux, "err_private")
+				g.noteMuxSegOutcome(nativeMux, "err_private", channelID, PromNoMuxSegHistogram)
 				respondHLSMuxClientError(w, r, http.StatusForbidden, hlsMuxDiagBlockedPrivateUpstream, "mux upstream host is not allowed")
 				return
 			}
@@ -243,13 +243,13 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						reqID, channel.GuideName, channelID, nativeMux, safeurl.RedactURL(target), r.UserAgent())
 					finalStatus = muxPrefix + "_blocked_private_upstream"
 					finalErr = errHLSMuxBlockedPrivateUpstream
-					g.noteMuxSegOutcome(nativeMux, "err_private")
+					g.noteMuxSegOutcome(nativeMux, "err_private", channelID, PromNoMuxSegHistogram)
 					respondHLSMuxClientError(w, r, http.StatusForbidden, hlsMuxDiagBlockedPrivateUpstream, "mux upstream host is not allowed")
 					return
 				}
 			}
 			g.mu.Lock()
-			segLimit := g.effectiveHLSMuxSegLimitLocked()
+			segLimit := g.effectiveHLSMuxSegLimitLocked(channel)
 			if g.hlsMuxSegInUse >= segLimit {
 				g.noteMuxSegConcurrencyReject()
 				g.mu.Unlock()
@@ -258,7 +258,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "All tuners in use", http.StatusServiceUnavailable)
 				finalStatus = muxPrefix + "_seg_limit"
 				finalErr = errors.New("native mux segment concurrency limit")
-				g.noteMuxSegOutcome(nativeMux, "503_limit")
+				g.noteMuxSegOutcome(nativeMux, "503_limit", channelID, PromNoMuxSegHistogram)
 				return
 			}
 			g.hlsMuxSegInUse++
@@ -279,14 +279,14 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				finalErr = err
 				if errors.Is(err, errHLSMuxUnsupportedTargetScheme) {
 					finalStatus = muxPrefix + "_unsupported_target_scheme"
-					g.noteMuxSegOutcome(nativeMux, "err_scheme")
+					g.noteMuxSegOutcome(nativeMux, "err_scheme", channelID, time.Since(start))
 					respondHLSMuxUnsupportedTargetScheme(w, r)
 					return
 				}
 				var upHTTP *hlsMuxUpstreamHTTPError
 				if errors.As(err, &upHTTP) {
 					finalStatus = muxPrefix + "_upstream_http_" + strconv.Itoa(upHTTP.Status)
-					g.noteMuxSegOutcome(nativeMux, "upstream_http")
+					g.noteMuxSegOutcome(nativeMux, "upstream_http", channelID, time.Since(start))
 					respondHLSMuxUpstreamHTTP(w, r, upHTTP.Status, upHTTP.Body)
 					return
 				}
@@ -294,24 +294,24 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					msg := strings.ToLower(err.Error())
 					if strings.Contains(msg, "blocked") || strings.Contains(msg, "private") {
 						finalStatus = muxPrefix + "_blocked_private_upstream"
-						g.noteMuxSegOutcome(nativeMux, "err_private")
+						g.noteMuxSegOutcome(nativeMux, "err_private", channelID, time.Since(start))
 						respondHLSMuxClientError(w, r, http.StatusForbidden, hlsMuxDiagBlockedPrivateUpstream, "mux upstream host is not allowed")
 					} else {
 						finalStatus = muxPrefix + "_redirect_rejected"
-						g.noteMuxSegOutcome(nativeMux, "err_redirect")
+						g.noteMuxSegOutcome(nativeMux, "err_redirect", channelID, time.Since(start))
 						respondHLSMuxClientError(w, r, http.StatusBadGateway, hlsMuxDiagRedirectRejected, "mux upstream redirect rejected")
 					}
 					return
 				}
 				finalStatus = muxPrefix + "_target_failed"
-				g.noteMuxSegOutcome(nativeMux, "502")
+				g.noteMuxSegOutcome(nativeMux, "502", channelID, time.Since(start))
 				http.Error(w, "Native mux target failed", http.StatusBadGateway)
 				return
 			}
 			if p := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_ACCESS_LOG")); p != "" {
 				appendMuxSegAccessLogLine(p, muxAccessLogJSON(nativeMux, channelID, target, time.Since(start)))
 			}
-			g.noteMuxSegOutcome(nativeMux, "success")
+			g.noteMuxSegOutcome(nativeMux, "success", channelID, time.Since(start))
 			finalStatus = "ok"
 			finalMode = nativeMux + "_mux_target"
 			finalEffectiveURL = target
@@ -646,11 +646,11 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (g *Gateway) noteHLSMuxSegOutcome(kind string) {
-	g.noteMuxSegOutcome("hls", kind)
+	g.noteMuxSegOutcome("hls", kind, "", PromNoMuxSegHistogram)
 }
 
-func (g *Gateway) noteMuxSegOutcome(mux, kind string) {
-	promNoteMuxSegOutcome(mux, kind)
+func (g *Gateway) noteMuxSegOutcome(mux, kind, channelID string, elapsed time.Duration) {
+	promNoteMuxSegOutcome(mux, kind, channelID, elapsed)
 	if mux == "dash" {
 		switch kind {
 		case "success":

@@ -23,6 +23,24 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Native mux nice-to-haves — DASH $ in seg=, LL-HLS tags, Brotli, Prometheus histogram/channel labels, Autopilot seg bonus
+  Summary:
+    - **DASH:** **`dashSegQueryEscape`** preserves **`$`** in **`seg=`** for **SegmentTemplate**; **`gatewayDashMuxProxyURL`**; **`<BaseURL>`** chain includes **`$`** paths.
+    - **HLS:** **`extInfSameLineMedia`** rewrite; tests for **PRELOAD-HINT**, **RENDITION-REPORT**; **`docs/reference/hls-mux-ll-hls-tags.md`**.
+    - **HTTP:** **`IPTV_TUNERR_HTTP_ACCEPT_BROTLI`**, **`brotliRoundTripper`**, lazy env read per request; **`CloneDefaultTransport`**; vendored **andybalholm/brotli**.
+    - **Metrics:** **`iptv_tunerr_mux_seg_request_duration_seconds`**; optional **`IPTV_TUNERR_METRICS_MUX_CHANNEL_LABELS`**; **`noteMuxSegOutcome`** passes **`channelID`** + duration.
+    - **Autopilot:** **`muxAutopilotMaxHits`**, **`IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_*`**, **`effectiveHLSMuxSegLimitLocked(channel)`**.
+    - **Runtime snapshot** keys for new envs; docs/CHANGELOG/.env/cli/toolkit/index updates.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Histogram/counter label set chosen at first metrics registration (process lifetime).
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/httpclient/brotli.go`, `internal/tuner/gateway_dash.go`, `internal/tuner/gateway_hls.go`, `internal/tuner/prometheus_mux.go`, `internal/tuner/gateway_policy.go`, `internal/tuner/autopilot.go`
+
+- Date: 2026-03-19
   Title: Native mux — redirect SSRF hardening, DASH relative rewrite, adaptive seg slots, access log, golden/tests, ADR/OTEL docs
   Summary:
     - **`muxSegHTTPClient`**: **`CheckRedirect`** validates each hop (scheme + literal/resolved private, max **10**); **`errMuxRedirectPolicy`** → **403** / **502** + **`redirect_rejected`** / **`blocked_private_upstream`**.

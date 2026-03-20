@@ -209,7 +209,7 @@ func (g *Gateway) ProviderBehaviorProfile() ProviderBehaviorProfile {
 	learned := g.learnedUpstreamLimit
 	effective := g.effectiveTunerLimitLocked()
 	hlsMuxSegInUse := g.hlsMuxSegInUse
-	hlsMuxSegLimit := g.effectiveHLSMuxSegLimitLocked()
+	hlsMuxSegLimit := g.effectiveHLSMuxSegLimitLocked(nil)
 	g.mu.Unlock()
 
 	g.providerStateMu.Lock()

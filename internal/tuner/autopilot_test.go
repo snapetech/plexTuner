@@ -5,6 +5,18 @@ import (
 	"testing"
 )
 
+func TestAutopilot_muxAutopilotMaxHits(t *testing.T) {
+	s := &autopilotStore{byKey: map[string]autopilotDecision{}}
+	s.byKey[autopilotKey("dna:abc", "web")] = autopilotDecision{Hits: 3}
+	s.byKey[autopilotKey("dna:abc", "native")] = autopilotDecision{Hits: 7}
+	if n := s.muxAutopilotMaxHits("dna:abc"); n != 7 {
+		t.Fatalf("got %d want 7", n)
+	}
+	if n := s.muxAutopilotMaxHits("dna:missing"); n != 0 {
+		t.Fatalf("got %d want 0", n)
+	}
+}
+
 func TestAutopilotStorePersistsAndReloads(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "autopilot.json")
 

@@ -22,6 +22,10 @@ import (
 // hlsQuotedURIAttr matches URI="..." in HLS tag lines (#EXT-X-KEY, #EXT-X-MAP, #EXT-X-STREAM-INF, …).
 var hlsQuotedURIAttr = regexp.MustCompile(`(?i)(URI=")([^"]*)(")`)
 
+// extInfSameLineMedia matches non-standard #EXTINF where a segment-like URI appears on the same line as the
+// duration (some LL-HLS / packager variants). Conservative: requires a known media extension.
+var extInfSameLineMedia = regexp.MustCompile(`^(?i)#EXTINF:([\d.]+),\s*([^",\s][^",\n]*?\.(?:m4s|ts|mp4|mp2t|aac|webvtt|vtt))(?:\?[^",\s]*)?\s*$`)
+
 var errHLSMuxUnsupportedTargetScheme = errors.New("unsupported hls mux target URL scheme")
 
 var errHLSMuxSegParamTooLarge = errors.New("hls mux seg parameter too large")
@@ -452,7 +456,16 @@ func rewriteHLSPlaylistToGatewayProxy(body []byte, upstreamURL string, channelID
 			continue
 		}
 		if strings.HasPrefix(trim, "#") {
+			if sm := extInfSameLineMedia.FindStringSubmatch(trim); len(sm) == 3 {
+				resolved := resolveHLSMediaRef(sm[2], base)
+				if strings.TrimSpace(resolved) != "" {
+					proxied := gatewayHLSProxyMediaURL(channelID, resolved)
+					out.WriteString(strings.Replace(trim, sm[2], proxied, 1))
+					continue
+				}
+			}
 			// Attribute name is usually URI= but some generators use uri=; regex rewrite is case-insensitive.
+			// Covers #EXT-X-PART, #EXT-X-PRELOAD-HINT, #EXT-X-RENDITION-REPORT, keys, maps, variants, etc.
 			if strings.Contains(strings.ToUpper(trim), `URI="`) {
 				out.WriteString(rewriteHLSQuotedURIAttrs(line, base, channelID))
 			} else {

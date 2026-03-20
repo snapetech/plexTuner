@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/snapetech/iptvtunerr/internal/catalog"
 	"github.com/snapetech/iptvtunerr/internal/safeurl"
 )
 
@@ -50,7 +51,8 @@ func (g *Gateway) effectiveTunerLimitLocked() int {
 // effectiveHLSMuxSegLimitLocked caps concurrent ?mux=hls|dash&seg= proxy requests (short-lived HTTP relays).
 // Default: effective tuner limit × IPTV_TUNERR_HLS_MUX_SEG_SLOTS_PER_TUNER (default 8). Override with IPTV_TUNERR_HLS_MUX_MAX_CONCURRENT.
 // Optional IPTV_TUNERR_HLS_MUX_SEG_SLOTS_AUTO adds temporary bonus slots from recent 503-limit rejections (see muxSegAdaptiveBonus).
-func (g *Gateway) effectiveHLSMuxSegLimitLocked() int {
+// Optional IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_BONUS adds slots for channels with hot Autopilot memory (channel may be nil for aggregate profile display).
+func (g *Gateway) effectiveHLSMuxSegLimitLocked(channel *catalog.LiveChannel) int {
 	if v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_MAX_CONCURRENT")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			return n
@@ -68,10 +70,57 @@ func (g *Gateway) effectiveHLSMuxSegLimitLocked() int {
 		limit = 1
 	}
 	limit += g.muxSegAdaptiveBonus()
+	limit += g.muxSegAutopilotBonus(channel)
 	if limit < 1 {
 		limit = 1
 	}
 	return limit
+}
+
+func (g *Gateway) muxSegAutopilotBonus(channel *catalog.LiveChannel) int {
+	if g == nil || !getenvBool("IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_BONUS", false) {
+		return 0
+	}
+	if channel == nil || strings.TrimSpace(channel.DNAID) == "" {
+		return 0
+	}
+	if g.Autopilot == nil {
+		return 0
+	}
+	if strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_MAX_CONCURRENT")) != "" {
+		return 0
+	}
+	maxH := g.Autopilot.muxAutopilotMaxHits(channel.DNAID)
+	minHits := 3
+	if v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_MIN_HITS")); v != "" {
+		if x, err := strconv.Atoi(v); err == nil && x > 0 {
+			minHits = x
+		}
+	}
+	if maxH < minHits {
+		return 0
+	}
+	perStep := 4
+	if v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_BONUS_PER_STEP")); v != "" {
+		if x, err := strconv.Atoi(v); err == nil && x >= 0 {
+			perStep = x
+		}
+	}
+	capB := 32
+	if v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_BONUS_CAP")); v != "" {
+		if x, err := strconv.Atoi(v); err == nil && x >= 0 {
+			capB = x
+		}
+	}
+	steps := maxH - minHits + 1
+	if steps < 1 {
+		return 0
+	}
+	bonus := perStep * steps
+	if bonus > capB {
+		bonus = capB
+	}
+	return bonus
 }
 
 func muxSegSlotsAutoEnabled() bool {

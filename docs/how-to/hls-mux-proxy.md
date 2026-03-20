@@ -61,6 +61,7 @@ Byte-range HLS (**`#EXT-X-BYTERANGE`**) requires the player’s **`Range`** requ
 See also
 --------
 
+- [LL-HLS tag coverage (reference)](../reference/hls-mux-ll-hls-tags.md) — which **`#EXT-*`** lines get **`URI=`** rewrite and same-line **`#EXTINF`** handling.
 - [HLS mux toolkit (reference)](../reference/hls-mux-toolkit.md) — diagnostics, **`curl`** snippets, enhancement backlog.
 - [Transcode profiles](../reference/transcode-profiles.md) — `?mux=fmp4`, `?profile=`, TS defaults.
 - [CLI and env reference](../reference/cli-and-env-reference.md) — `IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`, `IPTV_TUNERR_HLS_MUX_CORS`, streaming envs.

@@ -27,6 +27,7 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[how-to/hybrid-hdhr-iptv.md](how-to/hybrid-hdhr-iptv.md)** | Merge HDHR `lineup.json` + `guide.xml` with IPTV index and `/guide.xml`. |
 | **[how-to/hls-mux-proxy.md](how-to/hls-mux-proxy.md)** | HLS/DASH-through-Tunerr: `?mux=hls` / experimental `?mux=dash`, optional **`IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`**, CORS, web demo. |
 | **[reference/hls-mux-toolkit.md](reference/hls-mux-toolkit.md)** | Native mux diagnostics (**HLS** + **DASH**), operator **`curl`** snippets, metrics, DNS SSRF options, remaining backlog. |
+| **[reference/hls-mux-ll-hls-tags.md](reference/hls-mux-ll-hls-tags.md)** | LL-HLS / low-latency tag coverage for **`?mux=hls`** playlist rewrite. |
 | **[reference/cli-and-env-reference.md](reference/cli-and-env-reference.md)** | Commands, flags, and key env vars (including supervisor/testing knobs). |
 | **[reference/transcode-profiles.md](reference/transcode-profiles.md)** | Gateway ffmpeg profile names, HDHR-style aliases, `?profile=`, `?mux=fmp4` / `?mux=hls` / `?mux=dash`. |
 | **[explanations/media-server-integration-modes.md](explanations/media-server-integration-modes.md)** | Where the common tuner story ends and Plex-heavy ops begin. |

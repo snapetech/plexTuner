@@ -14,7 +14,7 @@ Dense reference for **Tunerr-native HLS** and **experimental DASH MPD** proxying
 | Area | Behavior |
 |------|-----------|
 | Entry URL (HLS) | `GET /stream/<channel>?mux=hls` — rewritten **M3U8**; media uses `?mux=hls&seg=<url-encoded-upstream>` |
-| Entry URL (DASH) | `GET /stream/<channel>?mux=dash` on **DASH** upstream — rewritten **MPD** (`application/dash+xml`); **`media=`** / **`initialization=`** / **`BaseURL`**: absolute **http(s)** and **plain relative** values (resolved with a running **`<BaseURL>`** chain + manifest URL) → `?mux=dash&seg=` (**experimental**); **`SegmentTemplate`** placeholders containing **`$`** are left unchanged |
+| Entry URL (DASH) | `GET /stream/<channel>?mux=dash` on **DASH** upstream — rewritten **MPD** (`application/dash+xml`); **`media=`** / **`initialization=`** / **`BaseURL`**: absolute **http(s)** and **plain relative** values (resolved with a running **`<BaseURL>`** chain + manifest URL) → `?mux=dash&seg=` (**experimental**); **`SegmentTemplate`** identifiers (**`$Number$`**, **`$RepresentationID$`**, …) stay **literal in `seg=`** (query encoding does not escape `$`) so players can substitute before fetching |
 | Upstream auth | Same **`Cookie`**, **`Referer`**, **`Origin`**, **`Authorization`**, correlation IDs as **`/stream`** |
 | Playlist `URI="..."` | Rewritten on HLS tag lines (keys, maps, variants, media, **`EXT-X-PART`** `URI=`, case-insensitive **`uri=`**) |
 | **Range / If-Range** | Forwarded; **206** + **Content-Range** for binary |
@@ -28,7 +28,11 @@ Dense reference for **Tunerr-native HLS** and **experimental DASH MPD** proxying
 | Absolute client URLs | **`IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`** |
 | Rate limit | Optional **`IPTV_TUNERR_HLS_MUX_SEG_RPS_PER_IP`** per source IP (**429** + **`seg_rate_limited`**) |
 | DNS-assisted SSRF guard | **`IPTV_TUNERR_HLS_MUX_DENY_RESOLVED_PRIVATE_UPSTREAM`** — **A/AAAA** lookup; block if any addr is private/link-local/loopback (**fail-open** on DNS errors; combine with literal deny) |
-| gzip | Go’s default **`http.Transport`** negotiates **`Accept-Encoding: gzip`** and **decompresses** responses unless disabled — segments/playlists are usually already decoded when handlers run |
+| gzip | Go’s **`http.Transport`** negotiates **gzip** and **decompresses** unless disabled — segments/playlists are usually already decoded when handlers run |
+| Brotli | Optional **`IPTV_TUNERR_HTTP_ACCEPT_BROTLI`**: **`Accept-Encoding`** includes **`br`** and **`Content-Encoding: br`** responses are decompressed (`internal/httpclient`) |
+| LL-HLS-style tags | **`URI="..."`** on **`#EXT-X-PRELOAD-HINT`**, **`#EXT-X-RENDITION-REPORT`**, **`#EXT-X-PART`**, etc.; optional same-line **`#EXTINF`** segment URI (conservative) — see [hls-mux-ll-hls-tags](hls-mux-ll-hls-tags.md) |
+| Metrics | **`iptv_tunerr_mux_seg_request_duration_seconds`** histogram (when **`IPTV_TUNERR_METRICS_ENABLE`**); optional per-channel counter/histogram labels (**`IPTV_TUNERR_METRICS_MUX_CHANNEL_LABELS`**, high cardinality) |
+| Autopilot | Optional **`IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_BONUS`**: extra **`seg=`** slots for channels whose **`dna_id`** has hot Autopilot memory (see env table) |
 
 ## Diagnostic header: `X-IptvTunerr-Hls-Mux-Error`
 
@@ -78,8 +82,14 @@ Dense reference for **Tunerr-native HLS** and **experimental DASH MPD** proxying
 | `IPTV_TUNERR_HLS_MUX_UPSTREAM_ERR_BODY_MAX` | Upstream error body cap |
 | `IPTV_TUNERR_HLS_MUX_SEG_RPS_PER_IP` | Token-bucket rate / IP (**0** = off) |
 | `IPTV_TUNERR_HLS_MUX_WEB_DEMO` | Serves **`/debug/hls-mux-demo.html`** (hls.js sample) when **true** |
-| `IPTV_TUNERR_METRICS_ENABLE` | Exposes Prometheus **`GET /metrics`** + registers **`iptv_tunerr_mux_seg_outcomes_total{mux,outcome}`** |
+| `IPTV_TUNERR_METRICS_ENABLE` | Exposes Prometheus **`GET /metrics`** + mux counters + **`iptv_tunerr_mux_seg_request_duration_seconds`** histogram |
+| `IPTV_TUNERR_METRICS_MUX_CHANNEL_LABELS` | Add **`channel_id`** to mux counter/histogram labels (**high cardinality**; default off) |
+| `IPTV_TUNERR_HTTP_ACCEPT_BROTLI` | Accept **br** and decompress brotli upstream bodies on the shared HTTP stack |
 | `IPTV_TUNERR_HTTP_MAX_IDLE_CONNS_PER_HOST` | Tunable **`MaxIdleConnsPerHost`** on shared HTTP client (default **16**) |
+| `IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_BONUS` | Extra concurrent **`seg=`** slots from Autopilot hit counts (**`MAX_CONCURRENT`** disables) |
+| `IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_MIN_HITS` | Minimum Autopilot **Hits** (best row per **`dna_id`**) before bonus applies (default **3**) |
+| `IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_BONUS_PER_STEP` | Bonus slots × (**maxHits − minHits + 1**), capped (default **4** per step) |
+| `IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_BONUS_CAP` | Max autopilot bonus slots (default **32**) |
 
 See [cli-and-env-reference](cli-and-env-reference.md#stream-behavior).
 
@@ -109,11 +119,8 @@ curl -sS 'http://127.0.0.1:5004/provider_profile.json' | jq '.hls_mux_seg_succes
 
 ## Enhancement backlog (remaining)
 
-- **DASH:** **`SegmentTemplate`** with **`$Number$` / `$RepresentationID$`** expansion (placeholders are intentionally not rewritten today).
-- **LL-HLS** remainders (**`PRELOAD-HINT`**, **`RENDITION-REPORT`**, …) audit.
-- **BYTERANGE** on same line as segment URI; **Brotli-only** CDNs without gzip.
-- **Prometheus:** histograms; per-channel labels (cardinality risk). **OpenTelemetry:** scrape **`/metrics`** with a collector — [explanation](../explanations/observability-prometheus-and-otel.md).
-- **Autopilot-driven** seg limits (beyond reactive **503** auto-bonus).
+- **DASH:** numeric **enumeration** of **`SegmentTemplate`** into explicit segment lists (VoD math); today templates proxy with **`$`** preserved for client substitution.
+- **HLS:** **`#EXTINF`** + **`BYTERANGE=`** on the **same** tag line (non-standard); unusual tags that carry URLs outside **`URI="`**.
 
 ## Related code
 
@@ -129,6 +136,7 @@ curl -sS 'http://127.0.0.1:5004/provider_profile.json' | jq '.hls_mux_seg_succes
 See also
 --------
 
+- [LL-HLS tag coverage](hls-mux-ll-hls-tags.md)
 - [HLS mux how-to](../how-to/hls-mux-proxy.md)
 - [Transcode profiles](transcode-profiles.md) — **`?mux=hls`** / **`?mux=dash`** vs ffmpeg **`?mux=fmp4`**
 - [CLI and env reference](cli-and-env-reference.md)

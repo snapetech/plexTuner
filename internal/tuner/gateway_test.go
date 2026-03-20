@@ -100,6 +100,39 @@ func TestRewriteDASHManifestToGatewayProxy(t *testing.T) {
 	if !strings.Contains(s, "mux=dash&seg=") {
 		t.Fatalf("expected dash mux proxy: %q", s)
 	}
+	if !strings.Contains(s, "$Number$") {
+		t.Fatalf("expected SegmentTemplate $Number$ preserved for player substitution: %q", s)
+	}
+}
+
+func TestRewriteHLSPlaylistToGatewayProxy_extInfSameLineMedia(t *testing.T) {
+	in := []byte("#EXTM3U\n#EXTINF:4.0,relative/part.m4s\n")
+	out := rewriteHLSPlaylistToGatewayProxy(in, "http://up.example/live/m.m3u8", "z")
+	s := string(out)
+	if !strings.Contains(s, "/stream/z?mux=hls&seg=") {
+		t.Fatalf("expected same-line media rewritten: %q", s)
+	}
+	if strings.Contains(s, "relative/part.m4s") {
+		t.Fatalf("raw relative path should not remain: %q", s)
+	}
+}
+
+func TestRewriteHLSPlaylistToGatewayProxy_preloadHintUri(t *testing.T) {
+	in := "#EXTM3U\n#EXT-X-PRELOAD-HINT:TYPE=PART,URI=\"https://cdn.example/hint.m4s\"\n"
+	out := rewriteHLSPlaylistToGatewayProxy([]byte(in), "http://up.example/x.m3u8", "a")
+	s := string(out)
+	if !strings.Contains(s, `URI="/stream/a?mux=hls&seg=`) {
+		t.Fatalf("expected PRELOAD-HINT URI rewrite: %q", s)
+	}
+}
+
+func TestRewriteHLSPlaylistToGatewayProxy_renditionReportUri(t *testing.T) {
+	in := "#EXTM3U\n#EXT-X-RENDITION-REPORT:URI=\"https://cdn.example/rep.m3u8\",LAST-MSN=1\n"
+	out := rewriteHLSPlaylistToGatewayProxy([]byte(in), "http://up.example/x.m3u8", "b")
+	s := string(out)
+	if !strings.Contains(s, `URI="/stream/b?mux=hls&seg=`) {
+		t.Fatalf("expected RENDITION-REPORT URI rewrite: %q", s)
+	}
 }
 
 func TestRewriteDASHManifestToGatewayProxy_relativeWithBaseURL(t *testing.T) {
@@ -182,6 +215,25 @@ func TestGateway_hlsMuxSeg_chunkedUpstreamPassthrough(t *testing.T) {
 	}
 }
 
+func TestGateway_effectiveHLSMuxSegLimit_autopilotBonus(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_BONUS", "1")
+	t.Setenv("IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_MIN_HITS", "2")
+	t.Setenv("IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_BONUS_PER_STEP", "5")
+	t.Setenv("IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_BONUS_CAP", "100")
+	t.Setenv("IPTV_TUNERR_HLS_MUX_SEG_SLOTS_PER_TUNER", "1")
+	st := &autopilotStore{byKey: map[string]autopilotDecision{}}
+	st.byKey[autopilotKey("dna:x", "web")] = autopilotDecision{DNAID: "dna:x", ClientClass: "web", Hits: 5}
+	g := &Gateway{TunerCount: 2, Autopilot: st}
+	ch := &catalog.LiveChannel{DNAID: "dna:x"}
+	g.mu.Lock()
+	lim := g.effectiveHLSMuxSegLimitLocked(ch)
+	g.mu.Unlock()
+	// base 2 + (5-2+1)*5 = 22
+	if lim < 22 {
+		t.Fatalf("expected autopilot bonus, limit=%d", lim)
+	}
+}
+
 func TestGateway_effectiveHLSMuxSegLimit_adaptiveBonus(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_HLS_MUX_SEG_SLOTS_AUTO", "1")
 	t.Setenv("IPTV_TUNERR_HLS_MUX_SEG_AUTO_BONUS_PER_HIT", "10")
@@ -191,7 +243,7 @@ func TestGateway_effectiveHLSMuxSegLimit_adaptiveBonus(t *testing.T) {
 	now := time.Now()
 	g.muxSegAutoRejectAt = []time.Time{now, now, now}
 	g.mu.Lock()
-	base := g.effectiveHLSMuxSegLimitLocked()
+	base := g.effectiveHLSMuxSegLimitLocked(nil)
 	g.mu.Unlock()
 	// 2 tuners * 1 slot + min(3*10, 100) = 32
 	if base < 30 {

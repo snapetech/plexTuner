@@ -14,6 +14,7 @@ const (
 	MaxIdleConnsPerHost    = 16
 )
 
+var defaultTransportTemplate *http.Transport
 var defaultClient *http.Client
 
 func init() {
@@ -23,15 +24,22 @@ func init() {
 			maxPerHost = n
 		}
 	}
-	defaultClient = &http.Client{
-		Timeout: DefaultTimeout,
-		Transport: &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: maxPerHost,
-			IdleConnTimeout:     DefaultIdleConnTimeout,
-			ForceAttemptHTTP2:   true, // enable h2 via ALPN, matches http.DefaultTransport behaviour
-		},
+	defaultTransportTemplate = &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: maxPerHost,
+		IdleConnTimeout:     DefaultIdleConnTimeout,
+		ForceAttemptHTTP2:   true,
 	}
+	defaultClient = &http.Client{
+		Timeout:   DefaultTimeout,
+		Transport: TransportWithOptionalBrotli(defaultTransportTemplate),
+	}
+}
+
+// CloneDefaultTransport returns a cloned http.Transport with the same defaults as the shared client
+// (idle limits, HTTP/2), without the default client's optional Brotli wrapper.
+func CloneDefaultTransport() *http.Transport {
+	return defaultTransportTemplate.Clone()
 }
 
 // Default returns the shared tuned HTTP client for indexer, gateway, materializer, probe.
@@ -39,26 +47,17 @@ func Default() *http.Client {
 	return defaultClient
 }
 
-// WithTimeout returns a client with the given timeout and the same transport as Default (or a copy).
+// WithTimeout returns a client with the given timeout and the same transport stack as Default.
 func WithTimeout(timeout time.Duration) *http.Client {
-	t, ok := defaultClient.Transport.(*http.Transport)
-	if !ok {
-		return &http.Client{Timeout: timeout}
-	}
 	return &http.Client{
 		Timeout:   timeout,
-		Transport: t.Clone(),
+		Transport: TransportWithOptionalBrotli(defaultTransportTemplate.Clone()),
 	}
 }
 
 // ForStreaming returns a client tuned for long-lived streaming requests.
 func ForStreaming() *http.Client {
-	t, ok := defaultClient.Transport.(*http.Transport)
-	if !ok {
-		return &http.Client{}
-	}
 	return &http.Client{
-		// No client-wide timeout for long-running stream relays.
-		Transport: t.Clone(),
+		Transport: TransportWithOptionalBrotli(defaultTransportTemplate.Clone()),
 	}
 }
