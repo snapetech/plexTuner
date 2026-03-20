@@ -552,6 +552,13 @@ func (x *XMLTV) refresh() {
 					log.Printf("epg sqlite: vacuum completed (after prune)")
 				}
 			}
+			if x.EpgMaxBytes > 0 {
+				if qn, qerr := x.EpgStore.EnforceMaxDBBytes(x.EpgMaxBytes); qerr != nil {
+					log.Printf("epg sqlite: max-bytes enforce failed: %v", qerr)
+				} else if qn > 0 {
+					log.Printf("epg sqlite: enforced max size: deleted %d programme row(s)", qn)
+				}
+			}
 		}
 	}
 }

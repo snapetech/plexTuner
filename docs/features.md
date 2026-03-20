@@ -49,6 +49,7 @@ See also:
 | **HDHR metadata controls** | Per-instance discover metadata (manufacturer/model/fw/device auth) and `ScanPossible` control for wizard-lane vs category tuners. |
 | **Physical HDHomeRun client (spike)** | `hdhr-scan` discovers real tuners on the LAN (UDP) or fetches `discover.json` / `lineup.json` via HTTP; catalog merge is **not** automatic — see [ADR 0002](adr/0002-hdhr-hardware-iptv-merge.md). |
 | **HDHR `guide.xml`** | `hdhr-scan -guide-xml` probes device XMLTV (counts). **`IPTV_TUNERR_HDHR_GUIDE_URL`** merges that feed into `/guide.xml` when `tvg-id` values match ([ADR 0004](adr/0004-hdhr-guide-epg-merge.md)). |
+| **HDHR `lineup.json` → catalog** | **`IPTV_TUNERR_HDHR_LINEUP_URL`** merges hardware channels during **`iptv-tunerr index`** ([how-to](how-to/hybrid-hdhr-iptv.md)). |
 | **Operator `/ui/` shell** | Embedded static pages on `serve`/`run`: home (`/ui/`) links to health and JSON reports; **`/ui/guide/`** shows a read-only preview of the merged cached guide; localhost-only unless `IPTV_TUNERR_UI_ALLOW_LAN=1`. |
 
 ## 4. Stream gateway and transcoding
@@ -56,7 +57,7 @@ See also:
 | Feature | Description |
 |---------|-------------|
 | **HLS -> MPEG-TS relay** | Native relay path for HLS inputs to Plex-facing TS output. |
-| **ffmpeg transcode path** | Optional ffmpeg-based remux/transcode for web-safe / Plex-friendly output; named profiles + HDHR-style aliases — [transcode-profiles](reference/transcode-profiles.md). |
+| **ffmpeg transcode path** | Optional ffmpeg remux/transcode; MPEG-TS default; experimental **`?mux=fmp4`** fragmented MP4 when transcoding HLS — [transcode-profiles](reference/transcode-profiles.md). |
 | **Transcode modes** | `off`, `on`, `auto` (codec/probe-driven behavior depending config/runtime). |
 | **Startup/bootstrap controls** | Web-safe bootstrap and startup-gate tuning for Plex web playback behavior. |
 | **Client disconnect handling** | Better classification of downstream disconnects to avoid false relay errors. |
@@ -66,7 +67,7 @@ See also:
 
 The guide pipeline merges three sources in priority order per channel: provider XMLTV > external XMLTV > placeholder. External gap-fills provider. Cache is pre-warmed at startup; stale data served on fetch error.
 
-Optional **SQLite EPG file** (`IPTV_TUNERR_EPG_SQLITE_PATH`) stores merged guide rows after each refresh, exposes max programme end times for incremental fetch windows, and `/guide/epg-store.json` for inspection ([ADR 0003](adr/0003-epg-sqlite-vs-postgres.md)). Optional **`IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS`** drops older programmes from the SQLite file after each sync; optional **`IPTV_TUNERR_EPG_SQLITE_VACUUM`** runs `VACUUM` after such pruning to shrink the on-disk file. **`IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX`** can append query params to provider `xmltv.php` when your panel documents them.
+Optional **SQLite EPG file** (`IPTV_TUNERR_EPG_SQLITE_PATH`) stores merged guide rows after each refresh, exposes max programme end times for incremental fetch windows, and `/guide/epg-store.json` for inspection ([ADR 0003](adr/0003-epg-sqlite-vs-postgres.md)). Optional **`IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS`** drops older programmes from the SQLite file after each sync; optional **`IPTV_TUNERR_EPG_SQLITE_VACUUM`** runs `VACUUM` after such pruning; optional **`IPTV_TUNERR_EPG_SQLITE_MAX_BYTES`** / **`IPTV_TUNERR_EPG_SQLITE_MAX_MB`** cap on-disk file size after sync. **`IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX`** can append query params to provider `xmltv.php` when your panel documents them.
 
 | Feature | Description |
 |---------|-------------|

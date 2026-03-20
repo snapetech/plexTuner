@@ -191,7 +191,21 @@ func effectiveProfileName(g *Gateway, channel *catalog.LiveChannel, channelID, f
 	return g.profileForChannelMeta(channelID, channel.GuideNumber, channel.TVGID)
 }
 
+const (
+	streamMuxMPEGTS = "mpegts"
+	streamMuxFMP4   = "fmp4"
+)
+
+// buildFFmpegMPEGTSCodecArgs targets MPEG-TS output (default gateway / Plex HDHR).
 func buildFFmpegMPEGTSCodecArgs(transcode bool, profile string) []string {
+	return buildFFmpegStreamOutputArgs(transcode, profile, streamMuxMPEGTS)
+}
+
+// buildFFmpegStreamOutputArgs builds ffmpeg output args for MPEG-TS or fragmented MP4 (LP-010/011).
+func buildFFmpegStreamOutputArgs(transcode bool, profile string, outputMux string) []string {
+	if outputMux == "" {
+		outputMux = streamMuxMPEGTS
+	}
 	mpegtsFlags := mpegTSFlagsWithOptionalInitialDiscontinuity()
 	var codecArgs []string
 	if !transcode {
@@ -324,12 +338,24 @@ func buildFFmpegMPEGTSCodecArgs(transcode bool, profile string) []string {
 				"-af", "aresample=async=1:first_pts=0",
 			)
 		}
-		// Help Plex's live parser lock onto a clean TS timeline/header faster.
+		if outputMux == streamMuxMPEGTS {
+			// Help Plex's live parser lock onto a clean TS timeline/header faster.
+			codecArgs = append(codecArgs,
+				"-muxrate", "3000000",
+				"-pcr_period", "20",
+				"-pat_period", "0.05",
+			)
+		}
+	}
+	if outputMux == streamMuxFMP4 {
 		codecArgs = append(codecArgs,
-			"-muxrate", "3000000",
-			"-pcr_period", "20",
-			"-pat_period", "0.05",
+			"-flush_packets", "1",
+			"-max_interleave_delta", "0",
+			"-movflags", "frag_keyframe+empty_moov+default_base_moof",
+			"-f", "mp4",
+			"pipe:1",
 		)
+		return codecArgs
 	}
 	codecArgs = append(codecArgs,
 		"-flush_packets", "1",

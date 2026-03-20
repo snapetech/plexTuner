@@ -100,6 +100,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	bufferBytes int,
 	forcedProfile string,
 	hotStart hotStartConfig,
+	outputMux string,
 ) error {
 	reqField := gatewayReqIDField(r.Context())
 	profile := g.profileForChannelMeta(channelID, guideNumber, tvgID)
@@ -169,7 +170,10 @@ func (g *Gateway) relayHLSWithFFmpeg(
 		args = append(args, "-headers", headers)
 	}
 	args = append(args, "-i", ffmpegPlaylistURL)
-	args = append(args, buildFFmpegMPEGTSCodecArgs(transcode, profile)...)
+	if outputMux == "" {
+		outputMux = streamMuxMPEGTS
+	}
+	args = append(args, buildFFmpegStreamOutputArgs(transcode, profile, outputMux)...)
 
 	cmd := exec.CommandContext(r.Context(), ffmpegPath, args...)
 	stdout, err := cmd.StdoutPipe()
@@ -210,6 +214,12 @@ func (g *Gateway) relayHLSWithFFmpeg(
 		log.Printf("gateway:%s channel=%q id=%s %s hot-start %s bootstrap_sec=%.2f keepalive=%t",
 			reqField, channelName, channelID, modeLabel, hotStartSummary(hotStart), bootstrapSec, enableProgramKeepalive)
 	}
+	if outputMux == streamMuxFMP4 {
+		// fMP4 is not TS; skip IDR/AAC-in-TS prefetch and TS keepalives.
+		startupMin, startupMax = 0, 0
+		enableNullTSKeepalive = false
+		enableProgramKeepalive = false
+	}
 	if enableProgramKeepalive && enableNullTSKeepalive {
 		enableNullTSKeepalive = false
 		log.Printf("gateway:%s channel=%q id=%s %s keepalive-select program=true null=false reason=program-priority",
@@ -222,7 +232,11 @@ func (g *Gateway) relayHLSWithFFmpeg(
 		if responseStarted {
 			return
 		}
-		w.Header().Set("Content-Type", "video/mp2t")
+		ct := "video/mp2t"
+		if outputMux == streamMuxFMP4 {
+			ct = "video/mp4"
+		}
+		w.Header().Set("Content-Type", ct)
 		w.Header().Del("Content-Length")
 		w.WriteHeader(http.StatusOK)
 		bodyOut, flushBody = streamWriter(w, bufferBytes)

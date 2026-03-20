@@ -20,6 +20,7 @@ Goal → preconditions → steps → verify.
 | [tester-release-notes-draft](tester-release-notes-draft.md) | Draft release notes / tester-facing summary for current validation builds. |
 | [cloudflare-bypass](cloudflare-bypass.md) | Cloudflare-protected IPTV: UA cycling, cookies, clearance, operator knobs. |
 | [debug-bundle](debug-bundle.md) | Collect `iptv-tunerr debug-bundle` and analyze with `scripts/analyze-bundle.py`. |
+| [hybrid-hdhr-iptv](hybrid-hdhr-iptv.md) | Physical HDHomeRun + IPTV: lineup merge, guide.xml, optional SQLite caps. |
 
 See also
 --------

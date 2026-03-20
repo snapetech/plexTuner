@@ -2,7 +2,7 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Latest (2026-03-19):** **`LP-009` (partial)** — **`IPTV_TUNERR_EPG_SQLITE_VACUUM`**, `Store.Vacuum()`, `/guide/epg-store.json` **db_file_bytes** / **vacuum_after_prune**. **Next:** HLS/fMP4 outputs (epic), HDHR catalog import (**LP-002**), stricter EPG store quotas if needed.
+**Latest (2026-03-19):** **Lineup parity sweep** — LP-002 **`IPTV_TUNERR_HDHR_LINEUP_URL`**; LP-009 **max SQLite bytes**; LP-010/011 **`?mux=fmp4`** + `buildFFmpegStreamOutputArgs`; LP-012 [docs/how-to/hybrid-hdhr-iptv.md](../docs/how-to/hybrid-hdhr-iptv.md). **Next:** optional provider-side incremental `xmltv.php` fetch; Tunerr-native **HLS segmenter** only if product asks.
 
 **Goal:** Start the new Live TV Intelligence product track: map the multi-PR roadmap, then ship the first visible foundation feature so IPTV Tunerr feels like an intelligent control plane instead of only a tuner bridge.
 

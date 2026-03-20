@@ -55,6 +55,7 @@ func newRuntimeServer(cfg *config.Config, addr, baseURL, deviceID, friendlyName 
 		ProviderEPGCacheTTL:       cfg.ProviderEPGCacheTTL,
 		EpgSQLiteRetainPastHours:  cfg.EpgSQLiteRetainPastHours,
 		EpgSQLiteVacuumAfterPrune: cfg.EpgSQLiteVacuumAfterPrune,
+		EpgSQLiteMaxBytes:         cfg.EpgSQLiteMaxBytes,
 		ProviderEPGURLSuffix:      cfg.ProviderEPGURLSuffix,
 		HDHRGuideURL:              cfg.HDHRGuideURL,
 		HDHRGuideTimeout:          cfg.HDHRGuideTimeout,

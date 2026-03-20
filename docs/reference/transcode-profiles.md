@@ -9,7 +9,7 @@ tags: [transcode, ffmpeg, gateway, hdhomerun]
 
 IPTV Tunerr’s gateway can **transcode** live HLS/MPEG-TS to a Plex-friendly **MPEG-TS** output using ffmpeg. Profiles are **names** that select bitrate, resolution caps, and audio codec policy (`internal/tuner/gateway_profiles.go`).
 
-**Not in scope yet:** separate **HLS** or **fMP4** packaging outputs (see [EPIC-lineup-parity](../epics/EPIC-lineup-parity.md) LP-010/LP-011 roadmap). Today’s profiles all target the existing TS relay path.
+**MPEG-TS** is the default output for Plex/HDHR compatibility. **Fragmented MP4** is optional for ffmpeg HLS paths: add **`?mux=fmp4`** on `/stream/…` when **transcoding** is active (experimental). **HLS segment packaging** (multi-file `.m3u8` + `.ts` segments from Tunerr) is not implemented—use TS or fMP4 pass-through from ffmpeg.
 
 ## Canonical profile names
 

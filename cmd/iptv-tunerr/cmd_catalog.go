@@ -13,6 +13,7 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/channeldna"
 	"github.com/snapetech/iptvtunerr/internal/config"
 	"github.com/snapetech/iptvtunerr/internal/epglink"
+	"github.com/snapetech/iptvtunerr/internal/hdhomerun"
 	"github.com/snapetech/iptvtunerr/internal/indexer"
 	"github.com/snapetech/iptvtunerr/internal/provider"
 	"github.com/snapetech/iptvtunerr/internal/refio"
@@ -503,6 +504,25 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 		}
 	}
 
+	// Optional physical HDHomeRun lineup.json merge (LP-002).
+	if u := strings.TrimSpace(cfg.HDHRLineupMergeURL); u != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		doc, err := hdhomerun.FetchLineupJSON(ctx, nil, u)
+		cancel()
+		if err != nil {
+			log.Printf("hdhr-lineup: fetch %q failed: %v", u, err)
+		} else {
+			added := hdhomerun.LiveChannelsFromLineupDoc(doc, cfg.HDHRLineupIDPrefix)
+			if len(added) == 0 {
+				log.Printf("hdhr-lineup: no channels from %q", u)
+			} else {
+				before := len(res.Live)
+				res.Live = mergeHDHRCatalogChannels(res.Live, added)
+				log.Printf("hdhr-lineup: merged %d hardware channel(s); live channels %d -> %d", len(added), before, len(res.Live))
+			}
+		}
+	}
+
 	applyRuntimeEPGRepairs(cfg, res.Live, res.ProviderBase, res.ProviderUser, res.ProviderPass)
 
 	channeldna.Assign(res.Live)
@@ -549,6 +569,33 @@ func configuredDirectM3UURLs(cfg *config.Config) []string {
 		direct = append(direct, u)
 	}
 	return direct
+}
+
+func mergeHDHRCatalogChannels(base, hd []catalog.LiveChannel) []catalog.LiveChannel {
+	seen := make(map[string]struct{}, len(base)+len(hd))
+	for _, c := range base {
+		seen[c.ChannelID] = struct{}{}
+		if c.TVGID != "" {
+			seen["tvg:"+c.TVGID] = struct{}{}
+		}
+	}
+	out := append([]catalog.LiveChannel(nil), base...)
+	for _, c := range hd {
+		if _, ok := seen[c.ChannelID]; ok {
+			continue
+		}
+		if c.TVGID != "" {
+			if _, ok := seen["tvg:"+c.TVGID]; ok {
+				continue
+			}
+		}
+		seen[c.ChannelID] = struct{}{}
+		if c.TVGID != "" {
+			seen["tvg:"+c.TVGID] = struct{}{}
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 func catalogStats(live []catalog.LiveChannel) (epgLinked, withBackups int) {

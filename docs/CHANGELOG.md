@@ -13,6 +13,13 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+### Lineup parity — remaining LP stories (LP-002 / LP-009 / LP-010 / LP-011 / LP-012)
+
+- **LP-002**: **`IPTV_TUNERR_HDHR_LINEUP_URL`** (+ optional **`IPTV_TUNERR_HDHR_LINEUP_ID_PREFIX`**) merges physical **`lineup.json`** into the catalog during **`iptv-tunerr index`** (`internal/hdhomerun/LiveChannelsFromLineupDoc`).
+- **LP-009**: **`IPTV_TUNERR_EPG_SQLITE_MAX_BYTES`** / **`IPTV_TUNERR_EPG_SQLITE_MAX_MB`** post-sync SQLite size enforcement (`Store.EnforceMaxDBBytes`); **`max_bytes`** on `/guide/epg-store.json`.
+- **LP-010 / LP-011**: **`buildFFmpegStreamOutputArgs`**, optional **`?mux=fmp4`** on HLS ffmpeg relay (fragmented MP4 when transcoding); default remains MPEG-TS.
+- **LP-012**: [how-to/hybrid-hdhr-iptv.md](how-to/hybrid-hdhr-iptv.md).
+
 ### HDHR EPG merge (LP-003 partial)
 - **`IPTV_TUNERR_HDHR_GUIDE_URL`** / **`IPTV_TUNERR_HDHR_GUIDE_TIMEOUT`**: optional fetch of a physical HDHomeRun-style `guide.xml`, merged after provider + external EPG; non-overlapping programmes per `tvg-id`. See [ADR 0004](adr/0004-hdhr-guide-epg-merge.md).
 

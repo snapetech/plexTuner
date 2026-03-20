@@ -62,6 +62,12 @@ type Config struct {
 	EpgSQLiteRetainPastHours int
 	// EpgSQLiteVacuumAfterPrune: if true, run VACUUM after retain-past pruning removed at least one row (LP-009).
 	EpgSQLiteVacuumAfterPrune bool
+	// EpgSQLiteMaxBytes: if > 0, shrink SQLite file to at most this many bytes after sync (LP-009). 0 = disabled.
+	EpgSQLiteMaxBytes int64
+	// HDHRLineupMergeURL: optional http(s) URL to lineup.json merged at index time (LP-002).
+	HDHRLineupMergeURL string
+	// HDHRLineupIDPrefix: channel_id prefix for merged HDHR channels (default hdhr).
+	HDHRLineupIDPrefix string
 	// ProviderEPGURLSuffix is appended to provider xmltv.php URL (e.g. panel-specific query params). Empty = default URL only.
 	ProviderEPGURLSuffix string
 	// HDHRGuideURL is an optional http(s) URL to a SiliconDust-style device guide.xml (LP-003). Empty = disabled.
@@ -173,6 +179,9 @@ func Load() *Config {
 		EpgSQLitePath:               strings.TrimSpace(os.Getenv("IPTV_TUNERR_EPG_SQLITE_PATH")),
 		EpgSQLiteRetainPastHours:    getEnvInt("IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS", 0),
 		EpgSQLiteVacuumAfterPrune:   getEnvBool("IPTV_TUNERR_EPG_SQLITE_VACUUM", false),
+		EpgSQLiteMaxBytes:           epgMaxBytesFromEnv(),
+		HDHRLineupMergeURL:          getEnvURL("IPTV_TUNERR_HDHR_LINEUP_URL"),
+		HDHRLineupIDPrefix:          getEnv("IPTV_TUNERR_HDHR_LINEUP_ID_PREFIX", "hdhr"),
 		ProviderEPGURLSuffix:        strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX")),
 		HDHRGuideURL:                getEnvURL("IPTV_TUNERR_HDHR_GUIDE_URL"),
 		HDHRGuideTimeout:            getEnvDuration("IPTV_TUNERR_HDHR_GUIDE_TIMEOUT", 90*time.Second),
@@ -406,6 +415,20 @@ func getEnvInt(key string, defaultVal int) int {
 		return n
 	}
 	return defaultVal
+}
+
+// epgMaxBytesFromEnv returns IPTV_TUNERR_EPG_SQLITE_MAX_BYTES if set, else MAX_MB * 1MiB, else 0.
+func epgMaxBytesFromEnv() int64 {
+	if v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_EPG_SQLITE_MAX_BYTES")); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err == nil && n > 0 {
+			return n
+		}
+	}
+	if mb := getEnvInt("IPTV_TUNERR_EPG_SQLITE_MAX_MB", 0); mb > 0 {
+		return int64(mb) * 1024 * 1024
+	}
+	return 0
 }
 
 // getEnvIntOrAuto returns -1 if env is "auto" or "-1", otherwise like getEnvInt.

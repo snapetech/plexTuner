@@ -84,14 +84,14 @@ IPTV Tunerr’s mission stays **IPTV/Xtream → HDHR-shaped bridge for Plex/Emby
 
 ## Current status
 
-- **PR-1**: `LP-001`, `LP-002` spike, ADR 0002, docs.
-- **PR-2 (partial)**: **`LP-003`** — `FetchGuideXML`, `AnalyzeGuideXMLStats`, `hdhr-scan -guide-xml` (device probe). **`IPTV_TUNERR_HDHR_GUIDE_URL`** merges hardware `guide.xml` into `/guide.xml` after provider + external gap-fill ([ADR 0004](../adr/0004-hdhr-guide-epg-merge.md)); identity is `tvg-id` string match only.
-- **PR-3 (partial)**: **`LP-004`/`LP-005`** — embedded `/ui/` with health/guide/report links; `IPTV_TUNERR_UI_DISABLED` / `IPTV_TUNERR_UI_ALLOW_LAN`; `AppVersion` on server.
-- **PR-4 (partial)**: **`LP-006`** — `/ui/guide/` + `/ui/guide-preview.json` read-only merged cached guide preview (`XMLTV.GuidePreview`); shared `operatorUIAllowed` helper.
-- **PR-5 (partial)**: **`LP-007`** — `internal/epgstore` schema v1 + migrations + `IPTV_TUNERR_EPG_SQLITE_PATH`; runtime open on `serve`/`run`; [ADR 0003](../adr/0003-epg-sqlite-vs-postgres.md) (SQLite vs Postgres).
-- **PR-6 (partial)**: **`LP-008`** — merged guide bytes sync to SQLite after each refresh; `MaxStopUnixPerChannel` / `GlobalMaxStopUnix` for fetch windows; `/guide/epg-store.json`; optional **`IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX`** for panel-specific `xmltv.php` params. **`LP-009` (partial)** — `IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS` prune + orphan channel cleanup; optional **`IPTV_TUNERR_EPG_SQLITE_VACUUM`** after prune; `/guide/epg-store.json` exposes DB file size / mod time. **Not** hard byte quotas or incremental-only ingest yet.
-- **PR-7 (partial)**: **`LP-010` / `LP-011`** — named profile aliases (incl. HDHR-style labels) + `pmsxcode` query behavior; [transcode-profiles](../reference/transcode-profiles.md). **Not** separate HLS/fMP4 ffmpeg outputs yet.
-- **`LP-012`**: ongoing.
+- **PR-1**: **`LP-001`** discovery; **`LP-002`** — **`IPTV_TUNERR_HDHR_LINEUP_URL`** merges device **`lineup.json`** at **index** time (`IPTV_TUNERR_HDHR_LINEUP_ID_PREFIX`); ADR 0002; [how-to hybrid HDHR+IPTV](../how-to/hybrid-hdhr-iptv.md).
+- **PR-2**: **`LP-003`** — `hdhr-scan`, **`IPTV_TUNERR_HDHR_GUIDE_URL`** runtime merge into `/guide.xml` ([ADR 0004](../adr/0004-hdhr-guide-epg-merge.md)); `tvg-id` string match.
+- **PR-3**: **`LP-004`/`LP-005`** — `/ui/`, health links, `IPTV_TUNERR_UI_*`, `AppVersion`.
+- **PR-4**: **`LP-006`** — `/ui/guide/`, `guide-preview.json`, `GuidePreview`.
+- **PR-5**: **`LP-007`** — `internal/epgstore`, [ADR 0003](../adr/0003-epg-sqlite-vs-postgres.md).
+- **PR-6**: **`LP-008`/`LP-009`** — SQLite sync, retain/VACUUM/max-bytes, `/guide/epg-store.json`. Full **provider** incremental fetch (not pulling whole `xmltv.php`) is still a future optimization; Tunerr SQLite remains snapshot replace per refresh.
+- **PR-7**: **`LP-010`/`LP-011`** — profiles + ffmpeg TS default; optional **`?mux=fmp4`** (transcode). *Tunerr-generated HLS segment playlists* not implemented.
+- **`LP-012`**: [how-to/hybrid-hdhr-iptv.md](../how-to/hybrid-hdhr-iptv.md), env/docs sweep.
 
 ## Coordination with other epics
 

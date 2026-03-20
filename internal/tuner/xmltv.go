@@ -50,6 +50,8 @@ type XMLTV struct {
 	EpgRetainPastHours int
 	// EpgVacuumAfterPrune runs VACUUM on the EPG file after retain-past pruning removes rows (LP-009).
 	EpgVacuumAfterPrune bool
+	// EpgMaxBytes: optional SQLite file size ceiling after sync (LP-009).
+	EpgMaxBytes int64
 	// ProviderEPGURLSuffix is appended to provider xmltv.php URL (optional; panel-specific query params). LP-008 follow-on.
 	ProviderEPGURLSuffix string
 	// HDHRGuideURL is an optional http(s) URL to a physical HDHomeRun-style guide.xml (LP-003).

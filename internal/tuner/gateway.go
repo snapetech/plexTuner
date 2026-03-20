@@ -340,10 +340,17 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				channel.GuideName, channelID, len(body), firstSeg, time.Since(start).Round(time.Millisecond), mode, bufDesc)
 			log.Printf("gateway: channel=%q id=%s hls-mode transcode=%t mode=%q guide=%q tvg=%q", channel.GuideName, channelID, transcode, g.StreamTranscodeMode, channel.GuideNumber, channel.TVGID)
 			hotStart := g.hotStartConfig(channel, clientClass)
+			outputMux := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mux")))
+			if outputMux != streamMuxFMP4 {
+				outputMux = streamMuxMPEGTS
+			}
+			if outputMux == streamMuxFMP4 && !transcode {
+				outputMux = streamMuxMPEGTS
+			}
 			if !g.DisableFFmpeg {
 				if ffmpegPath, ffmpegErr := resolveFFmpegPath(); ffmpegErr == nil {
 					attempt.setFFmpegHeaders(attemptIdx, ffmpegHeaderSummary(g.ffmpegInputHeaderBlock(r, effectiveURL, "")))
-					if err := g.relayHLSWithFFmpeg(w, r, ffmpegPath, streamURL, channel.GuideName, channelID, channel.GuideNumber, channel.TVGID, start, transcode, bufferSize, forcedProfile, hotStart); err == nil {
+					if err := g.relayHLSWithFFmpeg(w, r, ffmpegPath, streamURL, channel.GuideName, channelID, channel.GuideNumber, channel.TVGID, start, transcode, bufferSize, forcedProfile, hotStart, outputMux); err == nil {
 						finalStatus = "ok"
 						finalMode = "hls_ffmpeg"
 						finalEffectiveURL = effectiveURL

@@ -23,6 +23,22 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Lineup parity — LP-002 lineup merge, LP-009 max bytes, fMP4 mux, LP-012 how-to
+  Summary:
+    - Index: `IPTV_TUNERR_HDHR_LINEUP_URL` / `HDHR_LINEUP_ID_PREFIX`, `hdhomerun.LiveChannelsFromLineupDoc`, `mergeHDHRCatalogChannels`.
+    - EPG SQLite: `EnforceMaxDBBytes`, `IPTV_TUNERR_EPG_SQLITE_MAX_BYTES` / `_MAX_MB`, `max_bytes` on epg-store report.
+    - Gateway: `buildFFmpegStreamOutputArgs`, `?mux=fmp4` (transcode), Content-Type `video/mp4`.
+    - Docs: `docs/how-to/hybrid-hdhr-iptv.md`, epic/changelog/features/cli updates.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Multi-file HLS packaging from Tunerr not implemented; provider incremental xmltv fetch still future optimization.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway_profiles.go`, `internal/epgstore/quota.go`, `cmd/iptv-tunerr/cmd_catalog.go`
+
+- Date: 2026-03-19
   Title: LP-009 partial — EPG SQLite VACUUM opt-in + epg-store file stats
   Summary:
     - `Store` retains DB path; `DBFilePath`, `DBFileStat`, `Vacuum()`; `IPTV_TUNERR_EPG_SQLITE_VACUUM` runs after retain-past prune when rows removed.

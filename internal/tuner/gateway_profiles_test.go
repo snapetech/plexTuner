@@ -1,6 +1,9 @@
 package tuner
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestNormalizeProfileName_HDHRStyleAliases(t *testing.T) {
 	cases := map[string]string{
@@ -19,5 +22,17 @@ func TestNormalizeProfileName_HDHRStyleAliases(t *testing.T) {
 		if got := normalizeProfileName(in); got != want {
 			t.Fatalf("%q: got %q want %q", in, got, want)
 		}
+	}
+}
+
+func TestBuildFFmpegStreamOutputArgs_fmp4(t *testing.T) {
+	args := buildFFmpegStreamOutputArgs(true, profileDefault, streamMuxFMP4)
+	s := strings.Join(args, " ")
+	if !strings.Contains(s, "-f mp4") || !strings.Contains(s, "frag_keyframe") {
+		t.Fatalf("expected fragmented mp4 mux: %s", s)
+	}
+	argsTS := buildFFmpegStreamOutputArgs(true, profileDefault, streamMuxMPEGTS)
+	if !strings.Contains(strings.Join(argsTS, " "), "-f mpegts") {
+		t.Fatalf("expected mpegts: %v", argsTS)
 	}
 }
