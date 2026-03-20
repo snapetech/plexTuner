@@ -155,7 +155,28 @@ Reference:
 | **One-sided VOD registration** | `plex-vod-register --shows-only` / `--movies-only` for lane-specific library creation without unwanted companion sections. |
 | **Platform scope** | `mount` / VODFS is Linux-only. Non-Linux builds provide a stub. |
 
-## 12. Packaging, testing, and ops tooling
+## 12. Cloudflare resilience
+
+Operator-oriented summary; full guide: [how-to/cloudflare-bypass.md](how-to/cloudflare-bypass.md).
+
+| Feature | Description |
+|---------|-------------|
+| **UA cycling** | On CF block signals, cycles Lavf (ffmpeg-detected), VLC, mpv, Kodi, Firefox, Chrome until one works. |
+| **Browser header profiles** | Matching `Accept`, `Accept-Language`, `Sec-Ch-Ua`, etc., when a browser UA is selected. |
+| **Learned UA persistence** | Per-host working UA in `cf-learned.json` (with cookie jar); restored at startup. |
+| **HLS segment CF detection** | Detects CF failures on `.ts` segment fetches, not only playlists. |
+| **Clearance freshness monitor** | Optional proactive re-bootstrap before `cf_clearance` expiry. |
+| **Cookie import** | `import-cookies` from HAR, Netscape, or inline (`cf_clearance`). |
+| **`cf-status`** | CLI view of per-host CF state, clearance TTL, working UA. |
+
+## 13. Diagnostics and debug tooling
+
+| Feature | Description |
+|---------|-------------|
+| **`debug-bundle`** | `iptv-tunerr debug-bundle` collects stream attempts, provider profile, CF learned, cookie metadata, env (redacted). See [how-to/debug-bundle.md](how-to/debug-bundle.md). |
+| **`analyze-bundle.py`** | Correlates bundle artifacts with PMS.log, Tunerr stdout, and optional pcap. |
+
+## 14. Packaging, testing, and ops tooling
 
 | Feature | Description |
 |---------|-------------|
@@ -167,7 +188,7 @@ Reference:
 | **Plex stream override analysis helper** | `scripts/plex-generate-stream-overrides.py` for feed/profile override candidate generation. |
 | **Live TV provider label rewrite proxy** | `scripts/plex-media-providers-label-proxy.py` + k8s deploy helper to rewrite `/media/providers` labels (client-dependent effect). |
 
-## 13. Platform support summary
+## 15. Platform support summary
 
 | Platform | Core app (`run/serve/index/probe/supervise`) | HDHR HTTP endpoints | HDHR network mode | `mount` / VODFS |
 |----------|----------------------------------------------|---------------------|-------------------|-----------------|
@@ -175,7 +196,7 @@ Reference:
 | macOS | Yes | Yes | Compiles (runtime validation depends on environment) | No |
 | Windows | Yes | Yes | Compiles (native validation recommended; `wine` smoke not authoritative) | No |
 
-## 14. Not supported / limits (current)
+## 16. Not supported / limits (current)
 
 - **Web UI** (by design; CLI/env only)
 - **Plex wizard checkbox preselection for >479 channels** (HDHR protocol/wizard limitation; serve only the channels you want selectable)

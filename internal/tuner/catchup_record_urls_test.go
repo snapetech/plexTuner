@@ -28,6 +28,31 @@ func TestBuildRecordURLsForCapsule_TunerrThenDirect(t *testing.T) {
 	}
 }
 
+func TestDeprioritizeRecordSourceURLs(t *testing.T) {
+	pen := map[string]struct{}{"bad.example": {}}
+	urls := []string{
+		"http://tunerr/stream/x",
+		"http://bad.example/a",
+		"http://good.example/b",
+		"http://bad.example/c",
+	}
+	got := DeprioritizeRecordSourceURLs(urls, pen)
+	want := []string{
+		"http://tunerr/stream/x",
+		"http://good.example/b",
+		"http://bad.example/a",
+		"http://bad.example/c",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("len %d vs %d: %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("idx %d: got %q want %q", i, got[i], want[i])
+		}
+	}
+}
+
 func TestBuildRecordURLsForCapsule_ReplayOnly(t *testing.T) {
 	ch := catalog.LiveChannel{StreamURL: "http://ignored"}
 	cap := CatchupCapsule{ChannelID: "101", ReplayURL: "http://replay.example/x"}

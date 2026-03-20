@@ -2,6 +2,8 @@ package tuner
 
 import (
 	"fmt"
+	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
@@ -29,6 +31,79 @@ func EnrichCatchupCapsulesRecordURLs(preview *CatchupCapsulePreview, channels []
 			c.PreferredStreamUA = ua
 		}
 	}
+}
+
+// ApplyRecordURLDeprioritizeHosts reorders each capsule's RecordSourceURLs so URLs whose host matches
+// penalizedHosts (comma-separated hostnames, case-insensitive) move after non-matching URLs.
+// The first URL (typically the Tunerr relay) is always kept first. Intended for IPTV_TUNERR_RECORD_DEPRIORITIZE_HOSTS.
+func ApplyRecordURLDeprioritizeHosts(preview *CatchupCapsulePreview, hostsCSV string) {
+	if preview == nil {
+		return
+	}
+	penalized := ParseHostPenaltySet(hostsCSV)
+	if len(penalized) == 0 {
+		return
+	}
+	for i := range preview.Capsules {
+		preview.Capsules[i].RecordSourceURLs = DeprioritizeRecordSourceURLs(preview.Capsules[i].RecordSourceURLs, penalized)
+	}
+}
+
+// ParseHostPenaltySet parses a comma-separated hostname list into a lookup set (lowercased).
+func ParseHostPenaltySet(csv string) map[string]struct{} {
+	csv = strings.TrimSpace(csv)
+	if csv == "" {
+		return nil
+	}
+	out := make(map[string]struct{})
+	for _, p := range strings.Split(csv, ",") {
+		p = strings.ToLower(strings.TrimSpace(p))
+		if p != "" {
+			out[p] = struct{}{}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// DeprioritizeRecordSourceURLs moves URLs whose host matches penalized to the end (stable). The first URL stays first.
+func DeprioritizeRecordSourceURLs(urls []string, penalized map[string]struct{}) []string {
+	if len(urls) <= 1 || len(penalized) == 0 {
+		return urls
+	}
+	head := urls[0]
+	tail := append([]string(nil), urls[1:]...)
+	sort.SliceStable(tail, func(i, j int) bool {
+		pi := urlHostPenalized(tail[i], penalized)
+		pj := urlHostPenalized(tail[j], penalized)
+		if pi == pj {
+			return false
+		}
+		return !pi && pj
+	})
+	return append([]string{head}, tail...)
+}
+
+func urlHostPenalized(rawURL string, penalized map[string]struct{}) bool {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || u.Host == "" {
+		return false
+	}
+	h := strings.ToLower(u.Hostname())
+	if _, ok := penalized[h]; ok {
+		return true
+	}
+	for ph := range penalized {
+		if h == ph {
+			return true
+		}
+		if strings.HasSuffix(h, "."+ph) {
+			return true
+		}
+	}
+	return false
 }
 
 // BuildRecordURLsForCapsule returns an ordered list: Tunerr relay URL when possible, then catalog StreamURL / StreamURLs (deduped).

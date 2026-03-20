@@ -8,6 +8,8 @@
 
 **Shipped 2026-03-19 (recorder gaps):** Multi-upstream capture failover (Tunerr URL + catalog `stream_url`/`stream_urls`), catalog `preferred_ua` on capture requests, time-based completed retention (`-retain-completed-max-age*`), `scripts/recorder-daemon-soak.sh`, metrics `capture_upstream_switches` / `sum_capture_upstream_switches`.
 
+**Release v0.1.14 (2026-03-19):** `debug-bundle` CLI, `analyze-bundle.py`, CF + debug how-tos, README updates, `IPTV_TUNERR_RECORD_DEPRIORITIZE_HOSTS` for capture fallback ordering; tag `v0.1.14` (v0.1.13 already existed on remote).
+
 **Scope:** In: roadmap/epic documentation, channel intelligence reporting (`channel-report` + `/channels/report.json`), EPG match provenance visibility, lineup recipes, Channel DNA foundation, Autopilot decision-memory foundation, Ghost Hunter visible-session foundation, provider behavior profile foundation, README/features/reference/changelog updates, memory-bank updates, local verification. Out: catch-up capsules, active provider self-tuning defaults, hidden-grab Ghost Hunter automation, and a complete cross-provider identity graph in one patch.
 
 **Last updated:** 2026-03-19

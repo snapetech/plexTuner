@@ -65,10 +65,14 @@ Recent additions are aimed at one thing: making the system explain itself and re
 - **Guide highlights and catch-up capsules**: turn raw XMLTV data into "what's on now", "starting soon", and publishable near-live programme blocks.
 - **Catch-up publishing**: writes real `.strm + .nfo` items and can register lane libraries in Plex, Emby, and Jellyfin. Emby and Jellyfin were live-validated in cluster.
 - **Guide-quality policy hooks**: can now use actual guide-health results, not just channel metadata, to suppress placeholder-only channels from runtime lineups and catch-up outputs.
+- **Cloudflare resilience**: automatic UA cycling (Lavf→VLC→mpv→Kodi→Firefox→Chrome), full browser header profiles alongside browser UAs, HLS segment-level CF detection, learned UA persistence across restarts, per-host UA pinning, and clearance freshness monitoring. Cookie import from browser (HAR, Netscape, inline). See [Cloudflare provider support](#cloudflare-provider-support).
+- **Debug bundle and log correlation**: `iptv-tunerr debug-bundle` collects Tunerr-side diagnostic state. `scripts/analyze-bundle.py` correlates stream attempts, Tunerr stdout, PMS.log, and pcap to produce a ranked findings report. See [docs/how-to/debug-bundle.md](docs/how-to/debug-bundle.md).
 
 See:
 - [docs/features.md](docs/features.md)
 - [docs/CHANGELOG.md](docs/CHANGELOG.md)
+- [docs/how-to/cloudflare-bypass.md](docs/how-to/cloudflare-bypass.md)
+- [docs/how-to/debug-bundle.md](docs/how-to/debug-bundle.md)
 - [docs/epics/EPIC-live-tv-intelligence.md](docs/epics/EPIC-live-tv-intelligence.md)
 
 ## Release Channels
@@ -488,6 +492,75 @@ IPTV_TUNERR_CATCHUP_GUIDE_POLICY=healthy
 
 ---
 
+## Cloudflare Provider Support
+
+Some IPTV providers route endpoints through Cloudflare. This causes streams to fail even when `ffplay -i <url>` works directly — the difference is the User-Agent and full header profile sent.
+
+### Automatic (no config required)
+
+When Tunerr detects a CF response (403/503/520/521/524 + CF body signals) it automatically:
+
+1. **Cycles UAs**: Lavf (auto-detected ffmpeg version), VLC, mpv, Kodi, Firefox, Chrome, curl — until one works
+2. **Sends full browser profile**: when cycling lands on a browser UA, sends matching Accept/Accept-Language/Accept-Encoding/Sec-Ch-Ua headers. CF Bot Management scores the full set, not just the UA string.
+3. **Detects HLS segments**: CF sometimes passes the playlist but blocks `.ts` segment fetches — detected and re-bootstrapped at the segment level
+4. **Persists the working UA**: saves to `cf-learned.json` and pre-loads on restart — no re-cycling after a restart
+
+### Quick start config
+
+```bash
+IPTV_TUNERR_CF_AUTO_BOOT=true
+IPTV_TUNERR_COOKIE_JAR_FILE=/var/lib/iptvtunerr/cf-cookies.json
+```
+
+Enables full CF handling, `cf_clearance` persistence, and a background freshness monitor that proactively re-bootstraps when clearance is within 1 hour of expiry.
+
+### Pin a known-good UA
+
+```bash
+# Per-host (skips cycling entirely for known hosts)
+IPTV_TUNERR_HOST_UA=provider.example.com:vlc,cdn.example.com:lavf
+
+# Global
+IPTV_TUNERR_UPSTREAM_USER_AGENT=lavf
+```
+
+Presets: `lavf` (auto-detected ffmpeg version), `vlc`, `mpv`, `kodi`, `firefox`, or any literal UA string.
+
+### Manual cookie import (if cycling alone is not enough)
+
+```bash
+# Inline from DevTools → Network → copy Cookie header
+iptv-tunerr import-cookies -jar "$IPTV_TUNERR_COOKIE_JAR_FILE" \
+  -cookie "cf_clearance=<paste>" -domain provider.example.com
+
+# Netscape format (Cookie-Editor extension)
+iptv-tunerr import-cookies -jar "$IPTV_TUNERR_COOKIE_JAR_FILE" \
+  -netscape /tmp/cookies.txt
+
+# HAR file from DevTools "Save all as HAR with content"
+iptv-tunerr import-cookies -jar "$IPTV_TUNERR_COOKIE_JAR_FILE" \
+  -har /tmp/session.har
+```
+
+### Diagnostics
+
+```bash
+# Per-host CF state (no running server needed)
+iptv-tunerr cf-status
+iptv-tunerr cf-status -json | jq
+
+# Recent stream attempts
+curl http://localhost:5004/debug/stream-attempts.json | jq
+
+# Full diagnostic bundle
+iptv-tunerr debug-bundle --out ./debug-scratch
+python3 scripts/analyze-bundle.py ./debug-scratch/
+```
+
+Full guide: [docs/how-to/cloudflare-bypass.md](docs/how-to/cloudflare-bypass.md)
+
+---
+
 ## Two Setup Paths (Registration)
 
 How you connect IPTV Tunerr to your media server:
@@ -577,9 +650,14 @@ Config reference: [`docs/reference/testing-and-supervisor-config.md`](docs/refer
 | `ghost-hunter` | Observe Plex Live TV sessions and classify stale/hidden-grab cases |
 | `catchup-capsules` | Export near-live capsule candidates from guide XMLTV |
 | `catchup-publish` | Publish catch-up capsules as `.strm + .nfo` libraries and optionally register them |
+| `catchup-daemon` | Continuously record guide-derived capsules with persistent state |
+| `catchup-recorder-report` | Summarize the persistent recorder state file |
 | `epg-link-report` | Report EPG coverage and unmatched channels |
 | `mount` | Mount VODFS (Linux only) |
 | `plex-vod-register` | Create or reuse Plex VOD libraries for a VODFS mount |
+| `import-cookies` | Import browser cookies (inline, Netscape, or HAR) into the cookie jar |
+| `cf-status` | Show per-host Cloudflare state: cf_clearance freshness, working UA, CF-tagged flag |
+| `debug-bundle` | Collect diagnostic state (stream attempts, provider profile, CF state, env) into a shareable bundle |
 
 Full reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-and-env-reference.md)
 
@@ -624,8 +702,12 @@ Full reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-a
 | `IPTV_TUNERR_FORCE_WEBSAFE` | Always transcode with MP3 audio |
 | `IPTV_TUNERR_UPSTREAM_HEADERS` | Extra upstream request headers such as `Referer`, `Origin`, or `Host` |
 | `IPTV_TUNERR_UPSTREAM_ADD_SEC_FETCH` | Add browser-style `Sec-Fetch-*` headers on upstream requests |
-| `IPTV_TUNERR_UPSTREAM_USER_AGENT` | Override upstream `User-Agent` |
+| `IPTV_TUNERR_UPSTREAM_USER_AGENT` | Override upstream `User-Agent` (preset: `lavf`, `vlc`, `mpv`, `kodi`, `firefox`, or literal) |
 | `IPTV_TUNERR_COOKIE_JAR_FILE` | Persist upstream cookies such as Cloudflare clearance tokens |
+| `IPTV_TUNERR_CF_LEARNED_FILE` | Per-host CF learned state: working UA and CF-tagged flag (auto-derived beside jar) |
+| `IPTV_TUNERR_HOST_UA` | Pin UA per hostname: `host:preset,...` — skips cycling for known-good hosts |
+| `IPTV_TUNERR_CF_AUTO_BOOT` | Enable CF auto-bootstrap at startup and clearance freshness monitor |
+| `IPTV_TUNERR_STREAM_ATTEMPT_LOG` | Persistent JSONL audit log of stream attempts (survives restarts) |
 
 ### Guide / XMLTV
 

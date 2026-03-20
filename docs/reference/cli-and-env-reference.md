@@ -899,6 +899,7 @@ Fetches EPG directly from your IPTV provider using existing credentials. No sepa
 - `IPTV_TUNERR_XMLTV_ALIASES` — optional file path or `http(s)` URL for alias overrides used in deterministic EPG repair
 - `IPTV_TUNERR_CATCHUP_GUIDE_POLICY` — optional `off|healthy|strict`; applies guide-quality filtering to `/guide/capsules.json`, `catchup-capsules`, and `catchup-publish`
 - `IPTV_TUNERR_CATCHUP_REPLAY_URL_TEMPLATE` — optional source-backed replay URL template for capsules/publishing; when set, replay URLs are rendered with programme and channel tokens instead of falling back to live-channel launchers
+- `IPTV_TUNERR_RECORD_DEPRIORITIZE_HOSTS` — comma-separated hostnames; for `catchup-daemon` / `catchup-record` with `-record-upstream-fallback`, catalog capture fallbacks whose host matches (or is a subdomain of) these names are tried after other fallbacks (Tunerr `/stream/<id>` stays first)
 - `IPTV_TUNERR_XMLTV_MATCH_ENABLE` — repair/assign channel `TVGID`s from provider/external XMLTV channel metadata during catalog build (default `true`)
 - `IPTV_TUNERR_XMLTV_TIMEOUT` — fetch timeout (default `45s`)
 - `IPTV_TUNERR_XMLTV_CACHE_TTL` — refresh interval when provider EPG cache TTL is not set (default `10m`)

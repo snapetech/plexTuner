@@ -296,6 +296,7 @@ func buildCatchupCapsulePreviewFromRef(path, xmltvRef string, horizon time.Durat
 	}
 	if recordUpstreamFallback && strings.TrimSpace(streamBaseURL) != "" {
 		tuner.EnrichCatchupCapsulesRecordURLs(&rep, live, streamBaseURL)
+		tuner.ApplyRecordURLDeprioritizeHosts(&rep, strings.TrimSpace(os.Getenv("IPTV_TUNERR_RECORD_DEPRIORITIZE_HOSTS")))
 	}
 	return rep, nil
 }

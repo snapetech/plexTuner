@@ -23,6 +23,20 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Release v0.1.14 (CF docs, debug-bundle, recorder deprioritize hosts)
+  Summary:
+    - Shipped `iptv-tunerr debug-bundle`, `scripts/analyze-bundle.py`, `docs/how-to/cloudflare-bypass.md`, `docs/how-to/debug-bundle.md`, README Cloudflare section; wired `debugBundleCommands()` in main.
+    - Recorder: `IPTV_TUNERR_RECORD_DEPRIORITIZE_HOSTS` + `ApplyRecordURLDeprioritizeHosts` / `DeprioritizeRecordSourceURLs`; docs and features tables updated; CHANGELOG [v0.1.14]. (Remote already had `v0.1.13` at another commit; this release is tagged `v0.1.14`.)
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Git tag `v0.1.14` triggers GitHub release workflow (binaries).
+  Opportunities filed:
+    - none
+  Links:
+    - `docs/CHANGELOG.md`, `.github/workflows/release.yml`
+
+- Date: 2026-03-19
   Title: Recorder multi-upstream failover, catalog UA on capture, time-based retention, soak script
   Summary:
     - `CatchupCapsule` gains `record_source_urls` / `preferred_stream_ua`; `EnrichCatchupCapsulesRecordURLs` merges Tunerr `/stream/<id>` with catalog stream URLs when `-record-upstream-fallback` is on (default for daemon/catchup-record).

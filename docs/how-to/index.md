@@ -18,6 +18,8 @@ Goal → preconditions → steps → verify.
 | [package-test-builds](package-test-builds.md) | Build cross-platform test bundles (Linux/macOS/Windows) for binary + supervisor testing. |
 | [tester-handoff-checklist](tester-handoff-checklist.md) | Final handoff checklist for sending tester bundles and collecting useful bug reports. |
 | [tester-release-notes-draft](tester-release-notes-draft.md) | Draft release notes / tester-facing summary for current validation builds. |
+| [cloudflare-bypass](cloudflare-bypass.md) | Cloudflare-protected IPTV: UA cycling, cookies, clearance, operator knobs. |
+| [debug-bundle](debug-bundle.md) | Collect `iptv-tunerr debug-bundle` and analyze with `scripts/analyze-bundle.py`. |
 
 See also
 --------

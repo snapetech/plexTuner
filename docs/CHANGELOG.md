@@ -13,6 +13,15 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+---
+
+## [v0.1.14] — 2026-03-19
+
+### Documentation & diagnostics
+- **Cloudflare operator guide**: added [how-to/cloudflare-bypass.md](how-to/cloudflare-bypass.md) (automatic UA cycling, header profiles, cookies, `cf-status`, env knobs).
+- **Debug bundle workflow**: added `iptv-tunerr debug-bundle` plus [how-to/debug-bundle.md](how-to/debug-bundle.md) and `scripts/analyze-bundle.py` for correlating stream attempts, logs, and pcaps.
+- **README**: expanded Cloudflare troubleshooting section and cross-links to the new how-to guides.
+
 ### QA / diagnostics
 - **Direct-vs-Tunerr comparison harness**: added `scripts/stream-compare-harness.sh` and `scripts/stream-compare-report.py` to capture `ffprobe`, `ffplay`, `curl`, and optional `tcpdump` evidence for a direct upstream URL versus the equivalent Tunerr stream URL in one reproducible bundle.
 - **Structured stream-attempt export**: added `/debug/stream-attempts.json`, which exposes recent gateway decisions, per-upstream outcomes, effective URLs, and redacted request/ffmpeg header summaries for debugging direct-vs-Tunerr mismatches.
@@ -35,6 +44,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Recorder catalog UA on capture**: `preferred_ua` from the live channel is sent as `User-Agent` on capture HTTP requests when present.
 - **Recorder time-based completed retention**: `-retain-completed-max-age` and `-retain-completed-max-age-per-lane` (e.g. `sports=72h`, `7d`) prune old completed items from state and delete associated files.
 - **Recorder soak helper**: `scripts/recorder-daemon-soak.sh` wraps `catchup-daemon -run-for` for bounded soak runs.
+- **Recorder fallback URL ordering**: `IPTV_TUNERR_RECORD_DEPRIORITIZE_HOSTS` (comma-separated hosts) moves matching catalog fallbacks after healthier URLs; the Tunerr `/stream/<id>` URL stays first.
 
 ### Upstream / Cloudflare hardening
 - **`cf-status` CLI**: inspect per-host Cloudflare state from the cookie jar and persisted learned file (`cf_clearance` freshness, working UA, CF-tagged flag); JSON output supported.

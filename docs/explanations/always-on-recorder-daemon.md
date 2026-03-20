@@ -296,7 +296,7 @@ Original recommended order:
 - shared primitives with `catchup-record` and replay-template-aware URLs when configured
 
 **Still aspirational / partial relative to this doc’s “full vision”:**
-- **Smarter upstream ordering** — failover uses **catalog URL order** (after Tunerr), not live gateway host-penalty scores.
+- **Smarter upstream ordering** — failover uses **catalog URL order** (after Tunerr); optional **`IPTV_TUNERR_RECORD_DEPRIORITIZE_HOSTS`** moves named bad hosts to the end of the fallback list (live autotune penalties from `/provider/profile.json` are not applied in the standalone recorder CLI).
 - **Autopilot-driven capture path selection** — not wired; **Preferred UA** from catalog **is** applied to capture HTTP requests.
 - **CI multi-hour soak** — still manual / `scripts/recorder-daemon-soak.sh`; no hours-long automated scheduler test in CI.
 
