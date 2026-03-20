@@ -89,7 +89,7 @@ IPTV Tunerr’s mission stays **IPTV/Xtream → HDHR-shaped bridge for Plex/Emby
 - **PR-3 (partial)**: **`LP-004`/`LP-005`** — embedded `/ui/` with health/guide/report links; `IPTV_TUNERR_UI_DISABLED` / `IPTV_TUNERR_UI_ALLOW_LAN`; `AppVersion` on server.
 - **PR-4 (partial)**: **`LP-006`** — `/ui/guide/` + `/ui/guide-preview.json` read-only merged cached guide preview (`XMLTV.GuidePreview`); shared `operatorUIAllowed` helper.
 - **PR-5 (partial)**: **`LP-007`** — `internal/epgstore` schema v1 + migrations + `IPTV_TUNERR_EPG_SQLITE_PATH`; runtime open on `serve`/`run`; [ADR 0003](../adr/0003-epg-sqlite-vs-postgres.md) (SQLite vs Postgres).
-- **PR-6 (partial)**: **`LP-008`** — merged guide bytes sync to SQLite after each refresh; `MaxStopUnixPerChannel` / `GlobalMaxStopUnix` for fetch windows; `/guide/epg-store.json`. **Not yet**: provider fetch shortened using max-stop alone (**LP-008** follow-on) or **LP-009** eviction.
+- **PR-6 (partial)**: **`LP-008`** — merged guide bytes sync to SQLite after each refresh; `MaxStopUnixPerChannel` / `GlobalMaxStopUnix` for fetch windows; `/guide/epg-store.json`; optional **`IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX`** for panel-specific `xmltv.php` params. **`LP-009` (partial)** — `IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS` prune + orphan channel cleanup after sync; **not** full disk quotas / VACUUM / incremental-only ingest yet.
 - **`LP-012`**: ongoing.
 
 ## Coordination with other epics

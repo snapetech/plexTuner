@@ -58,6 +58,10 @@ type Config struct {
 	EpgPruneUnlinked bool
 	// EpgSQLitePath is an optional path to a SQLite file for durable EPG storage (LP-007+). Empty = disabled.
 	EpgSQLitePath string
+	// EpgSQLiteRetainPastHours: if > 0, drop SQLite programme rows whose end time is before now minus N hours (LP-009). 0 = keep full merged snapshot in SQLite.
+	EpgSQLiteRetainPastHours int
+	// ProviderEPGURLSuffix is appended to provider xmltv.php URL (e.g. panel-specific query params). Empty = default URL only.
+	ProviderEPGURLSuffix string
 	// Provider ingest policy: when true, reject any provider URL that is Cloudflare-proxied.
 	// The ranker will skip CF URLs and try alternates; if all URLs are CF-proxied, ingest is
 	// blocked with an alert log. Off by default. Enable with IPTV_TUNERR_BLOCK_CF_PROVIDERS=true.
@@ -161,6 +165,8 @@ func Load() *Config {
 		LiveOnly:                    getEnvBool("IPTV_TUNERR_LIVE_ONLY", false),
 		EpgPruneUnlinked:            getEnvBool("IPTV_TUNERR_EPG_PRUNE_UNLINKED", false),
 		EpgSQLitePath:               strings.TrimSpace(os.Getenv("IPTV_TUNERR_EPG_SQLITE_PATH")),
+		EpgSQLiteRetainPastHours:    getEnvInt("IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS", 0),
+		ProviderEPGURLSuffix:        strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX")),
 		BlockCFProviders:            getEnvBool("IPTV_TUNERR_BLOCK_CF_PROVIDERS", false),
 		FetchCFReject:               getEnvBool("IPTV_TUNERR_FETCH_CF_REJECT", false),
 		StripStreamHosts:            getEnvHosts("IPTV_TUNERR_STRIP_STREAM_HOSTS"),
@@ -196,6 +202,9 @@ func Load() *Config {
 		FreeSourceCacheDir:          os.Getenv("IPTV_TUNERR_FREE_SOURCE_CACHE_DIR"),
 		FreeSourceFilterNSFW:        getEnvBool("IPTV_TUNERR_FREE_SOURCE_FILTER_NSFW", true),
 		FreeSourceFilterClosed:      getEnvBool("IPTV_TUNERR_FREE_SOURCE_FILTER_CLOSED", true),
+	}
+	if c.EpgSQLiteRetainPastHours < 0 {
+		c.EpgSQLiteRetainPastHours = 0
 	}
 	if c.TunerCount <= 0 {
 		c.TunerCount = 2

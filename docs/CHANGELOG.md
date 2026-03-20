@@ -17,6 +17,10 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **`internal/epgstore`**: optional SQLite file (`IPTV_TUNERR_EPG_SQLITE_PATH`), WAL + migrations (`epg_channel`, `epg_programme`); opened during `serve` / `run` when set.
 - **ADR 0003** ([docs/adr/0003-epg-sqlite-vs-postgres.md](adr/0003-epg-sqlite-vs-postgres.md)): SQLite default for Tunerr-local EPG; Postgres only for explicit multi-writer/shared-state requirements.
 
+### EPG SQLite retention + provider URL hook (LP-009 partial + LP-008 follow-on)
+- **`IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS`**: after merged-guide sync, delete SQLite programmes whose **end** is before `now - N hours`, then drop orphan `epg_channel` rows; `SyncMergedGuideXML` returns prune count; `/guide/epg-store.json` includes `retain_past_hours`.
+- **`IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX`**: optional query string appended to provider `xmltv.php` (for panels that support extra parameters — **not** standard Xtream; verify with your provider).
+
 ### EPG SQLite sync + incremental window (LP-008 partial)
 - **Merged guide → SQLite**: after each successful XMLTV refresh, `SyncMergedGuideXML` replaces `epg_channel` / `epg_programme` + `last_sync_utc` metadata (schema v2: `epg_meta`).
 - **`/guide/epg-store.json`**: programme/channel counts, `global_max_stop_unix`, optional `?detail=1` for per-channel max stop (incremental fetch input).

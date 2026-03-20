@@ -30,6 +30,41 @@ func TestOpen_emptyPath(t *testing.T) {
 	}
 }
 
+func TestSyncMergedGuideXML_retainPrune(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "p.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	// One programme ended long ago, one in the future.
+	xml := `<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="c1"><display-name>One</display-name></channel>
+  <programme start="20200101000000 +0000" stop="20200101010000 +0000" channel="c1">
+    <title>Old</title>
+  </programme>
+  <programme start="20350101000000 +0000" stop="20350101010000 +0000" channel="c1">
+    <title>Future</title>
+  </programme>
+</tv>`
+	pruned, err := s.SyncMergedGuideXML([]byte(xml), 24)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pruned != 1 {
+		t.Fatalf("pruned=%d want 1", pruned)
+	}
+	p, _, err := s.RowCounts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p != 1 {
+		t.Fatalf("remaining programmes=%d want 1", p)
+	}
+}
+
 func TestSyncMergedGuideXML_roundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "g.db")
@@ -47,7 +82,7 @@ func TestSyncMergedGuideXML_roundTrip(t *testing.T) {
     <category>News</category>
   </programme>
 </tv>`
-	if err := s.SyncMergedGuideXML([]byte(xml)); err != nil {
+	if _, err := s.SyncMergedGuideXML([]byte(xml), 0); err != nil {
 		t.Fatal(err)
 	}
 	p, c, err := s.RowCounts()

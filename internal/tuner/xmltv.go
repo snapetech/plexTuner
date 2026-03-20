@@ -45,6 +45,10 @@ type XMLTV struct {
 
 	// EpgStore is an optional SQLite backing store for merged guide rows (LP-008). Nil = disabled.
 	EpgStore *epgstore.Store
+	// EpgRetainPastHours: if > 0, SQLite rows for programmes that ended before now-retain are dropped after sync (LP-009).
+	EpgRetainPastHours int
+	// ProviderEPGURLSuffix is appended to provider xmltv.php URL (optional; panel-specific query params). LP-008 follow-on.
+	ProviderEPGURLSuffix string
 
 	mu        sync.RWMutex
 	cachedXML []byte

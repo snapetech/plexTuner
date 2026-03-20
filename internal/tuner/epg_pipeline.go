@@ -150,10 +150,21 @@ func fetchAndParseXMLTV(ctx context.Context, rawURL string, timeout time.Duratio
 	return result, nil
 }
 
+// providerXMLTVEPGURL builds the Xtream xmltv.php URL; extraSuffix is optional (e.g. panel-specific query params).
+func providerXMLTVEPGURL(base, user, pass, extraSuffix string) string {
+	base = strings.TrimSuffix(strings.TrimSpace(base), "/")
+	rawURL := base + "/xmltv.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass)
+	suf := strings.TrimSpace(extraSuffix)
+	if suf == "" {
+		return rawURL
+	}
+	suf = strings.TrimPrefix(suf, "&")
+	return rawURL + "&" + suf
+}
+
 // fetchProviderXMLTV fetches the provider's xmltv.php EPG feed.
 func (x *XMLTV) fetchProviderXMLTV(ctx context.Context, allowedTVGIDs map[string]bool) (*parsedEPG, error) {
-	base := strings.TrimSuffix(x.ProviderBaseURL, "/")
-	rawURL := base + "/xmltv.php?username=" + url.QueryEscape(x.ProviderUser) + "&password=" + url.QueryEscape(x.ProviderPass)
+	rawURL := providerXMLTVEPGURL(x.ProviderBaseURL, x.ProviderUser, x.ProviderPass, x.ProviderEPGURLSuffix)
 	timeout := x.ProviderEPGTimeout
 	if timeout <= 0 {
 		timeout = 90 * time.Second
@@ -454,8 +465,11 @@ func (x *XMLTV) refresh() {
 	log.Printf("xmltv: EPG cache updated (%d bytes, expires in %v)", len(data), ttl)
 
 	if x.EpgStore != nil {
-		if err := x.EpgStore.SyncMergedGuideXML(data); err != nil {
+		n, err := x.EpgStore.SyncMergedGuideXML(data, x.EpgRetainPastHours)
+		if err != nil {
 			log.Printf("epg sqlite: merged guide sync failed: %v", err)
+		} else if n > 0 && x.EpgRetainPastHours > 0 {
+			log.Printf("epg sqlite: pruned %d programme row(s) older than %dh (retain past window)", n, x.EpgRetainPastHours)
 		}
 	}
 }

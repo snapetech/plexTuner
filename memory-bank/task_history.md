@@ -23,6 +23,21 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: LP-009 partial — SQLite retain prune + provider EPG URL suffix
+  Summary:
+    - `SyncMergedGuideXML(data, retainPastHours)` prunes programmes with `stop_unix` before cutoff; orphan `epg_channel` rows; returns pruned row count.
+    - Config: `IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS`, `IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX`; `providerXMLTVEPGURL` helper + test; `Server` / `XMLTV` wiring.
+    - `/guide/epg-store.json` includes `retain_past_hours`; docs/README/.env.example.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Standard Xtream `xmltv.php` has no documented date-range params; suffix is for panels that support extra query params.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/epgstore/sync.go`, `internal/tuner/epg_pipeline.go`
+
+- Date: 2026-03-19
   Title: LP-008 partial — merged guide sync to SQLite + /guide/epg-store.json
   Summary:
     - `epgstore.SyncMergedGuideXML`, migration v2 `epg_meta`, `MaxStopUnixPerChannel` / `GlobalMaxStopUnix` / `RowCounts` / `MetaLastSyncUTC`.

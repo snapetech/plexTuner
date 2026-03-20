@@ -74,34 +74,39 @@ func categoriesJSON(cats []xmlValue) string {
 
 // SyncMergedGuideXML replaces epg_channel and epg_programme with the merged Tunerr guide snapshot.
 // Call after a successful XMLTV merge (same bytes as /guide.xml). LP-008.
-func (s *Store) SyncMergedGuideXML(data []byte) error {
+// If retainPastHours > 0 (LP-009), programmes with stop_unix before now-retainPastHours are deleted, then orphan epg_channel rows.
+// Returns the number of programme rows removed by pruning (0 if retainPastHours <= 0).
+func (s *Store) SyncMergedGuideXML(data []byte, retainPastHours int) (pruned int, err error) {
 	if s == nil || s.db == nil {
-		return nil
+		return 0, nil
+	}
+	if retainPastHours < 0 {
+		retainPastHours = 0
 	}
 	if len(data) == 0 {
-		return nil
+		return 0, nil
 	}
 	var tv xmlTVRoot
 	if err := xml.Unmarshal(data, &tv); err != nil {
-		return fmt.Errorf("epgstore: unmarshal merged guide: %w", err)
+		return 0, fmt.Errorf("epgstore: unmarshal merged guide: %w", err)
 	}
 
 	tx, err := s.db.Begin()
 	if err != nil {
-		return fmt.Errorf("epgstore: begin: %w", err)
+		return 0, fmt.Errorf("epgstore: begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.Exec(`DELETE FROM epg_programme`); err != nil {
-		return fmt.Errorf("epgstore: clear programmes: %w", err)
+		return 0, fmt.Errorf("epgstore: clear programmes: %w", err)
 	}
 	if _, err := tx.Exec(`DELETE FROM epg_channel`); err != nil {
-		return fmt.Errorf("epgstore: clear channels: %w", err)
+		return 0, fmt.Errorf("epgstore: clear channels: %w", err)
 	}
 
 	chStmt, err := tx.Prepare(`INSERT INTO epg_channel (epg_id, display_name) VALUES (?,?)`)
 	if err != nil {
-		return fmt.Errorf("epgstore: prepare channel: %w", err)
+		return 0, fmt.Errorf("epgstore: prepare channel: %w", err)
 	}
 	defer func() { _ = chStmt.Close() }()
 
@@ -111,13 +116,13 @@ func (s *Store) SyncMergedGuideXML(data []byte) error {
 			continue
 		}
 		if _, err := chStmt.Exec(id, strings.TrimSpace(ch.Display)); err != nil {
-			return fmt.Errorf("epgstore: insert channel %q: %w", id, err)
+			return 0, fmt.Errorf("epgstore: insert channel %q: %w", id, err)
 		}
 	}
 
 	ins, err := tx.Prepare(`INSERT INTO epg_programme (channel_epg_id, start_unix, stop_unix, title, sub_title, desc_plain, categories_json) VALUES (?,?,?,?,?,?,?)`)
 	if err != nil {
-		return fmt.Errorf("epgstore: prepare programme: %w", err)
+		return 0, fmt.Errorf("epgstore: prepare programme: %w", err)
 	}
 	defer func() { _ = ins.Close() }()
 
@@ -141,19 +146,43 @@ func (s *Store) SyncMergedGuideXML(data []byte) error {
 			categoriesJSON(p.Categories),
 		)
 		if err != nil {
-			return fmt.Errorf("epgstore: insert programme: %w", err)
+			return 0, fmt.Errorf("epgstore: insert programme: %w", err)
 		}
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	if _, err := tx.Exec(`INSERT OR REPLACE INTO epg_meta (k, v) VALUES ('last_sync_utc', ?)`, now); err != nil {
-		return fmt.Errorf("epgstore: meta last_sync: %w", err)
+		return 0, fmt.Errorf("epgstore: meta last_sync: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("epgstore: commit: %w", err)
+		return 0, fmt.Errorf("epgstore: commit: %w", err)
 	}
-	return nil
+
+	if retainPastHours > 0 {
+		n, err := s.pruneProgrammesStoppedBefore(time.Now().Add(-time.Duration(retainPastHours) * time.Hour))
+		if err != nil {
+			return 0, err
+		}
+		return int(n), nil
+	}
+	return 0, nil
+}
+
+func (s *Store) pruneProgrammesStoppedBefore(cutoff time.Time) (int64, error) {
+	if s == nil || s.db == nil {
+		return 0, nil
+	}
+	cu := cutoff.Unix()
+	res, err := s.db.Exec(`DELETE FROM epg_programme WHERE stop_unix < ?`, cu)
+	if err != nil {
+		return 0, fmt.Errorf("epgstore: prune programmes: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if _, err := s.db.Exec(`DELETE FROM epg_channel WHERE epg_id NOT IN (SELECT DISTINCT channel_epg_id FROM epg_programme)`); err != nil {
+		return n, fmt.Errorf("epgstore: prune orphan channels: %w", err)
+	}
+	return n, nil
 }
 
 // MetaLastSyncUTC returns the RFC3339 timestamp from epg_meta when SyncMergedGuideXML last succeeded.

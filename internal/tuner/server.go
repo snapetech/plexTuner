@@ -83,6 +83,10 @@ type Server struct {
 
 	// EpgStore is an optional SQLite file for durable merged EPG (LP-007/008). Nil = disabled.
 	EpgStore *epgstore.Store
+	// EpgSQLiteRetainPastHours: if > 0, drop SQLite programme rows whose stop is before now-N hours (LP-009).
+	EpgSQLiteRetainPastHours int
+	// ProviderEPGURLSuffix is appended to provider xmltv.php URL (optional; e.g. panel-specific date params).
+	ProviderEPGURLSuffix string
 
 	// health state updated by UpdateChannels; read by /healthz.
 	healthMu       sync.RWMutex
@@ -966,17 +970,19 @@ func (s *Server) Run(ctx context.Context) error {
 		cacheTTL = s.ProviderEPGCacheTTL
 	}
 	xmltv := &XMLTV{
-		Channels:           s.Channels,
-		EpgPruneUnlinked:   s.EpgPruneUnlinked,
-		SourceURL:          s.XMLTVSourceURL,
-		SourceTimeout:      s.XMLTVTimeout,
-		CacheTTL:           cacheTTL,
-		ProviderBaseURL:    s.ProviderBaseURL,
-		ProviderUser:       s.ProviderUser,
-		ProviderPass:       s.ProviderPass,
-		ProviderEPGEnabled: s.ProviderEPGEnabled,
-		ProviderEPGTimeout: s.ProviderEPGTimeout,
-		EpgStore:           s.EpgStore,
+		Channels:             s.Channels,
+		EpgPruneUnlinked:     s.EpgPruneUnlinked,
+		SourceURL:            s.XMLTVSourceURL,
+		SourceTimeout:        s.XMLTVTimeout,
+		CacheTTL:             cacheTTL,
+		ProviderBaseURL:      s.ProviderBaseURL,
+		ProviderUser:         s.ProviderUser,
+		ProviderPass:         s.ProviderPass,
+		ProviderEPGEnabled:   s.ProviderEPGEnabled,
+		ProviderEPGTimeout:   s.ProviderEPGTimeout,
+		EpgStore:             s.EpgStore,
+		EpgRetainPastHours:   s.EpgSQLiteRetainPastHours,
+		ProviderEPGURLSuffix: s.ProviderEPGURLSuffix,
 	}
 	s.xmltv = xmltv
 	xmltv.StartRefresh(ctx)
@@ -1140,6 +1146,7 @@ type epgStoreReportJSON struct {
 	ChannelCount       int              `json:"channel_count"`
 	GlobalMaxStopUnix  int64            `json:"global_max_stop_unix"`
 	ChannelMaxStopUnix map[string]int64 `json:"channel_max_stop_unix,omitempty"`
+	RetainPastHours    int              `json:"retain_past_hours,omitempty"`
 }
 
 func (s *Server) serveEpgStoreReport() http.Handler {
@@ -1172,6 +1179,7 @@ func (s *Server) serveEpgStoreReport() http.Handler {
 			ProgrammeCount:    prog,
 			ChannelCount:      ch,
 			GlobalMaxStopUnix: gmax,
+			RetainPastHours:   s.EpgSQLiteRetainPastHours,
 		}
 		if detail {
 			m, err := s.EpgStore.MaxStopUnixPerChannel()

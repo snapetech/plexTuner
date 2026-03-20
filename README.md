@@ -926,6 +926,7 @@ Full K8s guide: [`k8s/README.md`](k8s/README.md)
 | `import-cookies` | Import browser cookies (inline, Netscape, or HAR) into the cookie jar |
 | `cf-status` | Show per-host Cloudflare state: cf_clearance freshness, working UA, CF-tagged flag |
 | `debug-bundle` | Collect diagnostic state (stream attempts, provider profile, CF state, env) into a shareable bundle |
+| `free-sources` | Fetch and report free public IPTV channels — explore, probe, diff against catalog |
 
 Full reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-and-env-reference.md)
 
@@ -977,6 +978,20 @@ Full reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-a
 | `IPTV_TUNERR_CF_AUTO_BOOT` | Enable CF auto-bootstrap at startup and clearance freshness monitor |
 | `IPTV_TUNERR_STREAM_ATTEMPT_LOG` | Persistent JSONL audit log of stream attempts (survives restarts) |
 
+### Free Public Sources
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `IPTV_TUNERR_FREE_SOURCES` | — | Comma-separated public M3U URLs |
+| `IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_COUNTRIES` | — | Country codes for iptv-org/iptv (e.g. `us,gb,ca`) |
+| `IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_CATEGORIES` | — | iptv-org categories (e.g. `news,sports`) |
+| `IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_ALL` | `false` | Full iptv-org index (~40k channels) |
+| `IPTV_TUNERR_FREE_SOURCE_MODE` | `supplement` | `supplement` \| `merge` \| `full` |
+| `IPTV_TUNERR_FREE_SOURCE_FILTER_NSFW` | `true` | Drop NSFW/blocked channels (set `false` to tag instead) |
+| `IPTV_TUNERR_FREE_SOURCE_FILTER_CLOSED` | `true` | Drop channels with a broadcast end-date |
+| `IPTV_TUNERR_FREE_SOURCE_CACHE_TTL` | `6h` | How long M3U + metadata is reused from disk |
+| `IPTV_TUNERR_FREE_SOURCE_SMOKETEST` | `false` | Probe free channels at index time (reuses smoketest cache) |
+
 ### Guide / XMLTV
 
 | Variable | Description |
@@ -988,6 +1003,8 @@ Full reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-a
 | `IPTV_TUNERR_XMLTV_CACHE_TTL` | External XMLTV refresh interval (default `10m`) |
 | `IPTV_TUNERR_EPG_PRUNE_UNLINKED` | Exclude unlinked channels from guide and lineup |
 | `IPTV_TUNERR_EPG_SQLITE_PATH` | Optional SQLite file for durable EPG rows ([ADR](docs/adr/0003-epg-sqlite-vs-postgres.md)); merged guide sync + `/guide/epg-store.json` |
+| `IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS` | Drop SQLite programmes ended more than N hours ago (after each sync); `0` = keep full snapshot |
+| `IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX` | Optional `&…` query suffix on provider `xmltv.php` (panel-specific; verify with provider) |
 | `IPTV_TUNERR_XMLTV_PREFER_LANGS` | Language preference for programme titles (e.g. `en,eng`) |
 | `IPTV_TUNERR_XMLTV_PREFER_LATIN` | Prefer Latin script when multilingual data is available |
 | `IPTV_TUNERR_CATCHUP_GUIDE_POLICY` | `off` \| `healthy` \| `strict` for catch-up capsule / publish filtering |
