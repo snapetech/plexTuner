@@ -1113,6 +1113,7 @@ docs/                 Reference, how-to guides, runbooks
 - [`docs/reference/epg-linking-pipeline.md`](docs/reference/epg-linking-pipeline.md) — EPG match strategy
 - [`docs/potential_fixes.md`](docs/potential_fixes.md) — WebSafe / startup-gate context (**HR-001** pointers)
 - [`docs/explanations/architecture.md`](docs/explanations/architecture.md) — Layers, ASCII + **Mermaid** flow, package map ( **`cmd_*`**, **`gateway_*`** )
+- [`docs/explanations/project-backlog.md`](docs/explanations/project-backlog.md) — **Open work index** (epics, `memory-bank/opportunities.md`, `known_issues`, `docs-gaps`, features limits)
 
 **How-To**
 - [`docs/how-to/connect-plex-to-iptv-tunerr.md`](docs/how-to/connect-plex-to-iptv-tunerr.md) — Connect Plex (UI wizard vs `-register-plex` vs API; channelmap, limits)

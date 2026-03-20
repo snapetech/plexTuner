@@ -321,6 +321,10 @@ Also available live over HTTP:
 Live endpoint:
 - `GET /plex/ghost-report.json`
   - supports `?stop=true` to apply the same stale-visible-session stop mode as the CLI
+- `POST /ops/actions/ghost-visible-stop`
+  - runs the same stale-visible-session stop pass for the localhost/LAN operator UI
+- `POST /ops/actions/ghost-hidden-recover?mode=dry-run|restart`
+  - runs the guarded hidden-grab helper for the localhost/LAN operator UI
 
 Query params:
 - `observe=4s`
@@ -333,6 +337,7 @@ Limit:
   - `recommended_action`
   - `recovery_command`
   - `runbook`
+- `IPTV_TUNERR_GHOST_HUNTER_RECOVERY_HELPER` optionally overrides the helper script path used by the CLI `-recover-hidden` hook and the operator action endpoint (default `./scripts/plex-hidden-grab-recover.sh`).
 
 ## Provider behavior profile endpoint
 

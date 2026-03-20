@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -218,23 +217,11 @@ func handleChannelDNAReport(cfg *config.Config, catalogPath, outPath string) {
 }
 
 var ghostHunterRecoverRunner = func(mode string) error {
-	mode = strings.ToLower(strings.TrimSpace(mode))
-	if mode == "" || mode == "off" || mode == "none" {
-		return nil
+	result, err := tuner.RunGhostHunterRecoveryHelper(context.Background(), mode)
+	if strings.TrimSpace(result.Output) != "" {
+		fmt.Fprintln(os.Stderr, result.Output)
 	}
-	args := []string{}
-	switch mode {
-	case "dry-run":
-		args = append(args, "--dry-run")
-	case "restart":
-		args = append(args, "--restart")
-	default:
-		return fmt.Errorf("unknown recover-hidden mode %q", mode)
-	}
-	cmd := exec.Command("./scripts/plex-hidden-grab-recover.sh", args...)
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return err
 }
 
 func maybeRunGhostHunterRecovery(rep tuner.GhostHunterReport, recoverHidden string) error {

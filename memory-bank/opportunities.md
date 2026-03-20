@@ -3,6 +3,8 @@
 This is a lightweight backlog for improvements discovered during other work.
 It exists to encourage quality gains without derailing the current task.
 
+**Consolidated “what’s left” index:** For a single-page map that links this file, LTV/LP epics, **`known_issues`**, **`docs-gaps`**, and intentional limits, see **[docs/explanations/project-backlog.md](../docs/explanations/project-backlog.md)**. Update that index when you add or close major themes; keep **evidence and scope** in the dated entries below.
+
 ## Rules
 - Prefer evidence: link to code, test output, perf numbers, or a specific risk.
 - Do NOT expand scope mid-task unless it is small, low-risk, and clearly aligned.

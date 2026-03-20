@@ -109,6 +109,7 @@ IPTV Tunerr’s mission stays **IPTV/Xtream → HDHR-shaped bridge for Plex/Emby
 
 See also
 --------
+- [Project backlog index](../explanations/project-backlog.md)
 - [features.md](../features.md)
 - [repo map](../../memory-bank/repo_map.md) (`internal/hdhomerun/`, `internal/tuner/`)
 - Lineup README (upstream): [github.com/am385/lineup](https://github.com/am385/lineup)

@@ -26,6 +26,7 @@ If `scripts/verify-steps.sh` is missing, verify exits success so the template st
 | **`memory-bank/known_issues.md`** | Known bugs, limitations, and design tradeoffs. Add when you discover or fix something non-obvious so others don't re-fight the same battles. |
 | **`memory-bank/recurring_loops.md`** | **Critical:** Recurring agentic loops, bugfix loops, and hard-to-solve problems that keep coming back. Document them here with: what keeps happening, why it's tricky, and what actually works. Future agents should read this first to avoid repeating the same mistakes and to get early warnings about fragile areas. |
 | **`memory-bank/opportunities.md`** | Lightweight backlog for security/perf/reliability/maintainability/operability discoveries. File out-of-scope improvements here; raise to user in summary. |
+| **`docs/explanations/project-backlog.md`** | **Open work index:** links LTV/LP epics, **opportunities**, **known_issues**, **docs-gaps**, and [features](docs/features.md) § limits — single orientation page (details stay in those sources). |
 | **`memory-bank/task_history.md`** | Append-only log of completed tasks (summary, verification, opportunities filed). |
 | **`memory-bank/repo_map.md`** | Navigation: main entrypoints, key modules, hot paths, no-go zones. Check before wandering. |
 | **`memory-bank/commands.yml`** | Machine-readable verification commands; `scripts/verify` runs `scripts/verify-steps.sh` (which should align with this file). |

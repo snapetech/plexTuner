@@ -69,6 +69,21 @@ const actionDefinitions = {
     path: "/api/ops/actions/autopilot-reset",
     label: "Reset Autopilot Memory",
     confirm: "Clear remembered Autopilot playback decisions?"
+  },
+  ghost_visible_stop: {
+    path: "/api/ops/actions/ghost-visible-stop",
+    label: "Stop Visible Ghosts",
+    confirm: "Stop visible stale Plex transcode sessions now?"
+  },
+  ghost_hidden_recover_dry_run: {
+    path: "/api/ops/actions/ghost-hidden-recover?mode=dry-run",
+    label: "Run Hidden Recovery Dry-Run",
+    confirm: "Run the guarded hidden-grab recovery helper in dry-run mode?"
+  },
+  ghost_hidden_recover_restart: {
+    path: "/api/ops/actions/ghost-hidden-recover?mode=restart",
+    label: "Restart Hidden-Grabs",
+    confirm: "Run the guarded hidden-grab recovery helper with restart mode?"
   }
 };
 
@@ -585,6 +600,16 @@ function renderActionDock(operatorStatus, guideWorkflow, streamWorkflow, opsWork
           <button class="tiny" type="button" data-inspect="operatorActionsStatus">Inspect Action Status</button>
         </div>
       </article>
+      <article class="action-panel">
+        <h3>Ghost Hunter</h3>
+        <p>Use visible-stop first for stale sessions. Hidden-grab recovery stays guarded and split into dry-run vs restart on purpose.</p>
+        <div class="meta">${opsWorkflow.summary?.ghost?.recommended_action ? esc(pretty(opsWorkflow.summary.ghost.recommended_action)) : "Ghost Hunter guidance is available from the ops workflow."}</div>
+        <div class="action-row">
+          ${createActionButton("ghost_visible_stop")}
+          ${createActionButton("ghost_hidden_recover_dry_run", "Hidden Recovery Dry-Run")}
+          ${createActionButton("ghost_hidden_recover_restart", "Hidden Recovery Restart")}
+        </div>
+      </article>
     </div>
   `;
 }
@@ -993,7 +1018,7 @@ function renderDeck() {
     createCard("Ops recovery workflow", `${pretty(opsWorkflow.summary?.recorder?.failed_count || 0)} recorder failures, ${pretty(opsWorkflow.summary?.ghost?.stale_count || 0)} ghost-stale sessions, ${pretty(opsWorkflow.summary?.autopilot?.decision_count || 0)} autopilot decisions in memory.`, "", ((opsWorkflow.summary?.ghost?.stale_count || 0) + (opsWorkflow.summary?.recorder?.failed_count || 0)) > 0 ? "tone-warn" : "tone-good", "opsWorkflow", `${createWorkflowButton("opsWorkflow", "Open Ops Workflow")}`),
     createCard("Recorder state", recorder.summary ? `${pretty(recorder.summary.active_count)} active, ${pretty(recorder.summary.completed_count)} completed, ${pretty(recorder.summary.failed_count)} failed.` : pretty(recorder.error || "Recorder not configured"), "", (recorder.summary?.failed_count || 0) > 0 ? "tone-warn" : "", "recorder", `${createWorkflowButton("opsWorkflow", "Recovery Playbook")}`),
     createCard("Autopilot memory", autopilot.hot_channels ? `${autopilot.hot_channels.length} hot channels with remembered preferences.` : pretty(autopilot.error || "Autopilot memory unavailable"), formatAutopilotConsensusMeta(autopilot), "", "autopilot", `${createActionButton("autopilot_reset")}`),
-    createCard("Ghost hunter", ghost.summary ? esc(JSON.stringify(ghost.summary)) : esc(pretty(ghost.error || "Plex report unavailable")), "", "", "ghost", `<button class="tiny" type="button" data-inspect="opsWorkflow">Workflow Payload</button>`),
+    createCard("Ghost hunter", ghost.summary ? esc(JSON.stringify(ghost.summary)) : esc(pretty(ghost.error || "Plex report unavailable")), "", "", "ghost", `${createActionButton("ghost_visible_stop")}${createActionButton("ghost_hidden_recover_dry_run", "Dry-Run Recovery")}<button class="tiny" type="button" data-inspect="opsWorkflow">Workflow Payload</button>`),
     createCard("Operator activity log", activity.slice(0, 4).map((item) => `${formatWhen(item.at)} · ${item.title}${item.message ? ` · ${item.message}` : ""}`).join(" | ") || "No operator activity recorded yet.", "", "", "deckActivity", `<button class="tiny" id="activity-reset" type="button">Clear Activity</button>`),
     createCard("Media hooks", runtime.media_servers ? `Emby host=${pretty(runtime.media_servers.emby_host_configured)}, Jellyfin host=${pretty(runtime.media_servers.jellyfin_host_configured)}` : "No runtime snapshot", "", "", "runtime"),
     createCard("Recorder files", `state=${pretty(runtime.recorder?.state_file)}, autopilot=${pretty(runtime.tuner?.autopilot_state_file)}`, "", "", "runtime", `<button class="tiny" type="button" data-inspect="operatorActionsStatus">Control Status</button>`)

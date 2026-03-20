@@ -81,11 +81,12 @@ Make IPTV Tunerr feel less like a tuner bridge and more like a live-TV intellige
 - Next recommended slices (still open — validated 2026-03-19):
   - Richer **Channel DNA** graph (cross-provider relationships, long-lived match provenance store beyond current **`dna_id`** + reports)
   - **Autopilot**: provider-level / multi-host **policy** memory — **`IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS`** (comma hostnames; **`reorderStreamURLs`** after per-DNA memory, before consensus) **shipped**; richer cross-provider **policy file** / automatic host strips beyond **`STRIP_STREAM_HOSTS`** remain future
-  - **Ghost Hunter**: deeper product loop on top of existing **`ghost-hunter`**, **`/plex/ghost-report.json`**, and [plex-hidden-live-grab-recovery](../runbooks/plex-hidden-live-grab-recovery.md)
+  - **Ghost Hunter**: deeper product loop is now partially shipped via localhost/LAN operator actions (**`ghost-visible-stop`**, guarded hidden-grab dry-run/restart helper); remaining depth is richer evidence correlation and stronger automated recovery policy
   - **Provider profile → active remediation:** optional **host quarantine** (**`IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE`**) skips repeatedly failing upstreams when backups exist. **Observability shipped:** **`upstream_quarantine_skips_total`** on **`/provider/profile.json`**, Prometheus **`iptv_tunerr_upstream_quarantine_skips_total`** (with **`IPTV_TUNERR_METRICS_ENABLE`**), and Control Deck (**`internal/webui/deck.js`**) summary + watch/Routing meta. **Further work:** automatic strip / cap beyond quarantine (policy); **`remediation_hints`** remain advisory read-only.
   - **Always-on recorder** extensions for non-replay sources beyond **[catchup-daemon](../explanations/always-on-recorder-daemon.md)** MVP (**`catchup-daemon`** already schedules + records + publish hooks)
 
 See also
 --------
+- [Project backlog index](../explanations/project-backlog.md) (open work across epics, opportunities, known issues)
 - [features](../features.md)
 - [cli-and-env-reference](../reference/cli-and-env-reference.md)

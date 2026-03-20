@@ -1,6 +1,7 @@
 package tuner
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -598,6 +599,13 @@ func TestServer_operatorActionStatus(t *testing.T) {
 		AutopilotReset struct {
 			Available bool `json:"available"`
 		} `json:"autopilot_reset"`
+		GhostVisibleStop struct {
+			Available bool `json:"available"`
+		} `json:"ghost_visible_stop"`
+		GhostHiddenRecover struct {
+			Available bool     `json:"available"`
+			Modes     []string `json:"modes"`
+		} `json:"ghost_hidden_recover"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal: %v", err)
@@ -610,6 +618,12 @@ func TestServer_operatorActionStatus(t *testing.T) {
 	}
 	if !body.AutopilotReset.Available {
 		t.Fatal("expected autopilot_reset available")
+	}
+	if body.GhostVisibleStop.Available {
+		t.Fatal("expected ghost_visible_stop unavailable without PMS config")
+	}
+	if body.GhostHiddenRecover.Available {
+		t.Fatal("expected ghost_hidden_recover unavailable without PMS config")
 	}
 }
 
@@ -737,6 +751,80 @@ func TestServer_autopilotResetAction(t *testing.T) {
 	}
 	if got := len(reloaded.byKey); got != 0 {
 		t.Fatalf("reloaded entries=%d want 0", got)
+	}
+}
+
+func TestServer_ghostVisibleStopAction(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
+	t.Setenv("IPTV_TUNERR_PMS_URL", "http://plex:32400")
+	t.Setenv("IPTV_TUNERR_PMS_TOKEN", "token")
+	prev := runGhostHunterAction
+	runGhostHunterAction = func(ctx context.Context, cfg GhostHunterConfig, stop bool, client *http.Client) (GhostHunterReport, error) {
+		if !stop {
+			t.Fatal("expected stop=true")
+		}
+		return GhostHunterReport{
+			SessionCount:      2,
+			StaleCount:        1,
+			RecommendedAction: "visible stale cleared",
+		}, nil
+	}
+	defer func() { runGhostHunterAction = prev }()
+
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodPost, "/ops/actions/ghost-visible-stop", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	s.serveGhostVisibleStopAction().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body struct {
+		OK     bool              `json:"ok"`
+		Action string            `json:"action"`
+		Detail GhostHunterReport `json:"detail"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !body.OK || body.Action != "ghost_visible_stop" || body.Detail.StaleCount != 1 {
+		t.Fatalf("unexpected body=%+v", body)
+	}
+}
+
+func TestServer_ghostHiddenRecoverAction(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
+	prev := runGhostHunterRecoveryAction
+	runGhostHunterRecoveryAction = func(ctx context.Context, mode string) (GhostHunterRecoveryResult, error) {
+		if mode != "dry-run" {
+			t.Fatalf("mode=%q want dry-run", mode)
+		}
+		return GhostHunterRecoveryResult{
+			Mode:   mode,
+			Path:   "./scripts/plex-hidden-grab-recover.sh",
+			Output: "safe to restart",
+		}, nil
+	}
+	defer func() { runGhostHunterRecoveryAction = prev }()
+
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodPost, "/ops/actions/ghost-hidden-recover?mode=dry-run", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	s.serveGhostHiddenRecoverAction().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body struct {
+		OK     bool                      `json:"ok"`
+		Action string                    `json:"action"`
+		Detail GhostHunterRecoveryResult `json:"detail"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !body.OK || body.Action != "ghost_hidden_recover" || body.Detail.Mode != "dry-run" {
+		t.Fatalf("unexpected body=%+v", body)
 	}
 }
 

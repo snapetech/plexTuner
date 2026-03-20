@@ -153,6 +153,9 @@ type OperatorWorkflowReport struct {
 	Actions     []string               `json:"actions,omitempty"`
 }
 
+var runGhostHunterAction = RunGhostHunter
+var runGhostHunterRecoveryAction = RunGhostHunterRecoveryHelper
+
 // UpdateChannels updates the channel list for all handlers so -refresh can serve new lineup without restart.
 // Caps at LineupMaxChannels (default PlexDVRMaxChannels) so Plex DVR can save the lineup when using the wizard (Plex fails above ~480).
 // When LineupMaxChannels is NoLineupCap, no cap is applied (for programmatic lineup sync; see -register-plex).
@@ -1129,6 +1132,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/ops/actions/stream-attempts-clear", s.serveStreamAttemptsClearAction())
 	mux.Handle("/ops/actions/provider-profile-reset", s.serveProviderProfileResetAction())
 	mux.Handle("/ops/actions/autopilot-reset", s.serveAutopilotResetAction())
+	mux.Handle("/ops/actions/ghost-visible-stop", s.serveGhostVisibleStopAction())
+	mux.Handle("/ops/actions/ghost-hidden-recover", s.serveGhostHiddenRecoverAction())
 
 	srv := &http.Server{Addr: addr, Handler: logRequests(mux)}
 
@@ -1530,7 +1535,7 @@ func (s *Server) serveGhostHunterReport() http.Handler {
 		if raw := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("stop"))); raw != "" {
 			stop = raw == "1" || raw == "true" || raw == "yes" || raw == "on"
 		}
-		rep, err := RunGhostHunter(r.Context(), cfg, stop, nil)
+		rep, err := runGhostHunterAction(r.Context(), cfg, stop, nil)
 		if err != nil {
 			http.Error(w, `{"error":"ghost hunter failed"}`, http.StatusBadGateway)
 			return
@@ -1600,6 +1605,16 @@ func (s *Server) serveOperatorActionStatus() http.Handler {
 			},
 			"autopilot_reset": map[string]interface{}{
 				"available": s.gateway != nil && s.gateway.Autopilot != nil,
+			},
+			"ghost_visible_stop": map[string]interface{}{
+				"available": NewGhostHunterConfigFromEnv().GhostHunterReady(),
+				"observe":   NewGhostHunterConfigFromEnv().ObserveWindow.String(),
+			},
+			"ghost_hidden_recover": map[string]interface{}{
+				"available":    NewGhostHunterConfigFromEnv().GhostHunterReady(),
+				"helper_path":  ghostHunterRecoveryHelperPath(),
+				"modes":        []string{"dry-run", "restart"},
+				"localhost_ui": true,
 			},
 			"mux_seg_decode": map[string]interface{}{
 				"available":    true,
@@ -1737,11 +1752,12 @@ func (s *Server) serveOpsRecoveryWorkflow() http.Handler {
 		}
 
 		ghostSummary := map[string]interface{}{}
-		if rep, err := RunGhostHunter(r.Context(), NewGhostHunterConfigFromEnv(), false, nil); err == nil {
+		if rep, err := runGhostHunterAction(r.Context(), NewGhostHunterConfigFromEnv(), false, nil); err == nil {
 			ghostSummary["session_count"] = rep.SessionCount
 			ghostSummary["stale_count"] = rep.StaleCount
 			ghostSummary["hidden_grab_suspected"] = rep.HiddenGrabSuspected
 			ghostSummary["recommended_action"] = rep.RecommendedAction
+			ghostSummary["safe_actions"] = rep.SafeActions
 		} else {
 			ghostSummary["error"] = err.Error()
 		}
@@ -1767,10 +1783,14 @@ func (s *Server) serveOpsRecoveryWorkflow() http.Handler {
 			Steps: []string{
 				"Check recorder failures and interrupted items before assuming the recording lane is healthy.",
 				"Inspect Ghost Hunter when playback symptoms smell like stale Plex session state rather than upstream failures.",
+				"Stop only visible stale sessions first; use hidden-grab recovery dry-run before any restart action.",
 				"Review Autopilot memory when the gateway keeps preferring a stale profile or host path.",
 				"Reset Autopilot memory only after you have captured the current evidence and want a clean learning pass.",
 			},
 			Actions: []string{
+				"/ops/actions/ghost-visible-stop",
+				"/ops/actions/ghost-hidden-recover?mode=dry-run",
+				"/ops/actions/ghost-hidden-recover?mode=restart",
 				"/ops/actions/autopilot-reset",
 				"/recordings/recorder.json",
 				"/plex/ghost-report.json?observe=0s",
@@ -1869,6 +1889,69 @@ func (s *Server) serveAutopilotResetAction() http.Handler {
 			return
 		}
 		writeOperatorActionJSON(w, http.StatusOK, OperatorActionResponse{OK: true, Action: "autopilot_reset", Message: "autopilot memory cleared"})
+	})
+}
+
+func (s *Server) serveGhostVisibleStopAction() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
+		cfg := NewGhostHunterConfigFromEnv()
+		if !cfg.GhostHunterReady() {
+			writeOperatorActionJSON(w, http.StatusServiceUnavailable, OperatorActionResponse{OK: false, Action: "ghost_visible_stop", Message: "ghost hunter is not configured"})
+			return
+		}
+		rep, err := runGhostHunterAction(r.Context(), cfg, true, nil)
+		if err != nil {
+			writeOperatorActionJSON(w, http.StatusBadGateway, OperatorActionResponse{OK: false, Action: "ghost_visible_stop", Message: "ghost hunter stop failed", Detail: err.Error()})
+			return
+		}
+		msg := "ghost hunter stop pass completed"
+		if rep.StaleCount == 0 {
+			msg = "ghost hunter found no visible stale sessions to stop"
+		}
+		writeOperatorActionJSON(w, http.StatusOK, OperatorActionResponse{OK: true, Action: "ghost_visible_stop", Message: msg, Detail: rep})
+	})
+}
+
+func (s *Server) serveGhostHiddenRecoverAction() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
+		mode := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mode")))
+		if mode == "" {
+			mode = "dry-run"
+		}
+		result, err := runGhostHunterRecoveryAction(r.Context(), mode)
+		if err != nil {
+			writeOperatorActionJSON(w, http.StatusBadGateway, OperatorActionResponse{
+				OK:      false,
+				Action:  "ghost_hidden_recover",
+				Message: "ghost hidden-grab helper failed",
+				Detail:  map[string]interface{}{"mode": mode, "result": result, "error": err.Error()},
+			})
+			return
+		}
+		message := "ghost hidden-grab helper completed"
+		if mode == "dry-run" {
+			message = "ghost hidden-grab helper dry-run completed"
+		}
+		writeOperatorActionJSON(w, http.StatusOK, OperatorActionResponse{
+			OK:      true,
+			Action:  "ghost_hidden_recover",
+			Message: message,
+			Detail:  result,
+		})
 	})
 }
 

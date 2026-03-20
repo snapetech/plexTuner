@@ -22,6 +22,32 @@ Append-only. One entry per completed task.
 
 ## Entries
 
+- Date: 2026-03-20
+  Title: Ghost Hunter operator actions and guarded recovery loop
+  Summary:
+    - Added **`POST /ops/actions/ghost-visible-stop`** and **`POST /ops/actions/ghost-hidden-recover?mode=dry-run|restart`** to the tuner operator surface.
+    - Added reusable **`RunGhostHunterRecoveryHelper`** with **`IPTV_TUNERR_GHOST_HUNTER_RECOVERY_HELPER`** override, and reused it from the CLI recovery hook.
+    - Updated ops workflow and deck action dock so Ghost Hunter is actionable instead of report-only.
+  Verification:
+    - `go test ./internal/tuner ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+  Links:
+    - INT-008 product loop
+
+- Date: 2026-03-20
+  Title: Document project-backlog.md (open work index)
+  Summary:
+    - **`docs/explanations/project-backlog.md`**: single entry point linking **EPIC LTV/LP**, **`memory-bank/opportunities.md`**, **`known_issues`**, **`docs-gaps`**, **features** § limits; maintenance rules.
+    - **Cross-links:** **`docs/index.md`**, **`docs/explanations/index.md`**, **`README`**, **`AGENTS.md`** memory-bank table, **`repo_map.md`**, **`opportunities.md`** intro, **EPIC** See also, **`CHANGELOG`** **[Unreleased]**.
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+  Links:
+    - answers “is that all documented?” for consolidated backlog orientation
+
 - Date: 2026-03-19
   Title: Control Deck host quarantine + EPIC LTV observability note
   Summary:

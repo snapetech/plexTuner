@@ -2,6 +2,10 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-20):** **INT-008 follow-up:** Ghost Hunter now has first-class operator actions: **`POST /ops/actions/ghost-visible-stop`** and **`POST /ops/actions/ghost-hidden-recover?mode=dry-run|restart`**, reusing the guarded helper path (**`IPTV_TUNERR_GHOST_HUNTER_RECOVERY_HELPER`** override). Control-deck actions/workflows, tests, and docs updated.
+
+**Latest (2026-03-20):** **Docs:** **[docs/explanations/project-backlog.md](../docs/explanations/project-backlog.md)** — canonical “open work” index (links epics, **opportunities**, **known_issues**, **docs-gaps**, **README** / **AGENTS** / **repo_map** / **EPIC** See also). **`./scripts/verify`** OK.
+
 **Latest (2026-03-19):** **Control Deck:** **`deck.js`** provider summary + Watch/Routing for **host quarantine**; **EPIC-live-tv-intelligence** observability line; **CHANGELOG** / **features**. **`./scripts/verify`** OK.
 
 **Latest (2026-03-19):** **INT-010:** **`upstream_quarantine_skips_total`** on **`/provider/profile.json`** (cumulative; mirrors Prometheus counter). **`./scripts/verify`** OK.

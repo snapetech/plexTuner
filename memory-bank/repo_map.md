@@ -33,6 +33,7 @@ Normal push path from this checkout: `git push origin main`. Never `git push git
 | **`internal/vodfs/`** | FUSE: root, Movies/TV dirs, virtual files (NodeOpener, keep FD). |
 | **`AGENTS.md`** | Agent instructions; **`memory-bank/`** = state + process. |
 | **`docs/index.md`** | Doc map (Diátaxis). |
+| **`docs/explanations/project-backlog.md`** | Open-work index (epics + **opportunities** + **known_issues** + gaps + limits). |
 | **`docs/explanations/architecture.md`** | Layered overview: core runtime vs intelligence vs publishing; **`cmd_*`** / **`gateway_*`** entry pointers. |
 
 ## Single binary (supervisor vs oracle)
