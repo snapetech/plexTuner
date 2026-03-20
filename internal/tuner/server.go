@@ -1691,8 +1691,10 @@ func (s *Server) serveStreamInvestigateWorkflow() http.Handler {
 			Actions: []string{
 				"/ops/actions/stream-attempts-clear",
 				"/ops/actions/provider-profile-reset",
+				"/ops/actions/autopilot-reset",
 				"/debug/stream-attempts.json",
 				"/provider/profile.json",
+				"/autopilot/report.json",
 				"/debug/runtime.json",
 			},
 		}

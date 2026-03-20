@@ -45,10 +45,12 @@ IPTV Tunerr’s mission stays **IPTV/Xtream → HDHR-shaped bridge for Plex/Emby
 
 ## Implementation status (repo snapshot)
 
-- **LP-001 (MVP shipped):** `internal/hdhomerun` implements **`DiscoverLAN`** (UDP broadcast), **`ParseDiscoverReply`**, **`FetchDiscoverJSON`**, **`FetchLineupJSON`**, **`FetchGuideXML`**. Operators run **`iptv-tunerr hdhr-scan`** (LAN discovery or **`-addr http://device`**). Further work = polish (multicast subnets, IPv6) and continued **LP-002** merge ADR alignment.
-- **LP-010 (partial):** Hardware-style profile aliases + optional **`IPTV_TUNERR_STREAM_PROFILES_FILE`** named matrix (**`base_profile`**, **`transcode`**, **`output_mux`**) in **`internal/tuner/gateway_profiles.go`**; see [transcode-profiles](../reference/transcode-profiles.md). Remaining LP-010/011 = more **ffmpeg HLS/fMP4 packaging** paths if product needs disk segment output beyond Tunerr-native **`?mux=hls|dash`** rewrite.
-- **LP-004–LP-006:** Substantial dashboard work lives in **`internal/webui`** + tuner JSON APIs; treat epic rows as iterative hardening, not empty.
-- **Not started here (multi-PR):** **LP-007–LP-009** (SQLite schema, incremental fetch, cleanup), **Postgres**, always-on recorder daemon — track in [memory-bank/work_breakdown.md](../../memory-bank/work_breakdown.md) when scheduled.
+- **LP-001 (MVP shipped):** `internal/hdhomerun` implements **`DiscoverLAN`** (UDP broadcast), **`ParseDiscoverReply`**, **`FetchDiscoverJSON`**, **`FetchLineupJSON`**, **`FetchGuideXML`**. Operators run **`iptv-tunerr hdhr-scan`** (LAN discovery or **`-addr http://device`**). **Remaining:** polish (multicast subnets, IPv6) and **LP-002** merge semantics if catalog rules evolve.
+- **LP-002 / LP-003 (shipped):** **`IPTV_TUNERR_HDHR_LINEUP_URL`** at **index** time; **`IPTV_TUNERR_HDHR_GUIDE_URL`** runtime **`/guide.xml`** merge — see **Current status** below and [ADR 0002](../adr/0002-hdhr-hardware-iptv-merge.md) / [ADR 0004](../adr/0004-hdhr-guide-epg-merge.md).
+- **LP-007–LP-009 (shipped):** **`internal/epgstore`**, incremental/overlap upsert knobs, retention/VACUUM/max-bytes, **`GET /guide/epg-store.json`** — [ADR 0003](../adr/0003-epg-sqlite-vs-postgres.md). *Future optimization:* provider **full** `xmltv.php` fetch per refresh remains; windowed/incremental provider pulls are **opportunities**-tracked where panels support it.
+- **LP-010 (partial):** Hardware-style profile aliases + **`IPTV_TUNERR_STREAM_PROFILES_FILE`** + native **`?mux=hls|dash`** + **`X-IptvTunerr-Native-Mux`**. **Remaining LP-010/011:** optional **ffmpeg disk** multi-file HLS packaging if needed beyond rewrite/proxy.
+- **LP-004–LP-006:** Dashboard + **`/ui/`** live in **`internal/webui`** + tuner JSON; iterative hardening continues with **[EPIC-live-tv-intelligence](EPIC-live-tv-intelligence.md)** (e.g. **`intelligence.autopilot`** on **`/provider/profile.json`**).
+- **Parked (not LP acceptance):** **Postgres** multi-writer EPG, **always-on recorder** beyond **catchup-daemon** MVP — [opportunities.md](../../memory-bank/opportunities.md).
 
 ## Story list
 

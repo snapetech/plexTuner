@@ -67,19 +67,21 @@ Make IPTV Tunerr feel less like a tuner bridge and more like a live-TV intellige
 ## Current status
 
 - Shipped now:
-  - `INT-001` channel health report foundation
-  - `INT-002` EPG match provenance in the report when XMLTV is supplied
-  - early lineup recipes driven by channel intelligence scores (`high_confidence`, `balanced`, `guide_first`, `resilient`)
-  - Channel DNA foundation: persisted `dna_id` derived from repaired `TVGID` or normalized channel identity inputs
-  - `INT-005` Autopilot memory foundation: optional JSON-backed remembered decisions keyed by `dna_id + client_class`, with successful stream choices reused before generic client adaptation
-  - Ghost Hunter foundation: `ghost-hunter` CLI and `/plex/ghost-report.json` for visible-session stall reporting and optional stop actions
-  - Provider behavior profile foundation: `/provider/profile.json` exposes learned runtime quirks like effective tuner cap, concurrency signals, and Cloudflare-abuse hits
+  - `INT-001` channel health report foundation (`channel-report`, `/channels/report.json`)
+  - `INT-002` EPG match provenance in reports when XMLTV is supplied
+  - `INT-003` guide-quality policy: **`IPTV_TUNERR_GUIDE_POLICY`**, **`IPTV_TUNERR_CATCHUP_GUIDE_POLICY`**, **`GET /guide/policy.json`**, catch-up preview summaries
+  - Lineup / registration recipes driven by channel intelligence (`high_confidence`, `balanced`, `guide_first`, `resilient`, …)
+  - Channel DNA: persisted **`dna_id`**, `/channels/dna.json`, duplicate collapse policies
+  - **`INT-005` Autopilot**: JSON state file, remembered transcode/profile/**upstream host** preference, **hot-start** hints, mux **seg** slot bonus, **`/autopilot/report.json`**
+  - Ghost Hunter: `ghost-hunter` CLI and `/plex/ghost-report.json`
+  - Provider behavior profile: **`/provider/profile.json`** (tuner limits, CF/mux counters, penalized hosts, last mux outcomes)
+  - **Operator surfacing (2026-03):** **`GET /provider/profile.json`** includes **`intelligence.autopilot`** (enabled, state file, decision count, top hot channels) beside provider-runtime fields so the deck and scripts see LTV signals in one JSON fetch. Stream-investigate workflow actions link **`/autopilot/report.json`** and **`autopilot-reset`**.
 - Next recommended slices:
-  - persist richer match provenance and long-lived cross-provider relationships into a fuller Channel DNA store
-  - expand Autopilot from profile/transcode memory into fallback URL/provider selection and hot-start behavior
-  - extend Ghost Hunter beyond visible sessions by tying in hidden-grab operational recovery signals
-  - promote provider behavior profiles from passive reporting into active default tuning and remediation
-  - evaluate an always-on recorder daemon for non-replay sources so catch-up can evolve from guide-driven launchers into rolling recorded replay
+  - Richer **Channel DNA** graph (cross-provider relationships, long-lived match provenance store)
+  - **Autopilot**: deeper **URL ordering** (multi-host failover priority) and provider-level memory beyond per-channel host hints
+  - **Ghost Hunter** + **hidden-grab** runbook automation (already scripts/runbooks — tighter product loop)
+  - **Provider profile → active remediation** (auto cap / strip hosts beyond today’s autotune hooks)
+  - **Always-on recorder** for non-replay sources ([catchup-daemon](../explanations/always-on-recorder-daemon.md) extensions)
 
 See also
 --------

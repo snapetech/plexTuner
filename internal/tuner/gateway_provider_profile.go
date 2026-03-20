@@ -75,6 +75,21 @@ type ProviderBehaviorProfile struct {
 	LastDashMuxAt              string                `json:"last_dash_mux_at,omitempty"`
 	LastDashMuxURL             string                `json:"last_dash_mux_url,omitempty"`
 	PenalizedHosts             []ProviderHostPenalty `json:"penalized_hosts,omitempty"`
+	// Intelligence surfaces Live TV intelligence (LTV epic) next to provider-runtime quirks.
+	Intelligence ProviderIntelligenceSnapshot `json:"intelligence,omitempty"`
+}
+
+// ProviderIntelligenceSnapshot is a stable, versionable bundle for operator dashboards.
+type ProviderIntelligenceSnapshot struct {
+	Autopilot AutopilotIntelSnapshot `json:"autopilot,omitempty"`
+}
+
+// AutopilotIntelSnapshot is a trimmed view of Autopilot memory (same shape as /autopilot/report.json hot list).
+type AutopilotIntelSnapshot struct {
+	Enabled       bool                `json:"enabled"`
+	StateFile     string              `json:"state_file,omitempty"`
+	DecisionCount int                 `json:"decision_count"`
+	HotChannels   []autopilotHotEntry `json:"hot_channels,omitempty"`
 }
 
 func (g *Gateway) noteHLSSegmentFailure(segURL string) {
@@ -323,6 +338,15 @@ func (g *Gateway) ProviderBehaviorProfile() ProviderBehaviorProfile {
 	}
 	if !lastDashMuxAt.IsZero() {
 		prof.LastDashMuxAt = lastDashMuxAt.Format(time.RFC3339)
+	}
+	if g.Autopilot != nil {
+		rep := g.Autopilot.report(5)
+		prof.Intelligence.Autopilot.Enabled = true
+		prof.Intelligence.Autopilot.StateFile = rep.StateFile
+		prof.Intelligence.Autopilot.DecisionCount = rep.DecisionCount
+		if len(rep.HotChannels) > 0 {
+			prof.Intelligence.Autopilot.HotChannels = rep.HotChannels
+		}
 	}
 	return prof
 }

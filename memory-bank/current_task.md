@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-20):** **LP / LTV slice:** **`/provider/profile.json`** → **`intelligence.autopilot`**; **stream-investigate** workflow actions; **EPIC-lineup-parity** implementation status sync; **EPIC-live-tv-intelligence** current status; **hybrid-hdhr** §6 LTV table; **features** + **CHANGELOG** + **work_breakdown**. **`./scripts/verify`** OK.
+
 **Latest (2026-03-20):** Doc sync: **README** documentation map + k8s probes + recent bullets; **`docs/features.md`** (**`/readyz`**, native mux header, profiles, harness); **`docs/index`**, **`reference/index`**, **`runbooks/index`**, **`how-to/index`** cross-links; **CHANGELOG** [Unreleased] **Documentation** section.
 
 **Latest (2026-03-20):** Closed test gaps: **`internal/probe/probe_test.go`** (~92% stmts) + **`internal/materializer/materializer_test.go`** (~71% stmts; HLS/ffmpeg still integration-only); **`CHANGELOG`**, **`commands.yml`** note; **`./scripts/verify`** OK.

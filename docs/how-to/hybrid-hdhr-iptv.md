@@ -47,10 +47,25 @@ See [ADR 0003](../adr/0003-epg-sqlite-vs-postgres.md). Use **`IPTV_TUNERR_EPG_SQ
 
 For HLS inputs processed with ffmpeg, **`?mux=fmp4`** requests **fragmented MP4** instead of MPEG-TS. **Requires transcoding** (remux-only requests fall back to TS). Plex HDHR clients expect TS by default—use for lab/testing unless your player accepts `video/mp4`.
 
+## 6. Live TV intelligence (hybrid ops)
+
+Hardware + IPTV merges increase moving parts. Use the **LTV** JSON surfaces on the same tuner port:
+
+| Endpoint | Use |
+|----------|-----|
+| **`GET /guide/health.json`** | Placeholder-only vs real programme coverage |
+| **`GET /channels/report.json`** | Per-channel scores and backup-stream depth |
+| **`GET /provider/profile.json`** | Concurrency/CF/mux counters + **`intelligence.autopilot`** (hot learned paths) |
+| **`GET /autopilot/report.json`** | Full Autopilot memory sample |
+| **`GET /plex/ghost-report.json`** | Plex visible-session stalls (optional **`stop`**) |
+
+Cross-reference: [EPIC-live-tv-intelligence](../epics/EPIC-live-tv-intelligence.md). Deck **`/debug/runtime.json`** → **`URLs`** lists the same paths for copy/paste.
+
 ## See also
 
 - [cli-and-env reference](../reference/cli-and-env-reference.md)
 - [EPIC lineup parity](../epics/EPIC-lineup-parity.md)
+- [EPIC live TV intelligence](../epics/EPIC-live-tv-intelligence.md)
 - [features](../features.md)
 - [hls-mux-toolkit](../reference/hls-mux-toolkit.md) — Tunerr-native **`?mux=hls|dash`** proxy headers and caps
-- [Troubleshooting runbook](../runbooks/iptvtunerr-troubleshooting.md) — **`/healthz`**, harnesses, **HR-*** checklists
+- [Troubleshooting runbook](../runbooks/iptvtunerr-troubleshooting.md) — **`/healthz`**, **`/readyz`**, harnesses, **HR-*** checklists

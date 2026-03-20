@@ -629,6 +629,37 @@ func TestGateway_ProviderBehaviorProfile_hlsMuxSegLimit(t *testing.T) {
 	}
 }
 
+func TestGateway_ProviderBehaviorProfile_includesIntelligenceAutopilot(t *testing.T) {
+	st := &autopilotStore{
+		byKey: map[string]autopilotDecision{
+			autopilotKey("dna:z", "web"): {
+				DNAID: "dna:z", ClientClass: "web", Hits: 9, Profile: "heavy",
+				Transcode: true, PreferredHost: "cdn.example", UpdatedAt: "2026-03-20T00:00:00Z",
+			},
+		},
+	}
+	st.path = "/tmp/autopilot-test.json"
+	g := &Gateway{TunerCount: 2, Autopilot: st}
+	p := g.ProviderBehaviorProfile()
+	if !p.Intelligence.Autopilot.Enabled {
+		t.Fatal("expected intelligence.autopilot.enabled")
+	}
+	if p.Intelligence.Autopilot.DecisionCount != 1 {
+		t.Fatalf("decision_count=%d", p.Intelligence.Autopilot.DecisionCount)
+	}
+	if len(p.Intelligence.Autopilot.HotChannels) != 1 {
+		t.Fatalf("hot=%v", p.Intelligence.Autopilot.HotChannels)
+	}
+	if p.Intelligence.Autopilot.HotChannels[0].DNAID != "dna:z" || p.Intelligence.Autopilot.HotChannels[0].Hits != 9 {
+		t.Fatalf("%+v", p.Intelligence.Autopilot.HotChannels[0])
+	}
+	g2 := &Gateway{TunerCount: 2}
+	p2 := g2.ProviderBehaviorProfile()
+	if p2.Intelligence.Autopilot.Enabled {
+		t.Fatal("expected no intelligence.autopilot without store")
+	}
+}
+
 func TestGateway_newUpstreamRequest_forwardsCorrelationHeaders(t *testing.T) {
 	g := &Gateway{}
 	in := httptest.NewRequest(http.MethodGet, "/", nil)

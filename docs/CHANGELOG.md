@@ -18,6 +18,10 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **`docs/features.md`:** **`/healthz`** / **`/readyz`**, **`X-IptvTunerr-Native-Mux`**, named profile matrix row, **`provider_profile.json`** mux breadcrumbs, runtime **`URLs.ready`**, materializer scope, live-race harness + Plex sessions; **See also** links **CHANGELOG** / tuning docs.
 - **`docs/index.md`:** quick entrypoints (**README**, **CHANGELOG**, **features**, CLI ref); runbooks row points at troubleshooting §8; **See also** → **repo_map**.
 - **`docs/reference/index.md`:** **features** + **CHANGELOG** rows for discoverability.
+- **LP / LTV epics:** [EPIC-lineup-parity](epics/EPIC-lineup-parity.md) **Implementation status** aligned with shipped **LP-007–LP-009** / **LP-002–LP-003**; [EPIC-live-tv-intelligence](epics/EPIC-live-tv-intelligence.md) **Current status** updated (**INT-003**, Autopilot URL/host, **`intelligence.autopilot`** on **`/provider/profile.json`**). [hybrid-hdhr-iptv](how-to/hybrid-hdhr-iptv.md) §6 LTV endpoint table.
+
+### Live TV intelligence (LTV) / lineup parity (LP)
+- **`GET /provider/profile.json`**: includes **`intelligence.autopilot`** (`enabled`, `state_file`, `decision_count`, `hot_channels` sample) when Autopilot memory is configured — aggregates provider-runtime + learned playback signals for operator UIs. **`stream-investigate`** workflow actions include **`/autopilot/report.json`** and **`/ops/actions/autopilot-reset`**.
 
 ### Testing
 - **`internal/probe`**: unit tests for **`Probe`** (path classification, HTTP content-types, body sniff, redirects) plus **`Lineup`**, **`LineupHandler`**, **`DiscoveryHandler`** (`probe_test.go`).
