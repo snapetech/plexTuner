@@ -482,10 +482,11 @@ type CatchupCapsule struct {
 }
 
 type CatchupCapsulePreview struct {
-	GeneratedAt string           `json:"generated_at"`
-	SourceReady bool             `json:"source_ready"`
-	ReplayMode  string           `json:"replay_mode,omitempty"`
-	Capsules    []CatchupCapsule `json:"capsules"`
+	GeneratedAt string              `json:"generated_at"`
+	SourceReady bool                `json:"source_ready"`
+	ReplayMode  string              `json:"replay_mode,omitempty"`
+	GuidePolicy *GuidePolicySummary `json:"guide_policy,omitempty"`
+	Capsules    []CatchupCapsule    `json:"capsules"`
 }
 
 func (x *XMLTV) GuideHighlights(now time.Time, soonWindow time.Duration, limit int) (GuideHighlights, error) {

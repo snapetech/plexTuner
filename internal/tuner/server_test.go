@@ -900,6 +900,66 @@ func TestServer_UpdateChannelsGuidePolicy(t *testing.T) {
 	}
 }
 
+func TestServer_guidePolicyReport(t *testing.T) {
+	s := &Server{
+		xmltv: &XMLTV{
+			Channels: []catalog.LiveChannel{
+				{ChannelID: "1", GuideNumber: "101", GuideName: "News One", TVGID: "news.one"},
+				{ChannelID: "2", GuideNumber: "102", GuideName: "Mystery TV", TVGID: "mystery.tv"},
+				{ChannelID: "3", GuideNumber: "103", GuideName: "Ghost TV"},
+			},
+			cachedGuideHealth: &guidehealth.Report{
+				SourceReady: true,
+				Channels: []guidehealth.ChannelHealth{
+					{ChannelID: "1", GuideNumber: "101", GuideName: "News One", TVGID: "news.one", Status: "healthy", HasRealProgrammes: true, HasProgrammes: true},
+					{ChannelID: "2", GuideNumber: "102", GuideName: "Mystery TV", TVGID: "mystery.tv", Status: "placeholder_only", PlaceholderOnly: true, HasProgrammes: true},
+					{ChannelID: "3", GuideNumber: "103", GuideName: "Ghost TV", Status: "matched_no_programmes"},
+				},
+			},
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/guide/policy.json?policy=healthy", nil)
+	w := httptest.NewRecorder()
+	s.serveGuidePolicy().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d want 200", w.Code)
+	}
+	var body struct {
+		Summary struct {
+			Policy                  string `json:"policy"`
+			SourceReady             bool   `json:"source_ready"`
+			TotalChannels           int    `json:"total_channels"`
+			HealthyChannels         int    `json:"healthy_channels"`
+			PlaceholderOnlyChannels int    `json:"placeholder_only_channels"`
+			NoProgrammeChannels     int    `json:"no_programme_channels"`
+			KeptChannels            int    `json:"kept_channels"`
+			DroppedChannels         int    `json:"dropped_channels"`
+			DroppedPlaceholderOnly  int    `json:"dropped_placeholder_only"`
+			DroppedNoProgramme      int    `json:"dropped_no_programme"`
+		} `json:"summary"`
+		Channels []struct {
+			ChannelID  string `json:"channel_id"`
+			Keep       bool   `json:"keep"`
+			DropReason string `json:"drop_reason"`
+		} `json:"channels"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body.Summary.Policy != "healthy" || !body.Summary.SourceReady {
+		t.Fatalf("unexpected policy summary=%+v", body.Summary)
+	}
+	if body.Summary.TotalChannels != 3 || body.Summary.KeptChannels != 1 || body.Summary.DroppedChannels != 2 {
+		t.Fatalf("unexpected counts=%+v", body.Summary)
+	}
+	if body.Summary.DroppedPlaceholderOnly != 1 || body.Summary.DroppedNoProgramme != 1 {
+		t.Fatalf("unexpected drop reasons=%+v", body.Summary)
+	}
+	if len(body.Channels) != 3 || body.Channels[1].Keep || body.Channels[1].DropReason != "placeholder_only" {
+		t.Fatalf("unexpected decisions=%+v", body.Channels)
+	}
+}
+
 func TestServer_epgDoctor(t *testing.T) {
 	s := &Server{
 		xmltv: &XMLTV{
@@ -1036,6 +1096,12 @@ func TestServer_catchupCapsulesGuidePolicy(t *testing.T) {
 	}
 	if body.Capsules[0].ChannelID != "101" {
 		t.Fatalf("kept capsule channel=%q want 101", body.Capsules[0].ChannelID)
+	}
+	if body.GuidePolicy == nil {
+		t.Fatalf("expected guide policy summary")
+	}
+	if body.GuidePolicy.Policy != "healthy" || body.GuidePolicy.KeptChannels != 1 || body.GuidePolicy.DroppedPlaceholderOnly != 1 {
+		t.Fatalf("unexpected guide policy summary=%+v", body.GuidePolicy)
 	}
 }
 

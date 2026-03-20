@@ -1070,6 +1070,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/device.xml", s.serveDeviceXML())
 	mux.Handle("/guide.xml", xmltv)
 	mux.Handle("/guide/health.json", s.serveGuideHealth())
+	mux.Handle("/guide/policy.json", s.serveGuidePolicy())
 	mux.Handle("/guide/doctor.json", s.serveEPGDoctor())
 	mux.Handle("/guide/aliases.json", s.serveSuggestedAliasOverrides())
 	mux.Handle("/guide/highlights.json", s.serveGuideHighlights())
@@ -1432,6 +1433,32 @@ func (s *Server) serveCatchupCapsules() http.Handler {
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
 			http.Error(w, `{"error":"encode catchup capsules"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveGuidePolicy() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if s.xmltv == nil {
+			http.Error(w, `{"error":"xmltv unavailable"}`, http.StatusServiceUnavailable)
+			return
+		}
+		policy := normalizeGuidePolicy(strings.TrimSpace(r.URL.Query().Get("policy")))
+		if policy == "off" {
+			if raw := strings.TrimSpace(os.Getenv("IPTV_TUNERR_GUIDE_POLICY")); raw != "" {
+				policy = normalizeGuidePolicy(raw)
+			}
+		}
+		report, ok := s.xmltv.guidePolicyReport(s.xmltv.Channels, policy)
+		if !ok && report.Summary.Policy == "" {
+			report.Summary.Policy = policy
+		}
+		body, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode guide policy"}`, http.StatusInternalServerError)
 			return
 		}
 		_, _ = w.Write(body)
