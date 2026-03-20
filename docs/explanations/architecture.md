@@ -88,7 +88,8 @@ Primary code:
 - `/stream/{id}`
 - `/guide.xml`
 - `/live.m3u`
-- `/healthz`
+- `/healthz` (JSON liveness-style catalog gate: `ok` / `loading`)
+- `/readyz` (same gate; `ready` / `not_ready` — useful for Kubernetes readiness probes)
 
 Primary code:
 - [server.go](../../internal/tuner/server.go)

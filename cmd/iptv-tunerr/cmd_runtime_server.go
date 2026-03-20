@@ -204,6 +204,7 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 		},
 		URLs: map[string]string{
 			"health":              "/healthz",
+			"ready":               "/readyz",
 			"guide":               "/guide.xml",
 			"guide_health":        "/guide/health.json",
 			"guide_doctor":        "/guide/doctor.json",

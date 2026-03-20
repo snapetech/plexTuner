@@ -125,10 +125,10 @@ spec:
             initialDelaySeconds: 600
             periodSeconds: 30
             failureThreshold: 10
-          # Readiness: prefer /healthz (503 until children load channels). Liveness stays /discover.json during long catalog builds.
+          # Readiness: prefer /readyz (503 until children load channels). /healthz is equivalent for HTTP status; use either. Liveness stays /discover.json during long catalog builds.
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: 5004
             initialDelaySeconds: 120
             periodSeconds: 10

@@ -23,6 +23,16 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-20
+  Title: **`/readyz`** operability docs + **k8s** readiness alignment
+  Summary:
+    - Code already exposed **`GET /readyz`** + richer **`/healthz`** (`internal/tuner/server.go`, **`TestServer_readyz`**). This slice documents both and points example **`readinessProbe`** paths at **`/readyz`** (`k8s/iptvtunerr-hdhr-test.yaml`, `k8s/iptvtunerr-supervisor-singlepod.example.yaml`).
+    - Runbook §8 **`curl`** recipes; **`k8s/README.md`** verify; **`architecture.md`**; tuner static **`ui/index.html`**; **[CHANGELOG](../docs/CHANGELOG.md)** **[Unreleased]**; **LP-012**; **`opportunities.md`** superseded **`/healthz`** row; **`work_breakdown`** readiness note.
+  Verification:
+    - `./scripts/verify`
+  Links:
+    - `internal/tuner/server.go`, `docs/runbooks/iptvtunerr-troubleshooting.md`, `k8s/*`
+
+- Date: 2026-03-20
   Title: Supersede smoketest-cache opportunity + doc cross-links (**LP-012** hygiene)
   Summary:
     - [opportunities.md](opportunities.md): **2026-02-25** smoketest “no disk cache” → **superseded** (**`IPTV_TUNERR_SMOKETEST_CACHE_*`**, **`internal/indexer/smoketest_cache.go`**).

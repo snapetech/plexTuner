@@ -309,9 +309,9 @@ It exists to encourage quality gains without derailing the current task.
 
 - Date: 2026-02-25
   Category: operability
-  Title: (superseded 2026-03-19) **`/healthz`** for Kubernetes readiness
+  Title: (superseded 2026-03-19) **`/healthz`** / **`/readyz`** for Kubernetes readiness
   Context: Examples used **`/discover.json`** for readiness only.
-  Status: **`GET /healthz`** returns **503** `loading` until **`UpdateChannels`** has live rows, then **JSON** `ok` + **`channels`** + **`last_refresh`** (`internal/tuner/server.go`, **`TestServer_healthz`**). Example manifests: readiness MAY probe **`/healthz`**; **liveness** should stay something that stays **200** during long first catalog builds (often **`/discover.json`**).
+  Status: **`GET /healthz`** returns **503** `loading` until **`UpdateChannels`** has live rows, then **JSON** `ok` + **`source_ready`** + **`channels`** + **`last_refresh`**. **`GET /readyz`** uses the same gate with **`status`** **`ready`** / **`not_ready`** (`internal/tuner/server.go`, **`TestServer_healthz`**, **`TestServer_readyz`**). Example manifests: readiness MAY probe **`/readyz`** (or **`/healthz`**); **liveness** should stay something that stays **200** during long first catalog builds (often **`/discover.json`**).
   Risk/Scope: n/a (historical; update local manifests when convenient)
   User decision needed?: no
 

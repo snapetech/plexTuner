@@ -237,7 +237,8 @@ Once the server is running, quick HTTP checks:
 ```bash
 BASE=http://localhost:5004   # or your IPTV_TUNERR_BASE_URL
 
-curl -sS "$BASE/healthz" | jq .   # 503 {"status":"loading"} until channels loaded; then 200 + channel count
+curl -sS "$BASE/healthz" | jq .   # 503 {"status":"loading",...} until channels loaded; then 200 {"status":"ok","source_ready":true,...}
+curl -sS "$BASE/readyz" | jq .   # same readiness gate: 503 {"status":"not_ready",...} until loaded; then 200 {"status":"ready",...}
 
 curl -s -o /dev/null -w "%{http_code}" "$BASE/discover.json"   # expect 200
 curl -s -o /dev/null -w "%{http_code}" "$BASE/lineup.json"     # expect 200

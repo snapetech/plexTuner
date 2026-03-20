@@ -33,6 +33,12 @@ func TestServer_healthz(t *testing.T) {
 	if loading["status"] != "loading" {
 		t.Errorf("before update: status = %q, want loading", loading["status"])
 	}
+	if ready, _ := loading["source_ready"].(bool); ready {
+		t.Error("before update: source_ready = true, want false")
+	}
+	if channels, _ := loading["channels"].(float64); channels != 0 {
+		t.Errorf("before update: channels = %v, want 0", loading["channels"])
+	}
 
 	// After UpdateChannels with live channels: /healthz must return 200 "ok".
 	live := []catalog.LiveChannel{{ChannelID: "1", GuideName: "Ch1"}}
@@ -51,8 +57,58 @@ func TestServer_healthz(t *testing.T) {
 	if ok["status"] != "ok" {
 		t.Errorf("after update: status = %q, want ok", ok["status"])
 	}
+	if ready, _ := ok["source_ready"].(bool); !ready {
+		t.Error("after update: source_ready = false, want true")
+	}
 	if ok["channels"] == nil {
 		t.Error("after update: missing channels field")
+	}
+	if ok["last_refresh"] == nil {
+		t.Error("after update: missing last_refresh field")
+	}
+}
+
+func TestServer_readyz(t *testing.T) {
+	s := &Server{LineupMaxChannels: 480}
+
+	handler := s.serveReady()
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("before update: expected 503, got %d", w.Code)
+	}
+	var loading map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &loading); err != nil {
+		t.Fatalf("before update: unmarshal: %v", err)
+	}
+	if loading["status"] != "not_ready" {
+		t.Errorf("before update: status = %q, want not_ready", loading["status"])
+	}
+	if loading["reason"] != "channels not loaded" {
+		t.Errorf("before update: reason = %q, want channels not loaded", loading["reason"])
+	}
+	if ready, _ := loading["source_ready"].(bool); ready {
+		t.Error("before update: source_ready = true, want false")
+	}
+
+	s.UpdateChannels([]catalog.LiveChannel{{ChannelID: "1", GuideName: "Ch1"}})
+
+	req = httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("after update: expected 200, got %d", w.Code)
+	}
+	var ok map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &ok); err != nil {
+		t.Fatalf("after update: unmarshal: %v", err)
+	}
+	if ok["status"] != "ready" {
+		t.Errorf("after update: status = %q, want ready", ok["status"])
+	}
+	if ready, _ := ok["source_ready"].(bool); !ready {
+		t.Error("after update: source_ready = false, want true")
 	}
 	if ok["last_refresh"] == nil {
 		t.Error("after update: missing last_refresh field")

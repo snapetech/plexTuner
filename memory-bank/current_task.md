@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-20):** Documented **`GET /readyz`** (already in **`server.go`**); **k8s** examples use **`/readyz`** for **`readinessProbe`**; runbook §8, architecture, static UI, **`CHANGELOG`**, **LP-012**, opportunities superseded row, **`work_breakdown`**. **`./scripts/verify`** OK.
+
 **Latest (2026-03-20):** Superseded **smoketest disk cache** opportunity (already shipped); **plex-livetv-http-tuning** + **hybrid-hdhr** + **k8s/README** cross-links; **repo_map** indexer smoketest note. **`./scripts/verify`** OK.
 
 **Latest (2026-03-19):** Priority sweep **4→1**: native mux **`X-IptvTunerr-Native-Mux`** + toolkit/runbook; **HR-002** checklist in troubleshooting; superseded ops opportunities (**Save/SIGHUP/healthz**); k8s readiness **`/healthz`**; **EPIC-lineup-parity** **LP-010** = **`STREAM_PROFILES_FILE`**. **`./scripts/verify`** OK.

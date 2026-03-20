@@ -16,7 +16,8 @@ code { font-size: 0.9em; }
 <p>Version <strong>{{VERSION}}</strong></p>
 <ul>
 <li><a href="guide/">/ui/guide/</a> — merged EPG preview (from cache; read-only)</li>
-<li><a href="../healthz">/healthz</a> — tuner / catalog readiness</li>
+<li><a href="../healthz">/healthz</a> — tuner / catalog readiness (<code>status</code> ok / loading)</li>
+<li><a href="../readyz">/readyz</a> — same gate for orchestrators (<code>status</code> ready / not_ready)</li>
 <li><a href="../guide/health.json">/guide/health.json</a> — merged guide quality</li>
 <li><a href="../guide/epg-store.json">/guide/epg-store.json</a> — SQLite EPG horizon (requires <code>IPTV_TUNERR_EPG_SQLITE_PATH</code>)</li>
 <li><a href="../channels/report.json">/channels/report.json</a> — channel intelligence</li>
