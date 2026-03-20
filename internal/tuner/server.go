@@ -85,6 +85,8 @@ type Server struct {
 	EpgStore *epgstore.Store
 	// EpgSQLiteRetainPastHours: if > 0, drop SQLite programme rows whose stop is before now-N hours (LP-009).
 	EpgSQLiteRetainPastHours int
+	// EpgSQLiteVacuumAfterPrune: VACUUM SQLite after retain-past prune removed rows (LP-009).
+	EpgSQLiteVacuumAfterPrune bool
 	// ProviderEPGURLSuffix is appended to provider xmltv.php URL (optional; e.g. panel-specific date params).
 	ProviderEPGURLSuffix string
 	// HDHRGuideURL is an optional device guide.xml URL (LP-003); merged after provider + external gap-fill.
@@ -986,6 +988,7 @@ func (s *Server) Run(ctx context.Context) error {
 		ProviderEPGTimeout:   s.ProviderEPGTimeout,
 		EpgStore:             s.EpgStore,
 		EpgRetainPastHours:   s.EpgSQLiteRetainPastHours,
+		EpgVacuumAfterPrune:  s.EpgSQLiteVacuumAfterPrune,
 		ProviderEPGURLSuffix: s.ProviderEPGURLSuffix,
 		HDHRGuideURL:         s.HDHRGuideURL,
 		HDHRGuideTimeout:     s.HDHRGuideTimeout,
@@ -1153,6 +1156,9 @@ type epgStoreReportJSON struct {
 	GlobalMaxStopUnix  int64            `json:"global_max_stop_unix"`
 	ChannelMaxStopUnix map[string]int64 `json:"channel_max_stop_unix,omitempty"`
 	RetainPastHours    int              `json:"retain_past_hours,omitempty"`
+	VacuumAfterPrune   bool             `json:"vacuum_after_prune,omitempty"`
+	DbFileBytes        int64            `json:"db_file_bytes,omitempty"`
+	DbFileModifiedUTC  string           `json:"db_file_modified_utc,omitempty"`
 }
 
 func (s *Server) serveEpgStoreReport() http.Handler {
@@ -1186,6 +1192,11 @@ func (s *Server) serveEpgStoreReport() http.Handler {
 			ChannelCount:      ch,
 			GlobalMaxStopUnix: gmax,
 			RetainPastHours:   s.EpgSQLiteRetainPastHours,
+			VacuumAfterPrune:  s.EpgSQLiteVacuumAfterPrune,
+		}
+		if sz, mod, err := s.EpgStore.DBFileStat(); err == nil {
+			rep.DbFileBytes = sz
+			rep.DbFileModifiedUTC = mod.UTC().Format(time.RFC3339)
 		}
 		if detail {
 			m, err := s.EpgStore.MaxStopUnixPerChannel()

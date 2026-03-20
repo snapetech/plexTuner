@@ -23,6 +23,21 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: LP-009 partial — EPG SQLite VACUUM opt-in + epg-store file stats
+  Summary:
+    - `Store` retains DB path; `DBFilePath`, `DBFileStat`, `Vacuum()`; `IPTV_TUNERR_EPG_SQLITE_VACUUM` runs after retain-past prune when rows removed.
+    - `/guide/epg-store.json`: `db_file_bytes`, `db_file_modified_utc`, `vacuum_after_prune`.
+    - Config + `XMLTV`/`Server` wiring; tests in `epgstore` and `server_test`.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - No hard disk quota; VACUUM can be slow on very large files — opt-in by design.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/epgstore/store.go`, `internal/tuner/epg_pipeline.go`
+
+- Date: 2026-03-19
   Title: LP-003 partial — HDHR guide.xml merge into /guide.xml
   Summary:
     - Config: `IPTV_TUNERR_HDHR_GUIDE_URL`, `IPTV_TUNERR_HDHR_GUIDE_TIMEOUT`; `Server` / `XMLTV` / `newRuntimeServer` wiring.

@@ -48,6 +48,8 @@ type XMLTV struct {
 	EpgStore *epgstore.Store
 	// EpgRetainPastHours: if > 0, SQLite rows for programmes that ended before now-retain are dropped after sync (LP-009).
 	EpgRetainPastHours int
+	// EpgVacuumAfterPrune runs VACUUM on the EPG file after retain-past pruning removes rows (LP-009).
+	EpgVacuumAfterPrune bool
 	// ProviderEPGURLSuffix is appended to provider xmltv.php URL (optional; panel-specific query params). LP-008 follow-on.
 	ProviderEPGURLSuffix string
 	// HDHRGuideURL is an optional http(s) URL to a physical HDHomeRun-style guide.xml (LP-003).

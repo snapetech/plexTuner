@@ -66,7 +66,7 @@ See also:
 
 The guide pipeline merges three sources in priority order per channel: provider XMLTV > external XMLTV > placeholder. External gap-fills provider. Cache is pre-warmed at startup; stale data served on fetch error.
 
-Optional **SQLite EPG file** (`IPTV_TUNERR_EPG_SQLITE_PATH`) stores merged guide rows after each refresh, exposes max programme end times for incremental fetch windows, and `/guide/epg-store.json` for inspection ([ADR 0003](adr/0003-epg-sqlite-vs-postgres.md)). Optional **`IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS`** drops older programmes from the SQLite file after each sync; **`IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX`** can append query params to provider `xmltv.php` when your panel documents them.
+Optional **SQLite EPG file** (`IPTV_TUNERR_EPG_SQLITE_PATH`) stores merged guide rows after each refresh, exposes max programme end times for incremental fetch windows, and `/guide/epg-store.json` for inspection ([ADR 0003](adr/0003-epg-sqlite-vs-postgres.md)). Optional **`IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS`** drops older programmes from the SQLite file after each sync; optional **`IPTV_TUNERR_EPG_SQLITE_VACUUM`** runs `VACUUM` after such pruning to shrink the on-disk file. **`IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX`** can append query params to provider `xmltv.php` when your panel documents them.
 
 | Feature | Description |
 |---------|-------------|

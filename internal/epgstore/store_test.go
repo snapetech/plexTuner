@@ -14,6 +14,13 @@ func TestOpen_migrateAndVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
+	if s.DBFilePath() != path {
+		t.Fatalf("DBFilePath: %q want %q", s.DBFilePath(), path)
+	}
+	sz, mod, err := s.DBFileStat()
+	if err != nil || sz <= 0 || mod.IsZero() {
+		t.Fatalf("DBFileStat: size=%d mod=%v err=%v", sz, mod, err)
+	}
 	if s.SchemaVersion() != 2 {
 		t.Fatalf("schema version: %d want 2", s.SchemaVersion())
 	}
@@ -55,6 +62,9 @@ func TestSyncMergedGuideXML_retainPrune(t *testing.T) {
 	}
 	if pruned != 1 {
 		t.Fatalf("pruned=%d want 1", pruned)
+	}
+	if err := s.Vacuum(); err != nil {
+		t.Fatal(err)
 	}
 	p, _, err := s.RowCounts()
 	if err != nil {

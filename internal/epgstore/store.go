@@ -1,11 +1,13 @@
 package epgstore
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	_ "modernc.org/sqlite" // EPG SQLite file (same driver family as cookie_browser.go)
 )
@@ -14,6 +16,7 @@ import (
 type Store struct {
 	db            *sql.DB
 	schemaVersion int
+	path          string // filesystem path of the SQLite file (for stats / observability)
 }
 
 // Open creates parent directories as needed, opens the DB in WAL mode, and applies migrations.
@@ -35,7 +38,7 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("epgstore: open: %w", err)
 	}
 	db.SetMaxOpenConns(1) // SQLite: avoid concurrent writers
-	s := &Store{db: db}
+	s := &Store{db: db, path: path}
 	if err := migrate(s.db); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -66,4 +69,37 @@ func (s *Store) Close() error {
 		return nil
 	}
 	return s.db.Close()
+}
+
+// DBFilePath returns the path passed to Open.
+func (s *Store) DBFilePath() string {
+	if s == nil {
+		return ""
+	}
+	return s.path
+}
+
+// DBFileStat returns the SQLite file size and mod time (LP-009 observability).
+func (s *Store) DBFileStat() (size int64, mod time.Time, err error) {
+	if s == nil || s.path == "" {
+		return 0, time.Time{}, fmt.Errorf("epgstore: no path")
+	}
+	fi, err := os.Stat(s.path)
+	if err != nil {
+		return 0, time.Time{}, err
+	}
+	return fi.Size(), fi.ModTime(), nil
+}
+
+// Vacuum runs SQLite VACUUM to reclaim space after bulk deletes (e.g. retain-past pruning).
+// It must not run inside an application transaction; callers typically invoke after SyncMergedGuideXML.
+func (s *Store) Vacuum() error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	_, err := s.db.ExecContext(context.Background(), `VACUUM`)
+	if err != nil {
+		return fmt.Errorf("epgstore: vacuum: %w", err)
+	}
+	return nil
 }

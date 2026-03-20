@@ -2,7 +2,7 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Latest (2026-03-19):** **`LP-003` (partial)** — **`IPTV_TUNERR_HDHR_GUIDE_URL`** merges device `guide.xml` into `/guide.xml` after provider + external; [ADR 0004](../docs/adr/0004-hdhr-guide-epg-merge.md). **Next:** HLS/fMP4 outputs (epic), deeper **LP-009**, richer HDHR catalog import (**LP-002**).
+**Latest (2026-03-19):** **`LP-009` (partial)** — **`IPTV_TUNERR_EPG_SQLITE_VACUUM`**, `Store.Vacuum()`, `/guide/epg-store.json` **db_file_bytes** / **vacuum_after_prune**. **Next:** HLS/fMP4 outputs (epic), HDHR catalog import (**LP-002**), stricter EPG store quotas if needed.
 
 **Goal:** Start the new Live TV Intelligence product track: map the multi-PR roadmap, then ship the first visible foundation feature so IPTV Tunerr feels like an intelligent control plane instead of only a tuner bridge.
 

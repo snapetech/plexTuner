@@ -541,8 +541,17 @@ func (x *XMLTV) refresh() {
 		n, err := x.EpgStore.SyncMergedGuideXML(data, x.EpgRetainPastHours)
 		if err != nil {
 			log.Printf("epg sqlite: merged guide sync failed: %v", err)
-		} else if n > 0 && x.EpgRetainPastHours > 0 {
-			log.Printf("epg sqlite: pruned %d programme row(s) older than %dh (retain past window)", n, x.EpgRetainPastHours)
+		} else {
+			if n > 0 && x.EpgRetainPastHours > 0 {
+				log.Printf("epg sqlite: pruned %d programme row(s) older than %dh (retain past window)", n, x.EpgRetainPastHours)
+			}
+			if n > 0 && x.EpgVacuumAfterPrune {
+				if vErr := x.EpgStore.Vacuum(); vErr != nil {
+					log.Printf("epg sqlite: vacuum after prune failed: %v", vErr)
+				} else {
+					log.Printf("epg sqlite: vacuum completed (after prune)")
+				}
+			}
 		}
 	}
 }

@@ -356,6 +356,19 @@ func TestXMLTVEnv(t *testing.T) {
 	}
 }
 
+func TestEpgSQLiteVacuumEnv(t *testing.T) {
+	os.Clearenv()
+	c := Load()
+	if c.EpgSQLiteVacuumAfterPrune {
+		t.Error("EpgSQLiteVacuumAfterPrune default should be false")
+	}
+	os.Setenv("IPTV_TUNERR_EPG_SQLITE_VACUUM", "1")
+	c = Load()
+	if !c.EpgSQLiteVacuumAfterPrune {
+		t.Error("EpgSQLiteVacuumAfterPrune should be true when IPTV_TUNERR_EPG_SQLITE_VACUUM=1")
+	}
+}
+
 func TestStreamTranscodeMode(t *testing.T) {
 	os.Clearenv()
 	c := Load()

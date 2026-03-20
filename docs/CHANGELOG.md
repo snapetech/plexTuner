@@ -25,6 +25,10 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **`internal/epgstore`**: optional SQLite file (`IPTV_TUNERR_EPG_SQLITE_PATH`), WAL + migrations (`epg_channel`, `epg_programme`); opened during `serve` / `run` when set.
 - **ADR 0003** ([docs/adr/0003-epg-sqlite-vs-postgres.md](adr/0003-epg-sqlite-vs-postgres.md)): SQLite default for Tunerr-local EPG; Postgres only for explicit multi-writer/shared-state requirements.
 
+### EPG SQLite cleanup (LP-009 partial)
+- **`IPTV_TUNERR_EPG_SQLITE_VACUUM`**: when `true`/`1`, run **`VACUUM`** on the EPG SQLite file after retain-past pruning removes one or more programme rows (reclaim space; can add latency on large files).
+- **`/guide/epg-store.json`**: includes `db_file_bytes`, `db_file_modified_utc`, and `vacuum_after_prune` for operator visibility.
+
 ### EPG SQLite retention + provider URL hook (LP-009 partial + LP-008 follow-on)
 - **`IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS`**: after merged-guide sync, delete SQLite programmes whose **end** is before `now - N hours`, then drop orphan `epg_channel` rows; `SyncMergedGuideXML` returns prune count; `/guide/epg-store.json` includes `retain_past_hours`.
 - **`IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX`**: optional query string appended to provider `xmltv.php` (for panels that support extra parameters — **not** standard Xtream; verify with your provider).
@@ -36,7 +40,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ### Hardware HDHomeRun (client spike)
 - **`hdhr-scan`**: UDP discovery for physical SiliconDust tuners (or `-addr` for HTTP-only `discover.json` / optional `lineup.json`). Implemented in `internal/hdhomerun` (`DiscoverLAN`, `FetchDiscoverJSON`, `FetchLineupJSON`).
-- **`hdhr-scan -guide-xml`**: fetch device `guide.xml`, count XMLTV `channel` / `programme` elements (`internal/hdhomerun/guide.go`); still no merge into Tunerr EPG (see ADR 0002).
+- **`hdhr-scan -guide-xml`**: fetch device `guide.xml`, count XMLTV `channel` / `programme` elements (`internal/hdhomerun/guide.go`). Runtime merge: **`IPTV_TUNERR_HDHR_GUIDE_URL`** ([ADR 0004](adr/0004-hdhr-guide-epg-merge.md)); catalog merge semantics remain [ADR 0002](adr/0002-hdhr-hardware-iptv-merge.md).
 - **Operator `/ui/`**: minimal embedded HTML dashboard (`internal/tuner/static/ui/`, `IPTV_TUNERR_UI_*`); localhost-only by default.
 - **Operator guide preview (`LP-006`)**: `/ui/guide/` shows a read-only table from the **merged cached** XMLTV (`XMLTV.GuidePreview`); `/ui/guide-preview.json` returns the same data (optional `?limit=` up to 500).
 - **ADR 0002** ([docs/adr/0002-hdhr-hardware-iptv-merge.md](adr/0002-hdhr-hardware-iptv-merge.md)): how HDHR hardware lineups relate to IPTV catalogs (tag sources; separate instances until explicit merge).

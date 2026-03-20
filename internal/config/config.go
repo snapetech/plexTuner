@@ -60,6 +60,8 @@ type Config struct {
 	EpgSQLitePath string
 	// EpgSQLiteRetainPastHours: if > 0, drop SQLite programme rows whose end time is before now minus N hours (LP-009). 0 = keep full merged snapshot in SQLite.
 	EpgSQLiteRetainPastHours int
+	// EpgSQLiteVacuumAfterPrune: if true, run VACUUM after retain-past pruning removed at least one row (LP-009).
+	EpgSQLiteVacuumAfterPrune bool
 	// ProviderEPGURLSuffix is appended to provider xmltv.php URL (e.g. panel-specific query params). Empty = default URL only.
 	ProviderEPGURLSuffix string
 	// HDHRGuideURL is an optional http(s) URL to a SiliconDust-style device guide.xml (LP-003). Empty = disabled.
@@ -170,6 +172,7 @@ func Load() *Config {
 		EpgPruneUnlinked:            getEnvBool("IPTV_TUNERR_EPG_PRUNE_UNLINKED", false),
 		EpgSQLitePath:               strings.TrimSpace(os.Getenv("IPTV_TUNERR_EPG_SQLITE_PATH")),
 		EpgSQLiteRetainPastHours:    getEnvInt("IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS", 0),
+		EpgSQLiteVacuumAfterPrune:   getEnvBool("IPTV_TUNERR_EPG_SQLITE_VACUUM", false),
 		ProviderEPGURLSuffix:        strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX")),
 		HDHRGuideURL:                getEnvURL("IPTV_TUNERR_HDHR_GUIDE_URL"),
 		HDHRGuideTimeout:            getEnvDuration("IPTV_TUNERR_HDHR_GUIDE_TIMEOUT", 90*time.Second),

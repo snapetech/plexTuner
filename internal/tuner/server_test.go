@@ -5,11 +5,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
 	"github.com/snapetech/iptvtunerr/internal/epglink"
+	"github.com/snapetech/iptvtunerr/internal/epgstore"
 	"github.com/snapetech/iptvtunerr/internal/guidehealth"
 )
 
@@ -398,6 +400,41 @@ func TestServer_epgStoreReport_disabled(t *testing.T) {
 	s.serveEpgStoreReport().ServeHTTP(w, req)
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status=%d want 503", w.Code)
+	}
+}
+
+func TestServer_epgStoreReport_fileStatsAndVacuumFlag(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "epg.db")
+	st, err := epgstore.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = st.Close() }()
+
+	s := &Server{
+		EpgStore:                  st,
+		EpgSQLiteRetainPastHours:  48,
+		EpgSQLiteVacuumAfterPrune: true,
+	}
+	req := httptest.NewRequest(http.MethodGet, "/guide/epg-store.json", nil)
+	w := httptest.NewRecorder()
+	s.serveEpgStoreReport().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var rep epgStoreReportJSON
+	if err := json.Unmarshal(w.Body.Bytes(), &rep); err != nil {
+		t.Fatal(err)
+	}
+	if rep.DbFileBytes <= 0 {
+		t.Fatalf("db_file_bytes: %d", rep.DbFileBytes)
+	}
+	if rep.DbFileModifiedUTC == "" {
+		t.Fatal("expected db_file_modified_utc")
+	}
+	if !rep.VacuumAfterPrune || rep.RetainPastHours != 48 {
+		t.Fatalf("unexpected %+v", rep)
 	}
 }
 
