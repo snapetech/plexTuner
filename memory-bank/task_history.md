@@ -23,6 +23,17 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Architecture Mermaid diagram + docs-gaps Medium cleared
+  Summary:
+    - **`docs/explanations/architecture.md`**: **Visual (Mermaid)** `flowchart` mirroring ASCII overview.
+    - **`docs/docs-gaps.md`**: **Medium** empty; **Resolved** row for Mermaid; **`docs/explanations/index`**, **`docs/index`** links.
+    - **`docs/CHANGELOG.md`** **[Unreleased]** Documentation.
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+
+- Date: 2026-03-19
   Title: Doc/epic backlog validation (docs-gaps, epics, opportunities)
   Summary:
     - **`docs/docs-gaps.md`**: removed stale gap rows; **Resolved** expanded; optional Mermaid for **architecture** remains one medium row.

@@ -58,6 +58,34 @@ Registration / publishing
   - catch-up library publishing
 ```
 
+### Visual (Mermaid)
+
+The same structure as the ASCII diagram above, for tools that render [Mermaid](https://mermaid.js.org/) (GitHub, many IDEs, static site generators):
+
+```mermaid
+flowchart TB
+  subgraph in["Provider inputs"]
+    PI["Xtream API · M3U · XMLTV"]
+  end
+  subgraph cat["Catalog build and repair"]
+    CB["index · probe · TVGID repair · DNA · dedupe · URL merge"]
+  end
+  subgraph core["Core tuner runtime"]
+    CR["HDHR HTTP API · stream gateway · /guide.xml · /live.m3u"]
+  end
+  subgraph intel["Intelligence layer"]
+    IN["channel reports · DNA · Autopilot · provider profile · capsules"]
+  end
+  subgraph pub["Registration and publishing"]
+    RG["Plex / Emby / Jellyfin · catch-up .strm libraries"]
+  end
+  PI --> CB
+  CB --> CR
+  CB --> IN
+  CR --> RG
+  IN --> RG
+```
+
 ---
 
 ## Layer 1: Core Runtime

@@ -42,6 +42,7 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[reference/plex-client-compatibility-matrix.md](reference/plex-client-compatibility-matrix.md)** | Tier-1 Plex Live TV clients, **`CLIENT_ADAPT`** classes, automated + manual validation (**HR-003**). |
 | **[reference/lineup-epg-hygiene.md](reference/lineup-epg-hygiene.md)** | Built-in lineup/EPG hygiene defaults: dedupe, strip hosts, guide policy, stable catalog order (**HR-005** / **HR-006**). |
 | **[reference/transcode-profiles.md](reference/transcode-profiles.md)** | Gateway ffmpeg profile names, HDHR-style aliases, `?profile=`, `?mux=fmp4` / `?mux=hls` / `?mux=dash`. |
+| **[explanations/architecture.md](explanations/architecture.md)** | Layers, ASCII + Mermaid flow, package map, CLI split (**`cmd_registry`**). |
 | **[explanations/media-server-integration-modes.md](explanations/media-server-integration-modes.md)** | Where the common tuner story ends and Plex-heavy ops begin. |
 | **[explanations/observability-prometheus-and-otel.md](explanations/observability-prometheus-and-otel.md)** | **`/metrics`** and bridging to OpenTelemetry via collector scrape. |
 | **[explanations/always-on-recorder-daemon.md](explanations/always-on-recorder-daemon.md)** | Rolling catch-up recorder daemon (`catchup-daemon`): MVP shipped, extensions noted. |

@@ -1112,7 +1112,7 @@ docs/                 Reference, how-to guides, runbooks
 - [`docs/reference/testing-and-supervisor-config.md`](docs/reference/testing-and-supervisor-config.md) — Supervisor, offsets, overflow shards
 - [`docs/reference/epg-linking-pipeline.md`](docs/reference/epg-linking-pipeline.md) — EPG match strategy
 - [`docs/potential_fixes.md`](docs/potential_fixes.md) — WebSafe / startup-gate context (**HR-001** pointers)
-- [`docs/explanations/architecture.md`](docs/explanations/architecture.md) — Layered codebase map ( **`cmd_*`**, **`gateway_*`** )
+- [`docs/explanations/architecture.md`](docs/explanations/architecture.md) — Layers, ASCII + **Mermaid** flow, package map ( **`cmd_*`**, **`gateway_*`** )
 
 **How-To**
 - [`docs/how-to/connect-plex-to-iptv-tunerr.md`](docs/how-to/connect-plex-to-iptv-tunerr.md) — Connect Plex (UI wizard vs `-register-plex` vs API; channelmap, limits)
@@ -1147,6 +1147,7 @@ Verify the build:
 
 ## Recent Changes
 
+- **Architecture diagram:** [docs/explanations/architecture.md](docs/explanations/architecture.md) includes a **Mermaid** flowchart (provider → catalog → tuner + intelligence → registration).
 - **Hot-start by category:** **`IPTV_TUNERR_HOT_START_GROUP_TITLES`** marks whole M3U **`group_title`** buckets (substring match) for faster startup tuning — [cli-and-env-reference](docs/reference/cli-and-env-reference.md).
 - **Plex onboarding how-to**: [docs/how-to/connect-plex-to-iptv-tunerr.md](docs/how-to/connect-plex-to-iptv-tunerr.md) (wizard vs **`-register-plex`** vs API; channelmap, **480** limit). See [plex-dvr-lifecycle-and-api](docs/reference/plex-dvr-lifecycle-and-api.md).
 - **Prometheus / Autopilot consensus**: with **`IPTV_TUNERR_METRICS_ENABLE`**, **`GET /metrics`** includes **`iptv_tunerr_autopilot_consensus_*`** gauges — [cli-and-env-reference](docs/reference/cli-and-env-reference.md).

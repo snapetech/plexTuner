@@ -1,7 +1,7 @@
 ---
 id: docs-gaps
 type: reference
-status: draft
+status: stable
 tags: [documentation, gaps, opportunities]
 ---
 
@@ -25,9 +25,7 @@ Known missing or incomplete documentation. Address these when touching the relev
 
 ## Medium (improves clarity or onboarding)
 
-| Gap | Where it hurts | Suggested fix |
-|-----|----------------|----------------|
-| **Optional diagram polish** | [architecture](explanations/architecture.md) already has layered text + ASCII flow; some readers want a single Mermaid figure. | Add optional Mermaid block to `architecture.md` (keep text as source of truth). |
+*(None — [architecture](explanations/architecture.md) includes a Mermaid flowchart under **Visual (Mermaid)** alongside the ASCII diagram.)*
 
 ---
 
@@ -43,6 +41,7 @@ Known missing or incomplete documentation. Address these when touching the relev
 |--------|------|------|
 | 2026-03 | **Single-place env documentation** (supersedes “only .env.example”) | Canonical operator map: [cli-and-env-reference](reference/cli-and-env-reference.md); [reference index](reference/index.md); README quick table |
 | 2026-03 | **Architecture overview** (“no architecture doc”) | [explanations/architecture.md](explanations/architecture.md) — three layers, data flow, package map |
+| 2026-03 | **Mermaid diagram** (optional polish on architecture doc) | [architecture.md § Visual (Mermaid)](explanations/architecture.md#visual-mermaid) |
 | 2026-03 | **VODFS mount / cache / Plex libraries** | [mount-vodfs-and-register-plex-libraries.md](how-to/mount-vodfs-and-register-plex-libraries.md) |
 | 2026-03 | **External XMLTV + layered guide pipeline** | [features §5](features.md#5-xmltv--epg-behavior); [lineup-epg-hygiene](reference/lineup-epg-hygiene.md); [glossary](glossary.md) **XMLTV** |
 | 2026-03 | **Multi-host / Cloudflare operator guidance** | [cloudflare-bypass.md](how-to/cloudflare-bypass.md); [interpreting-probe-results](how-to/interpreting-probe-results.md) |

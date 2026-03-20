@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-19):** **Closed last docs gap:** [architecture.md](../docs/explanations/architecture.md) **Visual (Mermaid)**; [docs-gaps.md](../docs/docs-gaps.md) has no open High/Medium/Low rows. **`./scripts/verify`** OK.
+
 **Latest (2026-03-19):** **Backlog validation:** [docs-gaps.md](../docs/docs-gaps.md) stale rows removed (cli-and-env + existing docs cover prior “gaps”); [EPIC-live-tv-intelligence](../docs/epics/EPIC-live-tv-intelligence.md) / [EPIC-lineup-parity](../docs/epics/EPIC-lineup-parity.md) + [work_breakdown](work_breakdown.md) + [opportunities](opportunities.md) (guide-health opportunity partially superseded). **CHANGELOG** doc bullet.
 
 **Latest (2026-03-19):** **LTV `INT-006` — hot-start by M3U `group_title`:** **`IPTV_TUNERR_HOT_START_GROUP_TITLES`**; **`/debug/runtime.json`** **`tuner.hot_start_*`**; tests **`gateway_hotstart_test.go`**. **`Gateway`**: removed dead **`hlsPackager*`** fields (undefined type). **`./scripts/verify`** OK.
