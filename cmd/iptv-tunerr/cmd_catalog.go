@@ -334,6 +334,18 @@ type streamVariant struct {
 	Auth catalog.StreamAuth
 }
 
+func logCatalogPhase(name string, fn func() error) error {
+	start := time.Now()
+	log.Printf("catalog phase start: %s", name)
+	err := fn()
+	if err != nil {
+		log.Printf("catalog phase failed: %s dur=%s err=%v", name, time.Since(start).Round(time.Millisecond), err)
+		return err
+	}
+	log.Printf("catalog phase done: %s dur=%s", name, time.Since(start).Round(time.Millisecond))
+	return nil
+}
+
 func applyStreamVariants(live []catalog.LiveChannel, variantsByProvider []provider.EntryResult) {
 	for i := range live {
 		variants := streamVariantsFromRankedEntries(live[i].StreamURL, variantsByProvider)
@@ -406,7 +418,13 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 		for i, e := range entries {
 			provEntries[i] = provider.Entry{BaseURL: e.BaseURL, User: e.User, Pass: e.Pass}
 		}
-		ranked := provider.RankedEntries(ctx, provEntries, nil, probeOpts)
+		var ranked []provider.EntryResult
+		if err := logCatalogPhase("provider probe + rank", func() error {
+			ranked = provider.RankedEntries(ctx, provEntries, nil, probeOpts)
+			return nil
+		}); err != nil {
+			return res, err
+		}
 		if cfg.BlockCFProviders && len(ranked) == 0 {
 			return res, fmt.Errorf("no usable provider URL: all candidates are Cloudflare-proxied and IPTV_TUNERR_BLOCK_CF_PROVIDERS=true")
 		}
@@ -418,9 +436,14 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 			}
 			log.Printf("Ranked %d provider(s): best-first order %s", len(ranked), strings.Join(allBases, ", "))
 			for _, candidate := range ranked {
-				res.Movies, res.Series, res.Live, fetchErr = indexer.IndexFromPlayerAPI(
-					candidate.Entry.BaseURL, candidate.Entry.User, candidate.Entry.Pass, "m3u8", cfg.LiveOnly, allBases, nil,
-				)
+				err := logCatalogPhase("index provider "+candidate.Entry.BaseURL, func() error {
+					var err error
+					res.Movies, res.Series, res.Live, err = indexer.IndexFromPlayerAPI(
+						candidate.Entry.BaseURL, candidate.Entry.User, candidate.Entry.Pass, "m3u8", cfg.LiveOnly, allBases, nil,
+					)
+					return err
+				})
+				fetchErr = err
 				if fetchErr == nil {
 					res.APIBase = candidate.Entry.BaseURL
 					res.ProviderBase = candidate.Entry.BaseURL
@@ -437,9 +460,16 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 			for _, e := range entries {
 				base := strings.TrimSuffix(e.BaseURL, "/")
 				log.Printf("No player_api host passed probe; attempting direct index on %s", base)
-				movies, series, live, err := indexer.IndexFromPlayerAPI(
-					base, e.User, e.Pass, "m3u8", cfg.LiveOnly, nil, nil,
-				)
+				var movies []catalog.Movie
+				var series []catalog.Series
+				var live []catalog.LiveChannel
+				err := logCatalogPhase("direct index "+base, func() error {
+					var err error
+					movies, series, live, err = indexer.IndexFromPlayerAPI(
+						base, e.User, e.Pass, "m3u8", cfg.LiveOnly, nil, nil,
+					)
+					return err
+				})
 				if err == nil {
 					res.Movies, res.Series, res.Live = movies, series, live
 					res.APIBase = base
@@ -477,7 +507,14 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 			for _, e := range entries {
 				base := strings.TrimSuffix(e.BaseURL, "/")
 				m3uURL := base + "/get.php?username=" + url.QueryEscape(e.User) + "&password=" + url.QueryEscape(e.Pass) + "&type=m3u_plus&output=ts"
-				movies, series, live, err := indexer.ParseM3U(m3uURL, nil)
+				var movies []catalog.Movie
+				var series []catalog.Series
+				var live []catalog.LiveChannel
+				err := logCatalogPhase("fallback get.php parse "+base, func() error {
+					var err error
+					movies, series, live, err = indexer.ParseM3U(m3uURL, nil)
+					return err
+				})
 				fallbackErr = err
 				if fallbackErr == nil {
 					if okCount == 0 {
@@ -512,7 +549,12 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 	// Merge free public sources (iptv-org, custom M3U URLs) into catalog.
 	if freeURLs := freeSourceURLs(cfg); len(freeURLs) > 0 {
 		log.Printf("free-sources: fetching %d public source URL(s) (mode=%s)...", len(freeURLs), cfg.FreeSourceMode)
-		if free, err := fetchFreeSources(cfg); err != nil {
+		var free []catalog.LiveChannel
+		if err := logCatalogPhase("free sources fetch", func() error {
+			var err error
+			free, err = fetchFreeSources(cfg)
+			return err
+		}); err != nil {
 			log.Printf("free-sources: fetch failed: %v (continuing without)", err)
 		} else if len(free) > 0 {
 			before := len(res.Live)
@@ -524,7 +566,12 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 	// Optional physical HDHomeRun lineup.json merge (LP-002).
 	if u := strings.TrimSpace(cfg.HDHRLineupMergeURL); u != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-		doc, err := hdhomerun.FetchLineupJSON(ctx, nil, u)
+		var doc *hdhomerun.LineupDoc
+		err := logCatalogPhase("hdhr lineup merge fetch", func() error {
+			var err error
+			doc, err = hdhomerun.FetchLineupJSON(ctx, nil, u)
+			return err
+		})
 		cancel()
 		if err != nil {
 			log.Printf("hdhr-lineup: fetch %q failed: %v", u, err)
@@ -547,9 +594,15 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 		log.Printf("dedupeByTVGID (post-merge): %d -> %d live channels", beforeDedupe, len(res.Live))
 	}
 
-	applyRuntimeEPGRepairs(cfg, res.Live, res.ProviderBase, res.ProviderUser, res.ProviderPass)
+	_ = logCatalogPhase("runtime EPG repairs", func() error {
+		applyRuntimeEPGRepairs(cfg, res.Live, res.ProviderBase, res.ProviderUser, res.ProviderPass)
+		return nil
+	})
 
-	channeldna.Assign(res.Live)
+	_ = logCatalogPhase("channel DNA assign", func() error {
+		channeldna.Assign(res.Live)
+		return nil
+	})
 	if cfg.LiveEPGOnly {
 		filtered := make([]catalog.LiveChannel, 0, len(res.Live))
 		for _, ch := range res.Live {
@@ -563,11 +616,14 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 	if cfg.SmoketestEnabled {
 		cache := indexer.LoadSmoketestCache(cfg.SmoketestCacheFile)
 		before := len(res.Live)
-		res.Live = indexer.FilterLiveBySmoketestWithCache(
-			res.Live, cache, cfg.SmoketestCacheTTL, nil,
-			cfg.SmoketestTimeout, cfg.SmoketestConcurrency,
-			cfg.SmoketestMaxChannels, cfg.SmoketestMaxDuration,
-		)
+		_ = logCatalogPhase("smoketest filter", func() error {
+			res.Live = indexer.FilterLiveBySmoketestWithCache(
+				res.Live, cache, cfg.SmoketestCacheTTL, nil,
+				cfg.SmoketestTimeout, cfg.SmoketestConcurrency,
+				cfg.SmoketestMaxChannels, cfg.SmoketestMaxDuration,
+			)
+			return nil
+		})
 		if cfg.SmoketestCacheFile != "" {
 			if err := cache.Save(cfg.SmoketestCacheFile); err != nil {
 				log.Printf("Smoketest cache save failed: %v", err)

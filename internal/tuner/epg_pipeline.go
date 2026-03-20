@@ -643,8 +643,9 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 // StartRefresh warms the cache synchronously, then starts a background goroutine that
 // re-fetches the merged EPG on every CacheTTL interval (default 10m).
 func (x *XMLTV) StartRefresh(ctx context.Context) {
-	// Synchronous warm-up so cache is populated before HTTP server starts.
-	x.runRefresh("startup")
+	// Startup refresh runs in the background so the tuner can bind and expose
+	// /healthz, /readyz, and placeholder /guide.xml immediately during long guide builds.
+	go x.runRefresh("startup")
 
 	ttl := x.CacheTTL
 	if ttl <= 0 {

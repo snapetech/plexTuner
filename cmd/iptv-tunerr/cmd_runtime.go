@@ -129,6 +129,53 @@ func handleRun(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendl
 	if path == "" {
 		path = cfg.CatalogPath
 	}
+	if baseURL == "http://localhost:5004" && cfg.BaseURL != "" {
+		baseURL = cfg.BaseURL
+	}
+
+	lineupCap := cfg.LineupMaxChannels
+	switch mode {
+	case "easy":
+		lineupCap = tuner.PlexDVRWizardSafeMax
+	case "full", "":
+		if registerPlex != "" {
+			lineupCap = tuner.NoLineupCap
+		}
+	default:
+		log.Printf("Unknown -mode=%q; use easy or full", mode)
+	}
+
+	srv := newRuntimeServer(
+		cfg,
+		addr,
+		baseURL,
+		deviceID,
+		friendlyName,
+		lineupCap,
+		cfg.ProviderBaseURL,
+		cfg.ProviderUser,
+		cfg.ProviderPass,
+	)
+	epgSt, closeEpg, err := maybeOpenEpgStore(cfg)
+	if err != nil {
+		log.Printf("%v", err)
+		os.Exit(1)
+	}
+	srv.EpgStore = epgSt
+	if closeEpg != nil {
+		defer closeEpg()
+	}
+	if cfg.XMLTVURL != "" {
+		log.Printf("External XMLTV enabled: %s (timeout %v)", cfg.XMLTVURL, cfg.XMLTVTimeout)
+	}
+
+	serverErr := make(chan error, 1)
+	if !registerOnly {
+		go func() {
+			serverErr <- srv.Run(runCtx)
+		}()
+		startDedicatedWebUI(runCtx, cfg, addr)
+	}
 
 	var runApiBase string
 	var runProviderBase, runProviderUser, runProviderPass string
@@ -177,9 +224,6 @@ func handleRun(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendl
 		log.Print("Provider OK")
 	}
 
-	if baseURL == "http://localhost:5004" && cfg.BaseURL != "" {
-		baseURL = cfg.BaseURL
-	}
 	live, err := loadRuntimeLiveChannels(
 		cfg,
 		path,
@@ -191,41 +235,11 @@ func handleRun(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendl
 		log.Printf("Load catalog failed: %v", err)
 		os.Exit(1)
 	}
-	lineupCap := cfg.LineupMaxChannels
-	switch mode {
-	case "easy":
-		lineupCap = tuner.PlexDVRWizardSafeMax
-	case "full", "":
-		if registerPlex != "" {
-			lineupCap = tuner.NoLineupCap
-		}
-	default:
-		log.Printf("Unknown -mode=%q; use easy or full", mode)
-	}
-	srv := newRuntimeServer(
-		cfg,
-		addr,
-		baseURL,
-		deviceID,
-		friendlyName,
-		lineupCap,
-		firstNonEmpty(runProviderBase, cfg.ProviderBaseURL),
-		firstNonEmpty(runProviderUser, cfg.ProviderUser),
-		firstNonEmpty(runProviderPass, cfg.ProviderPass),
-	)
+	srv.ProviderBaseURL = firstNonEmpty(runProviderBase, cfg.ProviderBaseURL)
+	srv.ProviderUser = firstNonEmpty(runProviderUser, cfg.ProviderUser)
+	srv.ProviderPass = firstNonEmpty(runProviderPass, cfg.ProviderPass)
+	srv.RuntimeSnapshot = buildRuntimeSnapshot(cfg, addr, baseURL, deviceID, friendlyName, lineupCap, srv.ProviderBaseURL, srv.ProviderUser)
 	srv.UpdateChannels(live)
-	epgSt, closeEpg, err := maybeOpenEpgStore(cfg)
-	if err != nil {
-		log.Printf("%v", err)
-		os.Exit(1)
-	}
-	srv.EpgStore = epgSt
-	if closeEpg != nil {
-		defer closeEpg()
-	}
-	if cfg.XMLTVURL != "" {
-		log.Printf("External XMLTV enabled: %s (timeout %v)", cfg.XMLTVURL, cfg.XMLTVTimeout)
-	}
 	registrationLive := applyRegistrationRecipe(live, registerRecipe)
 
 	credentials := cfg.ProviderUser != "" && cfg.ProviderPass != ""
@@ -274,9 +288,10 @@ func handleRun(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendl
 		return
 	}
 	registerRunMediaServers(runCtx, cfg, registrationLive, baseURL, registerEmby, registerJellyfin, embyStateFile, jellyfinStateFile, embyInterval, jellyfinInterval)
-	startDedicatedWebUI(runCtx, cfg, addr)
-
-	if err := srv.Run(runCtx); err != nil {
+	if registerOnly {
+		return
+	}
+	if err := <-serverErr; err != nil {
 		log.Printf("Tuner failed: %v", err)
 		os.Exit(1)
 	}

@@ -3,6 +3,7 @@ package indexer
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -24,30 +25,44 @@ func IndexFromPlayerAPI(apiBase, user, pass, ext string, liveOnly bool, baseURLs
 		client = httpclient.WithTimeout(60 * time.Second)
 	}
 	apiBase = strings.TrimSuffix(apiBase, "/")
+	log.Printf("indexer: player_api start base=%s live_only=%v base_url_candidates=%d", apiBase, liveOnly, len(baseURLs))
 
+	resolveStart := time.Now()
 	streamBase, err := resolveStreamBaseURL(context.Background(), apiBase, user, pass, baseURLs, client)
 	if err != nil {
+		log.Printf("indexer: player_api resolveStreamBaseURL failed base=%s after=%s: %v", apiBase, time.Since(resolveStart).Round(time.Millisecond), err)
 		return nil, nil, nil, err
 	}
+	log.Printf("indexer: player_api resolveStreamBaseURL base=%s stream_base=%s dur=%s", apiBase, streamBase, time.Since(resolveStart).Round(time.Millisecond))
 
+	liveStart := time.Now()
 	live, err = fetchLiveStreams(context.Background(), apiBase, user, pass, streamBase, ext, client)
 	if err != nil {
+		log.Printf("indexer: player_api fetchLiveStreams failed base=%s after=%s: %v", apiBase, time.Since(liveStart).Round(time.Millisecond), err)
 		return nil, nil, nil, err
 	}
+	log.Printf("indexer: player_api fetchLiveStreams base=%s live=%d dur=%s", apiBase, len(live), time.Since(liveStart).Round(time.Millisecond))
 
 	if liveOnly {
 		return nil, nil, live, nil
 	}
 
+	vodStart := time.Now()
 	movies, err = fetchVODStreams(context.Background(), apiBase, user, pass, streamBase, client)
 	if err != nil {
+		log.Printf("indexer: player_api fetchVODStreams failed base=%s after=%s: %v", apiBase, time.Since(vodStart).Round(time.Millisecond), err)
 		return nil, nil, nil, err
 	}
+	log.Printf("indexer: player_api fetchVODStreams base=%s movies=%d dur=%s", apiBase, len(movies), time.Since(vodStart).Round(time.Millisecond))
 
+	seriesStart := time.Now()
 	series, err = fetchSeries(context.Background(), apiBase, user, pass, streamBase, client)
 	if err != nil {
+		log.Printf("indexer: player_api fetchSeries failed base=%s after=%s: %v", apiBase, time.Since(seriesStart).Round(time.Millisecond), err)
 		return nil, nil, nil, err
 	}
+	log.Printf("indexer: player_api fetchSeries base=%s series=%d dur=%s", apiBase, len(series), time.Since(seriesStart).Round(time.Millisecond))
+	log.Printf("indexer: player_api done base=%s total=%s", apiBase, time.Since(resolveStart).Round(time.Millisecond))
 
 	return movies, series, live, nil
 }
