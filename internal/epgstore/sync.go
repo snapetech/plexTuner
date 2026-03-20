@@ -77,6 +77,16 @@ func categoriesJSON(cats []xmlValue) string {
 // If retainPastHours > 0 (LP-009), programmes with stop_unix before now-retainPastHours are deleted, then orphan epg_channel rows.
 // Returns the number of programme rows removed by pruning (0 if retainPastHours <= 0).
 func (s *Store) SyncMergedGuideXML(data []byte, retainPastHours int) (pruned int, err error) {
+	return s.syncMergedGuideXML(data, retainPastHours, false)
+}
+
+// SyncMergedGuideXMLUpsert incrementally upserts channels/programmes without truncating the full store.
+// It deletes existing programmes only in overlapping per-channel windows present in the incoming XML.
+func (s *Store) SyncMergedGuideXMLUpsert(data []byte, retainPastHours int) (pruned int, err error) {
+	return s.syncMergedGuideXML(data, retainPastHours, true)
+}
+
+func (s *Store) syncMergedGuideXML(data []byte, retainPastHours int, incremental bool) (pruned int, err error) {
 	if s == nil || s.db == nil {
 		return 0, nil
 	}
@@ -97,14 +107,20 @@ func (s *Store) SyncMergedGuideXML(data []byte, retainPastHours int) (pruned int
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if _, err := tx.Exec(`DELETE FROM epg_programme`); err != nil {
-		return 0, fmt.Errorf("epgstore: clear programmes: %w", err)
-	}
-	if _, err := tx.Exec(`DELETE FROM epg_channel`); err != nil {
-		return 0, fmt.Errorf("epgstore: clear channels: %w", err)
+	if !incremental {
+		if _, err := tx.Exec(`DELETE FROM epg_programme`); err != nil {
+			return 0, fmt.Errorf("epgstore: clear programmes: %w", err)
+		}
+		if _, err := tx.Exec(`DELETE FROM epg_channel`); err != nil {
+			return 0, fmt.Errorf("epgstore: clear channels: %w", err)
+		}
 	}
 
-	chStmt, err := tx.Prepare(`INSERT INTO epg_channel (epg_id, display_name) VALUES (?,?)`)
+	chSQL := `INSERT INTO epg_channel (epg_id, display_name) VALUES (?,?)`
+	if incremental {
+		chSQL = `INSERT OR REPLACE INTO epg_channel (epg_id, display_name) VALUES (?,?)`
+	}
+	chStmt, err := tx.Prepare(chSQL)
 	if err != nil {
 		return 0, fmt.Errorf("epgstore: prepare channel: %w", err)
 	}
@@ -117,6 +133,45 @@ func (s *Store) SyncMergedGuideXML(data []byte, retainPastHours int) (pruned int
 		}
 		if _, err := chStmt.Exec(id, strings.TrimSpace(ch.Display)); err != nil {
 			return 0, fmt.Errorf("epgstore: insert channel %q: %w", id, err)
+		}
+	}
+
+	if incremental {
+		type w struct{ min, max int64 }
+		windows := map[string]w{}
+		for _, p := range tv.Programmes {
+			start, okS := parseXMLTVTime(p.Start)
+			stop, okT := parseXMLTVTime(p.Stop)
+			if !okS || !okT || !stop.After(start) {
+				continue
+			}
+			chID := strings.TrimSpace(p.Channel)
+			if chID == "" {
+				continue
+			}
+			v := w{min: start.Unix(), max: stop.Unix()}
+			cur, ok := windows[chID]
+			if !ok {
+				windows[chID] = v
+				continue
+			}
+			if v.min < cur.min {
+				cur.min = v.min
+			}
+			if v.max > cur.max {
+				cur.max = v.max
+			}
+			windows[chID] = cur
+		}
+		delStmt, err := tx.Prepare(`DELETE FROM epg_programme WHERE channel_epg_id = ? AND start_unix < ? AND stop_unix > ?`)
+		if err != nil {
+			return 0, fmt.Errorf("epgstore: prepare delete overlap: %w", err)
+		}
+		defer func() { _ = delStmt.Close() }()
+		for chID, win := range windows {
+			if _, err := delStmt.Exec(chID, win.max, win.min); err != nil {
+				return 0, fmt.Errorf("epgstore: delete overlap %q: %w", chID, err)
+			}
 		}
 	}
 

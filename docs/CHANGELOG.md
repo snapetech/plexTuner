@@ -13,6 +13,11 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+### Web UI
+- **Dedicated control deck (`internal/webui`)**: `serve` / `run` now start a separate operator dashboard on **`48879`** by default (`0xBEEF`), with a single-origin `/api/*` proxy over the tuner server.
+- **Runtime settings snapshot**: added **`/debug/runtime.json`** so operators can inspect effective tuner/guide/provider/HDHR/web UI settings without spelunking env files or logs.
+- **Web UI envs**: added **`IPTV_TUNERR_WEBUI_DISABLED`**, **`IPTV_TUNERR_WEBUI_PORT`**, and **`IPTV_TUNERR_WEBUI_ALLOW_LAN`**. The older `/ui/` pages on the tuner port remain available.
+
 ### Lineup parity — remaining LP stories (LP-002 / LP-009 / LP-010 / LP-011 / LP-012)
 
 - **LP-002**: **`IPTV_TUNERR_HDHR_LINEUP_URL`** (+ optional **`IPTV_TUNERR_HDHR_LINEUP_ID_PREFIX`**) merges physical **`lineup.json`** into the catalog during **`iptv-tunerr index`** (`internal/hdhomerun/LiveChannelsFromLineupDoc`).
@@ -39,6 +44,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 ### EPG SQLite retention + provider URL hook (LP-009 partial + LP-008 follow-on)
 - **`IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS`**: after merged-guide sync, delete SQLite programmes whose **end** is before `now - N hours`, then drop orphan `epg_channel` rows; `SyncMergedGuideXML` returns prune count; `/guide/epg-store.json` includes `retain_past_hours`.
 - **`IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX`**: optional query string appended to provider `xmltv.php` (for panels that support extra parameters — **not** standard Xtream; verify with your provider).
+- **`IPTV_TUNERR_PROVIDER_EPG_DISK_CACHE`**: optional path to a file storing the last provider `xmltv.php` body; sends **`If-None-Match`** / **`If-Modified-Since`** and reuses the file on **HTTP 304** (reduces bandwidth when the upstream supports conditional GET). Sidecar: `*.meta.json`.
 
 ### EPG SQLite sync + incremental window (LP-008 partial)
 - **Merged guide → SQLite**: after each successful XMLTV refresh, `SyncMergedGuideXML` replaces `epg_channel` / `epg_programme` + `last_sync_utc` metadata (schema v2: `epg_meta`).

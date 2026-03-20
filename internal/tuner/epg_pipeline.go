@@ -3,12 +3,14 @@ package tuner
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -55,40 +57,22 @@ func parseXMLTVTime(s string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// fetchAndParseXMLTV performs an HTTP GET on rawURL and stream-parses the XMLTV response.
-// Only programme nodes whose channel attribute is in allowedTVGIDs are retained.
-// Pass a nil allowedTVGIDs map to accept all channels.
-func fetchAndParseXMLTV(ctx context.Context, rawURL string, timeout time.Duration, client *http.Client, allowedTVGIDs map[string]bool) (*parsedEPG, error) {
-	if timeout <= 0 {
-		timeout = 90 * time.Second
+// httpClientOrDefault returns c when non-nil; otherwise a client with the given timeout.
+func httpClientOrDefault(c *http.Client, timeout time.Duration) *http.Client {
+	if c != nil {
+		return c
 	}
-	if client == nil {
-		client = &http.Client{Timeout: timeout}
-	}
+	return &http.Client{Timeout: timeout}
+}
 
-	fetchCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(fetchCtx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("epg fetch request: %w", err)
-	}
-	req.Header.Set("User-Agent", "IptvTunerr/1.0")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("epg fetch: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("epg fetch HTTP %s", resp.Status)
-	}
-
+// parseXMLTVProgrammes stream-parses XMLTV from r. Only programme nodes whose channel
+// attribute is in allowedTVGIDs are retained. Pass a nil allowedTVGIDs map to accept all channels.
+func parseXMLTVProgrammes(r io.Reader, allowedTVGIDs map[string]bool) (*parsedEPG, error) {
 	result := &parsedEPG{
 		programmes: make(map[string]*channelEPG),
 	}
 
-	dec := xml.NewDecoder(resp.Body)
+	dec := xml.NewDecoder(r)
 	inTV := false
 	for {
 		tok, err := dec.Token()
@@ -150,6 +134,137 @@ func fetchAndParseXMLTV(ctx context.Context, rawURL string, timeout time.Duratio
 	return result, nil
 }
 
+// fetchAndParseXMLTV performs an HTTP GET on rawURL and stream-parses the XMLTV response.
+// Only programme nodes whose channel attribute is in allowedTVGIDs are retained.
+// Pass a nil allowedTVGIDs map to accept all channels.
+func fetchAndParseXMLTV(ctx context.Context, rawURL string, timeout time.Duration, client *http.Client, allowedTVGIDs map[string]bool) (*parsedEPG, error) {
+	if timeout <= 0 {
+		timeout = 90 * time.Second
+	}
+	client = httpClientOrDefault(client, timeout)
+
+	fetchCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(fetchCtx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("epg fetch request: %w", err)
+	}
+	req.Header.Set("User-Agent", "IptvTunerr/1.0")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("epg fetch: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("epg fetch HTTP %s", resp.Status)
+	}
+
+	return parseXMLTVProgrammes(resp.Body, allowedTVGIDs)
+}
+
+// providerEPGCacheMeta stores HTTP validators for conditional GET of provider xmltv.php (LP-008 follow-on).
+type providerEPGCacheMeta struct {
+	ETag         string `json:"etag,omitempty"`
+	LastModified string `json:"last_modified,omitempty"`
+}
+
+func providerEPGMetaPath(cacheFile string) string {
+	return cacheFile + ".meta.json"
+}
+
+func loadProviderEPGCacheMeta(path string) (providerEPGCacheMeta, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return providerEPGCacheMeta{}, err
+	}
+	var m providerEPGCacheMeta
+	if err := json.Unmarshal(b, &m); err != nil {
+		return providerEPGCacheMeta{}, err
+	}
+	return m, nil
+}
+
+func saveProviderEPGCacheMeta(path string, m providerEPGCacheMeta) error {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, b, 0644)
+}
+
+// fetchProviderXMLTVConditional stores the last response body on disk and uses ETag / Last-Modified
+// for If-None-Match / If-Modified-Since. On HTTP 304, the cached file is parsed (no full re-download).
+func (x *XMLTV) fetchProviderXMLTVConditional(ctx context.Context, rawURL string, allowedTVGIDs map[string]bool, cacheFile string, timeout time.Duration) (*parsedEPG, error) {
+	if timeout <= 0 {
+		timeout = 90 * time.Second
+	}
+	client := httpClientOrDefault(x.Client, timeout)
+
+	metaPath := providerEPGMetaPath(cacheFile)
+	meta, metaErr := loadProviderEPGCacheMeta(metaPath)
+	switch {
+	case metaErr == nil:
+	case os.IsNotExist(metaErr):
+	default:
+		log.Printf("xmltv: provider EPG cache meta read failed (%v); fetching without conditional headers", metaErr)
+	}
+
+	fetchCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(fetchCtx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("epg fetch request: %w", err)
+	}
+	req.Header.Set("User-Agent", "IptvTunerr/1.0")
+	if metaErr == nil {
+		if meta.ETag != "" {
+			req.Header.Set("If-None-Match", meta.ETag)
+		}
+		if meta.LastModified != "" {
+			req.Header.Set("If-Modified-Since", meta.LastModified)
+		}
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("epg fetch: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusNotModified:
+		f, err := os.Open(cacheFile)
+		if err != nil {
+			return nil, fmt.Errorf("epg fetch HTTP 304 but cache file missing or unreadable: %w", err)
+		}
+		defer f.Close()
+		log.Printf("xmltv: provider EPG not modified (HTTP 304); using disk cache %s", cacheFile)
+		return parseXMLTVProgrammes(f, allowedTVGIDs)
+	case http.StatusOK:
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("epg fetch read body: %w", err)
+		}
+		etag := strings.TrimSpace(resp.Header.Get("ETag"))
+		lm := strings.TrimSpace(resp.Header.Get("Last-Modified"))
+		if err := os.WriteFile(cacheFile, body, 0644); err != nil {
+			log.Printf("xmltv: provider EPG disk cache write failed (%v)", err)
+		} else if etag != "" || lm != "" {
+			if err := saveProviderEPGCacheMeta(metaPath, providerEPGCacheMeta{ETag: etag, LastModified: lm}); err != nil {
+				log.Printf("xmltv: provider EPG cache meta write failed (%v)", err)
+			}
+		} else {
+			_ = os.Remove(metaPath)
+		}
+		return parseXMLTVProgrammes(bytes.NewReader(body), allowedTVGIDs)
+	default:
+		return nil, fmt.Errorf("epg fetch HTTP %s", resp.Status)
+	}
+}
+
 // providerXMLTVEPGURL builds the Xtream xmltv.php URL; extraSuffix is optional (e.g. panel-specific query params).
 func providerXMLTVEPGURL(base, user, pass, extraSuffix string) string {
 	base = strings.TrimSuffix(strings.TrimSpace(base), "/")
@@ -162,12 +277,54 @@ func providerXMLTVEPGURL(base, user, pass, extraSuffix string) string {
 	return rawURL + "&" + suf
 }
 
+func providerEPGSuffixWindowTokens(now time.Time, maxStopUnix int64, lookaheadHours int, backfillHours int) map[string]string {
+	if lookaheadHours <= 0 {
+		lookaheadHours = 72
+	}
+	if backfillHours < 0 {
+		backfillHours = 0
+	}
+	to := now.Add(time.Duration(lookaheadHours) * time.Hour).UTC()
+	from := now.Add(-6 * time.Hour).UTC()
+	if maxStopUnix > 0 {
+		from = time.Unix(maxStopUnix, 0).UTC().Add(-time.Duration(backfillHours) * time.Hour)
+	}
+	return map[string]string{
+		"{from_unix}": fmt.Sprintf("%d", from.Unix()),
+		"{to_unix}":   fmt.Sprintf("%d", to.Unix()),
+		"{from_ymd}":  from.Format("2006-01-02"),
+		"{to_ymd}":    to.Format("2006-01-02"),
+	}
+}
+
+func renderProviderEPGSuffix(template string, tokens map[string]string) string {
+	out := strings.TrimSpace(template)
+	for k, v := range tokens {
+		out = strings.ReplaceAll(out, k, v)
+	}
+	return out
+}
+
 // fetchProviderXMLTV fetches the provider's xmltv.php EPG feed.
 func (x *XMLTV) fetchProviderXMLTV(ctx context.Context, allowedTVGIDs map[string]bool) (*parsedEPG, error) {
-	rawURL := providerXMLTVEPGURL(x.ProviderBaseURL, x.ProviderUser, x.ProviderPass, x.ProviderEPGURLSuffix)
+	suffix := x.ProviderEPGURLSuffix
+	if x.ProviderEPGIncremental && x.EpgStore != nil {
+		maxStop, err := x.EpgStore.GlobalMaxStopUnix()
+		if err != nil {
+			log.Printf("xmltv: provider incremental horizon read failed (%v); using static suffix", err)
+		} else {
+			toks := providerEPGSuffixWindowTokens(time.Now().UTC(), maxStop, x.ProviderEPGLookaheadHours, x.ProviderEPGBackfillHours)
+			suffix = renderProviderEPGSuffix(suffix, toks)
+		}
+	}
+	rawURL := providerXMLTVEPGURL(x.ProviderBaseURL, x.ProviderUser, x.ProviderPass, suffix)
 	timeout := x.ProviderEPGTimeout
 	if timeout <= 0 {
 		timeout = 90 * time.Second
+	}
+	cachePath := strings.TrimSpace(x.ProviderEPGDiskCachePath)
+	if cachePath != "" {
+		return x.fetchProviderXMLTVConditional(ctx, rawURL, allowedTVGIDs, cachePath, timeout)
 	}
 	return fetchAndParseXMLTV(ctx, rawURL, timeout, x.Client, allowedTVGIDs)
 }
@@ -538,7 +695,13 @@ func (x *XMLTV) refresh() {
 	log.Printf("xmltv: EPG cache updated (%d bytes, expires in %v)", len(data), ttl)
 
 	if x.EpgStore != nil {
-		n, err := x.EpgStore.SyncMergedGuideXML(data, x.EpgRetainPastHours)
+		var n int
+		var err error
+		if x.EpgSQLiteIncrementalUpsert {
+			n, err = x.EpgStore.SyncMergedGuideXMLUpsert(data, x.EpgRetainPastHours)
+		} else {
+			n, err = x.EpgStore.SyncMergedGuideXML(data, x.EpgRetainPastHours)
+		}
 		if err != nil {
 			log.Printf("epg sqlite: merged guide sync failed: %v", err)
 		} else {

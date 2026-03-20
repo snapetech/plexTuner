@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/snapetech/iptvtunerr/internal/safeurl"
 )
 
 // sleepHLSRefresh sleeps based on playlist EXT-X-TARGETDURATION to avoid hammering upstream (1-10s).
@@ -154,6 +156,87 @@ func rewriteHLSPlaylist(body []byte, upstreamURL string) []byte {
 		out.WriteByte('\n')
 	}
 	return out.Bytes()
+}
+
+func rewriteHLSPlaylistToGatewayProxy(body []byte, upstreamURL string, channelID string) []byte {
+	base, err := url.Parse(upstreamURL)
+	if err != nil || base == nil {
+		return body
+	}
+	var out bytes.Buffer
+	sc := bufio.NewScanner(bytes.NewReader(body))
+	first := true
+	for sc.Scan() {
+		if !first {
+			out.WriteByte('\n')
+		}
+		first = false
+		line := sc.Text()
+		trim := strings.TrimSpace(line)
+		if trim == "" || strings.HasPrefix(trim, "#") {
+			out.WriteString(line)
+			continue
+		}
+		ref, perr := url.Parse(trim)
+		if perr != nil {
+			out.WriteString(line)
+			continue
+		}
+		resolved := trim
+		if strings.HasPrefix(trim, "//") {
+			resolved = base.Scheme + ":" + trim
+		} else if !ref.IsAbs() {
+			resolved = base.ResolveReference(ref).String()
+		}
+		out.WriteString("/stream/" + url.PathEscape(channelID) + "?mux=hls&seg=" + url.QueryEscape(resolved))
+	}
+	if len(body) > 0 && body[len(body)-1] == '\n' {
+		out.WriteByte('\n')
+	}
+	return out.Bytes()
+}
+
+func (g *Gateway) serveHLSMuxTarget(w http.ResponseWriter, r *http.Request, client *http.Client, channelID, targetURL string) error {
+	if !safeurl.IsHTTPOrHTTPS(targetURL) {
+		return errors.New("invalid hls target URL scheme")
+	}
+	req, err := g.newUpstreamRequest(r.Context(), r, targetURL)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return errors.New("hls target http status " + strconv.Itoa(resp.StatusCode))
+	}
+	effectiveURL := targetURL
+	if resp.Request != nil && resp.Request.URL != nil {
+		effectiveURL = resp.Request.URL.String()
+	}
+	if isHLSResponse(resp, effectiveURL) {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		out := rewriteHLSPlaylistToGatewayProxy(body, effectiveURL, channelID)
+		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(out)
+		return nil
+	}
+	if ct := strings.TrimSpace(resp.Header.Get("Content-Type")); ct != "" {
+		w.Header().Set("Content-Type", ct)
+	} else {
+		w.Header().Set("Content-Type", "video/mp2t")
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, err = io.Copy(w, resp.Body)
+	return err
 }
 
 func firstHLSMediaLine(body []byte) string {

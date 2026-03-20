@@ -80,6 +80,11 @@ type Server struct {
 	ProviderEPGEnabled  bool
 	ProviderEPGTimeout  time.Duration
 	ProviderEPGCacheTTL time.Duration
+	// ProviderEPGDiskCachePath: optional on-disk cache + conditional GET for provider xmltv.php.
+	ProviderEPGDiskCachePath  string
+	ProviderEPGIncremental    bool
+	ProviderEPGLookaheadHours int
+	ProviderEPGBackfillHours  int
 
 	// EpgStore is an optional SQLite file for durable merged EPG (LP-007/008). Nil = disabled.
 	EpgStore *epgstore.Store
@@ -89,12 +94,16 @@ type Server struct {
 	EpgSQLiteVacuumAfterPrune bool
 	// EpgSQLiteMaxBytes: optional post-sync file size cap (LP-009).
 	EpgSQLiteMaxBytes int64
+	// EpgSQLiteIncrementalUpsert uses overlap-window upsert instead of full truncate+replace.
+	EpgSQLiteIncrementalUpsert bool
 	// ProviderEPGURLSuffix is appended to provider xmltv.php URL (optional; e.g. panel-specific date params).
 	ProviderEPGURLSuffix string
 	// HDHRGuideURL is an optional device guide.xml URL (LP-003); merged after provider + external gap-fill.
 	HDHRGuideURL string
 	// HDHRGuideTimeout for guide.xml fetch; 0 = default 90s.
 	HDHRGuideTimeout time.Duration
+	// RuntimeSnapshot is an optional read-only view of effective settings for the operator dashboard.
+	RuntimeSnapshot *RuntimeSnapshot
 
 	// health state updated by UpdateChannels; read by /healthz.
 	healthMu       sync.RWMutex
@@ -105,6 +114,25 @@ type Server struct {
 	gateway  *Gateway
 	xmltv    *XMLTV
 	m3uServe *M3UServe
+}
+
+// RuntimeSnapshot is returned by /debug/runtime.json for the dedicated web UI and operator tooling.
+// Secrets are intentionally omitted or reduced to presence booleans/counts.
+type RuntimeSnapshot struct {
+	GeneratedAt   string                 `json:"generated_at"`
+	Version       string                 `json:"version,omitempty"`
+	ListenAddress string                 `json:"listen_address,omitempty"`
+	BaseURL       string                 `json:"base_url,omitempty"`
+	DeviceID      string                 `json:"device_id,omitempty"`
+	FriendlyName  string                 `json:"friendly_name,omitempty"`
+	Tuner         map[string]interface{} `json:"tuner,omitempty"`
+	Guide         map[string]interface{} `json:"guide,omitempty"`
+	Provider      map[string]interface{} `json:"provider,omitempty"`
+	Recorder      map[string]interface{} `json:"recorder,omitempty"`
+	HDHR          map[string]interface{} `json:"hdhr,omitempty"`
+	WebUI         map[string]interface{} `json:"webui,omitempty"`
+	MediaServers  map[string]interface{} `json:"media_servers,omitempty"`
+	URLs          map[string]string      `json:"urls,omitempty"`
 }
 
 // UpdateChannels updates the channel list for all handlers so -refresh can serve new lineup without restart.
@@ -978,23 +1006,28 @@ func (s *Server) Run(ctx context.Context) error {
 		cacheTTL = s.ProviderEPGCacheTTL
 	}
 	xmltv := &XMLTV{
-		Channels:             s.Channels,
-		EpgPruneUnlinked:     s.EpgPruneUnlinked,
-		SourceURL:            s.XMLTVSourceURL,
-		SourceTimeout:        s.XMLTVTimeout,
-		CacheTTL:             cacheTTL,
-		ProviderBaseURL:      s.ProviderBaseURL,
-		ProviderUser:         s.ProviderUser,
-		ProviderPass:         s.ProviderPass,
-		ProviderEPGEnabled:   s.ProviderEPGEnabled,
-		ProviderEPGTimeout:   s.ProviderEPGTimeout,
-		EpgStore:             s.EpgStore,
-		EpgRetainPastHours:   s.EpgSQLiteRetainPastHours,
-		EpgVacuumAfterPrune:  s.EpgSQLiteVacuumAfterPrune,
-		EpgMaxBytes:          s.EpgSQLiteMaxBytes,
-		ProviderEPGURLSuffix: s.ProviderEPGURLSuffix,
-		HDHRGuideURL:         s.HDHRGuideURL,
-		HDHRGuideTimeout:     s.HDHRGuideTimeout,
+		Channels:                   s.Channels,
+		EpgPruneUnlinked:           s.EpgPruneUnlinked,
+		SourceURL:                  s.XMLTVSourceURL,
+		SourceTimeout:              s.XMLTVTimeout,
+		CacheTTL:                   cacheTTL,
+		ProviderBaseURL:            s.ProviderBaseURL,
+		ProviderUser:               s.ProviderUser,
+		ProviderPass:               s.ProviderPass,
+		ProviderEPGEnabled:         s.ProviderEPGEnabled,
+		ProviderEPGTimeout:         s.ProviderEPGTimeout,
+		ProviderEPGIncremental:     s.ProviderEPGIncremental,
+		ProviderEPGLookaheadHours:  s.ProviderEPGLookaheadHours,
+		ProviderEPGBackfillHours:   s.ProviderEPGBackfillHours,
+		EpgStore:                   s.EpgStore,
+		EpgRetainPastHours:         s.EpgSQLiteRetainPastHours,
+		EpgVacuumAfterPrune:        s.EpgSQLiteVacuumAfterPrune,
+		EpgMaxBytes:                s.EpgSQLiteMaxBytes,
+		EpgSQLiteIncrementalUpsert: s.EpgSQLiteIncrementalUpsert,
+		ProviderEPGURLSuffix:       s.ProviderEPGURLSuffix,
+		ProviderEPGDiskCachePath:   s.ProviderEPGDiskCachePath,
+		HDHRGuideURL:               s.HDHRGuideURL,
+		HDHRGuideTimeout:           s.HDHRGuideTimeout,
 	}
 	s.xmltv = xmltv
 	xmltv.StartRefresh(ctx)
@@ -1052,6 +1085,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/provider/profile.json", s.serveProviderProfile())
 	mux.Handle("/recordings/recorder.json", s.serveCatchupRecorderReport())
 	mux.Handle("/debug/stream-attempts.json", s.serveRecentStreamAttempts())
+	mux.Handle("/debug/runtime.json", s.serveRuntimeSnapshot())
 
 	srv := &http.Server{Addr: addr, Handler: logRequests(mux)}
 
@@ -1426,6 +1460,28 @@ func (s *Server) serveRecentStreamAttempts() http.Handler {
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
 			http.Error(w, `{"error":"encode stream attempts"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveRuntimeSnapshot() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		rep := s.RuntimeSnapshot
+		if rep == nil {
+			rep = &RuntimeSnapshot{
+				GeneratedAt:  time.Now().UTC().Format(time.RFC3339),
+				Version:      s.AppVersion,
+				BaseURL:      s.BaseURL,
+				DeviceID:     s.DeviceID,
+				FriendlyName: s.FriendlyName,
+			}
+		}
+		body, err := json.MarshalIndent(rep, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode runtime snapshot"}`, http.StatusInternalServerError)
 			return
 		}
 		_, _ = w.Write(body)

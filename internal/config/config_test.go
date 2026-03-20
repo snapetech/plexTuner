@@ -459,6 +459,34 @@ func TestXMLTVCacheTTL(t *testing.T) {
 	}
 }
 
+func TestWebUIConfig(t *testing.T) {
+	os.Clearenv()
+	c := Load()
+	if !c.WebUIEnabled {
+		t.Fatal("WebUIEnabled default should be true")
+	}
+	if c.WebUIPort != 48879 {
+		t.Fatalf("WebUIPort default: got %d want 48879", c.WebUIPort)
+	}
+	if c.WebUIAllowLAN {
+		t.Fatal("WebUIAllowLAN default should be false")
+	}
+
+	os.Setenv("IPTV_TUNERR_WEBUI_DISABLED", "1")
+	os.Setenv("IPTV_TUNERR_WEBUI_PORT", "50123")
+	os.Setenv("IPTV_TUNERR_WEBUI_ALLOW_LAN", "true")
+	c = Load()
+	if c.WebUIEnabled {
+		t.Fatal("WebUIEnabled should be false when disabled")
+	}
+	if c.WebUIPort != 50123 {
+		t.Fatalf("WebUIPort: got %d want 50123", c.WebUIPort)
+	}
+	if !c.WebUIAllowLAN {
+		t.Fatal("WebUIAllowLAN should be true")
+	}
+}
+
 func TestSmoketestCacheConfig(t *testing.T) {
 	os.Clearenv()
 	c := Load()

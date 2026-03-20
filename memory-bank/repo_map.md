@@ -22,6 +22,7 @@ Normal push path from this checkout: `git push origin main`. Never `git push git
 | **`internal/indexer/`** | M3U stream parsing, player_api (auth, live, VOD, series with parallel fetch). |
 | **`internal/catalog/`** | Movie/Series/LiveChannel types; Save (snapshot then encode), Load. |
 | **`internal/tuner/`** | HDHR endpoints, stream gateway, XMLTV/guide pipeline, Autopilot, Ghost Hunter, provider profile, catch-up publishing. |
+| **`internal/webui/`** | Dedicated operator dashboard on port `48879` (`0xBEEF` by default); reverse-proxies tuner JSON/debug endpoints under `/api/*`. |
 | **`internal/epgstore/`** | Optional SQLite EPG file (`IPTV_TUNERR_EPG_SQLITE_PATH`): migrations, `SyncMergedGuideXML` (optional retain-past prune), max-stop queries; `/guide/epg-store.json`. |
 | **HDHR hardware EPG** | Optional `IPTV_TUNERR_HDHR_GUIDE_URL` merges device `guide.xml` in `internal/tuner/epg_pipeline.go` ([ADR 0004](../docs/adr/0004-hdhr-guide-epg-merge.md)). |
 | **EPG SQLite** | `internal/epgstore/` — optional `VACUUM`, **max file bytes** (`EnforceMaxDBBytes`); `/guide/epg-store.json`. |
@@ -53,7 +54,8 @@ Normal push path from this checkout: `git push origin main`. Never `git push git
 - **`internal/httpclient`** — Shared tuned HTTP client; used by indexer, gateway, materializer, vodfs.
 - **`internal/materializer`** — Download: single GET or range (16 MiB, 206 when off>0); env `IPTV_TUNERR_RANGE_DOWNLOAD=1`.
 - **`internal/tuner/gateway.go`** — Stream gateway with fallback URLs, provider-cap learning, auth-context forwarding, and autotune hooks.
-- **`internal/tuner/xmltv.go` + `internal/tuner/epg_pipeline.go`** — Layered guide builder: provider XMLTV, external XMLTV, placeholder fallback, highlights, capsules.
+- **`internal/tuner/xmltv.go` + `internal/tuner/epg_pipeline.go`** — Layered guide builder: provider XMLTV (optional **`IPTV_TUNERR_PROVIDER_EPG_DISK_CACHE`** + HTTP 304), external XMLTV, placeholder fallback, highlights, capsules.
+- **`internal/webui/webui.go`** — Dedicated dashboard listener + `/api/*` reverse proxy; main page is embedded from `internal/webui/index.html`.
 - **`internal/channelreport`** — Channel scoring, guide confidence, resilience summaries.
 - **`internal/channeldna`** — Stable identity layer for merged-provider channels.
 - **`internal/plex` / `internal/emby`** — DVR/tuner registration and media-server integration flows.

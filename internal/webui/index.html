@@ -1,7 +1,1148 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"/><title>IPTV Tunerr Web UI</title></head>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IPTV Tunerr Control Deck</title>
+<style>
+:root {
+  --paper: #f5f0e6;
+  --paper-deep: #eadfcd;
+  --ink: #1d1915;
+  --muted: #695d51;
+  --line: rgba(60, 46, 32, 0.13);
+  --line-strong: rgba(60, 46, 32, 0.22);
+  --panel: rgba(255, 251, 244, 0.8);
+  --panel-strong: rgba(255, 249, 240, 0.95);
+  --panel-deep: rgba(35, 27, 19, 0.92);
+  --accent: #bf4f26;
+  --accent-cool: #0f6c73;
+  --accent-soft: #f7dfcf;
+  --good: #1d7348;
+  --warn: #9b6b12;
+  --bad: #8d2d2d;
+  --shadow: 0 20px 60px rgba(32, 21, 10, 0.14);
+  --radius: 24px;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  color: var(--ink);
+  font-family: "Segoe UI", "Avenir Next", sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(191,79,38,0.18), transparent 28%),
+    radial-gradient(circle at top right, rgba(15,108,115,0.18), transparent 30%),
+    linear-gradient(160deg, var(--paper), var(--paper-deep));
+}
+a { color: inherit; text-decoration: none; }
+button, select, input {
+  font: inherit;
+  color: inherit;
+}
+button {
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72);
+  border-radius: 999px;
+  padding: 0.7rem 1rem;
+}
+button:hover, button.active {
+  border-color: rgba(191,79,38,0.45);
+  background: rgba(255, 245, 235, 0.96);
+}
+code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
+.app {
+  display: grid;
+  grid-template-columns: 290px minmax(0, 1fr);
+  min-height: 100vh;
+}
+.sidebar {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  padding: 24px 20px;
+  border-right: 1px solid rgba(60, 46, 32, 0.08);
+  background: linear-gradient(180deg, rgba(255,250,242,0.72), rgba(240,230,214,0.52));
+  backdrop-filter: blur(12px);
+}
+.brand {
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  padding: 18px;
+  background: rgba(255,255,255,0.58);
+  box-shadow: var(--shadow);
+}
+.eyebrow {
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.brand h1 {
+  margin: 14px 0 8px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 2.2rem;
+  line-height: 0.96;
+  letter-spacing: -0.04em;
+}
+.brand p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+.nav {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+.nav button {
+  width: 100%;
+  text-align: left;
+  border-radius: 18px;
+  padding: 0.9rem 1rem;
+}
+.nav strong {
+  display: block;
+  font-size: 0.95rem;
+}
+.nav span {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+.sidebar-stack {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+.mini-card {
+  padding: 16px;
+  border-radius: 20px;
+  background: rgba(255,255,255,0.6);
+  border: 1px solid var(--line);
+}
+.mini-card strong {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+.mini-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.content {
+  padding: 26px;
+}
+.topbar {
+  display: grid;
+  gap: 14px;
+}
+.topbar-shell {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+.crumbs .slash {
+  opacity: 0.45;
+}
+.controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.search {
+  min-width: min(360px, 100%);
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.75);
+  padding: 0.8rem 1rem;
+}
+.hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 34px;
+  padding: 30px;
+  background:
+    linear-gradient(135deg, rgba(255,250,242,0.95), rgba(248,236,220,0.88)),
+    linear-gradient(160deg, rgba(191,79,38,0.06), rgba(15,108,115,0.06));
+  border: 1px solid rgba(60, 46, 32, 0.08);
+  box-shadow: var(--shadow);
+}
+.hero::after {
+  content: "";
+  position: absolute;
+  right: -70px;
+  bottom: -90px;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(191,79,38,0.2), transparent 66%);
+}
+.hero-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.9fr;
+  gap: 18px;
+}
+.hero h2 {
+  margin: 14px 0 12px;
+  max-width: 11ch;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(2.4rem, 5vw, 4.8rem);
+  line-height: 0.93;
+  letter-spacing: -0.05em;
+}
+.hero p {
+  max-width: 68ch;
+  margin: 0;
+  color: var(--muted);
+  font-size: 1rem;
+}
+.hero-links, .mode-strip {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: 999px;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.68);
+}
+.spotlight {
+  display: grid;
+  gap: 12px;
+}
+.status-panel {
+  padding: 18px;
+  border-radius: 24px;
+  background: rgba(255,255,255,0.7);
+  border: 1px solid var(--line);
+}
+.status-panel h3, .panel-head h3 {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  letter-spacing: -0.02em;
+}
+.status-panel p {
+  margin: 0.35rem 0 0;
+}
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+}
+.ok { background: rgba(29,115,72,0.14); color: var(--good); }
+.warn { background: rgba(155,107,18,0.14); color: var(--warn); }
+.bad { background: rgba(141,45,45,0.14); color: var(--bad); }
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+.stat {
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.75);
+}
+.stat .label {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.78rem;
+}
+.stat .value {
+  margin-top: 10px;
+  font-size: clamp(1.4rem, 2.4vw, 2.3rem);
+  font-weight: 700;
+  line-height: 1;
+}
+.stat .note {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.surface {
+  display: grid;
+  gap: 18px;
+  margin-top: 18px;
+}
+.panel-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 18px;
+}
+.panel, .rail {
+  border-radius: var(--radius);
+  border: 1px solid rgba(60, 46, 32, 0.08);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  padding: 18px;
+  backdrop-filter: blur(12px);
+}
+.rail {
+  background: linear-gradient(180deg, rgba(255,248,238,0.88), rgba(248,239,226,0.82));
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.panel-head p {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.stack {
+  display: grid;
+  gap: 10px;
+}
+.card {
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255,255,255,0.64);
+  border: 1px solid rgba(60, 46, 32, 0.08);
+}
+.card strong {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+.card .meta {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.story-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.route-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.route-card {
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.68);
+}
+.route-card h4 {
+  margin: 0 0 0.4rem;
+  font-size: 1rem;
+}
+.route-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.index-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.index-grid button {
+  text-align: left;
+  border-radius: 18px;
+  padding: 0.9rem 1rem;
+}
+.section {
+  display: none;
+}
+.section.active {
+  display: grid;
+  gap: 18px;
+}
+.detail-rail {
+  display: grid;
+  gap: 12px;
+}
+.detail-line {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid rgba(60, 46, 32, 0.08);
+}
+.detail-line:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.detail-line dt {
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+.detail-line dd {
+  margin: 0;
+  font-size: 0.95rem;
+}
+.timeline {
+  display: grid;
+  gap: 10px;
+}
+.timeline-item {
+  position: relative;
+  padding: 14px 16px 14px 22px;
+  border-radius: 18px;
+  background: rgba(255,255,255,0.62);
+  border: 1px solid rgba(60, 46, 32, 0.08);
+}
+.timeline-item::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 20px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.timeline-item strong {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+.raw-inline {
+  min-height: 280px;
+  max-height: 560px;
+  overflow: auto;
+  border-radius: 20px;
+  padding: 16px;
+  background: var(--panel-deep);
+  color: #f8f2ea;
+  border: 1px solid rgba(255,255,255,0.08);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.modal {
+  position: fixed;
+  inset: 0;
+  display: none;
+  place-items: center;
+  background: rgba(17, 13, 10, 0.55);
+  padding: 18px;
+  z-index: 100;
+}
+.modal.open {
+  display: grid;
+}
+.modal-card {
+  width: min(1100px, 100%);
+  max-height: 88vh;
+  overflow: hidden;
+  border-radius: 28px;
+  background: rgba(250,245,238,0.98);
+  border: 1px solid rgba(60,46,32,0.14);
+  box-shadow: 0 30px 80px rgba(11, 9, 7, 0.28);
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px;
+  border-bottom: 1px solid rgba(60,46,32,0.1);
+}
+.modal-head h3 {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+}
+.modal-body {
+  overflow: auto;
+  padding: 20px;
+}
+.footer {
+  margin: 18px 0 50px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 0.9rem;
+}
+@media (max-width: 1120px) {
+  .app {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    position: relative;
+    height: auto;
+    border-right: 0;
+    border-bottom: 1px solid rgba(60,46,32,0.08);
+  }
+}
+@media (max-width: 860px) {
+  .content { padding: 16px; }
+  .hero { padding: 22px; border-radius: 26px; }
+  .hero-grid, .panel-grid, .stats, .story-grid, .route-grid, .index-grid {
+    grid-template-columns: 1fr;
+  }
+  .detail-line { grid-template-columns: 1fr; gap: 4px; }
+}
+</style>
+</head>
 <body>
-<p>Operator UI placeholder — use embedded <code>/ui/</code> on the main tuner port, or configure this proxy package separately.</p>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="eyebrow">Port [[.Port]] · v[[.Version]]</div>
+      <h1>Control Deck</h1>
+      <p>Operator surface for guide health, routing, intelligence, recordings, and runtime state.</p>
+    </div>
+
+    <nav class="nav" id="mode-nav">
+      <button type="button" data-mode="overview" class="active">
+        <strong>Overview</strong>
+        <span>Front page, major signals, quick routes.</span>
+      </button>
+      <button type="button" data-mode="guide">
+        <strong>Guide</strong>
+        <span>EPG quality, doctoring, highlights, capsules.</span>
+      </button>
+      <button type="button" data-mode="routing">
+        <strong>Routing</strong>
+        <span>Provider behavior, fallback evidence, HDHR surfaces.</span>
+      </button>
+      <button type="button" data-mode="ops">
+        <strong>Operations</strong>
+        <span>Autopilot, recorder, media-server hooks, ghosts.</span>
+      </button>
+      <button type="button" data-mode="settings">
+        <strong>Settings</strong>
+        <span>Effective runtime config, endpoint index, raw JSON.</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-stack">
+      <div class="mini-card">
+        <strong>Single Origin</strong>
+        <p>Every live JSON/debug endpoint is reachable here under <code>/api/*</code>, so the deck stays self-contained.</p>
+      </div>
+      <div class="mini-card" id="sidebar-health">
+        <strong>System State</strong>
+        <p>Loading health.</p>
+      </div>
+      <div class="mini-card">
+        <strong>Quick Doors</strong>
+        <p><a href="/api/ui/" target="_blank" rel="noreferrer">Legacy UI</a> · <a href="/api/guide.xml" target="_blank" rel="noreferrer">Guide XML</a> · <a href="/api/live.m3u" target="_blank" rel="noreferrer">Live M3U</a></p>
+      </div>
+    </div>
+  </aside>
+
+  <main class="content">
+    <header class="topbar">
+      <div class="topbar-shell">
+        <div class="crumbs">
+          <span>Deck</span>
+          <span class="slash">/</span>
+          <span id="crumb-mode">Overview</span>
+          <span class="slash">/</span>
+          <span id="crumb-focus">Live State</span>
+        </div>
+        <div class="controls">
+          <input id="deck-search" class="search" type="search" placeholder="Filter cards, endpoints, hosts, channels, settings">
+          <button id="reload-all" type="button">Reload Deck</button>
+          <button id="open-modal" type="button">Open Raw Modal</button>
+        </div>
+      </div>
+
+      <section class="hero">
+        <div class="eyebrow">IPTV Tunerr Control Deck · dedicated listener on `0xBEEF`</div>
+        <div class="hero-grid">
+          <div>
+            <h2>Not a debug panel. A control plane.</h2>
+            <p>
+              This deck is structured like an operator cockpit: overview first, then dedicated lanes for guide integrity,
+              stream routing, operational automation, and settings. The goal is quick diagnosis without burying the user
+              in undifferentiated JSON.
+            </p>
+            <div class="hero-links">
+              <a class="pill" href="/api/discover.json" target="_blank" rel="noreferrer">HDHR Discover</a>
+              <a class="pill" href="/api/provider/profile.json" target="_blank" rel="noreferrer">Provider Profile</a>
+              <a class="pill" href="/api/debug/stream-attempts.json?limit=20" target="_blank" rel="noreferrer">Stream Attempts</a>
+              <a class="pill" href="/api/recordings/recorder.json?limit=20" target="_blank" rel="noreferrer">Recorder Report</a>
+            </div>
+            <div class="mode-strip" id="active-filters"></div>
+          </div>
+          <div class="spotlight">
+            <div class="status-panel">
+              <div class="panel-head">
+                <div>
+                  <h3>Current Posture</h3>
+                  <p id="posture-copy">Reading runtime state.</p>
+                </div>
+                <span id="health-pill" class="status-badge warn">Loading</span>
+              </div>
+              <dl class="detail-rail" id="session-kv"></dl>
+            </div>
+            <div class="status-panel">
+              <div class="panel-head">
+                <div>
+                  <h3>Decision Board</h3>
+                  <p>Immediate operator questions this deck answers.</p>
+                </div>
+              </div>
+              <div class="stack" id="decision-board"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </header>
+
+    <section class="stats" id="stats"></section>
+
+    <div class="surface">
+      <section class="section active" data-mode="overview">
+        <div class="panel-grid">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Executive Overview</h3>
+                <p>The “is this box actually healthy?” layer.</p>
+              </div>
+            </div>
+            <div class="story-grid" id="overview-stories"></div>
+          </article>
+
+          <aside class="rail">
+            <div class="panel-head">
+              <div>
+                <h3>Hot Trail</h3>
+                <p>Recent evidence and live pressure points.</p>
+              </div>
+            </div>
+            <div class="timeline" id="overview-timeline"></div>
+          </aside>
+        </div>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>Fast Lanes</h3>
+              <p>Jump directly to the surface you need without hunting.</p>
+            </div>
+          </div>
+          <div class="route-grid" id="fast-lanes"></div>
+        </article>
+      </section>
+
+      <section class="section" data-mode="guide">
+        <div class="panel-grid">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Guide Integrity</h3>
+                <p>Programmes, placeholders, freshness, and doctoring state.</p>
+              </div>
+            </div>
+            <div class="stack" id="guide-list"></div>
+          </article>
+          <aside class="rail">
+            <div class="panel-head">
+              <div>
+                <h3>Highlights</h3>
+                <p>Current guide moments and catch-up opportunities.</p>
+              </div>
+            </div>
+            <div class="timeline" id="guide-timeline"></div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="section" data-mode="routing">
+        <div class="panel-grid">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Routing + Debug</h3>
+                <p>Fallbacks, host pain, mux decisions, and HDHR-facing surfaces.</p>
+              </div>
+            </div>
+            <div class="stack" id="routing-list"></div>
+          </article>
+          <aside class="rail">
+            <div class="panel-head">
+              <div>
+                <h3>Attempt Trail</h3>
+                <p>Recent upstream decisions as an operator-readable timeline.</p>
+              </div>
+            </div>
+            <div class="timeline" id="attempt-trail"></div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="section" data-mode="ops">
+        <div class="panel-grid">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Automation + Operations</h3>
+                <p>Recorder, autopilot memory, Plex ghost hunting, and media hooks.</p>
+              </div>
+            </div>
+            <div class="stack" id="ops-list"></div>
+          </article>
+          <aside class="rail">
+            <div class="panel-head">
+              <div>
+                <h3>Channel Intelligence</h3>
+                <p>DNA grouping, quality, and leaderboard slices.</p>
+              </div>
+            </div>
+            <div class="stack" id="channel-list"></div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="section" data-mode="settings">
+        <div class="panel-grid">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Runtime Settings</h3>
+                <p>Read-only effective config grouped by subsystem.</p>
+              </div>
+            </div>
+            <div class="stack" id="settings-list"></div>
+          </article>
+          <aside class="rail">
+            <div class="panel-head">
+              <div>
+                <h3>Endpoint Index</h3>
+                <p>Browse every proxied surface and open raw payloads in context.</p>
+              </div>
+              <div class="controls">
+                <select id="raw-select"></select>
+              </div>
+            </div>
+            <div class="index-grid" id="endpoint-grid"></div>
+          </aside>
+        </div>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>Inline Raw View</h3>
+              <p>JSON stays available here, but it is now the supporting layer, not the whole product.</p>
+            </div>
+          </div>
+          <pre class="raw-inline" id="raw-output">Loading...</pre>
+        </article>
+      </section>
+    </div>
+
+    <p class="footer">Rendered [[.Now]] UTC · tuner proxy target <code>[[.TunerBase]]</code>.</p>
+  </main>
+</div>
+
+<div class="modal" id="raw-modal" aria-hidden="true">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div>
+        <div class="eyebrow" id="modal-label">Raw Payload</div>
+        <h3 id="modal-title">Endpoint Viewer</h3>
+      </div>
+      <div class="controls">
+        <button id="modal-refresh" type="button">Reload</button>
+        <button id="modal-close" type="button">Close</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <pre class="raw-inline" id="modal-output">Loading...</pre>
+    </div>
+  </div>
+</div>
+
+<script>
+const endpoints = {
+  runtime: "/api/debug/runtime.json",
+  health: "/api/healthz",
+  guideHealth: "/api/guide/health.json",
+  guideDoctor: "/api/guide/doctor.json",
+  guideHighlights: "/api/guide/highlights.json?limit=8",
+  epgStore: "/api/guide/epg-store.json",
+  capsules: "/api/guide/capsules.json?limit=8",
+  channelReport: "/api/channels/report.json",
+  channelLeaderboard: "/api/channels/leaderboard.json?limit=8",
+  channelDNA: "/api/channels/dna.json",
+  autopilot: "/api/autopilot/report.json?limit=8",
+  ghost: "/api/plex/ghost-report.json?observe=0s",
+  provider: "/api/provider/profile.json",
+  recorder: "/api/recordings/recorder.json?limit=8",
+  attempts: "/api/debug/stream-attempts.json?limit=8"
+};
+
+const modeTitles = {
+  overview: ["Overview", "Live State"],
+  guide: ["Guide", "Integrity"],
+  routing: ["Routing", "Decision Trail"],
+  ops: ["Operations", "Automation"],
+  settings: ["Settings", "Runtime Snapshot"]
+};
+
+const state = {
+  mode: "overview",
+  filter: "",
+  payloads: {},
+  selectedRaw: "runtime"
+};
+
+const healthPill = document.getElementById("health-pill");
+const sidebarHealth = document.getElementById("sidebar-health");
+const crumbMode = document.getElementById("crumb-mode");
+const crumbFocus = document.getElementById("crumb-focus");
+const activeFilters = document.getElementById("active-filters");
+const sessionKV = document.getElementById("session-kv");
+const decisionBoard = document.getElementById("decision-board");
+const postureCopy = document.getElementById("posture-copy");
+const statsEl = document.getElementById("stats");
+const overviewStories = document.getElementById("overview-stories");
+const overviewTimeline = document.getElementById("overview-timeline");
+const fastLanes = document.getElementById("fast-lanes");
+const guideList = document.getElementById("guide-list");
+const guideTimeline = document.getElementById("guide-timeline");
+const routingList = document.getElementById("routing-list");
+const attemptTrail = document.getElementById("attempt-trail");
+const opsList = document.getElementById("ops-list");
+const channelList = document.getElementById("channel-list");
+const settingsList = document.getElementById("settings-list");
+const endpointGrid = document.getElementById("endpoint-grid");
+const rawSelect = document.getElementById("raw-select");
+const rawOutput = document.getElementById("raw-output");
+const rawModal = document.getElementById("raw-modal");
+const modalOutput = document.getElementById("modal-output");
+const modalTitle = document.getElementById("modal-title");
+const modalLabel = document.getElementById("modal-label");
+
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"]/g, (ch) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;"
+  }[ch]));
+}
+
+function pretty(value) {
+  if (value === null || value === undefined || value === "") return "n/a";
+  if (typeof value === "boolean") return value ? "enabled" : "disabled";
+  if (Array.isArray(value)) return value.length ? value.join(", ") : "none";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function normalizeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function createCard(title, body, meta = "", tone = "") {
+  return `<div class="card ${tone}"><strong>${esc(title)}</strong><div>${body}</div>${meta ? `<div class="meta">${meta}</div>` : ""}</div>`;
+}
+
+function createStat(label, value, note) {
+  return `<div class="stat"><div class="label">${esc(label)}</div><div class="value">${esc(pretty(value))}</div><div class="note">${esc(note)}</div></div>`;
+}
+
+function createTimeline(title, body, tone = "") {
+  return `<div class="timeline-item ${tone}"><strong>${esc(title)}</strong><div class="meta">${body}</div></div>`;
+}
+
+function filterCards(items) {
+  const q = state.filter.trim().toLowerCase();
+  if (!q) return items;
+  return items.filter((html) => html.toLowerCase().includes(q));
+}
+
+async function fetchJSON(label, path) {
+  const res = await fetch(path, { headers: { "Accept": "application/json" } });
+  const text = await res.text();
+  let body;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = { raw: text };
+  }
+  return { label, path, ok: res.ok, status: res.status, body };
+}
+
+function setHealth(ok, label) {
+  healthPill.textContent = label;
+  healthPill.className = `status-badge ${ok ? "ok" : "warn"}`;
+  sidebarHealth.innerHTML = ok
+    ? `<strong>System State</strong><p>Deck can reach the tuner. This is a live operator surface, not a static shell.</p>`
+    : `<strong>System State</strong><p>Tuner is not reachable right now. The deck stays up, but payload cards reflect degraded state.</p>`;
+}
+
+function applyMode(mode) {
+  state.mode = mode;
+  document.querySelectorAll("#mode-nav button").forEach((button) => {
+    button.classList.toggle("active", button.dataset.mode === mode);
+  });
+  document.querySelectorAll(".section").forEach((section) => {
+    section.classList.toggle("active", section.dataset.mode === mode);
+  });
+  const pair = modeTitles[mode] || ["Deck", "View"];
+  crumbMode.textContent = pair[0];
+  crumbFocus.textContent = pair[1];
+}
+
+function fillRawSelectors() {
+  rawSelect.innerHTML = "";
+  endpointGrid.innerHTML = "";
+  Object.keys(endpoints).forEach((key) => {
+    const opt = document.createElement("option");
+    opt.value = key;
+    opt.textContent = `${key} -> ${endpoints[key]}`;
+    rawSelect.appendChild(opt);
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.innerHTML = `<strong>${esc(key)}</strong><span>${esc(endpoints[key])}</span>`;
+    button.addEventListener("click", () => {
+      state.selectedRaw = key;
+      rawSelect.value = key;
+      renderRaw();
+      openModal();
+    });
+    endpointGrid.appendChild(button);
+  });
+  rawSelect.value = state.selectedRaw;
+}
+
+function renderFilters() {
+  activeFilters.innerHTML = state.filter
+    ? `<span class="pill">Filter active: ${esc(state.filter)}</span>`
+    : `<span class="pill">Mode: ${esc(modeTitles[state.mode][0])}</span><span class="pill">Deck target: [[.TunerBase]]</span>`;
+}
+
+function renderDeck() {
+  const runtime = state.payloads.runtime?.body || {};
+  const health = state.payloads.health || { ok: false, status: 0, body: {} };
+  const guideHealth = state.payloads.guideHealth?.body || {};
+  const guideDoctor = state.payloads.guideDoctor?.body || {};
+  const guideHighlights = state.payloads.guideHighlights?.body || {};
+  const epgStore = state.payloads.epgStore?.body || {};
+  const capsules = state.payloads.capsules?.body || {};
+  const channelReport = state.payloads.channelReport?.body || {};
+  const leaderboard = state.payloads.channelLeaderboard?.body || {};
+  const dna = state.payloads.channelDNA?.body || {};
+  const autopilot = state.payloads.autopilot?.body || {};
+  const ghost = state.payloads.ghost?.body || {};
+  const provider = state.payloads.provider?.body || {};
+  const recorder = state.payloads.recorder?.body || {};
+  const attempts = normalizeArray(state.payloads.attempts?.body);
+
+  setHealth(health.ok, health.ok ? "Healthy" : `HTTP ${health.status}`);
+  renderFilters();
+
+  postureCopy.textContent = health.ok
+    ? `Main listener ${runtime.listen_address || "unknown"} is answering and the deck can see live runtime state.`
+    : "The deck is loaded, but the tuner target is degraded or still starting.";
+
+  sessionKV.innerHTML = [
+    ["Tuner base", runtime.base_url || "[[.TunerBase]]"],
+    ["Listen address", runtime.listen_address || "n/a"],
+    ["Device", `${runtime.friendly_name || "IPTV Tunerr"} (${runtime.device_id || "n/a"})`],
+    ["Generated", runtime.generated_at || "[[.Now]]"]
+  ].map(([label, value]) =>
+    `<div class="detail-line"><dt>${esc(label)}</dt><dd>${esc(pretty(value))}</dd></div>`
+  ).join("");
+
+  decisionBoard.innerHTML = filterCards([
+    createCard("Is the guide believable?", `${pretty(guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes)} channels have programme data; ${pretty(guideHealth.summary?.placeholder_only_channels)} are placeholder-only.`),
+    createCard("Are streams falling back?", `${attempts.length} recent attempts tracked; ${attempts.slice(0, 2).map((item) => item.reason || item.result || item.status || "unknown").join(" | ") || "no recent evidence"}`),
+    createCard("Is recording alive?", recorder.summary ? `${pretty(recorder.summary.active_count)} active, ${pretty(recorder.summary.failed_count)} failed, ${pretty(recorder.summary.completed_count)} completed.` : pretty(recorder.error || "No recorder state file configured")),
+    createCard("What config am I really running?", `Read-only snapshot exposed at /api/debug/runtime.json and summarized in the Settings lane.`)
+  ]).join("");
+
+  statsEl.innerHTML = filterCards([
+    createStat("Health", health.ok ? "ok" : "degraded", health.ok ? `${health.body.channels || 0} channels loaded` : pretty(health.body.error || health.body.status)),
+    createStat("Guide Channels", guideHealth.summary?.total_channels || guideHealth.channel_count || 0, `${guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes || 0} carrying listings`),
+    createStat("Programmes", epgStore.programme_count || guideDoctor.summary?.programme_count || "n/a", epgStore.source_ready ? "SQLite horizon active" : "merged cache only"),
+    createStat("Recorder", recorder.summary?.active_count ?? recorder.active_count ?? "n/a", recorder.summary ? `${recorder.summary.completed_count || 0} completed` : "not configured")
+  ]).join("");
+
+  overviewStories.innerHTML = filterCards([
+    createCard("Guide posture", `${pretty(guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes)} real programme channels, ${pretty(guideHealth.summary?.stale_channels)} stale, ${pretty(guideHealth.summary?.placeholder_only_channels)} placeholder-only.`, "Guide confidence from /guide/health.json"),
+    createCard("Provider posture", provider.summary ? esc(JSON.stringify(provider.summary)) : esc(pretty(provider.error)), "Runtime provider behavior from /provider/profile.json"),
+    createCard("Channel posture", channelReport.summary ? `${pretty(channelReport.summary.total_channels)} total, ${pretty(channelReport.summary.epg_linked_channels)} linked, ${pretty(channelReport.summary.channels_with_backup_streams)} backup-capable.` : pretty(channelReport.error), "Channel intelligence summary"),
+    createCard("Ops posture", recorder.summary ? `${pretty(recorder.summary.active_count)} active recordings with automation memory and publishing state available.` : pretty(recorder.error || "No recorder state"), "Recorder + automation surface")
+  ]).join("");
+
+  overviewTimeline.innerHTML = filterCards([
+    createTimeline("Latest runtime snapshot", esc(runtime.generated_at || "unknown")),
+    createTimeline("Guide highlights", normalizeArray(guideHighlights.current).slice(0, 2).map((item) => `${item.channel_name || item.channel_id}: ${item.title}`).join(" | ") || "No live highlights"),
+    createTimeline("Catch-up pressure", normalizeArray(capsules.capsules || capsules.items).slice(0, 2).map((item) => `${item.channel_name || item.channel_id}: ${item.title}`).join(" | ") || pretty(capsules.error || "No capsules")),
+    createTimeline("Fallback trail", attempts.slice(0, 2).map((item) => `${item.channel_name || item.channel_id || "channel"} -> ${item.reason || item.result || item.status || "unknown"}`).join(" | ") || "No recent attempts")
+  ]).join("");
+
+  fastLanes.innerHTML = filterCards([
+    createCard("Guide lane", "Guide health, doctor, highlights, capsules, and SQLite horizon in one place.", `<button type="button" onclick="window.deckMode('guide')">Open Guide</button>`),
+    createCard("Routing lane", "Fallback evidence, provider posture, attempt trail, and mux behavior.", `<button type="button" onclick="window.deckMode('routing')">Open Routing</button>`),
+    createCard("Operations lane", "Recorder status, autopilot memory, Plex ghost state, and media hooks.", `<button type="button" onclick="window.deckMode('ops')">Open Ops</button>`),
+    createCard("Settings lane", "Effective runtime config, endpoint index, and raw payload drill-down.", `<button type="button" onclick="window.deckMode('settings')">Open Settings</button>`)
+  ]).join("");
+
+  guideList.innerHTML = filterCards([
+    createCard("Guide health", `${pretty(guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes)} channels with real listings, ${pretty(guideHealth.summary?.placeholder_only_channels)} placeholder-only, ${pretty(guideHealth.summary?.stale_channels)} stale.`),
+    createCard("Guide doctor", guideDoctor.summary ? `${pretty(guideDoctor.summary.channel_count)} channels inspected, ${pretty(guideDoctor.summary.programme_count)} programmes parsed.` : pretty(guideDoctor.error)),
+    createCard("SQLite horizon", epgStore.source_ready ? `${pretty(epgStore.programme_count)} programmes, DB file ${pretty(epgStore.db_file_bytes)} bytes, max stop ${pretty(epgStore.global_max_stop_unix)}.` : pretty(epgStore.error || "SQLite disabled")),
+    createCard("Provider EPG mode", `enabled=${pretty(runtime.guide?.provider_epg_enabled)}, incremental=${pretty(runtime.guide?.provider_epg_incremental)}, disk_cache=${pretty(runtime.guide?.provider_epg_disk_cache_path)}`),
+    createCard("Guide shaping", `xmltv=${pretty(runtime.guide?.xmltv_url)}, prune_unlinked=${pretty(runtime.tuner?.epg_prune_unlinked)}, suffix=${pretty(runtime.guide?.provider_epg_url_suffix)}`)
+  ]).join("");
+
+  guideTimeline.innerHTML = filterCards([
+    createTimeline("Current highlights", normalizeArray(guideHighlights.current).slice(0, 3).map((item) => `${item.channel_name || item.channel_id}: ${item.title}`).join(" | ") || "No current guide moments"),
+    createTimeline("Starting soon", normalizeArray(guideHighlights.starting_soon || guideHighlights.movies_starting_soon).slice(0, 3).map((item) => `${item.channel_name || item.channel_id}: ${item.title}`).join(" | ") || "No starting-soon highlights"),
+    createTimeline("Capsule queue", normalizeArray(capsules.capsules || capsules.items).slice(0, 3).map((item) => `${item.channel_name || item.channel_id}: ${item.title}`).join(" | ") || pretty(capsules.error || "No catch-up capsules")),
+    createTimeline("Guide freshness", guideHealth.generated_at || guideDoctor.generated_at || runtime.generated_at || "unknown")
+  ]).join("");
+
+  routingList.innerHTML = filterCards([
+    createCard("Provider profile", provider.summary ? esc(JSON.stringify(provider.summary)) : esc(pretty(provider.error)), provider.client_behavior ? `client_behavior=${esc(JSON.stringify(provider.client_behavior))}` : ""),
+    createCard("Attempt volume", `${attempts.length} recent attempts in buffer. Top host pressure: ${attempts.slice(0, 3).map((item) => item.upstream_url_host || item.upstream_host || "unknown").join(", ") || "none"}`),
+    createCard("Fallback evidence", attempts.slice(0, 4).map((item) => `${item.channel_name || item.channel_id || "channel"} -> ${item.reason || item.result || item.status || "unknown"}`).join(" | ") || "No fallback evidence"),
+    createCard("HDHR contract", "discover.json, lineup.json, lineup_status.json, device.xml, and guide.xml still live on the tuner and are proxied here under /api."),
+    createCard("Mux choices", "Native TS/fMP4/HLS surfaces exist; the deck is a supervisor over those capabilities, not a stream path itself.")
+  ]).join("");
+
+  attemptTrail.innerHTML = filterCards(attempts.slice(0, 8).map((item) =>
+    createTimeline(
+      item.channel_name || item.channel_id || "channel",
+      `${item.upstream_url_host || item.upstream_host || "host?"} · ${item.reason || item.result || item.status || "unknown"}${item.profile ? ` · profile=${item.profile}` : ""}`
+    )
+  )).join("") || createTimeline("Attempts", "No recent stream attempts recorded.");
+
+  opsList.innerHTML = filterCards([
+    createCard("Recorder state", recorder.summary ? `${pretty(recorder.summary.active_count)} active, ${pretty(recorder.summary.completed_count)} completed, ${pretty(recorder.summary.failed_count)} failed.` : pretty(recorder.error || "Recorder not configured")),
+    createCard("Autopilot memory", autopilot.hot_channels ? `${autopilot.hot_channels.length} hot channels with remembered preferences.` : pretty(autopilot.error || "Autopilot memory unavailable")),
+    createCard("Ghost hunter", ghost.summary ? esc(JSON.stringify(ghost.summary)) : esc(pretty(ghost.error || "Plex report unavailable"))),
+    createCard("Media hooks", runtime.media_servers ? `Emby host=${pretty(runtime.media_servers.emby_host_configured)}, Jellyfin host=${pretty(runtime.media_servers.jellyfin_host_configured)}` : "No runtime snapshot"),
+    createCard("Recorder files", `state=${pretty(runtime.recorder?.state_file)}, autopilot=${pretty(runtime.tuner?.autopilot_state_file)}`)
+  ]).join("");
+
+  channelList.innerHTML = filterCards([
+    createCard("Channel report", channelReport.summary ? `${pretty(channelReport.summary.total_channels)} total, ${pretty(channelReport.summary.epg_linked_channels)} linked, ${pretty(channelReport.summary.channels_with_backup_streams)} backup-stream channels.` : pretty(channelReport.error)),
+    createCard("Leaderboard", normalizeArray(leaderboard.channels || leaderboard.items || leaderboard).slice(0, 5).map((item) => `${item.name || item.channel_name || item.channel_id} (${item.score || item.health_score || "n/a"})`).join(" | ") || "No leaderboard data"),
+    createCard("DNA grouping", `${pretty(dna.summary?.channel_count || dna.channel_count)} channels, ${pretty(dna.summary?.dna_group_count || dna.group_count)} grouped identities.`),
+    createCard("What this means", "This lane is where duplicate-provider chaos becomes operator-readable channel structure.")
+  ]).join("");
+
+  settingsList.innerHTML = filterCards([
+    createCard("Tuner", `count=${pretty(runtime.tuner?.count)}, lineup_cap=${pretty(runtime.tuner?.lineup_max_channels)}, transcode=${pretty(runtime.tuner?.stream_transcode)}, buffer=${pretty(runtime.tuner?.stream_buffer_bytes)}`),
+    createCard("Guide", `xmltv=${pretty(runtime.guide?.xmltv_url)}, provider_epg=${pretty(runtime.guide?.provider_epg_enabled)}, sqlite=${pretty(runtime.guide?.epg_sqlite_path)}`),
+    createCard("Provider", `entries=${pretty(runtime.provider?.entry_count)}, base_urls=${pretty(runtime.provider?.base_urls)}, block_cf=${pretty(runtime.provider?.block_cf_providers)}`),
+    createCard("Web UI", `enabled=${pretty(runtime.webui?.enabled)}, port=${pretty(runtime.webui?.port)}, allow_lan=${pretty(runtime.webui?.allow_lan)}, legacy_ui=${pretty(runtime.webui?.legacy_ui)}`),
+    createCard("HDHR", `network_mode=${pretty(runtime.hdhr?.network_mode)}, device_id=${pretty(runtime.hdhr?.device_id)}, discover_port=${pretty(runtime.hdhr?.discover_port)}`),
+    createCard("Recorder + ops", `recorder_state=${pretty(runtime.recorder?.state_file)}, autopilot_state=${pretty(runtime.tuner?.autopilot_state_file)}`)
+  ]).join("");
+}
+
+async function renderRaw() {
+  const key = rawSelect.value || state.selectedRaw;
+  state.selectedRaw = key;
+  rawOutput.textContent = "Loading...";
+  modalOutput.textContent = "Loading...";
+  modalTitle.textContent = `Endpoint Viewer · ${key}`;
+  modalLabel.textContent = endpoints[key] || "Raw Payload";
+  try {
+    const payload = await fetchJSON(key, endpoints[key]);
+    const text = JSON.stringify(payload.body, null, 2);
+    rawOutput.textContent = text;
+    modalOutput.textContent = text;
+  } catch (err) {
+    rawOutput.textContent = String(err);
+    modalOutput.textContent = String(err);
+  }
+}
+
+function openModal() {
+  rawModal.classList.add("open");
+  rawModal.setAttribute("aria-hidden", "false");
+}
+
+function closeModal() {
+  rawModal.classList.remove("open");
+  rawModal.setAttribute("aria-hidden", "true");
+}
+
+async function reloadDeck() {
+  const entries = await Promise.all(Object.entries(endpoints).map(([key, path]) =>
+    fetchJSON(key, path).catch((error) => ({ label: key, path, ok: false, status: 0, body: { error: String(error) } }))
+  ));
+  state.payloads = Object.fromEntries(entries.map((item) => [item.label, item]));
+  renderDeck();
+  rawSelect.value = state.selectedRaw;
+  await renderRaw();
+}
+
+function bindUI() {
+  fillRawSelectors();
+  document.querySelectorAll("#mode-nav button").forEach((button) => {
+    button.addEventListener("click", () => applyMode(button.dataset.mode));
+  });
+  document.getElementById("reload-all").addEventListener("click", reloadDeck);
+  document.getElementById("open-modal").addEventListener("click", openModal);
+  document.getElementById("modal-close").addEventListener("click", closeModal);
+  document.getElementById("modal-refresh").addEventListener("click", renderRaw);
+  rawSelect.addEventListener("change", renderRaw);
+  document.getElementById("deck-search").addEventListener("input", (event) => {
+    state.filter = event.target.value || "";
+    renderFilters();
+    renderDeck();
+  });
+  rawModal.addEventListener("click", (event) => {
+    if (event.target === rawModal) closeModal();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeModal();
+  });
+  window.deckMode = (mode) => applyMode(mode);
+}
+
+async function boot() {
+  bindUI();
+  applyMode(state.mode);
+  await reloadDeck();
+}
+
+boot().catch((err) => {
+  setHealth(false, "Load failed");
+  rawOutput.textContent = String(err);
+  modalOutput.textContent = String(err);
+});
+</script>
 </body>
 </html>

@@ -52,8 +52,19 @@ type XMLTV struct {
 	EpgVacuumAfterPrune bool
 	// EpgMaxBytes: optional SQLite file size ceiling after sync (LP-009).
 	EpgMaxBytes int64
+	// EpgSQLiteIncrementalUpsert enables non-truncate sync mode in epgstore.
+	EpgSQLiteIncrementalUpsert bool
 	// ProviderEPGURLSuffix is appended to provider xmltv.php URL (optional; panel-specific query params). LP-008 follow-on.
 	ProviderEPGURLSuffix string
+	// ProviderEPGDiskCachePath: optional path to a file for provider xmltv.php body + HTTP conditional GET (ETag / Last-Modified).
+	// Sidecar metadata is cachePath + ".meta.json". Empty = fetch without disk cache.
+	ProviderEPGDiskCachePath string
+	// ProviderEPGIncremental enables tokenized suffix rendering using EpgStore horizon.
+	ProviderEPGIncremental bool
+	// ProviderEPGLookaheadHours controls incremental window end when ProviderEPGIncremental is true.
+	ProviderEPGLookaheadHours int
+	// ProviderEPGBackfillHours controls incremental window start skew before existing horizon.
+	ProviderEPGBackfillHours int
 	// HDHRGuideURL is an optional http(s) URL to a physical HDHomeRun-style guide.xml (LP-003).
 	HDHRGuideURL string
 	// HDHRGuideTimeout for fetching HDHRGuideURL; 0 = default 90s.

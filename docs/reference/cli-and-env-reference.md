@@ -736,10 +736,15 @@ Merge semantics for HDHR + IPTV catalogs: [adr/0002-hdhr-hardware-iptv-merge.md]
 
 | Env | Meaning |
 |-----|---------|
+| `IPTV_TUNERR_WEBUI_DISABLED` | If `1`, disable the dedicated dashboard on port `48879` (`0xBEEF`). |
+| `IPTV_TUNERR_WEBUI_PORT` | Dedicated dashboard port (default `48879`). |
+| `IPTV_TUNERR_WEBUI_ALLOW_LAN` | If `1`, allow non-loopback clients to open the dedicated dashboard (default: **localhost only**). |
 | `IPTV_TUNERR_UI_DISABLED` | If `1`, `/ui/` is not served. |
 | `IPTV_TUNERR_UI_ALLOW_LAN` | If `1`, allow non-loopback clients to open `/ui/` (default: **localhost only**). |
 
-Browser URLs (same env as above): `http://127.0.0.1:<port>/ui/` (home), `/ui/guide/` (merged guide preview from cache), `/ui/guide-preview.json` (JSON; optional `?limit=`). Also linked from `/ui/`: `/healthz`, `/guide/health.json`, `/guide/epg-store.json` (SQLite EPG stats when `IPTV_TUNERR_EPG_SQLITE_PATH` is set), `/channels/report.json`.
+Browser URLs:
+- Dedicated deck: `http://127.0.0.1:48879/` by default. It reverse-proxies tuner endpoints under `/api/*` and surfaces runtime settings from `/api/debug/runtime.json`.
+- Legacy pages on the tuner port: `http://127.0.0.1:<port>/ui/` (home), `/ui/guide/` (merged guide preview from cache), `/ui/guide-preview.json` (JSON; optional `?limit=`).
 
 Transcode profile names, HDHomeRun-style aliases, and `?profile=` on `/stream/<id>`: [transcode-profiles.md](transcode-profiles.md).
 
@@ -1005,6 +1010,11 @@ Fetches EPG directly from your IPTV provider using existing credentials. No sepa
 - `IPTV_TUNERR_PROVIDER_EPG_ENABLED` (`true`) — set `false` to disable provider EPG fetch
 - `IPTV_TUNERR_PROVIDER_EPG_TIMEOUT` (`90s`) — fetch timeout; provider XMLTV can be large (10–50 MB)
 - `IPTV_TUNERR_PROVIDER_EPG_CACHE_TTL` (`10m`) — how often to re-fetch; overrides `XMLTV_CACHE_TTL` when set
+- `IPTV_TUNERR_PROVIDER_EPG_DISK_CACHE` — optional filesystem path to store the last downloaded provider `xmltv.php` body. When set, Tunerr persists **`ETag`** / **`Last-Modified`** in a sidecar `*.meta.json` and sends conditional request headers; **HTTP 304** responses skip re-download and parse the cached file. Many Xtream panels do **not** emit validators — in that case behavior matches an uncached fetch (full download each refresh). Create the parent directory before use.
+- `IPTV_TUNERR_PROVIDER_EPG_INCREMENTAL` (`false`) — when `true`, apply token rendering on `IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX` from SQLite horizon (`GlobalMaxStopUnix`)
+- `IPTV_TUNERR_PROVIDER_EPG_LOOKAHEAD_HOURS` (`72`) — window end offset for incremental suffix token rendering
+- `IPTV_TUNERR_PROVIDER_EPG_BACKFILL_HOURS` (`6`) — start offset before known max stop for incremental suffix token rendering
+- Suffix tokens: `{from_unix}`, `{to_unix}`, `{from_ymd}`, `{to_ymd}` (only meaningful when incremental is enabled and SQLite store has data)
 
 ### External XMLTV (tier 2)
 
@@ -1022,6 +1032,7 @@ Fetches EPG directly from your IPTV provider using existing credentials. No sepa
 - `IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS` — if `> 0`, after each sync delete SQLite programme rows whose **end time** is before `now - N hours`, then remove orphan `epg_channel` rows. `0` = keep the full merged snapshot in SQLite.
 - `IPTV_TUNERR_EPG_SQLITE_VACUUM` — if `true`/`1`, run SQLite **`VACUUM`** after a retain-past prune that removed at least one row (optional; reclaims file space, may pause briefly on large DBs).
 - `IPTV_TUNERR_EPG_SQLITE_MAX_BYTES` — optional post-sync cap on the **SQLite file size** (bytes); deletes programmes until the file fits (ended programmes first). `IPTV_TUNERR_EPG_SQLITE_MAX_MB` is a shorthand (mebibytes) if `MAX_BYTES` is unset.
+- `IPTV_TUNERR_EPG_SQLITE_INCREMENTAL_UPSERT` — use overlap-window upsert sync mode for merged XMLTV (does not truncate all programme/channel rows each refresh)
 - `IPTV_TUNERR_HDHR_LINEUP_URL` — optional `http(s)://device/lineup.json` merged into the catalog on **`iptv-tunerr index`** (LP-002). `IPTV_TUNERR_HDHR_LINEUP_ID_PREFIX` (default `hdhr`) prefixes generated `channel_id`s.
 - `IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX` — optional string appended to provider `xmltv.php` as `&…` (e.g. panel-specific query params). **Not** part of stock Xtream; only use if your provider documents extra parameters.
 - `IPTV_TUNERR_HDHR_GUIDE_URL` — optional http(s) URL to a **physical HDHomeRun-style** `guide.xml` (e.g. `http://192.168.1.50/guide.xml`). Merged **after** provider + external gap-fill; see [ADR 0004](../adr/0004-hdhr-guide-epg-merge.md).

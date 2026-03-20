@@ -100,6 +100,10 @@ type Config struct {
 	SmoketestCacheTTL  time.Duration // how long a probe result is considered fresh (default 4h)
 	// XMLTV cache: cache the external XMLTV feed to avoid hammering the upstream on every /guide.xml request.
 	XMLTVCacheTTL time.Duration // 0 = use default 10m
+	// Web UI: dedicated dashboard listener on a separate port that proxies the tuner API.
+	WebUIEnabled  bool
+	WebUIPort     int
+	WebUIAllowLAN bool
 	// HDHomeRun network mode: native HDHomeRun protocol (UDP+TCP) instead of HTTP-only.
 	HDHREnabled      bool
 	HDHRDeviceID     uint32
@@ -121,6 +125,16 @@ type Config struct {
 	ProviderEPGEnabled  bool
 	ProviderEPGTimeout  time.Duration
 	ProviderEPGCacheTTL time.Duration
+	// ProviderEPGDiskCachePath: optional file path; stores last xmltv.php body and uses If-None-Match / If-Modified-Since when supported.
+	ProviderEPGDiskCachePath string
+	// ProviderEPGIncremental enables tokenized suffix rendering with EPG horizon window.
+	ProviderEPGIncremental bool
+	// ProviderEPGLookaheadHours controls incremental window end offset from now.
+	ProviderEPGLookaheadHours int
+	// ProviderEPGBackfillHours controls incremental window start before known max stop.
+	ProviderEPGBackfillHours int
+	// EpgSQLiteIncrementalUpsert enables non-truncate XMLTV sync mode.
+	EpgSQLiteIncrementalUpsert bool
 
 	// Free public sources: supplement or enrich the paid catalog with public M3U feeds
 	// (e.g. iptv-org/iptv). No credentials required. Never redistributed — fetched at index time.
@@ -180,6 +194,7 @@ func Load() *Config {
 		EpgSQLiteRetainPastHours:    getEnvInt("IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS", 0),
 		EpgSQLiteVacuumAfterPrune:   getEnvBool("IPTV_TUNERR_EPG_SQLITE_VACUUM", false),
 		EpgSQLiteMaxBytes:           epgMaxBytesFromEnv(),
+		EpgSQLiteIncrementalUpsert:  getEnvBool("IPTV_TUNERR_EPG_SQLITE_INCREMENTAL_UPSERT", false),
 		HDHRLineupMergeURL:          getEnvURL("IPTV_TUNERR_HDHR_LINEUP_URL"),
 		HDHRLineupIDPrefix:          getEnv("IPTV_TUNERR_HDHR_LINEUP_ID_PREFIX", "hdhr"),
 		ProviderEPGURLSuffix:        strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX")),
@@ -196,6 +211,9 @@ func Load() *Config {
 		SmoketestCacheFile:          os.Getenv("IPTV_TUNERR_SMOKETEST_CACHE_FILE"),
 		SmoketestCacheTTL:           getEnvDuration("IPTV_TUNERR_SMOKETEST_CACHE_TTL", 4*time.Hour),
 		XMLTVCacheTTL:               getEnvDuration("IPTV_TUNERR_XMLTV_CACHE_TTL", 10*time.Minute),
+		WebUIEnabled:                !getEnvBool("IPTV_TUNERR_WEBUI_DISABLED", false),
+		WebUIPort:                   getEnvInt("IPTV_TUNERR_WEBUI_PORT", 48879),
+		WebUIAllowLAN:               getEnvBool("IPTV_TUNERR_WEBUI_ALLOW_LAN", getEnvBool("IPTV_TUNERR_UI_ALLOW_LAN", false)),
 		HDHREnabled:                 getEnvBool("IPTV_TUNERR_HDHR_NETWORK_MODE", false),
 		HDHRDeviceID:                getEnvUint32("IPTV_TUNERR_HDHR_DEVICE_ID", 0x12345678),
 		HDHRTunerCount:              getEnvInt("IPTV_TUNERR_HDHR_TUNER_COUNT", 2),
@@ -209,6 +227,10 @@ func Load() *Config {
 		ProviderEPGEnabled:          getEnvBool("IPTV_TUNERR_PROVIDER_EPG_ENABLED", true),
 		ProviderEPGTimeout:          getEnvDuration("IPTV_TUNERR_PROVIDER_EPG_TIMEOUT", 90*time.Second),
 		ProviderEPGCacheTTL:         getEnvDuration("IPTV_TUNERR_PROVIDER_EPG_CACHE_TTL", 10*time.Minute),
+		ProviderEPGDiskCachePath:    strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_EPG_DISK_CACHE")),
+		ProviderEPGIncremental:      getEnvBool("IPTV_TUNERR_PROVIDER_EPG_INCREMENTAL", false),
+		ProviderEPGLookaheadHours:   getEnvInt("IPTV_TUNERR_PROVIDER_EPG_LOOKAHEAD_HOURS", 72),
+		ProviderEPGBackfillHours:    getEnvInt("IPTV_TUNERR_PROVIDER_EPG_BACKFILL_HOURS", 6),
 		FreeSources:                 getEnvCSV("IPTV_TUNERR_FREE_SOURCES"),
 		FreeSourceMode:              getEnvFreeSourceMode("IPTV_TUNERR_FREE_SOURCE_MODE", "supplement"),
 		FreeSourceSmoketest:         getEnvBool("IPTV_TUNERR_FREE_SOURCE_SMOKETEST", false),
@@ -235,6 +257,9 @@ func Load() *Config {
 	}
 	if c.XMLTVTimeout <= 0 {
 		c.XMLTVTimeout = 45 * time.Second
+	}
+	if c.WebUIPort <= 0 {
+		c.WebUIPort = 48879
 	}
 	// Subscription file fallback (same pattern as k3s update-iptv-m3u.sh / iptv.subscription.2026.txt)
 	if c.ProviderUser == "" || c.ProviderPass == "" {

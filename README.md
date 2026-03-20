@@ -119,7 +119,7 @@ Three ways to add IPTV Tunerr to Plex, Emby, or Jellyfin — pick the one that f
 > Then: Dashboard → Live TV → + (guide) → XMLTV
 > Guide URL: `http://<this-host>:5004/guide.xml`
 
-Optional local operator UI: `http://127.0.0.1:5004/ui/` (links to health / JSON reports) and **`/ui/guide/`** (read-only merged guide preview from cache) — localhost-only unless `IPTV_TUNERR_UI_ALLOW_LAN=1`
+Dedicated web UI: `http://127.0.0.1:48879/` by default (`0xBEEF`) with integrated health, guide, channel, recorder, provider, debug, and runtime-settings views. It stays localhost-only unless `IPTV_TUNERR_WEBUI_ALLOW_LAN=1`. The older lightweight operator pages still exist at `http://127.0.0.1:5004/ui/` and `/ui/guide/`.
 
 **Programmatic (all servers, headless):**
 ```bash
@@ -999,6 +999,7 @@ Full reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-a
 | `IPTV_TUNERR_PROVIDER_EPG_ENABLED` | Fetch EPG from provider `xmltv.php` (default `true`) |
 | `IPTV_TUNERR_PROVIDER_EPG_TIMEOUT` | Provider EPG fetch timeout (default `90s`) |
 | `IPTV_TUNERR_PROVIDER_EPG_CACHE_TTL` | Provider EPG refresh interval (default `10m`) |
+| `IPTV_TUNERR_PROVIDER_EPG_DISK_CACHE` | Optional path: cache provider `xmltv.php` on disk + conditional HTTP when supported |
 | `IPTV_TUNERR_XMLTV_URL` | External XMLTV source — gap-fills provider EPG |
 | `IPTV_TUNERR_XMLTV_CACHE_TTL` | External XMLTV refresh interval (default `10m`) |
 | `IPTV_TUNERR_EPG_PRUNE_UNLINKED` | Exclude unlinked channels from guide and lineup |

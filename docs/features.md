@@ -50,7 +50,8 @@ See also:
 | **Physical HDHomeRun client (spike)** | `hdhr-scan` discovers real tuners on the LAN (UDP) or fetches `discover.json` / `lineup.json` via HTTP; catalog merge is **not** automatic — see [ADR 0002](adr/0002-hdhr-hardware-iptv-merge.md). |
 | **HDHR `guide.xml`** | `hdhr-scan -guide-xml` probes device XMLTV (counts). **`IPTV_TUNERR_HDHR_GUIDE_URL`** merges that feed into `/guide.xml` when `tvg-id` values match ([ADR 0004](adr/0004-hdhr-guide-epg-merge.md)). |
 | **HDHR `lineup.json` → catalog** | **`IPTV_TUNERR_HDHR_LINEUP_URL`** merges hardware channels during **`iptv-tunerr index`** ([how-to](how-to/hybrid-hdhr-iptv.md)). |
-| **Operator `/ui/` shell** | Embedded static pages on `serve`/`run`: home (`/ui/`) links to health and JSON reports; **`/ui/guide/`** shows a read-only preview of the merged cached guide; localhost-only unless `IPTV_TUNERR_UI_ALLOW_LAN=1`. |
+| **Dedicated web UI (`:48879` / `0xBEEF`)** | Separate operator dashboard on `serve`/`run` with a single-origin proxy over tuner JSON/debug endpoints plus a runtime-settings snapshot (`/debug/runtime.json`). Default: `http://127.0.0.1:48879/`; localhost-only unless `IPTV_TUNERR_WEBUI_ALLOW_LAN=1`. |
+| **Legacy `/ui/` shell** | Embedded lightweight pages remain on the tuner port: home (`/ui/`) links to health and JSON reports; **`/ui/guide/`** shows a read-only preview of the merged cached guide; localhost-only unless `IPTV_TUNERR_UI_ALLOW_LAN=1`. |
 
 ## 4. Stream gateway and transcoding
 
@@ -67,7 +68,7 @@ See also:
 
 The guide pipeline merges three sources in priority order per channel: provider XMLTV > external XMLTV > placeholder. External gap-fills provider. Cache is pre-warmed at startup; stale data served on fetch error.
 
-Optional **SQLite EPG file** (`IPTV_TUNERR_EPG_SQLITE_PATH`) stores merged guide rows after each refresh, exposes max programme end times for incremental fetch windows, and `/guide/epg-store.json` for inspection ([ADR 0003](adr/0003-epg-sqlite-vs-postgres.md)). Optional **`IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS`** drops older programmes from the SQLite file after each sync; optional **`IPTV_TUNERR_EPG_SQLITE_VACUUM`** runs `VACUUM` after such pruning; optional **`IPTV_TUNERR_EPG_SQLITE_MAX_BYTES`** / **`IPTV_TUNERR_EPG_SQLITE_MAX_MB`** cap on-disk file size after sync. **`IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX`** can append query params to provider `xmltv.php` when your panel documents them.
+Optional **SQLite EPG file** (`IPTV_TUNERR_EPG_SQLITE_PATH`) stores merged guide rows after each refresh, exposes max programme end times for incremental fetch windows, and `/guide/epg-store.json` for inspection ([ADR 0003](adr/0003-epg-sqlite-vs-postgres.md)). Optional **`IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS`** drops older programmes from the SQLite file after each sync; optional **`IPTV_TUNERR_EPG_SQLITE_VACUUM`** runs `VACUUM` after such pruning; optional **`IPTV_TUNERR_EPG_SQLITE_MAX_BYTES`** / **`IPTV_TUNERR_EPG_SQLITE_MAX_MB`** cap on-disk file size after sync. **`IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX`** can append query params to provider `xmltv.php` when your panel documents them. Optional **`IPTV_TUNERR_PROVIDER_EPG_DISK_CACHE`** stores the last provider `xmltv.php` download and uses HTTP conditional GET (`If-None-Match` / `If-Modified-Since`) when the upstream sends **`ETag`** / **`Last-Modified`** — **HTTP 304** skips re-download (many panels omit validators; then each refresh still pulls the full feed).
 
 | Feature | Description |
 |---------|-------------|

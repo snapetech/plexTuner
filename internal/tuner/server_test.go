@@ -438,6 +438,33 @@ func TestServer_epgStoreReport_fileStatsAndVacuumFlag(t *testing.T) {
 	}
 }
 
+func TestServer_runtimeSnapshot(t *testing.T) {
+	s := &Server{
+		RuntimeSnapshot: &RuntimeSnapshot{
+			GeneratedAt:   "2026-03-19T12:00:00Z",
+			Version:       "test",
+			ListenAddress: ":5004",
+			BaseURL:       "http://127.0.0.1:5004",
+			WebUI: map[string]interface{}{
+				"port": 48879,
+			},
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/debug/runtime.json", nil)
+	w := httptest.NewRecorder()
+	s.serveRuntimeSnapshot().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body RuntimeSnapshot
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body.Version != "test" || body.BaseURL != "http://127.0.0.1:5004" {
+		t.Fatalf("unexpected %+v", body)
+	}
+}
+
 func TestServer_operatorGuidePreview_forbiddenNonLoopback(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
 	s := &Server{

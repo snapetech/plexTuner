@@ -122,3 +122,38 @@ func TestSyncMergedGuideXML_roundTrip(t *testing.T) {
 		t.Fatalf("last sync: %q err=%v", ls, err)
 	}
 }
+
+func TestSyncMergedGuideXMLUpsert_preservesOutsideWindow(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "u.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	first := `<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="c1"><display-name>One</display-name></channel>
+  <programme start="20260319100000 +0000" stop="20260319110000 +0000" channel="c1"><title>A</title></programme>
+  <programme start="20260319120000 +0000" stop="20260319130000 +0000" channel="c1"><title>B</title></programme>
+</tv>`
+	if _, err := s.SyncMergedGuideXML([]byte(first), 0); err != nil {
+		t.Fatal(err)
+	}
+	second := `<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="c1"><display-name>One</display-name></channel>
+  <programme start="20260319120000 +0000" stop="20260319130000 +0000" channel="c1"><title>B2</title></programme>
+</tv>`
+	if _, err := s.SyncMergedGuideXMLUpsert([]byte(second), 0); err != nil {
+		t.Fatal(err)
+	}
+	p, _, err := s.RowCounts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p != 2 {
+		t.Fatalf("programmes=%d want 2", p)
+	}
+}

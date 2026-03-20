@@ -1,46 +1,41 @@
-// Package webui serves the operator web dashboard on a dedicated port (default 48879 = 0xBEEF).
-// It proxies all /api/* requests to the main tuner server so the SPA never needs to know
-// the tuner's port — the webui server is the single origin.
+// Package webui serves the operator dashboard on a dedicated port (default 48879 = 0xBEEF).
+// It proxies all /api/* requests to the main tuner server so the browser only needs one origin.
 package webui
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
+	"html/template"
 	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
-	"text/template"
 	"time"
 )
 
-// DefaultPort is 0xBEEF — five digits, spells something, easy to remember.
+// DefaultPort is 0xBEEF in decimal.
 const DefaultPort = 48879
 
 //go:embed index.html
 var indexHTML string
 
-// Server is the web UI HTTP server.
+// Server is the dedicated web dashboard HTTP server.
 type Server struct {
-	// Port to listen on (default DefaultPort).
-	Port int
-	// TunerAddr is the listen address of the main tuner server, e.g. ":5004" or "0.0.0.0:5004".
-	// The proxy target is derived as http://127.0.0.1:<port>.
+	Port      int
 	TunerAddr string
-	// Version string injected into the UI.
-	Version string
-	// AllowLAN: if false (default), restrict to loopback only.
-	AllowLAN bool
+	Version   string
+	AllowLAN  bool
 
 	tunerBase string
 	tmpl      *template.Template
 }
 
-// New constructs a Server. tunerAddr is the main tuner's listen address (e.g. ":5004").
+// New constructs a dedicated dashboard server.
 func New(port int, tunerAddr, version string, allowLAN bool) *Server {
-	if port == 0 {
+	if port <= 0 {
 		port = DefaultPort
 	}
 	return &Server{
@@ -51,77 +46,123 @@ func New(port int, tunerAddr, version string, allowLAN bool) *Server {
 	}
 }
 
-// Start begins listening. Blocks until error. Call in a goroutine.
-func (s *Server) Start() error {
+// Run starts the dashboard server and shuts it down with ctx.
+func (s *Server) Run(ctx context.Context) error {
 	s.tunerBase = proxyBase(s.TunerAddr)
-	s.tmpl = template.Must(template.New("ui").Delims("[[", "]]").Parse(indexHTML))
+	s.tmpl = template.Must(template.New("webui").Delims("[[", "]]").Parse(indexHTML))
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/", s.proxy)
+	mux.HandleFunc("/api", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/api/", http.StatusSeeOther)
+	})
 	mux.HandleFunc("/", s.index)
 
-	var handler http.Handler = mux
+	handler := http.Handler(mux)
 	if !s.AllowLAN {
 		handler = localhostOnly(mux)
 	}
 
 	srv := &http.Server{
-		Addr:        fmt.Sprintf(":%d", s.Port),
-		Handler:     handler,
-		ReadTimeout: 60 * time.Second,
+		Addr:              fmt.Sprintf(":%d", s.Port),
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	log.Printf("webui: http://127.0.0.1:%d  (0xBEEF)  proxying→%s", s.Port, s.tunerBase)
-	return srv.ListenAndServe()
+	serverErr := make(chan error, 1)
+	go func() {
+		log.Printf("webui: http://127.0.0.1:%d (0xBEEF) proxying -> %s", s.Port, s.tunerBase)
+		serverErr <- srv.ListenAndServe()
+	}()
+
+	select {
+	case err := <-serverErr:
+		if err != nil && err != http.ErrServerClosed {
+			return err
+		}
+		return nil
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("webui shutdown: %v", err)
+		}
+		<-serverErr
+		return nil
+	}
 }
 
-// proxy reverse-proxies /api/<path> → <tunerBase>/<path>.
 func (s *Server) proxy(w http.ResponseWriter, r *http.Request) {
-	base, _ := url.Parse(s.tunerBase)
-	rp := httputil.NewSingleHostReverseProxy(base)
-	// Strip the /api prefix before forwarding.
-	r.URL.Path = strings.TrimPrefix(r.URL.Path, "/api")
-	if r.URL.Path == "" {
-		r.URL.Path = "/"
+	base, err := url.Parse(s.tunerBase)
+	if err != nil {
+		http.Error(w, `{"error":"invalid tuner base"}`, http.StatusInternalServerError)
+		return
 	}
-	r.Host = base.Host
-	// Suppress X-Forwarded-For noise in tuner logs.
-	r.Header.Del("X-Forwarded-For")
-	rp.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		http.Error(w, `{"error":"tuner unreachable"}`, http.StatusBadGateway)
+	rp := httputil.NewSingleHostReverseProxy(base)
+	origDirector := rp.Director
+	rp.Director = func(req *http.Request) {
+		origDirector(req)
+		req.URL.Path = strings.TrimPrefix(r.URL.Path, "/api")
+		if req.URL.Path == "" {
+			req.URL.Path = "/"
+		}
+		req.URL.RawPath = req.URL.Path
+		req.Host = base.Host
+		req.Header.Del("X-Forwarded-For")
+	}
+	rp.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{"error":"tuner unreachable"}`))
 	}
 	rp.ServeHTTP(w, r)
 }
 
-// index serves the SPA for all non-/api/ paths.
 func (s *Server) index(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Cache-Control", "no-store")
 	if err := s.tmpl.Execute(w, map[string]interface{}{
-		"Version":   s.Version,
+		"Version":   fallbackVersion(s.Version),
 		"Port":      s.Port,
 		"TunerBase": s.tunerBase,
+		"Now":       time.Now().UTC().Format(time.RFC3339),
 	}); err != nil {
-		log.Printf("webui: template error: %v", err)
+		log.Printf("webui template: %v", err)
 	}
 }
 
-// proxyBase converts a listen address like ":5004" or "0.0.0.0:5004" into
-// "http://127.0.0.1:5004" suitable as a reverse proxy target.
+func fallbackVersion(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return "dev"
+	}
+	return v
+}
+
 func proxyBase(addr string) string {
-	_, port, err := net.SplitHostPort(addr)
+	host, port, err := net.SplitHostPort(addr)
 	if err != nil || port == "" {
 		port = "5004"
 	}
-	return "http://127.0.0.1:" + port
+	host = strings.TrimSpace(host)
+	if host == "" || host == "0.0.0.0" || host == "::" || host == "[::]" {
+		host = "127.0.0.1"
+	}
+	if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
+		host = "[" + host + "]"
+	}
+	return "http://" + host + ":" + port
 }
 
-// localhostOnly wraps h to reject non-loopback clients.
 func localhostOnly(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host, _, err := net.SplitHostPort(r.RemoteAddr)
 		if err != nil || !isLoopback(host) {
-			http.Error(w, "forbidden: webui is localhost-only (set IPTV_TUNERR_UI_ALLOW_LAN=1)", http.StatusForbidden)
+			http.Error(w, "forbidden: webui is localhost-only (set IPTV_TUNERR_WEBUI_ALLOW_LAN=1)", http.StatusForbidden)
 			return
 		}
 		h.ServeHTTP(w, r)
@@ -129,6 +170,6 @@ func localhostOnly(h http.Handler) http.Handler {
 }
 
 func isLoopback(host string) bool {
-	ip := net.ParseIP(host)
+	ip := net.ParseIP(strings.TrimSpace(host))
 	return ip != nil && ip.IsLoopback()
 }

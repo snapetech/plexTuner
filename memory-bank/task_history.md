@@ -23,6 +23,36 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Provider incremental suffix tokens, SQLite upsert mode, native HLS mux proxy
+  Summary:
+    - Provider EPG: `IPTV_TUNERR_PROVIDER_EPG_INCREMENTAL` + suffix tokens `{from_unix}`/`{to_unix}`/`{from_ymd}`/`{to_ymd}` using SQLite horizon.
+    - SQLite: `SyncMergedGuideXMLUpsert` and env `IPTV_TUNERR_EPG_SQLITE_INCREMENTAL_UPSERT` for overlap-window upsert sync.
+    - Gateway: `?mux=hls` serves rewritten HLS playlists and proxied segment/variant targets from Tunerr (`/stream/<id>?mux=hls&seg=...`).
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Provider window params remain panel-specific; token rendering only shapes suffix strings.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/epg_pipeline.go`, `internal/epgstore/sync.go`, `internal/tuner/gateway_hls.go`
+
+- Date: 2026-03-19
+  Title: Provider EPG conditional HTTP + disk cache (`IPTV_TUNERR_PROVIDER_EPG_DISK_CACHE`)
+  Summary:
+    - `parseXMLTVProgrammes`, `fetchProviderXMLTVConditional`: optional file path + `*.meta.json` for ETag/Last-Modified; HTTP 304 parses cached body.
+    - Config / `Server` / `XMLTV` wiring; test `TestFetchProviderXMLTV_conditionalDiskCache`.
+    - Docs: CHANGELOG, cli-and-env-reference, features, README, `.env.example`; opportunities updated.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Many Xtream panels omit validators — full download each refresh unless upstream supports 304.
+  Opportunities filed:
+    - Updated existing “incremental XMLTV” entry (partial mitigation)
+  Links:
+    - `internal/tuner/epg_pipeline.go`, `internal/config/config.go`
+
+- Date: 2026-03-19
   Title: Lineup parity — LP-002 lineup merge, LP-009 max bytes, fMP4 mux, LP-012 how-to
   Summary:
     - Index: `IPTV_TUNERR_HDHR_LINEUP_URL` / `HDHR_LINEUP_ID_PREFIX`, `hdhomerun.LiveChannelsFromLineupDoc`, `mergeHDHRCatalogChannels`.
@@ -2598,3 +2628,18 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - Added regression tests for interrupted partial-recording annotation and retry-within-window behavior, then updated docs/changelog/features to describe the restart semantics honestly.
   Verification:
     - `go test -count=1 ./internal/tuner ./cmd/iptv-tunerr`
+
+---
+
+- Date: 2026-03-19
+  Title: Ship dedicated integrated web UI on port 48879
+  Summary:
+    - Replaced the unfinished `internal/webui` placeholder with a real operator dashboard served on port `48879` (`0xBEEF`) by default, using a single-origin `/api/*` reverse proxy over the main tuner server.
+    - Pushed the dashboard beyond a flat dev panel into a structured control-plane UI with explicit mode navigation (overview / guide / routing / ops / settings), clearer hierarchy, richer cards, quick-route affordances, endpoint indexing, and modal raw-payload drill-down.
+    - Added a new read-only runtime/settings surface at `/debug/runtime.json` so the dashboard can show effective tuner, guide, provider, recorder, HDHR, media-server, and web UI configuration without exposing secrets.
+    - Wired the dedicated dashboard into `serve` and `run`, added `IPTV_TUNERR_WEBUI_DISABLED`, `IPTV_TUNERR_WEBUI_PORT`, and `IPTV_TUNERR_WEBUI_ALLOW_LAN`, and kept the older `/ui/` pages on the tuner port for backward compatibility.
+    - Updated README, feature/changelog/env/CLI reference docs, plus repo navigation entries for the new operator surface.
+  Verification:
+    - `go test ./internal/webui ./internal/config ./cmd/iptv-tunerr ./internal/tuner -run 'TestProxyBase|TestProxyForwardsAPIPath|TestServer_runtimeSnapshot|TestServer_operatorGuidePreviewJSON|TestServer_epgStoreReport_disabled|TestServer_epgStoreReport_fileStatsAndVacuumFlag|TestWebUIConfig'`
+    - `go test ./...`
+    - `./scripts/verify`

@@ -161,6 +161,26 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.appendStreamAttempt(attempt.finish(finalStatus, finalMode, finalErr, finalEffectiveURL))
 	}()
 	urls = g.reorderStreamURLs(channel, clientClass, urls)
+	requestMux := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mux")))
+	if requestMux == "hls" {
+		target := strings.TrimSpace(r.URL.Query().Get("seg"))
+		if target != "" {
+			client := g.Client
+			if client == nil {
+				client = httpclient.ForStreaming()
+			}
+			if err := g.serveHLSMuxTarget(w, r, client, channelID, target); err != nil {
+				finalStatus = "hls_mux_target_failed"
+				finalErr = err
+				http.Error(w, "HLS mux target failed", http.StatusBadGateway)
+				return
+			}
+			finalStatus = "ok"
+			finalMode = "hls_mux_target"
+			finalEffectiveURL = target
+			return
+		}
+	}
 
 	g.mu.Lock()
 	limit := g.effectiveTunerLimitLocked()
@@ -340,12 +360,23 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				channel.GuideName, channelID, len(body), firstSeg, time.Since(start).Round(time.Millisecond), mode, bufDesc)
 			log.Printf("gateway: channel=%q id=%s hls-mode transcode=%t mode=%q guide=%q tvg=%q", channel.GuideName, channelID, transcode, g.StreamTranscodeMode, channel.GuideNumber, channel.TVGID)
 			hotStart := g.hotStartConfig(channel, clientClass)
-			outputMux := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mux")))
-			if outputMux != streamMuxFMP4 {
+			outputMux := requestMux
+			if outputMux != streamMuxFMP4 && outputMux != "hls" {
 				outputMux = streamMuxMPEGTS
 			}
 			if outputMux == streamMuxFMP4 && !transcode {
 				outputMux = streamMuxMPEGTS
+			}
+			if outputMux == "hls" {
+				out := rewriteHLSPlaylistToGatewayProxy(body, effectiveURL, channelID)
+				w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+				w.Header().Set("Cache-Control", "no-store")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(out)
+				finalStatus = "ok"
+				finalMode = "hls_native_mux"
+				finalEffectiveURL = effectiveURL
+				return
 			}
 			if !g.DisableFFmpeg {
 				if ffmpegPath, ffmpegErr := resolveFFmpegPath(); ffmpegErr == nil {

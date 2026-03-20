@@ -19,6 +19,7 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/hdhomerun"
 	"github.com/snapetech/iptvtunerr/internal/health"
 	"github.com/snapetech/iptvtunerr/internal/tuner"
+	"github.com/snapetech/iptvtunerr/internal/webui"
 )
 
 // maybeOpenEpgStore opens the optional on-disk EPG SQLite file (LP-007/008). Returns (nil, nil, nil) when disabled.
@@ -37,6 +38,18 @@ func maybeOpenEpgStore(cfg *config.Config) (*epgstore.Store, func(), error) {
 			log.Printf("EPG SQLite close: %v", err)
 		}
 	}, nil
+}
+
+func startDedicatedWebUI(ctx context.Context, cfg *config.Config, tunerAddr string) {
+	if cfg == nil || !cfg.WebUIEnabled {
+		return
+	}
+	ui := webui.New(cfg.WebUIPort, tunerAddr, Version, cfg.WebUIAllowLAN)
+	go func() {
+		if err := ui.Run(ctx); err != nil {
+			log.Printf("Web UI failed: %v", err)
+		}
+	}()
 }
 
 func handleServe(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendlyName, mode string) {
@@ -99,6 +112,8 @@ func handleServe(cfg *config.Config, catalogPath, addr, baseURL, deviceID, frien
 			log.Printf("HDHomeRun network mode enabled (UDP 65001 + TCP 65001)")
 		}
 	}
+
+	startDedicatedWebUI(ctx, cfg, addr)
 
 	if err := srv.Run(ctx); err != nil {
 		log.Printf("Serve failed: %v", err)
@@ -259,6 +274,7 @@ func handleRun(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendl
 		return
 	}
 	registerRunMediaServers(runCtx, cfg, registrationLive, baseURL, registerEmby, registerJellyfin, embyStateFile, jellyfinStateFile, embyInterval, jellyfinInterval)
+	startDedicatedWebUI(runCtx, cfg, addr)
 
 	if err := srv.Run(runCtx); err != nil {
 		log.Printf("Tuner failed: %v", err)

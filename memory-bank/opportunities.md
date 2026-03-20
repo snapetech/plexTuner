@@ -25,10 +25,10 @@ It exists to encourage quality gains without derailing the current task.
 - Date: 2026-03-19
   Category: performance
   Title: Provider incremental XMLTV fetch (avoid full xmltv.php each refresh)
-  Context: `fetchProviderXMLTV` in `internal/tuner/epg_pipeline.go` pulls the whole provider XMLTV; SQLite `GlobalMaxStopUnix` could bound a smaller window **if** the provider supports date-range parameters (non-standard; panel-specific).
+  Context: `fetchProviderXMLTV` in `internal/tuner/epg_pipeline.go` pulls the whole provider XMLTV when HTTP conditional GET cannot short-circuit; SQLite `GlobalMaxStopUnix` could bound a smaller window **if** the provider supports date-range parameters (non-standard; panel-specific).
   Why it matters: Large provider guides waste bandwidth/CPU on every cache tick.
   Evidence: Epic PR-6 notes “incremental-only ingest” as future; Tunerr SQLite sync remains full replace per refresh.
-  Suggested fix: Document provider capabilities first; optional env to append window params via existing `IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX` patterns; consider partial merge instead of DELETE-all in `SyncMergedGuideXML` only if product requires it.
+  Suggested fix: **`IPTV_TUNERR_PROVIDER_EPG_DISK_CACHE`** (2026-03-19) implements on-disk body + **`If-None-Match`** / **`If-Modified-Since`** when upstream sends validators. Still need panel-specific window params via **`IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX`** where documented; consider partial merge instead of DELETE-all in `SyncMergedGuideXML` only if product requires it.
   Risk/Scope: high | fits current scope? no
   User decision needed?: yes (provider contract / compatibility)
 

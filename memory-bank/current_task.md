@@ -2,7 +2,7 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Latest (2026-03-19):** **Lineup parity sweep** — LP-002 **`IPTV_TUNERR_HDHR_LINEUP_URL`**; LP-009 **max SQLite bytes**; LP-010/011 **`?mux=fmp4`** + `buildFFmpegStreamOutputArgs`; LP-012 [docs/how-to/hybrid-hdhr-iptv.md](../docs/how-to/hybrid-hdhr-iptv.md). **Next:** optional provider-side incremental `xmltv.php` fetch; Tunerr-native **HLS segmenter** only if product asks.
+**Latest (2026-03-19):** Integrated web UI slice landed and verification is green: dedicated dashboard listener on **port `48879` (`0xBEEF`)** via `internal/webui/`, single-origin `/api/*` proxy over tuner JSON/debug endpoints, new read-only runtime/settings snapshot at **`/debug/runtime.json`**, and full repo verification now passing again (`go test ./...` and `./scripts/verify`). Existing lightweight `/ui/` pages remain on the tuner port for backward compatibility.
 
 **Goal:** Start the new Live TV Intelligence product track: map the multi-PR roadmap, then ship the first visible foundation feature so IPTV Tunerr feels like an intelligent control plane instead of only a tuner bridge.
 

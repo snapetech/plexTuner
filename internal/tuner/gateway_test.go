@@ -69,6 +69,18 @@ func TestGateway_stream_primaryThenBackup(t *testing.T) {
 	}
 }
 
+func TestRewriteHLSPlaylistToGatewayProxy(t *testing.T) {
+	in := []byte("#EXTM3U\n#EXTINF:4,\nseg-1.ts\n")
+	out := rewriteHLSPlaylistToGatewayProxy(in, "http://up.example/live/index.m3u8", "abc")
+	s := string(out)
+	if !strings.Contains(s, "/stream/abc?mux=hls&seg=") {
+		t.Fatalf("missing gateway proxy url: %q", s)
+	}
+	if !strings.Contains(s, "http%3A%2F%2Fup.example%2Flive%2Fseg-1.ts") {
+		t.Fatalf("missing escaped target url: %q", s)
+	}
+}
+
 func TestGateway_stream_invalidHLSPlaylistFallsBackToBackup(t *testing.T) {
 	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
