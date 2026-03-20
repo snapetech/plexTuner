@@ -23,6 +23,38 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Mux toolkit — SegmentTimeline <S></S>, UTF-8 BOM strip on mux rewrite
+  Summary:
+    - **`reSegmentTimelineS`:** alternation for **`<S …/>`** and empty **`<S …></S>`**.
+    - **`stripLeadingUTF8BOM`** (**`gateway_support.go`**) at start of **`rewriteHLSPlaylistToGatewayProxy`** and **`rewriteDASHManifestToGatewayProxy`**.
+    - Tests: paired-**S** expand, BOM HLS/DASH rewrite.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - **`<S>`** with non-whitespace child content still unsupported (backlog).
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway_dash_expand.go`, `gateway_support.go`, `gateway_hls.go`, `gateway_dash.go`
+
+- Date: 2026-03-19
+  Title: Mux toolkit — DASH quotes, template % width, SegmentTimeline expand, HLS URI='
+  Summary:
+    - **DASH rewrite:** **`dashAttrURL`** matches **single- or double-quoted** **`media=`** / **`initialization=`** / **`sourceURL`** / **`url`** / **`segmentURL`**; output normalizes to double quotes.
+    - **`dashSegQueryEscape`:** restores **`$Number%2505d$` → `$Number%05d$`** (and **`$Time…`**) after **`url.QueryEscape`**.
+    - **Expand:** **`reSegmentTemplatePaired`**; **`SegmentTimeline`** + **`$Time$`** / **`$Number$`**; **`$Number%0Nd$`**; skip self-closing templates nested inside a paired template (**`dashSpanInsideAny`**).
+    - **HLS:** **`hlsQuotedURIAttrSingle`** + **`rewriteHLSQuotedURIAttrs`**; **`URI='`** gate on **`#`** lines.
+    - **Tests/docs:** **`gateway_test`**, **`gateway_dash_expand_test`**, fuzz seed; toolkit / LL-HLS / how-to / CLI env / CHANGELOG.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - **`<S …></S>`** (non–self-closing) timeline elements not parsed yet — listed in toolkit backlog.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway_dash.go`, `gateway_dash_expand.go`, `gateway_hls.go`
+
+- Date: 2026-03-19
   Title: Mux toolkit follow-up — runtime.json echo, fuzz seeds, how-to + repo_map
   Summary:
     - **`buildRuntimeSnapshot`**: **`tuner.hls_mux_dash_expand_segment_template`**, **`tuner.hls_mux_dash_expand_max_segments`** (raw env strings).
@@ -3016,3 +3048,18 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - `node --check internal/webui/deck.js`
     - `GOFLAGS=-mod=mod go test ./internal/webui`
     - `GOFLAGS=-mod=mod go test ./cmd/iptv-tunerr ./internal/tuner`
+
+---
+
+- Date: 2026-03-19
+  Title: Teach the stream compare harness to capture reusable HLS and DASH samples
+  Summary:
+    - Extended `scripts/stream-compare-harness.sh` so each curl artifact can also emit `manifest.json` when the body looks like HLS or DASH, instead of leaving operators with only raw body previews and packet captures.
+    - Added `scripts/stream-compare-manifest.py` to inventory URI-bearing references, decode Tunerr `?mux=...&seg=` targets into redacted upstream URLs, and turn failing provider manifests into reusable analysis artifacts.
+    - Updated `scripts/stream-compare-report.py`, the troubleshooting runbook, and `memory-bank/commands.yml` so the new manifest capture path is visible in summaries and operator docs.
+  Verification:
+    - `bash -n scripts/stream-compare-harness.sh`
+    - `python3 -m py_compile scripts/stream-compare-report.py scripts/stream-compare-manifest.py`
+    - `python3 scripts/stream-compare-manifest.py --body <synthetic.m3u8> --meta <meta.json> --curl-meta <curl.meta.json> --out <manifest.json>`
+    - `python3 scripts/stream-compare-manifest.py --body <synthetic.mpd> --meta <meta.json> --curl-meta <curl.meta.json> --out <manifest.json>`
+    - `python3 scripts/stream-compare-report.py --dir <synthetic-run-dir>`

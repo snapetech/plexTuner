@@ -39,6 +39,8 @@ FFPLAY_NODISP="${FFPLAY_NODISP:-true}"
 FFPLAY_AUTOEXIT="${FFPLAY_AUTOEXIT:-true}"
 FFPLAY_INFBUF="${FFPLAY_INFBUF:-false}"
 FETCH_TUNERR_ATTEMPTS="${FETCH_TUNERR_ATTEMPTS:-true}"
+ANALYZE_MANIFESTS="${ANALYZE_MANIFESTS:-true}"
+MANIFEST_REF_LIMIT="${MANIFEST_REF_LIMIT:-40}"
 
 PIDS=()
 TCPDUMP_PID=""
@@ -286,6 +288,21 @@ payload = {
     "size_download": lines[2] if len(lines) > 2 else "",
     "url_effective": lines[3] if len(lines) > 3 else "",
 }
+
+analyze_manifest_artifact() {
+  local label="$1"
+  local artifact_dir="$OUT_DIR/$label"
+  [[ "$ANALYZE_MANIFESTS" == "true" ]] || return 0
+  [[ -f "$artifact_dir/curl.body" ]] || return 0
+  [[ -f "$artifact_dir/curl.meta.json" ]] || return 0
+  [[ -f "$artifact_dir/meta.json" ]] || return 0
+  python3 "$ROOT/scripts/stream-compare-manifest.py" \
+    --body "$artifact_dir/curl.body" \
+    --meta "$artifact_dir/meta.json" \
+    --curl-meta "$artifact_dir/curl.meta.json" \
+    --out "$artifact_dir/manifest.json" \
+    --ref-limit "$MANIFEST_REF_LIMIT"
+}
 with open(sys.argv[3], "w", encoding="utf-8") as fh:
     json.dump(payload, fh, indent=2, sort_keys=True)
     fh.write("\n")
@@ -345,6 +362,7 @@ run_target() {
   if [[ "$USE_CURL" == "true" ]]; then
     log "[$label] curl $url"
     run_curl_probe "$label" "$url" "$artifact_dir/http.headers"
+    analyze_manifest_artifact "$label"
   fi
   if [[ "$USE_FFPROBE" == "true" ]]; then
     log "[$label] ffprobe $url"
@@ -376,14 +394,18 @@ write_summary() {
     echo "Artifacts:"
     echo "  direct/: curl, ffprobe, ffplay logs"
     echo "  tunerr/: curl, ffprobe, ffplay logs"
+    if [[ "$ANALYZE_MANIFESTS" == "true" ]]; then
+      echo "  */manifest.json: parsed M3U8/MPD references, including decoded Tunerr seg targets when present"
+    fi
     [[ -f "$OUT_DIR/compare.pcap" ]] && echo "  compare.pcap: open in Wireshark/tshark"
     echo "  report.txt / report.json: compact comparison summary"
     echo
     echo "Suggested next steps:"
     echo "  1) Compare direct/curl.meta.json vs tunerr/curl.meta.json"
     echo "  2) Compare direct/ffplay.stderr vs tunerr/ffplay.stderr"
-    echo "  3) If packet capture is enabled, open compare.pcap in Wireshark and filter on the direct or Tunerr host"
-    echo "  4) If Tunerr fails but direct succeeds, correlate with iptv-tunerr logs from the same wall-clock window"
+    echo "  3) Inspect */manifest.json when the body is HLS or DASH; it decodes Tunerr seg targets into redacted upstream URLs"
+    echo "  4) If packet capture is enabled, open compare.pcap in Wireshark and filter on the direct or Tunerr host"
+    echo "  5) If Tunerr fails but direct succeeds, correlate with iptv-tunerr logs from the same wall-clock window"
   } >"$summary"
 }
 

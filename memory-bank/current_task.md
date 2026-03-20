@@ -2,6 +2,12 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-19, harness sample capture):** Extend the existing stream-compare harness so it captures failing **M3U8/MPD** samples as reusable artifacts instead of only raw curl/ffplay logs. Current slice: detect manifest responses, persist normalized manifest analysis, decode Tunerr **`seg=`** URLs locally (and optionally via **`/ops/actions/mux-seg-decode`** when reachable), and document how operators can hand over one captured sample rather than describe the failure from memory. Keep this isolated to harness/report/docs files because another agent is actively editing the mux gateway internals.
+
+**Latest (2026-03-19, mux toolkit — continuation):** **`SegmentTimeline`** **`<S></S>`** (empty paired) + **UTF-8 BOM** strip on HLS/DASH rewrite (**`stripLeadingUTF8BOM`** in **`gateway_support.go`**). Docs/tests/CHANGELOG. **`./scripts/verify`** OK.
+
+**Latest (2026-03-19, mux toolkit — scope completion):** DASH **single-quoted** URL attrs; **`dashSegQueryEscape`** restores **`$Number%05d$`** / **`$Time%…$`**; **`SegmentTemplate`** expand: **paired** tags, **`SegmentTimeline`** + **`$Time$`**, **`$Number%0Nd$`**, skip nested self-close inside paired; HLS **`URI='...'`** rewrite. Docs + tests + fuzz. **`./scripts/verify`** OK.
+
 **Latest (2026-03-19, mux toolkit follow-up):** **`/debug/runtime.json`** echoes **`hls_mux_dash_expand_*`**; fuzz corpus seeds for merged **EXTINF/BYTERANGE** + **SegmentTemplate** MPD; **`hls-mux-proxy` how-to** + **`repo_map`** pointer to **`gateway_dash_expand.go`**. **`./scripts/verify`** OK.
 
 **Latest (2026-03-19, mux toolkit backlog):** **DASH** optional **`IPTV_TUNERR_HLS_MUX_DASH_EXPAND_SEGMENT_TEMPLATE`** expands uniform self-closing **`SegmentTemplate`** → **`SegmentList`** (**`gateway_dash_expand.go`**, wired in **`rewriteDASHManifestToGatewayProxy`**). **HLS** splits non-standard **`#EXTINF:...,BYTERANGE=...`** into **`#EXTINF`** + **`#EXT-X-BYTERANGE`**. Docs (toolkit, LL-HLS tags, CLI/env, **`.env.example`**, CHANGELOG), unit tests. **`./scripts/verify`** OK.

@@ -55,6 +55,7 @@ def summarize_target(base: Path, label: str) -> dict[str, Any]:
     target = base / label
     curl_meta = read_json(target / "curl.meta.json")
     ffprobe_data = read_json(target / "ffprobe.json")
+    manifest = read_json(target / "manifest.json")
     streams = ffprobe_data.get("streams") if isinstance(ffprobe_data.get("streams"), list) else []
     format_data = ffprobe_data.get("format") if isinstance(ffprobe_data.get("format"), dict) else {}
     ffplay_ua = extract_user_agent_from_ff_stderr(target / "ffplay.stderr")
@@ -93,6 +94,7 @@ def summarize_target(base: Path, label: str) -> dict[str, Any]:
         "ffplay_user_agent": ffplay_ua,
         "ffprobe_user_agent": ffprobe_ua,
         "stream_attempts": read_json(target / "stream-attempts.json"),
+        "manifest": manifest,
     }
 
 
@@ -117,6 +119,27 @@ def compare(data: dict[str, Any]) -> dict[str, Any]:
         findings.append(
             f"ffprobe stream count differs: direct={direct['ffprobe_stream_count']} tunerr={tunerr['ffprobe_stream_count']}"
         )
+    direct_manifest = direct.get("manifest", {}) if isinstance(direct.get("manifest"), dict) else {}
+    tunerr_manifest = tunerr.get("manifest", {}) if isinstance(tunerr.get("manifest"), dict) else {}
+    if bool(direct_manifest.get("detected")) != bool(tunerr_manifest.get("detected")):
+        findings.append(
+            "Manifest detection differs: "
+            f"direct={direct_manifest.get('kind') or 'none'} tunerr={tunerr_manifest.get('kind') or 'none'}"
+        )
+    elif direct_manifest.get("detected") and tunerr_manifest.get("detected"):
+        if direct_manifest.get("kind") != tunerr_manifest.get("kind"):
+            findings.append(
+                f"Manifest kind differs: direct={direct_manifest.get('kind')} tunerr={tunerr_manifest.get('kind')}"
+            )
+        if direct_manifest.get("uri_ref_count") != tunerr_manifest.get("uri_ref_count"):
+            findings.append(
+                "Manifest reference count differs: "
+                f"direct={direct_manifest.get('uri_ref_count')} tunerr={tunerr_manifest.get('uri_ref_count')}"
+            )
+        if tunerr_manifest.get("uri_ref_count", 0) > 0 and tunerr_manifest.get("tunerr_seg_ref_count", 0) == 0:
+            findings.append(
+                "Tunerr manifest has references but none decoded as mux seg targets; inspect tunerr/manifest.json for rewrite gaps"
+            )
     # User-Agent comparison: if direct succeeds and they use different UAs, this is often the CF cause.
     d_ua = direct.get("ffplay_user_agent") or direct.get("ffprobe_user_agent") or ""
     t_ua = tunerr.get("ffplay_user_agent") or tunerr.get("ffprobe_user_agent") or ""
@@ -154,6 +177,22 @@ def render_text(data: dict[str, Any]) -> str:
         lines.append(f"  ffplay: exit={target['ffplay_exit']} ua={ua}")
         if target["ffprobe_error"]:
             lines.append(f"  ffprobe error: {target['ffprobe_error']}")
+        manifest = target.get("manifest", {}) if isinstance(target.get("manifest"), dict) else {}
+        if manifest.get("detected"):
+            lines.append(
+                "  manifest: "
+                f"kind={manifest.get('kind', '')} refs={manifest.get('uri_ref_count', '')} "
+                f"tunerr_seg_refs={manifest.get('tunerr_seg_ref_count', '')}"
+            )
+            if manifest.get("issues"):
+                lines.append(f"  manifest issues: {manifest['issues'][:2]}")
+            refs = manifest.get("refs") if isinstance(manifest.get("refs"), list) else []
+            for ref in refs[:3]:
+                rendered = ref.get("resolved_ref") or ref.get("raw_ref") or ""
+                seg = ref.get("tunerr_seg") if isinstance(ref.get("tunerr_seg"), dict) else {}
+                if seg:
+                    rendered = f"{rendered} -> {seg.get('redacted_url', '')}"
+                lines.append(f"  manifest ref: {rendered}")
         if target["curl_preview"]:
             lines.append("  curl preview:")
             lines.extend(f"    {line}" for line in target["curl_preview"][:5])

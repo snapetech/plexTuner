@@ -267,6 +267,7 @@ TUNERR_URL='http://127.0.0.1:5004/stream/espn.us' \
 Artifacts are written under `.diag/stream-compare/<timestamp>/`:
 
 - `direct/` and `tunerr/` each contain `curl`, `ffprobe`, and `ffplay` logs
+- `direct/manifest.json` and `tunerr/manifest.json` are written automatically when the curl body looks like HLS (`.m3u8`) or DASH (`.mpd`); they normalize URI-bearing references and decode Tunerr `?mux=...&seg=` links into redacted upstream targets
 - `tunerr/stream-attempts.json` is fetched automatically from `/debug/stream-attempts.json` when the Tunerr target has a resolvable base URL
 - `summary.txt` gives the run inputs and quick next steps
 - `report.txt` / `report.json` summarize the high-level differences
@@ -278,8 +279,22 @@ Useful knobs:
 - `USE_FFPLAY=false` if `ffplay` is not installed on the host
 - `COMMON_HEADERS_FILE=/path/headers.txt` to apply the same headers to both direct and Tunerr paths
 - `TCPDUMP_FILTER='host 1.2.3.4 or host 127.0.0.1'` to override the auto-derived capture filter
+- `ANALYZE_MANIFESTS=false` to skip manifest parsing if you only want transport logs
+- `MANIFEST_REF_LIMIT=80` to keep more parsed playlist or MPD references in each `manifest.json`
 
 The harness does not replace Wireshark; it standardizes the capture session so the pcap, ffplay logs, ffprobe stream info, and curl headers all line up in one folder.
+
+### Turning a failing provider stream into a reusable sample
+
+When someone says "this provider MPD/M3U8 fails through Tunerr," the quickest next step is no longer "paste the URL in chat." Run the harness once and keep the whole output directory.
+
+The useful payloads are:
+
+- `direct/curl.body` or `tunerr/curl.body`: the exact captured manifest body
+- `*/manifest.json`: parsed URI inventory with decoded Tunerr `seg=` targets
+- `tunerr/stream-attempts.json`: Tunerr's own gateway decision trace for the same window
+
+That gives us something we can diff, redact, and later turn into a focused regression sample instead of guessing which playlist construct broke the rewrite.
 
 ### App-side debug export
 
