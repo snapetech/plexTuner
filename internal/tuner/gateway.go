@@ -52,7 +52,9 @@ type Gateway struct {
 	Autopilot                  *autopilotStore
 	mu                         sync.Mutex
 	inUse                      int
+	hlsPackagerInUse           int
 	hlsMuxSegInUse             int // concurrent ?mux=hls&seg= proxies (bounded; see effectiveHLSMuxSegLimitLocked)
+	hlsPackagerSessions        map[string]*ffmpegHLSPackagerSession
 	hlsMuxSegSuccess           atomic.Uint64
 	hlsMuxSegErrScheme         atomic.Uint64
 	hlsMuxSegErrPrivate        atomic.Uint64
@@ -100,6 +102,7 @@ type Gateway struct {
 	recentAttempts             []StreamAttemptRecord
 	adaptStickyMu              sync.Mutex
 	adaptStickyUntil           map[string]time.Time // HR-004: Plex session+channel → websafe sticky expiry
+	hlsPackagerJanitorOnce     sync.Once
 }
 
 type gatewayReqIDKey struct{}

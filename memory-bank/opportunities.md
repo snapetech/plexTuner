@@ -48,6 +48,7 @@ It exists to encourage quality gains without derailing the current task.
   Category: maintainability
   Title: **Plex connect** step-by-step (UI wizard vs `-register-plex` vs API) — [docs-gaps.md](../../docs/docs-gaps.md) high row
   Context: README covers modes at high level; **480-channel wizard limit**, channelmap activation, and “headless DVR exists but guide empty” still generate support churn.
+  Status: **Shipped** — [docs/how-to/connect-plex-to-iptv-tunerr.md](../../docs/how-to/connect-plex-to-iptv-tunerr.md); README **How-To**; **`docs/how-to/index`**, **`docs/index`**, **`reference/index`**; **`docs-gaps.md`** **Resolved**; **`features.md`** §8 reference + §14 metrics cross-link.
   Why it matters: Onboarding and category-DVR fleets need one honest checklist.
   Evidence: [docs-gaps.md](../../docs/docs-gaps.md); [plex-dvr-lifecycle-and-api.md](../../docs/reference/plex-dvr-lifecycle-and-api.md); [ADR 0001](../../docs/adr/0001-zero-touch-plex-lineup.md).
   Suggested fix: **`docs/how-to/connect-plex-to-iptv-tunerr.md`** with flows A/B/C + troubleshooting links; README + docs index.
@@ -115,13 +116,12 @@ It exists to encourage quality gains without derailing the current task.
   Category: operability
   Title: Feed guide-health and channel-intelligence results back into runtime publishing and lineup decisions
   Context: Fresh whole-project audit of the new intelligence layer.
-  Why it matters: the app can now diagnose weak guide coverage very well, but most runtime decisions still operate on static channel metadata and simple score heuristics. That leaves real user-facing wins on the table: high-confidence lineups, cleaner catch-up output, and media-server registration that avoids weak channels by default.
-  Evidence: `internal/tuner/server.go:203` lineup recipes sort by `channelreport.Score/GuideConfidence/StreamResilience` only; `internal/tuner/catchup_publish.go` publishes every capsule preview row regardless of actual guide-health quality; no runtime path consumes `guide-health` or `epg-doctor` results as policy input.
-  Suggested fix: Introduce an optional cached guide-quality policy layer that can suppress placeholder-only channels, publish only high-confidence capsules, and expose one "healthy lineup" mode for registration and recipes.
-  Risk/Scope: med | fits current scope? no
-  User decision needed?: yes
-  If yes: 2–3 options + recommended default + what you will do if no answer
-  Recommended default: add an opt-in policy (`healthy`, `strict`) first, keep today's permissive behavior as default, and reuse the cached guide-health surface rather than recomputing diagnostics per request.
+  Status: **Partially superseded (2026-03-19)** — **`IPTV_TUNERR_GUIDE_POLICY`** / **`IPTV_TUNERR_CATCHUP_GUIDE_POLICY`**, **`GET /guide/policy.json`**, **`UpdateChannels`** guide pruning, **`catchup-publish -guide-policy`**, **`catchup-capsules`** with policy, **`IPTV_TUNERR_REGISTER_RECIPE=healthy`** are shipped. **Remaining:** optional deeper wiring (e.g. more registration paths keyed solely off live **`guide-health`** scores) if product wants stricter defaults everywhere.
+  Why it matters: the app can now diagnose weak guide coverage very well; tightening every remaining path is product scope.
+  Evidence (historical): older audit predated policy flags; see **`guide_policy.go`**, **`FilterCatchupCapsulesByGuidePolicy`**, server **`UpdateChannels`**.
+  Suggested fix: Re-audit only if a concrete path still ignores guide quality after **`IPTV_TUNERR_*_POLICY`**.
+  Risk/Scope: med | fits current scope? no (unless new requirement)
+  User decision needed?: only for new default strictness
 
 - Date: 2026-03-18
   Category: other

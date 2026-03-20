@@ -219,7 +219,7 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 		profileName = normalizeConfiguredProfileName(forcedProfile)
 	}
 	outputMux := g.preferredOutputMuxForProfile(profileName, requestMux, transcode)
-	if outputMux == "hls" {
+	if requestMux == "hls" {
 		out := rewriteHLSPlaylistToGatewayProxy(body, effectiveURL, channelID)
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 		w.Header().Set("Cache-Control", "no-store")
@@ -229,6 +229,15 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 		_, _ = w.Write(out)
 		promNoteMuxManifestOutcome("hls", "playlist_proxy", channelID, time.Since(startManifest))
 		return "ok", "hls_native_mux", effectiveURL, true
+	}
+	if outputMux == streamMuxHLS {
+		profileSelection := g.resolveProfileSelection(profileName)
+		if err := g.serveFFmpegPackagedHLSInitial(w, r, channel.GuideName, channelID, effectiveURL, profileSelection); err == nil {
+			g.rememberAutopilotDecision(channel, clientClass, transcode, effectiveProfileName(g, channel, channelID, forcedProfile), adaptReason, streamURL)
+			return "ok", "hls_ffmpeg_packaged", effectiveURL, true
+		}
+		log.Printf("gateway: channel=%q id=%s ffmpeg-hls-packager failed (falling back to normal relay): profile=%q",
+			channel.GuideName, channelID, profileName)
 	}
 	preferGoRelay := !transcode && g.shouldPreferGoRelayForHLSRemux(streamURL)
 	if preferGoRelay {

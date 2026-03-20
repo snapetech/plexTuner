@@ -115,6 +115,8 @@ func normalizeStreamOutputMuxName(v string) string {
 		return streamMuxMPEGTS
 	case "fmp4", "mp4", "dash":
 		return streamMuxFMP4
+	case "hls":
+		return streamMuxHLS
 	default:
 		return ""
 	}
@@ -319,6 +321,7 @@ func effectiveProfileName(g *Gateway, channel *catalog.LiveChannel, channelID, f
 const (
 	streamMuxMPEGTS = "mpegts"
 	streamMuxFMP4   = "fmp4"
+	streamMuxHLS    = "hls"
 )
 
 // buildFFmpegMPEGTSCodecArgs targets MPEG-TS output (default gateway / Plex HDHR).
@@ -331,7 +334,30 @@ func buildFFmpegStreamOutputArgs(transcode bool, profile string, outputMux strin
 	if outputMux == "" {
 		outputMux = streamMuxMPEGTS
 	}
-	mpegtsFlags := mpegTSFlagsWithOptionalInitialDiscontinuity()
+	codecArgs := buildFFmpegStreamCodecArgs(transcode, profile, outputMux)
+	if outputMux == streamMuxFMP4 {
+		codecArgs = append(codecArgs,
+			"-flush_packets", "1",
+			"-max_interleave_delta", "0",
+			"-movflags", "frag_keyframe+empty_moov+default_base_moof",
+			"-f", "mp4",
+			"pipe:1",
+		)
+		return codecArgs
+	}
+	codecArgs = append(codecArgs,
+		"-flush_packets", "1",
+		"-max_interleave_delta", "0",
+		"-muxdelay", "0",
+		"-muxpreload", "0",
+		"-mpegts_flags", mpegTSFlagsWithOptionalInitialDiscontinuity(),
+		"-f", "mpegts",
+		"pipe:1",
+	)
+	return codecArgs
+}
+
+func buildFFmpegStreamCodecArgs(transcode bool, profile string, outputMux string) []string {
 	var codecArgs []string
 	if !transcode {
 		codecArgs = []string{
@@ -472,25 +498,6 @@ func buildFFmpegStreamOutputArgs(transcode bool, profile string, outputMux strin
 			)
 		}
 	}
-	if outputMux == streamMuxFMP4 {
-		codecArgs = append(codecArgs,
-			"-flush_packets", "1",
-			"-max_interleave_delta", "0",
-			"-movflags", "frag_keyframe+empty_moov+default_base_moof",
-			"-f", "mp4",
-			"pipe:1",
-		)
-		return codecArgs
-	}
-	codecArgs = append(codecArgs,
-		"-flush_packets", "1",
-		"-max_interleave_delta", "0",
-		"-muxdelay", "0",
-		"-muxpreload", "0",
-		"-mpegts_flags", mpegtsFlags,
-		"-f", "mpegts",
-		"pipe:1",
-	)
 	return codecArgs
 }
 

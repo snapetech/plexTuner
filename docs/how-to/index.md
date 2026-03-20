@@ -12,8 +12,10 @@ Goal → preconditions → steps → verify.
 | Doc | Description |
 |-----|-------------|
 | [interpreting-probe-results](interpreting-probe-results.md) | Read **`iptv-tunerr probe`** output (`get.php` vs **`player_api`**, CF, ranked order). |
+| [connect-plex-to-iptv-tunerr](connect-plex-to-iptv-tunerr.md) | Plex UI wizard vs **`-register-plex`** vs API; channelmap, 480 limit, empty-guide pitfalls. |
 | [first-push](first-push.md) | Add remote and push (GitHub / GitLab / self-hosted). |
-| [deployment](deployment.md) | Deploy IPTV Tunerr: binary, Docker, systemd; local QA/smoke script. |
+| [deployment](deployment.md) | Deploy IPTV Tunerr: binary, Docker, systemd; **`run`** vs **`index`/`serve`**; local QA/smoke script. |
+| [mount-vodfs-and-register-plex-libraries](mount-vodfs-and-register-plex-libraries.md) | Linux VODFS mount, `-cache`, Plex library registration. |
 | [fix-guide-data-with-epg-doctor](fix-guide-data-with-epg-doctor.md) | Diagnose and fix bad guide data, placeholder-only channels, and weak XMLTV matches. |
 | [deploy-and-connect-plex-home](deploy-and-connect-plex-home.md) | Deploy IPTV Tunerr in-cluster and connect Plex at plex.home (one-command deploy, zero-touch or manual add). |
 | [package-test-builds](package-test-builds.md) | Build cross-platform test bundles (Linux/macOS/Windows) for binary + supervisor testing. |

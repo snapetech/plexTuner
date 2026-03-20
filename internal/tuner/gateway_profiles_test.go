@@ -37,6 +37,9 @@ func TestBuildFFmpegStreamOutputArgs_fmp4(t *testing.T) {
 	if !strings.Contains(strings.Join(argsTS, " "), "-f mpegts") {
 		t.Fatalf("expected mpegts: %v", argsTS)
 	}
+	if got := normalizeStreamOutputMuxName("hls"); got != streamMuxHLS {
+		t.Fatalf("expected hls output mux, got %q", got)
+	}
 }
 
 func TestLoadNamedProfilesFile(t *testing.T) {
@@ -44,7 +47,8 @@ func TestLoadNamedProfilesFile(t *testing.T) {
 	path := filepath.Join(dir, "profiles.json")
 	body := `{
 		"mobile-fmp4": {"base_profile":"lowbitrate","transcode":true,"output_mux":"fmp4"},
-		"copy-ts": {"base_profile":"dashfast","transcode":false,"output_mux":"mpegts"}
+		"copy-ts": {"base_profile":"dashfast","transcode":false,"output_mux":"mpegts"},
+		"web-hls": {"base_profile":"dashfast","transcode":true,"output_mux":"hls"}
 	}`
 	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
 		t.Fatal(err)
@@ -65,6 +69,9 @@ func TestLoadNamedProfilesFile(t *testing.T) {
 	if got["copy-ts"].Transcode == nil || *got["copy-ts"].Transcode {
 		t.Fatalf("expected transcode false: %#v", got["copy-ts"])
 	}
+	if got["web-hls"].OutputMux != streamMuxHLS {
+		t.Fatalf("OutputMux=%q", got["web-hls"].OutputMux)
+	}
 }
 
 func TestPreferredOutputMuxForProfile_namedProfile(t *testing.T) {
@@ -76,6 +83,11 @@ func TestPreferredOutputMuxForProfile_namedProfile(t *testing.T) {
 				Transcode:   &enable,
 				OutputMux:   streamMuxFMP4,
 			},
+			"web-hls": {
+				BaseProfile: profileDashFast,
+				Transcode:   &enable,
+				OutputMux:   streamMuxHLS,
+			},
 		},
 	}
 	if got := g.preferredOutputMuxForProfile("mobile-fmp4", "", true); got != streamMuxFMP4 {
@@ -83,6 +95,9 @@ func TestPreferredOutputMuxForProfile_namedProfile(t *testing.T) {
 	}
 	if got := g.preferredOutputMuxForProfile("mobile-fmp4", "mpegts", true); got != streamMuxMPEGTS {
 		t.Fatalf("request mux should win, got %q", got)
+	}
+	if got := g.preferredOutputMuxForProfile("web-hls", "", true); got != streamMuxHLS {
+		t.Fatalf("preferred mux=%q want %q", got, streamMuxHLS)
 	}
 }
 

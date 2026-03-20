@@ -2,6 +2,12 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-19):** **LTV `INT-006` — hot-start by M3U `group_title`:** **`IPTV_TUNERR_HOT_START_GROUP_TITLES`**; **`/debug/runtime.json`** **`tuner.hot_start_*`**; tests **`gateway_hotstart_test.go`**. **`Gateway`**: removed dead **`hlsPackager*`** fields (undefined type). **`./scripts/verify`** OK.
+
+**Latest (2026-03-20):** **LP-010 / LP-011:** named profiles can now prefer **`output_mux: "hls"`** for **ffmpeg-packaged HLS**. Tunerr starts a short-lived packager, keeps a background tuner hold while it runs, serves packaged playlist/segment files back through Tunerr session URLs, and leaves explicit **`?mux=hls`** on the existing native rewrite/proxy path. Docs/tests updated; **`./scripts/verify`** OK.
+
+**Latest (2026-03-19):** **Closure — Prometheus Autopilot consensus metrics + Plex onboarding doc:** **`internal/tuner/prometheus_autopilot.go`** + **`prometheus_autopilot_test.go`**; **`server.go`** registers when **`IPTV_TUNERR_METRICS_ENABLE`**. **Docs:** [how-to/connect-plex-to-iptv-tunerr.md](../docs/how-to/connect-plex-to-iptv-tunerr.md); **README** / **`docs/index`** / **`how-to/index`** / **`reference/index`**; **`docs-gaps`** Resolved + high table trim; **`cli-and-env`** **`METRICS_ENABLE`**; **`features.md`**; **CHANGELOG**; **`opportunities.md`** Plex connect → **Shipped**. **`./scripts/verify`** OK.
+
 **Latest (2026-03-19):** **Control Deck + Autopilot consensus:** **`deck.js`** **`summarizeProviderProfile`** + **`formatAutopilotConsensusMeta`**; **Watch** / **wins** / **Operations** Autopilot card; endpoint catalog. **CHANGELOG** + **features**. **`./scripts/verify`** OK.
 
 **Latest (2026-03-19):** **LTV Autopilot consensus host:** **`IPTV_TUNERR_AUTOPILOT_CONSENSUS_HOST`** (opt-in) + **`_MIN_DNA`** / **`_MIN_HIT_SUM`**; **`consensusPreferredHost`** in **`autopilot.go`**; **`autopilotPreferredStreamURL`** fallback; **`AutopilotReport`** + **`intelligence.autopilot`** fields; tests **`TestAutopilot_consensusPreferredHost`**, **`TestGateway_reorderStreamURLs_autopilotConsensusHost`**. Docs: **CHANGELOG**, **cli-and-env**, **.env.example**, **features**, **EPIC-live-tv-intelligence**. **`./scripts/verify`** OK.

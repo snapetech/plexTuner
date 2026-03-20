@@ -1115,6 +1115,7 @@ docs/                 Reference, how-to guides, runbooks
 - [`docs/explanations/architecture.md`](docs/explanations/architecture.md) — Layered codebase map ( **`cmd_*`**, **`gateway_*`** )
 
 **How-To**
+- [`docs/how-to/connect-plex-to-iptv-tunerr.md`](docs/how-to/connect-plex-to-iptv-tunerr.md) — Connect Plex (UI wizard vs `-register-plex` vs API; channelmap, limits)
 - [`docs/how-to/deployment.md`](docs/how-to/deployment.md) — Binary, Docker, systemd deployment
 - [`docs/how-to/platform-requirements.md`](docs/how-to/platform-requirements.md) — FFmpeg, FUSE, platform notes
 - [`docs/how-to/mount-vodfs-and-register-plex-libraries.md`](docs/how-to/mount-vodfs-and-register-plex-libraries.md) — VOD filesystem setup
@@ -1146,6 +1147,9 @@ Verify the build:
 
 ## Recent Changes
 
+- **Hot-start by category:** **`IPTV_TUNERR_HOT_START_GROUP_TITLES`** marks whole M3U **`group_title`** buckets (substring match) for faster startup tuning — [cli-and-env-reference](docs/reference/cli-and-env-reference.md).
+- **Plex onboarding how-to**: [docs/how-to/connect-plex-to-iptv-tunerr.md](docs/how-to/connect-plex-to-iptv-tunerr.md) (wizard vs **`-register-plex`** vs API; channelmap, **480** limit). See [plex-dvr-lifecycle-and-api](docs/reference/plex-dvr-lifecycle-and-api.md).
+- **Prometheus / Autopilot consensus**: with **`IPTV_TUNERR_METRICS_ENABLE`**, **`GET /metrics`** includes **`iptv_tunerr_autopilot_consensus_*`** gauges — [cli-and-env-reference](docs/reference/cli-and-env-reference.md).
 - **`/healthz` + `/readyz`**: JSON readiness gates for ops and Kubernetes (**503** until live channels load). Examples probe **`/readyz`**; see [runbook §8](docs/runbooks/iptvtunerr-troubleshooting.md#8-tuner-endpoints-sanity-check) and [k8s/README.md](k8s/README.md).
 - **Native mux visibility**: successful Tunerr **`?mux=hls` / `?mux=dash`** responses can include **`X-IptvTunerr-Native-Mux: hls|dash`** (also exposed for CORS when mux CORS is on) — [hls-mux-toolkit](docs/reference/hls-mux-toolkit.md).
 - **Named stream profiles**: optional **`IPTV_TUNERR_STREAM_PROFILES_FILE`** matrix (**LP-010** / **LP-011**) — [transcode-profiles](docs/reference/transcode-profiles.md).

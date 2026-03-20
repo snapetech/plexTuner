@@ -19,11 +19,7 @@ Known missing or incomplete documentation. Address these when touching the relev
 
 ## High (users or contributors need this)
 
-| Gap | Where it hurts | Suggested fix |
-|-----|----------------|----------------|
-| **No step-by-step Plex setup** | New users may not know: add tuner in Plex UI vs `-register-plex`, channelmap activation, 480-channel limit. | Add a [how-to](how-to/index.md): "Connect IPTV Tunerr to Plex (UI vs headless)". Link from README. |
-| **`.env.example` not fully documented in one place** | All env vars are in .env.example and config.go; no single reference table in docs. | README has a short table; add a [reference](reference/index.md) page "Configuration reference" with every env var, default, and effect. |
-| **Plex DB registration caveats** | RegisterTuner updates DB rows; does not create DVR via API or do channelmap activation. Guide can stay empty without channelmap. | Document in reference or how-to: when to use `-register-plex`, stop Plex, backup DB, and that channelmap activation is separate. |
+*(None — validated 2026-03-19. Hand-maintained commands/flags/env: [cli-and-env-reference](reference/cli-and-env-reference.md); exhaustive raw list: [.env.example](../.env.example).)*
 
 ---
 
@@ -31,22 +27,13 @@ Known missing or incomplete documentation. Address these when touching the relev
 
 | Gap | Where it hurts | Suggested fix |
 |-----|----------------|----------------|
-| **No architecture diagram** | Hard to see how index → catalog → serve/mount fit together. | Add an [explanations](explanations/index.md) doc: "Architecture overview" with a simple diagram (e.g. Mermaid) or bullet flow. |
-| **VODFS usage** | Mount and cache behavior (when to use -cache, how Plex scans) not clearly documented. | How-to: "Mount VOD as a library (VODFS)" with examples and cache vs no-cache. |
-| **External XMLTV remap** | Behaviour (filter to catalog, remap IDs) is in code and README but not step-by-step. | Reference: "XMLTV: placeholder vs external feed" with IPTV_TUNERR_XMLTV_URL and remap logic. |
-| **Multi-host and Cloudflare** | First-success and non-CF preference are in code and LEARNINGS; not in user-facing docs. | Explanations: "Provider URLs and multi-host" (why multiple URLs, get.php vs player_api). |
-| **Run vs serve** | Difference (run = index + health + serve; serve = only HTTP) is in README but could be clearer. | Add to "Quick start" or how-to: "When to use run vs serve". |
+| **Optional diagram polish** | [architecture](explanations/architecture.md) already has layered text + ASCII flow; some readers want a single Mermaid figure. | Add optional Mermaid block to `architecture.md` (keep text as source of truth). |
 
 ---
 
 ## Low (nice to have)
 
-| Gap | Where it hurts | Suggested fix |
-|-----|----------------|----------------|
-| **Glossary** | Terms like lineup, tvg-id, EPG-linked, player_api appear without definition. | Extend [glossary.md](glossary.md) with IPTV Tunerr terms. |
-| **Runbooks** | No runbook for "tuner not discovered", "guide empty", "all streams fail". | Add [runbooks](runbooks/index.md) entries for common failures. |
-| **Docker Compose override** | docker-compose.yml exists; overriding command (run vs serve) and env not documented. | How-to: "Run with Docker" with command override examples. |
-| **Systemd** | Example unit exists in docs/systemd/; not linked from main docs. | Link from README or how-to "Run as a service". |
+*(None — validated 2026-03-19. [glossary](glossary.md) defines core terms; [runbooks](runbooks/index.md) + [iptvtunerr-troubleshooting](runbooks/iptvtunerr-troubleshooting.md) cover common failures; [deployment](how-to/deployment.md) §§1–3 covers binary **`run`** vs **`index`/`serve`**, Docker Compose/`docker run` overrides, and systemd.)*
 
 ---
 
@@ -54,6 +41,16 @@ Known missing or incomplete documentation. Address these when touching the relev
 
 | Closed | What | Link |
 |--------|------|------|
+| 2026-03 | **Single-place env documentation** (supersedes “only .env.example”) | Canonical operator map: [cli-and-env-reference](reference/cli-and-env-reference.md); [reference index](reference/index.md); README quick table |
+| 2026-03 | **Architecture overview** (“no architecture doc”) | [explanations/architecture.md](explanations/architecture.md) — three layers, data flow, package map |
+| 2026-03 | **VODFS mount / cache / Plex libraries** | [mount-vodfs-and-register-plex-libraries.md](how-to/mount-vodfs-and-register-plex-libraries.md) |
+| 2026-03 | **External XMLTV + layered guide pipeline** | [features §5](features.md#5-xmltv--epg-behavior); [lineup-epg-hygiene](reference/lineup-epg-hygiene.md); [glossary](glossary.md) **XMLTV** |
+| 2026-03 | **Multi-host / Cloudflare operator guidance** | [cloudflare-bypass.md](how-to/cloudflare-bypass.md); [interpreting-probe-results](how-to/interpreting-probe-results.md) |
+| 2026-03 | **Run vs `index`/`serve`** | [deployment §1](how-to/deployment.md#1-binary-foreground-or-background) |
+| 2026-03 | **Glossary** | [glossary.md](glossary.md) |
+| 2026-03 | **Runbooks / common failures** | [runbooks index](runbooks/index.md); [iptvtunerr-troubleshooting](runbooks/iptvtunerr-troubleshooting.md) |
+| 2026-03 | **Docker / systemd deployment** | [deployment §2–3](how-to/deployment.md#2-docker) |
+| 2026-03 | **Plex setup paths** (wizard vs `-register-plex` vs API; channelmap, 480 limit, empty guide) | [connect-plex-to-iptv-tunerr.md](how-to/connect-plex-to-iptv-tunerr.md); see also [plex-dvr-lifecycle-and-api](reference/plex-dvr-lifecycle-and-api.md) |
 | 2026-03 | **Operator harness how-tos** (task-oriented entrypoints mirroring runbook §7 / §9 / §10) | [live-race-harness.md](how-to/live-race-harness.md), [stream-compare-harness.md](how-to/stream-compare-harness.md), [multi-stream-harness.md](how-to/multi-stream-harness.md) |
 | 2026-03 | **`probe` output interpretation** | [interpreting-probe-results.md](how-to/interpreting-probe-results.md); **`scripts/harness-index.py`** lists recent **`.diag/`** harness runs |
 

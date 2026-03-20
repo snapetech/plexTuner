@@ -71,6 +71,11 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 	urls = g.reorderStreamURLs(channel, clientClass, urls)
 	requestMux := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mux")))
+	if g.maybeServeFFmpegPackagedHLSTarget(w, r, channelID) {
+		finalStatus = "ok"
+		finalMode = "hls_ffmpeg_packaged_target"
+		return
+	}
 	if muxResult := g.maybeServeNativeMuxTarget(w, r, channel, channelID, reqID, start); muxResult.handled {
 		finalStatus = muxResult.finalStatus
 		finalMode = muxResult.finalMode
@@ -81,7 +86,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	g.mu.Lock()
 	limit := g.effectiveTunerLimitLocked()
-	if g.inUse >= limit {
+	if g.inUse+g.hlsPackagerInUse >= limit {
 		g.mu.Unlock()
 		finalStatus = "all_tuners_in_use"
 		finalErr = errors.New("all tuners in use")

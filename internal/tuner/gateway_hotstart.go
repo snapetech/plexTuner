@@ -42,6 +42,9 @@ func (g *Gateway) hotStartReason(channel *catalog.LiveChannel, clientClass strin
 	if matchesHotStartFavorite(channel) {
 		return "favorite"
 	}
+	if matchesHotStartGroupTitle(channel) {
+		return "group_title"
+	}
 	minHits := getenvInt("IPTV_TUNERR_HOT_START_MIN_HITS", 3)
 	if g != nil && g.Autopilot != nil {
 		if _, ok := g.Autopilot.hotDecision(channel.DNAID, clientClass, minHits); ok {
@@ -70,6 +73,31 @@ func matchesHotStartFavorite(ch *catalog.LiveChannel) bool {
 		strings.ToLower(strings.TrimSpace(ch.GuideName)),
 	} {
 		if key != "" && candidates[key] {
+			return true
+		}
+	}
+	return false
+}
+
+// matchesHotStartGroupTitle returns true when IPTV_TUNERR_HOT_START_GROUP_TITLES is set and any
+// comma-separated substring matches channel GroupTitle (case-insensitive substring match).
+// Empty GroupTitle never matches. Whole categories can be marked hot without listing each channel id.
+func matchesHotStartGroupTitle(ch *catalog.LiveChannel) bool {
+	raw := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HOT_START_GROUP_TITLES"))
+	if raw == "" || ch == nil {
+		return false
+	}
+	gt := strings.TrimSpace(ch.GroupTitle)
+	if gt == "" {
+		return false
+	}
+	gtLower := strings.ToLower(gt)
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if strings.Contains(gtLower, strings.ToLower(part)) {
 			return true
 		}
 	}

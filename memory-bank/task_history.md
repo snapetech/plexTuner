@@ -22,6 +22,47 @@ Append-only. One entry per completed task.
 
 ## Entries
 
+- Date: 2026-03-20
+  Title: LP-010 / LP-011 packaged HLS profile mode
+  Summary:
+    - **`internal/tuner/gateway_hls_packager.go`** adds a real ffmpeg-packaged HLS session path for named profiles with **`output_mux: "hls"`**, including background tuner holds, session janitor cleanup, packaged playlist rewrite, and packaged segment serving under internal **`mux=hlspkg`** URLs.
+    - **`internal/tuner/gateway_stream_response.go`**, **`gateway_servehttp.go`**, **`gateway.go`**, **`gateway_profiles.go`** wire profile-selected packaged HLS without changing explicit **`?mux=hls`** native rewrite/proxy semantics.
+    - **`internal/tuner/gateway_hls_packager_test.go`** proves packaged playlist + segment serving and that the packager continues holding a tuner slot after the first response; **`gateway_profiles_test.go`** covers named-profile **`output_mux: "hls"`**.
+    - **Docs:** **`docs/reference/transcode-profiles.md`**, **`docs/reference/cli-and-env-reference.md`**, **`docs/features.md`**, **`docs/epics/EPIC-lineup-parity.md`**, **`docs/CHANGELOG.md`**, **`.env.example`**, **`memory-bank/work_breakdown.md`**.
+  Verification:
+    - `go test ./internal/tuner -run 'Test(BuildFFmpegStreamOutputArgs_fmp4|LoadNamedProfilesFile|PreferredOutputMuxForProfile_namedProfile|Gateway_ffmpegPackagedHLS_namedProfileServesPlaylistAndSegment)'`
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+  Links:
+    - LP-010 / LP-011
+
+- Date: 2026-03-19
+  Title: Hot-start by M3U group_title (IPTV_TUNERR_HOT_START_GROUP_TITLES) + gateway build fix
+  Summary:
+    - **`internal/tuner/gateway_hotstart.go`**: **`matchesHotStartGroupTitle`**, **`hotStartReason`** **`group_title`**; **`cmd_runtime_server.go`** runtime snapshot **`hot_start_*`** keys.
+    - **`internal/tuner/gateway_hotstart_test.go`**: table tests + precedence vs **`HOT_START_CHANNELS`**.
+    - **`internal/tuner/gateway.go`**: drop unused **`hlsPackager*`** fields referencing undefined **`ffmpegHLSPackagerSession`**.
+    - **Docs:** **CHANGELOG**, **cli-and-env**, **.env.example**, **README** Recent Changes, **features**, **EPIC-live-tv-intelligence**.
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+  Links:
+    - LTV **INT-006**
+
+- Date: 2026-03-19
+  Title: Prometheus Autopilot consensus gauges + Plex connect how-to (doc closure)
+  Summary:
+    - **`internal/tuner/prometheus_autopilot.go`**: **`iptv_tunerr_autopilot_consensus_*`** GaugeFuncs when **`IPTV_TUNERR_METRICS_ENABLE`**; wired from **`server.go`**; tests **`prometheus_autopilot_test.go`**.
+    - **Docs:** [connect-plex-to-iptv-tunerr.md](../docs/how-to/connect-plex-to-iptv-tunerr.md) indexed; **README** Recent Changes + How-To; **`docs/index`**, **`reference/index`**; **`docs-gaps`** Resolved; **`cli-and-env-reference`**; **`features.md`**; **`opportunities.md`** Plex connect shipped.
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+  Links:
+    - [CHANGELOG](../docs/CHANGELOG.md) [Unreleased]
+
 - Date: 2026-03-19
   Title: Control Deck surfaces Autopilot consensus (intelligence.autopilot)
   Summary:

@@ -18,6 +18,7 @@ Dense and factual. Add CLI reference, env vars, API docs as needed.
 | [hls-mux-toolkit](hls-mux-toolkit.md) | Native **`?mux=hls`** / **`?mux=dash`** mux: diagnostics, Prometheus, DNS SSRF options, operator **`curl`**, remaining backlog. |
 | [hls-mux-ll-hls-tags](hls-mux-ll-hls-tags.md) | LL-HLS / low-latency HLS tag rewrite coverage for **`?mux=hls`**. |
 | [plex-livetv-http-tuning](plex-livetv-http-tuning.md) | Plex/Lavf parallel HTTP, shared client idle pool, tuner vs **`seg=`** caps (**HR-008** / **HR-010**). |
+| [../how-to/connect-plex-to-iptv-tunerr.md](../how-to/connect-plex-to-iptv-tunerr.md) | Plex onboarding: wizard vs **`-register-plex`** vs API (cross-link from reference index). |
 | [plex-client-compatibility-matrix](plex-client-compatibility-matrix.md) | Tier-1 Plex clients, adaptation classes, QA procedure (**HR-003**). |
 | [lineup-epg-hygiene](lineup-epg-hygiene.md) | Built-in catalog + serve hygiene: tvg-id dedupe, strip hosts, guide policy, EPG-only (**HR-005**). |
 | [plex-dvr-lifecycle-and-api](plex-dvr-lifecycle-and-api.md) | Plex Live TV/DVR lifecycle reference: wizard-equivalent API flow, injected DVRs, remove/refresh/channelmap, and UI/backend gotchas. |

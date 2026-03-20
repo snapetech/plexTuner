@@ -5,13 +5,13 @@ status: stable
 tags: [transcode, ffmpeg, gateway, hdhomerun]
 ---
 
-# Transcode profiles (MPEG-TS relay)
+# Transcode profiles (MPEG-TS, packaged HLS, fMP4)
 
 IPTV Tunerr’s gateway can **transcode** live HLS/MPEG-TS to a Plex-friendly **MPEG-TS** output using ffmpeg. Profiles are **names** that select bitrate, resolution caps, and audio codec policy (`internal/tuner/gateway_profiles.go`).
 
-**MPEG-TS** is the default output for Plex/HDHR compatibility. **Fragmented MP4** is optional for ffmpeg HLS paths: add **`?mux=fmp4`** on `/stream/…` when **transcoding** is active (experimental).
+**MPEG-TS** is the default output for Plex/HDHR compatibility. **Fragmented MP4** is optional for ffmpeg HLS paths: add **`?mux=fmp4`** on `/stream/…` when **transcoding** is active (experimental). Named profiles can also prefer **ffmpeg-packaged HLS** with **`"output_mux": "hls"`**; that path spins up a short-lived ffmpeg HLS packager, returns a Tunerr-served playlist, and serves packaged segment files back through Tunerr.
 
-**Tunerr-native manifest proxies:** **`?mux=hls`** for **M3U8** upstreams and **`?mux=dash`** (experimental) for **MPD** upstreams on `/stream/…`. Diagnostics: [hls-mux-toolkit](hls-mux-toolkit.md). HLS returns a rewritten **M3U8** whose media lines loop through Tunerr (`?mux=hls&seg=…`); tags with **`URI="…"`** (keys, **`EXT-X-PART`**, maps, variants, etc.) rewrite the same way for **http(s)** targets. DASH rewrites absolute segment **`media=`** / **`initialization=`** and **`BaseURL`** text to **`?mux=dash&seg=…`**. Optional **`IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`** forces **absolute** Tunerr URLs. See [hls-mux-proxy how-to](../how-to/hls-mux-proxy.md). **Not** an on-disk packager—proxy + rewrite only.
+**Tunerr-native manifest proxies:** **`?mux=hls`** for **M3U8** upstreams and **`?mux=dash`** (experimental) for **MPD** upstreams on `/stream/…`. Diagnostics: [hls-mux-toolkit](hls-mux-toolkit.md). HLS returns a rewritten **M3U8** whose media lines loop through Tunerr (`?mux=hls&seg=…`); tags with **`URI="…"`** (keys, **`EXT-X-PART`**, maps, variants, etc.) rewrite the same way for **http(s)** targets. DASH rewrites absolute segment **`media=`** / **`initialization=`** and **`BaseURL`** text to **`?mux=dash&seg=…`**. Optional **`IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`** forces **absolute** Tunerr URLs. See [hls-mux-proxy how-to](../how-to/hls-mux-proxy.md). This native mux is still **proxy + rewrite only**; the separate ffmpeg-packaged-HLS path comes from named profiles, not from explicit **`?mux=hls`**.
 
 ## Canonical profile names
 
@@ -44,7 +44,7 @@ Your panel may use different spellings; extend mappings via code or **per-channe
 
 ## Named profile matrix (optional)
 
-**`IPTV_TUNERR_STREAM_PROFILES_FILE`** is a JSON object of **operator-defined** profile keys. Each entry selects a **built-in** `base_profile` and can override **transcode on/off** and ffmpeg **output mux** (`mpegts` vs fragmented `fmp4`) without patching code. This is a small JSON map, not a full codec DSL, and it is useful when panels expect labels Tunerr does not map yet (Lineup parity **LP-010 / LP-011**).
+**`IPTV_TUNERR_STREAM_PROFILES_FILE`** is a JSON object of **operator-defined** profile keys. Each entry selects a **built-in** `base_profile` and can override **transcode on/off** and ffmpeg **output mux** (`mpegts`, packaged `hls`, or fragmented `fmp4`) without patching code. This is a small JSON map, not a full codec DSL, and it is useful when panels expect labels Tunerr does not map yet (Lineup parity **LP-010 / LP-011**).
 
 Example:
 
@@ -60,6 +60,12 @@ Example:
     "base_profile": "aaccfr",
     "transcode": true,
     "output_mux": "fmp4"
+  },
+  "ISP-hls": {
+    "base_profile": "dashfast",
+    "transcode": true,
+    "output_mux": "hls",
+    "description": "ffmpeg-packaged HLS playlist + segments served through Tunerr"
   }
 }
 ```
@@ -69,6 +75,8 @@ Use **`?profile=ISP-1080p`** or reference those names from **`IPTV_TUNERR_PROFIL
 Notes:
 - `base_profile` must be one of the built-in profiles or HDHR-style aliases listed above.
 - `output_mux` is only a preferred default. An explicit request like `?mux=mpegts` still wins.
+- `output_mux: "hls"` is a **profile-selected** ffmpeg packager path. It does **not** change explicit **`?mux=hls`**, which still means Tunerr-native playlist rewrite/proxy.
+- Packaged HLS uses short-lived session URLs under `/stream/<id>?mux=hlspkg&sid=...&file=...`; Tunerr serves the playlist and segment files while ffmpeg keeps packaging in the background.
 - `IPTV_TUNERR_PROFILE`, `IPTV_TUNERR_PROFILE_OVERRIDES_FILE`, and `?profile=<name>` can all reference these custom names once loaded.
 - Runtime snapshot echoes the file path under `tuner.stream_profiles_file`.
 
