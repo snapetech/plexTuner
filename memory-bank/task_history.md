@@ -23,6 +23,17 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: Autopilot URL match — godoc + known_issues (integration test baseline on main)
+  Summary:
+    - **`gateway_adapt.go`**: **`streamURLsSemanticallyEqual`** godoc lists equivalences, explicit non-goals, and test names.
+    - **`known_issues.md`**: **Gateway / Autopilot** explains narrow semantic matching (path segment case not folded).
+    - **`current_task.md`**: notes **`TestGateway_stream_..._normalizedTrailingSlash`** already on **`origin/main`**.
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+
+- Date: 2026-03-21
   Title: LP/LTV close-by-design — Autopilot URL norm + HDHR directed broadcast + LP-012 checklist
   Summary:
     - **`gateway_adapt`**: **`streamURLsSemanticallyEqual`** + tests; **HDHR**: **`IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS`**.

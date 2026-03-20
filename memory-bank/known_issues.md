@@ -35,6 +35,10 @@
 - **Plex is not deployed by this repo.** Plex Media Server is expected to run in the cluster (or on the node) from a separate deploy (e.g. sibling `k3s/plex`, Helm, or node install). If Plex is missing in the cluster, see [docs/runbooks/plex-in-cluster.md](docs/runbooks/plex-in-cluster.md) for how to check, why it's missing, and how to restore it.
 - **HDHR manifest: nodeSelector + imagePullPolicy Never.** If you pin the deployment to a node (for Plex hostPath), the image must be loaded on that node (e.g. `k3d image import` or build on that node). Otherwise you can see one healthy pod on another node and `ErrImageNeverPull` / stuck rollout on the selected node. Load the image on the chosen node or leave nodeSelector commented out to run on any node.
 
+## Gateway / Autopilot (LTV)
+
+- **Autopilot `preferred_url` vs catalog `StreamURLs` — semantic match is intentionally narrow:** `streamURLsSemanticallyEqual` in `internal/tuner/gateway_adapt.go` folds default HTTP(S) ports, one trailing slash on the path, and scheme/hostname case only. **Path segment case, userinfo, and fragments are not normalized**; **query strings must match** (`RawQuery`). Rationale: avoid treating two CDN spellings as the same URL when only casing differs. Tests: `TestStreamURLsSemanticallyEqual`, `TestGateway_stream_prefersAutopilotRememberedURL_normalizedTrailingSlash`.
+
 ## Security
 
 - **Credentials:** Secrets must live only in `.env` (or environment). `.env` is in `.gitignore`. Never commit `.env` or log secrets. Use `.env.example` as a template (no real values).

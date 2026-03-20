@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-21):** **Handoff / doc closure:** Confirmed gateway integration test **`TestGateway_stream_prefersAutopilotRememberedURL_normalizedTrailingSlash`** lives on **`origin/main`** (not part of the LP/LTV feature commit); expanded **`streamURLsSemanticallyEqual`** godoc + **`known_issues.md`** **Gateway / Autopilot** row so “by design” URL-match limits are single-source in code + memory bank. **`./scripts/verify`** OK.
+
 **Latest (2026-03-21):** **Close-by-design slice:** Autopilot **URL normalization**; **`IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS`**; **LP-012** checklist **`lineup-parity-lp012-closure.md`** + indexes; **cli-and-env**, **.env.example**, **CHANGELOG**, epics, **hdhr-scan** summary. **`./scripts/verify`** OK.
 
 **Latest (2026-03-20):** **LP / LTV slice:** **`/provider/profile.json`** → **`intelligence.autopilot`**; **stream-investigate** workflow actions; **EPIC-lineup-parity** implementation status sync; **EPIC-live-tv-intelligence** current status; **hybrid-hdhr** §6 LTV table; **features** + **CHANGELOG** + **work_breakdown**. **`./scripts/verify`** OK.

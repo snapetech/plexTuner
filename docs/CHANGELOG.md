@@ -14,6 +14,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 ## [Unreleased]
 
 ### Documentation
+- **Autopilot URL semantics:** **`streamURLsSemanticallyEqual`** godoc in **`gateway_adapt.go`** and **Gateway / Autopilot** row in **`memory-bank/known_issues.md`** spell out what is folded (ports, trailing slash, scheme/host case) vs intentionally not folded (path segment case, exact query).
 - **README:** expanded **Documentation** map (CHANGELOG, features, HR/mux references, architecture); **Kubernetes** probe guidance (**`/readyz`** / **`/healthz`** vs **`/discover.json`**); **Recent Changes** bullets for native mux header, profiles file, **HR-010** pool, live-race PMS snapshots; **Repo layout** lists **`internal/probe`**, **`internal/materializer`**; tuner endpoints mention readiness paths.
 - **`docs/features.md`:** **`/healthz`** / **`/readyz`**, **`X-IptvTunerr-Native-Mux`**, named profile matrix row, **`provider_profile.json`** mux breadcrumbs, runtime **`URLs.ready`**, materializer scope, live-race harness + Plex sessions; **See also** links **CHANGELOG** / tuning docs.
 - **`docs/index.md`:** quick entrypoints (**README**, **CHANGELOG**, **features**, CLI ref); runbooks row points at troubleshooting §8; **See also** → **repo_map**.

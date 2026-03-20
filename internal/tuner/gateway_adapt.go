@@ -313,8 +313,15 @@ func autopilotURLHost(raw string) string {
 	return strings.ToLower(strings.TrimSpace(u.Hostname()))
 }
 
-// streamURLsSemanticallyEqual treats trailing-slash paths and default HTTP(S) ports as equivalent
-// so Autopilot remembered URLs still match catalog URLs after minor normalization drift.
+// streamURLsSemanticallyEqual reports whether two stream URLs are the same for Autopilot
+// preference matching after common catalog vs memory drift:
+//   - HTTP(S) default ports (:80 / :443) when omitted vs explicit
+//   - a single trailing slash on the path (including root)
+//   - scheme and hostname ASCII case
+//
+// It does not fold path segment case, userinfo, or fragments; query strings must match
+// exactly (RawQuery). Intentionally conservative so distinct CDN path spellings are not
+// collapsed. Unit: TestStreamURLsSemanticallyEqual; integration: TestGateway_stream_prefersAutopilotRememberedURL_normalizedTrailingSlash.
 func streamURLsSemanticallyEqual(a, b string) bool {
 	a = strings.TrimSpace(a)
 	b = strings.TrimSpace(b)
