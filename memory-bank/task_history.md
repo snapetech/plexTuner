@@ -3827,6 +3827,18 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
 ---
 
 - Date: 2026-03-20
+  Title: Add guide mode that always represents the lineup
+  Summary:
+    - Added `IPTV_TUNERR_EPG_FORCE_LINEUP_MATCH` so `guide.xml` can keep every lineup channel represented even when `IPTV_TUNERR_EPG_PRUNE_UNLINKED=1` is enabled.
+    - Wired the new mode through config, runtime snapshot, XMLTV filtering, docs, and tests so it is an explicit operator choice rather than an implicit side effect.
+    - This preserves Plex matchability by letting unmatched channels keep placeholder guide rows instead of disappearing from the guide output.
+  Verification:
+    - `go test ./internal/config ./internal/tuner -run 'TestEpgPruneUnlinked|TestXMLTV_(epgPruneUnlinked|forceLineupMatchOverridesPrune)'`
+    - `./scripts/verify`
+
+---
+
+- Date: 2026-03-20
   Title: Validate live shards and add lineup integrity logging
   Summary:
     - Swept 18 live Tunerr ports and confirmed that the sampled `lineup.json` and `guide.xml` pairs were structurally healthy: zero malformed rows, zero duplicate guide numbers, and exact guide-name matches for every lineup row checked.

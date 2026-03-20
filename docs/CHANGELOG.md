@@ -21,6 +21,9 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Code-scanning hardening sweep:** local guide/alias refs now require a regular file path, while remote guide/alias `http(s)` refs reject private/loopback hosts by default unless **`IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP=1`** is set intentionally for localhost/LAN sources. Stream-attempt and guide preview endpoints now clamp oversized `limit=` requests, Plex adaptation / upstream concurrency logs avoid echoing raw header-derived values, deck login redirects are normalized to path-only targets, logout now mirrors the session cookie security flags, mux decode JSON re-enables default HTML escaping, and debug stream responses set **`X-Content-Type-Options: nosniff`**.
 - **Guide-input sandboxing:** local XMLTV / alias file refs now resolve only within the current working directory or explicit **`IPTV_TUNERR_GUIDE_INPUT_ROOTS`** entries, remote XMLTV / alias fetches must match configured provider/XMLTV/HDHR guide URLs (plus optional explicit **`IPTV_TUNERR_GUIDE_INPUT_ALLOWED_URLS`** entries), and guide parsing now reads through a single validated load path instead of reopening separate local-file sinks.
 
+### Guide / XMLTV
+- **Force lineup-to-guide matches:** **`IPTV_TUNERR_EPG_FORCE_LINEUP_MATCH=1`** keeps every lineup channel represented in emitted **`guide.xml`** even when **`IPTV_TUNERR_EPG_PRUNE_UNLINKED=1`** is enabled, by allowing unmatched channels to keep placeholder guide rows instead of disappearing from the guide output.
+
 ## [v0.1.16] — 2026-03-20
 
 ### Reliability

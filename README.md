@@ -1015,6 +1015,7 @@ Full reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-a
 | `IPTV_TUNERR_GUIDE_INPUT_ROOTS` | Comma-separated safe root directories for local XMLTV/alias files; refs outside these roots are rejected |
 | `IPTV_TUNERR_XMLTV_CACHE_TTL` | External XMLTV refresh interval (default `10m`) |
 | `IPTV_TUNERR_EPG_PRUNE_UNLINKED` | Exclude unlinked channels from guide and lineup |
+| `IPTV_TUNERR_EPG_FORCE_LINEUP_MATCH` | Keep every lineup row represented in `guide.xml` even when pruning unlinked rows, using placeholder guide entries for unmatched channels |
 | `IPTV_TUNERR_EPG_SQLITE_PATH` | Optional SQLite file for durable EPG rows ([ADR](docs/adr/0003-epg-sqlite-vs-postgres.md)); merged guide sync + `/guide/epg-store.json` |
 | `IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS` | Drop SQLite programmes ended more than N hours ago (after each sync); `0` = keep full snapshot |
 | `IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX` | Optional `&…` query suffix on provider `xmltv.php` (panel-specific; verify with provider) |

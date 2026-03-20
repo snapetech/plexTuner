@@ -58,6 +58,8 @@ type Config struct {
 	LiveOnly           bool // if true, only fetch live channels from API (skip VOD and series; faster)
 	// EPG prune: when true, guide.xml and M3U export only include channels with tvg-id set (reduces noise).
 	EpgPruneUnlinked bool
+	// EpgForceLineupMatch keeps every lineup row represented in guide.xml, even when prune-unlinked is enabled.
+	EpgForceLineupMatch bool
 	// EpgSQLitePath is an optional path to a SQLite file for durable EPG storage (LP-007+). Empty = disabled.
 	EpgSQLitePath string
 	// EpgSQLiteRetainPastHours: if > 0, drop SQLite programme rows whose end time is before now minus N hours (LP-009). 0 = keep full merged snapshot in SQLite.
@@ -196,6 +198,7 @@ func Load() *Config {
 		LiveEPGOnly:                 getEnvBool("IPTV_TUNERR_LIVE_EPG_ONLY", false),
 		LiveOnly:                    getEnvBool("IPTV_TUNERR_LIVE_ONLY", false),
 		EpgPruneUnlinked:            getEnvBool("IPTV_TUNERR_EPG_PRUNE_UNLINKED", false),
+		EpgForceLineupMatch:         getEnvBool("IPTV_TUNERR_EPG_FORCE_LINEUP_MATCH", false),
 		EpgSQLitePath:               strings.TrimSpace(os.Getenv("IPTV_TUNERR_EPG_SQLITE_PATH")),
 		EpgSQLiteRetainPastHours:    getEnvInt("IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS", 0),
 		EpgSQLiteVacuumAfterPrune:   getEnvBool("IPTV_TUNERR_EPG_SQLITE_VACUUM", false),

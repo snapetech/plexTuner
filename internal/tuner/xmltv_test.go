@@ -159,6 +159,44 @@ func TestXMLTV_epgPruneUnlinked(t *testing.T) {
 	}
 }
 
+func TestXMLTV_forceLineupMatchOverridesPrune(t *testing.T) {
+	x := &XMLTV{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "1", GuideName: "With TVG", TVGID: "id1"},
+			{GuideNumber: "2", GuideName: "No TVG", TVGID: ""},
+			{GuideNumber: "3", GuideName: "With TVG 2", TVGID: "id3"},
+		},
+		EpgPruneUnlinked:    true,
+		EpgForceLineupMatch: true,
+	}
+	req := httptest.NewRequest(http.MethodGet, "/guide.xml", nil)
+	w := httptest.NewRecorder()
+	x.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code: %d", w.Code)
+	}
+	dec := xml.NewDecoder(w.Body)
+	var tv struct {
+		Channels []struct {
+			ID      string `xml:"id,attr"`
+			Display string `xml:"display-name"`
+		} `xml:"channel"`
+	}
+	if err := dec.Decode(&tv); err != nil {
+		t.Fatal(err)
+	}
+	if len(tv.Channels) != 3 {
+		t.Fatalf("force lineup match should include all 3 channels; got %d", len(tv.Channels))
+	}
+	ids := make(map[string]string)
+	for _, ch := range tv.Channels {
+		ids[ch.ID] = ch.Display
+	}
+	if ids["1"] != "With TVG" || ids["2"] != "No TVG" || ids["3"] != "With TVG 2" {
+		t.Errorf("channels: %+v", tv.Channels)
+	}
+}
+
 func TestXMLTV_cacheHit(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
 	// refresh() fetches once; subsequent ServeHTTP calls read from cache without re-fetching.

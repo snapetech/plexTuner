@@ -79,6 +79,7 @@ type Server struct {
 	XMLTVTimeout        time.Duration
 	XMLTVCacheTTL       time.Duration // 0 = use default 10m
 	EpgPruneUnlinked    bool          // when true, guide.xml and /live.m3u only include channels with tvg-id
+	EpgForceLineupMatch bool          // when true, guide.xml keeps every lineup row even if prune-unlinked is enabled
 	FetchCFReject       bool          // abort HLS stream if segment redirected to CF abuse page (passed to Gateway)
 	ProviderEPGEnabled  bool
 	ProviderEPGTimeout  time.Duration
@@ -1095,6 +1096,7 @@ func (s *Server) Run(ctx context.Context) error {
 	xmltv := &XMLTV{
 		Channels:                   s.Channels,
 		EpgPruneUnlinked:           s.EpgPruneUnlinked,
+		EpgForceLineupMatch:        s.EpgForceLineupMatch,
 		SourceURL:                  s.XMLTVSourceURL,
 		SourceTimeout:              s.XMLTVTimeout,
 		CacheTTL:                   cacheTTL,

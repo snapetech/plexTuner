@@ -6,6 +6,8 @@
 
 **Latest (2026-03-20):** **Live shard validation + lineup integrity logs:** swept 18 live ports (**5004**, **5006–5013**, **5101–5103**, **5201–5206**) and every sampled **`lineup.json`** matched **`guide.xml`** exactly with zero malformed rows or duplicate guide numbers. Added a concise **`UpdateChannels`** integrity summary log (**channels / epg_linked / with_tvg / with_stream / missing_core / duplicate_guide_numbers / duplicate_channel_ids**) so future tester reports identify bad generated shards immediately.
 
+**Latest (2026-03-20):** **Guide match guarantee mode:** added an explicit XMLTV emission mode so **`IPTV_TUNERR_EPG_FORCE_LINEUP_MATCH=1`** keeps every lineup channel represented in **`guide.xml`** even when **`IPTV_TUNERR_EPG_PRUNE_UNLINKED=1`** is enabled. This is aimed at Plex first-run matching: unmatched channels keep placeholder guide rows instead of disappearing from the guide output.
+
 **Latest (2026-03-20):** **INT-005/INT-010 bridge:** Autopilot now supports a JSON **host policy file** (**`IPTV_TUNERR_AUTOPILOT_HOST_POLICY_FILE`**) with **preferred** and **blocked** hosts. Preferred hosts merge with **`IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS`**; blocked hosts are skipped in **`reorderStreamURLs`** only when backups remain. Runtime/report/docs/tests updated.
 
 **Latest (2026-03-20):** **INT-008 follow-up:** Ghost Hunter now has first-class operator actions: **`POST /ops/actions/ghost-visible-stop`** and **`POST /ops/actions/ghost-hidden-recover?mode=dry-run|restart`**, reusing the guarded helper path (**`IPTV_TUNERR_GHOST_HUNTER_RECOVERY_HELPER`** override). Control-deck actions/workflows, tests, and docs updated.

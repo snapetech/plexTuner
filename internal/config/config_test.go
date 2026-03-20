@@ -282,10 +282,17 @@ func TestEpgPruneUnlinked(t *testing.T) {
 	if c.EpgPruneUnlinked {
 		t.Error("EpgPruneUnlinked should default false")
 	}
+	if c.EpgForceLineupMatch {
+		t.Error("EpgForceLineupMatch should default false")
+	}
 	os.Setenv("IPTV_TUNERR_EPG_PRUNE_UNLINKED", "1")
+	os.Setenv("IPTV_TUNERR_EPG_FORCE_LINEUP_MATCH", "1")
 	c = Load()
 	if !c.EpgPruneUnlinked {
 		t.Error("EpgPruneUnlinked should be true for 1")
+	}
+	if !c.EpgForceLineupMatch {
+		t.Error("EpgForceLineupMatch should be true for 1")
 	}
 }
 

@@ -1091,7 +1091,8 @@ Fetches EPG directly from your IPTV provider using existing credentials. No sepa
 - `IPTV_TUNERR_XMLTV_TIMEOUT` — fetch timeout (default `45s`)
 - `IPTV_TUNERR_XMLTV_CACHE_TTL` — refresh interval when provider EPG cache TTL is not set (default `10m`)
 - `IPTV_TUNERR_LIVE_EPG_ONLY` — at **catalog build**, keep only channels with **`epg_linked`** / a **`tvg-id`** (drops unlinked rows before save). See [lineup-epg-hygiene](lineup-epg-hygiene.md).
-- `IPTV_TUNERR_EPG_PRUNE_UNLINKED` — exclude channels with no EPG match from both guide and lineup
+- `IPTV_TUNERR_EPG_PRUNE_UNLINKED` — exclude channels with no EPG match from emitted `guide.xml` and `live.m3u` by default
+- `IPTV_TUNERR_EPG_FORCE_LINEUP_MATCH` — keep every lineup row represented in `guide.xml` even when `IPTV_TUNERR_EPG_PRUNE_UNLINKED=1`, using placeholder guide rows for unmatched channels so Plex can still map tuner channels to guide channels
 - `IPTV_TUNERR_EPG_SQLITE_PATH` — optional filesystem path to a **SQLite** file for durable EPG storage (merged guide sync after each refresh; schema v2 includes `epg_meta`). Empty = disabled. Rationale: [ADR 0003](../adr/0003-epg-sqlite-vs-postgres.md).
 - `IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS` — if `> 0`, after each sync delete SQLite programme rows whose **end time** is before `now - N hours`, then remove orphan `epg_channel` rows. `0` = keep the full merged snapshot in SQLite.
 - `IPTV_TUNERR_EPG_SQLITE_VACUUM` — if `true`/`1`, run SQLite **`VACUUM`** after a retain-past prune that removed at least one row (optional; reclaims file space, may pause briefly on large DBs).

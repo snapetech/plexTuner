@@ -32,10 +32,12 @@ import (
 type XMLTV struct {
 	Channels         []catalog.LiveChannel
 	EpgPruneUnlinked bool // when true, only include channels with TVGID set
-	SourceURL        string
-	SourceTimeout    time.Duration
-	Client           *http.Client
-	CacheTTL         time.Duration // 0 = use default 10m
+	// EpgForceLineupMatch keeps every lineup channel represented in guide.xml even when prune-unlinked is enabled.
+	EpgForceLineupMatch bool
+	SourceURL           string
+	SourceTimeout       time.Duration
+	Client              *http.Client
+	CacheTTL            time.Duration // 0 = use default 10m
 
 	// Provider EPG: if set and ProviderEPGEnabled, fetches xmltv.php for the richest guide data.
 	ProviderBaseURL    string
@@ -178,6 +180,9 @@ func (x *XMLTV) filteredChannels() []catalog.LiveChannel {
 	channels := x.Channels
 	if channels == nil {
 		channels = []catalog.LiveChannel{}
+	}
+	if x.EpgForceLineupMatch {
+		return channels
 	}
 	if !x.EpgPruneUnlinked {
 		return channels
