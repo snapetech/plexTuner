@@ -707,7 +707,7 @@ Merge semantics for HDHR + IPTV catalogs: [adr/0002-hdhr-hardware-iptv-merge.md]
 | `IPTV_TUNERR_UI_DISABLED` | If `1`, `/ui/` is not served. |
 | `IPTV_TUNERR_UI_ALLOW_LAN` | If `1`, allow non-loopback clients to open `/ui/` (default: **localhost only**). |
 
-Browser URL: `http://127.0.0.1:<port>/ui/` — links to `/healthz`, `/guide/health.json`, `/channels/report.json`.
+Browser URLs (same env as above): `http://127.0.0.1:<port>/ui/` (home), `/ui/guide/` (merged guide preview from cache), `/ui/guide-preview.json` (JSON; optional `?limit=`). Also linked from `/ui/`: `/healthz`, `/guide/health.json`, `/channels/report.json`.
 
 ## `iptv-tunerr probe`
 

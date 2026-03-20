@@ -118,7 +118,7 @@ Three ways to add IPTV Tunerr to Plex, Emby, or Jellyfin — pick the one that f
 > Then: Dashboard → Live TV → + (guide) → XMLTV
 > Guide URL: `http://<this-host>:5004/guide.xml`
 
-Optional local operator page (links to health / JSON reports): `http://127.0.0.1:5004/ui/` — localhost-only unless `IPTV_TUNERR_UI_ALLOW_LAN=1`
+Optional local operator UI: `http://127.0.0.1:5004/ui/` (links to health / JSON reports) and **`/ui/guide/`** (read-only merged guide preview from cache) — localhost-only unless `IPTV_TUNERR_UI_ALLOW_LAN=1`
 
 **Programmatic (all servers, headless):**
 ```bash

@@ -49,6 +49,43 @@ func TestXMLTV_404(t *testing.T) {
 	}
 }
 
+func TestXMLTV_GuidePreview_sortAndLimit(t *testing.T) {
+	x := &XMLTV{
+		cachedXML: []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="A"><display-name>Alpha</display-name></channel>
+  <channel id="B"><display-name>Beta</display-name></channel>
+  <programme start="20260319120000 +0000" stop="20260319130000 +0000" channel="B">
+    <title>Later</title>
+  </programme>
+  <programme start="20260319100000 +0000" stop="20260319110000 +0000" channel="A">
+    <title>Earlier</title>
+  </programme>
+</tv>`),
+		cacheExp: time.Date(2026, 3, 20, 0, 0, 0, 0, time.UTC),
+	}
+	gp, err := x.GuidePreview(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gp.SourceReady || gp.ProgrammeCount != 2 || gp.ChannelCount != 2 {
+		t.Fatalf("meta: %+v", gp)
+	}
+	if gp.CacheExpiresAt == "" {
+		t.Fatalf("expected cache_expires_at")
+	}
+	if len(gp.Rows) != 1 || gp.Rows[0].Title != "Earlier" || gp.Rows[0].ChannelName != "Alpha" {
+		t.Fatalf("limit=1 rows: %+v", gp.Rows)
+	}
+	gp2, err := x.GuidePreview(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gp2.Rows) != 2 || gp2.Rows[0].Title != "Earlier" || gp2.Rows[1].Title != "Later" {
+		t.Fatalf("full order: %+v", gp2.Rows)
+	}
+}
+
 func TestXMLTV_epgPruneUnlinked(t *testing.T) {
 	x := &XMLTV{
 		Channels: []catalog.LiveChannel{

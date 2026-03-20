@@ -17,6 +17,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **`hdhr-scan`**: UDP discovery for physical SiliconDust tuners (or `-addr` for HTTP-only `discover.json` / optional `lineup.json`). Implemented in `internal/hdhomerun` (`DiscoverLAN`, `FetchDiscoverJSON`, `FetchLineupJSON`).
 - **`hdhr-scan -guide-xml`**: fetch device `guide.xml`, count XMLTV `channel` / `programme` elements (`internal/hdhomerun/guide.go`); still no merge into Tunerr EPG (see ADR 0002).
 - **Operator `/ui/`**: minimal embedded HTML dashboard (`internal/tuner/static/ui/`, `IPTV_TUNERR_UI_*`); localhost-only by default.
+- **Operator guide preview (`LP-006`)**: `/ui/guide/` shows a read-only table from the **merged cached** XMLTV (`XMLTV.GuidePreview`); `/ui/guide-preview.json` returns the same data (optional `?limit=` up to 500).
 - **ADR 0002** ([docs/adr/0002-hdhr-hardware-iptv-merge.md](adr/0002-hdhr-hardware-iptv-merge.md)): how HDHR hardware lineups relate to IPTV catalogs (tag sources; separate instances until explicit merge).
 
 ---

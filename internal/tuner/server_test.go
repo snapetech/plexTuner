@@ -355,6 +355,56 @@ func TestServer_guideHighlights(t *testing.T) {
 	}
 }
 
+func TestServer_operatorGuidePreviewJSON(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
+	now := time.Now().UTC()
+	p1 := now.Add(1 * time.Hour).Format("20060102150405 +0000")
+	p2 := now.Add(2 * time.Hour).Format("20060102150405 +0000")
+	stop := now.Add(3 * time.Hour).Format("20060102150405 +0000")
+	s := &Server{
+		AppVersion: "testver",
+		xmltv: &XMLTV{
+			cachedXML: []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="101"><display-name>One</display-name></channel>
+  <programme start="` + p2 + `" stop="` + stop + `" channel="101"><title>Second</title></programme>
+  <programme start="` + p1 + `" stop="` + stop + `" channel="101"><title>First</title></programme>
+</tv>`),
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/ui/guide-preview.json?limit=5", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	s.serveOperatorGuidePreviewJSON().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body GuidePreview
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if !body.SourceReady || len(body.Rows) != 2 {
+		t.Fatalf("unexpected body: %+v", body)
+	}
+	if body.Rows[0].Title != "First" || body.Rows[1].Title != "Second" {
+		t.Fatalf("sort: %+v", body.Rows)
+	}
+}
+
+func TestServer_operatorGuidePreview_forbiddenNonLoopback(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
+	s := &Server{
+		xmltv: &XMLTV{cachedXML: []byte(`<?xml version="1.0"?><tv></tv>`)},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/ui/guide-preview.json", nil)
+	req.RemoteAddr = "192.168.1.10:5555"
+	w := httptest.NewRecorder()
+	s.serveOperatorGuidePreviewJSON().ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status=%d want 403", w.Code)
+	}
+}
+
 func TestServer_guideHealth(t *testing.T) {
 	s := &Server{
 		xmltv: &XMLTV{

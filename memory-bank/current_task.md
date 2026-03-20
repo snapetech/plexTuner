@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-19):** Lineup parity **`LP-006`** — operator **merged guide preview**: `XMLTV.GuidePreview`, routes `/ui/guide/` + `/ui/guide-preview.json` (shared `operatorUIAllowed` with `/ui/`). See `memory-bank/task_history.md`. **Next likely slices:** `LP-007`–`LP-009` (SQLite EPG) or `LP-010`/`LP-011` (named transcode profile wiring).
+
 **Goal:** Start the new Live TV Intelligence product track: map the multi-PR roadmap, then ship the first visible foundation feature so IPTV Tunerr feels like an intelligent control plane instead of only a tuner bridge.
 
 **Approved epic (2026-03-19):** User confirmed **all four** tracks in [docs/epics/EPIC-lineup-parity.md](../docs/epics/EPIC-lineup-parity.md) — real HDHomeRun **client**, **web dashboard**, **SQLite EPG** model, **HLS/fMP4 profiles** (see stories `LP-001`–`LP-012`). Implementation is multi-PR; do not scope-creep unrelated refactors.

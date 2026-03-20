@@ -49,7 +49,7 @@ See also:
 | **HDHR metadata controls** | Per-instance discover metadata (manufacturer/model/fw/device auth) and `ScanPossible` control for wizard-lane vs category tuners. |
 | **Physical HDHomeRun client (spike)** | `hdhr-scan` discovers real tuners on the LAN (UDP) or fetches `discover.json` / `lineup.json` via HTTP; catalog merge is **not** automatic — see [ADR 0002](adr/0002-hdhr-hardware-iptv-merge.md). |
 | **HDHR `guide.xml` probe** | `hdhr-scan -guide-xml` downloads device XMLTV and counts channels/programmes (observability only; no pipeline merge yet). |
-| **Operator `/ui/` shell** | Embedded static page on `serve`/`run` with links to health and JSON reports; localhost-only unless `IPTV_TUNERR_UI_ALLOW_LAN=1`. |
+| **Operator `/ui/` shell** | Embedded static pages on `serve`/`run`: home (`/ui/`) links to health and JSON reports; **`/ui/guide/`** shows a read-only preview of the merged cached guide; localhost-only unless `IPTV_TUNERR_UI_ALLOW_LAN=1`. |
 
 ## 4. Stream gateway and transcoding
 

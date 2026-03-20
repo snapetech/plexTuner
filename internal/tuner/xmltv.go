@@ -337,6 +337,26 @@ type GuideHighlights struct {
 	MoviesStartingSoon []GuideHighlight `json:"movies_starting_soon"`
 }
 
+// GuidePreviewRow is a single row from the merged cached guide, sorted by programme start.
+type GuidePreviewRow struct {
+	ChannelID   string `json:"channel_id"`
+	ChannelName string `json:"channel_name"`
+	Title       string `json:"title"`
+	SubTitle    string `json:"sub_title,omitempty"`
+	Start       string `json:"start"`
+	Stop        string `json:"stop"`
+}
+
+// GuidePreview summarizes the cached merged guide for operator dashboards (read-only).
+type GuidePreview struct {
+	GeneratedAt    string            `json:"generated_at"`
+	CacheExpiresAt string            `json:"cache_expires_at,omitempty"`
+	SourceReady    bool              `json:"source_ready"`
+	ProgrammeCount int               `json:"programme_count"`
+	ChannelCount   int               `json:"channel_count"`
+	Rows           []GuidePreviewRow `json:"rows"`
+}
+
 type CatchupCapsule struct {
 	CapsuleID    string   `json:"capsule_id"`
 	DNAID        string   `json:"dna_id,omitempty"`
@@ -440,6 +460,83 @@ func (x *XMLTV) GuideHighlights(now time.Time, soonWindow time.Duration, limit i
 	out.StartingSoon = truncateGuideHighlights(soon, limit)
 	out.SportsNow = truncateGuideHighlights(sportsNow, limit)
 	out.MoviesStartingSoon = truncateGuideHighlights(moviesSoon, limit)
+	return out, nil
+}
+
+// GuidePreview returns the first limit programmes from the cached merged guide, sorted by
+// start time ascending. Intended for the operator UI; it does not hit the network.
+func (x *XMLTV) GuidePreview(limit int) (GuidePreview, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	now := time.Now()
+	x.mu.RLock()
+	data := append([]byte(nil), x.cachedXML...)
+	cacheExp := x.cacheExp
+	x.mu.RUnlock()
+
+	out := GuidePreview{
+		GeneratedAt: now.UTC().Format(time.RFC3339),
+		SourceReady: len(data) > 0,
+	}
+	if !cacheExp.IsZero() {
+		out.CacheExpiresAt = cacheExp.UTC().Format(time.RFC3339)
+	}
+	if len(data) == 0 {
+		return out, nil
+	}
+	var tv xmlTVRoot
+	if err := xml.Unmarshal(data, &tv); err != nil {
+		return out, err
+	}
+	out.ChannelCount = len(tv.Channels)
+	out.ProgrammeCount = len(tv.Programmes)
+
+	channelNames := make(map[string]string, len(tv.Channels))
+	for _, ch := range tv.Channels {
+		channelNames[strings.TrimSpace(ch.ID)] = strings.TrimSpace(ch.Display)
+	}
+
+	type keyed struct {
+		start time.Time
+		row   GuidePreviewRow
+	}
+	var buf []keyed
+	for _, p := range tv.Programmes {
+		start, okStart := parseXMLTVTime(p.Start)
+		stop, okStop := parseXMLTVTime(p.Stop)
+		if !okStart || !okStop || !stop.After(start) {
+			continue
+		}
+		chID := strings.TrimSpace(p.Channel)
+		buf = append(buf, keyed{
+			start: start,
+			row: GuidePreviewRow{
+				ChannelID:   chID,
+				ChannelName: channelNames[chID],
+				Title:       strings.TrimSpace(p.Title.Value),
+				SubTitle:    strings.TrimSpace(p.SubTitle.Value),
+				Start:       start.UTC().Format(time.RFC3339),
+				Stop:        stop.UTC().Format(time.RFC3339),
+			},
+		})
+	}
+	sort.SliceStable(buf, func(i, j int) bool {
+		if buf[i].start.Equal(buf[j].start) {
+			if buf[i].row.ChannelID == buf[j].row.ChannelID {
+				return buf[i].row.Title < buf[j].row.Title
+			}
+			return buf[i].row.ChannelID < buf[j].row.ChannelID
+		}
+		return buf[i].start.Before(buf[j].start)
+	})
+	if len(buf) > limit {
+		buf = buf[:limit]
+	}
+	out.Rows = make([]GuidePreviewRow, len(buf))
+	for i := range buf {
+		out.Rows[i] = buf[i].row
+	}
 	return out, nil
 }
 

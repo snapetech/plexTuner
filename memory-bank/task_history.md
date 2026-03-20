@@ -23,6 +23,22 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: LP-006 operator guide preview (/ui/guide/)
+  Summary:
+    - `XMLTV.GuidePreview(limit)` + `GuidePreview` / `GuidePreviewRow` types: sorted programmes from merged cached XMLTV, cache expiry metadata.
+    - `internal/tuner/operator_ui.go`: `operatorUIAllowed`, `/ui/guide/` HTML (`static/ui/guide.html`), `/ui/guide-preview.json`; `serveOperatorUI` refactored to shared gate.
+    - `internal/tuner/server.go`: register routes before `/ui/` prefix; tests in `xmltv_test.go` / `server_test.go`.
+    - Docs: CHANGELOG, features, CLI reference, epic status; `gofmt -s` on `internal/config/config.go` (verify drift).
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Distinct from `/guide/highlights.json` (time-windowed “now/soon”); preview is linear cache inspection for operators.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/xmltv.go`, `internal/tuner/operator_ui.go`
+
+- Date: 2026-03-19
   Title: PR-2/3 partial: HDHR guide.xml probe + operator /ui
   Summary:
     - `internal/hdhomerun/guide.go`: `FetchGuideXML`, `AnalyzeGuideXMLStats`, `GuideURLFromBase`; `hdhr-scan -guide-xml`.

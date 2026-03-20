@@ -1003,6 +1003,15 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/live.m3u", m3uServe)
 	mux.Handle("/stream/", gateway)
 	mux.Handle("/healthz", s.serveHealth())
+	mux.Handle("/ui/guide-preview.json", s.serveOperatorGuidePreviewJSON())
+	mux.HandleFunc("/ui/guide", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		http.Redirect(w, r, "/ui/guide/", http.StatusSeeOther)
+	})
+	mux.Handle("/ui/guide/", s.serveOperatorGuidePreviewPage())
 	mux.HandleFunc("/ui", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

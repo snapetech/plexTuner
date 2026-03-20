@@ -87,6 +87,7 @@ IPTV Tunerr’s mission stays **IPTV/Xtream → HDHR-shaped bridge for Plex/Emby
 - **PR-1**: `LP-001`, `LP-002` spike, ADR 0002, docs.
 - **PR-2 (partial)**: **`LP-003`** — `FetchGuideXML`, `AnalyzeGuideXMLStats`, `hdhr-scan -guide-xml` (device XMLTV fetch + stats; **no merge** into Tunerr guide pipeline).
 - **PR-3 (partial)**: **`LP-004`/`LP-005`** — embedded `/ui/` with health/guide/report links; `IPTV_TUNERR_UI_DISABLED` / `IPTV_TUNERR_UI_ALLOW_LAN`; `AppVersion` on server.
+- **PR-4 (partial)**: **`LP-006`** — `/ui/guide/` + `/ui/guide-preview.json` read-only merged cached guide preview (`XMLTV.GuidePreview`); shared `operatorUIAllowed` helper.
 - **`LP-012`**: ongoing.
 
 ## Coordination with other epics
