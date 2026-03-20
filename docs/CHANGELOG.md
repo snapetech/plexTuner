@@ -15,6 +15,16 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 - *(none)*
 
+## [v0.1.18] — 2026-03-20
+
+### Guide / XMLTV
+- **Guide-versus-lineup match report:** added **`GET /guide/lineup-match.json`** so operators can inspect emitted guide coverage against the active lineup without scraping XML manually. The report includes lineup and guide channel counts, exact guide-name matches, duplicate guide numbers/names, and sampled missing lineup rows.
+- **Lineup integrity logging:** channel refreshes now log lineup-integrity counters including linked EPG rows, rows with streams, missing core fields, duplicate guide numbers, and duplicate channel ids so broken generator output is visible immediately in shard logs.
+- **First-run mapping regression fix:** runtime EPG repair and guide-health flows now pass their trusted provider/XMLTV refs into the hardened guide-input loader, restoring automatic first-run mapping while keeping the narrowed remote guide allowlist.
+
+### Testing / Performance
+- **Faster tuner verification:** the slow HLS relative-URL relay regression test now overrides the long no-progress timeout and refresh sleep in-test only, cutting **`internal/tuner`** package runtime sharply without changing production relay behavior.
+
 ## [v0.1.17] — 2026-03-20
 
 ### Security

@@ -3889,6 +3889,18 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
 ---
 
 - Date: 2026-03-20
+  Title: Enrich guide-lineup mismatch samples with TVG identifiers
+  Summary:
+    - Added `channel_id` and observed `tvg_id` to `/guide/lineup-match.json` sample rows so mismatch reports show the lineup record and upstream guide-link state together.
+    - Kept the endpoint diagnostic-only: it exposes real observed linkage metadata instead of synthesizing `tvg_id` from `guide_number`.
+    - Updated the CLI/env reference and tuner tests to lock the richer payload shape in place.
+  Verification:
+    - `go test ./internal/tuner -run 'Test(XMLTV_GuideLineupMatchReport|Server_guideLineupMatch)'`
+    - `./scripts/verify`
+
+---
+
+- Date: 2026-03-20
   Title: Add shared operator activity memory to the deck
   Summary:
     - Added `/deck/activity.json` on the dedicated web UI server and persisted it alongside deck telemetry so operator activity survives reloads and optional deck restarts.

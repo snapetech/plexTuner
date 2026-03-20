@@ -200,9 +200,9 @@ func TestXMLTV_forceLineupMatchOverridesPrune(t *testing.T) {
 func TestXMLTV_GuideLineupMatchReport(t *testing.T) {
 	x := &XMLTV{
 		Channels: []catalog.LiveChannel{
-			{GuideNumber: "1", GuideName: "Alpha", StreamURL: "http://a/1"},
-			{GuideNumber: "2", GuideName: "Missing", StreamURL: "http://a/2"},
-			{GuideNumber: "3", GuideName: "Alpha", StreamURL: "http://a/3"},
+			{ChannelID: "chan-1", GuideNumber: "1", GuideName: "Alpha", TVGID: "alpha.tvg", StreamURL: "http://a/1"},
+			{ChannelID: "chan-2", GuideNumber: "2", GuideName: "Missing", TVGID: "missing.tvg", StreamURL: "http://a/2"},
+			{ChannelID: "chan-3", GuideNumber: "3", GuideName: "Alpha", TVGID: "alpha-dup.tvg", StreamURL: "http://a/3"},
 		},
 		cachedXML: []byte(`<?xml version="1.0" encoding="UTF-8"?>
 <tv>
@@ -231,6 +231,9 @@ func TestXMLTV_GuideLineupMatchReport(t *testing.T) {
 		t.Fatalf("duplicate_guide_names=%d want 1", rep.DuplicateGuideNames)
 	}
 	if len(rep.SampleMissing) != 1 || rep.SampleMissing[0].GuideName != "Missing" {
+		t.Fatalf("sample_missing=%+v", rep.SampleMissing)
+	}
+	if rep.SampleMissing[0].ChannelID != "chan-2" || rep.SampleMissing[0].TVGID != "missing.tvg" {
 		t.Fatalf("sample_missing=%+v", rep.SampleMissing)
 	}
 }

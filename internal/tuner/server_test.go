@@ -121,8 +121,8 @@ func TestServer_guideLineupMatch(t *testing.T) {
 	s := &Server{
 		xmltv: &XMLTV{
 			Channels: []catalog.LiveChannel{
-				{GuideNumber: "101", GuideName: "Alpha", StreamURL: "http://a/1"},
-				{GuideNumber: "102", GuideName: "Missing", StreamURL: "http://a/2"},
+				{ChannelID: "alpha-101", GuideNumber: "101", GuideName: "Alpha", TVGID: "alpha.tvg", StreamURL: "http://a/1"},
+				{ChannelID: "missing-102", GuideNumber: "102", GuideName: "Missing", TVGID: "missing.tvg", StreamURL: "http://a/2"},
 			},
 			cachedXML: []byte(`<?xml version="1.0" encoding="UTF-8"?>
 <tv>
@@ -144,6 +144,9 @@ func TestServer_guideLineupMatch(t *testing.T) {
 		t.Fatalf("body=%+v", body)
 	}
 	if body.MissingGuideNames != 1 || len(body.SampleMissing) != 1 || body.SampleMissing[0].GuideName != "Missing" {
+		t.Fatalf("body=%+v", body)
+	}
+	if body.SampleMissing[0].ChannelID != "missing-102" || body.SampleMissing[0].TVGID != "missing.tvg" {
 		t.Fatalf("body=%+v", body)
 	}
 }

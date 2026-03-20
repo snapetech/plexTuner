@@ -461,8 +461,10 @@ type GuidePreview struct {
 }
 
 type GuideLineupMatchRow struct {
+	ChannelID   string `json:"channel_id,omitempty"`
 	GuideNumber string `json:"guide_number"`
 	GuideName   string `json:"guide_name"`
+	TVGID       string `json:"tvg_id,omitempty"`
 	URL         string `json:"url,omitempty"`
 	Reason      string `json:"reason,omitempty"`
 }
@@ -723,8 +725,10 @@ func (x *XMLTV) GuideLineupMatchReport(limit int) (GuideLineupMatchReport, error
 				url = strings.TrimSpace(ch.StreamURLs[0])
 			}
 			out.SampleMissing = append(out.SampleMissing, GuideLineupMatchRow{
+				ChannelID:   strings.TrimSpace(ch.ChannelID),
 				GuideNumber: strings.TrimSpace(ch.GuideNumber),
 				GuideName:   name,
+				TVGID:       strings.TrimSpace(ch.TVGID),
 				URL:         url,
 				Reason:      "guide_name_not_found_in_guide_xml",
 			})

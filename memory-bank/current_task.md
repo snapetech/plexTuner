@@ -2,6 +2,10 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-20):** **Release cut `v0.1.18`:** package the lineup-integrity logs, first-run mapping repair, guide-force-lineup-match mode, and new **`/guide/lineup-match.json`** debug surface into the next patch build. **`./scripts/verify`** OK; next is pushing the release tag and watching the workflow.
+
+**Latest (2026-03-20):** **Guide debug payload enrichment:** **`/guide/lineup-match.json`** sampled missing rows now include observed **`channel_id`** and **`tvg_id`** in addition to **`guide_number`** / **`guide_name`** / URL so tester reports show real upstream linkage state instead of only lineup labels.
+
 **Latest (2026-03-20):** **Post-release regression + test-cost fix:** the exact-URL guide-input hardening regressed first-run automatic channel mapping when provider/XMLTV refs were supplied at runtime instead of env; internal callers now pass their exact trusted refs explicitly into **`guideinput`**, restoring runtime EPG repair / guide-health flows without reopening generic remote fetches. Also cut the worst HLS relay test from ~12s wall-clock to ~1s by overriding the relay stall/sleep hooks in-test only. **`./scripts/verify`** OK.
 
 **Latest (2026-03-20):** **Live shard validation + lineup integrity logs:** swept 18 live ports (**5004**, **5006–5013**, **5101–5103**, **5201–5206**) and every sampled **`lineup.json`** matched **`guide.xml`** exactly with zero malformed rows or duplicate guide numbers. Added a concise **`UpdateChannels`** integrity summary log (**channels / epg_linked / with_tvg / with_stream / missing_core / duplicate_guide_numbers / duplicate_channel_ids**) so future tester reports identify bad generated shards immediately.
