@@ -107,7 +107,7 @@ seg.ts
 	if !strings.Contains(s, "http%3A%2F%2Fup.example%2Flive%2Flow%2Findex.m3u8") {
 		t.Fatalf("missing variant stream rewrite: %q", s)
 	}
-	if !strings.Contains(s, "http%3A%2F%2Fkeys.example.com%2Fsecret.key") {
+	if !strings.Contains(s, "https%3A%2F%2Fkeys.example.com%2Fsecret.key") {
 		t.Fatalf("missing AES key rewrite: %q", s)
 	}
 	if !strings.Contains(s, "http%3A%2F%2Fup.example%2Flive%2Finit.mp4") {
