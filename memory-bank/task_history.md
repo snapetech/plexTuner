@@ -3827,6 +3827,18 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
 ---
 
 - Date: 2026-03-20
+  Title: Add guide versus lineup match report endpoint
+  Summary:
+    - Added `/guide/lineup-match.json` to report current lineup count, guide channel count, exact-name coverage, duplicate guide names/numbers, and a sample of lineup rows missing from emitted `guide.xml`.
+    - Wired the endpoint into runtime links and tests so operators can validate Plex matchability directly from the tuner instead of manually diffing `lineup.json` and `guide.xml`.
+    - This complements `IPTV_TUNERR_EPG_FORCE_LINEUP_MATCH` by making the remaining mismatch surface observable.
+  Verification:
+    - `go test ./internal/tuner -run 'Test(XMLTV_GuideLineupMatchReport|Server_guideLineupMatch|XMLTV_forceLineupMatchOverridesPrune)'`
+    - `./scripts/verify`
+
+---
+
+- Date: 2026-03-20
   Title: Add guide mode that always represents the lineup
   Summary:
     - Added `IPTV_TUNERR_EPG_FORCE_LINEUP_MATCH` so `guide.xml` can keep every lineup channel represented even when `IPTV_TUNERR_EPG_PRUNE_UNLINKED=1` is enabled.

@@ -117,6 +117,37 @@ func TestServer_readyz(t *testing.T) {
 	}
 }
 
+func TestServer_guideLineupMatch(t *testing.T) {
+	s := &Server{
+		xmltv: &XMLTV{
+			Channels: []catalog.LiveChannel{
+				{GuideNumber: "101", GuideName: "Alpha", StreamURL: "http://a/1"},
+				{GuideNumber: "102", GuideName: "Missing", StreamURL: "http://a/2"},
+			},
+			cachedXML: []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="101"><display-name>Alpha</display-name></channel>
+</tv>`),
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/guide/lineup-match.json?limit=5", nil)
+	w := httptest.NewRecorder()
+	s.serveGuideLineupMatch().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d want 200", w.Code)
+	}
+	var body GuideLineupMatchReport
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body.LineupChannels != 2 || body.GuideChannels != 1 {
+		t.Fatalf("body=%+v", body)
+	}
+	if body.MissingGuideNames != 1 || len(body.SampleMissing) != 1 || body.SampleMissing[0].GuideName != "Missing" {
+		t.Fatalf("body=%+v", body)
+	}
+}
+
 func TestSummarizeLineupIntegrity(t *testing.T) {
 	live := []catalog.LiveChannel{
 		{ChannelID: "1", GuideNumber: "101", GuideName: "Ch1", TVGID: "one", EPGLinked: true, StreamURL: "http://a/1"},

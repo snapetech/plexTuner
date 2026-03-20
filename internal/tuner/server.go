@@ -1144,6 +1144,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/guide/policy.json", s.serveGuidePolicy())
 	mux.Handle("/guide/doctor.json", s.serveEPGDoctor())
 	mux.Handle("/guide/aliases.json", s.serveSuggestedAliasOverrides())
+	mux.Handle("/guide/lineup-match.json", s.serveGuideLineupMatch())
 	mux.Handle("/guide/highlights.json", s.serveGuideHighlights())
 	mux.Handle("/guide/epg-store.json", s.serveEpgStoreReport())
 	mux.Handle("/guide/capsules.json", s.serveCatchupCapsules())
@@ -2032,6 +2033,27 @@ func (s *Server) serveRuntimeSnapshot() http.Handler {
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
 			http.Error(w, `{"error":"encode runtime snapshot"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveGuideLineupMatch() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.xmltv == nil {
+			http.Error(w, `{"error":"guide unavailable"}`, http.StatusServiceUnavailable)
+			return
+		}
+		rep, err := s.xmltv.GuideLineupMatchReport(streamAttemptLimitFromQuery(r.URL.Query().Get("limit"), 25))
+		if err != nil {
+			http.Error(w, `{"error":"guide lineup match unavailable"}`, http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		body, err := json.MarshalIndent(rep, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode guide lineup match"}`, http.StatusInternalServerError)
 			return
 		}
 		_, _ = w.Write(body)

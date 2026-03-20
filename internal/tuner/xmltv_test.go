@@ -197,6 +197,44 @@ func TestXMLTV_forceLineupMatchOverridesPrune(t *testing.T) {
 	}
 }
 
+func TestXMLTV_GuideLineupMatchReport(t *testing.T) {
+	x := &XMLTV{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "1", GuideName: "Alpha", StreamURL: "http://a/1"},
+			{GuideNumber: "2", GuideName: "Missing", StreamURL: "http://a/2"},
+			{GuideNumber: "3", GuideName: "Alpha", StreamURL: "http://a/3"},
+		},
+		cachedXML: []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="1"><display-name>Alpha</display-name></channel>
+  <channel id="4"><display-name>Alpha</display-name></channel>
+  <programme start="20260319100000 +0000" stop="20260319110000 +0000" channel="1"><title>Show</title></programme>
+</tv>`),
+	}
+	rep, err := x.GuideLineupMatchReport(5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.SourceReady {
+		t.Fatal("expected source ready")
+	}
+	if rep.LineupChannels != 3 || rep.GuideChannels != 2 {
+		t.Fatalf("meta=%+v", rep)
+	}
+	if rep.ExactNameMatches != 2 {
+		t.Fatalf("exact_name_matches=%d want 2", rep.ExactNameMatches)
+	}
+	if rep.MissingGuideNames != 1 {
+		t.Fatalf("missing_guide_names=%d want 1", rep.MissingGuideNames)
+	}
+	if rep.DuplicateGuideNames != 1 {
+		t.Fatalf("duplicate_guide_names=%d want 1", rep.DuplicateGuideNames)
+	}
+	if len(rep.SampleMissing) != 1 || rep.SampleMissing[0].GuideName != "Missing" {
+		t.Fatalf("sample_missing=%+v", rep.SampleMissing)
+	}
+}
+
 func TestXMLTV_cacheHit(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
 	// refresh() fetches once; subsequent ServeHTTP calls read from cache without re-fetching.

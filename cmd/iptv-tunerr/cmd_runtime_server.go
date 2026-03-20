@@ -220,6 +220,7 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"guide_health":        "/guide/health.json",
 			"guide_doctor":        "/guide/doctor.json",
 			"guide_aliases":       "/guide/aliases.json",
+			"guide_lineup_match":  "/guide/lineup-match.json",
 			"guide_highlights":    "/guide/highlights.json",
 			"guide_epg_store":     "/guide/epg-store.json",
 			"guide_capsules":      "/guide/capsules.json",

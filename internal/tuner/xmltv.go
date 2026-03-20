@@ -460,6 +460,25 @@ type GuidePreview struct {
 	Rows           []GuidePreviewRow `json:"rows"`
 }
 
+type GuideLineupMatchRow struct {
+	GuideNumber string `json:"guide_number"`
+	GuideName   string `json:"guide_name"`
+	URL         string `json:"url,omitempty"`
+	Reason      string `json:"reason,omitempty"`
+}
+
+type GuideLineupMatchReport struct {
+	GeneratedAt           string                `json:"generated_at"`
+	SourceReady           bool                  `json:"source_ready"`
+	LineupChannels        int                   `json:"lineup_channels"`
+	GuideChannels         int                   `json:"guide_channels"`
+	ExactNameMatches      int                   `json:"exact_name_matches"`
+	MissingGuideNames     int                   `json:"missing_guide_names"`
+	DuplicateGuideNumbers int                   `json:"duplicate_guide_numbers"`
+	DuplicateGuideNames   int                   `json:"duplicate_guide_names"`
+	SampleMissing         []GuideLineupMatchRow `json:"sample_missing,omitempty"`
+}
+
 type CatchupCapsule struct {
 	CapsuleID    string   `json:"capsule_id"`
 	DNAID        string   `json:"dna_id,omitempty"`
@@ -643,6 +662,73 @@ func (x *XMLTV) GuidePreview(limit int) (GuidePreview, error) {
 	out.Rows = make([]GuidePreviewRow, len(buf))
 	for i := range buf {
 		out.Rows[i] = buf[i].row
+	}
+	return out, nil
+}
+
+func (x *XMLTV) GuideLineupMatchReport(limit int) (GuideLineupMatchReport, error) {
+	limit = clampGuidePreviewLimit(limit, 25)
+	now := time.Now()
+	x.mu.RLock()
+	data := append([]byte(nil), x.cachedXML...)
+	channels := append([]catalog.LiveChannel(nil), x.Channels...)
+	x.mu.RUnlock()
+
+	out := GuideLineupMatchReport{
+		GeneratedAt:    now.UTC().Format(time.RFC3339),
+		SourceReady:    len(data) > 0,
+		LineupChannels: len(channels),
+	}
+	if len(data) == 0 {
+		return out, nil
+	}
+	var tv xmlTVRoot
+	if err := xml.Unmarshal(data, &tv); err != nil {
+		return out, err
+	}
+	out.GuideChannels = len(tv.Channels)
+
+	nameCounts := map[string]int{}
+	idCounts := map[string]int{}
+	for _, ch := range tv.Channels {
+		id := strings.TrimSpace(ch.ID)
+		name := strings.TrimSpace(ch.Display)
+		if id != "" {
+			idCounts[id]++
+		}
+		if name != "" {
+			nameCounts[name]++
+		}
+	}
+	for _, n := range idCounts {
+		if n > 1 {
+			out.DuplicateGuideNumbers++
+		}
+	}
+	for _, n := range nameCounts {
+		if n > 1 {
+			out.DuplicateGuideNames++
+		}
+	}
+	for _, ch := range channels {
+		name := strings.TrimSpace(ch.GuideName)
+		if name != "" && nameCounts[name] > 0 {
+			out.ExactNameMatches++
+			continue
+		}
+		out.MissingGuideNames++
+		if len(out.SampleMissing) < limit {
+			url := strings.TrimSpace(ch.StreamURL)
+			if url == "" && len(ch.StreamURLs) > 0 {
+				url = strings.TrimSpace(ch.StreamURLs[0])
+			}
+			out.SampleMissing = append(out.SampleMissing, GuideLineupMatchRow{
+				GuideNumber: strings.TrimSpace(ch.GuideNumber),
+				GuideName:   name,
+				URL:         url,
+				Reason:      "guide_name_not_found_in_guide_xml",
+			})
+		}
 	}
 	return out, nil
 }
