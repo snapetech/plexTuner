@@ -15,6 +15,7 @@ Decision log. One file per decision; number by sequence.
 | [0002-hdhr-hardware-iptv-merge](0002-hdhr-hardware-iptv-merge.md) | Physical HDHomeRun vs IPTV catalog: tag sources, prefer separate instances until explicit merged-catalog design. |
 | [0003-epg-sqlite-vs-postgres](0003-epg-sqlite-vs-postgres.md) | EPG persistence: SQLite file for Tunerr-local store; Postgres only if shared/multi-writer requirements are explicit. |
 | [0004-hdhr-guide-epg-merge](0004-hdhr-guide-epg-merge.md) | Optional hardware `guide.xml` URL merged after provider + external gap-fill; overlap rules and `tvg-id` identity. |
+| [0005-hls-mux-no-disk-packager](0005-hls-mux-no-disk-packager.md) | Native HLS/DASH mux stays an in-process relay; no built-in disk packager; optional JSONL access log for audit. |
 
 See also
 --------

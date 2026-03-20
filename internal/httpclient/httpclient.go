@@ -2,6 +2,9 @@ package httpclient
 
 import (
 	"net/http"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -14,11 +17,17 @@ const (
 var defaultClient *http.Client
 
 func init() {
+	maxPerHost := MaxIdleConnsPerHost
+	if v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HTTP_MAX_IDLE_CONNS_PER_HOST")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			maxPerHost = n
+		}
+	}
 	defaultClient = &http.Client{
 		Timeout: DefaultTimeout,
 		Transport: &http.Transport{
 			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: MaxIdleConnsPerHost,
+			MaxIdleConnsPerHost: maxPerHost,
 			IdleConnTimeout:     DefaultIdleConnTimeout,
 			ForceAttemptHTTP2:   true, // enable h2 via ALPN, matches http.DefaultTransport behaviour
 		},

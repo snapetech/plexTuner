@@ -1,10 +1,30 @@
 package safeurl
 
 import (
+	"net"
 	"net/url"
 	"path"
 	"strings"
 )
+
+// HTTPURLHostIsLiteralBlockedPrivate reports whether rawURL's host is an IP address that is
+// loopback, private (RFC 1918), link-local, or unspecified. Hostnames are not resolved.
+// Used for optional HLS mux hardening when operators enable deny-private mode.
+func HTTPURLHostIsLiteralBlockedPrivate(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u == nil {
+		return false
+	}
+	host := strings.TrimSpace(u.Hostname())
+	if host == "" {
+		return false
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified()
+}
 
 // IsHTTPOrHTTPS reports whether s parses as an http(s) URL.
 func IsHTTPOrHTTPS(s string) bool {

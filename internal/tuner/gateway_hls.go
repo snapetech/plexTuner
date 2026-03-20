@@ -1,8 +1,9 @@
 package tuner
 
 import (
-	"bufio"
 	"bytes"
+	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/snapetech/iptvtunerr/internal/catalog"
 	"github.com/snapetech/iptvtunerr/internal/safeurl"
 )
 
@@ -22,6 +24,10 @@ var hlsQuotedURIAttr = regexp.MustCompile(`(?i)(URI=")([^"]*)(")`)
 
 var errHLSMuxUnsupportedTargetScheme = errors.New("unsupported hls mux target URL scheme")
 
+var errHLSMuxSegParamTooLarge = errors.New("hls mux seg parameter too large")
+
+var errHLSMuxBlockedPrivateUpstream = errors.New("blocked private upstream host for hls mux")
+
 // hlsMuxDiagnosticHeader is a non-HDHR response header for ?mux=hls tooling (debug / browser clients).
 // Values include unsupported_target_scheme and upstream_http_<status> (e.g. upstream_http_404).
 const hlsMuxDiagnosticHeader = "X-IptvTunerr-Hls-Mux-Error"
@@ -29,8 +35,98 @@ const hlsMuxDiagnosticHeader = "X-IptvTunerr-Hls-Mux-Error"
 // Diagnostic header values (stable tokens for scripts).
 const hlsMuxDiagUnsupportedTargetScheme = "unsupported_target_scheme"
 
-// hlsMuxUpstreamErrBodyMax limits how much of an upstream error body we buffer for pass-through (4xx/5xx).
-const hlsMuxUpstreamErrBodyMax = 8192
+const hlsMuxDiagSegParamTooLarge = "seg_param_too_large"
+
+const hlsMuxDiagBlockedPrivateUpstream = "blocked_private_upstream"
+
+const hlsMuxDiagSegRateLimited = "seg_rate_limited"
+
+const hlsMuxDiagRedirectRejected = "redirect_rejected"
+
+func hlsMuxUpstreamErrBodyLimit() int {
+	const def = 8192
+	v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_UPSTREAM_ERR_BODY_MAX"))
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return def
+	}
+	const hardMax = 1024 * 1024
+	if n > hardMax {
+		return hardMax
+	}
+	return n
+}
+
+func hlsMuxMaxSegParamBytes() int {
+	const def = 262144 // 256 KiB raw seg= value (URL-decoded query value)
+	v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_MAX_SEG_PARAM_BYTES"))
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return def
+	}
+	const hardMax = 2 * 1024 * 1024
+	if n > hardMax {
+		return hardMax
+	}
+	return n
+}
+
+func hlsMuxDenyLiteralPrivateUpstream() bool {
+	return getenvBool("IPTV_TUNERR_HLS_MUX_DENY_LITERAL_PRIVATE_UPSTREAM", false)
+}
+
+func hlsMuxDenyResolvedPrivateUpstream() bool {
+	return getenvBool("IPTV_TUNERR_HLS_MUX_DENY_RESOLVED_PRIVATE_UPSTREAM", false)
+}
+
+func muxSegRPSPerIP() float64 {
+	v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_SEG_RPS_PER_IP"))
+	if v == "" {
+		return 0
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil || f <= 0 {
+		return 0
+	}
+	if f > 10000 {
+		return 10000
+	}
+	return f
+}
+
+// splitHLSLines splits playlist bytes on newlines without bufio.Scanner token limits (long #EXTINF lines).
+func splitHLSLines(body []byte) []string {
+	norm := bytes.ReplaceAll(body, []byte("\r\n"), []byte("\n"))
+	parts := bytes.Split(norm, []byte("\n"))
+	out := make([]string, len(parts))
+	for i, p := range parts {
+		out[i] = string(p)
+	}
+	return out
+}
+
+func clientWantsHLSMuxJSON(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	accept := strings.ToLower(r.Header.Get("Accept"))
+	if accept == "" {
+		return false
+	}
+	for _, part := range strings.Split(accept, ",") {
+		tok := strings.TrimSpace(strings.Split(part, ";")[0])
+		if tok == "application/json" || strings.HasSuffix(tok, "+json") {
+			return true
+		}
+	}
+	return strings.Contains(accept, "application/json")
+}
 
 // hlsMuxUpstreamHTTPError is returned when the upstream responds with a non-success status for ?mux=hls&seg=.
 // The gateway may pass status and body to the client instead of mapping everything to 502.
@@ -60,23 +156,55 @@ func applyHLSMuxCORS(w http.ResponseWriter) {
 	}
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Range, If-Range, Content-Type, Accept, Authorization")
+	w.Header().Set("Access-Control-Allow-Headers", "Range, If-Range, Content-Type, Accept, Authorization, X-Request-Id, X-Correlation-Id, X-Trace-Id")
 	w.Header().Set("Access-Control-Expose-Headers", strings.Join([]string{
 		"Content-Range", "Content-Length", "Accept-Ranges", "Cache-Control", "Content-Type", hlsMuxDiagnosticHeader,
 	}, ", "))
 }
 
-// respondHLSMuxUnsupportedTargetScheme sends 400 with a machine-readable diagnostic header and optional CORS.
-func respondHLSMuxUnsupportedTargetScheme(w http.ResponseWriter) {
+// respondHLSMuxClientError sends a Tunerr HLS mux client error with diagnostic header and optional JSON (Accept: application/json).
+func respondHLSMuxClientError(w http.ResponseWriter, r *http.Request, code int, diag, plaintext string) {
+	if r != nil && diag != "" {
+		reqID := gatewayReqIDFromContext(r.Context())
+		chName := ""
+		if v := r.Context().Value(gatewayChannelKey{}); v != nil {
+			if ch, ok := v.(*catalog.LiveChannel); ok && ch != nil {
+				chName = ch.GuideName
+			}
+		}
+		log.Printf("gateway: req=%s channel=%q hls_mux_diag=%s code=%d %s", reqID, chName, diag, code, plaintext)
+	}
 	applyHLSMuxCORS(w)
-	w.Header().Set(hlsMuxDiagnosticHeader, hlsMuxDiagUnsupportedTargetScheme)
-	http.Error(w, "unsupported hls mux target URL scheme", http.StatusBadRequest)
+	w.Header().Set(hlsMuxDiagnosticHeader, diag)
+	if clientWantsHLSMuxJSON(r) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(code)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": diag, "message": plaintext})
+		return
+	}
+	http.Error(w, plaintext, code)
+}
+
+// respondHLSMuxUnsupportedTargetScheme sends 400 with a machine-readable diagnostic header and optional CORS.
+func respondHLSMuxUnsupportedTargetScheme(w http.ResponseWriter, r *http.Request) {
+	respondHLSMuxClientError(w, r, http.StatusBadRequest, hlsMuxDiagUnsupportedTargetScheme, "unsupported hls mux target URL scheme")
 }
 
 // respondHLSMuxUpstreamHTTP forwards an upstream HTTP error to the client (status + small body preview).
-func respondHLSMuxUpstreamHTTP(w http.ResponseWriter, status int, body []byte) {
+func respondHLSMuxUpstreamHTTP(w http.ResponseWriter, r *http.Request, status int, body []byte) {
+	diag := "upstream_http_" + strconv.Itoa(status)
+	if r != nil {
+		reqID := gatewayReqIDFromContext(r.Context())
+		chName := ""
+		if v := r.Context().Value(gatewayChannelKey{}); v != nil {
+			if ch, ok := v.(*catalog.LiveChannel); ok && ch != nil {
+				chName = ch.GuideName
+			}
+		}
+		log.Printf("gateway: req=%s channel=%q hls_mux_diag=%s upstream_status=%d", reqID, chName, diag, status)
+	}
 	applyHLSMuxCORS(w)
-	w.Header().Set(hlsMuxDiagnosticHeader, "upstream_http_"+strconv.Itoa(status))
+	w.Header().Set(hlsMuxDiagnosticHeader, diag)
 	if len(body) > 0 {
 		if ct := http.DetectContentType(body); ct != "" {
 			w.Header().Set("Content-Type", ct)
@@ -93,7 +221,8 @@ func maybeServeHLSMuxOPTIONS(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method != http.MethodOptions {
 		return false
 	}
-	if strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mux"))) != "hls" {
+	m := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mux")))
+	if m != "hls" && m != "dash" {
 		return false
 	}
 	if !hlsMuxCORSEnabled() {
@@ -214,14 +343,11 @@ func rewriteHLSPlaylist(body []byte, upstreamURL string) []byte {
 		return body
 	}
 	var out bytes.Buffer
-	sc := bufio.NewScanner(bytes.NewReader(body))
-	first := true
-	for sc.Scan() {
-		if !first {
+	lines := splitHLSLines(body)
+	for i, line := range lines {
+		if i > 0 {
 			out.WriteByte('\n')
 		}
-		first = false
-		line := sc.Text()
 		trim := strings.TrimSpace(line)
 		if trim == "" || strings.HasPrefix(trim, "#") {
 			out.WriteString(line)
@@ -248,17 +374,26 @@ func rewriteHLSPlaylist(body []byte, upstreamURL string) []byte {
 	return out.Bytes()
 }
 
-// gatewayHLSProxyMediaURL builds a Tunerr /stream URL that proxies an upstream HLS segment or sub-playlist.
-// When IPTV_TUNERR_STREAM_PUBLIC_BASE_URL is set (e.g. http://192.168.1.10:5004), media lines use an absolute URL
-// so clients that do not resolve relative playlist URLs correctly still work.
-func gatewayHLSProxyMediaURL(channelID, resolvedSegURL string) string {
+// gatewayNativeMuxProxyURL builds /stream?mux=<kind>&seg= for Tunerr-native HLS or DASH proxies.
+func gatewayNativeMuxProxyURL(channelID, resolvedSegURL, muxKind string) string {
+	muxKind = strings.TrimSpace(strings.ToLower(muxKind))
+	if muxKind == "" {
+		muxKind = "hls"
+	}
 	q := url.QueryEscape(resolvedSegURL)
-	rel := "/stream/" + url.PathEscape(channelID) + "?mux=hls&seg=" + q
+	rel := "/stream/" + url.PathEscape(channelID) + "?mux=" + url.QueryEscape(muxKind) + "&seg=" + q
 	base := strings.TrimRight(strings.TrimSpace(os.Getenv("IPTV_TUNERR_STREAM_PUBLIC_BASE_URL")), "/")
 	if base == "" {
 		return rel
 	}
 	return base + rel
+}
+
+// gatewayHLSProxyMediaURL builds a Tunerr /stream URL that proxies an upstream HLS segment or sub-playlist.
+// When IPTV_TUNERR_STREAM_PUBLIC_BASE_URL is set (e.g. http://192.168.1.10:5004), media lines use an absolute URL
+// so clients that do not resolve relative playlist URLs correctly still work.
+func gatewayHLSProxyMediaURL(channelID, resolvedSegURL string) string {
+	return gatewayNativeMuxProxyURL(channelID, resolvedSegURL, "hls")
 }
 
 // resolveHLSMediaRef resolves a playlist-relative or absolute URL against the effective playlist URL.
@@ -306,14 +441,11 @@ func rewriteHLSPlaylistToGatewayProxy(body []byte, upstreamURL string, channelID
 		return body
 	}
 	var out bytes.Buffer
-	sc := bufio.NewScanner(bytes.NewReader(body))
-	first := true
-	for sc.Scan() {
-		if !first {
+	lines := splitHLSLines(body)
+	for i, line := range lines {
+		if i > 0 {
 			out.WriteByte('\n')
 		}
-		first = false
-		line := sc.Text()
 		trim := strings.TrimSpace(line)
 		if trim == "" {
 			out.WriteString(line)
@@ -339,7 +471,7 @@ func rewriteHLSPlaylistToGatewayProxy(body []byte, upstreamURL string, channelID
 		} else if !ref.IsAbs() {
 			resolved = base.ResolveReference(ref).String()
 		}
-		out.WriteString(gatewayHLSProxyMediaURL(channelID, resolved))
+		out.WriteString(gatewayNativeMuxProxyURL(channelID, resolved, "hls"))
 	}
 	if len(body) > 0 && body[len(body)-1] == '\n' {
 		out.WriteByte('\n')
@@ -348,14 +480,58 @@ func rewriteHLSPlaylistToGatewayProxy(body []byte, upstreamURL string, channelID
 }
 
 func (g *Gateway) serveHLSMuxTarget(w http.ResponseWriter, r *http.Request, client *http.Client, channelID, targetURL string) error {
+	return g.serveNativeMuxTarget(w, r, client, channelID, targetURL, "hls")
+}
+
+func muxAccessLogJSON(mux, channelID, target string, d time.Duration) string {
+	m := map[string]any{
+		"ts":         time.Now().UTC().Format(time.RFC3339Nano),
+		"mux":        mux,
+		"channel_id": channelID,
+		"dur_ms":     d.Milliseconds(),
+		"target":     safeurl.RedactURL(target),
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
+}
+
+func appendMuxSegAccessLogLine(path, line string) {
+	if path == "" || line == "" {
+		return
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = io.WriteString(f, line+"\n")
+}
+
+func (g *Gateway) serveNativeMuxTarget(w http.ResponseWriter, r *http.Request, client *http.Client, channelID, targetURL, muxKind string) error {
 	if !safeurl.IsHTTPOrHTTPS(targetURL) {
 		return errHLSMuxUnsupportedTargetScheme
 	}
-	req, err := g.newUpstreamRequest(r.Context(), r, targetURL)
+	muxKind = strings.TrimSpace(strings.ToLower(muxKind))
+	if muxKind == "" {
+		muxKind = "hls"
+	}
+	upstreamMethod := http.MethodGet
+	if r != nil && r.Method == http.MethodHead {
+		upstreamMethod = http.MethodHead
+	}
+	ctx := context.Background()
+	if r != nil {
+		ctx = r.Context()
+	}
+	req, err := g.newUpstreamRequestMethod(ctx, r, targetURL, upstreamMethod)
 	if err != nil {
 		return err
 	}
-	resp, err := client.Do(req)
+	segClient := muxSegHTTPClient(client, ctx)
+	resp, err := segClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -364,7 +540,8 @@ func (g *Gateway) serveHLSMuxTarget(w http.ResponseWriter, r *http.Request, clie
 	switch resp.StatusCode {
 	case http.StatusOK, http.StatusPartialContent, http.StatusNotModified:
 	default:
-		preview, rerr := io.ReadAll(io.LimitReader(resp.Body, hlsMuxUpstreamErrBodyMax))
+		lim := int64(hlsMuxUpstreamErrBodyLimit())
+		preview, rerr := io.ReadAll(io.LimitReader(resp.Body, lim))
 		if rerr != nil {
 			return rerr
 		}
@@ -389,9 +566,11 @@ func (g *Gateway) serveHLSMuxTarget(w http.ResponseWriter, r *http.Request, clie
 		effectiveURL = resp.Request.URL.String()
 	}
 
-	if isHLSResponse(resp, effectiveURL) {
+	// HEAD has no body; never treat as a fetch-and-rewrite manifest.
+	if isHLSResponse(resp, effectiveURL) && muxKind == "hls" && (r == nil || r.Method != http.MethodHead) {
 		if resp.StatusCode != http.StatusOK {
-			preview, rerr := io.ReadAll(io.LimitReader(resp.Body, hlsMuxUpstreamErrBodyMax))
+			lim := int64(hlsMuxUpstreamErrBodyLimit())
+			preview, rerr := io.ReadAll(io.LimitReader(resp.Body, lim))
 			if rerr != nil {
 				return rerr
 			}
@@ -404,6 +583,33 @@ func (g *Gateway) serveHLSMuxTarget(w http.ResponseWriter, r *http.Request, clie
 		}
 		out := rewriteHLSPlaylistToGatewayProxy(body, effectiveURL, channelID)
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		w.Header().Set("Cache-Control", "no-store")
+		applyHLSMuxCORS(w)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(out)
+		return nil
+	}
+
+	if isDASHMPDResponse(resp, effectiveURL) && muxKind == "dash" && (r == nil || r.Method != http.MethodHead) {
+		if resp.StatusCode != http.StatusOK {
+			lim := int64(hlsMuxUpstreamErrBodyLimit())
+			preview, rerr := io.ReadAll(io.LimitReader(resp.Body, lim))
+			if rerr != nil {
+				return rerr
+			}
+			_, _ = io.Copy(io.Discard, resp.Body)
+			return &hlsMuxUpstreamHTTPError{Status: resp.StatusCode, Body: preview}
+		}
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		out := rewriteDASHManifestToGatewayProxy(body, effectiveURL, channelID)
+		ct := strings.TrimSpace(resp.Header.Get("Content-Type"))
+		if ct == "" {
+			ct = "application/dash+xml"
+		}
+		w.Header().Set("Content-Type", ct)
 		w.Header().Set("Cache-Control", "no-store")
 		applyHLSMuxCORS(w)
 		w.WriteHeader(http.StatusOK)
@@ -448,10 +654,9 @@ func hlsPlaylistLooksUsable(body []byte) bool {
 }
 
 func hlsMediaLines(body []byte) []string {
-	sc := bufio.NewScanner(bytes.NewReader(body))
 	var out []string
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
+	for _, raw := range splitHLSLines(body) {
+		line := strings.TrimSpace(raw)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
@@ -462,9 +667,8 @@ func hlsMediaLines(body []byte) []string {
 
 // hlsTargetDurationSeconds parses #EXT-X-TARGETDURATION from playlist body; returns 0 if missing/invalid.
 func hlsTargetDurationSeconds(body []byte) int {
-	sc := bufio.NewScanner(bytes.NewReader(body))
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
+	for _, raw := range splitHLSLines(body) {
+		line := strings.TrimSpace(raw)
 		if strings.HasPrefix(line, "#EXT-X-TARGETDURATION:") {
 			v := strings.TrimSpace(strings.TrimPrefix(line, "#EXT-X-TARGETDURATION:"))
 			if n, err := strconv.Atoi(v); err == nil && n > 0 {

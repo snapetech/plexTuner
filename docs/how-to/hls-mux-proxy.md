@@ -2,20 +2,21 @@
 id: hls-mux-proxy
 type: how-to
 status: stable
-tags: [hls, gateway, streaming, operators]
+tags: [hls, dash, gateway, streaming, operators]
 ---
 
-# Use Tunerr as an HLS playlist proxy (`?mux=hls`)
+# Use Tunerr as an HLS / DASH manifest proxy (`?mux=hls`, `?mux=dash`)
 
 Some clients work best when they fetch an **HLS master or media playlist** from Tunerr itself, while Tunerr still pulls **segments and nested playlists** from the provider with the same auth, cookies, and upstream headers as a normal `/stream/<id>` session.
 
-This mode is **not** ffmpeg segment packaging: Tunerr **rewrites** playlist lines to point back through Tunerr and **proxies** each requested URL. Default playback remains **MPEG-TS** when you omit `mux` or use the usual relay/transcode path.
+This mode is **not** ffmpeg segment packaging: Tunerr **rewrites** manifest lines to point back through Tunerr and **proxies** each requested URL. **`?mux=dash`** is **experimental** for **MPD** upstreams: absolute **http(s)** references are rewritten, and **plain relative** **`media=`** / **`initialization=`** / **`<BaseURL>`** text is resolved using the manifest URL plus a running **`<BaseURL>`** chain ( **`SegmentTemplate`** values that still contain **`$`** placeholders are left as-is). Default playback remains **MPEG-TS** when you omit `mux` or use the usual relay/transcode path.
 
 ## When to use it
 
 - You want **M3U8 in / M3U8 out** through Tunerr (e.g. testing with `ffplay` or an HLS-aware player) without transcoding to TS first.
 - A client mishandles **relative** URLs inside playlists: set **`IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`** so media lines use **absolute** Tunerr URLs.
-- A **browser** or **devtools** page loads the playlist from a different origin than Tunerr: set **`IPTV_TUNERR_HLS_MUX_CORS`**. Tunerr then adds permissive CORS headers on **`?mux=hls`** playlist and segment responses and answers **`OPTIONS`** preflight for the same query pattern.
+- A **browser** or **devtools** page loads the manifest from a different origin than Tunerr: set **`IPTV_TUNERR_HLS_MUX_CORS`**. Tunerr then adds permissive CORS headers on **`?mux=hls`** and **`?mux=dash`** responses and answers **`OPTIONS`** preflight for both query patterns.
+- Optional **`IPTV_TUNERR_HLS_MUX_WEB_DEMO`** exposes **`/debug/hls-mux-demo.html`** (uses **hls.js** from a CDN — still your responsibility to allow CORS to the tuner).
 
 ## Preconditions
 
@@ -39,11 +40,11 @@ This mode is **not** ffmpeg segment packaging: Tunerr **rewrites** playlist line
 
 5. Optional: set **`IPTV_TUNERR_HLS_MUX_CORS=true`** when a web client needs CORS on the playlist and segment URLs.
 
-6. Inspect effective settings at **`/debug/runtime.json`** (`tuner.stream_public_base_url`, **`tuner.hls_mux_cors`**) and SQLite/EPG flags at **`/guide/epg-store.json`** when using incremental provider suffixes.
+6. Inspect effective settings at **`/debug/runtime.json`** (`tuner.stream_public_base_url`, **`tuner.hls_mux_cors`**, **`tuner.hls_mux_max_seg_param_bytes`**, **`tuner.hls_mux_deny_literal_private_upstream`**, etc.) and SQLite/EPG flags at **`/guide/epg-store.json`** when using incremental provider suffixes.
 
 Byte-range HLS (**`#EXT-X-BYTERANGE`**) requires the player’s **`Range`** request to reach the CDN: Tunerr forwards **`Range`** / **`If-Range`** on upstream fetches and returns **`206 Partial Content`** with **`Content-Range`** when the CDN responds that way. Conditional cache validation (**`If-None-Match`** / **`If-Modified-Since`**) is forwarded; **`304 Not Modified`** is passed through for segment/sub-playlist responses.
 
-**Concurrency:** each **`?mux=hls&seg=`** request counts against a separate cap (default **effective tuner limit × 8**, tunable with **`IPTV_TUNERR_HLS_MUX_SEG_SLOTS_PER_TUNER`** or absolute **`IPTV_TUNERR_HLS_MUX_MAX_CONCURRENT`**). Inspect **`hls_mux_seg_in_use`** / **`hls_mux_seg_limit`** on the provider behavior profile endpoint. When the cap is hit, Tunerr returns **`503`** (same **`805`** tuner-style error header as main streams).
+**Concurrency:** each **`?mux=hls|dash&seg=`** request counts against the same cap (default **effective tuner limit × 8**, tunable with **`IPTV_TUNERR_HLS_MUX_SEG_SLOTS_PER_TUNER`** or absolute **`IPTV_TUNERR_HLS_MUX_MAX_CONCURRENT`**). Optional **`IPTV_TUNERR_HLS_MUX_SEG_SLOTS_AUTO`** temporarily raises the cap after recent **503** limit hits (see [hls-mux-toolkit](../reference/hls-mux-toolkit.md)). Inspect **`hls_mux_seg_in_use`** / **`hls_mux_seg_limit`** on the provider behavior profile endpoint. When the cap is hit, Tunerr returns **`503`** (same **`805`** tuner-style error header as main streams). **`IPTV_TUNERR_HLS_MUX_ACCESS_LOG`** can append one JSON line per successful **`seg=`** (redacted URL) for light auditing.
 
 ## Verify
 
@@ -60,6 +61,8 @@ Byte-range HLS (**`#EXT-X-BYTERANGE`**) requires the player’s **`Range`** requ
 See also
 --------
 
+- [HLS mux toolkit (reference)](../reference/hls-mux-toolkit.md) — diagnostics, **`curl`** snippets, enhancement backlog.
 - [Transcode profiles](../reference/transcode-profiles.md) — `?mux=fmp4`, `?profile=`, TS defaults.
 - [CLI and env reference](../reference/cli-and-env-reference.md) — `IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`, `IPTV_TUNERR_HLS_MUX_CORS`, streaming envs.
+- [Observability: Prometheus and OpenTelemetry](../explanations/observability-prometheus-and-otel.md) — **`/metrics`** and collector scrape.
 - [Features](../features.md) — gateway overview.

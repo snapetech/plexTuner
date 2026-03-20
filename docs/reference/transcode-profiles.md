@@ -11,7 +11,7 @@ IPTV Tunerr’s gateway can **transcode** live HLS/MPEG-TS to a Plex-friendly **
 
 **MPEG-TS** is the default output for Plex/HDHR compatibility. **Fragmented MP4** is optional for ffmpeg HLS paths: add **`?mux=fmp4`** on `/stream/…` when **transcoding** is active (experimental).
 
-**Tunerr-native HLS playlist proxy:** add **`?mux=hls`** on `/stream/…` for HLS upstreams. Tunerr returns a rewritten **M3U8** whose media lines loop back through Tunerr (`?mux=hls&seg=…`); segments and nested playlists are proxied, not re-muxed by ffmpeg. Tag **`URI="…"`** entries (AES-128 / SAMPLE-AES keys, **`EXT-X-SESSION-KEY`**, maps, variants) are rewritten the same way when they use **http(s)** targets. Optional **`IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`** forces **absolute** media URLs for picky clients. See [hls-mux-proxy how-to](../how-to/hls-mux-proxy.md). This is **not** a separate on-disk segmenter or DVR-style packaging—just proxy + rewrite.
+**Tunerr-native manifest proxies:** **`?mux=hls`** for **M3U8** upstreams and **`?mux=dash`** (experimental) for **MPD** upstreams on `/stream/…`. Diagnostics: [hls-mux-toolkit](hls-mux-toolkit.md). HLS returns a rewritten **M3U8** whose media lines loop through Tunerr (`?mux=hls&seg=…`); tags with **`URI="…"`** (keys, **`EXT-X-PART`**, maps, variants, etc.) rewrite the same way for **http(s)** targets. DASH rewrites absolute segment **`media=`** / **`initialization=`** and **`BaseURL`** text to **`?mux=dash&seg=…`**. Optional **`IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`** forces **absolute** Tunerr URLs. See [hls-mux-proxy how-to](../how-to/hls-mux-proxy.md). **Not** an on-disk packager—proxy + rewrite only.
 
 ## Canonical profile names
 

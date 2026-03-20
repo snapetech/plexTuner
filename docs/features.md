@@ -58,7 +58,7 @@ See also:
 | Feature | Description |
 |---------|-------------|
 | **HLS -> MPEG-TS relay** | Native relay path for HLS inputs to Plex-facing TS output. |
-| **Tunerr-native HLS playlist proxy** | **`?mux=hls`** on **`/stream/<id>`** returns a rewritten **M3U8** whose segments route through Tunerr (`?mux=hls&seg=…`). Optional **`IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`** forces absolute media URLs; optional **`IPTV_TUNERR_HLS_MUX_CORS`** adds CORS for browser clients. Concurrent **`seg=`** proxies are capped (**`IPTV_TUNERR_HLS_MUX_MAX_CONCURRENT`** / **`IPTV_TUNERR_HLS_MUX_SEG_SLOTS_PER_TUNER`**). |
+| **Tunerr-native HLS / DASH manifest proxy** | **`?mux=hls`** returns a rewritten **M3U8**; experimental **`?mux=dash`** rewrites **MPD** absolutes to **`?mux=dash&seg=…`**. Optional **`IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`**, **`IPTV_TUNERR_HLS_MUX_CORS`**, concurrency caps, literal + **DNS-resolved** private blocking, per-IP **`seg=`** rate limit, Prometheus **`/metrics`**, demo page, **`POST .../mux-seg-decode`**. Counters: **`hls_mux_seg_*`** and **`dash_mux_seg_*`** on **`provider_profile.json`**. |
 | **ffmpeg transcode path** | Optional ffmpeg remux/transcode; MPEG-TS default; experimental **`?mux=fmp4`** fragmented MP4 when transcoding HLS — [transcode-profiles](reference/transcode-profiles.md). |
 | **Transcode modes** | `off`, `on`, `auto` (codec/probe-driven behavior depending config/runtime). |
 | **Startup/bootstrap controls** | Web-safe bootstrap and startup-gate tuning for Plex web playback behavior. |

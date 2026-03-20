@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-//go:embed static/ui/index.html static/ui/guide.html
+//go:embed static/ui/index.html static/ui/guide.html static/hls_mux_demo.html
 var operatorUIEmbedded embed.FS
 
 // operatorUIAllowed enforces IPTV_TUNERR_UI_DISABLED and localhost-only access (unless IPTV_TUNERR_UI_ALLOW_LAN=1).

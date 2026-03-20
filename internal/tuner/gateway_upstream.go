@@ -83,7 +83,11 @@ func resolveUserAgentPreset(raw, detectedLavfUA string) string {
 
 // Range/If-Range: HLS byte-range segments (#EXT-X-BYTERANGE) and partial fetches through ?mux=hls&seg=.
 // If-None-Match / If-Modified-Since: conditional GET for cached segments (304 Not Modified).
-var forwardedUpstreamHeaderNames = []string{"Cookie", "Referer", "Origin", "Range", "If-Range", "If-None-Match", "If-Modified-Since"}
+var forwardedUpstreamHeaderNames = []string{
+	"Cookie", "Referer", "Origin",
+	"Range", "If-Range", "If-None-Match", "If-Modified-Since",
+	"X-Request-Id", "X-Correlation-Id", "X-Trace-Id",
+}
 
 func cloneClientWithCookieJar(src *http.Client) *http.Client {
 	if src == nil {
@@ -325,7 +329,18 @@ func (g *Gateway) applyUpstreamRequestHeaders(req *http.Request, incoming *http.
 }
 
 func (g *Gateway) newUpstreamRequest(ctx context.Context, incoming *http.Request, rawURL string) (*http.Request, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	return g.newUpstreamRequestMethod(ctx, incoming, rawURL, http.MethodGet)
+}
+
+// newUpstreamRequestMethod builds an upstream GET or HEAD. Only GET and HEAD are accepted; any other method is treated as GET.
+func (g *Gateway) newUpstreamRequestMethod(ctx context.Context, incoming *http.Request, rawURL, method string) (*http.Request, error) {
+	switch method {
+	case http.MethodHead:
+		// ok
+	default:
+		method = http.MethodGet
+	}
+	req, err := http.NewRequestWithContext(ctx, method, rawURL, nil)
 	if err != nil {
 		return nil, err
 	}

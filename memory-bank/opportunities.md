@@ -23,6 +23,16 @@ It exists to encourage quality gains without derailing the current task.
 ## Entries
 
 - Date: 2026-03-19
+  Category: operability
+  Title: HLS mux — consolidated operator toolkit + enhancement backlog doc
+  Context: User asked for a single place listing many future HLS-mux-style improvements (diagnostics, protocol edge cases, security, scale) without opening N separate backlog tickets.
+  Why it matters: Keeps gateway/HLS work discoverable for humans and agents; items graduate into scoped PRs with evidence when picked up.
+  Evidence: New reference page [docs/reference/hls-mux-toolkit.md](../docs/reference/hls-mux-toolkit.md) (tables, `curl` recipes, categorized candidates).
+  Suggested fix: When implementing a slice from the toolkit, add ADR/test link in that doc or move the row to `known_issues` if it becomes a user-facing limitation.
+  Risk/Scope: low | fits current scope? yes (docs-only)
+  User decision needed?: no
+
+- Date: 2026-03-19
   Category: performance
   Title: Provider incremental XMLTV fetch (avoid full xmltv.php each refresh)
   Context: `fetchProviderXMLTV` in `internal/tuner/epg_pipeline.go` pulls the whole provider XMLTV when HTTP conditional GET cannot short-circuit; SQLite `GlobalMaxStopUnix` could bound a smaller window **if** the provider supports date-range parameters (non-standard; panel-specific).

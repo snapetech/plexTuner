@@ -23,6 +23,25 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Native mux — redirect SSRF hardening, DASH relative rewrite, adaptive seg slots, access log, golden/tests, ADR/OTEL docs
+  Summary:
+    - **`muxSegHTTPClient`**: **`CheckRedirect`** validates each hop (scheme + literal/resolved private, max **10**); **`errMuxRedirectPolicy`** → **403** / **502** + **`redirect_rejected`** / **`blocked_private_upstream`**.
+    - **`safeurl.ValidateMuxSegTarget`** shared with gateway **`seg=`** checks; **`internal/safeurl/mux_target_test.go`**.
+    - **`rewriteDASHManifestToGatewayProxy`**: **`<BaseURL>`** chain + relative attribute resolution; **`$`** in template values skipped.
+    - **`IPTV_TUNERR_HLS_MUX_SEG_SLOTS_AUTO`** (+ window / per-hit / cap); **`noteMuxSegConcurrencyReject`** on **503** limit; **`effectiveHLSMuxSegLimitLocked`** adds bonus when **`MAX_CONCURRENT`** unset.
+    - **`IPTV_TUNERR_HLS_MUX_ACCESS_LOG`** JSONL on successful **`seg=`**; Prometheus outcome **`err_redirect`**.
+    - Golden **`internal/tuner/testdata/hls_mux_small_playlist.golden`**; tests: adaptive limit, chunked upstream, redirect block, DASH relative, **`TestRewriteHLSPlaylistToGatewayProxy_matchesGolden`**.
+    - **ADR 0005** (no in-process disk packager); **`docs/explanations/observability-prometheus-and-otel.md`**; toolkit/how-to/CHANGELOG/.env.example/index updates.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - OpenTelemetry in-process OTLP not added; collector scrape of **`/metrics`** documented.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/mux_http_client.go`, `internal/tuner/gateway_dash.go`, `internal/tuner/gateway_policy.go`, `internal/tuner/gateway_hls.go`, `internal/tuner/gateway.go`, `docs/adr/0005-hls-mux-no-disk-packager.md`, `docs/explanations/observability-prometheus-and-otel.md`
+
+- Date: 2026-03-19
   Title: Native mux epic — DASH MPD proxy, DNS SSRF option, Prometheus, rate limit, demo, fuzz, soak, ops decode
   Summary:
     - **`?mux=dash`** (**experimental**): **`rewriteDASHManifestToGatewayProxy`**, **`serveNativeMuxTarget`** / shared **`seg=`** pool with HLS; main loop **`dash_native_mux`** / passthrough; profile **`dash_mux_seg_*`** atomics.
@@ -33,7 +52,7 @@ Append-only. One entry per completed task.
   Verification:
     - `./scripts/verify`
   Notes:
-    - Redirect-chain SSRF and full DASH relative URL resolution remain open; DNS deny fails open on lookup errors.
+    - Follow-up: redirect-hop validation + DASH relative **`<BaseURL>`** chain shipped in a later entry; DNS deny fails open on lookup errors.
   Opportunities filed:
     - none
   Links:

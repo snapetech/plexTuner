@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>IPTV Tunerr — HLS mux demo (hls.js)</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+    video { width: 100%; background: #111; }
+    label { display: block; margin-top: 1rem; font-weight: 600; }
+    input { width: 100%; padding: 0.5rem; box-sizing: border-box; }
+    code { background: #f4f4f4; padding: 0.1rem 0.3rem; }
+    .hint { color: #555; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>HLS mux demo</h1>
+  <p class="hint">Served when <code>IPTV_TUNERR_HLS_MUX_WEB_DEMO=1</code>. Requires Tunerr <code>IPTV_TUNERR_HLS_MUX_CORS</code> for cross-origin playlists. Paste your tuner base (e.g. <code>http://127.0.0.1:5004</code>) and stream path.</p>
+
+  <label for="base">Tunerr base URL (no trailing slash)</label>
+  <input id="base" type="text" placeholder="http://127.0.0.1:5004" />
+
+  <label for="path">Stream path (e.g. /stream/0?mux=hls)</label>
+  <input id="path" type="text" value="/stream/0?mux=hls" />
+
+  <label for="url">Resolved playlist URL</label>
+  <input id="url" type="text" readonly />
+
+  <video id="vid" controls playsinline></video>
+
+  <script>
+    const baseEl = document.getElementById('base');
+    const pathEl = document.getElementById('path');
+    const urlEl = document.getElementById('url');
+    const vid = document.getElementById('vid');
+
+    function rebuildURL() {
+      const b = (baseEl.value || '').replace(/\/+$/, '');
+      const p = pathEl.value || '';
+      if (!b || !p.startsWith('/')) {
+        urlEl.value = '';
+        return '';
+      }
+      const u = b + p;
+      urlEl.value = u;
+      return u;
+    }
+
+    function load() {
+      const u = rebuildURL();
+      if (!u || !window.Hls) return;
+      if (vid._hls) {
+        vid._hls.destroy();
+        vid._hls = null;
+      }
+      if (Hls.isSupported()) {
+        const hls = new Hls({ enableWorker: true, lowLatencyMode: false });
+        vid._hls = hls;
+        hls.loadSource(u);
+        hls.attachMedia(vid);
+      } else if (vid.canPlayType('application/vnd.apple.mpegurl')) {
+        vid.src = u;
+      } else {
+        alert('HLS not supported in this browser');
+      }
+    }
+
+    ['input', 'change'].forEach(ev => {
+      baseEl.addEventListener(ev, () => { rebuildURL(); });
+      pathEl.addEventListener(ev, load);
+    });
+    rebuildURL();
+  </script>
+</body>
+</html>

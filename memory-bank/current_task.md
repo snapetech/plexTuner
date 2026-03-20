@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-19, native mux closure):** **Redirect-hop** validation on **`seg=`** (`mux_http_client` + **`safeurl.ValidateMuxSegTarget`**), richer **DASH** rewrite (relative **`media=`** / **`init=`** / **`<BaseURL>`** chain; skip **`$`** templates), **`IPTV_TUNERR_HLS_MUX_SEG_SLOTS_AUTO`** adaptive bonus, **`IPTV_TUNERR_HLS_MUX_ACCESS_LOG`**, golden **`testdata/hls_mux_small_playlist.golden`**, integration tests (**302→private**, chunked), **ADR 0005** (no disk packager), **OTEL** explanation doc (Prometheus scrape via collector). **`./scripts/verify`** OK.
+
 **Latest (2026-03-19, native mux epic):** Shipped **`?mux=dash`** (experimental MPD rewrite), DNS **`IPTV_TUNERR_HLS_MUX_DENY_RESOLVED_PRIVATE_UPSTREAM`**, per-IP **`IPTV_TUNERR_HLS_MUX_SEG_RPS_PER_IP`**, Prometheus **`/metrics`** + **`iptv_tunerr_mux_seg_outcomes_total`**, **`hls_mux_diag`** logs, **`POST /ops/actions/mux-seg-decode`**, **`/debug/hls-mux-demo.html`**, **`IPTV_TUNERR_HTTP_MAX_IDLE_CONNS_PER_HOST`**, fuzz/soak/docs/vendor; webui tests aligned with **`deckSession`** + POST logout.
 
 **Latest (2026-03-19, HLS mux):** Implemented toolkit backlog slice: **`seg=`** length cap, optional literal-private IP block, JSON mux errors, line splitting without scanner limits, CORS allow **correlation** headers, upstream **HEAD** for **`seg=`**, **`hls_mux_seg_*`** counters on **`provider_profile.json`** + runtime env echo, **`safeurl`** tests; fixed **`internal/webui`** **`go vet`**/test break (**`logout`**, **`strconv`**, test **`Server`** setup). **`./scripts/verify`** OK.

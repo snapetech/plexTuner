@@ -1,6 +1,9 @@
 package safeurl
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestIsHTTPOrHTTPS(t *testing.T) {
 	cases := []struct {
@@ -84,6 +87,45 @@ func TestRedactQuery(t *testing.T) {
 		got := RedactQuery(c.input)
 		if got != c.want {
 			t.Errorf("RedactQuery(%q) = %q; want %q", c.input, got, c.want)
+		}
+	}
+}
+
+func TestHTTPURLHostResolvesToBlockedPrivate(t *testing.T) {
+	ctx := context.Background()
+	b, err := HTTPURLHostResolvesToBlockedPrivate(ctx, "http://127.0.0.1/x")
+	if err != nil || !b {
+		t.Fatalf("loopback literal: blocked=%v err=%v", b, err)
+	}
+	b2, err2 := HTTPURLHostResolvesToBlockedPrivate(ctx, "http://8.8.8.8/")
+	if err2 != nil || b2 {
+		t.Fatalf("public literal: blocked=%v err=%v", b2, err2)
+	}
+}
+
+func TestHTTPURLHostIsLiteralBlockedPrivate(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want bool
+	}{
+		{"http://127.0.0.1/seg.ts", true},
+		{"https://192.168.1.10/path", true},
+		{"http://10.0.0.1/live", true},
+		{"http://172.16.0.1/x", true},
+		{"http://169.254.1.1/metadata", true}, // link-local
+		{"http://[::1]/v6", true},
+		{"https://[fd00::1]/ula", true}, // IPv6 unique local → IsPrivate
+		{"http://0.0.0.0/", true},
+		{"http://8.8.8.8/dns", false},
+		{"https://example.com/seg.ts", false},
+		{"http://not-an-ip.invalid/x", false},
+		{"", false},
+		{"%zz", false},
+	}
+	for _, c := range cases {
+		got := HTTPURLHostIsLiteralBlockedPrivate(c.raw)
+		if got != c.want {
+			t.Errorf("HTTPURLHostIsLiteralBlockedPrivate(%q) = %v; want %v", c.raw, got, c.want)
 		}
 	}
 }

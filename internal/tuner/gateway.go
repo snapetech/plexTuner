@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -17,6 +19,7 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/catalog"
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
 	"github.com/snapetech/iptvtunerr/internal/safeurl"
+	"golang.org/x/time/rate"
 )
 
 // errCFBlock is returned by fetchAndWriteSegment when FetchCFReject is true and a segment
@@ -27,58 +30,78 @@ var errCFBlock = errors.New("cloudflare-abuse-block")
 // Gateway proxies live stream requests to provider URLs with optional auth.
 // Limit concurrent streams to TunerCount (tuner semantics).
 type Gateway struct {
-	Channels             []catalog.LiveChannel
-	ProviderUser         string
-	ProviderPass         string
-	TunerCount           int
-	StreamAttemptLimit   int
-	StreamBufferBytes    int    // 0 = no buffer, -1 = auto
-	StreamTranscodeMode  string // "off" | "on" | "auto"
-	TranscodeOverrides   map[string]bool
-	DefaultProfile       string
-	ProfileOverrides     map[string]string
-	CustomHeaders        map[string]string // extra headers to send on all upstream requests (e.g. Referer, Origin)
-	CustomUserAgent      string            // override User-Agent sent to upstream; supports preset names: lavf, ffmpeg, vlc, kodi, firefox
-	DetectedFFmpegUA     string            // auto-detected Lavf/X.Y.Z from installed ffmpeg, used when CustomUserAgent is "lavf"/"ffmpeg"
-	AddSecFetchHeaders   bool
-	AutoCFBoot           bool // when true, automatically bootstrap CF clearance at startup and on first CF hit
-	DisableFFmpeg        bool
-	DisableFFmpegDNS     bool
-	Client               *http.Client
-	CookieJarFile        string // path to persist cookies for Cloudflare clearance
-	persistentCookieJar  *persistentCookieJar
-	cfBoot               *cfBootstrapper // nil unless AutoCFBoot is true
-	cfLearnedStore       *cfLearnedStore // persisted per-host CF state (working UA, CF-tagged)
-	learnedUAMu          sync.Mutex
-	learnedUAByHost      map[string]string // hostname → working UA found by cycling
-	StreamAttemptLogFile string            // if set, stream attempt records are appended as JSON lines
-	FetchCFReject        bool              // abort HLS stream on segment redirected to CF abuse page
-	PlexPMSURL           string
-	PlexPMSToken         string
-	PlexClientAdapt      bool
-	Autopilot            *autopilotStore
-	mu                   sync.Mutex
-	inUse                int
-	hlsMuxSegInUse       int // concurrent ?mux=hls&seg= proxies (bounded; see effectiveHLSMuxSegLimitLocked)
-	learnedUpstreamLimit int
-	reqSeq               uint64
-	providerStateMu      sync.Mutex
-	concurrencyHits      int
-	lastConcurrencyAt    time.Time
-	lastConcurrencyBody  string
-	lastConcurrencyCode  int
-	cfBlockHits          int
-	lastCFBlockAt        time.Time
-	lastCFBlockURL       string
-	hlsPlaylistFailures  int
-	lastHLSPlaylistAt    time.Time
-	lastHLSPlaylistURL   string
-	hlsSegmentFailures   int
-	lastHLSSegmentAt     time.Time
-	lastHLSSegmentURL    string
-	hostFailures         map[string]hostFailureStat
-	attemptsMu           sync.Mutex
-	recentAttempts       []StreamAttemptRecord
+	Channels                   []catalog.LiveChannel
+	ProviderUser               string
+	ProviderPass               string
+	TunerCount                 int
+	StreamAttemptLimit         int
+	StreamBufferBytes          int    // 0 = no buffer, -1 = auto
+	StreamTranscodeMode        string // "off" | "on" | "auto"
+	TranscodeOverrides         map[string]bool
+	DefaultProfile             string
+	ProfileOverrides           map[string]string
+	CustomHeaders              map[string]string // extra headers to send on all upstream requests (e.g. Referer, Origin)
+	CustomUserAgent            string            // override User-Agent sent to upstream; supports preset names: lavf, ffmpeg, vlc, kodi, firefox
+	DetectedFFmpegUA           string            // auto-detected Lavf/X.Y.Z from installed ffmpeg, used when CustomUserAgent is "lavf"/"ffmpeg"
+	AddSecFetchHeaders         bool
+	AutoCFBoot                 bool // when true, automatically bootstrap CF clearance at startup and on first CF hit
+	DisableFFmpeg              bool
+	DisableFFmpegDNS           bool
+	Client                     *http.Client
+	CookieJarFile              string // path to persist cookies for Cloudflare clearance
+	persistentCookieJar        *persistentCookieJar
+	cfBoot                     *cfBootstrapper // nil unless AutoCFBoot is true
+	cfLearnedStore             *cfLearnedStore // persisted per-host CF state (working UA, CF-tagged)
+	learnedUAMu                sync.Mutex
+	learnedUAByHost            map[string]string // hostname → working UA found by cycling
+	StreamAttemptLogFile       string            // if set, stream attempt records are appended as JSON lines
+	FetchCFReject              bool              // abort HLS stream on segment redirected to CF abuse page
+	PlexPMSURL                 string
+	PlexPMSToken               string
+	PlexClientAdapt            bool
+	Autopilot                  *autopilotStore
+	mu                         sync.Mutex
+	inUse                      int
+	hlsMuxSegInUse             int // concurrent ?mux=hls&seg= proxies (bounded; see effectiveHLSMuxSegLimitLocked)
+	hlsMuxSegSuccess           atomic.Uint64
+	hlsMuxSegErrScheme         atomic.Uint64
+	hlsMuxSegErrPrivate        atomic.Uint64
+	hlsMuxSegErrParam          atomic.Uint64
+	hlsMuxSegUpstreamHTTPErrs  atomic.Uint64
+	hlsMuxSeg502Fail           atomic.Uint64
+	hlsMuxSeg503LimitHits      atomic.Uint64
+	hlsMuxSegRateLimited       atomic.Uint64
+	dashMuxSegSuccess          atomic.Uint64
+	dashMuxSegErrScheme        atomic.Uint64
+	dashMuxSegErrPrivate       atomic.Uint64
+	dashMuxSegErrParam         atomic.Uint64
+	dashMuxSegUpstreamHTTPErrs atomic.Uint64
+	dashMuxSeg502Fail          atomic.Uint64
+	dashMuxSeg503LimitHits     atomic.Uint64
+	dashMuxSegRateLimited      atomic.Uint64
+	segRaterMu                 sync.Mutex
+	segRaterByIP               map[string]*rate.Limiter
+	muxSegAutoMu               sync.Mutex
+	muxSegAutoRejectAt         []time.Time // timestamps of 503 seg-limit rejects (for IPTV_TUNERR_HLS_MUX_SEG_SLOTS_AUTO)
+	learnedUpstreamLimit       int
+	reqSeq                     uint64
+	providerStateMu            sync.Mutex
+	concurrencyHits            int
+	lastConcurrencyAt          time.Time
+	lastConcurrencyBody        string
+	lastConcurrencyCode        int
+	cfBlockHits                int
+	lastCFBlockAt              time.Time
+	lastCFBlockURL             string
+	hlsPlaylistFailures        int
+	lastHLSPlaylistAt          time.Time
+	lastHLSPlaylistURL         string
+	hlsSegmentFailures         int
+	lastHLSSegmentAt           time.Time
+	lastHLSSegmentURL          string
+	hostFailures               map[string]hostFailureStat
+	attemptsMu                 sync.Mutex
+	recentAttempts             []StreamAttemptRecord
 }
 
 type gatewayReqIDKey struct{}
@@ -166,61 +189,131 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 	urls = g.reorderStreamURLs(channel, clientClass, urls)
 	requestMux := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mux")))
-	if requestMux == "hls" {
+	if requestMux == "hls" || requestMux == "dash" {
+		nativeMux := requestMux
 		target := strings.TrimSpace(r.URL.Query().Get("seg"))
 		if target != "" {
-			if !safeurl.IsHTTPOrHTTPS(target) {
-				log.Printf("gateway: req=%s channel=%q id=%s hls-mux-seg unsupported scheme target=%s ua=%q",
-					reqID, channel.GuideName, channelID, safeurl.RedactURL(target), r.UserAgent())
-				finalStatus = "hls_mux_unsupported_target_scheme"
-				finalErr = errHLSMuxUnsupportedTargetScheme
-				respondHLSMuxUnsupportedTargetScheme(w)
+			muxPrefix := nativeMux + "_mux"
+			if maxSeg := hlsMuxMaxSegParamBytes(); len(target) > maxSeg {
+				log.Printf("gateway: req=%s channel=%q id=%s native-mux-seg (%s) param too large bytes=%d max=%d ua=%q",
+					reqID, channel.GuideName, channelID, nativeMux, len(target), maxSeg, r.UserAgent())
+				finalStatus = muxPrefix + "_seg_param_too_large"
+				finalErr = errHLSMuxSegParamTooLarge
+				g.noteMuxSegOutcome(nativeMux, "err_param")
+				respondHLSMuxClientError(w, r, http.StatusBadRequest, hlsMuxDiagSegParamTooLarge, nativeMux+" mux seg parameter too large")
 				return
+			}
+			if !g.allowMuxSegRate(r) {
+				log.Printf("gateway: req=%s channel=%q id=%s native-mux-seg (%s) rate limited remote=%q",
+					reqID, channel.GuideName, channelID, nativeMux, r.RemoteAddr)
+				finalStatus = muxPrefix + "_seg_rate_limited"
+				finalErr = errors.New("native mux segment rate limited")
+				g.noteMuxSegOutcome(nativeMux, "429_rate")
+				respondHLSMuxClientError(w, r, http.StatusTooManyRequests, hlsMuxDiagSegRateLimited, "mux segment rate limit exceeded")
+				return
+			}
+			if !safeurl.IsHTTPOrHTTPS(target) {
+				log.Printf("gateway: req=%s channel=%q id=%s native-mux-seg (%s) unsupported scheme target=%s ua=%q",
+					reqID, channel.GuideName, channelID, nativeMux, safeurl.RedactURL(target), r.UserAgent())
+				finalStatus = muxPrefix + "_unsupported_target_scheme"
+				finalErr = errHLSMuxUnsupportedTargetScheme
+				g.noteMuxSegOutcome(nativeMux, "err_scheme")
+				respondHLSMuxUnsupportedTargetScheme(w, r)
+				return
+			}
+			if hlsMuxDenyLiteralPrivateUpstream() && safeurl.HTTPURLHostIsLiteralBlockedPrivate(target) {
+				log.Printf("gateway: req=%s channel=%q id=%s native-mux-seg (%s) blocked literal-private upstream=%s ua=%q",
+					reqID, channel.GuideName, channelID, nativeMux, safeurl.RedactURL(target), r.UserAgent())
+				finalStatus = muxPrefix + "_blocked_private_upstream"
+				finalErr = errHLSMuxBlockedPrivateUpstream
+				g.noteMuxSegOutcome(nativeMux, "err_private")
+				respondHLSMuxClientError(w, r, http.StatusForbidden, hlsMuxDiagBlockedPrivateUpstream, "mux upstream host is not allowed")
+				return
+			}
+			if hlsMuxDenyResolvedPrivateUpstream() {
+				resolveCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+				blocked, resErr := safeurl.HTTPURLHostResolvesToBlockedPrivate(resolveCtx, target)
+				cancel()
+				if resErr != nil {
+					log.Printf("gateway: req=%s channel=%q id=%s native-mux-seg (%s) dns-resolve warn=%v target=%s",
+						reqID, channel.GuideName, channelID, nativeMux, resErr, safeurl.RedactURL(target))
+				}
+				if blocked {
+					log.Printf("gateway: req=%s channel=%q id=%s native-mux-seg (%s) blocked resolved-private upstream=%s ua=%q",
+						reqID, channel.GuideName, channelID, nativeMux, safeurl.RedactURL(target), r.UserAgent())
+					finalStatus = muxPrefix + "_blocked_private_upstream"
+					finalErr = errHLSMuxBlockedPrivateUpstream
+					g.noteMuxSegOutcome(nativeMux, "err_private")
+					respondHLSMuxClientError(w, r, http.StatusForbidden, hlsMuxDiagBlockedPrivateUpstream, "mux upstream host is not allowed")
+					return
+				}
 			}
 			g.mu.Lock()
 			segLimit := g.effectiveHLSMuxSegLimitLocked()
 			if g.hlsMuxSegInUse >= segLimit {
+				g.noteMuxSegConcurrencyReject()
 				g.mu.Unlock()
-				log.Printf("gateway: req=%s channel=%q id=%s reject hls-mux-seg limit=%d ua=%q", reqID, channel.GuideName, channelID, segLimit, r.UserAgent())
+				log.Printf("gateway: req=%s channel=%q id=%s reject native-mux-seg (%s) limit=%d ua=%q", reqID, channel.GuideName, channelID, nativeMux, segLimit, r.UserAgent())
 				w.Header().Set("X-HDHomeRun-Error", "805") // All Tuners In Use
 				http.Error(w, "All tuners in use", http.StatusServiceUnavailable)
-				finalStatus = "hls_mux_seg_limit"
-				finalErr = errors.New("hls mux segment concurrency limit")
+				finalStatus = muxPrefix + "_seg_limit"
+				finalErr = errors.New("native mux segment concurrency limit")
+				g.noteMuxSegOutcome(nativeMux, "503_limit")
 				return
 			}
 			g.hlsMuxSegInUse++
 			segInUseNow := g.hlsMuxSegInUse
 			g.mu.Unlock()
-			log.Printf("gateway: req=%s channel=%q id=%s acquire hls-mux-seg inuse=%d/%d", reqID, channel.GuideName, channelID, segInUseNow, segLimit)
+			log.Printf("gateway: req=%s channel=%q id=%s acquire native-mux-seg (%s) inuse=%d/%d", reqID, channel.GuideName, channelID, nativeMux, segInUseNow, segLimit)
 			client := g.Client
 			if client == nil {
 				client = httpclient.ForStreaming()
 			}
-			err := g.serveHLSMuxTarget(w, r, client, channelID, target)
+			err := g.serveNativeMuxTarget(w, r, client, channelID, target, nativeMux)
 			g.mu.Lock()
 			g.hlsMuxSegInUse--
 			segLeft := g.hlsMuxSegInUse
 			g.mu.Unlock()
-			log.Printf("gateway: req=%s channel=%q id=%s release hls-mux-seg inuse=%d/%d dur=%s", reqID, channel.GuideName, channelID, segLeft, segLimit, time.Since(start).Round(time.Millisecond))
+			log.Printf("gateway: req=%s channel=%q id=%s release native-mux-seg (%s) inuse=%d/%d dur=%s", reqID, channel.GuideName, channelID, nativeMux, segLeft, segLimit, time.Since(start).Round(time.Millisecond))
 			if err != nil {
 				finalErr = err
 				if errors.Is(err, errHLSMuxUnsupportedTargetScheme) {
-					finalStatus = "hls_mux_unsupported_target_scheme"
-					respondHLSMuxUnsupportedTargetScheme(w)
+					finalStatus = muxPrefix + "_unsupported_target_scheme"
+					g.noteMuxSegOutcome(nativeMux, "err_scheme")
+					respondHLSMuxUnsupportedTargetScheme(w, r)
 					return
 				}
 				var upHTTP *hlsMuxUpstreamHTTPError
 				if errors.As(err, &upHTTP) {
-					finalStatus = "hls_mux_upstream_http_" + strconv.Itoa(upHTTP.Status)
-					respondHLSMuxUpstreamHTTP(w, upHTTP.Status, upHTTP.Body)
+					finalStatus = muxPrefix + "_upstream_http_" + strconv.Itoa(upHTTP.Status)
+					g.noteMuxSegOutcome(nativeMux, "upstream_http")
+					respondHLSMuxUpstreamHTTP(w, r, upHTTP.Status, upHTTP.Body)
 					return
 				}
-				finalStatus = "hls_mux_target_failed"
-				http.Error(w, "HLS mux target failed", http.StatusBadGateway)
+				if errors.Is(err, errMuxRedirectPolicy) {
+					msg := strings.ToLower(err.Error())
+					if strings.Contains(msg, "blocked") || strings.Contains(msg, "private") {
+						finalStatus = muxPrefix + "_blocked_private_upstream"
+						g.noteMuxSegOutcome(nativeMux, "err_private")
+						respondHLSMuxClientError(w, r, http.StatusForbidden, hlsMuxDiagBlockedPrivateUpstream, "mux upstream host is not allowed")
+					} else {
+						finalStatus = muxPrefix + "_redirect_rejected"
+						g.noteMuxSegOutcome(nativeMux, "err_redirect")
+						respondHLSMuxClientError(w, r, http.StatusBadGateway, hlsMuxDiagRedirectRejected, "mux upstream redirect rejected")
+					}
+					return
+				}
+				finalStatus = muxPrefix + "_target_failed"
+				g.noteMuxSegOutcome(nativeMux, "502")
+				http.Error(w, "Native mux target failed", http.StatusBadGateway)
 				return
 			}
+			if p := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_ACCESS_LOG")); p != "" {
+				appendMuxSegAccessLogLine(p, muxAccessLogJSON(nativeMux, channelID, target, time.Since(start)))
+			}
+			g.noteMuxSegOutcome(nativeMux, "success")
 			finalStatus = "ok"
-			finalMode = "hls_mux_target"
+			finalMode = nativeMux + "_mux_target"
 			finalEffectiveURL = target
 			return
 		}
@@ -370,6 +463,48 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				w.Header().Add(k, vv)
 			}
 		}
+		transcode := g.effectiveTranscodeForChannelMeta(r.Context(), channelID, channel.GuideNumber, channel.TVGID, streamURL)
+		if hasTranscodeOverride {
+			transcode = forceTranscode
+		}
+		if isDASHMPDResponse(resp, streamURL) {
+			body, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				log.Printf("gateway: channel=%q id=%s read-mpd-failed err=%v", channel.GuideName, channelID, err)
+				continue
+			}
+			outputMux := requestMux
+			if outputMux != streamMuxFMP4 && outputMux != "hls" && outputMux != "dash" {
+				outputMux = streamMuxMPEGTS
+			}
+			if outputMux == streamMuxFMP4 && !transcode {
+				outputMux = streamMuxMPEGTS
+			}
+			if outputMux == "dash" {
+				out := rewriteDASHManifestToGatewayProxy(body, effectiveURL, channelID)
+				w.Header().Set("Content-Type", "application/dash+xml")
+				w.Header().Set("Cache-Control", "no-store")
+				applyHLSMuxCORS(w)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(out)
+				finalStatus = "ok"
+				finalMode = "dash_native_mux"
+				finalEffectiveURL = effectiveURL
+				return
+			}
+			w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+			if w.Header().Get("Content-Type") == "" {
+				w.Header().Set("Content-Type", "application/dash+xml")
+			}
+			w.Header().Set("Cache-Control", "no-store")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(body)
+			finalStatus = "ok"
+			finalMode = "dash_passthrough"
+			finalEffectiveURL = effectiveURL
+			return
+		}
 		if isHLSResponse(resp, streamURL) {
 			body, err := io.ReadAll(resp.Body)
 			resp.Body.Close()
@@ -387,10 +522,6 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					channel.GuideName, channelID, i+1, len(urls), safeurl.RedactURL(streamURL), resp.Header.Get("Content-Type"), len(body))
 				continue
 			}
-			transcode := g.effectiveTranscodeForChannelMeta(r.Context(), channelID, channel.GuideNumber, channel.TVGID, streamURL)
-			if hasTranscodeOverride {
-				transcode = forceTranscode
-			}
 			bufferSize := g.effectiveBufferSize(transcode)
 			mode := "remux"
 			if transcode {
@@ -405,7 +536,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			log.Printf("gateway: channel=%q id=%s hls-mode transcode=%t mode=%q guide=%q tvg=%q", channel.GuideName, channelID, transcode, g.StreamTranscodeMode, channel.GuideNumber, channel.TVGID)
 			hotStart := g.hotStartConfig(channel, clientClass)
 			outputMux := requestMux
-			if outputMux != streamMuxFMP4 && outputMux != "hls" {
+			if outputMux != streamMuxFMP4 && outputMux != "hls" && outputMux != "dash" {
 				outputMux = streamMuxMPEGTS
 			}
 			if outputMux == streamMuxFMP4 && !transcode {
@@ -512,4 +643,89 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	g.rememberAutopilotFailure(channel, clientClass)
 	log.Printf("gateway: channel=%q id=%s all %d upstream(s) failed dur=%s", channel.GuideName, channelID, len(urls), time.Since(start).Round(time.Millisecond))
 	http.Error(w, "All upstreams failed", http.StatusBadGateway)
+}
+
+func (g *Gateway) noteHLSMuxSegOutcome(kind string) {
+	g.noteMuxSegOutcome("hls", kind)
+}
+
+func (g *Gateway) noteMuxSegOutcome(mux, kind string) {
+	promNoteMuxSegOutcome(mux, kind)
+	if mux == "dash" {
+		switch kind {
+		case "success":
+			g.dashMuxSegSuccess.Add(1)
+		case "err_scheme":
+			g.dashMuxSegErrScheme.Add(1)
+		case "err_private":
+			g.dashMuxSegErrPrivate.Add(1)
+		case "err_param":
+			g.dashMuxSegErrParam.Add(1)
+		case "upstream_http":
+			g.dashMuxSegUpstreamHTTPErrs.Add(1)
+		case "502":
+			g.dashMuxSeg502Fail.Add(1)
+		case "503_limit":
+			g.dashMuxSeg503LimitHits.Add(1)
+		case "429_rate":
+			g.dashMuxSegRateLimited.Add(1)
+		case "err_redirect":
+			g.dashMuxSeg502Fail.Add(1)
+		default:
+		}
+		return
+	}
+	switch kind {
+	case "success":
+		g.hlsMuxSegSuccess.Add(1)
+	case "err_scheme":
+		g.hlsMuxSegErrScheme.Add(1)
+	case "err_private":
+		g.hlsMuxSegErrPrivate.Add(1)
+	case "err_param":
+		g.hlsMuxSegErrParam.Add(1)
+	case "upstream_http":
+		g.hlsMuxSegUpstreamHTTPErrs.Add(1)
+	case "502":
+		g.hlsMuxSeg502Fail.Add(1)
+	case "503_limit":
+		g.hlsMuxSeg503LimitHits.Add(1)
+	case "429_rate":
+		g.hlsMuxSegRateLimited.Add(1)
+	case "err_redirect":
+		g.hlsMuxSeg502Fail.Add(1)
+	default:
+	}
+}
+
+func (g *Gateway) allowMuxSegRate(r *http.Request) bool {
+	rps := muxSegRPSPerIP()
+	if rps <= 0 || r == nil {
+		return true
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if host == "" {
+		host = "unknown"
+	}
+	g.segRaterMu.Lock()
+	defer g.segRaterMu.Unlock()
+	if g.segRaterByIP == nil {
+		g.segRaterByIP = make(map[string]*rate.Limiter)
+	}
+	lim, ok := g.segRaterByIP[host]
+	if !ok {
+		burst := int(math.Ceil(rps))
+		if burst < 1 {
+			burst = 1
+		}
+		if burst > 100 {
+			burst = 100
+		}
+		lim = rate.NewLimiter(rate.Limit(rps), burst)
+		g.segRaterByIP[host] = lim
+	}
+	return lim.Allow()
 }

@@ -47,8 +47,9 @@ func (g *Gateway) effectiveTunerLimitLocked() int {
 	return limit
 }
 
-// effectiveHLSMuxSegLimitLocked caps concurrent ?mux=hls&seg= proxy requests (short-lived HTTP relays).
+// effectiveHLSMuxSegLimitLocked caps concurrent ?mux=hls|dash&seg= proxy requests (short-lived HTTP relays).
 // Default: effective tuner limit × IPTV_TUNERR_HLS_MUX_SEG_SLOTS_PER_TUNER (default 8). Override with IPTV_TUNERR_HLS_MUX_MAX_CONCURRENT.
+// Optional IPTV_TUNERR_HLS_MUX_SEG_SLOTS_AUTO adds temporary bonus slots from recent 503-limit rejections (see muxSegAdaptiveBonus).
 func (g *Gateway) effectiveHLSMuxSegLimitLocked() int {
 	if v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_MAX_CONCURRENT")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -66,7 +67,87 @@ func (g *Gateway) effectiveHLSMuxSegLimitLocked() int {
 	if limit < 1 {
 		limit = 1
 	}
+	limit += g.muxSegAdaptiveBonus()
+	if limit < 1 {
+		limit = 1
+	}
 	return limit
+}
+
+func muxSegSlotsAutoEnabled() bool {
+	return getenvBool("IPTV_TUNERR_HLS_MUX_SEG_SLOTS_AUTO", false)
+}
+
+func muxSegAutoWindow() time.Duration {
+	v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_SEG_AUTO_WINDOW_SEC"))
+	if v == "" {
+		return 60 * time.Second
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 5 {
+		return 60 * time.Second
+	}
+	if n > 600 {
+		n = 600
+	}
+	return time.Duration(n) * time.Second
+}
+
+// noteMuxSegConcurrencyReject records a 503 seg-limit rejection for adaptive slot expansion.
+func (g *Gateway) noteMuxSegConcurrencyReject() {
+	if g == nil || !muxSegSlotsAutoEnabled() {
+		return
+	}
+	g.muxSegAutoMu.Lock()
+	defer g.muxSegAutoMu.Unlock()
+	now := time.Now()
+	g.muxSegAutoRejectAt = append(g.muxSegAutoRejectAt, now)
+	cutoff := now.Add(-muxSegAutoWindow())
+	i := 0
+	for _, t := range g.muxSegAutoRejectAt {
+		if t.After(cutoff) {
+			g.muxSegAutoRejectAt[i] = t
+			i++
+		}
+	}
+	g.muxSegAutoRejectAt = g.muxSegAutoRejectAt[:i]
+}
+
+// muxSegAdaptiveBonus returns extra concurrent seg slots when IPTV_TUNERR_HLS_MUX_SEG_SLOTS_AUTO is on and
+// IPTV_TUNERR_HLS_MUX_MAX_CONCURRENT is not set. Bonus scales with recent limit hits (capped).
+func (g *Gateway) muxSegAdaptiveBonus() int {
+	if g == nil || !muxSegSlotsAutoEnabled() {
+		return 0
+	}
+	if strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_MAX_CONCURRENT")) != "" {
+		return 0
+	}
+	g.muxSegAutoMu.Lock()
+	defer g.muxSegAutoMu.Unlock()
+	cutoff := time.Now().Add(-muxSegAutoWindow())
+	n := 0
+	for _, t := range g.muxSegAutoRejectAt {
+		if t.After(cutoff) {
+			n++
+		}
+	}
+	per := 4
+	if v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_SEG_AUTO_BONUS_PER_HIT")); v != "" {
+		if x, err := strconv.Atoi(v); err == nil && x >= 0 {
+			per = x
+		}
+	}
+	capB := 64
+	if v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_SEG_AUTO_BONUS_CAP")); v != "" {
+		if x, err := strconv.Atoi(v); err == nil && x >= 0 {
+			capB = x
+		}
+	}
+	bonus := n * per
+	if bonus > capB {
+		bonus = capB
+	}
+	return bonus
 }
 
 func (g *Gateway) noteUpstreamConcurrencySignal(status int, preview string) {

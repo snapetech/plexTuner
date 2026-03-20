@@ -2,6 +2,7 @@ package tuner
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,11 +18,13 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/snapetech/iptvtunerr/internal/catalog"
 	"github.com/snapetech/iptvtunerr/internal/channeldna"
 	"github.com/snapetech/iptvtunerr/internal/channelreport"
 	"github.com/snapetech/iptvtunerr/internal/epgstore"
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
+	"github.com/snapetech/iptvtunerr/internal/safeurl"
 )
 
 // PlexDVRMaxChannels is Plex's per-tuner channel limit when using the wizard; exceeding it causes "failed to save channel lineup".
@@ -1101,6 +1104,11 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/recordings/recorder.json", s.serveCatchupRecorderReport())
 	mux.Handle("/debug/stream-attempts.json", s.serveRecentStreamAttempts())
 	mux.Handle("/debug/runtime.json", s.serveRuntimeSnapshot())
+	mux.Handle("/debug/hls-mux-demo.html", s.serveHlsMuxWebDemo())
+	if metricsEnableFromEnv() {
+		mux.Handle("/metrics", promhttp.Handler())
+	}
+	mux.Handle("/ops/actions/mux-seg-decode", s.serveMuxSegDecodeAction())
 	mux.Handle("/ops/actions/status.json", s.serveOperatorActionStatus())
 	mux.Handle("/ops/workflows/guide-repair.json", s.serveGuideRepairWorkflow())
 	mux.Handle("/ops/workflows/stream-investigate.json", s.serveStreamInvestigateWorkflow())
@@ -1519,6 +1527,13 @@ func (s *Server) serveOperatorActionStatus() http.Handler {
 			"autopilot_reset": map[string]interface{}{
 				"available": s.gateway != nil && s.gateway.Autopilot != nil,
 			},
+			"mux_seg_decode": map[string]interface{}{
+				"available":    true,
+				"endpoint":     "/ops/actions/mux-seg-decode",
+				"method":       "POST",
+				"body":         `{"seg_b64":"<base64 of raw seg URL>"}`,
+				"localhost_ui": true,
+			},
 		}
 		body, err := json.MarshalIndent(detail, "", "  ")
 		if err != nil {
@@ -1825,6 +1840,63 @@ func (s *Server) serveCatchupRecorderReport() http.Handler {
 			return
 		}
 		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveHlsMuxWebDemo() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !getenvBool("IPTV_TUNERR_HLS_MUX_WEB_DEMO", false) {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		b, err := operatorUIEmbedded.ReadFile("static/hls_mux_demo.html")
+		if err != nil {
+			http.Error(w, "demo unavailable", http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(b)
+	})
+}
+
+func (s *Server) serveMuxSegDecodeAction() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Content-Type", "application/json")
+			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
+		limited := http.MaxBytesReader(w, r.Body, 65536)
+		var req struct {
+			SegB64 string `json:"seg_b64"`
+		}
+		if err := json.NewDecoder(limited).Decode(&req); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
+			return
+		}
+		raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(req.SegB64))
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			http.Error(w, `{"error":"invalid base64"}`, http.StatusBadRequest)
+			return
+		}
+		u := strings.TrimSpace(string(raw))
+		w.Header().Set("Content-Type", "application/json")
+		enc := json.NewEncoder(w)
+		enc.SetEscapeHTML(false)
+		_ = enc.Encode(map[string]interface{}{
+			"redacted_url": safeurl.RedactURL(u),
+			"http_ok":      safeurl.IsHTTPOrHTTPS(u),
+		})
 	})
 }
 

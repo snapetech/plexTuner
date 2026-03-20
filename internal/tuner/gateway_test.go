@@ -3,6 +3,7 @@ package tuner
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -80,6 +81,149 @@ func TestRewriteHLSPlaylistToGatewayProxy(t *testing.T) {
 	}
 	if !strings.Contains(s, "http%3A%2F%2Fup.example%2Flive%2Fseg-1.ts") {
 		t.Fatalf("missing escaped target url: %q", s)
+	}
+}
+
+func TestRewriteHLSPlaylistToGatewayProxy_extXPartURI(t *testing.T) {
+	in := "#EXTM3U\n#EXT-X-PART:URI=\"https://cdn.example/part1.m4s\",DURATION=0.5\n"
+	out := rewriteHLSPlaylistToGatewayProxy([]byte(in), "http://up.example/ll.m3u8", "x")
+	s := string(out)
+	if !strings.Contains(s, `URI="/stream/x?mux=hls&seg=`) || !strings.Contains(s, "cdn.example") {
+		t.Fatalf("expected EXT-X-PART URI rewrite: %q", s)
+	}
+}
+
+func TestRewriteDASHManifestToGatewayProxy(t *testing.T) {
+	in := []byte(`<MPD><Period><AdaptationSet><Representation><SegmentTemplate media="https://cdn.example/seg-$Number$.m4s" initialization="https://cdn.example/init.mp4"/></Representation></AdaptationSet></Period></MPD>`)
+	out := rewriteDASHManifestToGatewayProxy(in, "http://up.example/master.mpd", "ch9")
+	s := string(out)
+	if !strings.Contains(s, "mux=dash&seg=") {
+		t.Fatalf("expected dash mux proxy: %q", s)
+	}
+}
+
+func TestRewriteDASHManifestToGatewayProxy_relativeWithBaseURL(t *testing.T) {
+	mpd := `<MPD><Period><AdaptationSet><Representation>` +
+		`<BaseURL>https://cdn.example/video/</BaseURL>` +
+		`<SegmentTemplate media="seg1.m4s" initialization="init.mp4"/>` +
+		`</Representation></AdaptationSet></Period></MPD>`
+	out := rewriteDASHManifestToGatewayProxy([]byte(mpd), "http://up.example/path/master.mpd", "c1")
+	s := string(out)
+	if !strings.Contains(s, "mux=dash&seg=") {
+		t.Fatalf("expected proxies: %q", s)
+	}
+	if strings.Contains(s, `media="seg1.m4s"`) {
+		t.Fatalf("relative media should be rewritten: %q", s)
+	}
+	if strings.Contains(s, `initialization="init.mp4"`) {
+		t.Fatalf("relative init should be rewritten: %q", s)
+	}
+}
+
+func TestRewriteHLSPlaylistToGatewayProxy_matchesGolden(t *testing.T) {
+	in := []byte("#EXTM3U\n#EXTINF:4,\nseg-1.ts\n")
+	got := rewriteHLSPlaylistToGatewayProxy(in, "http://up.example/live/index.m3u8", "abc")
+	want, err := os.ReadFile("testdata/hls_mux_small_playlist.golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("golden mismatch\ngot:\n%q\nwant:\n%q", got, want)
+	}
+}
+
+func TestGateway_hlsMuxSeg_redirectToBlockedPrivateUpstream(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_HLS_MUX_DENY_LITERAL_PRIVATE_UPSTREAM", "1")
+	redir := "http://127.0.0.1:9/secret.ts"
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, redir, http.StatusFound)
+	}))
+	defer up.Close()
+	g := &Gateway{
+		Channels:   []catalog.LiveChannel{{GuideNumber: "0", GuideName: "C", StreamURL: "http://x/x.m3u8"}},
+		TunerCount: 2,
+	}
+	seg := url.QueryEscape(up.URL + "/start.ts")
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0?mux=hls&seg="+seg, nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("code=%d body=%q diag=%q", w.Code, w.Body.String(), w.Header().Get("X-IptvTunerr-Hls-Mux-Error"))
+	}
+}
+
+func TestGateway_hlsMuxSeg_chunkedUpstreamPassthrough(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.WriteHeader(http.StatusOK)
+		fl, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("no flusher")
+		}
+		_, _ = w.Write([]byte("aa"))
+		fl.Flush()
+		_, _ = w.Write([]byte("bb"))
+		fl.Flush()
+	}))
+	defer up.Close()
+	g := &Gateway{
+		Channels:   []catalog.LiveChannel{{GuideNumber: "0", GuideName: "C", StreamURL: "http://x/x.m3u8"}},
+		TunerCount: 2,
+	}
+	seg := url.QueryEscape(up.URL + "/blob.bin")
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0?mux=hls&seg="+seg, nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code=%d body=%q", w.Code, w.Body.String())
+	}
+	if got := w.Body.String(); got != "aabb" {
+		t.Fatalf("body=%q", got)
+	}
+}
+
+func TestGateway_effectiveHLSMuxSegLimit_adaptiveBonus(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_HLS_MUX_SEG_SLOTS_AUTO", "1")
+	t.Setenv("IPTV_TUNERR_HLS_MUX_SEG_AUTO_BONUS_PER_HIT", "10")
+	t.Setenv("IPTV_TUNERR_HLS_MUX_SEG_AUTO_BONUS_CAP", "100")
+	t.Setenv("IPTV_TUNERR_HLS_MUX_SEG_SLOTS_PER_TUNER", "1")
+	g := &Gateway{TunerCount: 2}
+	now := time.Now()
+	g.muxSegAutoRejectAt = []time.Time{now, now, now}
+	g.mu.Lock()
+	base := g.effectiveHLSMuxSegLimitLocked()
+	g.mu.Unlock()
+	// 2 tuners * 1 slot + min(3*10, 100) = 32
+	if base < 30 {
+		t.Fatalf("expected adaptive bonus, limit=%d", base)
+	}
+}
+
+func TestGateway_dashMuxSeg_proxiesBinary(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/init.m4s" {
+			t.Fatalf("path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "video/mp4")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ftyp"))
+	}))
+	defer up.Close()
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "0", GuideName: "Ch", StreamURL: "http://placeholder/x.mpd"},
+		},
+		TunerCount: 2,
+	}
+	seg := url.QueryEscape(up.URL + "/init.m4s")
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0?mux=dash&seg="+seg, nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code=%d body=%q", w.Code, w.Body.String())
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("ftyp")) {
+		t.Fatalf("body=%q", w.Body.String())
 	}
 }
 
@@ -273,6 +417,154 @@ func TestGateway_ProviderBehaviorProfile_hlsMuxSegLimit(t *testing.T) {
 	p := g.ProviderBehaviorProfile()
 	if p.HlsMuxSegLimit != 17 {
 		t.Fatalf("HlsMuxSegLimit=%d want 17", p.HlsMuxSegLimit)
+	}
+}
+
+func TestGateway_newUpstreamRequest_forwardsCorrelationHeaders(t *testing.T) {
+	g := &Gateway{}
+	in := httptest.NewRequest(http.MethodGet, "/", nil)
+	in.Header.Set("X-Request-Id", "req-1")
+	in.Header.Set("X-Correlation-Id", "corr-2")
+	in.Header.Set("X-Trace-Id", "trace-3")
+	req, err := g.newUpstreamRequest(context.Background(), in, "http://upstream.example/seg.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := req.Header.Get("X-Request-Id"); got != "req-1" {
+		t.Fatalf("X-Request-Id: got %q", got)
+	}
+	if got := req.Header.Get("X-Correlation-Id"); got != "corr-2" {
+		t.Fatalf("X-Correlation-Id: got %q", got)
+	}
+	if got := req.Header.Get("X-Trace-Id"); got != "trace-3" {
+		t.Fatalf("X-Trace-Id: got %q", got)
+	}
+}
+
+func TestGateway_serveHLSMuxTarget_forwardsHEAD(t *testing.T) {
+	var gotMethod string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		w.Header().Set("Content-Type", "video/mp2t")
+		w.Header().Set("Content-Length", "999")
+		w.WriteHeader(http.StatusOK)
+		// HEAD must not include a body
+		_, _ = w.Write([]byte("nope"))
+	}))
+	defer up.Close()
+
+	g := &Gateway{}
+	req := httptest.NewRequest(http.MethodHead, "http://local/stream/ch1?mux=hls&seg="+url.QueryEscape(up.URL+"/seg.ts"), nil)
+	w := httptest.NewRecorder()
+	if err := g.serveHLSMuxTarget(w, req, up.Client(), "ch1", up.URL+"/seg.ts"); err != nil {
+		t.Fatal(err)
+	}
+	if gotMethod != http.MethodHead {
+		t.Fatalf("upstream method: got %q want HEAD", gotMethod)
+	}
+	if w.Code != http.StatusOK {
+		t.Fatalf("code=%d", w.Code)
+	}
+	if w.Body.Len() != 0 {
+		t.Fatalf("client body should be empty for HEAD, got len=%d", w.Body.Len())
+	}
+}
+
+func TestGateway_hlsMuxSeg_unsupportedScheme_returnsJSONWhenAccepted(t *testing.T) {
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "0", GuideName: "Ch", StreamURL: "http://up.example/live.m3u8"},
+		},
+		TunerCount: 2,
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0?mux=hls&seg="+url.QueryEscape("skd://key-server/example"), nil)
+	req.Header.Set("Accept", "application/json")
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d body=%q", w.Code, w.Body.String())
+	}
+	var payload map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json: %v body=%q", err, w.Body.String())
+	}
+	if payload["error"] != hlsMuxDiagUnsupportedTargetScheme {
+		t.Fatalf("error field: %#v", payload)
+	}
+}
+
+func TestGateway_hlsMuxSeg_paramTooLarge_returnsBadRequest(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_HLS_MUX_MAX_SEG_PARAM_BYTES", "12")
+	longTarget := "http://zz.example/seg.ts" // len > 12
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "0", GuideName: "Ch", StreamURL: "http://up.example/live.m3u8"},
+		},
+		TunerCount: 2,
+	}
+	seg := url.QueryEscape(longTarget)
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0?mux=hls&seg="+seg, nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d body=%q", w.Code, w.Body.String())
+	}
+	if got := w.Result().Header.Get(hlsMuxDiagnosticHeader); got != hlsMuxDiagSegParamTooLarge {
+		t.Fatalf("diag header: got %q", got)
+	}
+	p := g.ProviderBehaviorProfile()
+	if p.HlsMuxSegErrParam != 1 {
+		t.Fatalf("HlsMuxSegErrParam=%d want 1", p.HlsMuxSegErrParam)
+	}
+}
+
+func TestGateway_hlsMuxSeg_literalPrivateBlocked_returnsForbidden(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_HLS_MUX_DENY_LITERAL_PRIVATE_UPSTREAM", "true")
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "0", GuideName: "Ch", StreamURL: "http://up.example/live.m3u8"},
+		},
+		TunerCount: 2,
+	}
+	seg := url.QueryEscape("http://192.168.1.50/seg.ts")
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0?mux=hls&seg="+seg, nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("want 403, got %d body=%q", w.Code, w.Body.String())
+	}
+	if got := w.Result().Header.Get(hlsMuxDiagnosticHeader); got != hlsMuxDiagBlockedPrivateUpstream {
+		t.Fatalf("diag: got %q", got)
+	}
+	p := g.ProviderBehaviorProfile()
+	if p.HlsMuxSegErrPrivate != 1 {
+		t.Fatalf("HlsMuxSegErrPrivate=%d want 1", p.HlsMuxSegErrPrivate)
+	}
+}
+
+func TestGateway_hlsMuxSeg_successIncrementsProfileCounter(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/mp2t")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ts"))
+	}))
+	defer up.Close()
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "0", GuideName: "Ch", StreamURL: "http://placeholder/x.m3u8"},
+		},
+		TunerCount: 2,
+	}
+	seg := url.QueryEscape(up.URL + "/seg.ts")
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0?mux=hls&seg="+seg, nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%q", w.Code, w.Body.String())
+	}
+	p := g.ProviderBehaviorProfile()
+	if p.HlsMuxSegSuccess != 1 {
+		t.Fatalf("HlsMuxSegSuccess=%d want 1", p.HlsMuxSegSuccess)
 	}
 }
 
