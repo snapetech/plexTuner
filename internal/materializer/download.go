@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/snapetech/iptvtunerr/internal/httpclient"
 	"github.com/snapetech/iptvtunerr/internal/safeurl"
 )
 
@@ -22,7 +23,7 @@ func DownloadToFile(ctx context.Context, streamURL, destPath string, client *htt
 		return fmt.Errorf("download: invalid stream URL scheme (only http/https allowed)")
 	}
 	if client == nil {
-		client = http.DefaultClient
+		client = httpclient.Default()
 	}
 	transferClient := cloneClientNoTimeout(client)
 	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
@@ -114,7 +115,7 @@ func (e *downloadError) Error() string { return "download: HTTP " + strconv.Itoa
 
 func cloneClientNoTimeout(c *http.Client) *http.Client {
 	if c == nil {
-		return &http.Client{}
+		return httpclient.ForStreaming()
 	}
 	clone := *c
 	clone.Timeout = 0

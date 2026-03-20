@@ -154,6 +154,39 @@ func containsH264IDRAnnexB(buf []byte) bool {
 	return false
 }
 
+// containsHEVCIRAPAnnexB reports whether buf contains an H.265/HEVC IRAP-family NAL unit
+// in Annex B form (00 00 01 or 00 00 00 01). NAL types 16–21 (BLA/IDR/CRA per H.265 Table 7-1)
+// are treated as random-access points for the WebSafe startup gate alongside H.264 IDR.
+// Scan order matches containsH264IDRAnnexB (3-byte prefix first at each offset, then 4-byte).
+func containsHEVCIRAPAnnexB(buf []byte) bool {
+	if len(buf) < 4 {
+		return false
+	}
+	for i := 0; i < len(buf)-3; i++ {
+		if i+4 <= len(buf) && buf[i] == 0x00 && buf[i+1] == 0x00 && buf[i+2] == 0x01 {
+			nal0 := i + 3
+			if nal0 < len(buf) {
+				nalType := (buf[nal0] >> 1) & 0x3F
+				if nalType >= 16 && nalType <= 21 {
+					return true
+				}
+			}
+			continue
+		}
+		if i+5 <= len(buf) && buf[i] == 0x00 && buf[i+1] == 0x00 && buf[i+2] == 0x00 && buf[i+3] == 0x01 {
+			nalType := (buf[i+4] >> 1) & 0x3F
+			if nalType >= 16 && nalType <= 21 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func containsAnnexBVideoKeyframe(buf []byte) bool {
+	return containsH264IDRAnnexB(buf) || containsHEVCIRAPAnnexB(buf)
+}
+
 const tsPacketSize = 188
 
 // trimTSHeadToMaxBytes drops MPEG-TS 188-byte packets from the front until len(buf) <= maxBytes,
@@ -232,13 +265,13 @@ func looksLikeGoodTSStart(buf []byte) startSignalState {
 		}
 		payload := p[i:]
 		if !st.HasIDR {
-			if containsH264IDRAnnexB(payload) {
+			if containsAnnexBVideoKeyframe(payload) {
 				st.HasIDR = true
 			} else if len(idrCarry) > 0 {
 				joined := make([]byte, 0, len(idrCarry)+len(payload))
 				joined = append(joined, idrCarry...)
 				joined = append(joined, payload...)
-				if containsH264IDRAnnexB(joined) {
+				if containsAnnexBVideoKeyframe(joined) {
 					st.HasIDR = true
 				}
 			}

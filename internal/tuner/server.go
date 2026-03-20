@@ -812,8 +812,8 @@ func (s *Server) GetStream(ctx context.Context, channelID string) (io.ReadCloser
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 
-	// Use the gateway's HTTP client if available, otherwise default client
-	client := http.DefaultClient
+	// Prefer the gateway's client (cookies/UA parity); else shared tuned streaming client (not http.DefaultClient).
+	client := httpclient.ForStreaming()
 	if s.gateway != nil && s.gateway.Client != nil {
 		client = s.gateway.Client
 	}

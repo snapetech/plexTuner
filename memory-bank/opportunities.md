@@ -23,6 +23,16 @@ It exists to encourage quality gains without derailing the current task.
 ## Entries
 
 - Date: 2026-03-19
+  Category: maintainability
+  Title: Optional — further split **`gateway_servehttp.go`** if it grows unwieldy
+  Context: **`ServeHTTP`** + upstream walk now live in **`internal/tuner/gateway_servehttp.go`**; mux segment rate counters in **`gateway_mux_ratelimit.go`**; **`gateway.go`** holds **`Gateway`** + keys only.
+  Why it matters: **`gateway_servehttp.go`** is still a large orchestration file; smaller units (e.g. upstream loop vs raw proxy) would help if churn stays high.
+  Evidence: `wc -l internal/tuner/gateway_servehttp.go`.
+  Suggested fix: Extract e.g. upstream URL walk or tuner acquire/release into **`gateway_stream_upstream.go`** when a second editor conflict wave appears.
+  Risk/Scope: med | fits current scope? no
+  User decision needed?: no
+
+- Date: 2026-03-19
   Category: operability
   Title: HLS mux — consolidated operator toolkit + enhancement backlog doc
   Context: User asked for a single place listing many future HLS-mux-style improvements (diagnostics, protocol edge cases, security, scale) without opening N separate backlog tickets.

@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-19):** **INT-006** gateway split landed: **`gateway_servehttp.go`** (**`ServeHTTP`** + upstream loop), **`gateway_mux_ratelimit.go`** (mux seg rate + **`note*MuxSeg`** helpers), slim **`gateway.go`**. **INT-001 tail:** **`internal/materializer`** nil-client paths and **`Server`** loopback stream fetch use **`httpclient`** (not **`http.DefaultClient`**). **`./scripts/verify`** OK.
+
 **Latest (2026-03-19, work breakdown begin→end):** Working the intelligence cross-wiring epic from the **front** while another agent works the **back**. Current slice is **`INT-001`**: new shared **`internal/guideinput`** helpers centralize provider XMLTV URL generation plus local-file / URL loading for guide XML, XMLTV channels, alias overrides, and match reports on the repo’s shared HTTP path. Report tooling, catch-up preview helpers, and tuner guide-health callers are rewired; next is full **`./scripts/verify`**, then landing **`INT-001`** cleanly before moving into the first real **`INT-002`** gap.
 
 **Latest (2026-03-19, work breakdown begin→end, INT-002):** Guide policy is being promoted from a hidden boolean filter into a reusable decision surface. Current code adds **`GuidePolicySummary`** / **`GuidePolicyReport`**, richer policy-application logging, **`/guide/policy.json`**, and catch-up preview metadata that shows what the active guide policy kept or dropped and why.

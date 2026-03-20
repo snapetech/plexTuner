@@ -81,6 +81,61 @@ func TestLooksLikeGoodTSStartDetectsSplitIDRStartCodeAcrossPackets(t *testing.T)
 	}
 }
 
+func TestContainsHEVCIRAPAnnexB(t *testing.T) {
+	// NAL type 19 (IDR_W_RADL): nal_unit_type = (0x26 >> 1) & 0x3F = 19
+	nal := []byte{0x00, 0x00, 0x01, 0x26, 0x01, 0x02}
+	if !containsHEVCIRAPAnnexB(nal) {
+		t.Fatal("expected HEVC IRAP detection for 3-byte start")
+	}
+	nal4 := []byte{0x00, 0x00, 0x00, 0x01, 0x2A, 0x01} // type 21 CRA: (0x2a>>1)=21
+	if !containsHEVCIRAPAnnexB(nal4) {
+		t.Fatal("expected HEVC CRA for 4-byte start")
+	}
+	// VPS (32): (0x40>>1)&0x3f = 32 — not IRAP
+	vps := []byte{0x00, 0x00, 0x01, 0x40, 0x01}
+	if containsHEVCIRAPAnnexB(vps) {
+		t.Fatal("did not expect VPS to count as IRAP")
+	}
+}
+
+func TestLooksLikeGoodTSStartDetectsHEVCIRAP(t *testing.T) {
+	var buf []byte
+	for i := 0; i < 8; i++ {
+		payload := []byte{byte(i)}
+		switch i {
+		case 2:
+			payload = []byte{0x11, 0xff, 0xf1, 0x50, 0x80}
+		case 5:
+			payload = []byte{0x00, 0x00, 0x01, 0x26, 0x01, 0x02} // HEVC IRAP type 19
+		}
+		buf = append(buf, testTSPacket(payload)...)
+	}
+	st := looksLikeGoodTSStart(buf)
+	if !st.HasAAC || !st.HasIDR {
+		t.Fatalf("want aac+hevc irap, got idr=%v aac=%v", st.HasIDR, st.HasAAC)
+	}
+}
+
+func TestLooksLikeGoodTSStartDetectsSplitHEVCStartCodeAcrossPackets(t *testing.T) {
+	var buf []byte
+	for i := 0; i < 8; i++ {
+		payload := []byte{byte(i), 0xaa}
+		switch i {
+		case 1:
+			payload = []byte{0xff, 0xf1, 0x50, 0x80}
+		case 4:
+			payload = []byte{0x99, 0x88, 0x00, 0x00}
+		case 5:
+			payload = []byte{0x01, 0x26, 0x01, 0x02}
+		}
+		buf = append(buf, testTSPacket(payload)...)
+	}
+	st := looksLikeGoodTSStart(buf)
+	if !st.HasAAC || !st.HasIDR {
+		t.Fatalf("expected split start code IRAP+aac, idr=%v aac=%v", st.HasIDR, st.HasAAC)
+	}
+}
+
 func TestTrimTSHeadToMaxBytesKeepsTailAndSync(t *testing.T) {
 	var prefix []byte
 	for i := 0; i < 25; i++ {

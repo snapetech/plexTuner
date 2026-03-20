@@ -23,6 +23,22 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: INT-006 gateway split + INT-001 httpclient (materializer + loopback)
+  Summary:
+    - **`internal/tuner/gateway_servehttp.go`**: **`ServeHTTP`** and main stream orchestration moved out of **`gateway.go`**.
+    - **`internal/tuner/gateway_mux_ratelimit.go`**: **`allowMuxSegRate`**, **`noteHLSMuxSegOutcome`**, **`noteMuxSegOutcome`**.
+    - **`internal/tuner/gateway.go`**: struct + **`errCFBlock`** + context keys only.
+    - Materializer / server loopback: nil or default HTTP paths use **`internal/httpclient`** (streaming / default) instead of **`http.DefaultClient`** where applicable.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Optional follow-up: split **`gateway_servehttp.go`** further if merge conflicts concentrate there.
+  Opportunities filed:
+    - Updated **`memory-bank/opportunities.md`** (replaced completed backlog rows with optional **`gateway_servehttp`** split note).
+  Links:
+    - `internal/tuner/gateway_servehttp.go`, `internal/tuner/gateway_mux_ratelimit.go`, `internal/materializer`, `internal/tuner/server.go`
+
+- Date: 2026-03-19
   Title: Work breakdown HR-006 — deterministic live channel order in catalog
   Summary:
     - **`catalog.ReplaceWithLive`** sorts **`live_channels`** in place by **`channel_id`** / **guide_number** / **guide_name**; test **`TestReplaceWithLive_stableChannelOrder`**.

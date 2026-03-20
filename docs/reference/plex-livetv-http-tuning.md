@@ -63,11 +63,13 @@ Sticky keys require at least one of **`X-Plex-Session-Identifier`** or **`X-Plex
 
 ## WebSafe ffmpeg startup gate + IDR awareness (HR-001)
 
-On **transcoding** ffmpeg relay paths with **`IPTV_TUNERR_WEBSAFE_STARTUP_MIN_BYTES` > 0**, Tunerr **prefetches** ffmpeg’s MPEG-TS stdout before streaming the body. When **`IPTV_TUNERR_WEBSAFE_REQUIRE_GOOD_START`** is **on** (default), the gate waits for **H.264 Annex B IDR** + **AAC ADTS** in the scanned TS (see `looksLikeGoodTSStart` in `internal/tuner/gateway_stream_helpers.go`) **and** at least **`STARTUP_MIN_BYTES`**, while bounding memory with a **sliding window** of **`IPTV_TUNERR_WEBSAFE_STARTUP_MAX_BYTES`** — it no longer flushes solely because the max byte count was reached without IDR/AAC.
+On **transcoding** ffmpeg relay paths with **`IPTV_TUNERR_WEBSAFE_STARTUP_MIN_BYTES` > 0**, Tunerr **prefetches** ffmpeg’s MPEG-TS stdout before streaming the body. When **`IPTV_TUNERR_WEBSAFE_REQUIRE_GOOD_START`** is **on** (default), the gate waits for **H.264 Annex B IDR** *or* **HEVC Annex B IRAP** (NAL types **16–21**) plus **AAC ADTS** in the scanned TS (see `looksLikeGoodTSStart` / `containsAnnexBVideoKeyframe` in `internal/tuner/gateway_stream_helpers.go`) **and** at least **`STARTUP_MIN_BYTES`**, while bounding memory with a **sliding window** of **`IPTV_TUNERR_WEBSAFE_STARTUP_MAX_BYTES`** — it no longer flushes solely because the max byte count was reached without a detected video keyframe + AAC.
 
-**Logs:** the **`startup-gate buffered=`** line includes **`release=`** — e.g. **`min-bytes-idr-aac-ready`**, **`max-bytes-no-signal-required`** (when **`REQUIRE_GOOD_START`** is off), **`max-bytes-without-idr-fallback`** (only if **`IPTV_TUNERR_WEBSAFE_STARTUP_MAX_FALLBACK_WITHOUT_IDR=true`**), or **`read-ended-partial-without-idr-aac`** on early EOF.
+**Logs:** the **`startup-gate buffered=`** line includes **`release=`** — e.g. **`min-bytes-idr-aac-ready`**, **`max-bytes-no-signal-required`** (when **`REQUIRE_GOOD_START`** is off), **`max-bytes-without-idr-fallback`** (only if **`IPTV_TUNERR_WEBSAFE_STARTUP_MAX_FALLBACK_WITHOUT_IDR=true`**), or **`read-ended-partial-without-idr-aac`** on early EOF. The **`idr=`** field is **true** when either **H.264 IDR** or **HEVC IRAP** was seen (name is historical).
 
-**HEVC / other codecs:** IDR detection today is **H.264-oriented**; for non–H.264 primary video, use the max fallback env, relax **`REQUIRE_GOOD_START`**, or extend detection in code.
+**`/debug/runtime.json`:** **`tuner.websafe_require_good_start`**, **`tuner.websafe_startup_max_fallback_without_idr`**, **`tuner.websafe_startup_{min,max}_bytes`**, **`tuner.websafe_startup_timeout_ms`** echo raw env strings.
+
+**Other codecs:** **VP9**, **AV1**, etc. are not scanned here — use **`IPTV_TUNERR_WEBSAFE_STARTUP_MAX_FALLBACK_WITHOUT_IDR`**, relax **`REQUIRE_GOOD_START`**, or extend **`containsAnnexBVideoKeyframe`** in code.
 
 **Plex Web validation bundle:** see **[plex-client-compatibility-matrix](plex-client-compatibility-matrix.md)** (**HR-002** probe + evidence checklist).
 

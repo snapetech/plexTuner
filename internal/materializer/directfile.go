@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/snapetech/iptvtunerr/internal/cache"
+	"github.com/snapetech/iptvtunerr/internal/httpclient"
 	"github.com/snapetech/iptvtunerr/internal/probe"
 )
 
@@ -24,7 +25,7 @@ func (d *DirectFile) Materialize(ctx context.Context, assetID string, streamURL 
 	}
 	client := d.Client
 	if client == nil {
-		client = http.DefaultClient
+		client = httpclient.Default()
 	}
 	finalPath := cache.Path(d.CacheDir, assetID)
 	if fi, err := os.Stat(finalPath); err == nil && fi.Size() > 0 {

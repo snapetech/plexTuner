@@ -99,12 +99,26 @@ For each story:
 | PR-E | `REC-001` (policy-driven recorder daemon MVP) |
 | PR-F | `REC-002` + `REC-003` (policy refinement + finalize/publish/retention wiring) |
 
-### Progress notes (2026-03-18)
+### Progress notes
 
-- **INT-001 (in progress, begin→end lane):** Added shared **`internal/guideinput`** helpers for provider XMLTV URL generation plus local-file / URL loading of guide XML, XMLTV channels, alias overrides, and optional match reports using the repo’s shared transport defaults. Current callers rewired: guide report tooling, catch-up preview helpers, and tuner guide-health/report paths.
-- **INT-002 (in progress, begin→end lane):** Promoting guide policy from a hidden filter to a reusable runtime decision surface with explicit keep/drop summaries, reason counts, **`/guide/policy.json`**, and catch-up preview metadata so downstream flows can explain policy outcomes instead of silently trimming channels/capsules.
-- **INT-003 / INT-004 (audited):** Existing runtime lineup refresh and catch-up preview/publish paths were already wired to **`IPTV_TUNERR_GUIDE_POLICY`** / **`IPTV_TUNERR_CATCHUP_GUIDE_POLICY`**. The missing gap was policy observability, now covered by **`INT-002`** via explicit keep/drop summaries.
-- **INT-005 (in progress, begin→end lane):** `main.go` is already far smaller than the historic 900+ line version, but command aggregation/indexing is being moved fully into **`cmd_registry.go`** with a registry test so the command surface is owned outside `main`.
+#### Integration / intelligence + recorder — status audit (2026-03-19)
+
+Verification: repo scan + `./scripts/verify` green. Treat stories below as **met unless you reopen scope** (e.g. stricter “no `http.DefaultClient` anywhere”).
+
+- **INT-001 (done):** **`internal/guideinput`** + **`refio`** back guide/XMLTV load paths; wired from **`cmd_catalog`**, **`cmd_guide_reports`**, **`cmd_report_support`**, **`internal/tuner/guide_health.go`**. **`internal/materializer`** and **`Server`** loopback stream self-fetch use **`internal/httpclient`** when no injected client. Residual **`http.DefaultClient`**: mostly tests / intentional mux negative cases (e.g. **`gateway_test.go`**).
+- **INT-002 (done):** **`internal/tuner/guide_policy.go`**, **`GET /guide/policy.json`**, **`GuidePolicySummary`** on catch-up preview, tests (**`TestServer_UpdateChannelsGuidePolicy`**, **`TestServer_catchupCapsulesGuidePolicy`**, etc.).
+- **INT-003 / INT-004 (done):** **`UpdateChannels`** → **`applyGuidePolicyToChannels`** via **`IPTV_TUNERR_GUIDE_POLICY`**; catch-up CLI/publish/daemon use **`IPTV_TUNERR_CATCHUP_GUIDE_POLICY`** / **`-guide-policy`** with **`FilterCatchupCapsulesByGuidePolicy`**.
+- **INT-005 (done):** **`main.go`** ~100 lines (dispatcher only); **`cmd_registry.go`** aggregates **`coreCommands`**, **`reportCommands`**, **`guideReportCommands`**, **`catchupOpsCommands`**, …; **`cmd_util.go`** shared helpers; **`TestAllCommandsUniqueAndSectioned`**.
+- **INT-006 (done):** **`gateway.go`** = **`Gateway`** struct + keys; **`gateway_servehttp.go`** = **`ServeHTTP`** + main upstream walk; **`gateway_mux_ratelimit.go`** = mux segment rate + outcome counters helpers. Other **`gateway_*.go`** peers unchanged (relay, HLS/DASH, adapt, …). Optional: split **`gateway_servehttp.go`** further if it becomes the new merge hotspot.
+- **INT-007 (done — acceptance):** **`IPTV_TUNERR_CATCHUP_REPLAY_URL_TEMPLATE`** / **`-replay-url-template`**; **`ReplayURL`** on capsules; publish/record/daemon honor replay vs launcher; tests **`catchup_replay_test.go`**, server capsule tests. Further “true replay” product depth = new scope.
+
+### Recorder track — status audit (2026-03-19)
+
+- **REC-001 (done — MVP):** **`iptv-tunerr catchup-daemon`** + **`internal/tuner/catchup_daemon.go`**, state file, concurrency, lane/channel filters, retry/resume flags, tests **`catchup_daemon_test.go`**.
+- **REC-002 (done — MVP):** lane allow/deny, channel allow/deny (`channel_id`, `guide_number`, `dna_id`, name), replay honesty via **`ReplayURL`** vs live **`/stream/`**; resilient record tests.
+- **REC-003 (done — MVP):** **`recorded-publish-manifest.json`** (**`catchup_record_publish.go`**), publish dir layout, optional Plex/Emby/Jellyfin registration hooks on daemon.
+
+#### Home run (HR) — slice log
 - **HR-010 (slice):** Shared **`internal/httpclient`** transport now documents Plex/Lavf parallel-segment behavior; new env **`IPTV_TUNERR_HTTP_MAX_IDLE_CONNS`**, **`IPTV_TUNERR_HTTP_IDLE_CONN_TIMEOUT_SEC`**; **`parseSharedTransportEnv`** unit tests; **`/debug/runtime.json`** echoes **`tuner.http_max_idle_conns`** + **`tuner.http_idle_conn_timeout_sec`**. Reference: **`docs/reference/plex-livetv-http-tuning.md`**.
 - **HR-009 (slice):** Runbook **§9** adds a **DVR recording soak baseline** checklist (short record, size, playback, logs).
 - **HR-008 (slice):** Runbook + **`plex-livetv-http-tuning`** document live-path **primary→backup** failover (no hot-path backoff) vs **`seg=`** diagnostics.
@@ -114,12 +128,8 @@ For each story:
 - **HR-004 (slice):** **`IPTV_TUNERR_CLIENT_ADAPT_STICKY_FALLBACK`** + **`_TTL_SEC`** + **`_LOG`**; map **`channel_id` + Plex session/client** → WebSafe until expiry when adaptation used non-WebSafe and status is **`all_upstreams_failed`** or **`upstream_concurrency_limited`**; **`requestAdaptation`** reason **`sticky-fallback-websafe`**; code **`internal/tuner/gateway_adapt_sticky.go`** + defer hook in **`gateway.go`**; tests **`gateway_test.go`**; runtime **`tuner.client_adapt_sticky_*`**; docs **`plex-livetv-http-tuning`**, **cli-and-env**, **CHANGELOG**.
 - **HR-003 (slice):** **`docs/reference/plex-client-compatibility-matrix.md`** — tier-1 clients (Web Firefox+Chrome, LG webOS, iOS, Shield/Android TV proxy), adaptation **client class** table vs expected **`gateway:`** reasons, **`go test -run 'TestGateway_requestAdaptation_|TestGateway_adaptSticky_'`** recipe, optional external **`plex-web-livetv-probe.py`** note, manual matrix table; **docs/index**, **reference/index**, **glossary** **`client class`**, **runbook §10**, **CHANGELOG**, **plex-livetv-http-tuning** see-also.
 - **HR-002 (slice):** **HR-002** subsection in **`plex-client-compatibility-matrix.md`** — deployment-fillable DVR/channel template, probe pass criteria, Tunerr **`startup-gate … release=`** correlation, PMS log slice; cross-links **HR-001**.
-- **HR-001 (slice):** WebSafe ffmpeg prefetch **sliding window** when **`WEBSAFE_REQUIRE_GOOD_START`** (no max-byte flush without IDR+AAC unless **`WEBSAFE_STARTUP_MAX_FALLBACK_WITHOUT_IDR`**); **`startup-gate buffered=`** **`release=`** reasons; **`trimTSHeadToMaxBytes`** in **`gateway_stream_helpers.go`**; **`gateway_relay.go`** prefetch loop; **`TestTrimTSHeadToMaxBytesKeepsTailAndSync`**; **`scripts/live-race-harness-report.py`**; **cli-and-env** / **`.env.example`** defaults aligned to code (**`786432`**, **`60000`** ms); **plex-livetv-http-tuning** §HR-001; **CHANGELOG**; runbook §6 log bullet.
-
-- `INT-007` now has a shipped first slice:
-  - catch-up capsules/publishing accept `IPTV_TUNERR_CATCHUP_REPLAY_URL_TEMPLATE`
-  - replay mode is explicit in preview/publish outputs
-  - without a replay template, the system stays in launcher mode instead of pretending live URLs are historical recordings
+- **HR-001 (slice):** WebSafe ffmpeg prefetch **sliding window** + **`release=`** log; **H.264 IDR** + **HEVC IRAP (NAL 16–21)** via **`containsAnnexBVideoKeyframe`**; **`trimTSHeadToMaxBytes`**; **`WEBSAFE_STARTUP_MAX_FALLBACK_WITHOUT_IDR`**; **`tuner.websafe_*`** runtime echo; tests (**trim**, **HEVC**, **H.264**); **cli** / **plex-livetv** / runbook §6; **`live-race-harness-report.py`**.
+- **INT-005 (slice):** **`cmd_util.go`** shared helpers; thin **`main.go`** (see audit above).
 
 ### Decision points (needs user input)
 
