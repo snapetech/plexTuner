@@ -1115,6 +1115,7 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
 <script>
 const endpoints = {
   deckTelemetry: "/deck/telemetry.json",
+  deckActivity: "/deck/activity.json",
   runtime: "/api/debug/runtime.json",
   health: "/api/healthz",
   guideHealth: "/api/guide/health.json",
@@ -1179,6 +1180,9 @@ const state = {
   telemetry: {
     samples: [],
     maxSamples: 18
+  },
+  activity: {
+    entries: []
   },
   sharedTelemetry: {
     samples: []
@@ -1699,6 +1703,35 @@ async function clearDeckTelemetry() {
   renderDeck();
 }
 
+async function syncDeckActivity(entry) {
+  try {
+    const res = await fetch(endpoints.deckActivity, {
+      method: "POST",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(entry)
+    });
+    const text = await res.text();
+    const body = text ? JSON.parse(text) : {};
+    state.activity.entries = normalizeArray(body.entries);
+  } catch {
+  }
+}
+
+async function clearDeckActivity() {
+  try {
+    const res = await fetch(endpoints.deckActivity, { method: "DELETE", headers: { "Accept": "application/json" } });
+    const text = await res.text();
+    const body = text ? JSON.parse(text) : {};
+    state.activity.entries = normalizeArray(body.entries);
+  } catch {
+    state.activity.entries = [];
+  }
+  renderDeck();
+}
+
 function renderDeck() {
   const runtime = state.payloads.runtime?.body || {};
   const health = state.payloads.health || { ok: false, status: 0, body: {} };
@@ -1719,6 +1752,9 @@ function renderDeck() {
   const guideWorkflow = state.payloads.guideWorkflow?.body || {};
   const streamWorkflow = state.payloads.streamWorkflow?.body || {};
   const opsWorkflow = state.payloads.opsWorkflow?.body || {};
+  const activity = normalizeArray(state.payloads.deckActivity?.body?.entries).length
+    ? normalizeArray(state.payloads.deckActivity?.body?.entries)
+    : state.activity.entries;
   const metrics = deriveMetrics(state.payloads);
   const failedAttempts = attempts.filter((item) => {
     const val = `${item.reason || item.result || item.status || ""}`.toLowerCase();
@@ -1736,7 +1772,8 @@ function renderDeck() {
     ["Tuner base", runtime.base_url || "[[.TunerBase]]"],
     ["Listen address", runtime.listen_address || "n/a"],
     ["Device", `${runtime.friendly_name || "IPTV Tunerr"} (${runtime.device_id || "n/a"})`],
-    ["Generated", runtime.generated_at || "[[.Now]]"]
+    ["Generated", runtime.generated_at || "[[.Now]]"],
+    ["Activity log", `${activity.length} shared entries`]
   ].map(([label, value]) =>
     `<div class="detail-line"><dt>${esc(label)}</dt><dd>${esc(pretty(value))}</dd></div>`
   ).join("");
@@ -1827,6 +1864,7 @@ function renderDeck() {
   ]).join("");
 
   overviewTimeline.innerHTML = filterCards([
+    createTimeline("Operator activity", activity.slice(0, 2).map((item) => `${item.title}: ${item.message || item.kind || "event"}`).join(" | ") || "No operator activity recorded yet."),
     createTimeline("Latest runtime snapshot", esc(runtime.generated_at || "unknown")),
     createTimeline("Guide highlights", normalizeArray(guideHighlights.current).slice(0, 2).map((item) => `${item.channel_name || item.channel_id}: ${item.title}`).join(" | ") || "No live highlights"),
     createTimeline("Catch-up pressure", normalizeArray(capsules.capsules || capsules.items).slice(0, 2).map((item) => `${item.channel_name || item.channel_id}: ${item.title}`).join(" | ") || pretty(capsules.error || "No capsules")),
@@ -1875,6 +1913,7 @@ function renderDeck() {
     createCard("Recorder state", recorder.summary ? `${pretty(recorder.summary.active_count)} active, ${pretty(recorder.summary.completed_count)} completed, ${pretty(recorder.summary.failed_count)} failed.` : pretty(recorder.error || "Recorder not configured"), "", (recorder.summary?.failed_count || 0) > 0 ? "tone-warn" : "", "recorder", `${createWorkflowButton("opsWorkflow", "Recovery Playbook")}`),
     createCard("Autopilot memory", autopilot.hot_channels ? `${autopilot.hot_channels.length} hot channels with remembered preferences.` : pretty(autopilot.error || "Autopilot memory unavailable"), "", "", "autopilot", `${createActionButton("autopilot_reset")}`),
     createCard("Ghost hunter", ghost.summary ? esc(JSON.stringify(ghost.summary)) : esc(pretty(ghost.error || "Plex report unavailable")), "", "", "ghost", `<button class="tiny" type="button" data-inspect="opsWorkflow">Workflow Payload</button>`),
+    createCard("Operator activity log", activity.slice(0, 4).map((item) => `${formatWhen(item.at)} · ${item.title}${item.message ? ` · ${item.message}` : ""}`).join(" | ") || "No operator activity recorded yet.", "", "", "deckActivity", `<button class="tiny" id="activity-reset" type="button">Clear Activity</button>`),
     createCard("Media hooks", runtime.media_servers ? `Emby host=${pretty(runtime.media_servers.emby_host_configured)}, Jellyfin host=${pretty(runtime.media_servers.jellyfin_host_configured)}` : "No runtime snapshot", "", "", "runtime"),
     createCard("Recorder files", `state=${pretty(runtime.recorder?.state_file)}, autopilot=${pretty(runtime.tuner?.autopilot_state_file)}`, "", "", "runtime", `<button class="tiny" type="button" data-inspect="operatorActionsStatus">Control Status</button>`)
   ]).join("");
@@ -1958,6 +1997,12 @@ async function postAction(actionKey) {
     if (!body.action) body.action = actionKey;
     if (!body.message) body.message = text || `HTTP ${res.status}`;
     setActionFeedback(body);
+    await syncDeckActivity({
+      kind: "action",
+      title: body.action || actionKey,
+      message: body.message || `HTTP ${res.status}`,
+      detail: { ok: !!body.ok }
+    });
     await reloadDeck();
     state.modalView = { kind: "static", key: actionKey };
     openModal();
@@ -2054,6 +2099,10 @@ function bindUI() {
   document.addEventListener("click", (event) => {
     if (event.target && event.target.id === "history-reset") {
       clearDeckTelemetry();
+      return;
+    }
+    if (event.target && event.target.id === "activity-reset") {
+      clearDeckActivity();
     }
   });
   window.deckMode = (mode) => applyMode(mode);

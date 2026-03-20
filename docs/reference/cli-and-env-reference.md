@@ -746,7 +746,7 @@ Merge semantics for HDHR + IPTV catalogs: [adr/0002-hdhr-hardware-iptv-merge.md]
 | `IPTV_TUNERR_UI_ALLOW_LAN` | If `1`, allow non-loopback clients to open `/ui/` (default: **localhost only**). |
 
 Browser URLs:
-- Dedicated deck: `http://127.0.0.1:48879/` by default. It reverse-proxies tuner endpoints under `/api/*`, surfaces runtime settings from `/api/debug/runtime.json`, opens on a login page with a cookie-backed session, and also accepts direct HTTP Basic auth for scriptable/API access (`admin` / `admin` by default unless overridden).
+- Dedicated deck: `http://127.0.0.1:48879/` by default. It reverse-proxies tuner endpoints under `/api/*`, surfaces runtime settings from `/api/debug/runtime.json`, opens on a login page with a cookie-backed session, accepts direct HTTP Basic auth for scriptable/API access (`admin` / `admin` by default unless overridden), and exposes shared deck memory under `/deck/telemetry.json` plus operator activity under `/deck/activity.json`.
 - Legacy pages on the tuner port: `http://127.0.0.1:<port>/ui/` (home), `/ui/guide/` (merged guide preview from cache), `/ui/guide-preview.json` (JSON; optional `?limit=`).
 
 Transcode profile names, HDHomeRun-style aliases, and `?profile=` on `/stream/<id>`: [transcode-profiles.md](transcode-profiles.md).
@@ -957,7 +957,7 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
 - `IPTV_TUNERR_HLS_MUX_CORS` — when `true`/`1`/`on`, add CORS headers on **`?mux=hls`** playlist and **`?mux=hls&seg=`** responses and handle **`OPTIONS`** preflight for those URLs (for browser-based players or devtools). Default off.
 - `IPTV_TUNERR_HLS_MUX_MAX_CONCURRENT` — optional absolute cap for concurrent **`?mux=hls&seg=`** proxy requests. Default derives from effective tuner limit.
 - `IPTV_TUNERR_HLS_MUX_SEG_SLOTS_PER_TUNER` — multiplier for the default **`?mux=hls&seg=`** concurrency cap (`effective_tuner_limit * slots_per_tuner`, default `8`).
-- **HLS mux query** — `GET /stream/<channel>?mux=hls` on an **HLS** upstream returns an **MPEG-URL playlist** proxied through Tunerr (not MPEG-TS). Nested playlists and segments use `?mux=hls&seg=<url>`. Default stream behavior remains TS remux/transcode when `mux` is omitted.
+- **HLS mux query** — `GET /stream/<channel>?mux=hls` on an **HLS** upstream returns an **MPEG-URL playlist** proxied through Tunerr (not MPEG-TS). Nested playlists and segments use `?mux=hls&seg=<url>`. Default stream behavior remains TS remux/transcode when `mux` is omitted. Direct **`seg=`** targets must be **http** or **https**; other schemes (e.g. FairPlay **`skd://`**) return **`400 Bad Request`** with body **`unsupported hls mux target URL scheme`**, response header **`X-IptvTunerr-Hls-Mux-Error: unsupported_target_scheme`**, and redacted target in logs. With **`IPTV_TUNERR_HLS_MUX_CORS`**, that response includes normal CORS headers and exposes **`X-IptvTunerr-Hls-Mux-Error`** to script/devtools via **`Access-Control-Expose-Headers`**.
 - **Byte-range / conditional segments:** client **`Range`** / **`If-Range`** / **`If-None-Match`** / **`If-Modified-Since`** are forwarded to upstream **`?mux=hls&seg=`** fetches; **`206`** + **`Content-Range`**, or **`304`**, are passed back when the CDN responds that way.
 - `IPTV_TUNERR_FFMPEG_PATH` — override the ffmpeg binary path (e.g. `/opt/ffmpeg-static/current/ffmpeg`).
 - `IPTV_TUNERR_FFMPEG_DISABLED` — disable ffmpeg entirely for HLS relay and stay on the Go playlist/segment fetch path. Useful when ffmpeg cannot satisfy provider header/cookie requirements.

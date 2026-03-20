@@ -109,6 +109,37 @@ func TestTelemetryPersistsToStateFile(t *testing.T) {
 	}
 }
 
+func TestActivityPOSTGETAndDELETE(t *testing.T) {
+	s := &Server{}
+
+	postReq := httptest.NewRequest(http.MethodPost, "/deck/activity.json", bytes.NewBufferString(`{"kind":"action","title":"guide_refresh","message":"started"}`))
+	postW := httptest.NewRecorder()
+	s.activity(postW, postReq)
+	if postW.Code != http.StatusOK {
+		t.Fatalf("post status=%d body=%s", postW.Code, postW.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/deck/activity.json", nil)
+	getW := httptest.NewRecorder()
+	s.activity(getW, getReq)
+	if getW.Code != http.StatusOK {
+		t.Fatalf("get status=%d body=%s", getW.Code, getW.Body.String())
+	}
+	if got := getW.Body.String(); got == "" || !bytes.Contains(getW.Body.Bytes(), []byte(`"count": 1`)) {
+		t.Fatalf("unexpected get body=%s", got)
+	}
+
+	delReq := httptest.NewRequest(http.MethodDelete, "/deck/activity.json", nil)
+	delW := httptest.NewRecorder()
+	s.activity(delW, delReq)
+	if delW.Code != http.StatusOK {
+		t.Fatalf("delete status=%d body=%s", delW.Code, delW.Body.String())
+	}
+	if !bytes.Contains(delW.Body.Bytes(), []byte(`activity_log_cleared`)) {
+		t.Fatalf("expected clear event body=%s", delW.Body.String())
+	}
+}
+
 func TestSessionAuthOnlyRedirectsBrowserRequests(t *testing.T) {
 	s := &Server{User: "admin", Pass: "admin", sessions: map[string]time.Time{}}
 	protected := s.sessionAuthOnly(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -199,6 +230,9 @@ func TestLoginAndLogoutFlow(t *testing.T) {
 	s.logout(logoutW, logoutReq)
 	if logoutW.Code != http.StatusSeeOther {
 		t.Fatalf("logout status=%d", logoutW.Code)
+	}
+	if len(s.activityEntries) < 2 {
+		t.Fatalf("activity entries=%d want login/logout entries", len(s.activityEntries))
 	}
 }
 

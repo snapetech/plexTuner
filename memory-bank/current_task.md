@@ -2,13 +2,15 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Latest (2026-03-19, gateway):** Shipped optional **`IPTV_TUNERR_HLS_MUX_CORS`** for `?mux=hls` playlist + `seg=` responses and `OPTIONS` preflight; runtime snapshot `tuner.hls_mux_cors`; tests + docs + `./scripts/verify` OK.
+**Latest (2026-03-19, gateway):** HLS mux: **`IPTV_TUNERR_HLS_MUX_CORS`**, segment concurrency caps, SAMPLE-AES/SESSION-KEY rewrite hardening, **400** + **`hls_mux_unsupported_target_scheme`** for non-http(s) **`seg=`** (e.g. **`skd://`**) before acquiring seg slots; tests + docs + **`./scripts/verify`** OK.
 
 **Latest (2026-03-20):** Continuing the web UI from “sticky operator cockpit” toward shared operator memory. Current slice adds a server-backed deck telemetry endpoint in `internal/webui` so trend cards can use shared in-process history across reloads and browsers hitting the same deck, while leaving per-user UI prefs in client-side `localStorage`. In the same cleanup pass, the gateway HLS mux path now has explicit browser/CORS hooks and bounded segment-proxy concurrency knobs instead of treating every `?mux=hls&seg=` request as unbounded.
 
 **Latest (2026-03-20, auth + persistence):** The dedicated deck now gates the whole `internal/webui` origin behind HTTP Basic auth, defaulting to `admin` / `admin` unless `IPTV_TUNERR_WEBUI_USER` / `IPTV_TUNERR_WEBUI_PASS` override it. Shared deck telemetry/history can also persist across web UI restarts with `IPTV_TUNERR_WEBUI_STATE_FILE`, and the runtime snapshot/UI now explicitly call out whether the deck is still on default creds and whether memory is durable or only process-local.
 
 **Latest (2026-03-20, session UX):** Replaced the bare browser auth prompt with a dedicated deck login page and cookie-backed session flow on the `internal/webui` origin, while keeping direct HTTP Basic auth as a fallback for scripts and API clients. The deck now has an explicit sign-out control and redirects back to `/login` if the session expires during live use, so the front door finally feels like product UX instead of infra chrome.
+
+**Latest (2026-03-20, operator activity):** Added shared deck activity memory on the dedicated web UI side so the control plane records operator behavior, not only system state. The deck now exposes `/deck/activity.json`, persists that activity alongside deck telemetry when `IPTV_TUNERR_WEBUI_STATE_FILE` is configured, records login/logout/memory-clear/action events, and surfaces the shared activity timeline in overview + ops.
 
 **Goal:** Start the new Live TV Intelligence product track: map the multi-PR roadmap, then ship the first visible foundation feature so IPTV Tunerr feels like an intelligent control plane instead of only a tuner bridge.
 

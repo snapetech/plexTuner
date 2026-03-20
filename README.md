@@ -119,7 +119,7 @@ Three ways to add IPTV Tunerr to Plex, Emby, or Jellyfin — pick the one that f
 > Then: Dashboard → Live TV → + (guide) → XMLTV
 > Guide URL: `http://<this-host>:5004/guide.xml`
 
-Dedicated web UI: `http://127.0.0.1:48879/` by default (`0xBEEF`) with integrated health, guide, channel, recorder, provider, debug, and runtime-settings views. It now opens on a dedicated login page and creates a cookie-backed deck session, defaulting to `admin` / `admin` unless `IPTV_TUNERR_WEBUI_USER` / `IPTV_TUNERR_WEBUI_PASS` override it; direct HTTP Basic auth still works for scripts. It stays localhost-only unless `IPTV_TUNERR_WEBUI_ALLOW_LAN=1`, and optional `IPTV_TUNERR_WEBUI_STATE_FILE` persists shared deck telemetry/history across web UI restarts. The older lightweight operator pages still exist at `http://127.0.0.1:5004/ui/` and `/ui/guide/`.
+Dedicated web UI: `http://127.0.0.1:48879/` by default (`0xBEEF`) with integrated health, guide, channel, recorder, provider, debug, and runtime-settings views. It now opens on a dedicated login page and creates a cookie-backed deck session, defaulting to `admin` / `admin` unless `IPTV_TUNERR_WEBUI_USER` / `IPTV_TUNERR_WEBUI_PASS` override it; direct HTTP Basic auth still works for scripts. It stays localhost-only unless `IPTV_TUNERR_WEBUI_ALLOW_LAN=1`, optional `IPTV_TUNERR_WEBUI_STATE_FILE` persists shared deck telemetry/history across web UI restarts, and the deck now keeps a shared operator activity log for login/logout/action history as part of that same control-plane memory.
 
 **Programmatic (all servers, headless):**
 ```bash

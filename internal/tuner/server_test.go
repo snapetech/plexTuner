@@ -480,6 +480,7 @@ func TestServer_runtimeSnapshot(t *testing.T) {
 				"auth_default_password": true,
 				"memory_persisted":      true,
 				"state_file":            "/tmp/deck-state.json",
+				"activity_endpoint":     "/deck/activity.json",
 				"telemetry_history_max": 96,
 			},
 		},
@@ -497,7 +498,7 @@ func TestServer_runtimeSnapshot(t *testing.T) {
 	if body.Version != "test" || body.BaseURL != "http://127.0.0.1:5004" {
 		t.Fatalf("unexpected %+v", body)
 	}
-	if body.WebUI["state_file"] != "/tmp/deck-state.json" || body.WebUI["auth_user"] != "admin" {
+	if body.WebUI["state_file"] != "/tmp/deck-state.json" || body.WebUI["auth_user"] != "admin" || body.WebUI["activity_endpoint"] != "/deck/activity.json" {
 		t.Fatalf("unexpected webui snapshot: %+v", body.WebUI)
 	}
 }

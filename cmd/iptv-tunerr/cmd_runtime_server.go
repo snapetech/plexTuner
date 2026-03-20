@@ -161,7 +161,9 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"legacy_ui":             os.Getenv("IPTV_TUNERR_UI_DISABLED") != "1",
 			"legacy_lan":            os.Getenv("IPTV_TUNERR_UI_ALLOW_LAN") == "1",
 			"telemetry_endpoint":    "/deck/telemetry.json",
+			"activity_endpoint":     "/deck/activity.json",
 			"telemetry_history_max": 96,
+			"activity_history_max":  64,
 		},
 		MediaServers: map[string]interface{}{
 			"emby_host_configured":      strings.TrimSpace(cfg.EmbyHost) != "",

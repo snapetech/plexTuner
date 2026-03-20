@@ -28,6 +28,7 @@ import (
 // DefaultPort is 0xBEEF in decimal.
 const DefaultPort = 48879
 const defaultTelemetryHistoryLimit = 96
+const defaultActivityHistoryLimit = 64
 const sessionCookieName = "iptvtunerr_deck_session"
 const sessionTTL = 12 * time.Hour
 
@@ -53,6 +54,8 @@ type Server struct {
 
 	telemetryMu      sync.Mutex
 	telemetrySamples []DeckTelemetrySample
+	activityMu       sync.Mutex
+	activityEntries  []DeckActivityEntry
 	sessionMu        sync.Mutex
 	sessions         map[string]time.Time
 }
@@ -72,9 +75,25 @@ type DeckTelemetryReport struct {
 	Samples     []DeckTelemetrySample `json:"samples"`
 }
 
+type DeckActivityEntry struct {
+	At      string                 `json:"at"`
+	Kind    string                 `json:"kind"`
+	Actor   string                 `json:"actor,omitempty"`
+	Title   string                 `json:"title"`
+	Message string                 `json:"message,omitempty"`
+	Detail  map[string]interface{} `json:"detail,omitempty"`
+}
+
+type DeckActivityReport struct {
+	GeneratedAt string              `json:"generated_at"`
+	Count       int                 `json:"count"`
+	Entries     []DeckActivityEntry `json:"entries"`
+}
+
 type persistedDeckState struct {
-	SavedAt string                `json:"saved_at"`
-	Samples []DeckTelemetrySample `json:"samples"`
+	SavedAt  string                `json:"saved_at"`
+	Samples  []DeckTelemetrySample `json:"samples"`
+	Activity []DeckActivityEntry   `json:"activity,omitempty"`
 }
 
 // New constructs a dedicated dashboard server.
@@ -119,6 +138,7 @@ func (s *Server) Run(ctx context.Context) error {
 		http.Redirect(w, r, "/api/", http.StatusSeeOther)
 	})
 	mux.HandleFunc("/deck/telemetry.json", s.telemetry)
+	mux.HandleFunc("/deck/activity.json", s.activity)
 	mux.HandleFunc("/", s.index)
 
 	handler := http.Handler(mux)
@@ -187,6 +207,7 @@ func (s *Server) telemetry(w http.ResponseWriter, r *http.Request) {
 		s.telemetryMu.Lock()
 		s.telemetrySamples = nil
 		s.telemetryMu.Unlock()
+		s.recordActivity("memory", "deck_memory_cleared", "Shared deck telemetry memory was cleared.", map[string]interface{}{"persisted": strings.TrimSpace(s.StateFile) != ""})
 		if err := s.persistState(); err != nil {
 			log.Printf("webui state persist: %v", err)
 		}
@@ -207,6 +228,55 @@ func (s *Server) writeTelemetry(w http.ResponseWriter) {
 	body, err := json.MarshalIndent(rep, "", "  ")
 	if err != nil {
 		http.Error(w, `{"error":"encode telemetry"}`, http.StatusInternalServerError)
+		return
+	}
+	_, _ = w.Write(body)
+}
+
+func (s *Server) activity(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	switch r.Method {
+	case http.MethodGet:
+		s.writeActivity(w)
+	case http.MethodPost:
+		var entry DeckActivityEntry
+		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if err != nil {
+			http.Error(w, `{"error":"read activity body"}`, http.StatusBadRequest)
+			return
+		}
+		if err := json.Unmarshal(body, &entry); err != nil {
+			http.Error(w, `{"error":"invalid activity json"}`, http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(entry.Kind) == "" || strings.TrimSpace(entry.Title) == "" {
+			http.Error(w, `{"error":"activity kind and title required"}`, http.StatusBadRequest)
+			return
+		}
+		s.recordActivityWithEntry(entry)
+		s.writeActivity(w)
+	case http.MethodDelete:
+		s.activityMu.Lock()
+		s.activityEntries = nil
+		s.activityMu.Unlock()
+		s.recordActivity("memory", "activity_log_cleared", "Shared operator activity log was cleared.", nil)
+		s.writeActivity(w)
+	default:
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) writeActivity(w http.ResponseWriter) {
+	s.activityMu.Lock()
+	rep := DeckActivityReport{
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		Count:       len(s.activityEntries),
+		Entries:     append([]DeckActivityEntry(nil), s.activityEntries...),
+	}
+	s.activityMu.Unlock()
+	body, err := json.MarshalIndent(rep, "", "  ")
+	if err != nil {
+		http.Error(w, `{"error":"encode activity"}`, http.StatusInternalServerError)
 		return
 	}
 	_, _ = w.Write(body)
@@ -237,6 +307,10 @@ func (s *Server) loadState() error {
 	s.telemetrySamples = append([]DeckTelemetrySample(nil), state.Samples...)
 	s.trimTelemetryLocked()
 	s.telemetryMu.Unlock()
+	s.activityMu.Lock()
+	s.activityEntries = append([]DeckActivityEntry(nil), state.Activity...)
+	s.trimActivityLocked()
+	s.activityMu.Unlock()
 	return nil
 }
 
@@ -245,10 +319,13 @@ func (s *Server) persistState() error {
 		return nil
 	}
 	s.telemetryMu.Lock()
+	s.activityMu.Lock()
 	state := persistedDeckState{
-		SavedAt: time.Now().UTC().Format(time.RFC3339),
-		Samples: append([]DeckTelemetrySample(nil), s.telemetrySamples...),
+		SavedAt:  time.Now().UTC().Format(time.RFC3339),
+		Samples:  append([]DeckTelemetrySample(nil), s.telemetrySamples...),
+		Activity: append([]DeckActivityEntry(nil), s.activityEntries...),
 	}
+	s.activityMu.Unlock()
 	s.telemetryMu.Unlock()
 	body, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
@@ -265,6 +342,12 @@ func (s *Server) persistState() error {
 		return fmt.Errorf("rename %s: %w", s.StateFile, err)
 	}
 	return nil
+}
+
+func (s *Server) trimActivityLocked() {
+	if len(s.activityEntries) > defaultActivityHistoryLimit {
+		s.activityEntries = append([]DeckActivityEntry(nil), s.activityEntries[len(s.activityEntries)-defaultActivityHistoryLimit:]...)
+	}
 }
 
 func (s *Server) proxy(w http.ResponseWriter, r *http.Request) {
@@ -322,10 +405,12 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		user := strings.TrimSpace(r.Form.Get("username"))
 		pass := r.Form.Get("password")
 		if !s.validCredentials(user, pass) {
+			s.recordActivity("auth", "login_failed", "Deck login failed.", map[string]interface{}{"username": user})
 			s.renderLogin(w, r, "Wrong username or password.")
 			return
 		}
 		s.startSession(w)
+		s.recordActivity("auth", "login", "Deck session opened.", map[string]interface{}{"username": user})
 		next := strings.TrimSpace(r.Form.Get("next"))
 		if next == "" || !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
 			next = "/"
@@ -342,6 +427,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 		delete(s.sessions, cookie.Value)
 		s.sessionMu.Unlock()
 	}
+	s.recordActivity("auth", "logout", "Deck session closed.", map[string]interface{}{"username": s.User})
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    "",
@@ -390,6 +476,7 @@ func (s *Server) sessionAuthOnly(h http.Handler) http.Handler {
 		user, pass, ok := r.BasicAuth()
 		if ok && s.validCredentials(user, pass) {
 			s.startSession(w)
+			s.recordActivity("auth", "basic_auth", "Deck session opened via HTTP Basic auth.", map[string]interface{}{"username": user})
 			h.ServeHTTP(w, r)
 			return
 		}
@@ -459,6 +546,29 @@ func (s *Server) pruneSessionsLocked() {
 		if now.After(expiry) {
 			delete(s.sessions, token)
 		}
+	}
+}
+
+func (s *Server) recordActivity(kind, title, message string, detail map[string]interface{}) {
+	s.recordActivityWithEntry(DeckActivityEntry{
+		Kind:    kind,
+		Title:   title,
+		Message: message,
+		Actor:   s.User,
+		Detail:  detail,
+	})
+}
+
+func (s *Server) recordActivityWithEntry(entry DeckActivityEntry) {
+	if strings.TrimSpace(entry.At) == "" {
+		entry.At = time.Now().UTC().Format(time.RFC3339)
+	}
+	s.activityMu.Lock()
+	s.activityEntries = append(s.activityEntries, entry)
+	s.trimActivityLocked()
+	s.activityMu.Unlock()
+	if err := s.persistState(); err != nil {
+		log.Printf("webui state persist: %v", err)
 	}
 }
 

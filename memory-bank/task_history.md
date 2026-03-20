@@ -23,6 +23,35 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: HLS mux — diagnostic header on unsupported seg= (X-IptvTunerr-Hls-Mux-Error)
+  Summary:
+    - `respondHLSMuxUnsupportedTargetScheme`: **`applyHLSMuxCORS`** + **`X-IptvTunerr-Hls-Mux-Error: unsupported_target_scheme`** + **400**; **`Access-Control-Expose-Headers`** includes that header when CORS is on.
+    - Tests for header and CORS expose; docs CHANGELOG/cli/how-to.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Distinct from **`X-HDHomeRun-Error` / `805`** (tuner-in-use) signal.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway_hls.go`, `internal/tuner/gateway.go`, `internal/tuner/gateway_test.go`
+
+- Date: 2026-03-19
+  Title: HLS mux — 400 for unsupported seg= schemes + stream-attempt status
+  Summary:
+    - Reject non-http(s) **`?mux=hls&seg=`** before segment concurrency acquire; **`400`** + body **`unsupported hls mux target URL scheme`**; log line with **`safeurl.RedactURL(target)`**.
+    - Stream attempt **`finalStatus`** **`hls_mux_unsupported_target_scheme`** when **`errors.Is(..., errHLSMuxUnsupportedTargetScheme)`**; `serveHLSMuxTarget` still returns sentinel for direct callers/tests.
+    - Docs: CLI/env reference; CHANGELOG + how-to already mention behavior; test `TestGateway_hlsMuxSeg_unsupportedScheme_returnsBadRequest`.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Avoids burning an **`hlsMuxSegInUse`** slot on **`skd://`** and similar.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway.go`, `internal/tuner/gateway_hls.go`, `internal/tuner/gateway_test.go`
+
+- Date: 2026-03-19
   Title: HLS mux — SAMPLE-AES / SESSION-KEY rewrite hardening + tests
   Summary:
     - `rewriteHLSQuotedURIAttrs`: skip empty inner URI; tag-line gate uses case-insensitive `URI="` so `uri="` rewrites.
@@ -2825,6 +2854,19 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - Added a dedicated `internal/webui/login.html` entry page with operator-facing login UX instead of relying on the browser’s raw Basic-auth prompt as the deck front door.
     - Switched the dedicated deck origin to cookie-backed sessions with explicit logout and session-expiry redirects, while keeping HTTP Basic auth as a compatibility fallback for scriptable clients.
     - Added visible sign-out affordances in the deck and kept the auth story consistent with the persisted/shared deck memory work.
+  Verification:
+    - `go test ./internal/webui`
+    - `go test ./...`
+    - `./scripts/verify`
+
+---
+
+- Date: 2026-03-20
+  Title: Add shared operator activity memory to the deck
+  Summary:
+    - Added `/deck/activity.json` on the dedicated web UI server and persisted it alongside deck telemetry so operator activity survives reloads and optional deck restarts.
+    - Recorded login/logout, memory clears, and deck-triggered action outcomes as shared operator activity instead of leaving those events trapped in browser state.
+    - Surfaced recent activity directly in the overview and operations lanes so the deck now shows operator behavior and not only backend condition snapshots.
   Verification:
     - `go test ./internal/webui`
     - `go test ./...`
