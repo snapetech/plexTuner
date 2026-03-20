@@ -169,6 +169,14 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if requestMux == "hls" {
 		target := strings.TrimSpace(r.URL.Query().Get("seg"))
 		if target != "" {
+			if !safeurl.IsHTTPOrHTTPS(target) {
+				log.Printf("gateway: req=%s channel=%q id=%s hls-mux-seg unsupported scheme target=%s ua=%q",
+					reqID, channel.GuideName, channelID, safeurl.RedactURL(target), r.UserAgent())
+				finalStatus = "hls_mux_unsupported_target_scheme"
+				finalErr = errHLSMuxUnsupportedTargetScheme
+				respondHLSMuxUnsupportedTargetScheme(w)
+				return
+			}
 			g.mu.Lock()
 			segLimit := g.effectiveHLSMuxSegLimitLocked()
 			if g.hlsMuxSegInUse >= segLimit {
@@ -195,12 +203,19 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			g.mu.Unlock()
 			log.Printf("gateway: req=%s channel=%q id=%s release hls-mux-seg inuse=%d/%d dur=%s", reqID, channel.GuideName, channelID, segLeft, segLimit, time.Since(start).Round(time.Millisecond))
 			if err != nil {
-				finalStatus = "hls_mux_target_failed"
 				finalErr = err
 				if errors.Is(err, errHLSMuxUnsupportedTargetScheme) {
-					http.Error(w, "unsupported hls mux target URL scheme", http.StatusBadRequest)
+					finalStatus = "hls_mux_unsupported_target_scheme"
+					respondHLSMuxUnsupportedTargetScheme(w)
 					return
 				}
+				var upHTTP *hlsMuxUpstreamHTTPError
+				if errors.As(err, &upHTTP) {
+					finalStatus = "hls_mux_upstream_http_" + strconv.Itoa(upHTTP.Status)
+					respondHLSMuxUpstreamHTTP(w, upHTTP.Status, upHTTP.Body)
+					return
+				}
+				finalStatus = "hls_mux_target_failed"
 				http.Error(w, "HLS mux target failed", http.StatusBadGateway)
 				return
 			}

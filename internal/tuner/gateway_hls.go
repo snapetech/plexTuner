@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -22,6 +21,26 @@ import (
 var hlsQuotedURIAttr = regexp.MustCompile(`(?i)(URI=")([^"]*)(")`)
 
 var errHLSMuxUnsupportedTargetScheme = errors.New("unsupported hls mux target URL scheme")
+
+// hlsMuxDiagnosticHeader is a non-HDHR response header for ?mux=hls tooling (debug / browser clients).
+const hlsMuxDiagnosticHeader = "X-IptvTunerr-Hls-Mux-Error"
+
+// Diagnostic header values (stable tokens for scripts).
+const hlsMuxDiagUnsupportedTargetScheme = "unsupported_target_scheme"
+
+// hlsMuxUpstreamErrBodyMax limits how much of an upstream error body we buffer for pass-through (4xx/5xx).
+const hlsMuxUpstreamErrBodyMax = 8192
+
+// hlsMuxUpstreamHTTPError is returned when the upstream responds with a non-success status for ?mux=hls&seg=.
+// The gateway may pass status and body to the client instead of mapping everything to 502.
+type hlsMuxUpstreamHTTPError struct {
+	Status int
+	Body   []byte
+}
+
+func (e *hlsMuxUpstreamHTTPError) Error() string {
+	return "hls target http status " + strconv.Itoa(e.Status)
+}
 
 func hlsMuxCORSEnabled() bool {
 	v := strings.TrimSpace(strings.ToLower(os.Getenv("IPTV_TUNERR_HLS_MUX_CORS")))
@@ -41,7 +60,31 @@ func applyHLSMuxCORS(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Range, If-Range, Content-Type, Accept, Authorization")
-	w.Header().Set("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges, Cache-Control, Content-Type")
+	w.Header().Set("Access-Control-Expose-Headers", strings.Join([]string{
+		"Content-Range", "Content-Length", "Accept-Ranges", "Cache-Control", "Content-Type", hlsMuxDiagnosticHeader,
+	}, ", "))
+}
+
+// respondHLSMuxUnsupportedTargetScheme sends 400 with a machine-readable diagnostic header and optional CORS.
+func respondHLSMuxUnsupportedTargetScheme(w http.ResponseWriter) {
+	applyHLSMuxCORS(w)
+	w.Header().Set(hlsMuxDiagnosticHeader, hlsMuxDiagUnsupportedTargetScheme)
+	http.Error(w, "unsupported hls mux target URL scheme", http.StatusBadRequest)
+}
+
+// respondHLSMuxUpstreamHTTP forwards an upstream HTTP error to the client (status + small body preview).
+func respondHLSMuxUpstreamHTTP(w http.ResponseWriter, status int, body []byte) {
+	applyHLSMuxCORS(w)
+	w.Header().Set(hlsMuxDiagnosticHeader, "upstream_http_"+strconv.Itoa(status))
+	if len(body) > 0 {
+		if ct := http.DetectContentType(body); ct != "" {
+			w.Header().Set("Content-Type", ct)
+		}
+	}
+	w.WriteHeader(status)
+	if len(body) > 0 {
+		_, _ = w.Write(body)
+	}
 }
 
 // maybeServeHLSMuxOPTIONS handles CORS preflight for HLS mux URLs when IPTV_TUNERR_HLS_MUX_CORS is enabled.
@@ -320,7 +363,12 @@ func (g *Gateway) serveHLSMuxTarget(w http.ResponseWriter, r *http.Request, clie
 	switch resp.StatusCode {
 	case http.StatusOK, http.StatusPartialContent, http.StatusNotModified:
 	default:
-		return errors.New("hls target http status " + strconv.Itoa(resp.StatusCode))
+		preview, rerr := io.ReadAll(io.LimitReader(resp.Body, hlsMuxUpstreamErrBodyMax))
+		if rerr != nil {
+			return rerr
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return &hlsMuxUpstreamHTTPError{Status: resp.StatusCode, Body: preview}
 	}
 
 	if resp.StatusCode == http.StatusNotModified {
@@ -342,7 +390,12 @@ func (g *Gateway) serveHLSMuxTarget(w http.ResponseWriter, r *http.Request, clie
 
 	if isHLSResponse(resp, effectiveURL) {
 		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("hls playlist unexpected status %d", resp.StatusCode)
+			preview, rerr := io.ReadAll(io.LimitReader(resp.Body, hlsMuxUpstreamErrBodyMax))
+			if rerr != nil {
+				return rerr
+			}
+			_, _ = io.Copy(io.Discard, resp.Body)
+			return &hlsMuxUpstreamHTTPError{Status: resp.StatusCode, Body: preview}
 		}
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {

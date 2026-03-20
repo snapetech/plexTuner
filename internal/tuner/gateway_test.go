@@ -3,6 +3,7 @@ package tuner
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -288,8 +289,87 @@ func TestGateway_hlsMuxSeg_unsupportedScheme_returnsBadRequest(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d body=%q", w.Code, w.Body.String())
 	}
+	resp := w.Result()
+	if got := resp.Header.Get(hlsMuxDiagnosticHeader); got != hlsMuxDiagUnsupportedTargetScheme {
+		t.Fatalf("diagnostic header: got %q want %q", got, hlsMuxDiagUnsupportedTargetScheme)
+	}
 	if !strings.Contains(strings.ToLower(w.Body.String()), "unsupported hls mux target url scheme") {
 		t.Fatalf("unexpected body: %q", w.Body.String())
+	}
+}
+
+func TestGateway_hlsMuxSeg_unsupportedScheme_setsCORSExposeWhenEnabled(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_HLS_MUX_CORS", "1")
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "0", GuideName: "Ch", StreamURL: "http://up.example/live.m3u8"},
+		},
+		TunerCount: 2,
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0?mux=hls&seg="+url.QueryEscape("skd://x"), nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	resp := w.Result()
+	exp := resp.Header.Get("Access-Control-Expose-Headers")
+	if !strings.Contains(exp, hlsMuxDiagnosticHeader) {
+		t.Fatalf("Expose-Headers should list diagnostic header: %q", exp)
+	}
+	if resp.Header.Get("Access-Control-Allow-Origin") != "*" {
+		t.Fatalf("expected CORS allow-origin on error response")
+	}
+}
+
+func TestServeHLSMuxTarget_unsupportedScheme(t *testing.T) {
+	g := &Gateway{}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	err := g.serveHLSMuxTarget(w, req, http.DefaultClient, "ch", "skd://example/key")
+	if !errors.Is(err, errHLSMuxUnsupportedTargetScheme) {
+		t.Fatalf("want errHLSMuxUnsupportedTargetScheme, got %v", err)
+	}
+}
+
+func TestServeHLSMuxTarget_returnsUpstreamHTTPError(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte("denied"))
+	}))
+	defer up.Close()
+	g := &Gateway{}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	err := g.serveHLSMuxTarget(w, req, up.Client(), "ch", up.URL+"/seg.ts")
+	var upErr *hlsMuxUpstreamHTTPError
+	if !errors.As(err, &upErr) || upErr.Status != http.StatusForbidden || string(upErr.Body) != "denied" {
+		t.Fatalf("unexpected err=%v upErr=%+v", err, upErr)
+	}
+}
+
+func TestGateway_hlsMuxSeg_upstreamHTTP_passedThrough(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte("gone"))
+	}))
+	defer up.Close()
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "0", GuideName: "Ch", StreamURL: "http://x/a.m3u8"},
+		},
+		TunerCount: 2,
+	}
+	seg := url.QueryEscape(up.URL + "/missing.ts")
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0?mux=hls&seg="+seg, nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("want 404 got %d body=%q", w.Code, w.Body.String())
+	}
+	resp := w.Result()
+	if got := resp.Header.Get(hlsMuxDiagnosticHeader); got != "upstream_http_404" {
+		t.Fatalf("diagnostic header: got %q", got)
+	}
+	if w.Body.String() != "gone" {
+		t.Fatalf("body: %q", w.Body.String())
 	}
 }
 
