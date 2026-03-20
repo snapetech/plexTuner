@@ -860,6 +860,7 @@ Full K8s guide: [`k8s/README.md`](k8s/README.md)
 | `epg-doctor` | Run the combined EPG diagnosis workflow in one report |
 | `channel-dna-report` | Group channels by stable cross-provider `dna_id` identity |
 | `ghost-hunter` | Observe Plex Live TV sessions and classify stale/hidden-grab cases |
+| `hdhr-scan` | Discover physical HDHomeRun tuners on LAN (UDP) or fetch discover/lineup via HTTP |
 | `catchup-capsules` | Export near-live capsule candidates from guide XMLTV |
 | `catchup-publish` | Publish catch-up capsules as `.strm + .nfo` libraries and optionally register them |
 | `catchup-record` | One-shot: record current in-progress capsules to local TS + record manifest |

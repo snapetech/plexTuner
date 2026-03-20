@@ -681,6 +681,24 @@ iptv-tunerr debug-bundle --out ./debug-scratch --tar
 
 See also: [debug-bundle.md](../how-to/debug-bundle.md)
 
+## `iptv-tunerr hdhr-scan`
+
+Discover **physical** SiliconDust HDHomeRun tuners on the local network, or query a device by HTTP only.
+
+- **UDP (default):** broadcast discovery on port `65001`, collect `discover` replies (device id, base URL, tuner count).
+- **HTTP:** `-addr http://<device-ip>` skips UDP and loads `discover.json` (and optionally `lineup.json`).
+
+Flags:
+
+| Flag | Meaning |
+|------|---------|
+| `-timeout` | UDP listen window (default `3s`; ignored with `-addr`) |
+| `-addr` | Base URL of the device (e.g. `http://192.168.1.100`) — HTTP-only mode |
+| `-lineup` | Also GET `lineup.json` and print channel count / metadata |
+| `-json` | JSON output for scripting |
+
+Merge semantics for HDHR + IPTV catalogs: [adr/0002-hdhr-hardware-iptv-merge.md](../adr/0002-hdhr-hardware-iptv-merge.md).
+
 ## `iptv-tunerr probe`
 
 Probe provider URLs and print ranked results (best host first).

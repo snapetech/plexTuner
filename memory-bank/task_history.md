@@ -23,6 +23,21 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: PR-1 LP-001/LP-002: hdhr-scan + HDHR client + ADR 0002 merge semantics
+  Summary:
+    - Added `internal/hdhomerun/client.go`: `DiscoverLAN`, `ParseDiscoverReply`, `FetchDiscoverJSON`, `FetchLineupJSON`, URL helpers; `client_test.go` for TLV round-trip.
+    - Added `iptv-tunerr hdhr-scan` (`cmd_hdhr_scan.go`) with `-timeout`, `-addr`, `-lineup`, `-json`; wired in `main.go`.
+    - ADR [docs/adr/0002-hdhr-hardware-iptv-merge.md](../docs/adr/0002-hdhr-hardware-iptv-merge.md); docs: CLI reference, features, CHANGELOG [Unreleased], README table, `docs/adr/index.md`, EPIC-lineup-parity status.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - No catalog import yet; separate instances per ADR until explicit merge.
+  Opportunities filed:
+    - none
+  Links:
+    - `docs/epics/EPIC-lineup-parity.md`
+
+- Date: 2026-03-19
   Title: Epic: Lineup-app parity (HDHR client, dashboard, SQLite EPG, transcode profiles)
   Summary:
     - User approved all four product tracks vs [am385/lineup](https://github.com/am385/lineup); added [docs/epics/EPIC-lineup-parity.md](../docs/epics/EPIC-lineup-parity.md) with stories `LP-001`–`LP-012`, milestones, PR plan, decision defaults, coordination with `INT-*` epic.

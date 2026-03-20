@@ -82,6 +82,12 @@ IPTV Tunerr’s mission stays **IPTV/Xtream → HDHR-shaped bridge for Plex/Emby
 | SQLite | Single file path vs per-instance | **`IPTV_TUNERR_EPG_SQLITE_PATH`**-style single file |
 | Profiles | Env list vs YAML | **Env + JSON file** consistent with supervisor patterns |
 
+## Current status (PR-1 landed)
+
+- **`LP-001`**: `DiscoverLAN`, `ParseDiscoverReply`, `FetchDiscoverJSON` — shipped (`internal/hdhomerun/client.go`).
+- **`LP-002`**: HTTP `lineup.json` fetch (`FetchLineupJSON`) + CLI `hdhr-scan`; **no catalog import yet** (ADR 0002).
+- **`LP-012`**: ADR + CLI reference + features blurb — partial.
+
 ## Coordination with other epics
 
 - **[EPIC-live-tv-intelligence.md](EPIC-live-tv-intelligence.md)** — Dashboard should surface channel intelligence and guide-confidence outputs where available (`INT-*`).

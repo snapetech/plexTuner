@@ -47,6 +47,7 @@ See also:
 | **`/stream/<id>`** | Stream gateway with provider auth/failover and tuner count limiting. |
 | **Tuner count limit** | Configurable concurrent streams, HDHR-style “all tuners in use” behavior. |
 | **HDHR metadata controls** | Per-instance discover metadata (manufacturer/model/fw/device auth) and `ScanPossible` control for wizard-lane vs category tuners. |
+| **Physical HDHomeRun client (spike)** | `hdhr-scan` discovers real tuners on the LAN (UDP) or fetches `discover.json` / `lineup.json` via HTTP; catalog merge is **not** automatic — see [ADR 0002](adr/0002-hdhr-hardware-iptv-merge.md). |
 
 ## 4. Stream gateway and transcoding
 

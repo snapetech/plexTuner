@@ -38,9 +38,9 @@ type DiscoverJSON struct {
 
 // LineupDoc is the HTTP lineup.json payload from a real HDHomeRun.
 type LineupDoc struct {
-	ScanInProgress int    `json:"ScanInProgress"`
-	ScanPossible   int    `json:"ScanPossible"`
-	Source         string `json:"Source"`
+	ScanInProgress int                `json:"ScanInProgress"`
+	ScanPossible   int                `json:"ScanPossible"`
+	Source         string             `json:"Source"`
 	Channels       []probe.LineupItem `json:"Channels"`
 }
 
