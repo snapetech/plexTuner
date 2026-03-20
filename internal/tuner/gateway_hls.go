@@ -77,6 +77,17 @@ var errHLSMuxBlockedPrivateUpstream = errors.New("blocked private upstream host 
 // Values include unsupported_target_scheme and upstream_http_<status> (e.g. upstream_http_404).
 const hlsMuxDiagnosticHeader = "X-IptvTunerr-Hls-Mux-Error"
 
+// NativeMuxKindHeader is set on successful Tunerr-native mux responses (rewritten HLS playlist, DASH MPD, **304**, or proxied **seg=** body).
+const NativeMuxKindHeader = "X-IptvTunerr-Native-Mux"
+
+func setNativeMuxResponseKind(w http.ResponseWriter, muxKind string) {
+	k := strings.TrimSpace(strings.ToLower(muxKind))
+	if k == "" {
+		k = "hls"
+	}
+	w.Header().Set(NativeMuxKindHeader, k)
+}
+
 // Diagnostic header values (stable tokens for scripts).
 const hlsMuxDiagUnsupportedTargetScheme = "unsupported_target_scheme"
 
@@ -208,7 +219,7 @@ func applyHLSMuxCORS(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Range, If-Range, Content-Type, Accept, Authorization, X-Request-Id, X-Correlation-Id, X-Trace-Id")
 	w.Header().Set("Access-Control-Expose-Headers", strings.Join([]string{
-		"Content-Range", "Content-Length", "Accept-Ranges", "Cache-Control", "Content-Type", hlsMuxDiagnosticHeader,
+		"Content-Range", "Content-Length", "Accept-Ranges", "Cache-Control", "Content-Type", NativeMuxKindHeader, hlsMuxDiagnosticHeader,
 	}, ", "))
 }
 
@@ -633,6 +644,7 @@ func (g *Gateway) serveNativeMuxTarget(w http.ResponseWriter, r *http.Request, c
 				w.Header().Set(h, v)
 			}
 		}
+		setNativeMuxResponseKind(w, muxKind)
 		applyHLSMuxCORS(w)
 		w.WriteHeader(http.StatusNotModified)
 		return nil
@@ -661,6 +673,7 @@ func (g *Gateway) serveNativeMuxTarget(w http.ResponseWriter, r *http.Request, c
 		out := rewriteHLSPlaylistToGatewayProxy(body, effectiveURL, channelID)
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 		w.Header().Set("Cache-Control", "no-store")
+		setNativeMuxResponseKind(w, muxKind)
 		applyHLSMuxCORS(w)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(out)
@@ -688,6 +701,7 @@ func (g *Gateway) serveNativeMuxTarget(w http.ResponseWriter, r *http.Request, c
 		}
 		w.Header().Set("Content-Type", ct)
 		w.Header().Set("Cache-Control", "no-store")
+		setNativeMuxResponseKind(w, muxKind)
 		applyHLSMuxCORS(w)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(out)
@@ -705,6 +719,7 @@ func (g *Gateway) serveNativeMuxTarget(w http.ResponseWriter, r *http.Request, c
 		w.Header().Set("Content-Type", "video/mp2t")
 	}
 	w.Header().Set("Cache-Control", "no-store")
+	setNativeMuxResponseKind(w, muxKind)
 	applyHLSMuxCORS(w)
 	w.WriteHeader(resp.StatusCode)
 	_, err = io.Copy(w, resp.Body)

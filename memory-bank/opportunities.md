@@ -293,35 +293,26 @@ It exists to encourage quality gains without derailing the current task.
 
 - Date: 2026-02-25
   Category: reliability
-  Title: Catalog disk save failure leaves in-memory state ahead of persisted state
-  Context: cmd/iptv-tunerr/main.go run command catalog refresh goroutine — calls server.UpdateChannels then c.Save.
-  Why it matters: If c.Save fails (disk full, permissions, NFS hang), the server is serving the new channel list but the catalog on disk is stale. On next restart the process loads the old channels and re-indexes from scratch, causing a silent regression in channel availability between restart and next successful index.
-  Evidence: main.go run refresh loop: UpdateChannels called before Save completes. Save error only logs and continues; no rollback of in-memory state.
-  Suggested fix: Invert the order — Save to a temp file first (atomic rename), then call UpdateChannels only on success. Alternatively log a prominent warning that disk and memory are out of sync so operators know why post-restart state differs. The atomic-rename approach is the cleanest and has no user-visible behavior change when disk writes succeed (common case).
-  Implementation notes: (1) catalog.Save should write to a .tmp file then os.Rename atomically. (2) In the refresh goroutine: call c.Save first; only if err == nil call server.UpdateChannels. (3) Add test: inject failing Save, assert UpdateChannels not called. Low blast radius — only changes success/failure ordering of two independent operations.
-  Risk/Scope: low | fits current scope: no (correctness fix, separate PR)
+  Title: (superseded 2026-03-19) Catalog refresh: Save vs **`UpdateChannels`** ordering
+  Context: Older audit feared scheduled refresh called **`UpdateChannels`** before **`catalog.Save`**, or non-atomic writes.
+  Status: **`catalog.Save`** uses **temp + rename** (`internal/catalog/catalog.go`). **`cmd/iptv-tunerr` `handleRun`** scheduled refresh: **`Save`** first, then **`channeldna.Assign`** + **`UpdateChannels`** only on success (`cmd_runtime.go`). Initial startup: save after index before serve when applicable.
+  Risk/Scope: n/a (historical)
   User decision needed?: no
 
 - Date: 2026-02-25
   Category: operability
-  Title: SIGHUP-triggered catalog reload without process restart
-  Context: cmd/iptv-tunerr/main.go run command — catalog only refreshes on the built-in timer or full restart.
-  Why it matters: Operators running in Docker/k8s often want to trigger an immediate lineup refresh (e.g. after provider maintenance) without a full pod restart, which resets streams and causes Plex to re-scan tuners. A SIGHUP reload is idiomatic Unix and expected by ops tooling.
-  Evidence: main.go run command: refresh only in a background goroutine on a fixed interval. No signal handler.
-  Suggested fix: Add a signal.NotifyContext or explicit signal channel for SIGHUP in the run command. On receipt, trigger a catalog refresh immediately (same logic as the periodic refresh goroutine). Log "SIGHUP received — reloading catalog". In k8s: kubectl exec kill -HUP <pid> or use a lifecycle hook.
-  Implementation notes: (1) Add `sigHUP := make(chan os.Signal, 1); signal.Notify(sigHUP, syscall.SIGHUP)` in run. (2) Select on ticker and sigHUP in refresh loop. (3) No lock changes needed — same code path as periodic refresh. (4) Add a test that sends SIGHUP and asserts catalog was reloaded (or mock the fetch). Low risk: signal handling is additive and doesn't change normal operation.
-  Risk/Scope: low | fits current scope: no (ops feature)
+  Title: (superseded 2026-03-19) **`SIGHUP`** catalog reload
+  Context: Operators wanted reload without pod restart.
+  Status: **`handleRun`** registers **`SIGHUP`** with the provider-credentials refresh goroutine; log line **`SIGHUP received — reloading catalog`** (`cmd_runtime.go`).
+  Risk/Scope: n/a (historical)
   User decision needed?: no
 
 - Date: 2026-02-25
   Category: operability
-  Title: Add dedicated /healthz or /ready endpoint for Kubernetes probes
-  Context: k8s/iptvtunerr-hdhr-test.yaml readinessProbe on /discover.json. internal/tuner/server.go — no /healthz route.
-  Why it matters: /discover.json is an HDHomeRun protocol endpoint; its content and latency depend on catalog load state, not just server health. Using it as a readiness probe couples k8s readiness to HDHomeRun emulation correctness. A dedicated /healthz endpoint can return 200 immediately (liveness) or 200 once the catalog is loaded (readiness) with a JSON body including catalog size and last-refresh timestamp for ops visibility.
-  Evidence: k8s/iptvtunerr-hdhr-test.yaml readinessProbe.httpGet.path: /discover.json (initialDelaySeconds 90). No /healthz in server.go.
-  Suggested fix: Add /healthz to the HTTP mux in Server.Run. Returns 200 + JSON `{"status":"ok","channels":<N>,"last_refresh":"<RFC3339>"}`. For readiness: 503 until first catalog load completes (channels > 0). Liveness: always 200 while HTTP server is up. Update k8s manifest readinessProbe to /healthz.
-  Implementation notes: (1) Add lastRefresh time.Time and channelCount int64 (atomic) fields to Server, updated in UpdateChannels. (2) /healthz handler: if channels == 0, return 503 `{"status":"loading"}`; else 200. (3) Update k8s manifest. (4) Add test: new server returns 503; after UpdateChannels with channels, returns 200. No behavior change to existing endpoints.
-  Risk/Scope: low | fits current scope: no (ops/k8s feature)
+  Title: (superseded 2026-03-19) **`/healthz`** for Kubernetes readiness
+  Context: Examples used **`/discover.json`** for readiness only.
+  Status: **`GET /healthz`** returns **503** `loading` until **`UpdateChannels`** has live rows, then **JSON** `ok` + **`channels`** + **`last_refresh`** (`internal/tuner/server.go`, **`TestServer_healthz`**). Example manifests: readiness MAY probe **`/healthz`**; **liveness** should stay something that stays **200** during long first catalog builds (often **`/discover.json`**).
+  Risk/Scope: n/a (historical; update local manifests when convenient)
   User decision needed?: no
 
 - Date: 2026-02-25

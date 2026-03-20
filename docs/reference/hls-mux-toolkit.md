@@ -36,6 +36,16 @@ Dense reference for **Tunerr-native HLS** and **experimental DASH MPD** proxying
 | Metrics | **`iptv_tunerr_mux_seg_request_duration_seconds`** histogram (when **`IPTV_TUNERR_METRICS_ENABLE`**); optional per-channel counter/histogram labels (**`IPTV_TUNERR_METRICS_MUX_CHANNEL_LABELS`**, high cardinality) |
 | Autopilot | Optional **`IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_BONUS`**: extra **`seg=`** slots for channels whose **`dna_id`** has hot Autopilot memory (see env table) |
 
+## Response kind: `X-IptvTunerr-Native-Mux`
+
+Successful **native mux** responses set **`X-IptvTunerr-Native-Mux: hls`** or **`dash`** on:
+
+- rewritten **entry** playlist / MPD (**`/stream/<id>?mux=hls|dash`**),
+- proxied **`seg=`** bodies (including **206** / **304**),
+- and **`serveNativeMuxTarget`** outcomes (same header).
+
+When **`IPTV_TUNERR_HLS_MUX_CORS`** is on, this header is listed in **`Access-Control-Expose-Headers`** so browsers can read it.
+
 ## Diagnostic header: `X-IptvTunerr-Hls-Mux-Error`
 
 | Value | Meaning |

@@ -46,7 +46,7 @@ IPTV Tunerr’s mission stays **IPTV/Xtream → HDHR-shaped bridge for Plex/Emby
 ## Implementation status (repo snapshot)
 
 - **LP-001 (MVP shipped):** `internal/hdhomerun` implements **`DiscoverLAN`** (UDP broadcast), **`ParseDiscoverReply`**, **`FetchDiscoverJSON`**, **`FetchLineupJSON`**, **`FetchGuideXML`**. Operators run **`iptv-tunerr hdhr-scan`** (LAN discovery or **`-addr http://device`**). Further work = polish (multicast subnets, IPv6) and continued **LP-002** merge ADR alignment.
-- **LP-010 (partial):** Hardware-style profile aliases (**`internet720`**, **`mobile`**, …) map to ffmpeg TS profiles in **`internal/tuner/gateway_profiles.go`**; see [transcode-profiles](../reference/transcode-profiles.md). Remaining LP-010 scope = explicit config file / env matrix and optional **HLS/fMP4 output** profiles (**LP-011**).
+- **LP-010 (partial):** Hardware-style profile aliases + optional **`IPTV_TUNERR_STREAM_PROFILES_FILE`** named matrix (**`base_profile`**, **`transcode`**, **`output_mux`**) in **`internal/tuner/gateway_profiles.go`**; see [transcode-profiles](../reference/transcode-profiles.md). Remaining LP-010/011 = more **ffmpeg HLS/fMP4 packaging** paths if product needs disk segment output beyond Tunerr-native **`?mux=hls|dash`** rewrite.
 - **LP-004–LP-006:** Substantial dashboard work lives in **`internal/webui`** + tuner JSON APIs; treat epic rows as iterative hardening, not empty.
 - **Not started here (multi-PR):** **LP-007–LP-009** (SQLite schema, incremental fetch, cleanup), **Postgres**, always-on recorder daemon — track in [memory-bank/work_breakdown.md](../../memory-bank/work_breakdown.md) when scheduled.
 

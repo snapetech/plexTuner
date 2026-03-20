@@ -218,6 +218,16 @@ RUN_SECONDS=30 CONCURRENCY=6 ./scripts/live-race-harness.sh
 
 The harness stores the probe artifacts in the same output directory, and `live-race-harness-report.py` prints a compact probe summary when those files are present.
 
+### HR-002 — closing a Plex Web `start.mpd` / startup regression
+
+Use this checklist when Tier‑1 browser clients still fail **`start.mpd`** or **`dash_init_404`** after **HR-001** tuning:
+
+1. **Agree the failing surface** — see [plex-client-compatibility-matrix](../reference/plex-client-compatibility-matrix.md) (**HR-003**) for pass criteria and client classes.
+2. **Collect one bundled evidence set** — run **`scripts/live-race-harness.sh`** (above) with **`CONCURRENCY`** and **`RUN_SECONDS`** close to your real failure mode; keep tuner logs at **`debug`** if possible.
+3. **Optional Plex Web probe** — set **`PWPROBE_SCRIPT`** to **`plex-web-livetv-probe.py`** (or your fork) and **`PWPROBE_ARGS`** to the DVR + channel under test; store JSON + exit code next to the harness output.
+4. **Correlate** — match **`startup-gate`** / **`release=`** lines and **`hls_mux_diag=`** / **`X-IptvTunerr-Hls-Mux-Error`** (native **`?mux=hls|dash`**) with the probe timestamp; see [hls-mux-toolkit](../reference/hls-mux-toolkit.md) and [plex-livetv-http-tuning](../reference/plex-livetv-http-tuning.md).
+5. **Declare pass** only when the same channel + client class succeeds twice in a row after a cold tuner (no hidden **`CaptureBuffer`** reuse — rotate channel if probes look stale).
+
 ---
 
 ## 8. Tuner endpoints (sanity check)
@@ -226,6 +236,8 @@ Once the server is running, quick HTTP checks:
 
 ```bash
 BASE=http://localhost:5004   # or your IPTV_TUNERR_BASE_URL
+
+curl -sS "$BASE/healthz" | jq .   # 503 {"status":"loading"} until channels loaded; then 200 + channel count
 
 curl -s -o /dev/null -w "%{http_code}" "$BASE/discover.json"   # expect 200
 curl -s -o /dev/null -w "%{http_code}" "$BASE/lineup.json"     # expect 200

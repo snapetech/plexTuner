@@ -23,6 +23,20 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Native mux **`X-IptvTunerr-Native-Mux`** + HR-002 runbook + k8s **`/healthz`** readiness + LP-010 epic sync
+  Summary:
+    - **`internal/tuner`**: **`X-IptvTunerr-Native-Mux`** (**`hls`** / **`dash`**) on native mux success paths (**`gateway_stream_response`**, **`serveNativeMuxTarget`**); CORS exposes header; tests **`TestGateway_stream_dashMux_returns`**, extended HLS/DASH **`seg=`** assertions.
+    - [hls-mux-toolkit](../docs/reference/hls-mux-toolkit.md) + [troubleshooting runbook](../docs/runbooks/iptvtunerr-troubleshooting.md): header doc + **HR-002** closure checklist + **`/healthz`** sanity **`curl`**.
+    - [EPIC-lineup-parity](../docs/epics/EPIC-lineup-parity.md): **LP-010** status reflects **`STREAM_PROFILES_FILE`**.
+    - **`k8s/`** `iptvtunerr-hdhr-test.yaml` + supervisor example: **readinessProbe** → **`/healthz`** (commented rationale; liveness unchanged on **`/discover.json`** for long startups).
+    - [opportunities.md](opportunities.md): superseded **Save/UpdateChannels**, **SIGHUP**, **`/healthz`** rows (all shipped).
+  Verification:
+    - `go test ./internal/tuner -count=1`
+    - `./scripts/verify`
+  Links:
+    - `internal/tuner/gateway_hls.go`, `internal/tuner/gateway_stream_response.go`, `internal/tuner/gateway_test.go`, `docs/reference/hls-mux-toolkit.md`, `docs/runbooks/iptvtunerr-troubleshooting.md`, `docs/epics/EPIC-lineup-parity.md`, `k8s/iptvtunerr-hdhr-test.yaml`, `k8s/iptvtunerr-supervisor-singlepod.example.yaml`, `memory-bank/opportunities.md`, `docs/CHANGELOG.md`
+
+- Date: 2026-03-19
   Title: Supersede stale XMLTV **`/guide.xml`** cache opportunities
   Summary:
     - [opportunities.md](opportunities.md): **2026-02-24** and **2026-02-25** performance rows marked **superseded** — merged guide caching + **`IPTV_TUNERR_XMLTV_CACHE_TTL`** + **`TestXMLTV_cacheHit`** already live in **`internal/tuner/xmltv.go`**.

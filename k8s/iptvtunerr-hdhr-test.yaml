@@ -121,9 +121,10 @@ spec:
         - -base-url=http://iptvtunerr-hdhr.plex.home
         - -register-plex=/config/Library/Application Support/Plex Media Server
         - -mode=full
+        # Readiness: /healthz is 503 until catalog channels are loaded; /discover.json stays 200 even with 0 channels.
         readinessProbe:
           httpGet:
-            path: /discover.json
+            path: /healthz
             port: 5004
           initialDelaySeconds: 180
           periodSeconds: 10

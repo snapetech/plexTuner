@@ -428,6 +428,9 @@ func TestGateway_dashMuxSeg_proxiesBinary(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("code=%d body=%q", w.Code, w.Body.String())
 	}
+	if got := w.Header().Get(NativeMuxKindHeader); got != "dash" {
+		t.Fatalf("%s=%q want dash", NativeMuxKindHeader, got)
+	}
 	if !bytes.Contains(w.Body.Bytes(), []byte("ftyp")) {
 		t.Fatalf("body=%q", w.Body.String())
 	}
@@ -1021,9 +1024,42 @@ func TestGateway_stream_hlsMux_returnsRewrittenPlaylist(t *testing.T) {
 	if !strings.Contains(ct, "mpegurl") || !strings.Contains(ct, "application/") {
 		t.Fatalf("content-type=%q", ct)
 	}
+	if got := w.Header().Get(NativeMuxKindHeader); got != "hls" {
+		t.Fatalf("%s=%q want hls", NativeMuxKindHeader, got)
+	}
 	body := w.Body.String()
 	if !strings.Contains(body, "/stream/0?mux=hls&seg=") {
 		t.Fatalf("missing proxy line: %q", body)
+	}
+}
+
+func TestGateway_stream_dashMux_returnsRewrittenManifest(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/dash+xml")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<MPD xmlns="urn:mpeg:dash:schema:mpd:2011"><Period><SegmentURL media="https://cdn.example/seg.m4s"/></Period></MPD>`))
+	}))
+	defer up.Close()
+
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "0", GuideName: "Ch", StreamURL: up.URL + "/manifest.mpd"},
+		},
+		TunerCount:    2,
+		DisableFFmpeg: true,
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0?mux=dash", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get(NativeMuxKindHeader); got != "dash" {
+		t.Fatalf("%s=%q want dash", NativeMuxKindHeader, got)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "mux=dash&seg=") || !strings.Contains(body, "cdn.example") {
+		t.Fatalf("missing proxy rewrite: %q", body)
 	}
 }
 
