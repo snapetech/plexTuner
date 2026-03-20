@@ -1351,18 +1351,26 @@ func TestIsUpstreamConcurrencyLimit_509(t *testing.T) {
 
 func TestGateway_shouldPreferGoRelayForHLSRemux(t *testing.T) {
 	g := &Gateway{TunerCount: 4, learnedUpstreamLimit: 2}
-	if !g.shouldPreferGoRelayForHLSRemux() {
+	if !g.shouldPreferGoRelayForHLSRemux("http://provider.example/live/1.m3u8") {
 		t.Fatal("expected learned lower upstream limit to prefer go relay")
 	}
 
 	t.Setenv("IPTV_TUNERR_HLS_RELAY_PREFER_GO_ON_PROVIDER_PRESSURE", "false")
-	if g.shouldPreferGoRelayForHLSRemux() {
+	if g.shouldPreferGoRelayForHLSRemux("http://provider.example/live/1.m3u8") {
 		t.Fatal("expected provider-pressure preference to be disable-able")
 	}
 
 	t.Setenv("IPTV_TUNERR_HLS_RELAY_PREFER_GO", "true")
-	if !g.shouldPreferGoRelayForHLSRemux() {
+	if !g.shouldPreferGoRelayForHLSRemux("http://provider.example/live/1.m3u8") {
 		t.Fatal("expected explicit go-relay preference override")
+	}
+}
+
+func TestGateway_shouldPreferGoRelayForHLSRemux_hostPenalty(t *testing.T) {
+	g := &Gateway{TunerCount: 4}
+	g.noteUpstreamFailure("http://provider.example/live/1.m3u8", 0, "ffmpeg_hls_failed")
+	if !g.shouldPreferGoRelayForHLSRemux("http://provider.example/live/2.m3u8") {
+		t.Fatal("expected host penalty to prefer go relay")
 	}
 }
 
@@ -2274,6 +2282,62 @@ func TestGateway_fetchAndRewritePlaylist_retriesConcurrencyLimit(t *testing.T) {
 	}
 	if g.learnedUpstreamLimit != 1 {
 		t.Fatalf("learnedUpstreamLimit=%d want 1", g.learnedUpstreamLimit)
+	}
+}
+
+func TestGateway_relayHLSAsTS_survivesPlaylistConcurrencyRetry(t *testing.T) {
+	playlistHits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/playlist.m3u8":
+			playlistHits++
+			if playlistHits == 2 {
+				http.Error(w, "maximum 1 connections allowed", 509)
+				return
+			}
+			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+			_, _ = w.Write([]byte("#EXTM3U\n#EXT-X-TARGETDURATION:1\nseg.ts\n"))
+		case "/seg.ts":
+			w.Header().Set("Content-Type", "video/mp2t")
+			_, _ = w.Write([]byte("segment-bytes"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	t.Setenv("IPTV_TUNERR_HLS_PLAYLIST_RETRY_LIMIT", "1")
+	t.Setenv("IPTV_TUNERR_HLS_PLAYLIST_RETRY_BACKOFF_MS", "1")
+	g := &Gateway{TunerCount: 4}
+	baseReq := httptest.NewRequest(http.MethodGet, "http://local/stream/1", nil)
+	initial, effectiveURL, err := g.fetchAndRewritePlaylist(baseReq, srv.Client(), srv.URL+"/playlist.m3u8")
+	if err != nil {
+		t.Fatalf("initial playlist fetch: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(baseReq.Context())
+	defer cancel()
+	req := baseReq.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	done := make(chan error, 1)
+	go func() {
+		done <- g.relayHLSAsTS(rec, req, srv.Client(), effectiveURL, initial, "Ch1", "1", "101", "tvg.1", time.Now(), false, "", 0, false)
+	}()
+
+	time.Sleep(1500 * time.Millisecond)
+	cancel()
+
+	if err := <-done; err != nil {
+		t.Fatalf("relayHLSAsTS: %v", err)
+	}
+	if got := rec.Body.Len(); got == 0 {
+		t.Fatal("expected relay to write bytes before cancellation")
+	}
+	if g.learnedUpstreamLimit != 1 {
+		t.Fatalf("learnedUpstreamLimit=%d want 1", g.learnedUpstreamLimit)
+	}
+	if playlistHits < 3 {
+		t.Fatalf("playlistHits=%d want at least 3 (initial + retry path)", playlistHits)
 	}
 }
 

@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-21):** **HLS go-relay + tests (restored):** **`shouldPreferGoRelayForHLSRemux(streamURL)`** considers **`hostPenalty`** for flaky hosts; **`TestGateway_shouldPreferGoRelayForHLSRemux_hostPenalty`**, **`TestGateway_relayHLSAsTS_survivesPlaylistConcurrencyRetry`**; **CHANGELOG** + **`recurring_loops`** note: do not **`git restore`** unrelated dirty files (multi-agent WIP). **`./scripts/verify`** OK.
+
 **Latest (2026-03-21):** **Handoff / doc closure:** Confirmed gateway integration test **`TestGateway_stream_prefersAutopilotRememberedURL_normalizedTrailingSlash`** lives on **`origin/main`** (not part of the LP/LTV feature commit); expanded **`streamURLsSemanticallyEqual`** godoc + **`known_issues.md`** **Gateway / Autopilot** row so “by design” URL-match limits are single-source in code + memory bank. **`./scripts/verify`** OK.
 
 **Latest (2026-03-21):** **Close-by-design slice:** Autopilot **URL normalization**; **`IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS`**; **LP-012** checklist **`lineup-parity-lp012-closure.md`** + indexes; **cli-and-env**, **.env.example**, **CHANGELOG**, epics, **hdhr-scan** summary. **`./scripts/verify`** OK.

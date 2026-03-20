@@ -230,7 +230,7 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 		promNoteMuxManifestOutcome("hls", "playlist_proxy", channelID, time.Since(startManifest))
 		return "ok", "hls_native_mux", effectiveURL, true
 	}
-	preferGoRelay := !transcode && g.shouldPreferGoRelayForHLSRemux()
+	preferGoRelay := !transcode && g.shouldPreferGoRelayForHLSRemux(streamURL)
 	if preferGoRelay {
 		log.Printf("gateway: channel=%q id=%s provider-pressure prefers go relay over ffmpeg-remux",
 			channel.GuideName, channelID)

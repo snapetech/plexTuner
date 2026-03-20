@@ -32,6 +32,12 @@
 - **Symptom:** Touching unrelated files; refactor drift.
 - **Exit ramp:** Tighten scope in `memory-bank/current_task.md`; stop editing unrelated areas.
 
+### Discarding another session's working-tree changes
+- **Symptom:** Agent runs **`git restore`** / **`git checkout --`** on files outside the intended diff to “keep commits focused,” and unrelated edits (often from another agent or parallel work) vanish from disk.
+- **Why it's tricky:** Those edits were never committed; **`reflog` does not save unstaged blobs**. Recovery depends on editor local history, another clone, or reconstructing from chat/tool output.
+- **What works:** **`git status`** first; if mixed WIP exists, **stash** (`git stash push -m '…' -- <paths>`) or **commit everything** the user cares about (including “unrelated” agent work), then separate logical commits if needed **`git reset --soft`** split). Ask before dropping dirty files when the branch is shared or multi-agent.
+- **Where:** (added 2026-03-21 after an incident)
+
 ### Repro-first for bugs
 - **Symptom:** Hours of blind edits; "fix" doesn't stick or breaks something else.
 - **Rule:** If it's a bug: add **repro steps or a failing test before** attempting fixes. Prevents random poking.

@@ -233,7 +233,7 @@ func (g *Gateway) noteHLSPlaylistFailure(playlistURL string) {
 	g.lastHLSPlaylistURL = safeurl.RedactURL(playlistURL)
 }
 
-func (g *Gateway) shouldPreferGoRelayForHLSRemux() bool {
+func (g *Gateway) shouldPreferGoRelayForHLSRemux(streamURL string) bool {
 	if g == nil {
 		return false
 	}
@@ -250,7 +250,11 @@ func (g *Gateway) shouldPreferGoRelayForHLSRemux() bool {
 	g.providerStateMu.Lock()
 	concurrencyHits := g.concurrencyHits
 	g.providerStateMu.Unlock()
-	return concurrencyHits > 0 || (learned > 0 && learned < configured)
+	if concurrencyHits > 0 || (learned > 0 && learned < configured) {
+		return true
+	}
+	host := upstreamURLAuthority(streamURL)
+	return host != "" && g.hostPenalty(host) > 0
 }
 
 func (g *Gateway) effectiveTranscode(ctx context.Context, streamURL string) bool {

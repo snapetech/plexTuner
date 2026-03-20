@@ -23,6 +23,20 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: HLS — prefer Go relay when upstream host penalized + playlist 509 retry integration test
+  Summary:
+    - **`shouldPreferGoRelayForHLSRemux(streamURL)`**: after provider-pressure checks, return true when **`hostPenalty`** for the stream authority is **> 0** (e.g. ffmpeg remux already failed for that host).
+    - **`relaySuccessfulHLSUpstream`**: passes **`streamURL`** into the helper.
+    - **Tests:** **`TestGateway_shouldPreferGoRelayForHLSRemux_hostPenalty`**, **`TestGateway_relayHLSAsTS_survivesPlaylistConcurrencyRetry`** (restored after an earlier mistaken **`git restore`**).
+    - **Docs:** **CHANGELOG**; **`recurring_loops`** guardrail on discarding dirty WIP.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Work was briefly dropped from the working tree while landing a doc-only commit; reconstructed from session diff.
+  Opportunities filed:
+    - none
+
+- Date: 2026-03-21
   Title: Autopilot URL match — godoc + known_issues (integration test baseline on main)
   Summary:
     - **`gateway_adapt.go`**: **`streamURLsSemanticallyEqual`** godoc lists equivalences, explicit non-goals, and test names.
