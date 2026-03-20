@@ -3827,6 +3827,19 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
 ---
 
 - Date: 2026-03-20
+  Title: Validate live shards and add lineup integrity logging
+  Summary:
+    - Swept 18 live Tunerr ports and confirmed that the sampled `lineup.json` and `guide.xml` pairs were structurally healthy: zero malformed rows, zero duplicate guide numbers, and exact guide-name matches for every lineup row checked.
+    - Added a concise `UpdateChannels` lineup-integrity summary log so future reports show channel count, linked count, stream coverage, missing core fields, and duplicate guide numbers/channel ids at refresh time.
+    - Added a unit test for the integrity summarizer and kept the post-regression faster `internal/tuner` suite intact.
+  Verification:
+    - live validation sweep across ports `5004`, `5006-5013`, `5101-5103`, `5201-5206`
+    - `go test ./internal/tuner -run 'TestSummarizeLineupIntegrity|TestServer_(healthz|readyz)'`
+    - `./scripts/verify`
+
+---
+
+- Date: 2026-03-20
   Title: Restore first-run channel mapping after guide-input hardening
   Summary:
     - Fixed the post-hardening regression where runtime EPG repair and guide-health flows could no longer fetch provider-derived XMLTV on first run unless matching env vars were already populated.

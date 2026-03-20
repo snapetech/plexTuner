@@ -178,6 +178,7 @@ func (s *Server) UpdateChannels(live []catalog.LiveChannel) {
 		}
 	}
 	live = applyGuideNumberOffset(live, s.GuideNumberOffset)
+	summary := summarizeLineupIntegrity(live)
 	s.Channels = live
 	s.healthMu.Lock()
 	s.healthChannels = len(live)
@@ -201,6 +202,63 @@ func (s *Server) UpdateChannels(live []catalog.LiveChannel) {
 	if s.m3uServe != nil {
 		s.m3uServe.Channels = live
 	}
+	log.Printf(
+		"Lineup updated: channels=%d epg_linked=%d with_tvg=%d with_stream=%d missing_core=%d duplicate_guide_numbers=%d duplicate_channel_ids=%d",
+		summary.Total,
+		summary.EPGLinked,
+		summary.WithTVGID,
+		summary.WithStream,
+		summary.MissingCoreFields,
+		summary.DuplicateGuideNumbers,
+		summary.DuplicateChannelIDs,
+	)
+}
+
+type lineupIntegritySummary struct {
+	Total                 int
+	EPGLinked             int
+	WithTVGID             int
+	WithStream            int
+	MissingCoreFields     int
+	DuplicateGuideNumbers int
+	DuplicateChannelIDs   int
+}
+
+func summarizeLineupIntegrity(live []catalog.LiveChannel) lineupIntegritySummary {
+	s := lineupIntegritySummary{Total: len(live)}
+	guideNumbers := make(map[string]int, len(live))
+	channelIDs := make(map[string]int, len(live))
+	for _, ch := range live {
+		if ch.EPGLinked {
+			s.EPGLinked++
+		}
+		if strings.TrimSpace(ch.TVGID) != "" {
+			s.WithTVGID++
+		}
+		if strings.TrimSpace(ch.StreamURL) != "" || len(ch.StreamURLs) > 0 {
+			s.WithStream++
+		}
+		if strings.TrimSpace(ch.ChannelID) == "" || strings.TrimSpace(ch.GuideNumber) == "" || strings.TrimSpace(ch.GuideName) == "" {
+			s.MissingCoreFields++
+		}
+		if guide := strings.TrimSpace(ch.GuideNumber); guide != "" {
+			guideNumbers[guide]++
+		}
+		if cid := strings.TrimSpace(ch.ChannelID); cid != "" {
+			channelIDs[cid]++
+		}
+	}
+	for _, n := range guideNumbers {
+		if n > 1 {
+			s.DuplicateGuideNumbers++
+		}
+	}
+	for _, n := range channelIDs {
+		if n > 1 {
+			s.DuplicateChannelIDs++
+		}
+	}
+	return s
 }
 
 func applyGuideNumberOffset(live []catalog.LiveChannel, offset int) []catalog.LiveChannel {

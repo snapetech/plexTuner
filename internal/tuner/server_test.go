@@ -117,6 +117,39 @@ func TestServer_readyz(t *testing.T) {
 	}
 }
 
+func TestSummarizeLineupIntegrity(t *testing.T) {
+	live := []catalog.LiveChannel{
+		{ChannelID: "1", GuideNumber: "101", GuideName: "Ch1", TVGID: "one", EPGLinked: true, StreamURL: "http://a/1"},
+		{ChannelID: "1", GuideNumber: "102", GuideName: "Ch1 dup id", StreamURLs: []string{"http://a/2"}},
+		{ChannelID: "3", GuideNumber: "102", GuideName: "Ch dup num"},
+		{ChannelID: "", GuideNumber: "104", GuideName: "Missing ID"},
+		{ChannelID: "5", GuideNumber: "", GuideName: "Missing Num"},
+		{ChannelID: "6", GuideNumber: "106", GuideName: ""},
+	}
+	got := summarizeLineupIntegrity(live)
+	if got.Total != 6 {
+		t.Fatalf("total=%d want 6", got.Total)
+	}
+	if got.EPGLinked != 1 {
+		t.Fatalf("epg_linked=%d want 1", got.EPGLinked)
+	}
+	if got.WithTVGID != 1 {
+		t.Fatalf("with_tvg=%d want 1", got.WithTVGID)
+	}
+	if got.WithStream != 2 {
+		t.Fatalf("with_stream=%d want 2", got.WithStream)
+	}
+	if got.MissingCoreFields != 3 {
+		t.Fatalf("missing_core=%d want 3", got.MissingCoreFields)
+	}
+	if got.DuplicateGuideNumbers != 1 {
+		t.Fatalf("duplicate_guide_numbers=%d want 1", got.DuplicateGuideNumbers)
+	}
+	if got.DuplicateChannelIDs != 1 {
+		t.Fatalf("duplicate_channel_ids=%d want 1", got.DuplicateChannelIDs)
+	}
+}
+
 func TestServer_channelReport(t *testing.T) {
 	s := &Server{LineupMaxChannels: NoLineupCap}
 	s.UpdateChannels([]catalog.LiveChannel{
