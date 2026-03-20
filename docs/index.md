@@ -25,7 +25,7 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[how-to/cloudflare-bypass.md](how-to/cloudflare-bypass.md)** | Cloudflare-protected providers: UA cycling, cookies, headers, troubleshooting. |
 | **[how-to/debug-bundle.md](how-to/debug-bundle.md)** | Collect a shareable `debug-bundle` and analyze with `scripts/analyze-bundle.py`. |
 | **[how-to/hybrid-hdhr-iptv.md](how-to/hybrid-hdhr-iptv.md)** | Merge HDHR `lineup.json` + `guide.xml` with IPTV index and `/guide.xml`. |
-| **[how-to/hls-mux-proxy.md](how-to/hls-mux-proxy.md)** | HLS-through-Tunerr: `?mux=hls` playlist proxy, optional `IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`. |
+| **[how-to/hls-mux-proxy.md](how-to/hls-mux-proxy.md)** | HLS-through-Tunerr: `?mux=hls` playlist proxy, optional `IPTV_TUNERR_STREAM_PUBLIC_BASE_URL` / `IPTV_TUNERR_HLS_MUX_CORS`. |
 | **[reference/cli-and-env-reference.md](reference/cli-and-env-reference.md)** | Commands, flags, and key env vars (including supervisor/testing knobs). |
 | **[reference/transcode-profiles.md](reference/transcode-profiles.md)** | Gateway ffmpeg profile names, HDHR-style aliases, `?profile=`, `?mux=fmp4` / `?mux=hls`. |
 | **[explanations/media-server-integration-modes.md](explanations/media-server-integration-modes.md)** | Where the common tuner story ends and Plex-heavy ops begin. |

@@ -965,6 +965,7 @@ Full reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-a
 | `IPTV_TUNERR_STREAM_TRANSCODE` | `off` \| `on` \| `auto` (probe codec, transcode if needed) |
 | `IPTV_TUNERR_STREAM_BUFFER_BYTES` | `0` \| `auto` \| `<bytes>` |
 | `IPTV_TUNERR_STREAM_PUBLIC_BASE_URL` | Optional base URL for absolute `?mux=hls` playlist lines (no trailing slash) |
+| `IPTV_TUNERR_HLS_MUX_CORS` | Add CORS + `OPTIONS` preflight for `?mux=hls` (playlist + segments); default off |
 | `IPTV_TUNERR_FFMPEG_PATH` | Custom ffmpeg binary path |
 | `IPTV_TUNERR_FFMPEG_DISABLED` | Disable ffmpeg relay and use the Go HLS relay path only |
 | `IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE` | Keep the original ffmpeg input hostname instead of rewriting it to an IP |
