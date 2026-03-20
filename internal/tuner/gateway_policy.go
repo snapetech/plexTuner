@@ -233,6 +233,26 @@ func (g *Gateway) noteHLSPlaylistFailure(playlistURL string) {
 	g.lastHLSPlaylistURL = safeurl.RedactURL(playlistURL)
 }
 
+func (g *Gateway) shouldPreferGoRelayForHLSRemux() bool {
+	if g == nil {
+		return false
+	}
+	if getenvBool("IPTV_TUNERR_HLS_RELAY_PREFER_GO", false) {
+		return true
+	}
+	if !getenvBool("IPTV_TUNERR_HLS_RELAY_PREFER_GO_ON_PROVIDER_PRESSURE", true) {
+		return false
+	}
+	g.mu.Lock()
+	learned := g.learnedUpstreamLimit
+	configured := g.configuredTunerLimit()
+	g.mu.Unlock()
+	g.providerStateMu.Lock()
+	concurrencyHits := g.concurrencyHits
+	g.providerStateMu.Unlock()
+	return concurrencyHits > 0 || (learned > 0 && learned < configured)
+}
+
 func (g *Gateway) effectiveTranscode(ctx context.Context, streamURL string) bool {
 	switch strings.ToLower(strings.TrimSpace(g.StreamTranscodeMode)) {
 	case "on":

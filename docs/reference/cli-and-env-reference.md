@@ -578,6 +578,10 @@ Operational notes:
 Relevant streaming env knobs for tricky HLS/CDN paths:
 - `IPTV_TUNERR_FFMPEG_HLS_HTTP_PERSISTENT` (`true|false`, default `true`) — ask ffmpeg/libavformat to reuse HTTP connections across HLS fetches
 - `IPTV_TUNERR_FFMPEG_HLS_MULTIPLE_REQUESTS` (`true|false`, default `true`) — allow multiple HTTP requests on a persistent connection for HLS input
+- `IPTV_TUNERR_HLS_PLAYLIST_RETRY_LIMIT` (default `2`) — extra retries for playlist refreshes that fail with a learned/concurrency-style upstream limit (`423`, `429`, `458`, `509`, or matching body text)
+- `IPTV_TUNERR_HLS_PLAYLIST_RETRY_BACKOFF_MS` (default `1000`) — base backoff for those retries; attempts use `1x`, `2x`, `4x`
+- `IPTV_TUNERR_HLS_RELAY_PREFER_GO_ON_PROVIDER_PRESSURE` (`true|false`, default `true`) — after Tunerr has already seen provider concurrency pressure, prefer the Go HLS relay over ffmpeg remux for non-transcode HLS
+- `IPTV_TUNERR_HLS_RELAY_PREFER_GO` (`true|false`, default `false`) — force the same Go-relay preference even without learned provider pressure
 
 These are legitimate transport-parity knobs, not Cloudflare bypasses.
 
@@ -985,6 +989,9 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
 - `IPTV_TUNERR_FFMPEG_DISABLED` — disable ffmpeg entirely for HLS relay and stay on the Go playlist/segment fetch path. Useful when ffmpeg cannot satisfy provider header/cookie requirements.
 - `IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE` — keep the original ffmpeg input hostname instead of rewriting it to a resolved IP. Useful for CDNs that validate the hostname against `Host` or TLS state.
 - `IPTV_TUNERR_FFMPEG_HLS_RECONNECT` — when `true`, adds HLS reconnect flags to ffmpeg (`-reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1`). Helps with providers whose HLS segment URLs expire mid-stream.
+- `IPTV_TUNERR_HLS_PLAYLIST_RETRY_LIMIT` / `IPTV_TUNERR_HLS_PLAYLIST_RETRY_BACKOFF_MS` — bounded retry/backoff for playlist refreshes that hit provider concurrency/limit responses; intended for short-lived `509`/similar contention rather than permanent failures.
+- `IPTV_TUNERR_HLS_RELAY_PREFER_GO_ON_PROVIDER_PRESSURE` — once Tunerr has learned provider concurrency pressure, skip non-transcode ffmpeg remux and go straight to the Go playlist/segment relay. Useful when ffmpeg remux adds enough upstream request pressure to destabilize multi-stream playback.
+- `IPTV_TUNERR_HLS_RELAY_PREFER_GO` — unconditional version of the same preference.
 - `IPTV_TUNERR_CLIENT_ADAPT` — when `true`, resolve the Plex client from the active session and force websafe (transcode + MP3 audio) for web/browser clients and for internal fetchers (Lavf/PMS). Ensures Chrome and Firefox get compatible audio without transcoding non-browser clients.
 - `IPTV_TUNERR_CLIENT_ADAPT_STICKY_FALLBACK` — when enabled (default), if adaptation chose the **non-websafe** path and the tune ends with **`all_upstreams_failed`** or **`upstream_concurrency_limited`**, register a **session-scoped** WebSafe fallback for that channel + Plex session/client id until TTL (see [plex-livetv-http-tuning](plex-livetv-http-tuning.md) **HR-004**).
 - `IPTV_TUNERR_CLIENT_ADAPT_STICKY_TTL_SEC` — sticky lifetime in seconds (default **14400**; clamped **120**–**604800**).

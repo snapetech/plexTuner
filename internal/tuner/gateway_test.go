@@ -1171,6 +1171,53 @@ func TestGateway_stream_prefersAutopilotRememberedURL(t *testing.T) {
 	}
 }
 
+func TestGateway_stream_prefersAutopilotRememberedURL_normalizedTrailingSlash(t *testing.T) {
+	hits := []string{}
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits = append(hits, "primary")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("primary"))
+	}))
+	defer primary.Close()
+	backup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits = append(hits, "backup")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("backup"))
+	}))
+	defer backup.Close()
+
+	rememberAs := strings.TrimRight(backup.URL, "/") + "/"
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "1", GuideName: "Ch1", DNAID: "dna:slash", StreamURL: primary.URL, StreamURLs: []string{primary.URL, backup.URL}},
+		},
+		TunerCount: 2,
+		Autopilot: &autopilotStore{
+			byKey: map[string]autopilotDecision{
+				autopilotKey("dna:slash", "unknown"): {
+					DNAID:         "dna:slash",
+					ClientClass:   "unknown",
+					PreferredURL:  rememberAs,
+					PreferredHost: autopilotURLHost(backup.URL),
+					Hits:          2,
+				},
+			},
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code: %d", w.Code)
+	}
+	if w.Body.String() != "backup" {
+		t.Fatalf("body: %q", w.Body.String())
+	}
+	if len(hits) == 0 || hits[0] != "backup" {
+		t.Fatalf("hit order=%v want backup first", hits)
+	}
+}
+
 func TestGateway_stream_penalizedHostFallsBehindHealthyHost(t *testing.T) {
 	hits := []string{}
 	penalized := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1293,6 +1340,29 @@ func TestParseUpstreamConcurrencyLimit(t *testing.T) {
 		if got := parseUpstreamConcurrencyLimit(tc.preview); got != tc.want {
 			t.Fatalf("preview=%q got=%d want=%d", tc.preview, got, tc.want)
 		}
+	}
+}
+
+func TestIsUpstreamConcurrencyLimit_509(t *testing.T) {
+	if !isUpstreamConcurrencyLimit(509, "") {
+		t.Fatal("expected 509 to count as upstream concurrency limit")
+	}
+}
+
+func TestGateway_shouldPreferGoRelayForHLSRemux(t *testing.T) {
+	g := &Gateway{TunerCount: 4, learnedUpstreamLimit: 2}
+	if !g.shouldPreferGoRelayForHLSRemux() {
+		t.Fatal("expected learned lower upstream limit to prefer go relay")
+	}
+
+	t.Setenv("IPTV_TUNERR_HLS_RELAY_PREFER_GO_ON_PROVIDER_PRESSURE", "false")
+	if g.shouldPreferGoRelayForHLSRemux() {
+		t.Fatal("expected provider-pressure preference to be disable-able")
+	}
+
+	t.Setenv("IPTV_TUNERR_HLS_RELAY_PREFER_GO", "true")
+	if !g.shouldPreferGoRelayForHLSRemux() {
+		t.Fatal("expected explicit go-relay preference override")
 	}
 }
 
@@ -2169,6 +2239,41 @@ func TestGateway_fetchAndRewritePlaylist_usesRedirectedURLAsBase(t *testing.T) {
 	}
 	if got := string(body); !strings.Contains(got, srv.URL+"/nested/segment.ts") {
 		t.Fatalf("rewritten playlist = %q, want redirected base URL", got)
+	}
+}
+
+func TestGateway_fetchAndRewritePlaylist_retriesConcurrencyLimit(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if hits == 1 {
+			http.Error(w, "maximum 1 connections allowed", 509)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("#EXTM3U\nsegment.ts\n"))
+	}))
+	defer srv.Close()
+
+	t.Setenv("IPTV_TUNERR_HLS_PLAYLIST_RETRY_LIMIT", "1")
+	t.Setenv("IPTV_TUNERR_HLS_PLAYLIST_RETRY_BACKOFF_MS", "1")
+	g := &Gateway{TunerCount: 4}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/1", nil)
+	body, effectiveURL, err := g.fetchAndRewritePlaylist(req, srv.Client(), srv.URL+"/playlist.m3u8")
+	if err != nil {
+		t.Fatalf("fetchAndRewritePlaylist retry: %v", err)
+	}
+	if hits != 2 {
+		t.Fatalf("hits=%d want 2", hits)
+	}
+	if effectiveURL != srv.URL+"/playlist.m3u8" {
+		t.Fatalf("effectiveURL=%q", effectiveURL)
+	}
+	if got := string(body); !strings.Contains(got, srv.URL+"/segment.ts") {
+		t.Fatalf("rewritten playlist=%q", got)
+	}
+	if g.learnedUpstreamLimit != 1 {
+		t.Fatalf("learnedUpstreamLimit=%d want 1", g.learnedUpstreamLimit)
 	}
 }
 

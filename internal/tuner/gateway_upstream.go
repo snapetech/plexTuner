@@ -427,7 +427,7 @@ func readUpstreamErrorPreview(resp *http.Response) string {
 
 func isUpstreamConcurrencyLimit(status int, preview string) bool {
 	switch status {
-	case http.StatusLocked, http.StatusTooManyRequests, 458:
+	case http.StatusLocked, http.StatusTooManyRequests, 458, 509:
 		return true
 	}
 	if preview == "" {

@@ -23,6 +23,18 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-20
+  Title: Harden HLS provider-pressure handling for multi-stream playback
+  Summary:
+    - **`509`** now counts as an upstream concurrency signal, and HLS playlist refreshes learn provider limits just like stream-open failures do.
+    - HLS playlist refreshes now use bounded retry/backoff on concurrency-style failures, which helps short-lived provider contention recover without immediately killing the stream.
+    - Non-transcode HLS now prefers the Go relay over **ffmpeg remux** once provider pressure is already known, reducing extra upstream request churn on fragile providers.
+  Verification:
+    - `go test ./internal/tuner -run 'Test(IsUpstreamConcurrencyLimit_509|Gateway_shouldPreferGoRelayForHLSRemux|Gateway_fetchAndRewritePlaylist_retriesConcurrencyLimit|Gateway_learnsUpstreamConcurrencyLimitAndRejectsLocally|ParseUpstreamConcurrencyLimit)'`
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+
+- Date: 2026-03-20
   Title: Add native mux manifest Prometheus metrics
   Summary:
     - [prometheus_mux.go](../internal/tuner/prometheus_mux.go) now exposes **`iptv_tunerr_mux_manifest_outcomes_total`** and **`iptv_tunerr_mux_manifest_request_duration_seconds`** alongside the existing **`seg`** metrics.
@@ -42,6 +54,18 @@ Append-only. One entry per completed task.
     - **`docs/CHANGELOG.md`** **[Unreleased · Documentation]**.
   Verification:
     - N/A (markdown)
+  Opportunities filed:
+    - none
+
+- Date: 2026-03-20
+  Title: LP + LTV — **`intelligence.autopilot`** on **`/provider/profile.json`** + epic doc sync
+  Summary:
+    - **`internal/tuner/gateway_provider_profile.go`**: **`intelligence.autopilot`** snapshot from Autopilot **`report(5)`**.
+    - **`serveStreamInvestigateWorkflow`**: **`/autopilot/report.json`**, **`autopilot-reset`** in actions.
+    - **`TestGateway_ProviderBehaviorProfile_includesIntelligenceAutopilot`**.
+    - **Epics / hybrid-hdhr / features / CHANGELOG / work_breakdown** LP–LTV alignment.
+  Verification:
+    - `./scripts/verify`
   Opportunities filed:
     - none
 

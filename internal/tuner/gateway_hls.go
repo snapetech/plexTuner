@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -311,28 +312,114 @@ func sleepHLSRefresh(playlistBody []byte) {
 	time.Sleep(time.Duration(half) * time.Second)
 }
 
+type playlistFetchError struct {
+	Status  int
+	Preview string
+	Limited bool
+}
+
+func (e *playlistFetchError) Error() string {
+	if e == nil {
+		return "playlist fetch failed"
+	}
+	if strings.TrimSpace(e.Preview) != "" {
+		return fmt.Sprintf("playlist http status %d: %s", e.Status, e.Preview)
+	}
+	return "playlist http status " + strconv.Itoa(e.Status)
+}
+
+func hlsPlaylistRetryLimit() int {
+	n := getenvInt("IPTV_TUNERR_HLS_PLAYLIST_RETRY_LIMIT", 2)
+	if n < 0 {
+		return 0
+	}
+	if n > 4 {
+		return 4
+	}
+	return n
+}
+
+func hlsPlaylistRetryBackoff(attempt int) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
+	if attempt > 3 {
+		attempt = 3
+	}
+	baseMs := getenvInt("IPTV_TUNERR_HLS_PLAYLIST_RETRY_BACKOFF_MS", 1000)
+	if baseMs < 1 {
+		baseMs = 1
+	}
+	if baseMs > 10000 {
+		baseMs = 10000
+	}
+	return time.Duration(baseMs*(1<<(attempt-1))) * time.Millisecond
+}
+
+func sleepWithContext(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
 func (g *Gateway) fetchAndRewritePlaylist(r *http.Request, client *http.Client, playlistURL string) ([]byte, string, error) {
-	req, err := g.newUpstreamRequest(r.Context(), r, playlistURL)
-	if err != nil {
-		return nil, "", err
+	reqID := ""
+	ctx := context.Background()
+	if r != nil {
+		reqID = gatewayReqIDFromContext(r.Context())
+		ctx = r.Context()
 	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, "", err
+	retries := hlsPlaylistRetryLimit()
+	for attempt := 0; ; attempt++ {
+		req, err := g.newUpstreamRequest(r.Context(), r, playlistURL)
+		if err != nil {
+			return nil, "", err
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, "", err
+		}
+		if resp.StatusCode != http.StatusOK {
+			preview := readUpstreamErrorPreview(resp)
+			resp.Body.Close()
+			limited := isUpstreamConcurrencyLimit(resp.StatusCode, preview)
+			if limited {
+				g.noteUpstreamConcurrencySignal(resp.StatusCode, preview)
+				if learned := g.learnUpstreamConcurrencyLimit(preview); learned > 0 {
+					log.Printf("gateway: req=%s playlist concurrency learned limit=%d status=%d url=%s body=%q",
+						reqID, learned, resp.StatusCode, safeurl.RedactURL(playlistURL), preview)
+				}
+			}
+			if limited && attempt < retries {
+				backoff := hlsPlaylistRetryBackoff(attempt + 1)
+				log.Printf("gateway: req=%s playlist refresh concurrency-limited status=%d url=%s backoff=%s retry=%d/%d body=%q",
+					reqID, resp.StatusCode, safeurl.RedactURL(playlistURL), backoff, attempt+1, retries, preview)
+				if err := sleepWithContext(ctx, backoff); err != nil {
+					return nil, "", err
+				}
+				continue
+			}
+			return nil, "", &playlistFetchError{Status: resp.StatusCode, Preview: preview, Limited: limited}
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, "", err
+		}
+		effectiveURL := playlistURL
+		if resp.Request != nil && resp.Request.URL != nil {
+			effectiveURL = resp.Request.URL.String()
+		}
+		return rewriteHLSPlaylist(body, effectiveURL), effectiveURL, nil
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, "", errors.New("playlist http status " + strconv.Itoa(resp.StatusCode))
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, "", err
-	}
-	effectiveURL := playlistURL
-	if resp.Request != nil && resp.Request.URL != nil {
-		effectiveURL = resp.Request.URL.String()
-	}
-	return rewriteHLSPlaylist(body, effectiveURL), effectiveURL, nil
 }
 
 func (g *Gateway) fetchAndWriteSegment(

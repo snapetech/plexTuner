@@ -230,7 +230,12 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 		promNoteMuxManifestOutcome("hls", "playlist_proxy", channelID, time.Since(startManifest))
 		return "ok", "hls_native_mux", effectiveURL, true
 	}
-	if !g.DisableFFmpeg {
+	preferGoRelay := !transcode && g.shouldPreferGoRelayForHLSRemux()
+	if preferGoRelay {
+		log.Printf("gateway: channel=%q id=%s provider-pressure prefers go relay over ffmpeg-remux",
+			channel.GuideName, channelID)
+	}
+	if !g.DisableFFmpeg && !preferGoRelay {
 		if ffmpegPath, ffmpegErr := resolveFFmpegPath(); ffmpegErr == nil {
 			attempt.setFFmpegHeaders(attemptIdx, ffmpegHeaderSummary(g.ffmpegInputHeaderBlock(r, effectiveURL, "")))
 			if err := g.relayHLSWithFFmpeg(w, r, ffmpegPath, streamURL, channel.GuideName, channelID, channel.GuideNumber, channel.TVGID, start, transcode, bufferSize, forcedProfile, hotStart, outputMux); err == nil {
@@ -238,6 +243,7 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 				return "ok", "hls_ffmpeg", effectiveURL, true
 			}
 			attempt.markUpstreamError(attemptIdx, "ffmpeg_hls_failed", err)
+			g.noteUpstreamFailure(streamURL, 0, "ffmpeg_hls_failed")
 			log.Printf("gateway: channel=%q id=%s ffmpeg-%s failed (falling back to go relay): %v",
 				channel.GuideName, channelID, mode, err)
 		} else if strings.TrimSpace(os.Getenv("IPTV_TUNERR_FFMPEG_PATH")) != "" {

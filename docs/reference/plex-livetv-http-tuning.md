@@ -57,6 +57,10 @@ On **`index` / catalog refresh**, **`live_channels`** are stored in **sorted ord
 - **`off`** — prefer remux (copy) through ffmpeg when on the HLS path; **`on`** — always normalize/transcode; **`auto`** — remux when ffprobe says video/audio are already Plex-friendly, otherwise transcode.
 - **`auto_cached`** — strict remux-first: only channels listed in **`IPTV_TUNERR_TRANSCODE_OVERRIDES_FILE`** change behavior; there is **no** per-request ffprobe (good for cutting probe load).
 
+Provider-pressure follow-on:
+- once Tunerr has already observed upstream concurrency pressure, **`IPTV_TUNERR_HLS_RELAY_PREFER_GO_ON_PROVIDER_PRESSURE`** (default **on**) skips the non-transcode **ffmpeg remux** attempt and goes straight to the Go HLS relay. This avoids spending extra provider/CDN request budget on a remux path that is already failing or destabilizing parallel playback.
+- playlist refreshes on the Go HLS relay use bounded retries when the provider answers with concurrency-style failures; tune with **`IPTV_TUNERR_HLS_PLAYLIST_RETRY_LIMIT`** and **`IPTV_TUNERR_HLS_PLAYLIST_RETRY_BACKOFF_MS`**.
+
 **Per-channel file** (`IPTV_TUNERR_TRANSCODE_OVERRIDES_FILE`): JSON map; each key is matched against **`channel_id`**, then **`guide_number`**, then **`tvg_id`**. For **`off` / `on` / `auto`**, the file **overrides** the global mode for hits (e.g. force remux for one hot channel while `on` everywhere else, or force transcode for a single bad feed under `off`). Logs: `gateway: transcode policy mode=...` when an override **differs** from the computed base (and always for `auto_cached` hits/misses).
 
 **Later precedence:** **`requestAdaptation`** (Plex client class / `?profile=` / Autopilot) can still force transcode + profile **after** this policy — see `internal/tuner/gateway_adapt.go` (and policy computation in `gateway_policy.go`).
