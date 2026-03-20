@@ -27,6 +27,15 @@ type ProviderHostPenalty struct {
 	LastAt     string `json:"last_at,omitempty"`
 }
 
+// ProviderRemediationHint is a stable, machine-readable suggestion derived from
+// live provider-runtime counters (dashboards/scripts; not automatic config changes).
+type ProviderRemediationHint struct {
+	Code     string `json:"code"`
+	Severity string `json:"severity"` // "info" | "warn"
+	Message  string `json:"message"`
+	Env      string `json:"env,omitempty"` // related IPTV_TUNERR_* knob when applicable
+}
+
 type ProviderBehaviorProfile struct {
 	ConfiguredTunerLimit       int                   `json:"configured_tuner_limit"`
 	LearnedTunerLimit          int                   `json:"learned_tuner_limit"`
@@ -75,6 +84,8 @@ type ProviderBehaviorProfile struct {
 	LastDashMuxAt              string                `json:"last_dash_mux_at,omitempty"`
 	LastDashMuxURL             string                `json:"last_dash_mux_url,omitempty"`
 	PenalizedHosts             []ProviderHostPenalty `json:"penalized_hosts,omitempty"`
+	// RemediationHints are heuristic suggestions from current counters (empty when none apply).
+	RemediationHints []ProviderRemediationHint `json:"remediation_hints,omitempty"`
 	// Intelligence surfaces Live TV intelligence (LTV epic) next to provider-runtime quirks.
 	Intelligence ProviderIntelligenceSnapshot `json:"intelligence,omitempty"`
 }
@@ -86,10 +97,14 @@ type ProviderIntelligenceSnapshot struct {
 
 // AutopilotIntelSnapshot is a trimmed view of Autopilot memory (same shape as /autopilot/report.json hot list).
 type AutopilotIntelSnapshot struct {
-	Enabled       bool                `json:"enabled"`
-	StateFile     string              `json:"state_file,omitempty"`
-	DecisionCount int                 `json:"decision_count"`
-	HotChannels   []autopilotHotEntry `json:"hot_channels,omitempty"`
+	Enabled                     bool                `json:"enabled"`
+	StateFile                   string              `json:"state_file,omitempty"`
+	DecisionCount               int                 `json:"decision_count"`
+	HotChannels                 []autopilotHotEntry `json:"hot_channels,omitempty"`
+	ConsensusHost               string              `json:"consensus_host,omitempty"`
+	ConsensusDNACount           int                 `json:"consensus_dna_count,omitempty"`
+	ConsensusHitSum             int                 `json:"consensus_hit_sum,omitempty"`
+	ConsensusHostRuntimeEnabled bool                `json:"consensus_host_runtime_enabled,omitempty"`
 }
 
 func (g *Gateway) noteHLSSegmentFailure(segURL string) {
@@ -228,6 +243,88 @@ func (g *Gateway) penalizedHostsLocked() []ProviderHostPenalty {
 	return out
 }
 
+// remediationHintsForProfile derives stable dashboard hints from profile counters (heuristic).
+func remediationHintsForProfile(p ProviderBehaviorProfile) []ProviderRemediationHint {
+	var out []ProviderRemediationHint
+	if p.CFBlockHits > 0 && !p.FetchCFReject {
+		out = append(out, ProviderRemediationHint{
+			Code:     "fetch_cf_reject",
+			Severity: "warn",
+			Message:  "Cloudflare-block responses were seen; rejecting Cloudflare-proxied provider URLs at ingest can avoid bad upstreams.",
+			Env:      "IPTV_TUNERR_FETCH_CF_REJECT",
+		})
+	}
+	penSum := 0
+	for _, h := range p.PenalizedHosts {
+		penSum += h.Failures
+	}
+	if len(p.PenalizedHosts) >= 3 || penSum >= 15 {
+		out = append(out, ProviderRemediationHint{
+			Code:     "upstream_host_churn",
+			Severity: "warn",
+			Message:  "Multiple upstream hosts are penalized; review backup stream URLs in the catalog and consider stripping persistently bad hosts.",
+			Env:      "IPTV_TUNERR_STRIP_STREAM_HOSTS",
+		})
+	}
+	if p.ConcurrencySignalsSeen > 0 {
+		out = append(out, ProviderRemediationHint{
+			Code:     "concurrency_limit",
+			Severity: "info",
+			Message:  "The upstream signaled a concurrency or session limit; tune tuner count or reduce parallel clients if playback is flaky.",
+			Env:      "IPTV_TUNERR_TUNER_COUNT",
+		})
+	}
+	if p.HlsMuxSeg503LimitHits > 3 {
+		out = append(out, ProviderRemediationHint{
+			Code:     "hls_mux_session_limit",
+			Severity: "warn",
+			Message:  "HLS mux segments often returned 503/limit; the CDN may be capping sessions per token or IP.",
+		})
+	}
+	if p.HlsMuxSegRateLimited > 3 {
+		out = append(out, ProviderRemediationHint{
+			Code:     "hls_mux_rate_limited",
+			Severity: "warn",
+			Message:  "HLS mux segments are being rate-limited; reduce parallel streams or check provider fair-use limits.",
+		})
+	}
+	if p.HlsMuxSeg502 > 5 {
+		out = append(out, ProviderRemediationHint{
+			Code:     "hls_mux_upstream_502",
+			Severity: "warn",
+			Message:  "HLS mux segments saw frequent 502 responses; upstream may be overloaded or rejecting the mux client.",
+		})
+	}
+	if p.DashMuxSeg503LimitHits > 3 {
+		out = append(out, ProviderRemediationHint{
+			Code:     "dash_mux_session_limit",
+			Severity: "warn",
+			Message:  "DASH mux segments often returned 503/limit; the CDN may be capping sessions per token or IP.",
+		})
+	}
+	if p.DashMuxSegRateLimited > 3 {
+		out = append(out, ProviderRemediationHint{
+			Code:     "dash_mux_rate_limited",
+			Severity: "warn",
+			Message:  "DASH mux segments are being rate-limited; reduce parallel streams or check provider fair-use limits.",
+		})
+	}
+	if p.DashMuxSeg502 > 5 {
+		out = append(out, ProviderRemediationHint{
+			Code:     "dash_mux_upstream_502",
+			Severity: "warn",
+			Message:  "DASH mux segments saw frequent 502 responses; upstream may be overloaded or rejecting the mux client.",
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Code != out[j].Code {
+			return out[i].Code < out[j].Code
+		}
+		return out[i].Severity < out[j].Severity
+	})
+	return out
+}
+
 func (g *Gateway) shouldAutoEnableHLSReconnect() bool {
 	if !providerAutotuneEnabled() {
 		return false
@@ -347,7 +444,12 @@ func (g *Gateway) ProviderBehaviorProfile() ProviderBehaviorProfile {
 		if len(rep.HotChannels) > 0 {
 			prof.Intelligence.Autopilot.HotChannels = rep.HotChannels
 		}
+		prof.Intelligence.Autopilot.ConsensusHost = rep.ConsensusHost
+		prof.Intelligence.Autopilot.ConsensusDNACount = rep.ConsensusDNACount
+		prof.Intelligence.Autopilot.ConsensusHitSum = rep.ConsensusHitSum
+		prof.Intelligence.Autopilot.ConsensusHostRuntimeEnabled = rep.ConsensusHostRuntimeEnabled
 	}
+	prof.RemediationHints = remediationHintsForProfile(prof)
 	return prof
 }
 

@@ -61,6 +61,22 @@ func TestAutopilotStorePersistsAndReloads(t *testing.T) {
 	}
 }
 
+func TestAutopilot_consensusPreferredHost(t *testing.T) {
+	s := &autopilotStore{byKey: map[string]autopilotDecision{
+		autopilotKey("dna:a", "web"): {DNAID: "dna:a", ClientClass: "web", PreferredHost: "cdn.example", Hits: 5},
+		autopilotKey("dna:b", "web"): {DNAID: "dna:b", ClientClass: "web", PreferredHost: "cdn.example", Hits: 5},
+		autopilotKey("dna:c", "web"): {DNAID: "dna:c", ClientClass: "web", PreferredHost: "cdn.example", Hits: 5},
+	}}
+	h, n, sum := s.consensusPreferredHost(3, 15)
+	if h != "cdn.example" || n != 3 || sum != 15 {
+		t.Fatalf("got host=%q dna=%d sum=%d", h, n, sum)
+	}
+	h2, _, _ := s.consensusPreferredHost(3, 16)
+	if h2 != "" {
+		t.Fatalf("expected no consensus below hit threshold, got %q", h2)
+	}
+}
+
 func TestAutopilotStoreHotDecisionAndReport(t *testing.T) {
 	store := &autopilotStore{
 		byKey: map[string]autopilotDecision{

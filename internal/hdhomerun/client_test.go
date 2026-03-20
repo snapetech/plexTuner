@@ -1,6 +1,7 @@
 package hdhomerun
 
 import (
+	"net"
 	"os"
 	"testing"
 )
@@ -38,20 +39,41 @@ func TestParseDiscoverReply_wrongType(t *testing.T) {
 	}
 }
 
-func TestExtraDiscoverBroadcastAddrs_env(t *testing.T) {
+func TestParseExtraDiscoverAddrs_env(t *testing.T) {
 	t.Cleanup(func() { _ = os.Unsetenv("IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS") })
-	if len(extraDiscoverBroadcastAddrs()) != 0 {
-		t.Fatal("expected empty without env")
+	v4, v6 := parseExtraDiscoverAddrs()
+	if len(v4) != 0 || len(v6) != 0 {
+		t.Fatalf("expected empty without env: v4=%d v6=%d", len(v4), len(v6))
 	}
 	t.Setenv("IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS", " 192.168.1.255 , 10.0.0.255:65001 , nope , ::1 ")
-	addrs := extraDiscoverBroadcastAddrs()
-	if len(addrs) != 2 {
-		t.Fatalf("got %d addrs: %+v", len(addrs), addrs)
+	v4, v6 = parseExtraDiscoverAddrs()
+	if len(v4) != 2 {
+		t.Fatalf("v4 got %d addrs: %+v", len(v4), v4)
 	}
-	if addrs[0].IP.String() != "192.168.1.255" || addrs[0].Port != DiscoverPort {
-		t.Fatalf("first: %+v", addrs[0])
+	if len(v6) != 1 || v6[0].IP.String() != "::1" || v6[0].Port != DiscoverPort {
+		t.Fatalf("v6: %+v", v6)
 	}
-	if addrs[1].IP.String() != "10.0.0.255" || addrs[1].Port != 65001 {
-		t.Fatalf("second: %+v", addrs[1])
+	if v4[0].IP.String() != "192.168.1.255" || v4[0].Port != DiscoverPort {
+		t.Fatalf("first v4: %+v", v4[0])
+	}
+	if v4[1].IP.String() != "10.0.0.255" || v4[1].Port != 65001 {
+		t.Fatalf("second v4: %+v", v4[1])
+	}
+}
+
+func TestParseLiteralUDPAddr_ipv6Zone(t *testing.T) {
+	a, ok := parseLiteralUDPAddr("fe80::1%eth0:65001")
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	if a.Port != 65001 || a.Zone != "eth0" || !a.IP.Equal(net.ParseIP("fe80::1")) {
+		t.Fatalf("got %+v", a)
+	}
+}
+
+func TestParseLiteralUDPAddr_bracketIPv6(t *testing.T) {
+	a, ok := parseLiteralUDPAddr("[::1]:65001")
+	if !ok || a.IP.String() != "::1" || a.Port != 65001 {
+		t.Fatalf("got ok=%v %+v", ok, a)
 	}
 }

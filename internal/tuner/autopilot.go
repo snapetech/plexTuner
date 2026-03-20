@@ -49,6 +49,11 @@ type AutopilotReport struct {
 	StateFile     string              `json:"state_file,omitempty"`
 	DecisionCount int                 `json:"decision_count"`
 	HotChannels   []autopilotHotEntry `json:"hot_channels"`
+	// ConsensusHost aggregates PreferredHost across rows when multiple DNA IDs agree (see IPTV_TUNERR_AUTOPILOT_CONSENSUS_*).
+	ConsensusHost               string `json:"consensus_host,omitempty"`
+	ConsensusDNACount           int    `json:"consensus_dna_count,omitempty"`
+	ConsensusHitSum             int    `json:"consensus_hit_sum,omitempty"`
+	ConsensusHostRuntimeEnabled bool   `json:"consensus_host_runtime_enabled,omitempty"`
 }
 
 func loadAutopilotStore(path string) (*autopilotStore, error) {
@@ -208,6 +213,53 @@ func (s *autopilotStore) hotDecision(dnaID, clientClass string, minHits int) (au
 	return row, true
 }
 
+// consensusPreferredHost returns the hostname most strongly supported across Autopilot rows
+// when at least minDNA distinct DNA IDs share that PreferredHost and the sum of row Hits meets minHitSum.
+func (s *autopilotStore) consensusPreferredHost(minDNA int, minHitSum int) (host string, dnaCount int, hitSum int) {
+	if s == nil || minDNA <= 0 || minHitSum <= 0 {
+		return "", 0, 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	type agg struct {
+		dna map[string]struct{}
+		sum int
+	}
+	byHost := make(map[string]*agg)
+	for _, row := range s.byKey {
+		h := strings.TrimSpace(strings.ToLower(row.PreferredHost))
+		if h == "" {
+			continue
+		}
+		a := byHost[h]
+		if a == nil {
+			a = &agg{dna: map[string]struct{}{}}
+			byHost[h] = a
+		}
+		dna := strings.TrimSpace(strings.ToLower(row.DNAID))
+		if dna != "" {
+			a.dna[dna] = struct{}{}
+		}
+		a.sum += row.Hits
+	}
+	bestHost := ""
+	bestSum := 0
+	for h, a := range byHost {
+		if len(a.dna) < minDNA || a.sum < minHitSum {
+			continue
+		}
+		if bestHost == "" || a.sum > bestSum || (a.sum == bestSum && h < bestHost) {
+			bestHost = h
+			bestSum = a.sum
+		}
+	}
+	if bestHost == "" {
+		return "", 0, 0
+	}
+	a := byHost[bestHost]
+	return bestHost, len(a.dna), a.sum
+}
+
 func (s *autopilotStore) hottest(limit int) []autopilotHotEntry {
 	if s == nil {
 		return nil
@@ -257,6 +309,14 @@ func (s *autopilotStore) report(limit int) AutopilotReport {
 	rep.StateFile = s.path
 	rep.DecisionCount = len(s.byKey)
 	rep.HotChannels = s.hottest(limit)
+	rep.ConsensusHostRuntimeEnabled = getenvBool("IPTV_TUNERR_AUTOPILOT_CONSENSUS_HOST", false)
+	md := getenvInt("IPTV_TUNERR_AUTOPILOT_CONSENSUS_MIN_DNA", 3)
+	ms := getenvInt("IPTV_TUNERR_AUTOPILOT_CONSENSUS_MIN_HIT_SUM", 15)
+	if host, dnaN, sum := s.consensusPreferredHost(md, ms); host != "" {
+		rep.ConsensusHost = host
+		rep.ConsensusDNACount = dnaN
+		rep.ConsensusHitSum = sum
+	}
 	return rep
 }
 

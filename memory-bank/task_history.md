@@ -22,6 +22,68 @@ Append-only. One entry per completed task.
 
 ## Entries
 
+- Date: 2026-03-19
+  Title: Control Deck surfaces Autopilot consensus (intelligence.autopilot)
+  Summary:
+    - **`internal/webui/deck.js`**: **`summarizeProviderProfile`** adds consensus fields; **`formatAutopilotConsensusMeta`**; **Watch** / **Confirmed wins**; **Operations** Autopilot card meta; endpoint catalog summary.
+    - **`docs/CHANGELOG.md`**, **`docs/features.md`**.
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+
+- Date: 2026-03-19
+  Title: Autopilot consensus host (LTV, opt-in runtime + report)
+  Summary:
+    - **`internal/tuner/autopilot.go`**: **`consensusPreferredHost`**, **`AutopilotReport`** consensus fields; **`report()`** fills thresholds from env.
+    - **`internal/tuner/gateway_adapt.go`**: **`autopilotConsensusPreferredURL`**, **`autopilotConsensusHostEnabled`**, **`autopilotPreferredStreamURL`** tries consensus after per-DNA memory misses.
+    - **`internal/tuner/gateway_provider_profile.go`**: **`AutopilotIntelSnapshot`** consensus fields.
+    - **Docs:** **CHANGELOG**, **cli-and-env-reference**, **.env.example**, **features**, **EPIC-live-tv-intelligence**.
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+  Links:
+    - LTV epic Autopilot next slice
+
+- Date: 2026-03-19
+  Title: Control Deck provider profile + remediation_hints (LP-004)
+  Summary:
+    - **`internal/webui/deck.js`**: **`summarizeProviderProfile`**, **`remediationHintsFromProfile`**; fix cards that referenced missing **`provider.summary`**; incidents/watch/wins + decision-board + routing integration for **`remediation_hints`**.
+    - **`docs/CHANGELOG.md`** (LP-004 note).
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+  Links:
+    - **`/provider/profile.json`** **`remediation_hints`** (LTV)
+
+- Date: 2026-03-19
+  Title: HDHR DiscoverLAN IPv6 + IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS literals (LP-001)
+  Summary:
+    - **`internal/hdhomerun/client.go`**: **`parseExtraDiscoverAddrs`** (IPv4 + IPv6), **`parseLiteralUDPAddr`** / **`udpAddrFromLiteralHost`** (zone, bracket IPv6, safe **`::1:port`** split); **`discoverReadLoop`**; **`DiscoverLAN`** parallel UDP6 when IPv6 targets present.
+    - **`internal/hdhomerun/client_test.go`**: env split tests, **`[::1]:65001`**, **`fe80::1%eth0:65001`**.
+    - **Docs:** **CHANGELOG**, **cli-and-env-reference**, **.env.example**, **features**, **hybrid-hdhr-iptv**, **EPIC-lineup-parity**, **work_breakdown**.
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+  Links:
+    - LP-001 epic remaining polish = optional default multicast, not env literals
+
+- Date: 2026-03-19
+  Title: Provider profile remediation_hints (LTV advisory layer)
+  Summary:
+    - **`internal/tuner/gateway_provider_profile.go`**: **`ProviderRemediationHint`** + **`remediationHintsForProfile`**; **`ProviderBehaviorProfile.RemediationHints`** populated on **`GET /provider/profile.json`** from CF blocks, host penalties, concurrency signals, HLS/DASH mux counters.
+    - **`internal/tuner/gateway_provider_profile_test.go`**: table-style tests for empty profile, CF hint, penalized hosts, sort order.
+    - **`docs/CHANGELOG.md`**, **`docs/reference/cli-and-env-reference.md`**: document **`remediation_hints`**.
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+  Links:
+    - LTV epic operator surfacing / “active remediation” precursor
+
 - Date: 2026-03-22
   Title: interpreting-probe-results.md + harness-index.py (backlog closure)
   Summary:

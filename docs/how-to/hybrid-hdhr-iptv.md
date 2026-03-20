@@ -17,7 +17,7 @@ iptv-tunerr hdhr-scan
 iptv-tunerr hdhr-scan -addr http://192.168.1.50 -lineup
 ```
 
-If UDP discovery finds **no** devices but you know the LAN subnet, set **`IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS`** to a comma-separated list of directed IPv4 broadcasts (e.g. `192.168.1.255`) or `ip:65001` — Tunerr sends discovery to **`255.255.255.255`** and each listed address. See [cli-and-env-reference](../reference/cli-and-env-reference.md).
+If UDP discovery finds **no** devices but you know the LAN subnet, set **`IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS`** to a comma-separated list of **literal** UDP targets: directed IPv4 broadcasts (e.g. `192.168.1.255`) or `ip:65001`, and/or **IPv6** addresses (e.g. `[fe80::1%eth0]:65001` for link-local with zone). Tunerr sends discovery to **`255.255.255.255`**, each IPv4 target, and each IPv6 target on a UDP6 socket. See [cli-and-env-reference](../reference/cli-and-env-reference.md).
 
 Note the device **base URL** (e.g. `http://192.168.1.50`).
 

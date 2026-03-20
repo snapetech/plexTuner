@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -84,40 +85,126 @@ func trimNull(b []byte) []byte {
 	return b
 }
 
-// extraDiscoverBroadcastAddrs returns optional directed IPv4 broadcast targets from
-// IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS (comma-separated IPs or host:port).
-// Useful when 255.255.255.255 is filtered but e.g. 192.168.1.255 works.
-func extraDiscoverBroadcastAddrs() []*net.UDPAddr {
+// parseExtraDiscoverAddrs returns optional directed discovery targets from
+// IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS (comma-separated literal IPs or host:port).
+// IPv4 entries are sent on the IPv4 discovery socket; IPv6 entries (including
+// link-local with zone, e.g. fe80::1%eth0) use a separate UDP6 socket. Hostnames
+// are not resolved (only net.ParseIP literals, matching the IPv4-only behavior).
+func parseExtraDiscoverAddrs() (v4 []*net.UDPAddr, v6 []*net.UDPAddr) {
 	raw := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS"))
 	if raw == "" {
-		return nil
+		return nil, nil
 	}
-	var out []*net.UDPAddr
 	for _, part := range strings.Split(raw, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
 		}
-		host, portStr, err := net.SplitHostPort(part)
-		if err != nil {
-			host = part
-			portStr = strconv.Itoa(DiscoverPort)
-		}
-		port, err := strconv.Atoi(portStr)
-		if err != nil || port <= 0 || port > 65535 {
-			port = DiscoverPort
-		}
-		ip := net.ParseIP(host)
-		if ip == nil {
+		addr, ok := parseLiteralUDPAddr(part)
+		if !ok {
 			continue
 		}
-		v4 := ip.To4()
-		if v4 == nil {
-			continue
+		if addr.IP.To4() != nil {
+			v4 = append(v4, addr)
+		} else {
+			v6 = append(v6, addr)
 		}
-		out = append(out, &net.UDPAddr{IP: v4, Port: port})
 	}
-	return out
+	return v4, v6
+}
+
+func parseLiteralUDPAddr(part string) (*net.UDPAddr, bool) {
+	part = strings.TrimSpace(part)
+	host, portStr, err := net.SplitHostPort(part)
+	if err != nil {
+		// fe80::1%eth0:65001 and ::1:65001 may not split reliably; never apply this to IPv4 dotted quads (192.168.1.255).
+		if strings.Contains(part, "%") || strings.Count(part, ":") >= 2 {
+			if i := strings.LastIndex(part, ":"); i > 0 {
+				tail := part[i+1:]
+				if port, err := strconv.Atoi(tail); err == nil && port > 0 && port <= 65535 {
+					cand := strings.TrimSpace(part[:i])
+					ip := net.ParseIP(cand)
+					if strings.Contains(part, "%") || (ip != nil && ip.To4() == nil) {
+						return udpAddrFromLiteralHost(cand, port)
+					}
+				}
+			}
+		}
+		host = part
+		portStr = strconv.Itoa(DiscoverPort)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port <= 0 || port > 65535 {
+		port = DiscoverPort
+	}
+	host = strings.TrimSpace(host)
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = host[1 : len(host)-1]
+	}
+	return udpAddrFromLiteralHost(host, port)
+}
+
+func udpAddrFromLiteralHost(host string, port int) (*net.UDPAddr, bool) {
+	host = strings.TrimSpace(host)
+	if i := strings.IndexByte(host, '%'); i >= 0 {
+		addr := strings.TrimSpace(host[:i])
+		zone := strings.TrimSpace(host[i+1:])
+		ip := net.ParseIP(addr)
+		if ip == nil || ip.To4() != nil {
+			return nil, false
+		}
+		if zone == "" {
+			return nil, false
+		}
+		return &net.UDPAddr{IP: ip, Port: port, Zone: zone}, true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return nil, false
+	}
+	if v4 := ip.To4(); v4 != nil {
+		return &net.UDPAddr{IP: v4, Port: port}, true
+	}
+	return &net.UDPAddr{IP: ip, Port: port}, true
+}
+
+func discoverReadLoop(ctx context.Context, conn *net.UDPConn, seen map[uint32]struct{}, out *[]DiscoveredDevice, mu *sync.Mutex) error {
+	buf := make([]byte, 4096)
+	poll := 250 * time.Millisecond
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(poll))
+		n, addr, err := conn.ReadFromUDP(buf)
+		if err != nil {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				continue
+			}
+			return fmt.Errorf("hdhomerun: read: %w", err)
+		}
+
+		pkt, err := Unmarshal(buf[:n])
+		if err != nil {
+			continue
+		}
+		dev, err := ParseDiscoverReply(pkt)
+		if err != nil {
+			continue
+		}
+		mu.Lock()
+		if _, dup := seen[dev.DeviceID]; dup {
+			mu.Unlock()
+			continue
+		}
+		seen[dev.DeviceID] = struct{}{}
+		d := *dev
+		d.SourceAddr = addr
+		*out = append(*out, d)
+		mu.Unlock()
+	}
 }
 
 func enableBroadcast(c *net.UDPConn) error {
@@ -137,13 +224,39 @@ func enableBroadcast(c *net.UDPConn) error {
 
 // DiscoverLAN broadcasts an HDHomeRun discovery request and collects responses until timeout.
 // Uses IPv4 global broadcast (255.255.255.255:DiscoverPort) plus any
-// IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS directed subnet broadcasts.
+// IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS directed IPv4 subnet broadcasts, and
+// optional literal IPv6 targets (unicast, multicast, or link-local with zone)
+// on a separate UDP6 socket when listed.
 func DiscoverLAN(ctx context.Context, timeout time.Duration) ([]DiscoveredDevice, error) {
 	if timeout <= 0 {
 		timeout = 3 * time.Second
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+
+	v4Extra, v6Extra := parseExtraDiscoverAddrs()
+	seen := make(map[uint32]struct{})
+	var out []DiscoveredDevice
+	var mu sync.Mutex
+
+	req := NewDiscoverReq(DeviceTypeWildcard, DeviceIDWildcard)
+	payload := req.Marshal()
+
+	var wg sync.WaitGroup
+	if len(v6Extra) > 0 {
+		conn6, err := net.ListenUDP("udp6", &net.UDPAddr{IP: net.IPv6zero, Port: 0})
+		if err == nil {
+			defer conn6.Close()
+			for _, dst := range v6Extra {
+				_, _ = conn6.WriteToUDP(payload, dst)
+			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_ = discoverReadLoop(ctx, conn6, seen, &out, &mu)
+			}()
+		}
+	}
 
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
 	if err != nil {
@@ -155,52 +268,19 @@ func DiscoverLAN(ctx context.Context, timeout time.Duration) ([]DiscoveredDevice
 		return nil, fmt.Errorf("hdhomerun: SO_BROADCAST: %w", err)
 	}
 
-	req := NewDiscoverReq(DeviceTypeWildcard, DeviceIDWildcard)
-	payload := req.Marshal()
-
 	broadcast := &net.UDPAddr{IP: net.IPv4(255, 255, 255, 255), Port: DiscoverPort}
 	if _, err := conn.WriteToUDP(payload, broadcast); err != nil {
 		return nil, fmt.Errorf("hdhomerun: broadcast discover: %w", err)
 	}
-	for _, dst := range extraDiscoverBroadcastAddrs() {
+	for _, dst := range v4Extra {
 		_, _ = conn.WriteToUDP(payload, dst)
 	}
 
-	seen := make(map[uint32]struct{})
-	var out []DiscoveredDevice
-
-	buf := make([]byte, 4096)
-	poll := 250 * time.Millisecond
-	for {
-		select {
-		case <-ctx.Done():
-			return out, nil
-		default:
-		}
-		_ = conn.SetReadDeadline(time.Now().Add(poll))
-		n, addr, err := conn.ReadFromUDP(buf)
-		if err != nil {
-			if ne, ok := err.(net.Error); ok && ne.Timeout() {
-				continue
-			}
-			return nil, fmt.Errorf("hdhomerun: read: %w", err)
-		}
-
-		pkt, err := Unmarshal(buf[:n])
-		if err != nil {
-			continue
-		}
-		dev, err := ParseDiscoverReply(pkt)
-		if err != nil {
-			continue
-		}
-		if _, dup := seen[dev.DeviceID]; dup {
-			continue
-		}
-		seen[dev.DeviceID] = struct{}{}
-		dev.SourceAddr = addr
-		out = append(out, *dev)
+	if err := discoverReadLoop(ctx, conn, seen, &out, &mu); err != nil {
+		return nil, err
 	}
+	wg.Wait()
+	return out, nil
 }
 
 // DiscoverURLFromBase returns the discover.json URL for a device base URL.

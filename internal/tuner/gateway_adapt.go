@@ -379,24 +379,50 @@ func upstreamURLAuthority(raw string) string {
 	return strings.ToLower(strings.TrimSpace(u.Host))
 }
 
-func (g *Gateway) autopilotPreferredStreamURL(channel *catalog.LiveChannel, clientClass string, urls []string) string {
-	row, ok := g.lookupAutopilotDecision(channel, clientClass)
-	if !ok {
+func autopilotConsensusHostEnabled() bool {
+	return getenvBool("IPTV_TUNERR_AUTOPILOT_CONSENSUS_HOST", false)
+}
+
+// autopilotConsensusPreferredURL picks a URL whose host matches Autopilot consensus (multi-DNA agreement)
+// when IPTV_TUNERR_AUTOPILOT_CONSENSUS_HOST is enabled. Skips hosts with autotune penalty.
+func (g *Gateway) autopilotConsensusPreferredURL(urls []string) string {
+	if g == nil || g.Autopilot == nil || len(urls) == 0 || !autopilotConsensusHostEnabled() {
 		return ""
 	}
-	wantURL := strings.TrimSpace(row.PreferredURL)
-	wantHost := strings.TrimSpace(row.PreferredHost)
-	for _, candidate := range urls {
-		if wantURL != "" && (candidate == wantURL || streamURLsSemanticallyEqual(candidate, wantURL)) {
-			return candidate
-		}
+	minDNA := getenvInt("IPTV_TUNERR_AUTOPILOT_CONSENSUS_MIN_DNA", 3)
+	minSum := getenvInt("IPTV_TUNERR_AUTOPILOT_CONSENSUS_MIN_HIT_SUM", 15)
+	host, _, _ := g.Autopilot.consensusPreferredHost(minDNA, minSum)
+	if host == "" {
+		return ""
 	}
 	for _, candidate := range urls {
-		if wantHost != "" && autopilotURLHost(candidate) == wantHost {
-			return candidate
+		if strings.TrimSpace(strings.ToLower(autopilotURLHost(candidate))) != host {
+			continue
 		}
+		if g.hostPenalty(upstreamURLAuthority(candidate)) > 0 {
+			continue
+		}
+		return candidate
 	}
 	return ""
+}
+
+func (g *Gateway) autopilotPreferredStreamURL(channel *catalog.LiveChannel, clientClass string, urls []string) string {
+	if row, ok := g.lookupAutopilotDecision(channel, clientClass); ok {
+		wantURL := strings.TrimSpace(row.PreferredURL)
+		wantHost := strings.TrimSpace(row.PreferredHost)
+		for _, candidate := range urls {
+			if wantURL != "" && (candidate == wantURL || streamURLsSemanticallyEqual(candidate, wantURL)) {
+				return candidate
+			}
+		}
+		for _, candidate := range urls {
+			if wantHost != "" && strings.EqualFold(autopilotURLHost(candidate), wantHost) {
+				return candidate
+			}
+		}
+	}
+	return g.autopilotConsensusPreferredURL(urls)
 }
 
 func (g *Gateway) reorderStreamURLs(channel *catalog.LiveChannel, clientClass string, urls []string) []string {

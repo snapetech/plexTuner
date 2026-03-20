@@ -1219,6 +1219,27 @@ func TestGateway_stream_prefersAutopilotRememberedURL_normalizedTrailingSlash(t 
 	}
 }
 
+func TestGateway_reorderStreamURLs_autopilotConsensusHost(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_AUTOPILOT_CONSENSUS_HOST", "true")
+	t.Setenv("IPTV_TUNERR_AUTOPILOT_CONSENSUS_MIN_DNA", "2")
+	t.Setenv("IPTV_TUNERR_AUTOPILOT_CONSENSUS_MIN_HIT_SUM", "8")
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE", "false")
+
+	st := &autopilotStore{byKey: map[string]autopilotDecision{
+		autopilotKey("dna:one", "web"): {DNAID: "dna:one", ClientClass: "web", PreferredHost: "cdn.example.com", Hits: 5},
+		autopilotKey("dna:two", "web"): {DNAID: "dna:two", ClientClass: "web", PreferredHost: "cdn.example.com", Hits: 5},
+	}}
+	g := &Gateway{TunerCount: 2, Autopilot: st}
+	ch := &catalog.LiveChannel{DNAID: "dna:new", GuideNumber: "1", GuideName: "Ch", StreamURLs: []string{
+		"https://bad.example.com/a",
+		"https://cdn.example.com/b",
+	}}
+	got := g.reorderStreamURLs(ch, "web", ch.StreamURLs)
+	if len(got) != 2 || got[0] != "https://cdn.example.com/b" {
+		t.Fatalf("got %v want consensus host first", got)
+	}
+}
+
 func TestGateway_stream_penalizedHostFallsBehindHealthyHost(t *testing.T) {
 	hits := []string{}
 	penalized := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

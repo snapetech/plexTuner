@@ -2,6 +2,16 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-19):** **Control Deck + Autopilot consensus:** **`deck.js`** **`summarizeProviderProfile`** + **`formatAutopilotConsensusMeta`**; **Watch** / **wins** / **Operations** Autopilot card; endpoint catalog. **CHANGELOG** + **features**. **`./scripts/verify`** OK.
+
+**Latest (2026-03-19):** **LTV Autopilot consensus host:** **`IPTV_TUNERR_AUTOPILOT_CONSENSUS_HOST`** (opt-in) + **`_MIN_DNA`** / **`_MIN_HIT_SUM`**; **`consensusPreferredHost`** in **`autopilot.go`**; **`autopilotPreferredStreamURL`** fallback; **`AutopilotReport`** + **`intelligence.autopilot`** fields; tests **`TestAutopilot_consensusPreferredHost`**, **`TestGateway_reorderStreamURLs_autopilotConsensusHost`**. Docs: **CHANGELOG**, **cli-and-env**, **.env.example**, **features**, **EPIC-live-tv-intelligence**. **`./scripts/verify`** OK.
+
+**Latest (2026-03-19):** **LP-004 Control Deck:** **`deck.js`** **`summarizeProviderProfile`** + **`remediationHintsFromProfile`** — Overview/Routing provider cards use real **`/provider/profile.json`** fields; **`remediation_hints`** on incidents, watch list, decision board, routing. **CHANGELOG** + **`current_task`**. **`./scripts/verify`** OK.
+
+**Latest (2026-03-19):** **LP-001 / HDHR:** **`IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS`** supports **literal IPv6** targets (plus **`[addr]:port`**, **`fe80::1%eth0:65001`**-style); **`DiscoverLAN`** uses UDP6 + merges with IPv4 broadcast. Docs: **cli-and-env**, **hybrid-hdhr**, **CHANGELOG**, **EPIC-lineup-parity**, **work_breakdown**. **`./scripts/verify`** OK; **`task_history`** entry.
+
+**Latest (2026-03-19):** **LTV:** **`GET /provider/profile.json`** now includes **`remediation_hints`** — stable **`code`** / **`severity`** / **`message`** / optional **`env`** suggestions from live counters (CF blocks, penalized hosts, concurrency, mux 502/503/rate-limit). Advisory only. **`./scripts/verify`** OK; **`task_history`** entry.
+
 **Latest (2026-03-22):** **Run startup visibility:** `run` now binds the tuner before long catalog/guide warm-up completes, so `/healthz` and `/readyz` expose `loading` / `not_ready` during startup. Added catalog phase timing logs plus `IndexFromPlayerAPI` substep timings so provider stalls identify the exact slow phase.
 
 **Latest (2026-03-22):** **Backlog → shipped:** [how-to/interpreting-probe-results.md](../docs/how-to/interpreting-probe-results.md); **`scripts/harness-index.py`**; README/runbook/**features**/**docs-gaps Resolved**/**commands.yml** **`harness_index`**; **`opportunities.md`** probe + harness-index entries marked shipped. **`./scripts/verify`** OK.

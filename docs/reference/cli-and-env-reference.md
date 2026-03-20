@@ -193,7 +193,7 @@ Common flags:
 
 Also available live over HTTP:
 - `GET /channels/report.json`
-- `GET /provider/profile.json` — runtime provider profile including learned tuner caps, HLS instability, Cloudflare hits, and penalized upstream hosts
+- `GET /provider/profile.json` — runtime provider profile including learned tuner caps, HLS instability, Cloudflare hits, penalized upstream hosts, and **`remediation_hints`** (advisory heuristic suggestions with optional related **`IPTV_TUNERR_*`** env names)
 
 Use for:
 - spotting channels that are present but operationally weak
@@ -1004,6 +1004,7 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
 - `IPTV_TUNERR_HOST_UA` — comma-separated `host:preset` pairs to pin a resolved upstream User-Agent per hostname at startup, without waiting for automatic cycling. Preset names: `lavf`/`ffmpeg` (auto-detected ffmpeg version), `vlc`, `mpv`, `kodi`, `firefox`, or any literal UA string. Example: `IPTV_TUNERR_HOST_UA=provider.example.com:vlc,cdn2.example.com:lavf`. Pre-populates `learnedUAByHost`; does not prevent cycling from updating the value later if a CF block is observed.
 - `IPTV_TUNERR_STREAM_ATTEMPT_LOG` — path to a JSONL file where each stream attempt is appended as a JSON record. Written asynchronously; does not block the stream path. The in-process ring buffer at `/debug/stream-attempts.json` resets on restart; this file persists across restarts for post-mortem analysis. Consumed by `scripts/analyze-bundle.py`. Example: `IPTV_TUNERR_STREAM_ATTEMPT_LOG=/var/log/tunerr-attempts.jsonl`.
 - `IPTV_TUNERR_AUTOPILOT_STATE_FILE` — optional JSON file for remembered playback decisions keyed by `dna_id + client_class`; when enabled, successful stream choices can be reused on later requests before generic adaptation rules, including the last known-good upstream URL/host.
+- `IPTV_TUNERR_AUTOPILOT_CONSENSUS_HOST` — when `true`/`1`/`on`, channels with **no** matching per-DNA Autopilot row (or stale URL memory) may prefer an upstream **hostname** that appears across multiple other channels’ remembered `preferred_host` values (aggregate agreement). Requires at least **`IPTV_TUNERR_AUTOPILOT_CONSENSUS_MIN_DNA`** distinct `dna_id` rows (default **3**) and **`IPTV_TUNERR_AUTOPILOT_CONSENSUS_MIN_HIT_SUM`** total `hits` across those rows for that host (default **15**). Skips hosts with autotune penalty. Reported on **`/autopilot/report.json`** and **`intelligence.autopilot`** on **`/provider/profile.json`**.
 - `IPTV_TUNERR_AUTOPILOT_MAX_FAILURE_STREAK` — maximum remembered failure streak before a stored Autopilot decision stops being reused automatically (default `2`)
 - `IPTV_TUNERR_HOT_START_ENABLED` — enable hot-start tuning for favorite/high-hit channels (default `true`)
 - `IPTV_TUNERR_HOT_START_CHANNELS` — comma-separated explicit favorites by `channel_id`, `dna_id`, `guide_number`, or exact `guide_name`
@@ -1080,7 +1081,7 @@ Fetches EPG directly from your IPTV provider using existing credentials. No sepa
 - `IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX` — optional string appended to provider `xmltv.php` as `&…` (e.g. panel-specific query params). **Not** part of stock Xtream; only use if your provider documents extra parameters.
 - `IPTV_TUNERR_HDHR_GUIDE_URL` — optional http(s) URL to a **physical HDHomeRun-style** `guide.xml` (e.g. `http://192.168.1.50/guide.xml`). Merged **after** provider + external gap-fill; see [ADR 0004](../adr/0004-hdhr-guide-epg-merge.md).
 - `IPTV_TUNERR_HDHR_GUIDE_TIMEOUT` — fetch timeout for the HDHR guide URL (default `90s`).
-- `IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS` — optional comma-separated **IPv4** directed broadcast addresses for **UDP** HDHR discovery (`hdhr-scan` without **`-addr`**, and **`DiscoverLAN`**). Each entry is an IP (e.g. `192.168.1.255`, uses port **65001**) or `host:port`. Global `255.255.255.255` is always tried first. Non-IPv4 entries are skipped.
+- `IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS` — optional comma-separated **literal** UDP targets for HDHR discovery (`hdhr-scan` without **`-addr`**, and **`DiscoverLAN`**). **IPv4** entries are subnet broadcasts (e.g. `192.168.1.255`, default port **65001**) or `host:port`. **IPv6** entries (e.g. `[::1]:65001`, `fe80::1%eth0:65001`, or `::1:65001` with a trailing port) use a separate UDP6 socket; link-local addresses should include a **zone** (`%eth0`) when required. Global IPv4 `255.255.255.255` is always tried first. Hostnames are not resolved (same as IPv4-only behavior).
   - Tunerr HTTP: `GET /guide/epg-store.json` — row counts, `last_sync_utc`, `global_max_stop_unix`, `retain_past_hours`, `db_file_bytes`, `db_file_modified_utc`, `vacuum_after_prune`; add `?detail=1` for `channel_max_stop_unix` (incremental fetch horizon).
 
 ### XMLTV language normalization

@@ -76,11 +76,13 @@ Make IPTV Tunerr feel less like a tuner bridge and more like a live-TV intellige
   - Ghost Hunter: `ghost-hunter` CLI and `/plex/ghost-report.json`
   - Provider behavior profile: **`/provider/profile.json`** (tuner limits, CF/mux counters, penalized hosts, last mux outcomes)
   - **Operator surfacing (2026-03):** **`GET /provider/profile.json`** includes **`intelligence.autopilot`** (enabled, state file, decision count, top hot channels) beside provider-runtime fields so the deck and scripts see LTV signals in one JSON fetch. Stream-investigate workflow actions link **`/autopilot/report.json`** and **`autopilot-reset`**.
+  - **Advisory remediation hints (2026-03):** **`remediation_hints`** on **`/provider/profile.json`** — stable **`code`** / **`severity`** / **`message`** / optional **`env`** rows derived from CF blocks, penalized hosts, concurrency signals, and mux error counters (not automatic config changes).
+  - **Autopilot consensus host (2026-03):** optional **`IPTV_TUNERR_AUTOPILOT_CONSENSUS_HOST`** — aggregate **`preferred_host`** agreement across multiple **`dna_id`** rows can steer **`StreamURLs`** for channels without per-DNA memory (thresholds via **`IPTV_TUNERR_AUTOPILOT_CONSENSUS_MIN_DNA`** / **`_MIN_HIT_SUM`**); reported on **`/autopilot/report.json`** and **`intelligence.autopilot`**.
 - Next recommended slices:
   - Richer **Channel DNA** graph (cross-provider relationships, long-lived match provenance store)
-  - **Autopilot**: provider-level / multi-host **policy** memory beyond per-channel **`preferred_url`** / host reranking (exact + normalized URL matching for catalog drift is **shipped**)
+  - **Autopilot**: provider-level / multi-host **policy** memory beyond per-channel **`preferred_url`** / host reranking + consensus host (exact + normalized URL matching for catalog drift is **shipped**)
   - **Ghost Hunter** + **hidden-grab** runbook automation (already scripts/runbooks — tighter product loop)
-  - **Provider profile → active remediation** (auto cap / strip hosts beyond today’s autotune hooks)
+  - **Provider profile → active remediation** (auto cap / strip hosts beyond today’s autotune hooks and read-only **`remediation_hints`**)
   - **Always-on recorder** for non-replay sources ([catchup-daemon](../explanations/always-on-recorder-daemon.md) extensions)
 
 See also

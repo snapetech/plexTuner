@@ -38,9 +38,9 @@ const endpointCatalog = {
   channelReport: { title: "Channel Report", category: "Intelligence", summary: "Channel quality and resilience summary." },
   channelLeaderboard: { title: "Leaderboard", category: "Intelligence", summary: "Top-ranked channels and health scoring." },
   channelDNA: { title: "Channel DNA", category: "Intelligence", summary: "Duplicate/provider grouping into stable channel identities." },
-  autopilot: { title: "Autopilot", category: "Operations", summary: "Remembered playback decisions and hot channels." },
+  autopilot: { title: "Autopilot", category: "Operations", summary: "Hot channels, decision count, optional multi-DNA consensus host (when enabled)." },
   ghost: { title: "Ghost Hunter", category: "Operations", summary: "Plex stale-session and hidden-grab signals." },
-  provider: { title: "Provider Profile", category: "Routing", summary: "Provider penalties, client behavior, and host pressure." },
+  provider: { title: "Provider Profile", category: "Routing", summary: "Tuner limits, CF/concurrency/mux counters, penalized hosts, advisory remediation_hints." },
   recorder: { title: "Recorder", category: "Operations", summary: "Catch-up recorder state, failures, and throughput." },
   attempts: { title: "Stream Attempts", category: "Routing", summary: "Recent fallback and failure evidence for live streams." },
   operatorActionsStatus: { title: "Operator Action Status", category: "Deck Control", summary: "Availability and current status of safe operator actions." },
@@ -161,6 +161,48 @@ function pretty(value) {
 
 function normalizeArray(value) {
   return Array.isArray(value) ? value : [];
+}
+
+/** Compact operator view: /provider/profile.json is a flat JSON object (no legacy summary wrapper). */
+function summarizeProviderProfile(body) {
+  if (!body || typeof body !== "object") return null;
+  if (body.error) return null;
+  if (body.summary && typeof body.summary === "object") return body.summary;
+  if (body.effective_tuner_limit === undefined && body.configured_tuner_limit === undefined) return null;
+  const hints = normalizeArray(body.remediation_hints);
+  const ia = body.intelligence?.autopilot || {};
+  return {
+    effective_tuner_limit: body.effective_tuner_limit,
+    learned_tuner_limit: body.learned_tuner_limit,
+    penalized_hosts: (body.penalized_hosts || []).length,
+    cf_block_hits: body.cf_block_hits,
+    concurrency_signals_seen: body.concurrency_signals_seen,
+    remediation_hint_count: hints.length,
+    last_hls_mux_outcome: body.last_hls_mux_outcome,
+    autopilot_decisions: ia.decision_count ?? 0,
+    autopilot_consensus_host: ia.consensus_host || "",
+    autopilot_consensus_dna: ia.consensus_dna_count ?? 0,
+    autopilot_consensus_hits: ia.consensus_hit_sum ?? 0,
+    autopilot_consensus_runtime: !!ia.consensus_host_runtime_enabled
+  };
+}
+
+function remediationHintsFromProfile(body) {
+  return normalizeArray(body?.remediation_hints);
+}
+
+/** Meta line for /autopilot/report.json (consensus_* fields from tuner). */
+function formatAutopilotConsensusMeta(ap) {
+  if (!ap || typeof ap !== "object") return "";
+  const host = ap.consensus_host;
+  const runtime = !!ap.consensus_host_runtime_enabled;
+  if (!host) {
+    return runtime ? "Consensus: (no qualifying host yet) · IPTV_TUNERR_AUTOPILOT_CONSENSUS_HOST=on" : "";
+  }
+  const dna = ap.consensus_dna_count ?? 0;
+  const hits = ap.consensus_hit_sum ?? 0;
+  const run = runtime ? "runtime reorder on" : "runtime reorder off";
+  return `Consensus: ${esc(host)} · ${dna} DNA · ${hits} hit-sum · ${run}`;
 }
 
 function createActionButton(actionKey, label = "") {
@@ -738,6 +780,9 @@ function renderDeck() {
   const autopilot = state.payloads.autopilot?.body || {};
   const ghost = state.payloads.ghost?.body || {};
   const provider = state.payloads.provider?.body || {};
+  const providerSummary = summarizeProviderProfile(provider);
+  const remediationHints = remediationHintsFromProfile(provider);
+  const providerLoadErr = provider.error || (state.payloads.provider && state.payloads.provider.ok === false ? `HTTP ${state.payloads.provider.status || 0}` : null);
   const recorder = state.payloads.recorder?.body || {};
   const attempts = normalizeArray(state.payloads.attempts?.body);
   const operatorStatus = state.payloads.operatorActionsStatus?.body || {};
@@ -784,6 +829,9 @@ function renderDeck() {
   if ((guideHealth.summary?.placeholder_only_channels || 0) > 0) incidents.push(`${guideHealth.summary.placeholder_only_channels} guide channels are placeholder-only.`);
   if ((recorder.summary?.failed_count || 0) > 0) incidents.push(`${recorder.summary.failed_count} recorder items are failed.`);
   if (failedAttempts.length > 0) incidents.push(`${failedAttempts.length} recent stream attempts are non-OK.`);
+  remediationHints.filter((h) => h && h.severity === "warn").slice(0, 4).forEach((h) => {
+    incidents.push(`Provider remediation (${h.code}): ${h.message || "see /api/provider/profile.json"}`);
+  });
   if (incidents.length === 0) incidents.push("No immediate red flags in the currently loaded payloads.");
 
   const watchItems = [];
@@ -793,12 +841,24 @@ function renderDeck() {
   watchItems.push(`EPG SQLite incremental upsert: ${pretty(runtime.guide?.epg_sqlite_incremental_upsert)}.`);
   watchItems.push(`Deck memory is ${runtime.webui?.memory_persisted ? `persisted at ${pretty(runtime.webui?.state_file)}` : "volatile until the web UI process restarts"}.`);
   watchItems.push(`Deck auth user is ${pretty(deckSettings.auth_user || runtime.webui?.auth_user)}${(deckSettings.auth_default_password ?? runtime.webui?.auth_default_password) ? " with the default password still in place." : "."}`);
+  if (remediationHints.length > 0) {
+    watchItems.push(`${remediationHints.length} advisory remediation hint(s) on provider profile (Routing lane).`);
+  }
+  if (providerSummary?.autopilot_consensus_host) {
+    watchItems.push(`Autopilot consensus host ${providerSummary.autopilot_consensus_host} (${providerSummary.autopilot_consensus_dna} DNA, ${providerSummary.autopilot_consensus_hits} hit-sum).`);
+  } else if (providerSummary?.autopilot_consensus_runtime) {
+    watchItems.push("Autopilot consensus reorder is enabled; no qualifying host in the current snapshot.");
+  }
 
   const wins = [];
   if (health.ok) wins.push("Deck can reach the tuner through the dedicated proxy origin.");
   if ((guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes || 0) > 0) wins.push("Guide payload contains real programme coverage.");
   if ((channelReport.summary?.channels_with_backup_streams || 0) > 0) wins.push("Channel catalog includes backup-capable streams.");
   if (runtime.generated_at) wins.push("Runtime snapshot is available for settings auditing.");
+  if (remediationHints.length === 0 && providerSummary) wins.push("No advisory provider remediation hints in the current profile snapshot.");
+  if (providerSummary?.autopilot_consensus_host) {
+    wins.push(`Autopilot reports a consensus host (${providerSummary.autopilot_consensus_host}) across multiple channel memories.`);
+  }
   if (wins.length === 0) wins.push("No positive confirmations yet because the deck is still in a degraded state.");
 
   alertBoard.innerHTML = [
@@ -838,6 +898,9 @@ function renderDeck() {
   decisionBoard.innerHTML = filterCards([
     createCard("Is the guide believable?", `${pretty(guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes)} channels have programme data; ${pretty(guideHealth.summary?.placeholder_only_channels)} are placeholder-only.`, "", (guideHealth.summary?.placeholder_only_channels || 0) > 0 ? "tone-warn" : "tone-good", "guideHealth", `${createWorkflowButton("guideWorkflow", "Guide Playbook")}${createActionButton("guide_refresh", "Refresh Now")}`),
     createCard("Are streams falling back?", `${attempts.length} recent attempts tracked; ${attempts.slice(0, 2).map((item) => item.reason || item.result || item.status || "unknown").join(" | ") || "no recent evidence"}`, "", failedAttempts.length > 0 ? "tone-warn" : "tone-good", "attempts", `${createWorkflowButton("streamWorkflow", "Investigate")}${createActionButton("stream_attempts_clear", "Clear History")}`),
+    createCard("Any provider remediation hints?", remediationHints.length
+      ? remediationHints.slice(0, 4).map((h) => `${h.severity || "info"} · ${h.code}: ${h.message || ""}`).join(" · ")
+      : "No advisory hints from current provider counters (see /api/provider/profile.json).", "", remediationHints.some((h) => h && h.severity === "warn") ? "tone-warn" : "", "provider", `<button class="tiny" type="button" data-open-path="/api/provider/profile.json" data-open-title="/provider/profile.json">Open JSON</button>`),
     createCard("Is recording alive?", recorder.summary ? `${pretty(recorder.summary.active_count)} active, ${pretty(recorder.summary.failed_count)} failed, ${pretty(recorder.summary.completed_count)} completed.` : pretty(recorder.error || "No recorder state file configured"), "", (recorder.summary?.failed_count || 0) > 0 ? "tone-warn" : "", "recorder", `${createWorkflowButton("opsWorkflow", "Ops Recovery")}`),
     createCard("What config am I really running?", `Read-only snapshot exposed at /api/debug/runtime.json and summarized in the Settings lane.`, "", "", "runtime", `<button class="tiny" type="button" data-inspect="operatorActionsStatus">Action Status</button>`)
   ]).join("");
@@ -851,7 +914,7 @@ function renderDeck() {
 
   overviewStories.innerHTML = filterCards([
     createCard("Guide posture", `${pretty(guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes)} real programme channels, ${pretty(guideHealth.summary?.stale_channels)} stale, ${pretty(guideHealth.summary?.placeholder_only_channels)} placeholder-only.`, "Guide confidence from /guide/health.json", (guideHealth.summary?.stale_channels || 0) > 0 ? "tone-warn" : "tone-good", "guideHealth"),
-    createCard("Provider posture", provider.summary ? esc(JSON.stringify(provider.summary)) : esc(pretty(provider.error)), "Runtime provider behavior from /provider/profile.json", "", "provider"),
+    createCard("Provider posture", providerSummary ? esc(JSON.stringify(providerSummary)) : esc(pretty(providerLoadErr || "Profile unavailable")), "Runtime provider behavior from /provider/profile.json", "", "provider"),
     createCard("Channel posture", channelReport.summary ? `${pretty(channelReport.summary.total_channels)} total, ${pretty(channelReport.summary.epg_linked_channels)} linked, ${pretty(channelReport.summary.channels_with_backup_streams)} backup-capable.` : pretty(channelReport.error), "Channel intelligence summary", "", "channelReport"),
     createCard("Ops posture", recorder.summary ? `${pretty(recorder.summary.active_count)} active recordings with automation memory and publishing state available.` : pretty(recorder.error || "No recorder state"), "Recorder + automation surface", "", "recorder")
   ]).join("");
@@ -887,7 +950,7 @@ function renderDeck() {
   ]).join("");
 
   routingList.innerHTML = filterCards([
-    createCard("Provider profile", provider.summary ? esc(JSON.stringify(provider.summary)) : esc(pretty(provider.error)), provider.client_behavior ? `client_behavior=${esc(JSON.stringify(provider.client_behavior))}` : "", "", "provider", `${createActionButton("provider_profile_reset")}`),
+    createCard("Provider profile", providerSummary ? esc(JSON.stringify(providerSummary)) : esc(pretty(providerLoadErr || "Profile unavailable")), remediationHints.length ? `remediation_hints=${remediationHints.length} (open JSON for full text)` : (provider.client_behavior ? `client_behavior=${esc(JSON.stringify(provider.client_behavior))}` : ""), "", "provider", `${createActionButton("provider_profile_reset")}`),
     createCard("Attempt volume", `${attempts.length} recent attempts in buffer. Top host pressure: ${attempts.slice(0, 3).map((item) => item.upstream_url_host || item.upstream_host || "unknown").join(", ") || "none"}`, "", failedAttempts.length > 0 ? "tone-warn" : "", "attempts", `${createWorkflowButton("streamWorkflow", "Failure Workflow")}${createActionButton("stream_attempts_clear")}`),
     createCard("Fallback evidence", attempts.slice(0, 4).map((item) => `${item.channel_name || item.channel_id || "channel"} -> ${item.reason || item.result || item.status || "unknown"}`).join(" | ") || "No fallback evidence", "", "", "attempts", `<button class="tiny" type="button" data-inspect="streamWorkflow">Workflow Payload</button>`),
     createCard("HDHR contract", "discover.json, lineup.json, lineup_status.json, device.xml, and guide.xml still live on the tuner and are proxied here under /api.", "", "", "runtime"),
@@ -904,7 +967,7 @@ function renderDeck() {
   opsList.innerHTML = filterCards([
     createCard("Ops recovery workflow", `${pretty(opsWorkflow.summary?.recorder?.failed_count || 0)} recorder failures, ${pretty(opsWorkflow.summary?.ghost?.stale_count || 0)} ghost-stale sessions, ${pretty(opsWorkflow.summary?.autopilot?.decision_count || 0)} autopilot decisions in memory.`, "", ((opsWorkflow.summary?.ghost?.stale_count || 0) + (opsWorkflow.summary?.recorder?.failed_count || 0)) > 0 ? "tone-warn" : "tone-good", "opsWorkflow", `${createWorkflowButton("opsWorkflow", "Open Ops Workflow")}`),
     createCard("Recorder state", recorder.summary ? `${pretty(recorder.summary.active_count)} active, ${pretty(recorder.summary.completed_count)} completed, ${pretty(recorder.summary.failed_count)} failed.` : pretty(recorder.error || "Recorder not configured"), "", (recorder.summary?.failed_count || 0) > 0 ? "tone-warn" : "", "recorder", `${createWorkflowButton("opsWorkflow", "Recovery Playbook")}`),
-    createCard("Autopilot memory", autopilot.hot_channels ? `${autopilot.hot_channels.length} hot channels with remembered preferences.` : pretty(autopilot.error || "Autopilot memory unavailable"), "", "", "autopilot", `${createActionButton("autopilot_reset")}`),
+    createCard("Autopilot memory", autopilot.hot_channels ? `${autopilot.hot_channels.length} hot channels with remembered preferences.` : pretty(autopilot.error || "Autopilot memory unavailable"), formatAutopilotConsensusMeta(autopilot), "", "autopilot", `${createActionButton("autopilot_reset")}`),
     createCard("Ghost hunter", ghost.summary ? esc(JSON.stringify(ghost.summary)) : esc(pretty(ghost.error || "Plex report unavailable")), "", "", "ghost", `<button class="tiny" type="button" data-inspect="opsWorkflow">Workflow Payload</button>`),
     createCard("Operator activity log", activity.slice(0, 4).map((item) => `${formatWhen(item.at)} · ${item.title}${item.message ? ` · ${item.message}` : ""}`).join(" | ") || "No operator activity recorded yet.", "", "", "deckActivity", `<button class="tiny" id="activity-reset" type="button">Clear Activity</button>`),
     createCard("Media hooks", runtime.media_servers ? `Emby host=${pretty(runtime.media_servers.emby_host_configured)}, Jellyfin host=${pretty(runtime.media_servers.jellyfin_host_configured)}` : "No runtime snapshot", "", "", "runtime"),
