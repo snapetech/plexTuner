@@ -3,37 +3,17 @@ package refio
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/http"
+	"github.com/snapetech/iptvtunerr/internal/safeurl"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
-
-	"github.com/snapetech/iptvtunerr/internal/httpclient"
-	"github.com/snapetech/iptvtunerr/internal/safeurl"
 )
-
-const userAgent = "IptvTunerr/1.0"
 
 type LocalFileRef string
 
 type RemoteHTTPRef struct {
 	raw string
-}
-
-type cancelReadCloser struct {
-	io.ReadCloser
-	cancel context.CancelFunc
-}
-
-func (r *cancelReadCloser) Close() error {
-	err := r.ReadCloser.Close()
-	if r.cancel != nil {
-		r.cancel()
-	}
-	return err
 }
 
 func PrepareLocalFileRef(raw string) (LocalFileRef, error) {
@@ -56,23 +36,6 @@ func PrepareLocalFileRef(raw string) (LocalFileRef, error) {
 		return "", fmt.Errorf("local ref must be a regular file")
 	}
 	return LocalFileRef(path), nil
-}
-
-func OpenLocalFile(ref LocalFileRef) (io.ReadCloser, error) {
-	path := strings.TrimSpace(string(ref))
-	if path == "" {
-		return nil, fmt.Errorf("empty ref")
-	}
-	return os.Open(path)
-}
-
-func ReadLocalFile(ref LocalFileRef) ([]byte, error) {
-	r, err := OpenLocalFile(ref)
-	if err != nil {
-		return nil, err
-	}
-	defer r.Close()
-	return io.ReadAll(r)
 }
 
 func PrepareRemoteHTTPRef(ctx context.Context, raw string) (RemoteHTTPRef, error) {
@@ -102,57 +65,12 @@ func PrepareRemoteHTTPRef(ctx context.Context, raw string) (RemoteHTTPRef, error
 	return RemoteHTTPRef{raw: u.String()}, nil
 }
 
-func OpenRemoteHTTP(ctx context.Context, ref RemoteHTTPRef, timeout time.Duration) (io.ReadCloser, error) {
-	raw := strings.TrimSpace(ref.raw)
-	if raw == "" {
-		return nil, fmt.Errorf("empty ref")
-	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	var cancel context.CancelFunc
-	if timeout > 0 {
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
-	if err != nil {
-		if cancel != nil {
-			cancel()
-		}
-		return nil, err
-	}
-	req.Header.Set("User-Agent", userAgent)
-	client := httpclient.Default()
-	if timeout > 0 {
-		client = httpclient.WithTimeout(timeout)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		if cancel != nil {
-			cancel()
-		}
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		defer resp.Body.Close()
-		if cancel != nil {
-			cancel()
-		}
-		return nil, fmt.Errorf("http %d", resp.StatusCode)
-	}
-	if cancel != nil {
-		return &cancelReadCloser{ReadCloser: resp.Body, cancel: cancel}, nil
-	}
-	return resp.Body, nil
+func (r RemoteHTTPRef) URL() string {
+	return strings.TrimSpace(r.raw)
 }
 
-func ReadRemoteHTTP(ctx context.Context, ref RemoteHTTPRef, timeout time.Duration) ([]byte, error) {
-	r, err := OpenRemoteHTTP(ctx, ref, timeout)
-	if err != nil {
-		return nil, err
-	}
-	defer r.Close()
-	return io.ReadAll(r)
+func (r LocalFileRef) Path() string {
+	return strings.TrimSpace(string(r))
 }
 
 func allowPrivateHTTPRefs() bool {

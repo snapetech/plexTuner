@@ -3791,6 +3791,18 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
 ---
 
 - Date: 2026-03-20
+  Title: Remove more CodeQL dataflow sinks from refio and deck auth
+  Summary:
+    - Removed free-form deck post-login redirects and now always land successful deck sessions on `/`, which drops the remaining `next=` redirect surface from the login path.
+    - Reduced `internal/refio` to validation-only helpers and moved guide-input file/network reads into `internal/guideinput`, so the generic ref helper no longer performs filesystem or HTTP I/O itself.
+    - Replaced the last request-header debug sinks with name-only logging and removed more request-sized preallocation in guide/attempt report helpers.
+  Verification:
+    - `go test ./internal/refio ./internal/guideinput ./internal/tuner ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+
+---
+
+- Date: 2026-03-20
   Title: Burn down high-risk CodeQL findings on ref loading, limits, logs, and deck redirects
   Summary:
     - Hardened `internal/refio` so local refs must be regular files and remote guide/alias `http(s)` refs reject private or loopback hosts by default unless `IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP=1` is set intentionally for localhost/LAN sources.

@@ -35,7 +35,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Printf("gateway: req=%s recv path=%q channel=%q remote=%t ua=%t", reqID, r.URL.Path, channelID, strings.TrimSpace(r.RemoteAddr) != "", strings.TrimSpace(r.UserAgent()) != "")
 	debugOpts := streamDebugOptionsFromEnv()
 	if debugOpts.HTTPHeaders {
-		for _, line := range debugHeaderLines(r.Header) {
+		for _, line := range debugHeaderNameLines(r.Header) {
 			log.Printf("gateway: req=%s channel=%q id=%s debug-http < %s", reqID, channel.GuideName, channelID, line)
 		}
 	}
