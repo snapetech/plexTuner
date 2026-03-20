@@ -22,7 +22,7 @@ Normal push path from this checkout: `git push origin main`. Never `git push git
 | **`internal/indexer/`** | M3U stream parsing, player_api (auth, live, VOD, series with parallel fetch). |
 | **`internal/catalog/`** | Movie/Series/LiveChannel types; Save (snapshot then encode), Load. |
 | **`internal/tuner/`** | HDHR endpoints, stream gateway, XMLTV/guide pipeline, Autopilot, Ghost Hunter, provider profile, catch-up publishing. |
-| **`internal/epgstore/`** | Optional SQLite EPG file (`IPTV_TUNERR_EPG_SQLITE_PATH`): schema/migrations for durable programmes; sync from merged guide is LP-008. |
+| **`internal/epgstore/`** | Optional SQLite EPG file (`IPTV_TUNERR_EPG_SQLITE_PATH`): migrations, `SyncMergedGuideXML` from merged guide, max-stop queries; `/guide/epg-store.json`. |
 | **`internal/channelreport/`** | Channel intelligence scoring and report building. |
 | **`internal/channeldna/`** | Stable per-channel identity (`dna_id`) and grouping/report surfaces. |
 | **`internal/emby/`** | Emby/Jellyfin tuner registration plus catch-up library registration helpers. |

@@ -7,7 +7,7 @@ import (
 
 const (
 	// schemaVersionCurrent must match the latest migration applied (PRAGMA user_version).
-	schemaVersionCurrent = 1
+	schemaVersionCurrent = 2
 )
 
 func readUserVersion(db *sql.DB) (int, error) {
@@ -31,6 +31,15 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("epgstore: migration 001: %w", err)
 		}
 		if _, err := db.Exec(`PRAGMA user_version = 1`); err != nil {
+			return fmt.Errorf("epgstore: set user_version: %w", err)
+		}
+		v = 1
+	}
+	if v < 2 {
+		if _, err := db.Exec(migration002); err != nil {
+			return fmt.Errorf("epgstore: migration 002: %w", err)
+		}
+		if _, err := db.Exec(`PRAGMA user_version = 2`); err != nil {
 			return fmt.Errorf("epgstore: set user_version: %w", err)
 		}
 	}
@@ -57,4 +66,12 @@ CREATE TABLE IF NOT EXISTS epg_programme (
 
 CREATE INDEX IF NOT EXISTS idx_epg_programme_ch_start ON epg_programme (channel_epg_id, start_unix);
 CREATE INDEX IF NOT EXISTS idx_epg_programme_ch_stop ON epg_programme (channel_epg_id, stop_unix);
+`
+
+// migration002 adds key/value metadata (sync timestamps, future flags).
+const migration002 = `
+CREATE TABLE IF NOT EXISTS epg_meta (
+  k TEXT NOT NULL PRIMARY KEY,
+  v TEXT NOT NULL
+);
 `

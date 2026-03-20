@@ -23,6 +23,21 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: LP-008 partial — merged guide sync to SQLite + /guide/epg-store.json
+  Summary:
+    - `epgstore.SyncMergedGuideXML`, migration v2 `epg_meta`, `MaxStopUnixPerChannel` / `GlobalMaxStopUnix` / `RowCounts` / `MetaLastSyncUTC`.
+    - `XMLTV.EpgStore` + `Server.EpgStore`; `maybeOpenEpgStore` returns `*Store`; sync after each successful `refresh()` in `epg_pipeline.go`.
+    - `GET /guide/epg-store.json` (`?detail=1`); operator `/ui/` link; tests in `epgstore` + `server_test`.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Full-table replace each refresh — optimize later if needed; provider-side incremental fetch using max-stop not wired yet.
+  Opportunities filed:
+    - none (perf note can go to opportunities if we measure huge guides)
+  Links:
+    - `internal/epgstore/sync.go`, `internal/tuner/epg_pipeline.go`, `internal/tuner/server.go`
+
+- Date: 2026-03-19
   Title: LP-007 partial — epgstore schema + ADR 0003 (SQLite vs Postgres)
   Summary:
     - `internal/epgstore`: open SQLite with WAL, `PRAGMA user_version` migrations, tables `epg_channel` / `epg_programme`.

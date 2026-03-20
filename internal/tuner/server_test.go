@@ -391,6 +391,16 @@ func TestServer_operatorGuidePreviewJSON(t *testing.T) {
 	}
 }
 
+func TestServer_epgStoreReport_disabled(t *testing.T) {
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodGet, "/guide/epg-store.json", nil)
+	w := httptest.NewRecorder()
+	s.serveEpgStoreReport().ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d want 503", w.Code)
+	}
+}
+
 func TestServer_operatorGuidePreview_forbiddenNonLoopback(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
 	s := &Server{

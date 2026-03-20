@@ -21,18 +21,18 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/tuner"
 )
 
-// maybeOpenEpgStore opens the optional on-disk EPG SQLite file (LP-007). Returns (nil, nil) when disabled.
-func maybeOpenEpgStore(cfg *config.Config) (func(), error) {
+// maybeOpenEpgStore opens the optional on-disk EPG SQLite file (LP-007/008). Returns (nil, nil, nil) when disabled.
+func maybeOpenEpgStore(cfg *config.Config) (*epgstore.Store, func(), error) {
 	p := strings.TrimSpace(cfg.EpgSQLitePath)
 	if p == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
 	st, err := epgstore.Open(p)
 	if err != nil {
-		return nil, fmt.Errorf("open EPG SQLite %q: %w", p, err)
+		return nil, nil, fmt.Errorf("open EPG SQLite %q: %w", p, err)
 	}
 	log.Printf("EPG SQLite store: %s (schema_version=%d)", p, st.SchemaVersion())
-	return func() {
+	return st, func() {
 		if err := st.Close(); err != nil {
 			log.Printf("EPG SQLite close: %v", err)
 		}
@@ -54,11 +54,12 @@ func handleServe(cfg *config.Config, catalogPath, addr, baseURL, deviceID, frien
 	}
 	srv := newRuntimeServer(cfg, addr, baseURL, deviceID, friendlyName, serveLineupCap, cfg.ProviderBaseURL, cfg.ProviderUser, cfg.ProviderPass)
 	srv.UpdateChannels(live)
-	closeEpg, err := maybeOpenEpgStore(cfg)
+	epgSt, closeEpg, err := maybeOpenEpgStore(cfg)
 	if err != nil {
 		log.Printf("%v", err)
 		os.Exit(1)
 	}
+	srv.EpgStore = epgSt
 	if closeEpg != nil {
 		defer closeEpg()
 	}
@@ -198,11 +199,12 @@ func handleRun(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendl
 		firstNonEmpty(runProviderPass, cfg.ProviderPass),
 	)
 	srv.UpdateChannels(live)
-	closeEpg, err := maybeOpenEpgStore(cfg)
+	epgSt, closeEpg, err := maybeOpenEpgStore(cfg)
 	if err != nil {
 		log.Printf("%v", err)
 		os.Exit(1)
 	}
+	srv.EpgStore = epgSt
 	if closeEpg != nil {
 		defer closeEpg()
 	}

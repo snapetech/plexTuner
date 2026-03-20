@@ -58,6 +58,7 @@ You can inspect channel health, guide confidence, provider behavior, stale Plex-
 - [Core Capabilities](#core-capabilities)
 - [Channel Intelligence](#channel-intelligence)
 - [Cloudflare Provider Support](#cloudflare-provider-support)
+- [Free Public Sources](#free-public-sources)
 - [Setup Paths](#setup-paths) — wizard · programmatic · supervisor · HDHR network mode
 - [Supervisor Mode](#supervisor-mode)
 - [VOD Filesystem](#vod-filesystem-linux-only)
@@ -635,6 +636,57 @@ Full guide: [docs/how-to/cloudflare-bypass.md](docs/how-to/cloudflare-bypass.md)
 
 ---
 
+## Free Public Sources
+
+Supplement or enrich your paid lineup with public M3U feeds fetched at index time. No redistribution — sources are fetched fresh on each catalog build and never committed to the repo.
+
+~35% of the ~40k streams in public aggregator lists are actively live at any given time. The rest are dead hosts, geo-blocked, or require CF bypass. IPTV Tunerr handles this cleanly: free channels go through the same NSFW filtering, smoketest, EPG repair, CF bypass, and autopilot as paid channels.
+
+### Quick start
+
+```bash
+# Gap-fill with UK + US public channels (government TV, news, local stations)
+IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_COUNTRIES=gb,us
+
+# Add free streams as resilience fallback behind paid streams on matching channels
+IPTV_TUNERR_FREE_SOURCE_MODE=merge
+IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_CATEGORIES=news,sports
+
+# Use a custom aggregator feed
+IPTV_TUNERR_FREE_SOURCES=https://m3u.prigoana.com/all.m3u
+```
+
+### Merge modes
+
+| Mode | What it does |
+|------|-------------|
+| `supplement` (default) | Add free channels whose `tvg-id` is not in the paid lineup — pure gap-fill, paid untouched |
+| `merge` | Append free stream URLs as fallback behind paid on matching channels; add new channels for gaps |
+| `full` | Combine everything, deduplicated by `tvg-id`; paid wins on conflicts |
+
+Free channels are re-numbered to start after the highest paid guide number — no lineup collisions in Plex/Emby/Jellyfin.
+
+### NSFW and safety filtering
+
+By default, channels flagged `is_nsfw` in iptv-org's `channels.json` or on their `blocklist.json` are dropped, as are channels with a broadcast end-date. Both the blocklist and metadata are cached alongside the M3U content.
+
+```bash
+# Keep NSFW channels but tag with [NSFW] group prefix (route via separate supervisor instance)
+IPTV_TUNERR_FREE_SOURCE_FILTER_NSFW=false
+```
+
+### Explore before committing
+
+```bash
+iptv-tunerr free-sources -by-group              # what's in the feed by group
+iptv-tunerr free-sources -catalog ./catalog.json  # what would be added to your catalog
+iptv-tunerr free-sources -probe -probe-max 50   # live pass rate on a sample
+```
+
+Full env var reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-and-env-reference.md)
+
+---
+
 ## Setup Paths
 
 IPTV Tunerr supports three distinct registration methods. Choose by use case:
@@ -935,7 +987,7 @@ Full reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-a
 | `IPTV_TUNERR_XMLTV_URL` | External XMLTV source — gap-fills provider EPG |
 | `IPTV_TUNERR_XMLTV_CACHE_TTL` | External XMLTV refresh interval (default `10m`) |
 | `IPTV_TUNERR_EPG_PRUNE_UNLINKED` | Exclude unlinked channels from guide and lineup |
-| `IPTV_TUNERR_EPG_SQLITE_PATH` | Optional SQLite file for durable EPG rows ([ADR](docs/adr/0003-epg-sqlite-vs-postgres.md)); incremental sync in **LP-008** |
+| `IPTV_TUNERR_EPG_SQLITE_PATH` | Optional SQLite file for durable EPG rows ([ADR](docs/adr/0003-epg-sqlite-vs-postgres.md)); merged guide sync + `/guide/epg-store.json` |
 | `IPTV_TUNERR_XMLTV_PREFER_LANGS` | Language preference for programme titles (e.g. `en,eng`) |
 | `IPTV_TUNERR_XMLTV_PREFER_LATIN` | Prefer Latin script when multilingual data is available |
 | `IPTV_TUNERR_CATCHUP_GUIDE_POLICY` | `off` \| `healthy` \| `strict` for catch-up capsule / publish filtering |

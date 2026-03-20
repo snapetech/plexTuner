@@ -20,6 +20,7 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/catalog"
 	"github.com/snapetech/iptvtunerr/internal/channeldna"
 	"github.com/snapetech/iptvtunerr/internal/channelreport"
+	"github.com/snapetech/iptvtunerr/internal/epgstore"
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
 )
 
@@ -79,6 +80,9 @@ type Server struct {
 	ProviderEPGEnabled  bool
 	ProviderEPGTimeout  time.Duration
 	ProviderEPGCacheTTL time.Duration
+
+	// EpgStore is an optional SQLite file for durable merged EPG (LP-007/008). Nil = disabled.
+	EpgStore *epgstore.Store
 
 	// health state updated by UpdateChannels; read by /healthz.
 	healthMu       sync.RWMutex
@@ -972,6 +976,7 @@ func (s *Server) Run(ctx context.Context) error {
 		ProviderPass:       s.ProviderPass,
 		ProviderEPGEnabled: s.ProviderEPGEnabled,
 		ProviderEPGTimeout: s.ProviderEPGTimeout,
+		EpgStore:           s.EpgStore,
 	}
 	s.xmltv = xmltv
 	xmltv.StartRefresh(ctx)
@@ -999,6 +1004,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/guide/doctor.json", s.serveEPGDoctor())
 	mux.Handle("/guide/aliases.json", s.serveSuggestedAliasOverrides())
 	mux.Handle("/guide/highlights.json", s.serveGuideHighlights())
+	mux.Handle("/guide/epg-store.json", s.serveEpgStoreReport())
 	mux.Handle("/guide/capsules.json", s.serveCatchupCapsules())
 	mux.Handle("/live.m3u", m3uServe)
 	mux.Handle("/stream/", gateway)
@@ -1121,6 +1127,65 @@ func (s *Server) serveHealth() http.Handler {
 			"channels":     count,
 			"last_refresh": lastRefresh.Format(time.RFC3339),
 		})
+		_, _ = w.Write(body)
+	})
+}
+
+// epgStoreReportJSON is returned by GET /guide/epg-store.json when IPTV_TUNERR_EPG_SQLITE_PATH is set.
+type epgStoreReportJSON struct {
+	SchemaVersion      int              `json:"schema_version"`
+	SourceReady        bool             `json:"source_ready"`
+	LastSyncUTC        string           `json:"last_sync_utc,omitempty"`
+	ProgrammeCount     int              `json:"programme_count"`
+	ChannelCount       int              `json:"channel_count"`
+	GlobalMaxStopUnix  int64            `json:"global_max_stop_unix"`
+	ChannelMaxStopUnix map[string]int64 `json:"channel_max_stop_unix,omitempty"`
+}
+
+func (s *Server) serveEpgStoreReport() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if s.EpgStore == nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":"epg sqlite disabled (set IPTV_TUNERR_EPG_SQLITE_PATH)"}`))
+			return
+		}
+		prog, ch, err := s.EpgStore.RowCounts()
+		if err != nil {
+			http.Error(w, `{"error":"epg store stats"}`, http.StatusInternalServerError)
+			return
+		}
+		lastSync, _ := s.EpgStore.MetaLastSyncUTC()
+		gmax, err := s.EpgStore.GlobalMaxStopUnix()
+		if err != nil {
+			http.Error(w, `{"error":"epg store max stop"}`, http.StatusInternalServerError)
+			return
+		}
+		detail := false
+		if raw := strings.TrimSpace(r.URL.Query().Get("detail")); raw == "1" || strings.EqualFold(raw, "true") || strings.EqualFold(raw, "yes") {
+			detail = true
+		}
+		rep := epgStoreReportJSON{
+			SchemaVersion:     s.EpgStore.SchemaVersion(),
+			SourceReady:       prog > 0 || ch > 0,
+			LastSyncUTC:       lastSync,
+			ProgrammeCount:    prog,
+			ChannelCount:      ch,
+			GlobalMaxStopUnix: gmax,
+		}
+		if detail {
+			m, err := s.EpgStore.MaxStopUnixPerChannel()
+			if err != nil {
+				http.Error(w, `{"error":"epg store per-channel max"}`, http.StatusInternalServerError)
+				return
+			}
+			rep.ChannelMaxStopUnix = m
+		}
+		body, err := json.MarshalIndent(rep, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode epg store report"}`, http.StatusInternalServerError)
+			return
+		}
 		_, _ = w.Write(body)
 	})
 }

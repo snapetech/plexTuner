@@ -17,6 +17,7 @@ import (
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
 	"github.com/snapetech/iptvtunerr/internal/epglink"
+	"github.com/snapetech/iptvtunerr/internal/epgstore"
 	"github.com/snapetech/iptvtunerr/internal/guidehealth"
 )
 
@@ -41,6 +42,9 @@ type XMLTV struct {
 	ProviderPass       string
 	ProviderEPGEnabled bool
 	ProviderEPGTimeout time.Duration
+
+	// EpgStore is an optional SQLite backing store for merged guide rows (LP-008). Nil = disabled.
+	EpgStore *epgstore.Store
 
 	mu        sync.RWMutex
 	cachedXML []byte

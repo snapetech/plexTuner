@@ -14,8 +14,13 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 ## [Unreleased]
 
 ### EPG SQLite foundation (LP-007 partial)
-- **`internal/epgstore`**: optional SQLite file (`IPTV_TUNERR_EPG_SQLITE_PATH`), WAL + migrations (`epg_channel`, `epg_programme`); opened during `serve` / `run` when set (no pipeline sync yet — **LP-008**).
+- **`internal/epgstore`**: optional SQLite file (`IPTV_TUNERR_EPG_SQLITE_PATH`), WAL + migrations (`epg_channel`, `epg_programme`); opened during `serve` / `run` when set.
 - **ADR 0003** ([docs/adr/0003-epg-sqlite-vs-postgres.md](adr/0003-epg-sqlite-vs-postgres.md)): SQLite default for Tunerr-local EPG; Postgres only for explicit multi-writer/shared-state requirements.
+
+### EPG SQLite sync + incremental window (LP-008 partial)
+- **Merged guide → SQLite**: after each successful XMLTV refresh, `SyncMergedGuideXML` replaces `epg_channel` / `epg_programme` + `last_sync_utc` metadata (schema v2: `epg_meta`).
+- **`/guide/epg-store.json`**: programme/channel counts, `global_max_stop_unix`, optional `?detail=1` for per-channel max stop (incremental fetch input).
+- **Operator `/ui/`** links to `/guide/epg-store.json` when exploring the store.
 
 ### Hardware HDHomeRun (client spike)
 - **`hdhr-scan`**: UDP discovery for physical SiliconDust tuners (or `-addr` for HTTP-only `discover.json` / optional `lineup.json`). Implemented in `internal/hdhomerun` (`DiscoverLAN`, `FetchDiscoverJSON`, `FetchLineupJSON`).

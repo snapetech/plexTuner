@@ -707,7 +707,7 @@ Merge semantics for HDHR + IPTV catalogs: [adr/0002-hdhr-hardware-iptv-merge.md]
 | `IPTV_TUNERR_UI_DISABLED` | If `1`, `/ui/` is not served. |
 | `IPTV_TUNERR_UI_ALLOW_LAN` | If `1`, allow non-loopback clients to open `/ui/` (default: **localhost only**). |
 
-Browser URLs (same env as above): `http://127.0.0.1:<port>/ui/` (home), `/ui/guide/` (merged guide preview from cache), `/ui/guide-preview.json` (JSON; optional `?limit=`). Also linked from `/ui/`: `/healthz`, `/guide/health.json`, `/channels/report.json`.
+Browser URLs (same env as above): `http://127.0.0.1:<port>/ui/` (home), `/ui/guide/` (merged guide preview from cache), `/ui/guide-preview.json` (JSON; optional `?limit=`). Also linked from `/ui/`: `/healthz`, `/guide/health.json`, `/guide/epg-store.json` (SQLite EPG stats when `IPTV_TUNERR_EPG_SQLITE_PATH` is set), `/channels/report.json`.
 
 ## `iptv-tunerr probe`
 
@@ -933,7 +933,8 @@ Fetches EPG directly from your IPTV provider using existing credentials. No sepa
 - `IPTV_TUNERR_XMLTV_CACHE_TTL` — refresh interval when provider EPG cache TTL is not set (default `10m`)
 - `IPTV_TUNERR_LIVE_EPG_ONLY` — only serve channels that have a `tvg-id`
 - `IPTV_TUNERR_EPG_PRUNE_UNLINKED` — exclude channels with no EPG match from both guide and lineup
-- `IPTV_TUNERR_EPG_SQLITE_PATH` — optional filesystem path to a **SQLite** file for durable EPG storage (schema v1; incremental sync **LP-008**). Empty = disabled. Rationale: [ADR 0003](../adr/0003-epg-sqlite-vs-postgres.md).
+- `IPTV_TUNERR_EPG_SQLITE_PATH` — optional filesystem path to a **SQLite** file for durable EPG storage (merged guide sync after each refresh; schema v2 includes `epg_meta`). Empty = disabled. Rationale: [ADR 0003](../adr/0003-epg-sqlite-vs-postgres.md).
+  - Tunerr HTTP: `GET /guide/epg-store.json` — row counts, `last_sync_utc`, `global_max_stop_unix`; add `?detail=1` for `channel_max_stop_unix` (incremental fetch horizon).
 
 ### XMLTV language normalization
 

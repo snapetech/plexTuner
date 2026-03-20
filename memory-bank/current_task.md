@@ -2,7 +2,7 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Latest (2026-03-19):** **`LP-007` (partial)** — `internal/epgstore` SQLite schema v1 + `IPTV_TUNERR_EPG_SQLITE_PATH`, opened on `serve`/`run`; **ADR 0003** (SQLite vs Postgres; no forced app-wide DB). **Next:** `LP-008` sync merged guide → SQLite, `LP-009` cleanup, or `LP-010`/`LP-011` profiles.
+**Latest (2026-03-19):** **`LP-008` (partial)** — merged `/guide.xml` snapshot → SQLite after each refresh (`SyncMergedGuideXML`); schema v2 `epg_meta`; `/guide/epg-store.json` + `?detail=1`; `Server.EpgStore` wired from `serve`/`run`. **Next:** use max-stop in upstream fetch (**LP-008** follow-on), **`LP-009`** eviction, or **`LP-010`/`LP-011`** profiles.
 
 **Goal:** Start the new Live TV Intelligence product track: map the multi-PR roadmap, then ship the first visible foundation feature so IPTV Tunerr feels like an intelligent control plane instead of only a tuner bridge.
 

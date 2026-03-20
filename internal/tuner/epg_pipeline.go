@@ -452,4 +452,10 @@ func (x *XMLTV) refresh() {
 	x.mu.Unlock()
 
 	log.Printf("xmltv: EPG cache updated (%d bytes, expires in %v)", len(data), ttl)
+
+	if x.EpgStore != nil {
+		if err := x.EpgStore.SyncMergedGuideXML(data); err != nil {
+			log.Printf("epg sqlite: merged guide sync failed: %v", err)
+		}
+	}
 }
