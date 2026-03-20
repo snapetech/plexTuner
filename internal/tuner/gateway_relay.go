@@ -105,8 +105,10 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	reqField := gatewayReqIDField(r.Context())
 	profile := g.profileForChannelMeta(channelID, guideNumber, tvgID)
 	if strings.TrimSpace(forcedProfile) != "" {
-		profile = normalizeProfileName(forcedProfile)
+		profile = normalizeConfiguredProfileName(forcedProfile)
 	}
+	profileSelection := g.resolveProfileSelection(profile)
+	profile = profileSelection.Name
 	ffmpegPlaylistURL, ffmpegInputHost, ffmpegInputIP := canonicalizeFFmpegInputURL(r.Context(), playlistURL, g.DisableFFmpegDNS)
 
 	hlsAnalyzeDurationUs := getenvInt("IPTV_TUNERR_FFMPEG_HLS_ANALYZEDURATION_US", 5000000)
@@ -170,10 +172,8 @@ func (g *Gateway) relayHLSWithFFmpeg(
 		args = append(args, "-headers", headers)
 	}
 	args = append(args, "-i", ffmpegPlaylistURL)
-	if outputMux == "" {
-		outputMux = streamMuxMPEGTS
-	}
-	args = append(args, buildFFmpegStreamOutputArgs(transcode, profile, outputMux)...)
+	outputMux = g.preferredOutputMuxForProfile(profile, outputMux, transcode)
+	args = append(args, buildFFmpegStreamOutputArgs(transcode, profileSelection.BaseProfile, outputMux)...)
 
 	cmd := exec.CommandContext(r.Context(), ffmpegPath, args...)
 	stdout, err := cmd.StdoutPipe()
@@ -193,7 +193,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 		log.Printf("gateway:%s channel=%q id=%s %s input-host-resolved %q=>%q",
 			reqField, channelName, channelID, modeLabel, ffmpegInputHost, ffmpegInputIP)
 	}
-	log.Printf("gateway:%s channel=%q id=%s %s profile=%s", reqField, channelName, channelID, modeLabel, profile)
+	log.Printf("gateway:%s channel=%q id=%s %s profile=%s base_profile=%s output_mux=%s", reqField, channelName, channelID, modeLabel, profile, profileSelection.BaseProfile, outputMux)
 	log.Printf("gateway:%s channel=%q id=%s %s hls-input analyzeduration_us=%d probesize=%d rw_timeout_us=%d live_start_index=%d nobuffer=%t reconnect=%t persistent=%t multi=%t realtime=%t loglevel=%s",
 		reqField, channelName, channelID, modeLabel, hlsAnalyzeDurationUs, hlsProbeSize, hlsRWTimeoutUs, hlsLiveStartIndex, hlsUseNoBuffer, hlsReconnect, hlsHTTPPersistent, hlsMultipleRequests, hlsRealtime, hlsLogLevel)
 	startupMin := getenvInt("IPTV_TUNERR_WEBSAFE_STARTUP_MIN_BYTES", 65536)
@@ -401,7 +401,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 			stopNullTSKeepalive("startup-gate-timeout")
 			stopPATMPTKeepalive("startup-gate-timeout")
 			if responseStarted && enableBootstrap && enableTimeoutBootstrap && bootstrapSec > 0 {
-				if err := writeBootstrapTS(r.Context(), ffmpegPath, bodyOut, channelName, channelID, bootstrapSec, profile); err != nil {
+				if err := writeBootstrapTS(r.Context(), ffmpegPath, bodyOut, channelName, channelID, bootstrapSec, profileSelection.BaseProfile); err != nil {
 					log.Printf("gateway:%s channel=%q id=%s %s timeout-bootstrap failed: %v", reqField, channelName, channelID, modeLabel, err)
 				} else {
 					bootstrapAlreadySent = true
@@ -435,7 +435,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	startResponse()
 
 	if enableBootstrap && bootstrapSec > 0 && !bootstrapAlreadySent {
-		if err := writeBootstrapTS(r.Context(), ffmpegPath, bodyOut, channelName, channelID, bootstrapSec, profile); err != nil {
+		if err := writeBootstrapTS(r.Context(), ffmpegPath, bodyOut, channelName, channelID, bootstrapSec, profileSelection.BaseProfile); err != nil {
 			log.Printf("gateway:%s channel=%q id=%s bootstrap failed: %v", reqField, channelName, channelID, err)
 		}
 		if joinDelayMs := getenvInt("IPTV_TUNERR_WEBSAFE_JOIN_DELAY_MS", 0); joinDelayMs > 0 {
@@ -524,8 +524,10 @@ func (g *Gateway) relayHLSAsTS(
 	}
 	profile := g.profileForChannelMeta(channelID, guideNumber, tvgID)
 	if strings.TrimSpace(forcedProfile) != "" {
-		profile = normalizeProfileName(forcedProfile)
+		profile = normalizeConfiguredProfileName(forcedProfile)
 	}
+	profileSelection := g.resolveProfileSelection(profile)
+	profile = profileSelection.Name
 	sw, flush := streamWriter(w, bufferBytes)
 	defer flush()
 	flusher, _ := w.(http.Flusher)
@@ -551,7 +553,7 @@ func (g *Gateway) relayHLSAsTS(
 				channelID,
 				start,
 				transcode,
-				profile,
+				profileSelection.BaseProfile,
 				sw,
 				flush,
 				bufferBytes,

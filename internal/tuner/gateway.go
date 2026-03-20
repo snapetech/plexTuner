@@ -29,6 +29,7 @@ type Gateway struct {
 	TranscodeOverrides         map[string]bool
 	DefaultProfile             string
 	ProfileOverrides           map[string]string
+	NamedProfiles              map[string]NamedStreamProfile
 	CustomHeaders              map[string]string // extra headers to send on all upstream requests (e.g. Referer, Origin)
 	CustomUserAgent            string            // override User-Agent sent to upstream; supports preset names: lavf, ffmpeg, vlc, kodi, firefox
 	DetectedFFmpegUA           string            // auto-detected Lavf/X.Y.Z from installed ffmpeg, used when CustomUserAgent is "lavf"/"ffmpeg"

@@ -208,7 +208,11 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 		channel.GuideName, channelID, len(body), firstSeg, time.Since(start).Round(time.Millisecond), mode, bufDesc)
 	log.Printf("gateway: channel=%q id=%s hls-mode transcode=%t mode=%q guide=%q tvg=%q", channel.GuideName, channelID, transcode, g.StreamTranscodeMode, channel.GuideNumber, channel.TVGID)
 	hotStart := g.hotStartConfig(channel, clientClass)
-	outputMux := normalizeStreamOutputMux(requestMux, transcode)
+	profileName := g.profileForChannelMeta(channelID, channel.GuideNumber, channel.TVGID)
+	if strings.TrimSpace(forcedProfile) != "" {
+		profileName = normalizeConfiguredProfileName(forcedProfile)
+	}
+	outputMux := g.preferredOutputMuxForProfile(profileName, requestMux, transcode)
 	if outputMux == "hls" {
 		out := rewriteHLSPlaylistToGatewayProxy(body, effectiveURL, channelID)
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")

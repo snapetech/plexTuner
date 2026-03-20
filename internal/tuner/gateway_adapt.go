@@ -250,14 +250,13 @@ func plexClientClass(info *plexResolvedClient) string {
 func (g *Gateway) requestAdaptation(ctx context.Context, r *http.Request, channel *catalog.LiveChannel, channelID string) (bool, bool, string, string, string) {
 	hints := plexRequestHints(r)
 	log.Printf("gateway: channel=%q id=%s plex-hints %s", channel.GuideName, channelID, hints.summary())
-	explicitProfile := normalizeProfileName(r.URL.Query().Get("profile"))
-	if strings.TrimSpace(r.URL.Query().Get("profile")) != "" {
-		switch explicitProfile {
-		case profilePlexSafe, profileAACCFR, profileVideoOnly, profileLowBitrate, profileDashFast, profilePMSXcode:
-			return true, true, explicitProfile, "query-profile", "manual"
-		default:
-			return true, false, explicitProfile, "query-profile", "manual"
+	explicitProfileRaw := strings.TrimSpace(r.URL.Query().Get("profile"))
+	if explicitProfileRaw != "" {
+		resolved := g.resolveProfileSelection(explicitProfileRaw)
+		if resolved.Known {
+			return true, resolved.ForceTranscode, resolved.Name, "query-profile", "manual"
 		}
+		return true, false, resolved.Name, "query-profile", "manual"
 	}
 	if getenvBool("IPTV_TUNERR_FORCE_WEBSAFE", false) {
 		return true, true, profilePlexSafe, "force-websafe", "manual"

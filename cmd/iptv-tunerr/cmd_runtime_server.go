@@ -95,6 +95,7 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"dedupe_by_tvg_id":                         strings.TrimSpace(os.Getenv("IPTV_TUNERR_DEDUPE_BY_TVG_ID")),
 			"transcode_overrides_file":                 strings.TrimSpace(os.Getenv("IPTV_TUNERR_TRANSCODE_OVERRIDES_FILE")),
 			"profile_overrides_file":                   strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROFILE_OVERRIDES_FILE")),
+			"stream_profiles_file":                     strings.TrimSpace(os.Getenv("IPTV_TUNERR_STREAM_PROFILES_FILE")),
 			"stream_public_base_url":                   strings.TrimSpace(os.Getenv("IPTV_TUNERR_STREAM_PUBLIC_BASE_URL")),
 			"hls_mux_cors":                             cfg.HlsMuxCORS,
 			"hls_mux_upstream_err_body_max":            strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_UPSTREAM_ERR_BODY_MAX")),

@@ -841,6 +841,13 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	s.hdhr = hdhr
 	defaultProfile := defaultProfileFromEnv()
+	profileMatrixPath := os.Getenv("IPTV_TUNERR_STREAM_PROFILES_FILE")
+	namedProfiles, profileMatrixErr := loadNamedProfilesFile(profileMatrixPath)
+	if profileMatrixErr != nil {
+		log.Printf("Named stream profiles disabled: load %q failed: %v", profileMatrixPath, profileMatrixErr)
+	} else if len(namedProfiles) > 0 {
+		log.Printf("Named stream profiles loaded: %d entries from %s", len(namedProfiles), profileMatrixPath)
+	}
 	overridePath := os.Getenv("IPTV_TUNERR_PROFILE_OVERRIDES_FILE")
 	overrides, err := loadProfileOverridesFile(overridePath)
 	if err != nil {
@@ -873,6 +880,7 @@ func (s *Server) Run(ctx context.Context) error {
 		TranscodeOverrides:  txOverrides,
 		DefaultProfile:      defaultProfile,
 		ProfileOverrides:    overrides,
+		NamedProfiles:       namedProfiles,
 		CustomHeaders:       parseCustomHeaders(os.Getenv("IPTV_TUNERR_UPSTREAM_HEADERS")),
 		CustomUserAgent:     strings.TrimSpace(os.Getenv("IPTV_TUNERR_UPSTREAM_USER_AGENT")),
 		AddSecFetchHeaders:  envBool("IPTV_TUNERR_UPSTREAM_ADD_SEC_FETCH", false),

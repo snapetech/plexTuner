@@ -1460,6 +1460,26 @@ func TestGateway_requestAdaptation_queryProfileHDHRAlias(t *testing.T) {
 	}
 }
 
+func TestGateway_requestAdaptation_queryProfileNamedProfile(t *testing.T) {
+	enable := true
+	g := &Gateway{
+		PlexClientAdapt: true,
+		NamedProfiles: map[string]NamedStreamProfile{
+			"mobile-fmp4": {
+				BaseProfile: profileLowBitrate,
+				Transcode:   &enable,
+				OutputMux:   streamMuxFMP4,
+			},
+		},
+	}
+	ch := &catalog.LiveChannel{GuideName: "Test"}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/test?profile=mobile-fmp4", nil)
+	hasOverride, transcode, profile, reason, _ := g.requestAdaptation(context.Background(), req, ch, "test")
+	if !hasOverride || !transcode || profile != "mobile-fmp4" || reason != "query-profile" {
+		t.Fatalf("override=%v trans=%v profile=%q reason=%q", hasOverride, transcode, profile, reason)
+	}
+}
+
 func TestGateway_requestAdaptation_resolvedNonWebGetsFull(t *testing.T) {
 	pms := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/status/sessions" {

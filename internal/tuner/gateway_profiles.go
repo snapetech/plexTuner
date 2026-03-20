@@ -22,6 +22,21 @@ const (
 	profilePMSXcode   = "pmsxcode"
 )
 
+type NamedStreamProfile struct {
+	BaseProfile string `json:"base_profile"`
+	Transcode   *bool  `json:"transcode,omitempty"`
+	OutputMux   string `json:"output_mux,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+type resolvedStreamProfile struct {
+	Name           string
+	BaseProfile    string
+	ForceTranscode bool
+	OutputMux      string
+	Known          bool
+}
+
 // compactProfileKey strips non-alphanumeric characters for HDHR-style labels
 // (e.g. "Internet-1080" → "internet1080") so aliases match SiliconDust spellings.
 func compactProfileKey(lower string) string {
@@ -35,53 +50,80 @@ func compactProfileKey(lower string) string {
 	return b.String()
 }
 
-func normalizeProfileName(v string) string {
+func builtinProfileName(v string) (string, bool) {
 	lower := strings.ToLower(strings.TrimSpace(v))
 	switch lower {
 	case "", "default":
-		return profileDefault
+		return profileDefault, true
 	case "plexsafe", "plex-safe", "safe":
-		return profilePlexSafe
+		return profilePlexSafe, true
 	case "aaccfr", "aac-cfr", "aac":
-		return profileAACCFR
+		return profileAACCFR, true
 	case "videoonlyfast", "video-only-fast", "videoonly", "video":
-		return profileVideoOnly
+		return profileVideoOnly, true
 	case "lowbitrate", "low-bitrate", "low":
-		return profileLowBitrate
+		return profileLowBitrate, true
 	case "dashfast", "dash-fast":
-		return profileDashFast
+		return profileDashFast, true
 	case "pmsxcode", "pms-xcode", "pmsforce", "pms-force":
-		return profilePMSXcode
-	// HDHomeRun / SiliconDust-style transcode preset names (Lineup parity LP-010): map to our ffmpeg TS profiles.
+		return profilePMSXcode, true
 	case "native", "heavy", "max", "super":
-		return profileDefault
+		return profileDefault, true
 	case "internet", "internet720", "internet1080", "hd":
-		return profileDashFast
+		return profileDashFast, true
 	case "internet240", "internet360", "internet480":
-		return profileAACCFR
+		return profileAACCFR, true
 	case "mobile", "cell", "light":
-		return profileLowBitrate
+		return profileLowBitrate, true
 	default:
-		// Hyphen/underscore variants: internet-1080, internet_360, etc.
 		switch compactProfileKey(lower) {
 		case "native", "heavy", "max", "super":
-			return profileDefault
+			return profileDefault, true
 		case "internet", "internet720", "internet1080", "hd":
-			return profileDashFast
+			return profileDashFast, true
 		case "internet240", "internet360", "internet480":
-			return profileAACCFR
+			return profileAACCFR, true
 		case "mobile", "cell", "light":
-			return profileLowBitrate
+			return profileLowBitrate, true
 		default:
-			return profileDefault
+			return "", false
 		}
+	}
+}
+
+func normalizeProfileName(v string) string {
+	if builtIn, ok := builtinProfileName(v); ok {
+		return builtIn
+	}
+	return profileDefault
+}
+
+func normalizeConfiguredProfileName(v string) string {
+	lower := strings.ToLower(strings.TrimSpace(v))
+	if lower == "" {
+		return ""
+	}
+	if builtIn, ok := builtinProfileName(lower); ok {
+		return builtIn
+	}
+	return lower
+}
+
+func normalizeStreamOutputMuxName(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", "mpegts", "ts":
+		return streamMuxMPEGTS
+	case "fmp4", "mp4", "dash":
+		return streamMuxFMP4
+	default:
+		return ""
 	}
 }
 
 func defaultProfileFromEnv() string {
 	p := strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROFILE"))
 	if p != "" {
-		return normalizeProfileName(p)
+		return normalizeConfiguredProfileName(p)
 	}
 	if strings.EqualFold(os.Getenv("IPTV_TUNERR_PLEX_SAFE"), "1") ||
 		strings.EqualFold(os.Getenv("IPTV_TUNERR_PLEX_SAFE"), "true") ||
@@ -110,7 +152,7 @@ func loadProfileOverridesFile(path string) (map[string]string, error) {
 		if k == "" {
 			continue
 		}
-		out[k] = normalizeProfileName(v)
+		out[k] = normalizeConfiguredProfileName(v)
 	}
 	return out, nil
 }
@@ -143,6 +185,39 @@ func loadTranscodeOverridesFile(path string) (map[string]bool, error) {
 			out[k] = true
 		case "0", "false", "no", "off", "remux", "copy":
 			out[k] = false
+		}
+	}
+	return out, nil
+}
+
+func loadNamedProfilesFile(path string) (map[string]NamedStreamProfile, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	raw := map[string]NamedStreamProfile{}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return nil, err
+	}
+	out := make(map[string]NamedStreamProfile, len(raw))
+	for key, spec := range raw {
+		name := normalizeConfiguredProfileName(key)
+		if name == "" {
+			continue
+		}
+		base := normalizeProfileName(spec.BaseProfile)
+		if strings.TrimSpace(spec.BaseProfile) == "" {
+			base = profileDefault
+		}
+		out[name] = NamedStreamProfile{
+			BaseProfile: base,
+			Transcode:   spec.Transcode,
+			OutputMux:   normalizeStreamOutputMuxName(spec.OutputMux),
+			Description: strings.TrimSpace(spec.Description),
 		}
 	}
 	return out, nil
@@ -181,9 +256,59 @@ func (g *Gateway) profileForChannelMeta(channelID, guideNumber, tvgID string) st
 	return g.profileForChannel("")
 }
 
+func (g *Gateway) resolveProfileSelection(name string) resolvedStreamProfile {
+	resolvedName := normalizeConfiguredProfileName(name)
+	if resolvedName == "" {
+		resolvedName = profileDefault
+	}
+	if g != nil {
+		if spec, ok := g.NamedProfiles[resolvedName]; ok {
+			forceTranscode := true
+			if spec.Transcode != nil {
+				forceTranscode = *spec.Transcode
+			}
+			return resolvedStreamProfile{
+				Name:           resolvedName,
+				BaseProfile:    normalizeProfileName(spec.BaseProfile),
+				ForceTranscode: forceTranscode,
+				OutputMux:      normalizeStreamOutputMuxName(spec.OutputMux),
+				Known:          true,
+			}
+		}
+	}
+	if builtIn, ok := builtinProfileName(resolvedName); ok {
+		return resolvedStreamProfile{
+			Name:           builtIn,
+			BaseProfile:    builtIn,
+			ForceTranscode: builtIn != profileDefault || strings.TrimSpace(name) != "",
+			Known:          true,
+		}
+	}
+	return resolvedStreamProfile{
+		Name:        resolvedName,
+		BaseProfile: profileDefault,
+		Known:       false,
+	}
+}
+
+func (g *Gateway) preferredOutputMuxForProfile(profileName, requestMux string, transcode bool) string {
+	requestMux = strings.TrimSpace(strings.ToLower(requestMux))
+	if requestMux != "" {
+		return normalizeStreamOutputMux(requestMux, transcode)
+	}
+	if !transcode {
+		return streamMuxMPEGTS
+	}
+	selection := g.resolveProfileSelection(profileName)
+	if selection.Known && selection.OutputMux != "" {
+		return normalizeStreamOutputMux(selection.OutputMux, transcode)
+	}
+	return streamMuxMPEGTS
+}
+
 func effectiveProfileName(g *Gateway, channel *catalog.LiveChannel, channelID, forcedProfile string) string {
 	if strings.TrimSpace(forcedProfile) != "" {
-		return normalizeProfileName(forcedProfile)
+		return normalizeConfiguredProfileName(forcedProfile)
 	}
 	if g == nil || channel == nil {
 		return ""

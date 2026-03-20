@@ -42,10 +42,40 @@ Hyphens and other punctuation are ignored for these hardware-style names (e.g. `
 
 Your panel may use different spellings; extend mappings via code or **per-channel profile overrides** (`IPTV_TUNERR_PROFILE_OVERRIDES_FILE` in [cli-and-env-reference](cli-and-env-reference.md)). Pair with **`IPTV_TUNERR_TRANSCODE_OVERRIDES_FILE`** when you need per-channel **remux vs transcode** (see [plex-livetv-http-tuning](plex-livetv-http-tuning.md)).
 
+## Named profile matrix (optional)
+
+**`IPTV_TUNERR_STREAM_PROFILES_FILE`** is a JSON object of **operator-defined** profile keys. Each entry selects a **built-in** `base_profile` and can override **transcode on/off** and ffmpeg **output mux** (`mpegts` vs fragmented `fmp4`) without patching code. This is a small JSON map, not a full codec DSL, and it is useful when panels expect labels Tunerr does not map yet (Lineup parity **LP-010 / LP-011**).
+
+Example:
+
+```json
+{
+  "ISP-1080p": {
+    "base_profile": "dashfast",
+    "transcode": true,
+    "output_mux": "mpegts",
+    "description": "Panel-specific label → dashfast preset"
+  },
+  "ISP-web": {
+    "base_profile": "aaccfr",
+    "transcode": true,
+    "output_mux": "fmp4"
+  }
+}
+```
+
+Use **`?profile=ISP-1080p`** or reference those names from **`IPTV_TUNERR_PROFILE_OVERRIDES_FILE`**.
+
+Notes:
+- `base_profile` must be one of the built-in profiles or HDHR-style aliases listed above.
+- `output_mux` is only a preferred default. An explicit request like `?mux=mpegts` still wins.
+- `IPTV_TUNERR_PROFILE`, `IPTV_TUNERR_PROFILE_OVERRIDES_FILE`, and `?profile=<name>` can all reference these custom names once loaded.
+- Runtime snapshot echoes the file path under `tuner.stream_profiles_file`.
+
 ## Selecting a profile
 
-- **Query string:** `GET /stream/<id>?profile=<name>` — forces adaptation and transcode for known profiles (e.g. `?profile=internet360` → `aaccfr`).
-- **Environment:** `IPTV_TUNERR_PROFILE`, `IPTV_TUNERR_PLEX_SAFE`, profile overrides file.
+- **Query string:** `GET /stream/<id>?profile=<name>` — forces adaptation using built-in or loaded named profiles (e.g. `?profile=internet360` → `aaccfr`, or `?profile=ISP-web` from the matrix file).
+- **Environment:** `IPTV_TUNERR_PROFILE`, `IPTV_TUNERR_PLEX_SAFE`, profile overrides file, named profile matrix file.
 - **Autopilot:** remembered per `dna_id` + client class when enabled.
 
 ## See also
