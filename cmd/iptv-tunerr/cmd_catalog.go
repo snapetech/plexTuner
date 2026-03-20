@@ -66,6 +66,23 @@ func stripStreamHosts(live []catalog.LiveChannel, hosts []string) []catalog.Live
 	return out
 }
 
+// catalogDedupeByTvgIDEnabled returns false when IPTV_TUNERR_DEDUPE_BY_TVG_ID is explicitly off.
+func catalogDedupeByTvgIDEnabled() bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("IPTV_TUNERR_DEDUPE_BY_TVG_ID")))
+	if v == "" {
+		return true
+	}
+	return v == "1" || v == "true" || v == "yes" || v == "on"
+}
+
+// maybeDedupeByTVGID runs dedupeByTVGID when catalogDedupeByTvgIDEnabled (default on).
+func maybeDedupeByTVGID(live []catalog.LiveChannel, cfHosts []string) []catalog.LiveChannel {
+	if !catalogDedupeByTvgIDEnabled() {
+		return live
+	}
+	return dedupeByTVGID(live, cfHosts)
+}
+
 // dedupeByTVGID merges LiveChannel entries that share the same TVGID into a single entry,
 // combining their StreamURLs lists. Channels without a TVGID pass through unchanged.
 func dedupeByTVGID(live []catalog.LiveChannel, cfHosts []string) []catalog.LiveChannel {
@@ -347,7 +364,7 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 			return res, fmt.Errorf("parse M3U: %w", err)
 		}
 		res.Movies, res.Series, res.Live = movies, series, live
-		res.Live = dedupeByTVGID(res.Live, cfg.StripStreamHosts)
+		res.Live = maybeDedupeByTVGID(res.Live, cfg.StripStreamHosts)
 		enrichM3UWithProviderBases(cfg, res.Live)
 	} else if m3uURLs := configuredDirectM3UURLs(cfg); len(m3uURLs) > 0 {
 		var (
@@ -376,7 +393,7 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 		if okCount > 1 {
 			log.Printf("Merged %d direct M3U feeds into one catalog", okCount)
 		}
-		res.Live = dedupeByTVGID(res.Live, cfg.StripStreamHosts)
+		res.Live = maybeDedupeByTVGID(res.Live, cfg.StripStreamHosts)
 		enrichM3UWithProviderBases(cfg, res.Live)
 	} else if entries := cfg.ProviderEntries(); len(entries) > 0 {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -483,7 +500,7 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 			if okCount > 1 {
 				log.Printf("Merged %d get.php provider feeds into one catalog", okCount)
 			}
-			res.Live = dedupeByTVGID(res.Live, cfg.StripStreamHosts)
+			res.Live = maybeDedupeByTVGID(res.Live, cfg.StripStreamHosts)
 		}
 	} else {
 		return res, fmt.Errorf("need -m3u URL or set IPTV_TUNERR_PROVIDER_USER and IPTV_TUNERR_PROVIDER_PASS in .env")
@@ -521,6 +538,13 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 				log.Printf("hdhr-lineup: merged %d hardware channel(s); live channels %d -> %d", len(added), before, len(res.Live))
 			}
 		}
+	}
+
+	// Final merge after free-source + HDHR hardware merges (those paths can reintroduce duplicate tvg-id rows).
+	beforeDedupe := len(res.Live)
+	res.Live = maybeDedupeByTVGID(res.Live, cfg.StripStreamHosts)
+	if catalogDedupeByTvgIDEnabled() && len(res.Live) < beforeDedupe {
+		log.Printf("dedupeByTVGID (post-merge): %d -> %d live channels", beforeDedupe, len(res.Live))
 	}
 
 	applyRuntimeEPGRepairs(cfg, res.Live, res.ProviderBase, res.ProviderUser, res.ProviderPass)

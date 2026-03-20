@@ -80,7 +80,7 @@ class Parser:
     ffmpeg_mode_re = re.compile(r'(ffmpeg-(?:transcode|remux))')
     first_bytes_re = re.compile(r'req=(r\d+).*?\bfirst-bytes=(\d+)\s+startup=([^\s]+)')
     startup_gate_re = re.compile(
-        r'req=(r\d+).*?startup-gate buffered=(\d+).*?ts_pkts=(\d+)\s+idr=(true|false)\s+aac=(true|false)\s+align=(-?\d+)'
+        r'req=(r\d+).*?startup-gate buffered=(\d+).*?ts_pkts=(\d+)\s+idr=(true|false)\s+aac=(true|false)\s+align=(-?\d+)(?:\s+release=(\S+))?'
     )
     startup_gate_timeout_re = re.compile(r'req=(r\d+).*?startup-gate timeout')
     null_keepalive_start_re = re.compile(r'req=(r\d+).*?null-ts-keepalive start')
@@ -180,15 +180,16 @@ class Parser:
 
                 if m := self.startup_gate_re.search(msg):
                     req = self.req(m.group(1))
-                    req.startup_gate_buffered.append(
-                        {
-                            "buffered": int(m.group(2)),
-                            "ts_pkts": int(m.group(3)),
-                            "idr": BOOL_RE.get(m.group(4).lower(), False),
-                            "aac": BOOL_RE.get(m.group(5).lower(), False),
-                            "align": int(m.group(6)),
-                        }
-                    )
+                    row = {
+                        "buffered": int(m.group(2)),
+                        "ts_pkts": int(m.group(3)),
+                        "idr": BOOL_RE.get(m.group(4).lower(), False),
+                        "aac": BOOL_RE.get(m.group(5).lower(), False),
+                        "align": int(m.group(6)),
+                    }
+                    if m.group(7):
+                        row["release"] = m.group(7)
+                    req.startup_gate_buffered.append(row)
                     self.counters["startup_gate_buffered"] += 1
                     continue
 

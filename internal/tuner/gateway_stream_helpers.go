@@ -154,8 +154,37 @@ func containsH264IDRAnnexB(buf []byte) bool {
 	return false
 }
 
+const tsPacketSize = 188
+
+// trimTSHeadToMaxBytes drops MPEG-TS 188-byte packets from the front until len(buf) <= maxBytes,
+// resyncing on 0x47. Used by the WebSafe startup prefetch loop (HR-001) so we can keep reading
+// for an IDR while bounding memory. If no sync byte exists, retains the tail up to maxBytes.
+func trimTSHeadToMaxBytes(buf []byte, maxBytes int) []byte {
+	if maxBytes <= 0 || len(buf) <= maxBytes {
+		return buf
+	}
+	for len(buf) > maxBytes {
+		if len(buf) < tsPacketSize {
+			break
+		}
+		if buf[0] == 0x47 {
+			buf = buf[tsPacketSize:]
+			continue
+		}
+		idx := bytes.IndexByte(buf[1:], 0x47)
+		if idx < 0 {
+			if len(buf) > maxBytes {
+				buf = buf[len(buf)-maxBytes:]
+			}
+			break
+		}
+		buf = buf[idx+1:]
+	}
+	return buf
+}
+
 func looksLikeGoodTSStart(buf []byte) startSignalState {
-	const pkt = 188
+	pkt := tsPacketSize
 	st := startSignalState{}
 	st.AlignedOffset = -1
 	var idrCarry []byte

@@ -3,7 +3,8 @@
 
 This is an offline/helper tool that reuses the existing runtime override hooks:
   - IPTV_TUNERR_PROFILE_OVERRIDES_FILE
-  - IPTV_TUNERR_TRANSCODE_OVERRIDES_FILE
+  - IPTV_TUNERR_TRANSCODE_OVERRIDES_FILE (merged on top of STREAM_TRANSCODE off/on/auto;
+    for auto_cached mode the file alone selects transcode vs remux per channel)
 
 It probes channel stream URLs (typically IptvTunerr /lineup.json entries) and emits
 JSON maps for channels that match criteria likely to cause Plex Web trouble

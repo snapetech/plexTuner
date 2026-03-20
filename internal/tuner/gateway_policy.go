@@ -276,14 +276,23 @@ func (g *Gateway) effectiveTranscodeForChannel(ctx context.Context, channelID, s
 func (g *Gateway) effectiveTranscodeForChannelMeta(ctx context.Context, channelID, guideNumber, tvgID, streamURL string) bool {
 	mode := strings.ToLower(strings.TrimSpace(g.StreamTranscodeMode))
 	if mode == "auto_cached" || mode == "cached_auto" {
+		// Remux-first: only the override file decides (no ffprobe); unmatched keys stay on remux.
 		if v, ok := g.firstTranscodeOverride(channelID, guideNumber, tvgID); ok {
-			log.Printf("gateway: transcode auto_cached match id=%q guide=%q tvg=%q -> %t", channelID, guideNumber, tvgID, v)
+			log.Printf("gateway: transcode policy mode=auto_cached id=%q guide=%q tvg=%q -> %t (override_file)", channelID, guideNumber, tvgID, v)
 			return v
 		}
-		log.Printf("gateway: transcode auto_cached miss id=%q guide=%q tvg=%q (default remux)", channelID, guideNumber, tvgID)
+		log.Printf("gateway: transcode policy mode=auto_cached id=%q guide=%q tvg=%q -> remux (no override_file match)", channelID, guideNumber, tvgID)
 		return false
 	}
-	return g.effectiveTranscode(ctx, streamURL)
+	base := g.effectiveTranscode(ctx, streamURL)
+	if v, ok := g.firstTranscodeOverride(channelID, guideNumber, tvgID); ok {
+		if v != base {
+			log.Printf("gateway: transcode policy mode=%q id=%q guide=%q tvg=%q base=%t override_file=%t -> %t",
+				mode, channelID, guideNumber, tvgID, base, v, v)
+		}
+		return v
+	}
+	return base
 }
 
 func (g *Gateway) needTranscode(ctx context.Context, streamURL string) (bool, error) {

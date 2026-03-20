@@ -23,6 +23,47 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Work breakdown HR-006 — deterministic live channel order in catalog
+  Summary:
+    - **`catalog.ReplaceWithLive`** sorts **`live_channels`** in place by **`channel_id`** / **guide_number** / **guide_name**; test **`TestReplaceWithLive_stableChannelOrder`**.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Mutates the caller’s live slice; documented on **`ReplaceWithLive`**.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/catalog/catalog.go`, `docs/reference/plex-livetv-http-tuning.md`
+
+- Date: 2026-03-19
+  Title: Work breakdown HR-007 — transcode override file merges with off/on/auto
+  Summary:
+    - **`effectiveTranscodeForChannelMeta`**: **`IPTV_TUNERR_TRANSCODE_OVERRIDES_FILE`** overrides global **`STREAM_TRANSCODE`** for **`off`/`on`/`auto`**; **`auto_cached`** unchanged (file-only + remux default).
+    - Logs **`gateway: transcode policy ...`**; tests **`internal/tuner/gateway_policy_test.go`**; runtime **`transcode_overrides_file`** / **`profile_overrides_file`**; docs + **README** + **`.env.example`** + **CHANGELOG**.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Client adaptation still applied after base transcode bool in **`gateway.go`**.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway_policy.go`, `docs/reference/plex-livetv-http-tuning.md`
+
+- Date: 2026-03-19
+  Title: Work breakdown HR-010 / HR-009 / HR-008 — HTTP pool env + Plex ops docs
+  Summary:
+    - **`internal/httpclient`**: **`IPTV_TUNERR_HTTP_MAX_IDLE_CONNS`**, **`IPTV_TUNERR_HTTP_IDLE_CONN_TIMEOUT_SEC`**, **`parseSharedTransportEnv`** + tests; **`/debug/runtime.json`** tuner keys **`http_max_idle_conns`**, **`http_idle_conn_timeout_sec`**.
+    - **`docs/reference/plex-livetv-http-tuning.md`**; runbook §9 (parallel HTTP, live failover, DVR soak); **CHANGELOG**, **cli-and-env**, **hls-mux-toolkit**, **`.env.example`**, **work_breakdown** progress notes.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Granular stories from [work_breakdown.md](work_breakdown.md) worked **end toward beginning** (**HR-010** → **HR-009** → **HR-008**).
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/httpclient/httpclient.go`, `docs/runbooks/iptvtunerr-troubleshooting.md`
+
+- Date: 2026-03-19
   Title: Close mux regression-fixture backlog with committed HLS and DASH captures
   Summary:
     - Added committed stream-compare fixture docs in **`internal/tuner/testdata/README.md`**, tracked DASH upstream/expected MPD goldens, and gitignored **`.diag/`** so local harness captures stay disposable until promoted.

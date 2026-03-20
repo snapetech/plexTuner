@@ -262,6 +262,10 @@ func (g *Gateway) requestAdaptation(ctx context.Context, r *http.Request, channe
 	if getenvBool("IPTV_TUNERR_FORCE_WEBSAFE", false) {
 		return true, true, profilePlexSafe, "force-websafe", "manual"
 	}
+	if g.shouldAdaptStickyWebsafe(channelID, hints) {
+		cc := g.stickyFallbackClientClass(ctx, hints)
+		return true, true, profilePlexSafe, "sticky-fallback-websafe", cc
+	}
 	if !g.PlexClientAdapt {
 		return false, false, "", "adapt-disabled", "unknown"
 	}

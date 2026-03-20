@@ -40,7 +40,7 @@ Hardware tuners and Lineup-style apps often expose preset labels. Tunerr maps th
 
 Hyphens and other punctuation are ignored for these hardware-style names (e.g. `Internet-1080` and `internet1080` both map to `dashfast`).
 
-Your panel may use different spellings; extend mappings via code or **per-channel profile overrides** (`IPTV_TUNERR_PROFILE_OVERRIDES_FILE` in [cli-and-env-reference](cli-and-env-reference.md)).
+Your panel may use different spellings; extend mappings via code or **per-channel profile overrides** (`IPTV_TUNERR_PROFILE_OVERRIDES_FILE` in [cli-and-env-reference](cli-and-env-reference.md)). Pair with **`IPTV_TUNERR_TRANSCODE_OVERRIDES_FILE`** when you need per-channel **remux vs transcode** (see [plex-livetv-http-tuning](plex-livetv-http-tuning.md)).
 
 ## Selecting a profile
 
@@ -50,5 +50,6 @@ Your panel may use different spellings; extend mappings via code or **per-channe
 
 ## See also
 
+- [plex-client-compatibility-matrix](plex-client-compatibility-matrix.md) — which Plex clients should get **`plexsafe`** vs native path when **`CLIENT_ADAPT`** is on (**HR-003**).
 - [cli-and-env-reference](cli-and-env-reference.md) — env vars and stream behavior.
 - [EPIC-lineup-parity](../epics/EPIC-lineup-parity.md) — product roadmap for named HLS/fMP4 profiles.

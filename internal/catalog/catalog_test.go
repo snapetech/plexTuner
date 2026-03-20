@@ -81,6 +81,24 @@ func TestSave_permissions(t *testing.T) {
 	}
 }
 
+func TestReplaceWithLive_stableChannelOrder(t *testing.T) {
+	c := New()
+	live := []LiveChannel{
+		{ChannelID: "zebra", GuideNumber: "9", GuideName: "Z"},
+		{ChannelID: "alpha", GuideNumber: "1", GuideName: "A"},
+	}
+	c.ReplaceWithLive(nil, nil, live)
+	if got := c.LiveChannels[0].ChannelID; got != "alpha" {
+		t.Fatalf("first channel: got %q want alpha", got)
+	}
+	if got := c.LiveChannels[1].ChannelID; got != "zebra" {
+		t.Fatalf("second channel: got %q want zebra", got)
+	}
+	if live[0].ChannelID != "alpha" {
+		t.Fatal("expected ReplaceWithLive to sort live slice in place")
+	}
+}
+
 func TestSave_overwrite(t *testing.T) {
 	// Saving twice: second save replaces first correctly.
 	dir := t.TempDir()

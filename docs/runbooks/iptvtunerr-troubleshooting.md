@@ -2,7 +2,7 @@
 id: iptvtunerr-troubleshooting
 type: runbook
 status: stable
-tags: [runbooks, ops, troubleshooting, qa, iptv-tunerr]
+tags: [runbooks, ops, troubleshooting, qa, iptv-tunerr, hr-003, hr-002, hr-001]
 ---
 
 # IPTV Tunerr — Troubleshooting and QA
@@ -152,7 +152,7 @@ IPTV_TUNERR_STREAM_BUFFER_BYTES=auto
 ### Log lines to watch
 
 - `bootstrap-ts bytes=... startup=...` or `bootstrap-ts bytes=... dur=...`
-- `startup-gate buffered=... ts_pkts=... idr=... aac=...`
+- `startup-gate buffered=... ts_pkts=... idr=... aac=... align=... release=...` (**HR-001**: `release=` explains why the gate opened, e.g. `min-bytes-idr-aac-ready` vs `max-bytes-without-idr-fallback`)
 - `null-ts-keepalive start interval_ms=... packets=...`
 - `null-ts-keepalive stop=startup-gate-ready ...`
 - `pat-pmt-keepalive start interval_ms=...`
@@ -317,9 +317,27 @@ This is the useful app-side cross-wire for the harness:
 
 It is intentionally not a packet-capture feature. The app exports its own decision trace; the harness handles playback tools and pcaps.
 
+### Plex / Lavf parallel HTTP and Tunerr’s upstream pool (HR-010)
+
+PMS often uses **Lavf**, which opens **multiple parallel HTTP connections** (especially for HLS segments). Tunerr’s shared `internal/httpclient` transport defaults (**`MaxIdleConnsPerHost=16`**, **`IdleConnTimeout=90s`**, **`MaxIdleConns=100`**) target that pattern. Tune with **`IPTV_TUNERR_HTTP_MAX_IDLE_CONNS_PER_HOST`**, **`IPTV_TUNERR_HTTP_MAX_IDLE_CONNS`**, and **`IPTV_TUNERR_HTTP_IDLE_CONN_TIMEOUT_SEC`**; **`/debug/runtime.json`** → **`tuner.http_*`** echoes what was set at process start. Full rationale: [plex-livetv-http-tuning](../reference/plex-livetv-http-tuning.md).
+
+### Live-stream “flap” and retries (HR-008)
+
+On **`/stream/<channel>`**, Tunerr walks **primary then backup** catalog URLs **once each** and does **not** add backoff retries on the hot path (see `internal/tuner/gateway.go` comments). **`seg=`** short relays are a separate path: use mux diagnostics, **`/metrics`**, and **`/debug/stream-attempts.json`**.
+
+### DVR recording soak baseline (HR-009)
+
+After deploy or provider changes, run a **short Plex DVR recording** through the Tunerr tuner: (1) schedule **1–5 minutes** on a known-good channel, (2) confirm the job **completes** in PMS with plausible duration, (3) check the artifact **size** is non-trivial, (4) **spot-play** start/mid in a client, (5) grep Tunerr logs for **`805` All Tuners In Use**, **`503`**, or repeated **`gateway:`** upstream errors during the window. On failure, capture **`/debug/stream-attempts.json`** and the PMS DVR log slice.
+
 ---
 
-## 10. Checklist for "is the tuner OK?"
+## 10. Tier-1 Plex client matrix (HR-003)
+
+Cross-client Live TV validation (which devices, what adaptation class, what evidence to save) lives in **[plex-client-compatibility-matrix](../reference/plex-client-compatibility-matrix.md)**. Use it after transport/tuner sanity (§8–§9) when the bug is **client-specific** (Web vs TV app) rather than upstream-only.
+
+---
+
+## 11. Checklist for "is the tuner OK?"
 
 1. **Verify passes:** `./scripts/verify`
 2. **Probe OK (if using provider):** `iptv-tunerr probe` shows at least one get.php or player_api OK
@@ -328,7 +346,7 @@ It is intentionally not a packet-capture feature. The app exports its own decisi
 
 ---
 
-## 11. Category DVRs empty / "no live channels available" / guides stuck updating
+## 12. Category DVRs empty / "no live channels available" / guides stuck updating
 
 **Symptom:** Main HDHR lineup and guide work; category tuners (bcastus, newsus, generalent, etc.) log `xmltv: external source failed (no live channels available); falling back to placeholder guide` and serve tiny placeholder guides.
 

@@ -80,3 +80,34 @@ func TestLooksLikeGoodTSStartDetectsSplitIDRStartCodeAcrossPackets(t *testing.T)
 		t.Fatalf("expected IDR detection across packet boundary")
 	}
 }
+
+func TestTrimTSHeadToMaxBytesKeepsTailAndSync(t *testing.T) {
+	var prefix []byte
+	for i := 0; i < 25; i++ {
+		prefix = append(prefix, testTSPacket([]byte{byte(i)})...)
+	}
+	var goodTail []byte
+	for i := 0; i < 8; i++ {
+		payload := []byte{byte(i)}
+		switch i {
+		case 2:
+			payload = []byte{0x11, 0xff, 0xf1, 0x50, 0x80}
+		case 5:
+			payload = []byte{0x00, 0x00, 0x01, 0x45, 0x88, 0x84}
+		}
+		goodTail = append(goodTail, testTSPacket(payload)...)
+	}
+	buf := append(prefix, goodTail...)
+	maxB := tsPacketSize * 10
+	out := trimTSHeadToMaxBytes(buf, maxB)
+	if len(out) > maxB {
+		t.Fatalf("len=%d want <=%d", len(out), maxB)
+	}
+	if out[0] != 0x47 {
+		t.Fatalf("expected sync 0x47, got %02x", out[0])
+	}
+	st := looksLikeGoodTSStart(out)
+	if !st.HasIDR || !st.HasAAC {
+		t.Fatalf("lost IDR/AAC after trim: idr=%v aac=%v", st.HasIDR, st.HasAAC)
+	}
+}

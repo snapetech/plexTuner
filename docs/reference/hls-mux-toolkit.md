@@ -88,6 +88,9 @@ Dense reference for **Tunerr-native HLS** and **experimental DASH MPD** proxying
 | `IPTV_TUNERR_METRICS_MUX_CHANNEL_LABELS` | Add **`channel_id`** to mux counter/histogram labels (**high cardinality**; default off) |
 | `IPTV_TUNERR_HTTP_ACCEPT_BROTLI` | Accept **br** and decompress brotli upstream bodies on the shared HTTP stack |
 | `IPTV_TUNERR_HTTP_MAX_IDLE_CONNS_PER_HOST` | Tunable **`MaxIdleConnsPerHost`** on shared HTTP client (default **16**) |
+| `IPTV_TUNERR_HTTP_MAX_IDLE_CONNS` | Tunable global **`MaxIdleConns`** (default **100**) |
+| `IPTV_TUNERR_HTTP_IDLE_CONN_TIMEOUT_SEC` | Idle connection timeout seconds (default **90**) |
+| Plex HTTP tuning (ref) | [plex-livetv-http-tuning](plex-livetv-http-tuning.md) — Lavf parallel fetches, failover vs **`seg=`** (**HR-008**, **HR-010**) |
 | `IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_BONUS` | Extra concurrent **`seg=`** slots from Autopilot hit counts (**`MAX_CONCURRENT`** disables) |
 | `IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_MIN_HITS` | Minimum Autopilot **Hits** (best row per **`dna_id`**) before bonus applies (default **3**) |
 | `IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_BONUS_PER_STEP` | Bonus slots × (**maxHits − minHits + 1**), capped (default **4** per step) |

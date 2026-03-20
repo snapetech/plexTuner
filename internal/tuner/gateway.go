@@ -102,6 +102,8 @@ type Gateway struct {
 	hostFailures               map[string]hostFailureStat
 	attemptsMu                 sync.Mutex
 	recentAttempts             []StreamAttemptRecord
+	adaptStickyMu              sync.Mutex
+	adaptStickyUntil           map[string]time.Time // HR-004: Plex session+channel → websafe sticky expiry
 }
 
 type gatewayReqIDKey struct{}
@@ -166,6 +168,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			log.Printf("gateway: channel=%q id=%s adapt inherit profile=%q reason=%s", channel.GuideName, channelID, forcedProfile, adaptReason)
 		}
 	}
+	adaptStickyCandidate := hasTranscodeOverride && !forceTranscode && adaptReason != "query-profile" && adaptReason != "force-websafe"
 	start := time.Now()
 	if debugOpts.enabled() {
 		dw := newStreamDebugResponseWriter(w, reqID, channel.GuideName, channelID, start, debugOpts)
@@ -186,6 +189,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var finalErr error
 	defer func() {
 		g.appendStreamAttempt(attempt.finish(finalStatus, finalMode, finalErr, finalEffectiveURL))
+		if adaptStickyCandidate && (finalStatus == "all_upstreams_failed" || finalStatus == "upstream_concurrency_limited") {
+			g.noteAdaptStickyFallback(channelID, plexRequestHints(r))
+		}
 	}()
 	urls = g.reorderStreamURLs(channel, clientClass, urls)
 	requestMux := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mux")))

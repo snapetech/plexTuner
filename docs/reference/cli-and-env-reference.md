@@ -951,7 +951,9 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
 
 ## Stream behavior
 
-- `IPTV_TUNERR_STREAM_TRANSCODE` (`off|on|auto`) — `off` remuxes only; `on` always transcodes with libx264/AAC; `auto` probes the codec with ffprobe and transcodes only if Plex can't handle it natively (e.g. HEVC, VP9).
+- `IPTV_TUNERR_STREAM_TRANSCODE` — `off` remux only; `on` always transcode (libx264/AAC); `auto` run ffprobe on tune and transcode only if codecs are not Plex-friendly (e.g. HEVC, VP9); `auto_cached` (alias `cached_auto`) **remux-first** using **only** `IPTV_TUNERR_TRANSCODE_OVERRIDES_FILE` (no ffprobe; channels not listed in the file stay on remux).
+- `IPTV_TUNERR_TRANSCODE_OVERRIDES_FILE` — JSON object mapping **channel_id**, **guide_number**, or **tvg_id** → `true`/`false` (or string `transcode`/`remux`). With `off`/`on`/`auto`, the file **overrides** the global decision for matching channels (remux-first escapes for `on`, or per-channel transcode under `off`). With `auto_cached`, the file **is** the policy. Precedence after this: **client adaptation** (`IPTV_TUNERR_CLIENT_ADAPT` / Autopilot) may still force websafe transcode for browser-class clients. See [plex-livetv-http-tuning](plex-livetv-http-tuning.md) (**HR-007**).
+- `IPTV_TUNERR_PROFILE_OVERRIDES_FILE` — JSON per-channel ffmpeg profile names (same key order as transcode overrides). Used when transcoding is active.
 - `IPTV_TUNERR_STREAM_BUFFER_BYTES` (`0|auto|<bytes>`) — `auto` enables adaptive buffering when transcoding; `0` disables; a fixed integer (e.g. `2097152`) sets a 2 MiB buffer.
 - `IPTV_TUNERR_STREAM_PUBLIC_BASE_URL` — optional **no-trailing-slash** base URL (e.g. `http://192.168.1.10:5004`) prepended to **`?mux=hls`** playlist media lines so clients that mishandle relative URLs still resolve Tunerr. Empty = relative `/stream/...` lines only.
 - `IPTV_TUNERR_HLS_MUX_CORS` — when `true`/`1`/`on`, add CORS headers on **`?mux=hls`** playlist and **`?mux=hls&seg=`** responses and handle **`OPTIONS`** preflight for those URLs (for browser-based players or devtools). Default off.
@@ -970,7 +972,9 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
 - `IPTV_TUNERR_HTTP_ACCEPT_BROTLI` — when enabled, send **`br`** in **`Accept-Encoding`** and transparently decompress **`Content-Encoding: br`** on the shared HTTP client (including **`?mux=*&seg=`** fetches).
 - `IPTV_TUNERR_HLS_MUX_DASH_EXPAND_SEGMENT_TEMPLATE` — when enabled, expand uniform self-closing DASH **`SegmentTemplate`** (**`duration`** / **`timescale`**, **`$Number$`** in **`media`**, no **`$Time$`**) into **`SegmentList`** before MPD URL rewrite (default off; large manifests possible).
 - `IPTV_TUNERR_HLS_MUX_DASH_EXPAND_MAX_SEGMENTS` — max **`SegmentURL`** entries per expanded template (default **10000**, hard-capped at **500000**).
-- `IPTV_TUNERR_HTTP_MAX_IDLE_CONNS_PER_HOST` — optional override for the shared **`http.Transport`** **`MaxIdleConnsPerHost`** (default **16**), shared by **`internal/httpclient`**.
+- `IPTV_TUNERR_HTTP_MAX_IDLE_CONNS_PER_HOST` — optional override for the shared **`http.Transport`** **`MaxIdleConnsPerHost`** (default **16**), shared by **`internal/httpclient`** (process start only).
+- `IPTV_TUNERR_HTTP_MAX_IDLE_CONNS` — optional override for **`MaxIdleConns`** on that transport (default **100**).
+- `IPTV_TUNERR_HTTP_IDLE_CONN_TIMEOUT_SEC` — optional idle connection lifetime in seconds (default **90**). See [plex-livetv-http-tuning](plex-livetv-http-tuning.md).
 - `IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_BONUS` — when enabled, add extra concurrent **`seg=`** capacity for channels whose **`dna_id`** has “hot” Autopilot rows (best **`Hits`** across client classes); tunables **`IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_MIN_HITS`**, **`_BONUS_PER_STEP`**, **`_BONUS_CAP`**. Ignored when **`IPTV_TUNERR_HLS_MUX_MAX_CONCURRENT`** is set.
 - **HLS / DASH mux** — **`GET /stream/<channel>?mux=hls`** on an **HLS** upstream returns a rewritten **M3U8**; **`?mux=dash`** on a **DASH** upstream returns a rewritten **MPD** (experimental). HLS **`URI='...'`** (single-quoted) is rewritten like **`URI="..."`**. DASH **`media=`** / **`initialization=`** / similar accept **single- or double-quoted** values. **`?mux=dash&seg=`** preserves **`$Number%0Nd$`** / **`$Time%0Nd$`** through query encoding. Optional **`IPTV_TUNERR_HLS_MUX_DASH_EXPAND_SEGMENT_TEMPLATE`** expands **`SegmentTemplate`** (including **`SegmentTimeline`**, paired tags, padded **`$Number`**). Nested playlists/segments use **`?mux=<kind>&seg=<url>`**. Default stream behavior remains TS remux/transcode when `mux` is omitted. Direct **`seg=`** targets must be **http** or **https**; other schemes return **`400`** (JSON-capable clients may send **`Accept: application/json`**). **`X-IptvTunerr-Hls-Mux-Error`** documents failures; **4xx/5xx** from upstream are passed through with a bounded body preview. **`HEAD`** on **`seg=`** is forwarded as **HEAD** to the upstream. **`POST /ops/actions/mux-seg-decode`** (**localhost / UI LAN policy**) decodes base64 **`seg_b64`** for support tickets (**redacted** URL in JSON only).
 - **Byte-range / conditional segments:** client **`Range`** / **`If-Range`** / **`If-None-Match`** / **`If-Modified-Since`** are forwarded to upstream **`?mux=hls&seg=`** fetches; **`206`** + **`Content-Range`**, or **`304`**, are passed back when the CDN responds that way.
@@ -979,6 +983,9 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
 - `IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE` — keep the original ffmpeg input hostname instead of rewriting it to a resolved IP. Useful for CDNs that validate the hostname against `Host` or TLS state.
 - `IPTV_TUNERR_FFMPEG_HLS_RECONNECT` — when `true`, adds HLS reconnect flags to ffmpeg (`-reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1`). Helps with providers whose HLS segment URLs expire mid-stream.
 - `IPTV_TUNERR_CLIENT_ADAPT` — when `true`, resolve the Plex client from the active session and force websafe (transcode + MP3 audio) for web/browser clients and for internal fetchers (Lavf/PMS). Ensures Chrome and Firefox get compatible audio without transcoding non-browser clients.
+- `IPTV_TUNERR_CLIENT_ADAPT_STICKY_FALLBACK` — when enabled (default), if adaptation chose the **non-websafe** path and the tune ends with **`all_upstreams_failed`** or **`upstream_concurrency_limited`**, register a **session-scoped** WebSafe fallback for that channel + Plex session/client id until TTL (see [plex-livetv-http-tuning](plex-livetv-http-tuning.md) **HR-004**).
+- `IPTV_TUNERR_CLIENT_ADAPT_STICKY_TTL_SEC` — sticky lifetime in seconds (default **14400**; clamped **120**–**604800**).
+- `IPTV_TUNERR_CLIENT_ADAPT_STICKY_LOG` — set `1` to include internal sticky map keys in logs (with **`IPTV_TUNERR_STREAM_DEBUG`**).
 - `IPTV_TUNERR_UPSTREAM_HEADERS` — comma-separated extra headers applied to upstream playlist and segment requests, for example `Referer`, `Origin`, or `Host`.
 - `IPTV_TUNERR_UPSTREAM_ADD_SEC_FETCH` — add `Sec-Fetch-Site: cross-site` and `Sec-Fetch-Mode: cors` on upstream requests and ffmpeg inputs.
 - `IPTV_TUNERR_UPSTREAM_USER_AGENT` — override the upstream `User-Agent` while leaving downstream client detection untouched. Accepts preset names (`lavf`, `vlc`, `mpv`, `kodi`, `firefox`) or a literal UA string. When set to a preset, the resolved string matches the installed ffmpeg version (for `lavf`) or a canonical media-player/browser value.
@@ -997,6 +1004,7 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
 - `IPTV_TUNERR_HOT_START_PROGRAM_KEEPALIVE` — enable PAT/PMT keepalive automatically for hot channels (default `true`)
 - `IPTV_TUNERR_FORCE_WEBSAFE` — when `true`, always transcode with MP3 audio regardless of client. Use if client detection misclassifies a browser client or after a Plex update changes the session UA.
 - `IPTV_TUNERR_STRIP_STREAM_HOSTS` — comma-separated hostnames (e.g. `cf.like-cdn.com,like-cdn.com`) whose stream URLs are removed at catalog build time. Channels with only stripped hosts are dropped entirely so the tuner never attempts CF-blocked endpoints.
+- `IPTV_TUNERR_DEDUPE_BY_TVG_ID` — when `true`/`1`/`on` (default), merge catalog rows that share the same **`tvg_id`** during **`index`** (including a **post-merge** pass after free sources + HDHR hardware lineup). Set `false`/`0`/`off` to disable (niche debugging).
 
 ## Live TV startup race hardening (websafe bootstrap)
 
@@ -1005,10 +1013,11 @@ These vars address the Plex `dash_init_404` / "Failed to find consumer" race whe
 - `IPTV_TUNERR_WEBSAFE_BOOTSTRAP` — when `true`, sends a short burst of TS bytes immediately on stream open to give Plex's packager a head start before the real stream arrives.
 - `IPTV_TUNERR_WEBSAFE_BOOTSTRAP_ALL` — apply bootstrap to all stream types, not just HLS inputs.
 - `IPTV_TUNERR_WEBSAFE_BOOTSTRAP_SECONDS` — duration of the bootstrap burst (default `0.35`).
-- `IPTV_TUNERR_WEBSAFE_STARTUP_MIN_BYTES` — startup gate: minimum buffered bytes before passing data to Plex (default `65536`).
-- `IPTV_TUNERR_WEBSAFE_STARTUP_MAX_BYTES` — startup gate: maximum bytes to buffer waiting for min threshold (default `524288`).
-- `IPTV_TUNERR_WEBSAFE_STARTUP_TIMEOUT_MS` — startup gate: give up waiting after this many ms and pass whatever is available (default `30000`).
-- `IPTV_TUNERR_WEBSAFE_REQUIRE_GOOD_START` — when `true`, abort the session if the startup gate times out without meeting the min threshold (strict mode).
+- `IPTV_TUNERR_WEBSAFE_STARTUP_MIN_BYTES` — startup gate: minimum buffered bytes before releasing **main** ffmpeg TS to the client (default `65536`).
+- `IPTV_TUNERR_WEBSAFE_STARTUP_MAX_BYTES` — max bytes of ffmpeg TS kept while scanning for a decodable start (default **`786432`**). With **`IPTV_TUNERR_WEBSAFE_REQUIRE_GOOD_START`**, the scan uses a **sliding window** of this size (**HR-001**) so the gate does not flush at max size without **H.264 IDR + AAC**.
+- `IPTV_TUNERR_WEBSAFE_STARTUP_TIMEOUT_MS` — max wait for prefetch to finish (default **`60000`** ms in gateway code).
+- `IPTV_TUNERR_WEBSAFE_REQUIRE_GOOD_START` — when `true` (default) on transcode/WebSafe ffmpeg relay, require **H.264 IDR** (Annex B) and **AAC ADTS** in the scanned TS (plus **`STARTUP_MIN_BYTES`**) before releasing; still aborts on timeout per strict mode. Logs include **`release=min-bytes-idr-aac-ready`** or other **`release=`** reasons on the **`startup-gate buffered=`** line.
+- `IPTV_TUNERR_WEBSAFE_STARTUP_MAX_FALLBACK_WITHOUT_IDR` — when `true`, allow the legacy **max-bytes** release without IDR/AAC (logged **`release=max-bytes-without-idr-fallback`**). Default **`false`**. Escape hatch for odd codecs; prefer larger **`STARTUP_MAX_BYTES`** or **`REQUIRE_GOOD_START=false`** for experiments.
 - `IPTV_TUNERR_WEBSAFE_NULL_TS_KEEPALIVE` — send null TS packets (PID `0x1FFF`) while the startup gate waits. Keeps the TCP connection alive but carries no program structure.
 - `IPTV_TUNERR_WEBSAFE_NULL_TS_KEEPALIVE_MS` — interval between null TS bursts (default `100`ms).
 - `IPTV_TUNERR_WEBSAFE_NULL_TS_KEEPALIVE_PACKETS` — null TS packets per burst (default `1`).
@@ -1050,7 +1059,7 @@ Fetches EPG directly from your IPTV provider using existing credentials. No sepa
 - `IPTV_TUNERR_XMLTV_MATCH_ENABLE` — repair/assign channel `TVGID`s from provider/external XMLTV channel metadata during catalog build (default `true`)
 - `IPTV_TUNERR_XMLTV_TIMEOUT` — fetch timeout (default `45s`)
 - `IPTV_TUNERR_XMLTV_CACHE_TTL` — refresh interval when provider EPG cache TTL is not set (default `10m`)
-- `IPTV_TUNERR_LIVE_EPG_ONLY` — only serve channels that have a `tvg-id`
+- `IPTV_TUNERR_LIVE_EPG_ONLY` — at **catalog build**, keep only channels with **`epg_linked`** / a **`tvg-id`** (drops unlinked rows before save). See [lineup-epg-hygiene](lineup-epg-hygiene.md).
 - `IPTV_TUNERR_EPG_PRUNE_UNLINKED` — exclude channels with no EPG match from both guide and lineup
 - `IPTV_TUNERR_EPG_SQLITE_PATH` — optional filesystem path to a **SQLite** file for durable EPG storage (merged guide sync after each refresh; schema v2 includes `epg_meta`). Empty = disabled. Rationale: [ADR 0003](../adr/0003-epg-sqlite-vs-postgres.md).
 - `IPTV_TUNERR_EPG_SQLITE_RETAIN_PAST_HOURS` — if `> 0`, after each sync delete SQLite programme rows whose **end time** is before `now - N hours`, then remove orphan `epg_channel` rows. `0` = keep the full merged snapshot in SQLite.

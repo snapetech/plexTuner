@@ -45,4 +45,4 @@ You should see **more than one** host (e.g. non-CF hosts in addition to `cf.like
 See also
 --------
 - [memory-bank/known_issues.md](../../memory-bank/known_issues.md) — "Category DVRs (bcastus, newsus, generalent, etc.) end up with 0 channels".
-- [iptvtunerr-troubleshooting.md](../runbooks/iptvtunerr-troubleshooting.md) — §10 Category DVRs empty.
+- [iptvtunerr-troubleshooting.md](../runbooks/iptvtunerr-troubleshooting.md) — §12 Category DVRs empty.

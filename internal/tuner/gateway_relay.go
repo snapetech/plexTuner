@@ -204,6 +204,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	continueOnStartupTimeout := transcode && getenvBool("IPTV_TUNERR_WEBSAFE_TIMEOUT_CONTINUE_FFMPEG", false)
 	bootstrapSec := getenvFloat("IPTV_TUNERR_WEBSAFE_BOOTSTRAP_SECONDS", 1.5)
 	requireGoodStart := transcode && getenvBool("IPTV_TUNERR_WEBSAFE_REQUIRE_GOOD_START", true)
+	maxFallbackNoIDR := transcode && getenvBool("IPTV_TUNERR_WEBSAFE_STARTUP_MAX_FALLBACK_WITHOUT_IDR", false)
 	enableNullTSKeepalive := transcode && getenvBool("IPTV_TUNERR_WEBSAFE_NULL_TS_KEEPALIVE", false)
 	nullTSKeepaliveMs := getenvInt("IPTV_TUNERR_WEBSAFE_NULL_TS_KEEPALIVE_MS", 100)
 	nullTSKeepalivePackets := getenvInt("IPTV_TUNERR_WEBSAFE_NULL_TS_KEEPALIVE_PACKETS", 1)
@@ -286,9 +287,10 @@ func (g *Gateway) relayHLSWithFFmpeg(
 				reqField, channelName, channelID, modeLabel, programKeepaliveMs)
 		}
 		type prefetchRes struct {
-			b     []byte
-			err   error
-			state startSignalState
+			b             []byte
+			err           error
+			state         startSignalState
+			releaseReason string
 		}
 		ch := make(chan prefetchRes, 1)
 		go func() {
@@ -300,30 +302,53 @@ func (g *Gateway) relayHLSWithFFmpeg(
 			for {
 				n, rerr := stdout.Read(tmp)
 				if n > 0 {
-					room := startupMax - len(buf)
-					if room > 0 {
-						if n > room {
-							n = room
-						}
+					if requireGoodStart && !maxFallbackNoIDR {
 						buf = append(buf, tmp[:n]...)
+						if len(buf) > startupMax {
+							buf = trimTSHeadToMaxBytes(buf, startupMax)
+						}
+					} else {
+						room := startupMax - len(buf)
+						if room > 0 {
+							if n > room {
+								n = room
+							}
+							buf = append(buf, tmp[:n]...)
+						}
 					}
 					st := looksLikeGoodTSStart(buf)
 					good := !requireGoodStart || (st.HasIDR && st.HasAAC && st.TSLikePackets >= 8)
 					if len(buf) >= startupMin && good {
-						ch <- prefetchRes{b: buf, state: st}
+						reason := "min-bytes-met"
+						if requireGoodStart {
+							reason = "min-bytes-idr-aac-ready"
+						}
+						ch <- prefetchRes{b: bytes.Clone(buf), state: st, releaseReason: reason}
 						return
 					}
 					if len(buf) >= startupMax {
-						ch <- prefetchRes{b: buf, state: st}
-						return
+						if !requireGoodStart || maxFallbackNoIDR {
+							reason := "max-bytes-no-signal-required"
+							if requireGoodStart && maxFallbackNoIDR {
+								reason = "max-bytes-without-idr-fallback"
+							}
+							ch <- prefetchRes{b: bytes.Clone(buf), state: st, releaseReason: reason}
+							return
+						}
 					}
 				}
 				if rerr != nil {
 					st := looksLikeGoodTSStart(buf)
 					if len(buf) > 0 {
-						ch <- prefetchRes{b: buf, err: rerr, state: st}
+						reason := "read-ended-partial"
+						if requireGoodStart && !(st.HasIDR && st.HasAAC && st.TSLikePackets >= 8) {
+							reason = "read-ended-partial-without-idr-aac"
+						} else if st.HasIDR && st.HasAAC {
+							reason = "read-ended-partial-with-idr-aac"
+						}
+						ch <- prefetchRes{b: bytes.Clone(buf), err: rerr, state: st, releaseReason: reason}
 					} else {
-						ch <- prefetchRes{err: rerr, state: st}
+						ch <- prefetchRes{err: rerr, state: st, releaseReason: "read-ended-empty"}
 					}
 					return
 				}
@@ -346,10 +371,14 @@ func (g *Gateway) relayHLSWithFFmpeg(
 				prefetch = prefetch[pr.state.AlignedOffset:]
 			}
 			if len(prefetch) > 0 {
+				rel := pr.releaseReason
+				if rel == "" {
+					rel = "unspecified"
+				}
 				log.Printf(
-					"gateway:%s channel=%q id=%s %s startup-gate buffered=%d min=%d max=%d timeout_ms=%d ts_pkts=%d idr=%t aac=%t align=%d",
+					"gateway:%s channel=%q id=%s %s startup-gate buffered=%d min=%d max=%d timeout_ms=%d ts_pkts=%d idr=%t aac=%t align=%d release=%s",
 					reqField, channelName, channelID, modeLabel, len(prefetch), startupMin, startupMax, startupTimeoutMs,
-					pr.state.TSLikePackets, pr.state.HasIDR, pr.state.HasAAC, pr.state.AlignedOffset,
+					pr.state.TSLikePackets, pr.state.HasIDR, pr.state.HasAAC, pr.state.AlignedOffset, rel,
 				)
 			}
 			if pr.err != nil && len(prefetch) == 0 {

@@ -18,9 +18,9 @@ Normal push path from this checkout: `git push origin main`. Never `git push git
 
 | Path | Purpose |
 |------|--------|
-| **`cmd/iptv-tunerr/`** | CLI entrypoint and command handlers for run/serve/index/supervise, reports, registration, and catch-up publishing. |
+| **`cmd/iptv-tunerr/`** | CLI entrypoint and command handlers for run/serve/index/supervise, reports, registration, and catch-up publishing. Catalog **`index`** path: **`cmd_catalog.go`** (**tvg-id** dedupe, strip hosts, free/HDHR merge) — see **`docs/reference/lineup-epg-hygiene.md`**. |
 | **`internal/indexer/`** | M3U stream parsing, player_api (auth, live, VOD, series with parallel fetch). |
-| **`internal/catalog/`** | Movie/Series/LiveChannel types; Save (snapshot then encode), Load. |
+| **`internal/catalog/`** | Movie/Series/LiveChannel types; Save (snapshot then encode), Load. **`ReplaceWithLive`** sorts **`live_channels`** by **`channel_id`** for stable on-disk order (**HR-006**). |
 | **`internal/tuner/`** | HDHR endpoints, stream gateway, XMLTV/guide pipeline, Autopilot, Ghost Hunter, provider profile, catch-up publishing. |
 | **`internal/webui/`** | Dedicated operator dashboard on port `48879` (`0xBEEF` by default); reverse-proxies tuner JSON/debug endpoints under `/api/*` and now drives safe operator actions/workflows on top of those surfaces. |
 | **`internal/epgstore/`** | Optional SQLite EPG file (`IPTV_TUNERR_EPG_SQLITE_PATH`): migrations, `SyncMergedGuideXML` (optional retain-past prune), max-stop queries; `/guide/epg-store.json`. |
@@ -51,9 +51,9 @@ Normal push path from this checkout: `git push origin main`. Never `git push git
 
 ## Key modules
 
-- **`internal/httpclient`** — Shared tuned HTTP client; used by indexer, gateway, materializer, vodfs.
+- **`internal/httpclient`** — Shared tuned HTTP client; used by indexer, gateway, materializer, vodfs. Idle pool env: **`IPTV_TUNERR_HTTP_MAX_IDLE_CONNS_PER_HOST`** (default 16), **`IPTV_TUNERR_HTTP_MAX_IDLE_CONNS`** (100), **`IPTV_TUNERR_HTTP_IDLE_CONN_TIMEOUT_SEC`** (90). See **`docs/reference/plex-livetv-http-tuning.md`** (**HR-010**).
 - **`internal/materializer`** — Download: single GET or range (16 MiB, 206 when off>0); env `IPTV_TUNERR_RANGE_DOWNLOAD=1`.
-- **`internal/tuner/gateway.go`** — Stream gateway with fallback URLs, provider-cap learning, auth-context forwarding, and autotune hooks.
+- **`internal/tuner/gateway.go`** — Stream gateway with fallback URLs, provider-cap learning, auth-context forwarding, and autotune hooks. **`gateway_adapt.go`** / **`gateway_adapt_sticky.go`** — Plex client adaptation + **HR-004** session-scoped WebSafe sticky after hard failures. **`gateway_relay.go`** / **`gateway_stream_helpers.go`** — WebSafe ffmpeg prefetch + **HR-001** IDR/AAC sliding window + **`release=`** log. **HR-003** / **HR-002** tier-1 + Plex Web regression template: **`docs/reference/plex-client-compatibility-matrix.md`**.
 - **`internal/tuner/gateway_hls.go`** — HLS helpers: playlist rewrite, **`serveNativeMuxTarget`** ( **`?mux=hls`** + shared **`seg=`** with DASH). **`internal/tuner/gateway_dash.go`** — experimental **MPD** rewrite for **`?mux=dash`**. **`internal/tuner/gateway_dash_expand.go`** — optional **`SegmentTemplate`** → **`SegmentList`** expansion (**`IPTV_TUNERR_HLS_MUX_DASH_EXPAND_SEGMENT_TEMPLATE`**). **`prometheus_mux.go`** — **`iptv_tunerr_mux_seg_outcomes_total`** when **`IPTV_TUNERR_METRICS_ENABLE`**. See **`docs/reference/hls-mux-toolkit.md`**.
 - **`internal/tuner/xmltv.go` + `internal/tuner/epg_pipeline.go`** — Layered guide builder: provider XMLTV (optional **`IPTV_TUNERR_PROVIDER_EPG_DISK_CACHE`** + HTTP 304), external XMLTV, placeholder fallback, highlights, capsules.
 - **`internal/webui/webui.go`** — Dedicated dashboard listener + `/api/*` reverse proxy; main page is embedded from `internal/webui/index.html`.

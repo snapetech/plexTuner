@@ -1330,6 +1330,73 @@ func TestGateway_requestAdaptation_unknownDefaultsWebsafe(t *testing.T) {
 	}
 }
 
+func TestGateway_requestAdaptation_stickyFallbackWebsafe(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_CLIENT_ADAPT_STICKY_FALLBACK", "true")
+	key := "ch1" + adaptStickyKeySep + "sid-a" + adaptStickyKeySep + "-"
+	g := &Gateway{
+		PlexClientAdapt: true,
+		adaptStickyUntil: map[string]time.Time{
+			key: time.Now().Add(time.Hour),
+		},
+	}
+	ch := &catalog.LiveChannel{GuideName: "Test"}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/ch1", nil)
+	req.Header.Set("X-Plex-Session-Identifier", "sid-a")
+
+	hasOverride, transcode, profile, reason, clientClass := g.requestAdaptation(context.Background(), req, ch, "ch1")
+	if !hasOverride || !transcode || profile != profilePlexSafe || reason != "sticky-fallback-websafe" {
+		t.Fatalf("override=%v trans=%v profile=%q reason=%q", hasOverride, transcode, profile, reason)
+	}
+	if clientClass != "unknown" {
+		t.Fatalf("clientClass=%q want unknown without PMS", clientClass)
+	}
+}
+
+func TestGateway_adaptSticky_noteAndHonor(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_CLIENT_ADAPT_STICKY_FALLBACK", "true")
+	g := &Gateway{PlexClientAdapt: true}
+	h := plexForwardedHints{SessionIdentifier: "s1", ClientIdentifier: "c1"}
+	g.noteAdaptStickyFallback("ch1", h)
+	if !g.shouldAdaptStickyWebsafe("ch1", h) {
+		t.Fatal("expected sticky active after note")
+	}
+}
+
+func TestGateway_adaptSticky_skipsWithoutPlexHints(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_CLIENT_ADAPT_STICKY_FALLBACK", "true")
+	g := &Gateway{PlexClientAdapt: true}
+	g.noteAdaptStickyFallback("ch1", plexForwardedHints{})
+	g.adaptStickyMu.Lock()
+	n := len(g.adaptStickyUntil)
+	g.adaptStickyMu.Unlock()
+	if n != 0 {
+		t.Fatalf("expected no sticky without session/client id, got %d entries", n)
+	}
+}
+
+func TestGateway_adaptSticky_respectsMasterSwitch(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_CLIENT_ADAPT_STICKY_FALLBACK", "false")
+	g := &Gateway{PlexClientAdapt: true}
+	h := plexForwardedHints{SessionIdentifier: "s1"}
+	g.noteAdaptStickyFallback("ch1", h)
+	if g.shouldAdaptStickyWebsafe("ch1", h) {
+		t.Fatal("did not expect sticky when fallback disabled")
+	}
+}
+
+func TestGateway_adaptSticky_requiresClientAdapt(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_CLIENT_ADAPT_STICKY_FALLBACK", "true")
+	g := &Gateway{
+		PlexClientAdapt: false,
+		adaptStickyUntil: map[string]time.Time{
+			"x" + adaptStickyKeySep + "s" + adaptStickyKeySep + "c": time.Now().Add(time.Hour),
+		},
+	}
+	if g.shouldAdaptStickyWebsafe("x", plexForwardedHints{SessionIdentifier: "s", ClientIdentifier: "c"}) {
+		t.Fatal("expected no sticky when CLIENT_ADAPT-equivalent off")
+	}
+}
+
 func TestGateway_requestAdaptation_queryProfilePMSXcode(t *testing.T) {
 	g := &Gateway{PlexClientAdapt: true}
 	ch := &catalog.LiveChannel{GuideName: "Test"}

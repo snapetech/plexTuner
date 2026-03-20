@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 )
 
@@ -101,12 +103,35 @@ func (c *Catalog) Replace(movies []Movie, series []Series) {
 	c.Series = series
 }
 
+// sortLiveChannelsStable reorders live in place by ChannelID, then guide_number, then guide_name
+// so catalog JSON and lineup iteration do not shuffle when the upstream M3U order changes (HR-006).
+func sortLiveChannelsStable(live []LiveChannel) {
+	if len(live) < 2 {
+		return
+	}
+	sort.Slice(live, func(i, j int) bool {
+		ai := strings.TrimSpace(live[i].ChannelID)
+		aj := strings.TrimSpace(live[j].ChannelID)
+		if ai != aj {
+			return ai < aj
+		}
+		gi := strings.TrimSpace(live[i].GuideNumber)
+		gj := strings.TrimSpace(live[j].GuideNumber)
+		if gi != gj {
+			return gi < gj
+		}
+		return strings.TrimSpace(live[i].GuideName) < strings.TrimSpace(live[j].GuideName)
+	})
+}
+
 // ReplaceWithLive replaces catalog including live channels.
+// The live slice is sorted in place for stable on-disk / API ordering (see sortLiveChannelsStable).
 func (c *Catalog) ReplaceWithLive(movies []Movie, series []Series, live []LiveChannel) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.Movies = movies
 	c.Series = series
+	sortLiveChannelsStable(live)
 	c.LiveChannels = live
 }
 
