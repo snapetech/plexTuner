@@ -24,4 +24,5 @@ Deploy, rollback, troubleshoot. Goal → preconditions → steps → verify → 
 See also
 --------
 - [How-to](../how-to/index.md).
+- [How-to: multi-stream harness](../how-to/multi-stream-harness.md) — staggered live pulls + report for §10 triage.
 - [Reference](../reference/index.md).

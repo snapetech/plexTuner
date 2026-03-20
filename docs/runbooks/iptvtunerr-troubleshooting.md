@@ -359,6 +359,8 @@ After deploy or provider changes, run a **short Plex DVR recording** through the
 
 ## 10. Two-stream collapse / "second stream kills the first"
 
+Task-oriented entry (quick start + links): **[how-to: multi-stream harness](../how-to/multi-stream-harness.md)**.
+
 When a tester says "one stream plays, the second starts, then the first dies a few seconds later," use **`scripts/multi-stream-harness.sh`** instead of trying to line up two manual VLC/Plex clicks and a pile of ad hoc curls.
 
 Typical case:

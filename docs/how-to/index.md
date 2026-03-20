@@ -22,6 +22,7 @@ Goal → preconditions → steps → verify.
 | [debug-bundle](debug-bundle.md) | Collect `iptv-tunerr debug-bundle` and analyze with `scripts/analyze-bundle.py`. |
 | [hybrid-hdhr-iptv](hybrid-hdhr-iptv.md) | Physical HDHomeRun + IPTV: lineup merge, guide.xml, optional SQLite caps. |
 | [lineup-parity-lp012-closure](lineup-parity-lp012-closure.md) | **LP-012** operator checklist (parity epic doc sweep). |
+| [multi-stream-harness](multi-stream-harness.md) | Reproduce two-stream collapse: staggered live pulls, snapshots, **`multi-stream-harness-report.py`**. |
 | [hls-mux-proxy](hls-mux-proxy.md) | HLS playlist proxy through Tunerr (`?mux=hls`), absolute URL option. |
 
 See also

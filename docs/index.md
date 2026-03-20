@@ -26,6 +26,7 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[how-to/tester-release-notes-draft.md](how-to/tester-release-notes-draft.md)** | Draft tester-facing release notes for current validation builds. |
 | **[how-to/cloudflare-bypass.md](how-to/cloudflare-bypass.md)** | Cloudflare-protected providers: UA cycling, cookies, headers, troubleshooting. |
 | **[how-to/debug-bundle.md](how-to/debug-bundle.md)** | Collect a shareable `debug-bundle` and analyze with `scripts/analyze-bundle.py`. |
+| **[how-to/multi-stream-harness.md](how-to/multi-stream-harness.md)** | Two-stream collapse: **`scripts/multi-stream-harness.sh`** + report (**runbook §10**). |
 | **[how-to/hybrid-hdhr-iptv.md](how-to/hybrid-hdhr-iptv.md)** | Merge HDHR `lineup.json` + `guide.xml` with IPTV index and `/guide.xml`. |
 | **[how-to/lineup-parity-lp012-closure.md](how-to/lineup-parity-lp012-closure.md)** | **LP-012** operator checklist (hybrid HDHR, mux, readiness, LTV links). |
 | **[how-to/hls-mux-proxy.md](how-to/hls-mux-proxy.md)** | HLS/DASH-through-Tunerr: `?mux=hls` / experimental `?mux=dash`, optional **`IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`**, CORS, web demo. |

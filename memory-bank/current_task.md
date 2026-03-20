@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-21):** **Docs:** [how-to/multi-stream-harness.md](../docs/how-to/multi-stream-harness.md) + index/README/runbook §10/repo_map cross-links (**two-stream collapse** harness). **`./scripts/verify`** OK.
+
 **Latest (2026-03-21):** **Verify hygiene:** **`scripts/verify-steps.sh`** runs **`bash -n`** on **`scripts/*.sh`** and **`python3 -m py_compile`** on **`scripts/*.py`** ( **`commands.yml`** **`verify_steps`**, **`repo_map`**). **`./scripts/verify`** OK.
 
 **Latest (2026-03-21):** **Two-stream collapse harness:** adding **`scripts/multi-stream-harness.sh`** + **`scripts/multi-stream-harness-report.py`** so “load one channel, start another, first dies” reports turn into a reproducible bundle with staggered live pulls, provider/runtime/attempt snapshots, optional Plex session evidence, and a compact sustained-vs-premature report.

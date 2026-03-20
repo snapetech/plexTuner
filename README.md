@@ -1120,6 +1120,7 @@ docs/                 Reference, how-to guides, runbooks
 - [`docs/how-to/mount-vodfs-and-register-plex-libraries.md`](docs/how-to/mount-vodfs-and-register-plex-libraries.md) — VOD filesystem setup
 - [`docs/how-to/cloudflare-bypass.md`](docs/how-to/cloudflare-bypass.md) — Cloudflare bypass guide
 - [`docs/how-to/debug-bundle.md`](docs/how-to/debug-bundle.md) — Debug bundle and log correlation
+- [`docs/how-to/multi-stream-harness.md`](docs/how-to/multi-stream-harness.md) — Two-stream collapse harness (`scripts/multi-stream-harness.sh`)
 - [`docs/how-to/hls-mux-proxy.md`](docs/how-to/hls-mux-proxy.md) — **`?mux=hls` / `dash`** proxy setup
 - [`docs/how-to/hybrid-hdhr-iptv.md`](docs/how-to/hybrid-hdhr-iptv.md) — Merge hardware HDHR lineup + IPTV (**LP-012** pointers)
 
@@ -1148,6 +1149,7 @@ Verify the build:
 - **Named stream profiles**: optional **`IPTV_TUNERR_STREAM_PROFILES_FILE`** matrix (**LP-010** / **LP-011**) — [transcode-profiles](docs/reference/transcode-profiles.md).
 - **Shared HTTP idle pool**: **`IPTV_TUNERR_HTTP_MAX_IDLE_CONNS`**, **`IPTV_TUNERR_HTTP_IDLE_CONN_TIMEOUT_SEC`** across most subsystems (**HR-010**) — [plex-livetv-http-tuning](docs/reference/plex-livetv-http-tuning.md).
 - **Live-race harness + PMS**: optional Plex **`/status/sessions`** snapshots during **`scripts/live-race-harness.sh`** when **`PMS_URL`** + token are set — report summarizes players/sessions (**HR-002** / **HR-003**).
+- **Multi-stream harness how-to**: [docs/how-to/multi-stream-harness.md](docs/how-to/multi-stream-harness.md) (staggered **`curl`** pulls + **`multi-stream-harness-report.py`**; full knobs in [runbook §10](docs/runbooks/iptvtunerr-troubleshooting.md#10-two-stream-collapse--second-stream-kills-the-first)).
 - **Dedicated control deck**: `run` / `serve` now launch a real operator console on `:48879` with its own login/session flow, runtime snapshot, grouped settings lane, shared deck memory/activity, safe actions/workflows, and CSRF-protected state changes instead of a thin JSON/debug wrapper.
 - **HLS mux toolkit and observability**: Tunerr-native `?mux=hls` / experimental `?mux=dash` now have stronger SSRF/redirect policy, grouped diagnostics, Prometheus `/metrics`, soak/demo tooling, and a dedicated operator reference at [docs/reference/hls-mux-toolkit.md](docs/reference/hls-mux-toolkit.md).
 - **Runtime EPG repair**: fixes bad or missing channel IDs before guide pruning, so "channel name only" guide entries stop surviving just because a source had a bogus `tvg-id`.

@@ -23,6 +23,16 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: How-to — multi-stream-harness.md + doc cross-links
+  Summary:
+    - **`docs/how-to/multi-stream-harness.md`**: quick start, report command, pointers to **runbook §10** / related harnesses / verify.
+    - Linked from **`docs/how-to/index`**, **`docs/index`**, **`README`** (Documentation + Recent Changes), **`docs/runbooks/index`**, **troubleshooting §10** lead-in, **`repo_map`**, **CHANGELOG**.
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+
+- Date: 2026-03-21
   Title: Verify — bash -n + py_compile for scripts/*.sh and scripts/*.py
   Summary:
     - **`scripts/verify-steps.sh`**: new step after **vet**, before **go test**.
