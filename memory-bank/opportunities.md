@@ -28,7 +28,7 @@ It exists to encourage quality gains without derailing the current task.
   Category: operability
   Title: (partially addressed 2026-03-19) Autopilot **provider-level** host policy beyond per-DNA JSON
   Context: [EPIC-live-tv-intelligence](../../docs/epics/EPIC-live-tv-intelligence.md) “next” listed multi-host policy memory; operators needed a no-state-file knob for trusted CDN hostnames.
-  Status: **`IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS`** shipped — **`reorderStreamURLs`** / **`/autopilot/report.json`** / **`intelligence.autopilot`** / **`/debug/runtime.json`**. Remaining: file-based or UI-driven policy, auto strip hosts from **`remediation_hints`**, etc.
+  Status: **`IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS`** shipped; **`IPTV_TUNERR_AUTOPILOT_HOST_POLICY_FILE`** (preferred + blocked hosts, JSON) shipped — **`reorderStreamURLs`**, **`/autopilot/report.json`**, **`/debug/runtime.json`**. **Remaining:** UI-driven policy, automatic strip/cap from **`remediation_hints`**, etc.
   Risk/Scope: n/a
   User decision needed?: no
 
@@ -77,6 +77,7 @@ It exists to encourage quality gains without derailing the current task.
   Category: operability
   Title: HLS mux — consolidated operator toolkit + enhancement backlog doc
   Context: User asked for a single place listing many future HLS-mux-style improvements (diagnostics, protocol edge cases, security, scale) without opening N separate backlog tickets.
+  Status: **Reference doc shipped** — [docs/reference/hls-mux-toolkit.md](../docs/reference/hls-mux-toolkit.md). **Remaining:** implement or decline individual candidate rows in that doc (tracked there and in [project-backlog §2–3](../docs/explanations/project-backlog.md)); this opportunities row is **closed** for “single place exists.”
   Why it matters: Keeps gateway/HLS work discoverable for humans and agents; items graduate into scoped PRs with evidence when picked up.
   Evidence: New reference page [docs/reference/hls-mux-toolkit.md](../docs/reference/hls-mux-toolkit.md) (tables, `curl` recipes, categorized candidates).
   Suggested fix: When implementing a slice from the toolkit, add ADR/test link in that doc or move the row to `known_issues` if it becomes a user-facing limitation.
@@ -176,6 +177,7 @@ It exists to encourage quality gains without derailing the current task.
   Category: reliability
   Title: Add in-app/operator command to detect and clear Plex hidden Live TV "active grabs" without full Plex restart
   Context: Post guide-number-offset remap validation for 15 DVRs; Plex Web clicks did nothing until Plex restart.
+  Status: **Partially addressed (2026-03)** — Tunerr exposes localhost/LAN **`POST /ops/actions/ghost-visible-stop`** and **`POST /ops/actions/ghost-hidden-recover`** (guarded helper; see [cli-and-env](../docs/reference/cli-and-env-reference.md) Ghost Hunter section). **Remaining:** Plex-side hidden state may still require PMS restart in some cases; full “no restart” cleanup is not guaranteed from Tunerr alone.
   Why it matters: After large guide/channel remaps, Plex can wedge tunes (`Waiting for media grab to start`) even when `/status/sessions` is empty. Restarting Plex works but is heavy-handed and interrupts all clients.
   Evidence: `Plex Media Server.5.log` during `POST /livetv/dvrs/218/channels/2001/tune` showed `There are 2 active grabs at the end.` and `Waiting for media grab to start.`; same channel tuned normally after `deploy/plex` restart.
   Suggested fix: Investigate PMS APIs or DB/state paths for stale grab cleanup (or add an operator helper that detects the log pattern and recommends/executes a targeted restart only when no active sessions exist).
