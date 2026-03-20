@@ -599,6 +599,7 @@ func appendMuxSegAccessLogLine(path, line string) {
 }
 
 func (g *Gateway) serveNativeMuxTarget(w http.ResponseWriter, r *http.Request, client *http.Client, channelID, targetURL, muxKind string) error {
+	start := time.Now()
 	if !safeurl.IsHTTPOrHTTPS(targetURL) {
 		return errHLSMuxUnsupportedTargetScheme
 	}
@@ -631,9 +632,11 @@ func (g *Gateway) serveNativeMuxTarget(w http.ResponseWriter, r *http.Request, c
 		lim := int64(hlsMuxUpstreamErrBodyLimit())
 		preview, rerr := io.ReadAll(io.LimitReader(resp.Body, lim))
 		if rerr != nil {
+			promNoteMuxManifestOutcome(muxKind, "read_error", channelID, time.Since(start))
 			return rerr
 		}
 		_, _ = io.Copy(io.Discard, resp.Body)
+		promNoteMuxManifestOutcome(muxKind, "upstream_http", channelID, time.Since(start))
 		return &hlsMuxUpstreamHTTPError{Status: resp.StatusCode, Body: preview}
 	}
 
@@ -647,6 +650,7 @@ func (g *Gateway) serveNativeMuxTarget(w http.ResponseWriter, r *http.Request, c
 		setNativeMuxResponseKind(w, muxKind)
 		applyHLSMuxCORS(w)
 		w.WriteHeader(http.StatusNotModified)
+		promNoteMuxManifestOutcome(muxKind, "not_modified", channelID, time.Since(start))
 		return nil
 	}
 
@@ -661,13 +665,16 @@ func (g *Gateway) serveNativeMuxTarget(w http.ResponseWriter, r *http.Request, c
 			lim := int64(hlsMuxUpstreamErrBodyLimit())
 			preview, rerr := io.ReadAll(io.LimitReader(resp.Body, lim))
 			if rerr != nil {
+				promNoteMuxManifestOutcome(muxKind, "read_error", channelID, time.Since(start))
 				return rerr
 			}
 			_, _ = io.Copy(io.Discard, resp.Body)
+			promNoteMuxManifestOutcome(muxKind, "upstream_http", channelID, time.Since(start))
 			return &hlsMuxUpstreamHTTPError{Status: resp.StatusCode, Body: preview}
 		}
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
+			promNoteMuxManifestOutcome(muxKind, "read_error", channelID, time.Since(start))
 			return err
 		}
 		out := rewriteHLSPlaylistToGatewayProxy(body, effectiveURL, channelID)
@@ -677,6 +684,7 @@ func (g *Gateway) serveNativeMuxTarget(w http.ResponseWriter, r *http.Request, c
 		applyHLSMuxCORS(w)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(out)
+		promNoteMuxManifestOutcome(muxKind, "playlist_proxy", channelID, time.Since(start))
 		return nil
 	}
 
@@ -685,13 +693,16 @@ func (g *Gateway) serveNativeMuxTarget(w http.ResponseWriter, r *http.Request, c
 			lim := int64(hlsMuxUpstreamErrBodyLimit())
 			preview, rerr := io.ReadAll(io.LimitReader(resp.Body, lim))
 			if rerr != nil {
+				promNoteMuxManifestOutcome(muxKind, "read_error", channelID, time.Since(start))
 				return rerr
 			}
 			_, _ = io.Copy(io.Discard, resp.Body)
+			promNoteMuxManifestOutcome(muxKind, "upstream_http", channelID, time.Since(start))
 			return &hlsMuxUpstreamHTTPError{Status: resp.StatusCode, Body: preview}
 		}
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
+			promNoteMuxManifestOutcome(muxKind, "read_error", channelID, time.Since(start))
 			return err
 		}
 		out := rewriteDASHManifestToGatewayProxy(body, effectiveURL, channelID)
@@ -705,6 +716,7 @@ func (g *Gateway) serveNativeMuxTarget(w http.ResponseWriter, r *http.Request, c
 		applyHLSMuxCORS(w)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(out)
+		promNoteMuxManifestOutcome(muxKind, "mpd_proxy", channelID, time.Since(start))
 		return nil
 	}
 
@@ -723,6 +735,7 @@ func (g *Gateway) serveNativeMuxTarget(w http.ResponseWriter, r *http.Request, c
 	applyHLSMuxCORS(w)
 	w.WriteHeader(resp.StatusCode)
 	_, err = io.Copy(w, resp.Body)
+	promNoteMuxManifestOutcome(muxKind, "binary_relay", channelID, time.Since(start))
 	return err
 }
 

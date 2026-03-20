@@ -33,7 +33,7 @@ Dense reference for **Tunerr-native HLS** and **experimental DASH MPD** proxying
 | LL-HLS-style tags | **`URI="..."`** on **`#EXT-X-PRELOAD-HINT`**, **`#EXT-X-RENDITION-REPORT`**, **`#EXT-X-PART`**, etc.; optional same-line **`#EXTINF`** segment URI (conservative); non-standard **`#EXTINF:...,BYTERANGE=...`** on one line is split into **`#EXTINF`** + **`#EXT-X-BYTERANGE`** — see [hls-mux-ll-hls-tags](hls-mux-ll-hls-tags.md) |
 | UTF-8 BOM | Leading **`EF BB BF`** is stripped before HLS / DASH manifest rewrite so **`#EXTM3U`** / **`<MPD`** still match at line/start |
 | **`SegmentTimeline` `S` elements** | Quote-aware **`<S …/>`** / **`<S …>…</S>`** scan ( **`>`** inside quoted attrs OK); nested **`<S>`** balanced (invalid MPD: outer **`<S>`** row only) |
-| Metrics | **`iptv_tunerr_mux_seg_request_duration_seconds`** histogram (when **`IPTV_TUNERR_METRICS_ENABLE`**); optional per-channel counter/histogram labels (**`IPTV_TUNERR_METRICS_MUX_CHANNEL_LABELS`**, high cardinality) |
+| Metrics | **`iptv_tunerr_mux_seg_*`** plus **`iptv_tunerr_mux_manifest_outcomes_total`** / **`iptv_tunerr_mux_manifest_request_duration_seconds`** (when **`IPTV_TUNERR_METRICS_ENABLE`**); optional per-channel labels via **`IPTV_TUNERR_METRICS_MUX_CHANNEL_LABELS`** (**high cardinality**) |
 | Autopilot | Optional **`IPTV_TUNERR_HLS_MUX_SEG_AUTOPILOT_BONUS`**: extra **`seg=`** slots for channels whose **`dna_id`** has hot Autopilot memory (see env table) |
 
 ## Response kind: `X-IptvTunerr-Native-Mux`
@@ -94,7 +94,7 @@ When **`IPTV_TUNERR_HLS_MUX_CORS`** is on, this header is listed in **`Access-Co
 | `IPTV_TUNERR_HLS_MUX_UPSTREAM_ERR_BODY_MAX` | Upstream error body cap |
 | `IPTV_TUNERR_HLS_MUX_SEG_RPS_PER_IP` | Token-bucket rate / IP (**0** = off) |
 | `IPTV_TUNERR_HLS_MUX_WEB_DEMO` | Serves **`/debug/hls-mux-demo.html`** (hls.js sample) when **true** |
-| `IPTV_TUNERR_METRICS_ENABLE` | Exposes Prometheus **`GET /metrics`** + mux counters + **`iptv_tunerr_mux_seg_request_duration_seconds`** histogram |
+| `IPTV_TUNERR_METRICS_ENABLE` | Exposes Prometheus **`GET /metrics`** + mux counters + **`iptv_tunerr_mux_seg_request_duration_seconds`** and **`iptv_tunerr_mux_manifest_request_duration_seconds`** histograms |
 | `IPTV_TUNERR_METRICS_MUX_CHANNEL_LABELS` | Add **`channel_id`** to mux counter/histogram labels (**high cardinality**; default off) |
 | `IPTV_TUNERR_HTTP_ACCEPT_BROTLI` | Accept **br** and decompress brotli upstream bodies on the shared HTTP stack |
 | `IPTV_TUNERR_HTTP_MAX_IDLE_CONNS_PER_HOST` | Tunable **`MaxIdleConnsPerHost`** on shared HTTP client (default **16**) |

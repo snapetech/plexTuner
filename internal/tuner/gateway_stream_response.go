@@ -140,10 +140,12 @@ func (g *Gateway) relaySuccessfulDASHUpstream(
 	transcode bool,
 	resp *http.Response,
 ) (finalStatus, finalMode, finalEffectiveURL string, ok bool) {
+	start := time.Now()
 	body, err := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if err != nil {
 		log.Printf("gateway: channel=%q id=%s read-mpd-failed err=%v", channelName, channelID, err)
+		promNoteMuxManifestOutcome("dash", "read_error", channelID, time.Since(start))
 		return "", "", "", false
 	}
 	outputMux := normalizeStreamOutputMux(requestMux, transcode)
@@ -155,6 +157,7 @@ func (g *Gateway) relaySuccessfulDASHUpstream(
 		applyHLSMuxCORS(w)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(out)
+		promNoteMuxManifestOutcome("dash", "mpd_proxy", channelID, time.Since(start))
 		return "ok", "dash_native_mux", effectiveURL, true
 	}
 	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
@@ -180,10 +183,12 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 	transcode bool,
 	forcedProfile, adaptReason, clientClass, requestMux string,
 ) (finalStatus, finalMode, finalEffectiveURL string, ok bool) {
+	startManifest := time.Now()
 	body, err := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if err != nil {
 		log.Printf("gateway: channel=%q id=%s read-playlist-failed err=%v", channel.GuideName, channelID, err)
+		promNoteMuxManifestOutcome("hls", "read_error", channelID, time.Since(startManifest))
 		return "", "", "", false
 	}
 	body = rewriteHLSPlaylist(body, effectiveURL)
@@ -222,6 +227,7 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 		applyHLSMuxCORS(w)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(out)
+		promNoteMuxManifestOutcome("hls", "playlist_proxy", channelID, time.Since(startManifest))
 		return "ok", "hls_native_mux", effectiveURL, true
 	}
 	if !g.DisableFFmpeg {

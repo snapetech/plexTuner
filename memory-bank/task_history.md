@@ -23,6 +23,18 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-20
+  Title: Add native mux manifest Prometheus metrics
+  Summary:
+    - [prometheus_mux.go](../internal/tuner/prometheus_mux.go) now exposes **`iptv_tunerr_mux_manifest_outcomes_total`** and **`iptv_tunerr_mux_manifest_request_duration_seconds`** alongside the existing **`seg`** metrics.
+    - [gateway_hls.go](../internal/tuner/gateway_hls.go) and [gateway_stream_response.go](../internal/tuner/gateway_stream_response.go) now record manifest-level outcomes for playlist/MPD rewrites, manifest upstream HTTP errors, **304** responses, and binary relays.
+    - [hls-mux-toolkit](../docs/reference/hls-mux-toolkit.md) and [CHANGELOG](../docs/CHANGELOG.md) document the new metrics so operators can distinguish manifest-stage failures from **`seg=`** failures.
+  Verification:
+    - `go test ./internal/tuner`
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+
+- Date: 2026-03-20
   Title: README + features + doc indexes — cross-reference sync
   Summary:
     - **README**: documentation map (**CHANGELOG**, **features**, HR/mux refs, **architecture**); Kubernetes **`/readyz`** / **`/healthz`** / **`/discover.json`**; **Recent Changes** (native mux header, **`STREAM_PROFILES_FILE`**, **HR-010**, live-race PMS); tuner + **repo layout** (**probe**, **materializer**).
