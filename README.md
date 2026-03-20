@@ -1011,7 +1011,7 @@ Full reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-a
 | `IPTV_TUNERR_EPG_SQLITE_INCREMENTAL_UPSERT` | Overlap-window SQLite sync instead of full replace |
 | `IPTV_TUNERR_XMLTV_URL` | External XMLTV source — gap-fills provider EPG |
 | `IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP` | Allow private/loopback `http(s)` guide or alias refs when intentionally loading XMLTV from localhost/LAN |
-| `IPTV_TUNERR_GUIDE_INPUT_ALLOWED_HOSTS` | Extra remote hosts allowed for XMLTV/alias fetches beyond the configured provider/XMLTV/HDHR hosts |
+| `IPTV_TUNERR_GUIDE_INPUT_ALLOWED_URLS` | Extra remote XMLTV/alias URLs allowed beyond the configured provider/XMLTV/HDHR guide URLs |
 | `IPTV_TUNERR_GUIDE_INPUT_ROOTS` | Comma-separated safe root directories for local XMLTV/alias files; refs outside these roots are rejected |
 | `IPTV_TUNERR_XMLTV_CACHE_TTL` | External XMLTV refresh interval (default `10m`) |
 | `IPTV_TUNERR_EPG_PRUNE_UNLINKED` | Exclude unlinked channels from guide and lineup |

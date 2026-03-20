@@ -2,7 +2,7 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Latest (2026-03-20):** **Security / CodeQL burn-down:** follow-up pass now also allowlists remote guide/alias hosts to the configured provider/XMLTV/HDHR sources plus optional **`IPTV_TUNERR_GUIDE_INPUT_ALLOWED_HOSTS`**, on top of the earlier local safe roots (**`IPTV_TUNERR_GUIDE_INPUT_ROOTS`**) and single-load-path cleanup in **`internal/guideinput`**. Next step: verify, push, and rescan the remaining `request-forgery` + wrapper-level XSS alerts.
+**Latest (2026-03-20):** **Security / CodeQL burn-down:** guide-input remote fetches are being tightened again from host-level validation to exact authorized URLs: configured provider/XMLTV/HDHR guide refs plus optional **`IPTV_TUNERR_GUIDE_INPUT_ALLOWED_URLS`**, on top of the earlier local safe roots (**`IPTV_TUNERR_GUIDE_INPUT_ROOTS`**) and single-load-path cleanup in **`internal/guideinput`**. Next step: verify, push, rescan, then close or dismiss the remaining wrapper-level XSS findings.
 
 **Latest (2026-03-20):** **INT-005/INT-010 bridge:** Autopilot now supports a JSON **host policy file** (**`IPTV_TUNERR_AUTOPILOT_HOST_POLICY_FILE`**) with **preferred** and **blocked** hosts. Preferred hosts merge with **`IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS`**; blocked hosts are skipped in **`reorderStreamURLs`** only when backups remain. Runtime/report/docs/tests updated.
 

@@ -427,6 +427,8 @@ func TestApplyRuntimeEPGRepairs_PrefersProviderBeforeExternal(t *testing.T) {
 	}
 	t.Setenv("IPTV_TUNERR_XMLTV_URL", externalXMLTV.URL)
 	t.Setenv("IPTV_TUNERR_PROVIDER_URL", providerXMLTV.URL)
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER", "u")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS", "p")
 	live := []catalog.LiveChannel{
 		{ChannelID: "1", GuideName: "FOX News Channel US", TVGID: "wrong.id", EPGLinked: true},
 	}

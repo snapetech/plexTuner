@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
@@ -69,5 +70,33 @@ func TestLoadOptionalMatchReport(t *testing.T) {
 	}
 	if rep == nil || rep.TotalChannels != 1 || rep.Matched != 1 {
 		t.Fatalf("unexpected report: %#v", rep)
+	}
+}
+
+func TestLoadGuideData_RemoteRequiresConfiguredURL(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
+	const body = "<tv></tv>"
+	allowed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	defer allowed.Close()
+	blocked := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	defer blocked.Close()
+
+	t.Setenv("IPTV_TUNERR_XMLTV_URL", allowed.URL)
+
+	if _, err := LoadGuideData(blocked.URL); err == nil || !strings.Contains(err.Error(), "allowlist") {
+		t.Fatalf("expected allowlist error, got %v", err)
+	}
+
+	t.Setenv("IPTV_TUNERR_GUIDE_INPUT_ALLOWED_URLS", blocked.URL)
+	got, err := LoadGuideData(blocked.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != body {
+		t.Fatalf("http got %q", got)
 	}
 }

@@ -3829,7 +3829,7 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
 - Date: 2026-03-20
   Title: Constrain remote guide inputs to configured hosts
   Summary:
-    - Tightened `internal/guideinput` so remote XMLTV and alias fetches only target hosts already declared in provider, XMLTV, or HDHomeRun guide config, with optional explicit additions via `IPTV_TUNERR_GUIDE_INPUT_ALLOWED_HOSTS`.
+    - Tightened `internal/guideinput` so remote XMLTV and alias fetches only target exact URLs already declared in provider, XMLTV, or HDHomeRun guide config, with optional explicit additions via `IPTV_TUNERR_GUIDE_INPUT_ALLOWED_URLS`.
     - Updated guide-input tests and runtime EPG-repair tests so the hardened host-allowlist path is exercised intentionally instead of depending on ambient test URLs.
     - Documented the new env in the README, `.env.example`, cli/env reference, and changelog as part of the ongoing CodeQL burn-down.
   Verification:

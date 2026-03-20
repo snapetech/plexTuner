@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -97,10 +96,16 @@ func prepareRemoteGuideRef(ref string) (refio.RemoteHTTPRef, bool, error) {
 	if err != nil {
 		return refio.RemoteHTTPRef{}, false, err
 	}
-	if !guideInputRemoteHostAllowed(remote) {
-		return refio.RemoteHTTPRef{}, false, fmt.Errorf("remote ref host not in guide allowlist")
+	for _, raw := range configuredGuideInputRemoteRefsFromEnv() {
+		allowed, err := refio.PrepareRemoteHTTPRef(context.Background(), raw)
+		if err != nil {
+			continue
+		}
+		if remote.URL() == allowed.URL() {
+			return allowed, true, nil
+		}
 	}
-	return remote, true, nil
+	return refio.RemoteHTTPRef{}, false, fmt.Errorf("remote ref not in guide allowlist")
 }
 
 func openRemoteGuideRef(ctx context.Context, ref refio.RemoteHTTPRef) (io.ReadCloser, error) {
@@ -140,60 +145,58 @@ func (r *guideInputReadCloser) Close() error {
 	return err
 }
 
-func guideInputRemoteHostAllowed(ref refio.RemoteHTTPRef) bool {
-	host := ref.Hostname()
-	if host == "" {
-		return false
-	}
-	allowed := map[string]bool{}
-	for _, raw := range configuredGuideInputRefsFromEnv() {
-		u, err := url.Parse(strings.TrimSpace(raw))
-		if err != nil || u == nil {
-			continue
-		}
-		if h := strings.ToLower(strings.TrimSpace(u.Hostname())); h != "" {
-			allowed[h] = true
-		}
-	}
-	for _, raw := range strings.Split(os.Getenv("IPTV_TUNERR_GUIDE_INPUT_ALLOWED_HOSTS"), ",") {
-		raw = strings.ToLower(strings.TrimSpace(raw))
-		if raw != "" {
-			allowed[raw] = true
-		}
-	}
-	return allowed[host]
-}
-
-func configuredGuideInputRefsFromEnv() []string {
+func configuredGuideInputRemoteRefsFromEnv() []string {
 	refs := []string{
 		os.Getenv("IPTV_TUNERR_XMLTV_URL"),
 		os.Getenv("IPTV_TUNERR_XMLTV_ALIASES"),
 		os.Getenv("IPTV_TUNERR_HDHR_GUIDE_URL"),
-		os.Getenv("IPTV_TUNERR_PROVIDER_URL"),
 	}
-	refs = append(refs, strings.Split(os.Getenv("IPTV_TUNERR_PROVIDER_URLS"), ",")...)
+	refs = append(refs, providerXMLTVRefsFromEnv()...)
+	refs = append(refs, strings.Split(os.Getenv("IPTV_TUNERR_GUIDE_INPUT_ALLOWED_URLS"), ",")...)
+	out := make([]string, 0, len(refs))
+	seen := map[string]bool{}
+	for _, ref := range refs {
+		ref = strings.TrimSpace(ref)
+		if ref == "" || seen[ref] {
+			continue
+		}
+		seen[ref] = true
+		out = append(out, ref)
+	}
+	return out
+}
+
+func providerXMLTVRefsFromEnv() []string {
+	defaultUser := strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_USER"))
+	defaultPass := strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_PASS"))
+	refs := []string{}
+	if ref := ProviderXMLTVURL(os.Getenv("IPTV_TUNERR_PROVIDER_URL"), defaultUser, defaultPass); ref != "" {
+		refs = append(refs, ref)
+	}
+	for _, base := range strings.Split(os.Getenv("IPTV_TUNERR_PROVIDER_URLS"), ",") {
+		if ref := ProviderXMLTVURL(base, defaultUser, defaultPass); ref != "" {
+			refs = append(refs, ref)
+		}
+	}
 	for _, kv := range os.Environ() {
 		key, value, ok := strings.Cut(kv, "=")
 		if !ok {
 			continue
 		}
 		if strings.HasPrefix(key, "IPTV_TUNERR_PROVIDER_URL_") {
-			refs = append(refs, value)
-		}
-	}
-	out := make([]string, 0, len(refs))
-	for _, ref := range refs {
-		ref = strings.TrimSpace(ref)
-		if ref == "" {
-			continue
-		}
-		if strings.HasPrefix(ref, ".") {
-			if abs, err := filepath.Abs(ref); err == nil {
-				out = append(out, abs)
-				continue
+			suffix := strings.TrimPrefix(key, "IPTV_TUNERR_PROVIDER_URL_")
+			user := strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_USER_" + suffix))
+			pass := strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_PASS_" + suffix))
+			if user == "" {
+				user = defaultUser
+			}
+			if pass == "" {
+				pass = defaultPass
+			}
+			if ref := ProviderXMLTVURL(value, user, pass); ref != "" {
+				refs = append(refs, ref)
 			}
 		}
-		out = append(out, ref)
 	}
-	return out
+	return refs
 }
