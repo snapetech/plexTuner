@@ -4,6 +4,7 @@ package webui
 
 import (
 	"context"
+	"crypto/subtle"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,8 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +35,9 @@ type Server struct {
 	TunerAddr string
 	Version   string
 	AllowLAN  bool
+	StateFile string
+	User      string
+	Pass      string
 
 	tunerBase string
 	tmpl      *template.Template
@@ -55,16 +61,32 @@ type DeckTelemetryReport struct {
 	Samples     []DeckTelemetrySample `json:"samples"`
 }
 
+type persistedDeckState struct {
+	SavedAt string                `json:"saved_at"`
+	Samples []DeckTelemetrySample `json:"samples"`
+}
+
 // New constructs a dedicated dashboard server.
-func New(port int, tunerAddr, version string, allowLAN bool) *Server {
+func New(port int, tunerAddr, version string, allowLAN bool, stateFile, user, pass string) *Server {
 	if port <= 0 {
 		port = DefaultPort
+	}
+	user = strings.TrimSpace(user)
+	pass = strings.TrimSpace(pass)
+	if user == "" {
+		user = "admin"
+	}
+	if pass == "" {
+		pass = "admin"
 	}
 	return &Server{
 		Port:      port,
 		TunerAddr: tunerAddr,
 		Version:   version,
 		AllowLAN:  allowLAN,
+		StateFile: strings.TrimSpace(stateFile),
+		User:      user,
+		Pass:      pass,
 	}
 }
 
@@ -72,6 +94,9 @@ func New(port int, tunerAddr, version string, allowLAN bool) *Server {
 func (s *Server) Run(ctx context.Context) error {
 	s.tunerBase = proxyBase(s.TunerAddr)
 	s.tmpl = template.Must(template.New("webui").Delims("[[", "]]").Parse(indexHTML))
+	if err := s.loadState(); err != nil {
+		log.Printf("webui state load: %v", err)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/", s.proxy)
@@ -85,6 +110,7 @@ func (s *Server) Run(ctx context.Context) error {
 	if !s.AllowLAN {
 		handler = localhostOnly(mux)
 	}
+	handler = basicAuthOnly(handler, s.User, s.Pass)
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", s.Port),
@@ -136,15 +162,19 @@ func (s *Server) telemetry(w http.ResponseWriter, r *http.Request) {
 		}
 		s.telemetryMu.Lock()
 		s.telemetrySamples = append(s.telemetrySamples, sample)
-		if len(s.telemetrySamples) > defaultTelemetryHistoryLimit {
-			s.telemetrySamples = append([]DeckTelemetrySample(nil), s.telemetrySamples[len(s.telemetrySamples)-defaultTelemetryHistoryLimit:]...)
-		}
+		s.trimTelemetryLocked()
 		s.telemetryMu.Unlock()
+		if err := s.persistState(); err != nil {
+			log.Printf("webui state persist: %v", err)
+		}
 		s.writeTelemetry(w)
 	case http.MethodDelete:
 		s.telemetryMu.Lock()
 		s.telemetrySamples = nil
 		s.telemetryMu.Unlock()
+		if err := s.persistState(); err != nil {
+			log.Printf("webui state persist: %v", err)
+		}
 		s.writeTelemetry(w)
 	default:
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
@@ -165,6 +195,61 @@ func (s *Server) writeTelemetry(w http.ResponseWriter) {
 		return
 	}
 	_, _ = w.Write(body)
+}
+
+func (s *Server) trimTelemetryLocked() {
+	if len(s.telemetrySamples) > defaultTelemetryHistoryLimit {
+		s.telemetrySamples = append([]DeckTelemetrySample(nil), s.telemetrySamples[len(s.telemetrySamples)-defaultTelemetryHistoryLimit:]...)
+	}
+}
+
+func (s *Server) loadState() error {
+	if strings.TrimSpace(s.StateFile) == "" {
+		return nil
+	}
+	data, err := os.ReadFile(s.StateFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read %s: %w", s.StateFile, err)
+	}
+	var state persistedDeckState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return fmt.Errorf("decode %s: %w", s.StateFile, err)
+	}
+	s.telemetryMu.Lock()
+	s.telemetrySamples = append([]DeckTelemetrySample(nil), state.Samples...)
+	s.trimTelemetryLocked()
+	s.telemetryMu.Unlock()
+	return nil
+}
+
+func (s *Server) persistState() error {
+	if strings.TrimSpace(s.StateFile) == "" {
+		return nil
+	}
+	s.telemetryMu.Lock()
+	state := persistedDeckState{
+		SavedAt: time.Now().UTC().Format(time.RFC3339),
+		Samples: append([]DeckTelemetrySample(nil), s.telemetrySamples...),
+	}
+	s.telemetryMu.Unlock()
+	body, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode %s: %w", s.StateFile, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(s.StateFile), 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(s.StateFile), err)
+	}
+	tmp := s.StateFile + ".tmp"
+	if err := os.WriteFile(tmp, body, 0o600); err != nil {
+		return fmt.Errorf("write tmp %s: %w", tmp, err)
+	}
+	if err := os.Rename(tmp, s.StateFile); err != nil {
+		return fmt.Errorf("rename %s: %w", s.StateFile, err)
+	}
+	return nil
 }
 
 func (s *Server) proxy(w http.ResponseWriter, r *http.Request) {
@@ -241,6 +326,20 @@ func localhostOnly(h http.Handler) http.Handler {
 			return
 		}
 		h.ServeHTTP(w, r)
+	})
+}
+
+func basicAuthOnly(h http.Handler, wantUser, wantPass string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+		if ok &&
+			subtle.ConstantTimeCompare([]byte(user), []byte(wantUser)) == 1 &&
+			subtle.ConstantTimeCompare([]byte(pass), []byte(wantPass)) == 1 {
+			h.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("WWW-Authenticate", `Basic realm="IPTV Tunerr Deck"`)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 	})
 }
 

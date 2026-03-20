@@ -1593,9 +1593,10 @@ function fillRawSelectors() {
 
 function renderFilters() {
   const deckHistoryCount = state.sharedTelemetry.samples.length || state.telemetry.samples.length;
+  const memoryLabel = state.payloads.runtime?.body?.webui?.memory_persisted ? "Shared memory" : "Volatile memory";
   activeFilters.innerHTML = state.filter
     ? `<span class="pill">Filter active: ${esc(state.filter)}</span>`
-    : `<span class="pill">Mode: ${esc(modeTitles[state.mode][0])}</span><span class="pill">Deck target: [[.TunerBase]]</span><span class="pill">Shared memory: ${deckHistoryCount} samples</span>`;
+    : `<span class="pill">Mode: ${esc(modeTitles[state.mode][0])}</span><span class="pill">Deck target: [[.TunerBase]]</span><span class="pill">${esc(memoryLabel)}: ${deckHistoryCount} samples</span>`;
 }
 
 function deriveMetrics(payloads) {
@@ -1737,7 +1738,8 @@ function renderDeck() {
   heroMeta.innerHTML = [
     `<div class="meta-pill"><strong>Active mode</strong><span>${esc(modeTitles[state.mode][0])}</span></div>`,
     `<div class="meta-pill"><strong>Refresh cadence</strong><span>${state.refreshRateSec > 0 ? `${state.refreshRateSec}s auto` : "manual only"}</span></div>`,
-    `<div class="meta-pill"><strong>Payload posture</strong><span>${health.ok ? "live deck with reachable tuner" : "deck up, tuner degraded"}</span></div>`
+    `<div class="meta-pill"><strong>Payload posture</strong><span>${health.ok ? "live deck with reachable tuner" : "deck up, tuner degraded"}</span></div>`,
+    `<div class="meta-pill"><strong>Deck memory</strong><span>${runtime.webui?.memory_persisted ? `persisted at ${pretty(runtime.webui?.state_file)}` : "process-only shared memory"}</span></div>`
   ].join("");
 
   const incidents = [];
@@ -1753,6 +1755,8 @@ function renderDeck() {
   watchItems.push(`Block Cloudflare providers: ${pretty(runtime.provider?.block_cf_providers)}.`);
   watchItems.push(`Web UI LAN access: ${pretty(runtime.webui?.allow_lan)}.`);
   watchItems.push(`EPG SQLite incremental upsert: ${pretty(runtime.guide?.epg_sqlite_incremental_upsert)}.`);
+  watchItems.push(`Deck memory is ${runtime.webui?.memory_persisted ? `persisted at ${pretty(runtime.webui?.state_file)}` : "volatile until the web UI process restarts"}.`);
+  watchItems.push(`Deck auth user is ${pretty(runtime.webui?.auth_user)}${runtime.webui?.auth_default_password ? " with the default password still in place." : "."}`);
 
   const wins = [];
   if (health.ok) wins.push("Deck can reach the tuner through the dedicated proxy origin.");
@@ -1781,15 +1785,15 @@ function renderDeck() {
   historyBar.innerHTML = `
     <div>
       <strong>Deck Memory</strong>
-      <div class="history-copy">${trendSamples.length} samples in shared web UI memory. ${firstSample ? `Oldest: ${esc(formatWhen(firstSample.sampled_at || firstSample.at))}.` : "No saved history yet."} ${lastSample ? `Latest: ${esc(formatWhen(lastSample.sampled_at || lastSample.at))}.` : ""}</div>
+      <div class="history-copy">${trendSamples.length} samples in ${runtime.webui?.memory_persisted ? "persisted" : "shared in-process"} web UI memory. ${firstSample ? `Oldest: ${esc(formatWhen(firstSample.sampled_at || firstSample.at))}.` : "No saved history yet."} ${lastSample ? `Latest: ${esc(formatWhen(lastSample.sampled_at || lastSample.at))}.` : ""} ${runtime.webui?.memory_persisted ? `State file: ${esc(pretty(runtime.webui?.state_file))}.` : "Restarting the web UI clears this history."}</div>
     </div>
     <div class="controls">
-      <button id="history-reset" type="button">Clear Shared Memory</button>
+      <button id="history-reset" type="button">${runtime.webui?.memory_persisted ? "Clear Persisted Memory" : "Clear Shared Memory"}</button>
     </div>
   `;
 
   trendGrid.innerHTML = [
-    createTrendCard("Guide Trend", `${clampPercent(metrics.guidePercent)}%`, trendSamples.map((item) => ({ value: item.guidePercent || item.guide_percent })), `${trendSamples.length} refresh samples in shared deck memory.`),
+    createTrendCard("Guide Trend", `${clampPercent(metrics.guidePercent)}%`, trendSamples.map((item) => ({ value: item.guidePercent || item.guide_percent })), `${trendSamples.length} refresh samples in ${runtime.webui?.memory_persisted ? "persisted" : "shared"} deck memory.`),
     createTrendCard("Stream Trend", `${clampPercent(metrics.streamPercent)}%`, trendSamples.map((item) => ({ value: item.streamPercent || item.stream_percent })), `${metrics.failedAttemptCount} failures in the current attempt window.`),
     createTrendCard("Recorder Trend", recorder.summary ? `${clampPercent(metrics.recorderPercent)}%` : "n/a", trendSamples.map((item) => ({ value: item.recorderPercent || item.recorder_percent })), recorder.summary ? "Completion ratio across the current loaded recorder summary." : "Recorder not configured in this process."),
     createTrendCard("Ops Trend", `${clampPercent(metrics.opsPercent)}%`, trendSamples.map((item) => ({ value: item.opsPercent || item.ops_percent })), metrics.opsRisk > 0 ? "Recovery pressure is rising inside shared deck memory." : "Recovery pressure is flat or absent.")
@@ -1880,7 +1884,7 @@ function renderDeck() {
     createCard("Tuner", `count=${pretty(runtime.tuner?.count)}, lineup_cap=${pretty(runtime.tuner?.lineup_max_channels)}, transcode=${pretty(runtime.tuner?.stream_transcode)}, buffer=${pretty(runtime.tuner?.stream_buffer_bytes)}`, "", "", "runtime"),
     createCard("Guide", `xmltv=${pretty(runtime.guide?.xmltv_url)}, provider_epg=${pretty(runtime.guide?.provider_epg_enabled)}, sqlite=${pretty(runtime.guide?.epg_sqlite_path)}`, "", "", "runtime"),
     createCard("Provider", `entries=${pretty(runtime.provider?.entry_count)}, base_urls=${pretty(runtime.provider?.base_urls)}, block_cf=${pretty(runtime.provider?.block_cf_providers)}`, "", "", "runtime"),
-    createCard("Web UI", `enabled=${pretty(runtime.webui?.enabled)}, port=${pretty(runtime.webui?.port)}, allow_lan=${pretty(runtime.webui?.allow_lan)}, legacy_ui=${pretty(runtime.webui?.legacy_ui)}`, "", "", "runtime"),
+    createCard("Web UI", `enabled=${pretty(runtime.webui?.enabled)}, port=${pretty(runtime.webui?.port)}, allow_lan=${pretty(runtime.webui?.allow_lan)}, auth_user=${pretty(runtime.webui?.auth_user)}, auth_default_password=${pretty(runtime.webui?.auth_default_password)}, memory_persisted=${pretty(runtime.webui?.memory_persisted)}, state_file=${pretty(runtime.webui?.state_file)}, legacy_ui=${pretty(runtime.webui?.legacy_ui)}`, "", "", "runtime"),
     createCard("HDHR", `network_mode=${pretty(runtime.hdhr?.network_mode)}, device_id=${pretty(runtime.hdhr?.device_id)}, discover_port=${pretty(runtime.hdhr?.discover_port)}`, "", "", "runtime"),
     createCard("Recorder + ops", `recorder_state=${pretty(runtime.recorder?.state_file)}, autopilot_state=${pretty(runtime.tuner?.autopilot_state_file)}`, "", "", "runtime")
   ]).join("");

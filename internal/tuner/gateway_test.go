@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -115,6 +116,56 @@ seg.ts
 	}
 }
 
+func TestRewriteHLSPlaylistToGatewayProxy_sampleAESAndSessionKey(t *testing.T) {
+	in := `#EXTM3U
+#EXT-X-SESSION-KEY:METHOD=SAMPLE-AES,URI="https://keys.example/session.key"
+#EXT-X-KEY:METHOD=SAMPLE-AES,KEYFORMAT="identity",URI="rel/key.bin"
+#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="cc",NAME="EN",URI="tracks/cc.m3u8"
+#EXTINF:4,
+seg.ts
+`
+	out := rewriteHLSPlaylistToGatewayProxy([]byte(in), "http://up.example/live/master.m3u8", "ch1")
+	s := string(out)
+	if !strings.Contains(s, "METHOD=SAMPLE-AES") {
+		t.Fatalf("expected SAMPLE-AES retained: %q", s)
+	}
+	if !strings.Contains(s, "EXT-X-SESSION-KEY") {
+		t.Fatalf("expected EXT-X-SESSION-KEY retained: %q", s)
+	}
+	if !strings.Contains(s, "https%3A%2F%2Fkeys.example%2Fsession.key") {
+		t.Fatalf("missing session-key URI rewrite: %q", s)
+	}
+	if !strings.Contains(s, "http%3A%2F%2Fup.example%2Flive%2Frel%2Fkey.bin") {
+		t.Fatalf("missing relative SAMPLE-AES key rewrite: %q", s)
+	}
+	if !strings.Contains(s, "tracks%2Fcc.m3u8") {
+		t.Fatalf("missing EXT-X-MEDIA URI rewrite: %q", s)
+	}
+}
+
+func TestRewriteHLSPlaylistToGatewayProxy_preservesEmptyKeyURI(t *testing.T) {
+	in := `#EXTM3U
+#EXT-X-KEY:METHOD=NONE
+#EXT-X-KEY:METHOD=AES-128,URI=""
+#EXTINF:4,
+s.ts
+`
+	out := rewriteHLSPlaylistToGatewayProxy([]byte(in), "http://up.example/a.m3u8", "x")
+	s := string(out)
+	if !strings.Contains(s, `METHOD=AES-128,URI=""`) {
+		t.Fatalf("expected empty URI= left unchanged (no bogus proxy): %q", s)
+	}
+}
+
+func TestRewriteHLSPlaylistToGatewayProxy_lowercaseURIAttribute(t *testing.T) {
+	in := "#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,NAME=\"a\",uri=\"http://cdn.example/track.m3u8\"\n"
+	out := rewriteHLSPlaylistToGatewayProxy([]byte(in), "http://up.example/live/master.m3u8", "z")
+	s := string(out)
+	if !strings.Contains(s, `/stream/z?mux=hls&seg=`) || !strings.Contains(s, "cdn.example") {
+		t.Fatalf("expected lowercase uri= attribute rewritten: %q", s)
+	}
+}
+
 func TestGateway_serveHLSMuxTarget_forwardsRangeAndPartialContent(t *testing.T) {
 	var gotRange string
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -145,6 +196,82 @@ func TestGateway_serveHLSMuxTarget_forwardsRangeAndPartialContent(t *testing.T) 
 	}
 	if got := w.Body.String(); got != "1234" {
 		t.Fatalf("body=%q", got)
+	}
+}
+
+func TestGateway_serveHLSMuxTarget_forwardsNotModified(t *testing.T) {
+	var gotINM string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotINM = r.Header.Get("If-None-Match")
+		w.Header().Set("ETag", `"abc"`)
+		w.Header().Set("Cache-Control", "max-age=60")
+		w.WriteHeader(http.StatusNotModified)
+	}))
+	defer up.Close()
+
+	g := &Gateway{}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/ch1?mux=hls&seg="+url.QueryEscape(up.URL+"/seg.ts"), nil)
+	req.Header.Set("If-None-Match", `"abc"`)
+	w := httptest.NewRecorder()
+	if err := g.serveHLSMuxTarget(w, req, up.Client(), "ch1", up.URL+"/seg.ts"); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != http.StatusNotModified {
+		t.Fatalf("code=%d want 304", w.Code)
+	}
+	if gotINM != `"abc"` {
+		t.Fatalf("If-None-Match upstream: got %q", gotINM)
+	}
+	if w.Header().Get("ETag") == "" {
+		t.Fatal("expected ETag on client response")
+	}
+}
+
+func TestGateway_hlsMuxSeg_rejectsWhenAtConcurrencyLimit(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_HLS_MUX_MAX_CONCURRENT", "1")
+	block := make(chan struct{})
+	var firstEntered sync.WaitGroup
+	firstEntered.Add(1)
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		firstEntered.Done()
+		<-block
+		w.Header().Set("Content-Type", "video/mp2t")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer up.Close()
+
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "0", GuideName: "Ch", StreamURL: up.URL + "/x"},
+		},
+		TunerCount: 2,
+	}
+	seg := url.QueryEscape(up.URL + "/seg.ts")
+	done := make(chan struct{})
+	go func() {
+		req := httptest.NewRequest(http.MethodGet, "http://local/stream/0?mux=hls&seg="+seg, nil)
+		w := httptest.NewRecorder()
+		g.ServeHTTP(w, req)
+		close(done)
+	}()
+	firstEntered.Wait()
+	req2 := httptest.NewRequest(http.MethodGet, "http://local/stream/0?mux=hls&seg="+seg, nil)
+	w2 := httptest.NewRecorder()
+	g.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusServiceUnavailable {
+		t.Fatalf("want 503, got %d body=%q", w2.Code, w2.Body.String())
+	}
+	close(block)
+	<-done
+}
+
+func TestGateway_ProviderBehaviorProfile_hlsMuxSegLimit(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_HLS_MUX_MAX_CONCURRENT", "17")
+	g := &Gateway{TunerCount: 2}
+	p := g.ProviderBehaviorProfile()
+	if p.HlsMuxSegLimit != 17 {
+		t.Fatalf("HlsMuxSegLimit=%d want 17", p.HlsMuxSegLimit)
 	}
 }
 

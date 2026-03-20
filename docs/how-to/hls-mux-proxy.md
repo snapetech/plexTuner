@@ -41,7 +41,9 @@ This mode is **not** ffmpeg segment packaging: Tunerr **rewrites** playlist line
 
 6. Inspect effective settings at **`/debug/runtime.json`** (`tuner.stream_public_base_url`, **`tuner.hls_mux_cors`**) and SQLite/EPG flags at **`/guide/epg-store.json`** when using incremental provider suffixes.
 
-Byte-range HLS (**`#EXT-X-BYTERANGE`**) requires the player’s **`Range`** request to reach the CDN: Tunerr forwards **`Range`** / **`If-Range`** on upstream fetches and returns **`206 Partial Content`** with **`Content-Range`** when the CDN responds that way.
+Byte-range HLS (**`#EXT-X-BYTERANGE`**) requires the player’s **`Range`** request to reach the CDN: Tunerr forwards **`Range`** / **`If-Range`** on upstream fetches and returns **`206 Partial Content`** with **`Content-Range`** when the CDN responds that way. Conditional cache validation (**`If-None-Match`** / **`If-Modified-Since`**) is forwarded; **`304 Not Modified`** is passed through for segment/sub-playlist responses.
+
+**Concurrency:** each **`?mux=hls&seg=`** request counts against a separate cap (default **effective tuner limit × 8**, tunable with **`IPTV_TUNERR_HLS_MUX_SEG_SLOTS_PER_TUNER`** or absolute **`IPTV_TUNERR_HLS_MUX_MAX_CONCURRENT`**). Inspect **`hls_mux_seg_in_use`** / **`hls_mux_seg_limit`** on the provider behavior profile endpoint. When the cap is hit, Tunerr returns **`503`** (same **`805`** tuner-style error header as main streams).
 
 ## Verify
 
@@ -51,7 +53,7 @@ Byte-range HLS (**`#EXT-X-BYTERANGE`**) requires the player’s **`Range`** requ
 ## Caveats
 
 - This path **does not** replace Plex’s usual **MPEG-TS** HDHR stream expectation; use it where HLS-through-Tunerr is intentional.
-- **AES-128 / init map:** Tunerr rewrites **`URI="..."`** on common HLS tags (including **`#EXT-X-KEY`**, **`#EXT-X-MAP`**, variant **`#EXT-X-STREAM-INF`**) so keys and fMP4 init segments are fetched through the same **`?mux=hls&seg=`** proxy. **Widevine / FairPlay** and other DRM systems are not handled here—test with your client.
+- **AES-128 / SAMPLE-AES / init map:** Tunerr rewrites **`URI="..."`** (case-insensitive **`uri="`**) on common HLS tags—including **`#EXT-X-KEY`** (**`METHOD=AES-128`** or **`METHOD=SAMPLE-AES`** with optional **`KEYFORMAT`**), **`#EXT-X-SESSION-KEY`** on master playlists, **`#EXT-X-MAP`**, **`#EXT-X-MEDIA`**, variant **`#EXT-X-STREAM-INF`**—so keys, init segments, and renditions use the same **`?mux=hls&seg=`** proxy and upstream cookies. Empty **`URI=""`** is left unchanged. **Widevine / FairPlay** (e.g. non-HTTP **`skd://`** key delivery), PlayReady, and other full DRM stacks are **not** implemented here—test with your client.
 
 See also
 --------

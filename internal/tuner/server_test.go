@@ -475,7 +475,12 @@ func TestServer_runtimeSnapshot(t *testing.T) {
 			ListenAddress: ":5004",
 			BaseURL:       "http://127.0.0.1:5004",
 			WebUI: map[string]interface{}{
-				"port": 48879,
+				"port":                  48879,
+				"auth_user":             "admin",
+				"auth_default_password": true,
+				"memory_persisted":      true,
+				"state_file":            "/tmp/deck-state.json",
+				"telemetry_history_max": 96,
 			},
 		},
 	}
@@ -491,6 +496,9 @@ func TestServer_runtimeSnapshot(t *testing.T) {
 	}
 	if body.Version != "test" || body.BaseURL != "http://127.0.0.1:5004" {
 		t.Fatalf("unexpected %+v", body)
+	}
+	if body.WebUI["state_file"] != "/tmp/deck-state.json" || body.WebUI["auth_user"] != "admin" {
+		t.Fatalf("unexpected webui snapshot: %+v", body.WebUI)
 	}
 }
 

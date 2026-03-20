@@ -242,7 +242,13 @@ func rewriteHLSQuotedURIAttrs(line string, base *url.URL, channelID string) stri
 			return full
 		}
 		prefix, inner, suffix := sm[1], sm[2], sm[3]
+		if strings.TrimSpace(inner) == "" {
+			return full
+		}
 		resolved := resolveHLSMediaRef(inner, base)
+		if strings.TrimSpace(resolved) == "" {
+			return full
+		}
 		proxied := gatewayHLSProxyMediaURL(channelID, resolved)
 		return prefix + proxied + suffix
 	})
@@ -268,7 +274,8 @@ func rewriteHLSPlaylistToGatewayProxy(body []byte, upstreamURL string, channelID
 			continue
 		}
 		if strings.HasPrefix(trim, "#") {
-			if strings.Contains(trim, `URI="`) {
+			// Attribute name is usually URI= but some generators use uri=; regex rewrite is case-insensitive.
+			if strings.Contains(strings.ToUpper(trim), `URI="`) {
 				out.WriteString(rewriteHLSQuotedURIAttrs(line, base, channelID))
 			} else {
 				out.WriteString(line)

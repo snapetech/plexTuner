@@ -23,6 +23,20 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: HLS mux — SAMPLE-AES / SESSION-KEY rewrite hardening + tests
+  Summary:
+    - `rewriteHLSQuotedURIAttrs`: skip empty inner URI; tag-line gate uses case-insensitive `URI="` so `uri="` rewrites.
+    - Tests: SAMPLE-AES + EXT-X-SESSION-KEY + EXT-X-MEDIA; empty `URI=""`; lowercase `uri=`; docs/CHANGELOG caveats (DRM limits unchanged).
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - HTTP(S) key URLs still proxy; `skd://` / non-HTTP schemes remain unsupported at `seg=` (existing `safeurl` check).
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway_hls.go`, `internal/tuner/gateway_test.go`, `docs/how-to/hls-mux-proxy.md`
+
+- Date: 2026-03-19
   Title: HLS mux — optional CORS for ?mux=hls (playlist + seg + OPTIONS)
   Summary:
     - `IPTV_TUNERR_HLS_MUX_CORS` + `config.HlsMuxCORS`; `applyHLSMuxCORS` / `maybeServeHLSMuxOPTIONS` in `gateway_hls.go`; gateway calls OPTIONS handler after channel resolve.
@@ -35,6 +49,21 @@ Append-only. One entry per completed task.
     - none
   Links:
     - `internal/tuner/gateway_hls.go`, `internal/tuner/gateway.go`, `internal/config/config.go`, `cmd/iptv-tunerr/cmd_runtime_server.go`
+
+- Date: 2026-03-19
+  Title: HLS mux — seg concurrency cap + 304 passthrough + conditional upstream headers
+  Summary:
+    - `hlsMuxSegInUse` + `effectiveHLSMuxSegLimitLocked` (`IPTV_TUNERR_HLS_MUX_MAX_CONCURRENT`, `IPTV_TUNERR_HLS_MUX_SEG_SLOTS_PER_TUNER`); 503/805 when over cap; acquire/release around `serveHLSMuxTarget` in `gateway.go`.
+    - `serveHLSMuxTarget`: HTTP **304** with ETag/Cache-Control forward; `If-None-Match` / `If-Modified-Since` on `forwardedUpstreamHeaderNames`; provider profile `hls_mux_seg_in_use` / `hls_mux_seg_limit`.
+    - Tests `TestGateway_serveHLSMuxTarget_forwardsNotModified`, `TestGateway_hlsMuxSeg_rejectsWhenAtConcurrencyLimit`, `TestGateway_ProviderBehaviorProfile_hlsMuxSegLimit`; docs/CHANGELOG/cli/how-to/README/.env.example.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Default cap = effective tuner limit × 8 so parallel HLS segment fetches do not starve a typical player.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway.go`, `internal/tuner/gateway_hls.go`, `internal/tuner/gateway_policy.go`, `internal/tuner/gateway_upstream.go`, `internal/tuner/gateway_provider_profile.go`
 
 - Date: 2026-03-20
   Title: HLS mux — forward Range/If-Range; preserve 206 + Content-Range on seg=
@@ -2772,6 +2801,18 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - Added a server-backed `/deck/telemetry.json` endpoint in the dedicated web UI so trend cards can use shared in-process operator memory instead of only per-browser local storage.
     - Switched the deck trend/history surfaces to prefer shared web UI memory while keeping personal UI preferences local to the browser, making the page behave more like a shared cockpit.
     - Tightened the HLS mux path with explicit segment-proxy concurrency limits and 304/conditional-fetch handling, while keeping the browser-facing CORS/preflight support for `?mux=hls`.
+  Verification:
+    - `go test ./...`
+    - `./scripts/verify`
+
+---
+
+- Date: 2026-03-20
+  Title: Add deck auth defaults and persisted operator memory
+  Summary:
+    - Added HTTP Basic auth on the dedicated `internal/webui` origin, defaulting to `admin` / `admin` unless `IPTV_TUNERR_WEBUI_USER` / `IPTV_TUNERR_WEBUI_PASS` override it.
+    - Added optional `IPTV_TUNERR_WEBUI_STATE_FILE` persistence so shared deck telemetry/history survives dedicated web UI restarts instead of disappearing with process memory.
+    - Surfaced deck auth and memory posture in `/debug/runtime.json` and in the deck UI itself, while also closing the leftover HLS mux regression coverage for conditional `304` forwarding and segment concurrency caps.
   Verification:
     - `go test ./...`
     - `./scripts/verify`

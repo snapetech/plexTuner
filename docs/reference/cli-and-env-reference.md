@@ -739,11 +739,14 @@ Merge semantics for HDHR + IPTV catalogs: [adr/0002-hdhr-hardware-iptv-merge.md]
 | `IPTV_TUNERR_WEBUI_DISABLED` | If `1`, disable the dedicated dashboard on port `48879` (`0xBEEF`). |
 | `IPTV_TUNERR_WEBUI_PORT` | Dedicated dashboard port (default `48879`). |
 | `IPTV_TUNERR_WEBUI_ALLOW_LAN` | If `1`, allow non-loopback clients to open the dedicated dashboard (default: **localhost only**). |
+| `IPTV_TUNERR_WEBUI_STATE_FILE` | Optional JSON state file for shared deck telemetry/history so the web UI keeps trend memory across process restarts. |
+| `IPTV_TUNERR_WEBUI_USER` | Dedicated deck HTTP Basic auth username (default `admin`). |
+| `IPTV_TUNERR_WEBUI_PASS` | Dedicated deck HTTP Basic auth password (default `admin`). |
 | `IPTV_TUNERR_UI_DISABLED` | If `1`, `/ui/` is not served. |
 | `IPTV_TUNERR_UI_ALLOW_LAN` | If `1`, allow non-loopback clients to open `/ui/` (default: **localhost only**). |
 
 Browser URLs:
-- Dedicated deck: `http://127.0.0.1:48879/` by default. It reverse-proxies tuner endpoints under `/api/*` and surfaces runtime settings from `/api/debug/runtime.json`.
+- Dedicated deck: `http://127.0.0.1:48879/` by default. It reverse-proxies tuner endpoints under `/api/*`, surfaces runtime settings from `/api/debug/runtime.json`, and requires HTTP Basic auth on the dedicated deck origin (`admin` / `admin` by default unless overridden).
 - Legacy pages on the tuner port: `http://127.0.0.1:<port>/ui/` (home), `/ui/guide/` (merged guide preview from cache), `/ui/guide-preview.json` (JSON; optional `?limit=`).
 
 Transcode profile names, HDHomeRun-style aliases, and `?profile=` on `/stream/<id>`: [transcode-profiles.md](transcode-profiles.md).
@@ -955,7 +958,7 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
 - `IPTV_TUNERR_HLS_MUX_MAX_CONCURRENT` — optional absolute cap for concurrent **`?mux=hls&seg=`** proxy requests. Default derives from effective tuner limit.
 - `IPTV_TUNERR_HLS_MUX_SEG_SLOTS_PER_TUNER` — multiplier for the default **`?mux=hls&seg=`** concurrency cap (`effective_tuner_limit * slots_per_tuner`, default `8`).
 - **HLS mux query** — `GET /stream/<channel>?mux=hls` on an **HLS** upstream returns an **MPEG-URL playlist** proxied through Tunerr (not MPEG-TS). Nested playlists and segments use `?mux=hls&seg=<url>`. Default stream behavior remains TS remux/transcode when `mux` is omitted.
-- **Byte-range segments:** client **`Range`** / **`If-Range`** headers are forwarded to upstream playlist/segment/key fetches; **`206`** + **`Content-Range`** are passed back for **`?mux=hls&seg=`** binary responses (e.g. **`#EXT-X-BYTERANGE`**).
+- **Byte-range / conditional segments:** client **`Range`** / **`If-Range`** / **`If-None-Match`** / **`If-Modified-Since`** are forwarded to upstream **`?mux=hls&seg=`** fetches; **`206`** + **`Content-Range`**, or **`304`**, are passed back when the CDN responds that way.
 - `IPTV_TUNERR_FFMPEG_PATH` — override the ffmpeg binary path (e.g. `/opt/ffmpeg-static/current/ffmpeg`).
 - `IPTV_TUNERR_FFMPEG_DISABLED` — disable ffmpeg entirely for HLS relay and stay on the Go playlist/segment fetch path. Useful when ffmpeg cannot satisfy provider header/cookie requirements.
 - `IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE` — keep the original ffmpeg input hostname instead of rewriting it to a resolved IP. Useful for CDNs that validate the hostname against `Host` or TLS state.

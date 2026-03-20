@@ -44,7 +44,7 @@ func startDedicatedWebUI(ctx context.Context, cfg *config.Config, tunerAddr stri
 	if cfg == nil || !cfg.WebUIEnabled {
 		return
 	}
-	ui := webui.New(cfg.WebUIPort, tunerAddr, Version, cfg.WebUIAllowLAN)
+	ui := webui.New(cfg.WebUIPort, tunerAddr, Version, cfg.WebUIAllowLAN, cfg.WebUIStateFile, cfg.WebUIUser, cfg.WebUIPass)
 	go func() {
 		if err := ui.Run(ctx); err != nil {
 			log.Printf("Web UI failed: %v", err)

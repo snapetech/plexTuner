@@ -471,10 +471,19 @@ func TestWebUIConfig(t *testing.T) {
 	if c.WebUIAllowLAN {
 		t.Fatal("WebUIAllowLAN default should be false")
 	}
+	if c.WebUIStateFile != "" {
+		t.Fatalf("WebUIStateFile default: got %q want empty", c.WebUIStateFile)
+	}
+	if c.WebUIUser != "admin" || c.WebUIPass != "admin" {
+		t.Fatalf("default webui creds: got %q/%q want admin/admin", c.WebUIUser, c.WebUIPass)
+	}
 
 	os.Setenv("IPTV_TUNERR_WEBUI_DISABLED", "1")
 	os.Setenv("IPTV_TUNERR_WEBUI_PORT", "50123")
 	os.Setenv("IPTV_TUNERR_WEBUI_ALLOW_LAN", "true")
+	os.Setenv("IPTV_TUNERR_WEBUI_STATE_FILE", "/tmp/deck-state.json")
+	os.Setenv("IPTV_TUNERR_WEBUI_USER", "deck")
+	os.Setenv("IPTV_TUNERR_WEBUI_PASS", "secret")
 	c = Load()
 	if c.WebUIEnabled {
 		t.Fatal("WebUIEnabled should be false when disabled")
@@ -484,6 +493,12 @@ func TestWebUIConfig(t *testing.T) {
 	}
 	if !c.WebUIAllowLAN {
 		t.Fatal("WebUIAllowLAN should be true")
+	}
+	if c.WebUIStateFile != "/tmp/deck-state.json" {
+		t.Fatalf("WebUIStateFile: got %q want /tmp/deck-state.json", c.WebUIStateFile)
+	}
+	if c.WebUIUser != "deck" || c.WebUIPass != "secret" {
+		t.Fatalf("webui creds: got %q/%q want deck/secret", c.WebUIUser, c.WebUIPass)
 	}
 }
 
