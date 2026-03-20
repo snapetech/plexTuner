@@ -63,6 +63,7 @@ type Gateway struct {
 	hlsMuxSeg502Fail           atomic.Uint64
 	hlsMuxSeg503LimitHits      atomic.Uint64
 	hlsMuxSegRateLimited       atomic.Uint64
+	upstreamQuarantineSkips    atomic.Uint64 // URLs dropped by host quarantine when backups remained
 	dashMuxSegSuccess          atomic.Uint64
 	dashMuxSegErrScheme        atomic.Uint64
 	dashMuxSegErrPrivate       atomic.Uint64

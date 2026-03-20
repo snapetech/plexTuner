@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-19):** **INT-010:** **`upstream_quarantine_skips_total`** on **`/provider/profile.json`** (cumulative; mirrors Prometheus counter). **`./scripts/verify`** OK.
+
 **Latest (2026-03-19):** **INT-010 follow-up:** **`iptv_tunerr_upstream_quarantine_skips_total`** (Prometheus when **`IPTV_TUNERR_METRICS_ENABLE`**), **`promRegisterUpstreamMetrics`** on tuner start; extra **`filterQuarantinedUpstreams`** / **`ServeHTTP`** tests; docs (**cli-and-env**, **CHANGELOG**, **features**, **observability-prometheus-and-otel**). **`go mod tidy` + `go mod vendor`** ( **`prometheus/testutil`** ). **`./scripts/verify`** OK.
 
 **Latest (2026-03-19):** **LTV epic code:** **`IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS`** + optional **`IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE`** (**`walkStreamUpstreams`**, **`/provider/profile.json`**, **`/debug/runtime.json`**). **`./scripts/verify`** OK.

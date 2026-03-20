@@ -23,6 +23,19 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Provider profile upstream_quarantine_skips_total (INT-010)
+  Summary:
+    - **`Gateway.upstreamQuarantineSkips`** atomic + **`noteUpstreamQuarantineFilterSkipped`** (Prometheus + profile).
+    - **`ProviderBehaviorProfile.UpstreamQuarantineSkipsTotal`** on **`GET /provider/profile.json`**.
+    - **`TestGateway_ProviderBehaviorProfile_upstreamQuarantineSkipsTotal`**; **cli-and-env** / **CHANGELOG** / **features**.
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+  Links:
+    - complements **`iptv_tunerr_upstream_quarantine_skips_total`**
+
+- Date: 2026-03-19
   Title: Host quarantine tests + Prometheus upstream_quarantine_skips_total
   Summary:
     - **`internal/tuner/prometheus_upstream.go`**: **`iptv_tunerr_upstream_quarantine_skips_total`**; **`promNoteUpstreamQuarantineSkips`** from **`filterQuarantinedUpstreams`** when backups remain.
