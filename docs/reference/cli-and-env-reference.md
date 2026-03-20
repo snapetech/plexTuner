@@ -580,8 +580,8 @@ Relevant streaming env knobs for tricky HLS/CDN paths:
 - `IPTV_TUNERR_FFMPEG_HLS_MULTIPLE_REQUESTS` (`true|false`, default `true`) — allow multiple HTTP requests on a persistent connection for HLS input
 - `IPTV_TUNERR_HLS_PLAYLIST_RETRY_LIMIT` (default `2`) — extra retries for playlist refreshes that fail with a learned/concurrency-style upstream limit (`423`, `429`, `458`, `509`, or matching body text)
 - `IPTV_TUNERR_HLS_PLAYLIST_RETRY_BACKOFF_MS` (default `1000`) — base backoff for those retries; attempts use `1x`, `2x`, `4x`
-- `IPTV_TUNERR_HLS_RELAY_PREFER_GO_ON_PROVIDER_PRESSURE` (`true|false`, default `true`) — after Tunerr has already seen provider concurrency pressure, prefer the Go HLS relay over ffmpeg remux for non-transcode HLS
-- `IPTV_TUNERR_HLS_RELAY_PREFER_GO` (`true|false`, default `false`) — force the same Go-relay preference even without learned provider pressure
+- `IPTV_TUNERR_HLS_RELAY_PREFER_GO_ON_PROVIDER_PRESSURE` (`true|false`, default `true`) — for non-transcode HLS, prefer the Go relay over ffmpeg remux when Tunerr has seen **provider concurrency pressure** *or* the current stream host has a **non-zero penalty** from **`IPTV_TUNERR_PROVIDER_AUTOTUNE`** failure accounting (e.g. a recent **`ffmpeg_hls_failed`** on that host). Set `false` to disable this entire branch (concurrency + host-penalty); use **`IPTV_TUNERR_HLS_RELAY_PREFER_GO`** to force Go relay regardless.
+- `IPTV_TUNERR_HLS_RELAY_PREFER_GO` (`true|false`, default `false`) — force Go-relay preference even when the pressure/penalty signals above are absent
 
 These are legitimate transport-parity knobs, not Cloudflare bypasses.
 
@@ -990,8 +990,8 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
 - `IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE` — keep the original ffmpeg input hostname instead of rewriting it to a resolved IP. Useful for CDNs that validate the hostname against `Host` or TLS state.
 - `IPTV_TUNERR_FFMPEG_HLS_RECONNECT` — when `true`, adds HLS reconnect flags to ffmpeg (`-reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1`). Helps with providers whose HLS segment URLs expire mid-stream.
 - `IPTV_TUNERR_HLS_PLAYLIST_RETRY_LIMIT` / `IPTV_TUNERR_HLS_PLAYLIST_RETRY_BACKOFF_MS` — bounded retry/backoff for playlist refreshes that hit provider concurrency/limit responses; intended for short-lived `509`/similar contention rather than permanent failures.
-- `IPTV_TUNERR_HLS_RELAY_PREFER_GO_ON_PROVIDER_PRESSURE` — once Tunerr has learned provider concurrency pressure, skip non-transcode ffmpeg remux and go straight to the Go playlist/segment relay. Useful when ffmpeg remux adds enough upstream request pressure to destabilize multi-stream playback.
-- `IPTV_TUNERR_HLS_RELAY_PREFER_GO` — unconditional version of the same preference.
+- `IPTV_TUNERR_HLS_RELAY_PREFER_GO_ON_PROVIDER_PRESSURE` — skip non-transcode ffmpeg remux and go straight to the Go playlist/segment relay when Tunerr has **learned concurrency pressure** *or* the upstream host already has **autotune penalty** (same process; requires **`IPTV_TUNERR_PROVIDER_AUTOTUNE`** so failures are recorded). Turning this **off** disables both signals unless **`IPTV_TUNERR_HLS_RELAY_PREFER_GO`** is on.
+- `IPTV_TUNERR_HLS_RELAY_PREFER_GO` — unconditional Go-relay preference (overrides the `false` branch above).
 - `IPTV_TUNERR_CLIENT_ADAPT` — when `true`, resolve the Plex client from the active session and force websafe (transcode + MP3 audio) for web/browser clients and for internal fetchers (Lavf/PMS). Ensures Chrome and Firefox get compatible audio without transcoding non-browser clients.
 - `IPTV_TUNERR_CLIENT_ADAPT_STICKY_FALLBACK` — when enabled (default), if adaptation chose the **non-websafe** path and the tune ends with **`all_upstreams_failed`** or **`upstream_concurrency_limited`**, register a **session-scoped** WebSafe fallback for that channel + Plex session/client id until TTL (see [plex-livetv-http-tuning](plex-livetv-http-tuning.md) **HR-004**).
 - `IPTV_TUNERR_CLIENT_ADAPT_STICKY_TTL_SEC` — sticky lifetime in seconds (default **14400**; clamped **120**–**604800**).

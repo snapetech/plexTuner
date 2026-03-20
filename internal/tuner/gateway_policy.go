@@ -233,6 +233,11 @@ func (g *Gateway) noteHLSPlaylistFailure(playlistURL string) {
 	g.lastHLSPlaylistURL = safeurl.RedactURL(playlistURL)
 }
 
+// shouldPreferGoRelayForHLSRemux decides whether to skip ffmpeg remux and use the Go HLS relay
+// for non-transcode HLS. True when IPTV_TUNERR_HLS_RELAY_PREFER_GO is set; else when
+// IPTV_TUNERR_HLS_RELAY_PREFER_GO_ON_PROVIDER_PRESSURE is true and any of: concurrency
+// signals (learned cap below configured, concurrencyHits), or hostPenalty for streamURL's
+// authority (requires IPTV_TUNERR_PROVIDER_AUTOTUNE so noteUpstreamFailure populates penalties).
 func (g *Gateway) shouldPreferGoRelayForHLSRemux(streamURL string) bool {
 	if g == nil {
 		return false
