@@ -13,6 +13,10 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+- *(none)*
+
+## [v0.1.15] — 2026-03-20
+
 ### Web UI (Control Deck)
 - **Host quarantine visibility:** **`internal/webui/deck.js`** **`summarizeProviderProfile`** includes **`quarantined_hosts`**, **`auto_host_quarantine`**, **`upstream_quarantine_skips_total`**; **Watch** / **Routing** lanes surface cumulative skips and current quarantine counts.
 
