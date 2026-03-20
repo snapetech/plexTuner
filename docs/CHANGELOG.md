@@ -25,7 +25,10 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **HTTP client:** **`IPTV_TUNERR_HTTP_MAX_IDLE_CONNS`** and **`IPTV_TUNERR_HTTP_IDLE_CONN_TIMEOUT_SEC`** tune the shared **`internal/httpclient`** transport (with **`IPTV_TUNERR_HTTP_MAX_IDLE_CONNS_PER_HOST`**); **`/debug/runtime.json`** includes **`tuner.http_max_idle_conns`** and **`tuner.http_idle_conn_timeout_sec`**. Reference **[plex-livetv-http-tuning](reference/plex-livetv-http-tuning.md)**; runbook §9 notes **HR-008** / **HR-009** / **HR-010** checklists.
 
 ### Maintainability
-- **Gateway layout (INT-006):** **`internal/tuner/gateway.go`** now holds the **`Gateway`** struct and context keys; **`gateway_servehttp.go`** owns **`ServeHTTP`** and the main upstream walk; **`gateway_mux_ratelimit.go`** owns mux-segment rate limiting and outcome counters.
+- **Gateway:** Cloudflare recovery on the live upstream walk lives in **`internal/tuner/gateway_upstream_cf.go`** (**`tryRecoverCFUpstream`**) and is called from **`walkStreamUpstreams`**.
+- **HDHR client HTTP:** **`internal/hdhomerun`** (**`FetchDiscoverJSON`**, **`FetchLineupJSON`**, **`FetchGuideXML`**) and **`iptv-tunerr hdhr-scan`** use **`internal/httpclient`** (shared transport / idle pool) instead of ad hoc **`http.Client`** timeouts.
+- **Lineup parity doc:** [EPIC-lineup-parity](epics/EPIC-lineup-parity.md) adds an **implementation status** section (**LP-001** / **LP-010** / dashboard / remaining multi-PR items).
+- **Gateway layout (INT-006):** **`internal/tuner/gateway.go`** holds the **`Gateway`** struct and context keys; **`gateway_servehttp.go`** owns **`ServeHTTP`** (tuner slot + orchestration); **`gateway_stream_upstream.go`** owns **`walkStreamUpstreams`** (upstream URL loop and DASH/HLS/raw dispatch); **`gateway_mux_ratelimit.go`** owns mux-segment rate limiting and outcome counters.
 - **Shared HTTP client (INT-001 tail):** **`internal/materializer`** default/nil client paths and tuner **loopback** stream self-fetch use **`internal/httpclient`** instead of **`http.DefaultClient`** so timeouts and idle pooling match the rest of the binary.
 - **CLI helpers (INT-005 slice):** moved **`parseCSV`**, **`firstNonEmpty`**, **`hostPortFromBaseURL`** from **`main.go`** to **`cmd_util.go`** so **`main`** stays a thin dispatcher.
 

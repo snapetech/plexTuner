@@ -24,11 +24,11 @@ It exists to encourage quality gains without derailing the current task.
 
 - Date: 2026-03-19
   Category: maintainability
-  Title: Optional — further split **`gateway_servehttp.go`** if it grows unwieldy
-  Context: **`ServeHTTP`** + upstream walk now live in **`internal/tuner/gateway_servehttp.go`**; mux segment rate counters in **`gateway_mux_ratelimit.go`**; **`gateway.go`** holds **`Gateway`** + keys only.
-  Why it matters: **`gateway_servehttp.go`** is still a large orchestration file; smaller units (e.g. upstream loop vs raw proxy) would help if churn stays high.
-  Evidence: `wc -l internal/tuner/gateway_servehttp.go`.
-  Suggested fix: Extract e.g. upstream URL walk or tuner acquire/release into **`gateway_stream_upstream.go`** when a second editor conflict wave appears.
+  Title: Optional — smaller pieces inside **`gateway_stream_upstream.go`**
+  Context: **`walkStreamUpstreams`** holds the URL loop + DASH/HLS/raw branches; CF UA/bootstrap recovery is **`tryRecoverCFUpstream`** in **`gateway_upstream_cf.go`**.
+  Why it matters: **`gateway_stream_upstream.go`** remains a large merge hotspot.
+  Evidence: `wc -l internal/tuner/gateway_stream_upstream.go`.
+  Suggested fix: Extract non-OK HTTP logging / concurrency-limit handling vs success relay into testable helpers if churn stays high.
   Risk/Scope: med | fits current scope? no
   User decision needed?: no
 
@@ -73,34 +73,12 @@ It exists to encourage quality gains without derailing the current task.
   User decision needed?: yes
   If yes: 1) design/spec only (Recommended), 2) MVP single-process daemon for one or two lanes, 3) full multi-worker recorder/publisher architecture. If no answer: keep as a documented future feature and continue current catch-up tooling evolution.
 
-- Date: 2026-03-18
+- Date: 2026-03-19
   Category: maintainability
-  Title: Split CLI flag construction and shared input helpers out of `cmd/iptv-tunerr/main.go`
-  Context: Fresh whole-project audit after the command-handler split.
-  Why it matters: Command execution moved into `cmd_core.go`, `cmd_ops.go`, and `cmd_reports.go`, but `main.go` is still the central flag factory and usage printer at 944 lines. Every new command still expands one file and keeps help text, flag defaults, and dispatch tightly coupled.
-  Evidence: `cmd/iptv-tunerr/main.go` still contains all `flag.NewFlagSet(...)` calls, command usage text, `buildCatchupCapsulePreviewFromRef`, `loadXMLTVChannelsFromRef`, and `openFileOrURL`.
-  Suggested fix: Move each command's flag wiring and usage summary into the same concern-specific files as the handlers, with a small shared command registry and one common file/URL loader helper.
-  Risk/Scope: med | fits current scope? no
-  User decision needed?: no
-
-- Date: 2026-03-18
-  Category: maintainability
-  Title: Break up `internal/tuner/gateway.go` into adaptation, upstream fetch, and provider-intelligence modules
-  Context: Fresh whole-project audit after provider-profile, Autopilot, and Ghost Hunter additions.
-  Why it matters: `gateway.go` is now 3426 lines and owns request adaptation, ffmpeg path selection, HLS relay, upstream retry/fallback, Cloudflare handling, provider-cap learning, provider profile stats, and Autopilot memory hooks. That makes regression review expensive and cross-feature changes risky.
-  Evidence: `wc -l internal/tuner/gateway.go` reports 3426 lines; Autopilot and provider-profile code now live alongside low-level relay logic.
-  Suggested fix: Split into focused files such as `gateway_adapt.go`, `gateway_hls.go`, `gateway_provider_profile.go`, and `gateway_autopilot.go` while preserving the current public surface.
-  Risk/Scope: med-high | fits current scope? no
-  User decision needed?: no
-
-- Date: 2026-03-18
-  Category: reliability
-  Title: Unify file/URL fetch helpers and stop bypassing the shared HTTP client in guide tooling
-  Context: Fresh whole-project audit of report and guide-health paths.
-  Why it matters: guide/report tools currently use duplicated open helpers and `http.DefaultClient`, which means timeout, transport, and header behavior can drift from the rest of the app. That is exactly the kind of subtle difference that makes diagnostics disagree with runtime behavior.
-  Evidence: `cmd/iptv-tunerr/main.go:891` defines `openFileOrURL`; `internal/tuner/guide_health.go:167` defines `openGuideHealthRef`; both call `http.DefaultClient.Do(...)` directly.
-  Suggested fix: Add one shared loader helper under `internal/` that accepts local files or URLs and uses the repo's shared HTTP client defaults.
-  Risk/Scope: low-med | fits current scope? no
+  Title: (superseded 2026-03-19) Old audit bullets — `main.go` monolith, giant `gateway.go`, guide **`DefaultClient`**
+  Context: March 2026 audit assumed **`cmd/iptv-tunerr/main.go`** ~900+ lines, **`internal/tuner/gateway.go`** ~3000+ lines, and guide paths on **`http.DefaultClient`**.
+  Status: **INT-005** slimmed **`main.go`** to a dispatcher; **INT-006** split gateway into many **`gateway_*.go`** files (**`gateway_servehttp`**, **`gateway_stream_upstream`**, **`gateway_upstream_cf`**, …); **INT-001** + **`internal/refio`** + **`internal/httpclient`** rewired shared loading and clients. Re-audit with `wc -l` and `rg http.DefaultClient` before reopening.
+  Risk/Scope: n/a (historical)
   User decision needed?: no
 
 - Date: 2026-03-18

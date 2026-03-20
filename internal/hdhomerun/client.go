@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/snapetech/iptvtunerr/internal/httpclient"
 	"github.com/snapetech/iptvtunerr/internal/probe"
 )
 
@@ -181,7 +182,7 @@ func LineupURLFromBase(base string) string {
 // FetchDiscoverJSON GETs discover.json from a device base URL (e.g. http://192.168.1.100).
 func FetchDiscoverJSON(ctx context.Context, client *http.Client, baseURL string) (*DiscoverJSON, error) {
 	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
+		client = httpclient.WithTimeout(15 * time.Second)
 	}
 	u := DiscoverURLFromBase(baseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
@@ -207,7 +208,7 @@ func FetchDiscoverJSON(ctx context.Context, client *http.Client, baseURL string)
 // FetchLineupJSON GETs lineup.json from a base URL or full lineup URL.
 func FetchLineupJSON(ctx context.Context, client *http.Client, baseOrLineupURL string) (*LineupDoc, error) {
 	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
+		client = httpclient.Default()
 	}
 	u := LineupURLFromBase(baseOrLineupURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)

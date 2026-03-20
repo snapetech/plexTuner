@@ -23,6 +23,36 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Lineup-parity slice — CF upstream helper, HDHR **`httpclient`, epic status, backlog cleanup
+  Summary:
+    - **`internal/tuner/gateway_upstream_cf.go`**: **`tryRecoverCFUpstream`**; **`walkStreamUpstreams`** delegates CF UA cycle + bootstrap.
+    - **`internal/hdhomerun`**: nil-client **`FetchDiscoverJSON`** / **`FetchLineupJSON`** / **`FetchGuideXML`** use **`httpclient`**; **`cmd_hdhr_scan`** uses **`httpclient.Default`** and **`WithTimeout(90s)`** for guide.
+    - Docs: [EPIC-lineup-parity](docs/epics/EPIC-lineup-parity.md) implementation status; [hls-mux-toolkit](docs/reference/hls-mux-toolkit.md) related-code list; [CHANGELOG](docs/CHANGELOG.md) [Unreleased].
+    - Memory bank: **`work_breakdown`** LP progress note; **`opportunities.md`** replace three stale audit entries with one superseded row; **`repo_map`** gateway + HDHR pointers.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - SQLite / incremental EPG / Postgres / continuous recorder remain explicitly out of this slice (multi-PR).
+  Opportunities filed:
+    - Superseded entry consolidates old **`main.go`** / monolithic **`gateway.go`** / **`DefaultClient`** audit bullets.
+  Links:
+    - `internal/tuner/gateway_upstream_cf.go`, `internal/hdhomerun/client.go`, `internal/hdhomerun/guide.go`, `cmd/iptv-tunerr/cmd_hdhr_scan.go`
+
+- Date: 2026-03-19
+  Title: INT-006 — extract **`walkStreamUpstreams`** to **`gateway_stream_upstream.go`**
+  Summary:
+    - New **`internal/tuner/gateway_stream_upstream.go`**: **`walkStreamUpstreams`** contains the historical upstream **`for`** loop (SSRF guard, CF cycling, DASH/HLS/raw paths, autopilot hooks).
+    - **`gateway_servehttp.go`**: **`ServeHTTP`** delegates after tuner acquire; unchanged failure surfacing (**503** vs **502**).
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Raw TS via **`relayRawTSWithFFmpeg`** still returns **`streamHandled`** with empty **`finalStatus`** (unchanged defer semantics).
+  Opportunities filed:
+    - **`memory-bank/opportunities.md`** optional split note retargeted at **`gateway_stream_upstream.go`** size.
+  Links:
+    - `internal/tuner/gateway_stream_upstream.go`, `internal/tuner/gateway_servehttp.go`
+
+- Date: 2026-03-19
   Title: INT-006 gateway split + INT-001 httpclient (materializer + loopback)
   Summary:
     - **`internal/tuner/gateway_servehttp.go`**: **`ServeHTTP`** and main stream orchestration moved out of **`gateway.go`**.

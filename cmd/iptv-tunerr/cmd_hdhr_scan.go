@@ -13,6 +13,7 @@ import (
 
 	"github.com/snapetech/iptvtunerr/internal/config"
 	"github.com/snapetech/iptvtunerr/internal/hdhomerun"
+	"github.com/snapetech/iptvtunerr/internal/httpclient"
 )
 
 func hdhrScanCommands() []commandSpec {
@@ -39,11 +40,11 @@ func hdhrScanCommands() []commandSpec {
 }
 
 func httpClientDefault() *http.Client {
-	return &http.Client{Timeout: 30 * time.Second}
+	return httpclient.Default()
 }
 
 func httpClientGuide() *http.Client {
-	return &http.Client{Timeout: 90 * time.Second}
+	return httpclient.WithTimeout(90 * time.Second)
 }
 
 func guideXMLSummary(ctx context.Context, base string) map[string]any {

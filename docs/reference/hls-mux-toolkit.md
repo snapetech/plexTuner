@@ -135,7 +135,8 @@ curl -sS 'http://127.0.0.1:5004/provider_profile.json' | jq '.hls_mux_seg_succes
 - `internal/tuner/mux_http_client.go` — **`seg=`** HTTP client with redirect validation
 - `internal/tuner/gateway_dash.go` — MPD rewrite
 - `internal/tuner/gateway_dash_expand.go` — optional **`SegmentTemplate`** → **`SegmentList`** expansion
-- `internal/tuner/gateway.go` — **`seg=`** policy, **`dash` / `hls`** modes, main loop **`dash_native_mux`**
+- `internal/tuner/gateway_stream_upstream.go` — live **`/stream`** upstream walk (**`walkStreamUpstreams`**: DASH/HLS/raw dispatch)
+- `internal/tuner/gateway_upstream_cf.go` — Cloudflare-style upstream recovery (**`tryRecoverCFUpstream`**)
 - `internal/tuner/gateway_policy.go` — **`effectiveHLSMuxSegLimitLocked`**, adaptive bonus
 - `internal/tuner/prometheus_mux.go` — Prometheus counters
 - `internal/safeurl/privateresolve.go` — DNS-assisted private check

@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/snapetech/iptvtunerr/internal/httpclient"
 )
 
 // GuideXMLStats summarizes a fetched XMLTV document from a physical HDHomeRun (or compatible).
@@ -31,7 +33,7 @@ func GuideURLFromBase(base string) string {
 // Not all models or firmware builds expose this; callers should handle 404.
 func FetchGuideXML(ctx context.Context, client *http.Client, baseURL string) ([]byte, error) {
 	if client == nil {
-		client = &http.Client{Timeout: 60 * time.Second}
+		client = httpclient.WithTimeout(60 * time.Second)
 	}
 	u := GuideURLFromBase(baseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
