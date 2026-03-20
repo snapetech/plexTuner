@@ -128,6 +128,7 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"epg_prune_unlinked":                       cfg.EpgPruneUnlinked,
 			"autopilot_state_file":                     cfg.AutopilotStateFile,
 			"autopilot_global_preferred_hosts":         strings.TrimSpace(os.Getenv("IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS")),
+			"autopilot_host_policy_file":               strings.TrimSpace(os.Getenv("IPTV_TUNERR_AUTOPILOT_HOST_POLICY_FILE")),
 			"provider_autotune_host_quarantine":        strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE")),
 			"provider_autotune_host_quarantine_after":  strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_AFTER")),
 			"provider_autotune_host_quarantine_sec":    strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_SEC")),

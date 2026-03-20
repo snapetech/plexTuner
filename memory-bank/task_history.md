@@ -23,6 +23,33 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-20
+  Title: Project-backlog shipped vs open audit + opportunities status
+  Summary:
+    - **`docs/explanations/project-backlog.md`**: **§1 Shipped** table vs **§2** strategic gaps; **§3** engineering themes; aligns with **[EPIC-live-tv-intelligence](../../docs/epics/EPIC-live-tv-intelligence.md)** (host policy file shipped).
+    - **`memory-bank/opportunities.md`**: HLS mux toolkit **Status**; hidden-grab **Status**; Autopilot policy opportunity updated for **`IPTV_TUNERR_AUTOPILOT_HOST_POLICY_FILE`**.
+    - **`docs/CHANGELOG.md`** **[Unreleased]** Documentation.
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+  Links:
+    - backlog accuracy
+
+- Date: 2026-03-20
+  Title: Autopilot host policy file for preferred and blocked hosts
+  Summary:
+    - Added **`IPTV_TUNERR_AUTOPILOT_HOST_POLICY_FILE`** with JSON **preferred** and **blocked** host lists.
+    - Preferred hosts merge with **`IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS`**; blocked hosts are skipped during **`reorderStreamURLs`** when backups remain.
+    - Surfaced policy metadata on **`/autopilot/report.json`** and **`/debug/runtime.json`**; added tests and doc updates.
+  Verification:
+    - `go test ./internal/tuner ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+  Links:
+    - INT-005 policy memory depth
+
+- Date: 2026-03-20
   Title: Ghost Hunter operator actions and guarded recovery loop
   Summary:
     - Added **`POST /ops/actions/ghost-visible-stop`** and **`POST /ops/actions/ghost-hidden-recover?mode=dry-run|restart`** to the tuner operator surface.

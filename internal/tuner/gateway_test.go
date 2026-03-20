@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1254,6 +1255,43 @@ func TestGateway_reorderStreamURLs_autopilotGlobalPreferredHosts(t *testing.T) {
 	got := g.reorderStreamURLs(ch, "web", ch.StreamURLs)
 	if len(got) != 2 || got[0] != "https://cdn.good.example/b" {
 		t.Fatalf("got %v want global preferred host first", got)
+	}
+}
+
+func TestGateway_reorderStreamURLs_autopilotHostPolicyBlockedHosts(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "host-policy.json")
+	if err := os.WriteFile(path, []byte(`{"global_blocked_hosts":["bad.example"]}`), 0o600); err != nil {
+		t.Fatalf("write policy: %v", err)
+	}
+	t.Setenv("IPTV_TUNERR_AUTOPILOT_HOST_POLICY_FILE", path)
+	g := &Gateway{}
+	ch := &catalog.LiveChannel{
+		GuideName:   "Test",
+		GuideNumber: "100",
+		StreamURLs:  []string{"http://bad.example/live/1.m3u8", "http://good.example/live/1.m3u8"},
+	}
+	got := g.reorderStreamURLs(ch, "web", ch.StreamURLs)
+	if len(got) != 1 || got[0] != "http://good.example/live/1.m3u8" {
+		t.Fatalf("got %v want blocked host removed", got)
+	}
+}
+
+func TestGateway_reorderStreamURLs_autopilotHostPolicyMergesEnvAndFilePreferredHosts(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "host-policy.json")
+	if err := os.WriteFile(path, []byte(`{"global_preferred_hosts":["cdn.file.example"]}`), 0o600); err != nil {
+		t.Fatalf("write policy: %v", err)
+	}
+	t.Setenv("IPTV_TUNERR_AUTOPILOT_HOST_POLICY_FILE", path)
+	t.Setenv("IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS", "cdn.env.example")
+	g := &Gateway{}
+	ch := &catalog.LiveChannel{
+		GuideName:   "Test",
+		GuideNumber: "100",
+		StreamURLs:  []string{"http://plain.example/live/1.m3u8", "http://cdn.env.example/live/1.m3u8", "http://cdn.file.example/live/1.m3u8"},
+	}
+	got := g.reorderStreamURLs(ch, "web", ch.StreamURLs)
+	if len(got) != 3 || got[0] != "http://cdn.env.example/live/1.m3u8" {
+		t.Fatalf("got %v want env preferred host first", got)
 	}
 }
 

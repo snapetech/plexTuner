@@ -126,6 +126,25 @@ func TestAutopilot_report_includesGlobalPreferredHosts(t *testing.T) {
 	}
 }
 
+func TestAutopilot_report_includesHostPolicyFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "host-policy.json")
+	if err := os.WriteFile(path, []byte(`{"global_preferred_hosts":["cdn.file.example"],"global_blocked_hosts":["bad.file.example"]}`), 0o600); err != nil {
+		t.Fatalf("write policy: %v", err)
+	}
+	t.Setenv("IPTV_TUNERR_AUTOPILOT_HOST_POLICY_FILE", path)
+	store := &autopilotStore{byKey: map[string]autopilotDecision{}}
+	rep := store.report(1)
+	if rep.HostPolicyFile != path {
+		t.Fatalf("host_policy_file=%q want %q", rep.HostPolicyFile, path)
+	}
+	if len(rep.GlobalPreferredHosts) != 1 || rep.GlobalPreferredHosts[0] != "cdn.file.example" {
+		t.Fatalf("global_preferred_hosts=%v", rep.GlobalPreferredHosts)
+	}
+	if len(rep.GlobalBlockedHosts) != 1 || rep.GlobalBlockedHosts[0] != "bad.file.example" {
+		t.Fatalf("global_blocked_hosts=%v", rep.GlobalBlockedHosts)
+	}
+}
+
 func TestAutopilotStoreFailureStreakSuppressesReuse(t *testing.T) {
 	store := &autopilotStore{byKey: map[string]autopilotDecision{}}
 	store.put(autopilotDecision{DNAID: "dna:test", ClientClass: "web", Profile: profilePlexSafe, Transcode: true})

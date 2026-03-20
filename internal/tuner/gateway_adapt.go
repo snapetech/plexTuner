@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -434,19 +433,7 @@ func (g *Gateway) autopilotPreferredStreamURL(channel *catalog.LiveChannel, clie
 // any entry (case-insensitive) after per-channel Autopilot memory and before consensus host — LTV
 // provider-level policy without touching the JSON state file.
 func parseAutopilotGlobalPreferredHosts() []string {
-	raw := strings.TrimSpace(os.Getenv("IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS"))
-	if raw == "" {
-		return nil
-	}
-	var out []string
-	for _, part := range strings.Split(raw, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		out = append(out, part)
-	}
-	return out
+	return parseAutopilotHostPolicy().PreferredHosts
 }
 
 func pickFirstURLMatchingGlobalPreferredHosts(urls []string, preferredHosts []string) string {
@@ -473,6 +460,8 @@ func (g *Gateway) reorderStreamURLs(channel *catalog.LiveChannel, clientClass st
 	if len(urls) < 2 {
 		return urls
 	}
+	policy := parseAutopilotHostPolicy()
+	urls = filterAutopilotBlockedHosts(urls, policy.BlockedHosts)
 	preferred := g.autopilotPreferredStreamURL(channel, clientClass, urls)
 	if preferred == "" {
 		out := append([]string(nil), urls...)

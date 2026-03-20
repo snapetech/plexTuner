@@ -2,7 +2,11 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-20):** **INT-005/INT-010 bridge:** Autopilot now supports a JSON **host policy file** (**`IPTV_TUNERR_AUTOPILOT_HOST_POLICY_FILE`**) with **preferred** and **blocked** hosts. Preferred hosts merge with **`IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS`**; blocked hosts are skipped in **`reorderStreamURLs`** only when backups remain. Runtime/report/docs/tests updated.
+
 **Latest (2026-03-20):** **INT-008 follow-up:** Ghost Hunter now has first-class operator actions: **`POST /ops/actions/ghost-visible-stop`** and **`POST /ops/actions/ghost-hidden-recover?mode=dry-run|restart`**, reusing the guarded helper path (**`IPTV_TUNERR_GHOST_HUNTER_RECOVERY_HELPER`** override). Control-deck actions/workflows, tests, and docs updated.
+
+**Latest (2026-03-20):** **Docs:** **[project-backlog.md](../docs/explanations/project-backlog.md)** audit — **§1 shipped** vs **§2 open**; **opportunities** statuses (HLS toolkit doc, hidden-grab partial). **`./scripts/verify`** OK.
 
 **Latest (2026-03-20):** **Docs:** **[docs/explanations/project-backlog.md](../docs/explanations/project-backlog.md)** — canonical “open work” index (links epics, **opportunities**, **known_issues**, **docs-gaps**, **README** / **AGENTS** / **repo_map** / **EPIC** See also). **`./scripts/verify`** OK.
 

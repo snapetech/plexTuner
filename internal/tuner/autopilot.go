@@ -56,6 +56,8 @@ type AutopilotReport struct {
 	ConsensusHostRuntimeEnabled bool   `json:"consensus_host_runtime_enabled,omitempty"`
 	// GlobalPreferredHosts mirrors IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS (provider-level host policy).
 	GlobalPreferredHosts []string `json:"global_preferred_hosts,omitempty"`
+	GlobalBlockedHosts   []string `json:"global_blocked_hosts,omitempty"`
+	HostPolicyFile       string   `json:"host_policy_file,omitempty"`
 }
 
 func loadAutopilotStore(path string) (*autopilotStore, error) {
@@ -305,7 +307,10 @@ func (s *autopilotStore) report(limit int) AutopilotReport {
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		Enabled:     s != nil,
 	}
-	rep.GlobalPreferredHosts = parseAutopilotGlobalPreferredHosts()
+	policy := parseAutopilotHostPolicy()
+	rep.GlobalPreferredHosts = policy.PreferredHosts
+	rep.GlobalBlockedHosts = policy.BlockedHosts
+	rep.HostPolicyFile = strings.TrimSpace(os.Getenv("IPTV_TUNERR_AUTOPILOT_HOST_POLICY_FILE"))
 	if s == nil {
 		return rep
 	}
