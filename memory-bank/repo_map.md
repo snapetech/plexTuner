@@ -19,7 +19,7 @@ Normal push path from this checkout: `git push origin main`. Never `git push git
 | Path | Purpose |
 |------|--------|
 | **`cmd/iptv-tunerr/`** | CLI entrypoint and command handlers for run/serve/index/supervise, reports, registration, and catch-up publishing. **`main.go`** dispatches via **`cmd_registry.go`**; shared helpers **`cmd_util.go`**. Catalog **`index`** path: **`cmd_catalog.go`** (**tvg-id** dedupe, strip hosts, free/HDHR merge) — see **`docs/reference/lineup-epg-hygiene.md`**. |
-| **`internal/indexer/`** | M3U stream parsing, player_api (auth, live, VOD, series with parallel fetch). |
+| **`internal/indexer/`** | M3U stream parsing, player_api (auth, live, VOD, series with parallel fetch). Optional **smoketest** disk cache (**`smoketest_cache.go`**, **`IPTV_TUNERR_SMOKETEST_CACHE_FILE`**, **`IPTV_TUNERR_SMOKETEST_CACHE_TTL`**) skips fresh re-probes on **`index`**. |
 | **`internal/catalog/`** | Movie/Series/LiveChannel types; Save (snapshot then encode), Load. **`ReplaceWithLive`** sorts **`live_channels`** by **`channel_id`** for stable on-disk order (**HR-006**). |
 | **`internal/tuner/`** | HDHR endpoints, stream gateway, XMLTV/guide pipeline, Autopilot, Ghost Hunter, provider profile, catch-up publishing. |
 | **`internal/webui/`** | Dedicated operator dashboard on port `48879` (`0xBEEF` by default); reverse-proxies tuner JSON/debug endpoints under `/api/*` and now drives safe operator actions/workflows on top of those surfaces. |

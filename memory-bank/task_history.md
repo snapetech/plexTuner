@@ -22,6 +22,18 @@ Append-only. One entry per completed task.
 
 ## Entries
 
+- Date: 2026-03-20
+  Title: Supersede smoketest-cache opportunity + doc cross-links (**LP-012** hygiene)
+  Summary:
+    - [opportunities.md](opportunities.md): **2026-02-25** smoketest “no disk cache” → **superseded** (**`IPTV_TUNERR_SMOKETEST_CACHE_*`**, **`internal/indexer/smoketest_cache.go`**).
+    - [plex-livetv-http-tuning](../docs/reference/plex-livetv-http-tuning.md): **`X-IptvTunerr-Native-Mux`** pointer to [hls-mux-toolkit](../docs/reference/hls-mux-toolkit.md).
+    - [hybrid-hdhr-iptv](../docs/how-to/hybrid-hdhr-iptv.md) See also: mux toolkit + troubleshooting; [k8s/README.md](../k8s/README.md) verify **`/healthz`**; [repo_map](repo_map.md) indexer row mentions smoketest cache.
+    - [CHANGELOG](../docs/CHANGELOG.md) **[Unreleased]** backlog + docs bullets.
+  Verification:
+    - `./scripts/verify`
+  Links:
+    - `memory-bank/opportunities.md`, `memory-bank/repo_map.md`, `docs/reference/plex-livetv-http-tuning.md`, `docs/how-to/hybrid-hdhr-iptv.md`, `k8s/README.md`, `docs/CHANGELOG.md`
+
 - Date: 2026-03-19
   Title: Native mux **`X-IptvTunerr-Native-Mux`** + HR-002 runbook + k8s **`/healthz`** readiness + LP-010 epic sync
   Summary:

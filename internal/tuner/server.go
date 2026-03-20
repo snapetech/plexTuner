@@ -108,7 +108,7 @@ type Server struct {
 	// RuntimeSnapshot is an optional read-only view of effective settings for the operator dashboard.
 	RuntimeSnapshot *RuntimeSnapshot
 
-	// health state updated by UpdateChannels; read by /healthz.
+	// health state updated by UpdateChannels; read by /healthz and /readyz.
 	healthMu       sync.RWMutex
 	healthChannels int
 	healthRefresh  time.Time
@@ -1087,6 +1087,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/live.m3u", m3uServe)
 	mux.Handle("/stream/", gateway)
 	mux.Handle("/healthz", s.serveHealth())
+	mux.Handle("/readyz", s.serveReady())
 	mux.Handle("/ui/guide-preview.json", s.serveOperatorGuidePreviewJSON())
 	mux.HandleFunc("/ui/guide", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -1203,24 +1204,60 @@ func logRequests(next http.Handler) http.Handler {
 // Returns 200 {"status":"ok",...} once channels have been loaded, 503 {"status":"loading"} before.
 func (s *Server) serveHealth() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		s.healthMu.RLock()
-		count := s.healthChannels
-		lastRefresh := s.healthRefresh
-		s.healthMu.RUnlock()
-
 		w.Header().Set("Content-Type", "application/json")
-		if count == 0 {
+		body := s.healthStatusPayload()
+		if ready, _ := body["source_ready"].(bool); !ready {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = w.Write([]byte(`{"status":"loading"}`))
+		}
+		writeJSONStatusBody(w, body)
+	})
+}
+
+// serveReady returns an http.Handler for GET /readyz.
+// Returns 200 {"status":"ready",...} once channels have been loaded, 503 {"status":"not_ready"} before.
+func (s *Server) serveReady() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		body := s.healthStatusPayload()
+		ready, _ := body["source_ready"].(bool)
+		if ready {
+			body["status"] = "ready"
+			writeJSONStatusBody(w, body)
 			return
 		}
-		body, _ := json.Marshal(map[string]interface{}{
-			"status":       "ok",
-			"channels":     count,
-			"last_refresh": lastRefresh.Format(time.RFC3339),
-		})
-		_, _ = w.Write(body)
+		body["status"] = "not_ready"
+		body["reason"] = "channels not loaded"
+		w.WriteHeader(http.StatusServiceUnavailable)
+		writeJSONStatusBody(w, body)
 	})
+}
+
+func (s *Server) healthStatusPayload() map[string]interface{} {
+	s.healthMu.RLock()
+	count := s.healthChannels
+	lastRefresh := s.healthRefresh
+	s.healthMu.RUnlock()
+
+	body := map[string]interface{}{
+		"status":       "ok",
+		"source_ready": count > 0,
+		"channels":     count,
+	}
+	if count == 0 {
+		body["status"] = "loading"
+		return body
+	}
+	body["last_refresh"] = lastRefresh.Format(time.RFC3339)
+	return body
+}
+
+func writeJSONStatusBody(w http.ResponseWriter, body map[string]interface{}) {
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		http.Error(w, `{"error":"encode status"}`, http.StatusInternalServerError)
+		return
+	}
+	_, _ = w.Write(encoded)
 }
 
 // epgStoreReportJSON is returned by GET /guide/epg-store.json when IPTV_TUNERR_EPG_SQLITE_PATH is set.

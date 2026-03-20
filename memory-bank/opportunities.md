@@ -328,11 +328,8 @@ It exists to encourage quality gains without derailing the current task.
 
 - Date: 2026-02-25
   Category: reliability
-  Title: Smoketest results not cached to disk — all channels re-probed on every restart/refresh
-  Context: internal/indexer smoketest (IPTV_TUNERR_SMOKETEST_ENABLED). Catalog save/load cycle in cmd/iptv-tunerr/main.go.
-  Why it matters: With 500+ channels and SMOKETEST_TIMEOUT=8s at CONCURRENCY=10, a full smoketest takes ~400s (6.5 min) for a single refresh. On restart or -refresh this full cost is paid again. Channels that passed last time are very likely to pass again; re-probing all of them wastes provider bandwidth and slows startup.
-  Evidence: filterLiveBySmoketest runs a full probe on every call (no state file). With 48 threads and CDN rate limits, false-fail rate was 99.6% (observed 2026-02-25 in 13-DVR pipeline — led to disabling smoketest entirely).
-  Suggested fix: Persist smoketest pass/fail results to a sidecar file (e.g. catalog.smoketest.json, keyed by channel StreamURL hash). On next run: skip re-probe for channels whose last-passed timestamp is within a configurable staleness window (e.g. IPTV_TUNERR_SMOKETEST_CACHE_TTL=4h default). Re-probe only new/changed channels and those whose cached result is stale or was a fail.
-  Implementation notes: (1) New internal/indexer.SmoketestCache struct: `map[urlHash]{pass bool, ts time.Time}`. (2) Load from disk before probing; save after. (3) New IPTV_TUNERR_SMOKETEST_CACHE_TTL env (default 4h). (4) filterLiveBySmoketest skips channels with valid cache hit. (5) Unit test: inject cache hits, assert those channels skip probe. No behavior change when cache file absent (falls back to full probe). Only risk: stale cache passes a now-dead URL — mitigated by TTL and full re-probe on miss.
-  Risk/Scope: med | fits current scope: no (separate feature)
-  User decision needed?: yes (cache TTL default and whether to re-probe past-failures immediately or also cache them with shorter TTL).
+  Title: (superseded 2026-03-20) Smoketest persistent cache (**`IPTV_TUNERR_SMOKETEST_CACHE_FILE`**)
+  Context: Full smoketest re-runs were expensive on large catalogs.
+  Status: **`internal/indexer/smoketest_cache.go`** + **`FilterLiveBySmoketestWithCache`**; **`IPTV_TUNERR_SMOKETEST_CACHE_FILE`**, **`IPTV_TUNERR_SMOKETEST_CACHE_TTL`** (default **4h**); **`cmd_catalog`**, **`free_sources`**; atomic JSON save; **`smoketest_cache_test.go`**. **`/debug/runtime.json`** echoes cache keys when configured.
+  Risk/Scope: n/a (historical)
+  User decision needed?: no

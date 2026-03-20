@@ -175,6 +175,7 @@ kubectl -n plex get pods -l app=iptvtunerr-hdhr-test
 
 # Via Ingress (once DNS points to your Ingress)
 curl -s -o /dev/null -w "%{http_code}" http://iptvtunerr-hdhr.plex.home/discover.json   # expect 200
+curl -sS http://iptvtunerr-hdhr.plex.home/healthz | head -c 200   # 503 until catalog has channels; then JSON ok + channel count
 curl -s http://iptvtunerr-hdhr.plex.home/lineup.json | head -c 500
 ```
 

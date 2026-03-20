@@ -52,3 +52,5 @@ For HLS inputs processed with ffmpeg, **`?mux=fmp4`** requests **fragmented MP4*
 - [cli-and-env reference](../reference/cli-and-env-reference.md)
 - [EPIC lineup parity](../epics/EPIC-lineup-parity.md)
 - [features](../features.md)
+- [hls-mux-toolkit](../reference/hls-mux-toolkit.md) — Tunerr-native **`?mux=hls|dash`** proxy headers and caps
+- [Troubleshooting runbook](../runbooks/iptvtunerr-troubleshooting.md) — **`/healthz`**, harnesses, **HR-*** checklists

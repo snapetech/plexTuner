@@ -44,6 +44,8 @@ Unset or invalid values fall back to defaults. These are read **once at process 
 
 HDHR semantics cap **concurrent full transcodes/streams** with **`TunerCount`** (and optional learned upstream limits). Native **HLS/DASH mux** uses separate **`seg=`** concurrency: default **`effective_tuner_limit × IPTV_TUNERR_HLS_MUX_SEG_SLOTS_PER_TUNER`** (default multiplier **8**), with optional **`IPTV_TUNERR_HLS_MUX_MAX_CONCURRENT`** override. See [hls-mux-toolkit](hls-mux-toolkit.md) and [cli-and-env-reference](cli-and-env-reference.md).
 
+Successful native mux responses include **`X-IptvTunerr-Native-Mux: hls`** or **`dash`** (playlist/MPD rewrite, **`seg=`** relay, **304**/**206**) so operators can tell Tunerr-native proxying apart from TS relay without reading full bodies — details in [hls-mux-toolkit](hls-mux-toolkit.md).
+
 ## Stable live channel ordering (HR-006)
 
 On **`index` / catalog refresh**, **`live_channels`** are stored in **sorted order** by **`channel_id`** (then **guide_number**, **guide_name**) inside **`catalog.ReplaceWithLive`**. That keeps **`catalog.json`** and **`lineup.json`** iteration from reshuffling when the upstream playlist order changes, which reduces noisy diffs and unnecessary Plex channel-map churn while **`channel_id`** values themselves stay provider-derived.
