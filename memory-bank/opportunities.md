@@ -22,6 +22,36 @@ It exists to encourage quality gains without derailing the current task.
 
 ## Entries
 
+- Date: 2026-03-22
+  Category: operability
+  Title: Unified **`.diag/`** harness index (optional static `index.html` or `scripts/harness-index.py`)
+  Context: **§7** / **§9** / **§10** now have matching [how-to docs](../../docs/how-to/) (`live-race`, `stream-compare`, `multi-stream`), but operators still dig through timestamped folders by hand.
+  Why it matters: Faster triage when multiple harness runs exist under **`.diag/live-race`**, **`.diag/stream-compare`**, **`.diag/multi-stream`**.
+  Evidence: Runbooks + how-tos; no single directory browser.
+  Suggested fix: Small script that lists latest N runs per family + embeds **`report.json`** / **`summary.txt`** excerpts; optional **`--open`** for file manager. Keep out of **`scripts/verify`** (not CI-critical).
+  Risk/Scope: low | fits current scope? yes (isolated script + short doc link)
+  User decision needed?: no
+
+- Date: 2026-03-22
+  Category: operability
+  Title: **Probe** results — “what to do next” how-to (closes [docs-gaps.md](../../docs/docs-gaps.md) high row)
+  Context: **`iptv-tunerr probe`** output is clear to maintainers but not always actionable for new operators (CF vs auth vs DNS vs empty categories).
+  Why it matters: Reduces chat loops after “probe says …”.
+  Evidence: [docs-gaps.md](../../docs/docs-gaps.md) § High; **`cmd`** probe + [cli-and-env-reference](../../docs/reference/cli-and-env-reference.md).
+  Suggested fix: **`docs/how-to/interpreting-probe-results.md`** with decision table (symptom → env/flag → next command); link from README **Quick Start** and runbook §4.
+  Risk/Scope: low | fits current scope? yes (docs-only)
+  User decision needed?: no
+
+- Date: 2026-03-22
+  Category: maintainability
+  Title: **Plex connect** step-by-step (UI wizard vs `-register-plex` vs API) — [docs-gaps.md](../../docs/docs-gaps.md) high row
+  Context: README covers modes at high level; **480-channel wizard limit**, channelmap activation, and “headless DVR exists but guide empty” still generate support churn.
+  Why it matters: Onboarding and category-DVR fleets need one honest checklist.
+  Evidence: [docs-gaps.md](../../docs/docs-gaps.md); [plex-dvr-lifecycle-and-api.md](../../docs/reference/plex-dvr-lifecycle-and-api.md); [ADR 0001](../../docs/adr/0001-zero-touch-plex-lineup.md).
+  Suggested fix: **`docs/how-to/connect-plex-to-iptv-tunerr.md`** with flows A/B/C + troubleshooting links; README + docs index.
+  Risk/Scope: med (UX wording) | fits current scope? yes as docs-only epic slice
+  User decision needed?: no (safe defaults: document all three paths honestly)
+
 - Date: 2026-03-19
   Category: maintainability
   Title: (superseded 2026-03-19) Optional — smaller pieces inside **`gateway_stream_upstream.go`**

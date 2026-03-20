@@ -22,6 +22,17 @@ Append-only. One entry per completed task.
 
 ## Entries
 
+- Date: 2026-03-22
+  Title: How-to — stream-compare-harness.md + opportunities backlog (harness index, probe, Plex connect)
+  Summary:
+    - **`docs/how-to/stream-compare-harness.md`**: **§9** quick start + report; indexes, README, **runbook §9** lead-in, **live-race**/**multi-stream** related sections, **`features`**, **`repo_map`**.
+    - **`docs/docs-gaps.md`**: **Resolved** harness how-tos table.
+    - **`memory-bank/opportunities.md`**: **`2026-03-22`** entries (unified **`.diag/`** index script, **probe** interpretation how-to, **Plex connect** how-to).
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - see **`memory-bank/opportunities.md`** **2026-03-22** rows (this commit adds them)
+
 - Date: 2026-03-21
   Title: How-to — live-race-harness.md + §7 wiring + multi-stream §7 fix
   Summary:

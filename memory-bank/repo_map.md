@@ -74,5 +74,5 @@ Normal push path from this checkout: `git push origin main`. Never `git push git
 
 - **`scripts/verify`** — Full check: format (gofmt) → vet → **`bash -n` / `py_compile` on `scripts/*.sh` + `scripts/*.py`** → test → build. Fail fast, same as CI.
 - **`scripts/quick-check.sh`** — Tests only; use for short feedback when iterating.
-- **Troubleshooting:** [docs/runbooks/iptvtunerr-troubleshooting.md](docs/runbooks/iptvtunerr-troubleshooting.md) — fail-fast checklist, probe, logs, common failures; **§7** live-race harness → [how-to/live-race-harness.md](docs/how-to/live-race-harness.md); **§10** two-stream collapse → [how-to/multi-stream-harness.md](docs/how-to/multi-stream-harness.md).
+- **Troubleshooting:** [docs/runbooks/iptvtunerr-troubleshooting.md](docs/runbooks/iptvtunerr-troubleshooting.md) — fail-fast checklist, probe, logs, common failures; **§7** live-race → [how-to/live-race-harness.md](docs/how-to/live-race-harness.md); **§9** stream-compare → [how-to/stream-compare-harness.md](docs/how-to/stream-compare-harness.md); **§10** two-stream collapse → [how-to/multi-stream-harness.md](docs/how-to/multi-stream-harness.md).
 - CI runs only `scripts/verify`.

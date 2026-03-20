@@ -44,8 +44,8 @@ Artifact layout, **`CHANNEL_URLS_FILE`**, tuning **`POLL_SECS`**, **`ATTEMPTS_LI
 
 ## Related harnesses
 
-- **`scripts/live-race-harness.sh`** — synthetic/replay + concurrent probes for startup races (**HR-001** / **HR-002**); [live-race-harness.md](live-race-harness.md) · [runbook §7](../runbooks/iptvtunerr-troubleshooting.md#7-unified-diagnostics-harness-all-five-experiments-in-one-run).
-- **`scripts/stream-compare-harness.sh`** — direct upstream vs Tunerr URL comparison after multi-stream shows *which* path misbehaves.
+- [live-race-harness.md](live-race-harness.md) — synthetic/replay + concurrent probes (**§7**, **HR-001** / **HR-002**).
+- [stream-compare-harness.md](stream-compare-harness.md) — direct upstream vs Tunerr when you know *which* channel/CDN path to diff (**§9**).
 
 ## CI / development
 

@@ -43,8 +43,8 @@ Environment variables (**`TUNER_PORT`**, **`REPLAY_TS_FILE`**, **`PMS_URL`**, **
 
 ## Related harnesses
 
+- [stream-compare-harness.md](stream-compare-harness.md) — direct upstream vs Tunerr (**§9**).
 - **`scripts/multi-stream-harness.sh`** — staggered **real** tuner pulls for two-stream collapse — [multi-stream-harness.md](multi-stream-harness.md) · [runbook §10](../runbooks/iptvtunerr-troubleshooting.md#10-two-stream-collapse--second-stream-kills-the-first).
-- **`scripts/stream-compare-harness.sh`** — direct upstream vs Tunerr — [troubleshooting §9](../runbooks/iptvtunerr-troubleshooting.md#9-direct-upstream-vs-tunerr-comparison-harness).
 
 ## CI / development
 

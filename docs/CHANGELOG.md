@@ -14,6 +14,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 ## [Unreleased]
 
 ### Documentation
+- **Stream-compare harness:** new [how-to/stream-compare-harness.md](how-to/stream-compare-harness.md); **runbook §9** lead-in; **`features.md`** row; cross-links with **live-race** / **multi-stream** how-tos; **`docs/docs-gaps.md`** **Resolved** table; backlog in **`memory-bank/opportunities.md`** (2026-03-22).
 - **Live-race harness:** new [how-to/live-race-harness.md](how-to/live-race-harness.md); **runbook §7** lead-in; **`commands.yml`** **`live_race_harness`**; **`features.md`** harness rows link how-tos; cross-links with **multi-stream** how-to (fixed wrong §6 pointer → **§7** for live-race).
 - **Multi-stream harness:** new [how-to/multi-stream-harness.md](how-to/multi-stream-harness.md) (quick start + pointers); linked from **`docs/how-to/index`**, **`docs/index`**, **`README`** (Documentation + Recent Changes), **runbook §10** + **runbooks index**.
 - **HLS go-relay env:** **`cli-and-env-reference`** + **`plex-livetv-http-tuning`** now describe **`IPTV_TUNERR_HLS_RELAY_PREFER_GO_ON_PROVIDER_PRESSURE`** as covering **autotune host penalty** (not only learned concurrency), matching **`shouldPreferGoRelayForHLSRemux`** in **`gateway_policy.go`**.

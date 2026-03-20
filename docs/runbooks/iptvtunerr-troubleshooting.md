@@ -258,6 +258,8 @@ Non-200 → check server logs and config (catalog loaded, base URL, port).
 
 ## 9. Direct upstream vs Tunerr comparison harness
 
+Task-oriented entry (quick start + links): **[how-to: stream-compare harness](../how-to/stream-compare-harness.md)**.
+
 When a provider/CDN path plays directly in `ffplay` but fails through Tunerr, use `scripts/stream-compare-harness.sh` to collect one reproducible evidence bundle instead of hand-running curl/ffplay/tcpdump commands.
 
 Typical case:

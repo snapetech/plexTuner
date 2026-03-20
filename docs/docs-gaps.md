@@ -51,6 +51,14 @@ Known missing or incomplete documentation. Address these when touching the relev
 
 ---
 
+## Resolved (documentation)
+
+| Closed | What | Link |
+|--------|------|------|
+| 2026-03 | **Operator harness how-tos** (task-oriented entrypoints mirroring runbook §7 / §9 / §10) | [live-race-harness.md](how-to/live-race-harness.md), [stream-compare-harness.md](how-to/stream-compare-harness.md), [multi-stream-harness.md](how-to/multi-stream-harness.md) |
+
+---
+
 ## Maintenance
 
 - When closing a gap, move its row to a "Resolved" subsection with date and link to the new doc.

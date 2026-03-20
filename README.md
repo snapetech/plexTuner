@@ -1120,6 +1120,7 @@ docs/                 Reference, how-to guides, runbooks
 - [`docs/how-to/mount-vodfs-and-register-plex-libraries.md`](docs/how-to/mount-vodfs-and-register-plex-libraries.md) — VOD filesystem setup
 - [`docs/how-to/cloudflare-bypass.md`](docs/how-to/cloudflare-bypass.md) — Cloudflare bypass guide
 - [`docs/how-to/debug-bundle.md`](docs/how-to/debug-bundle.md) — Debug bundle and log correlation
+- [`docs/how-to/stream-compare-harness.md`](docs/how-to/stream-compare-harness.md) — Direct vs Tunerr comparison (`scripts/stream-compare-harness.sh`)
 - [`docs/how-to/live-race-harness.md`](docs/how-to/live-race-harness.md) — Live-race diagnostics (`scripts/live-race-harness.sh`, HR-002)
 - [`docs/how-to/multi-stream-harness.md`](docs/how-to/multi-stream-harness.md) — Two-stream collapse harness (`scripts/multi-stream-harness.sh`)
 - [`docs/how-to/hls-mux-proxy.md`](docs/how-to/hls-mux-proxy.md) — **`?mux=hls` / `dash`** proxy setup
@@ -1150,6 +1151,7 @@ Verify the build:
 - **Named stream profiles**: optional **`IPTV_TUNERR_STREAM_PROFILES_FILE`** matrix (**LP-010** / **LP-011**) — [transcode-profiles](docs/reference/transcode-profiles.md).
 - **Shared HTTP idle pool**: **`IPTV_TUNERR_HTTP_MAX_IDLE_CONNS`**, **`IPTV_TUNERR_HTTP_IDLE_CONN_TIMEOUT_SEC`** across most subsystems (**HR-010**) — [plex-livetv-http-tuning](docs/reference/plex-livetv-http-tuning.md).
 - **Live-race harness + PMS**: optional Plex **`/status/sessions`** snapshots during **`scripts/live-race-harness.sh`** when **`PMS_URL`** + token are set — report summarizes players/sessions (**HR-002** / **HR-003**).
+- **Stream-compare harness how-to**: [docs/how-to/stream-compare-harness.md](docs/how-to/stream-compare-harness.md) (direct vs Tunerr + **`stream-compare-report.py`**; [runbook §9](docs/runbooks/iptvtunerr-troubleshooting.md#9-direct-upstream-vs-tunerr-comparison-harness)).
 - **Live-race harness how-to**: [docs/how-to/live-race-harness.md](docs/how-to/live-race-harness.md) (synthetic/replay + **`live-race-harness-report.py`**; [runbook §7](docs/runbooks/iptvtunerr-troubleshooting.md#7-unified-diagnostics-harness-all-five-experiments-in-one-run)).
 - **Multi-stream harness how-to**: [docs/how-to/multi-stream-harness.md](docs/how-to/multi-stream-harness.md) (staggered **`curl`** pulls + **`multi-stream-harness-report.py`**; [runbook §10](docs/runbooks/iptvtunerr-troubleshooting.md#10-two-stream-collapse--second-stream-kills-the-first)).
 - **Dedicated control deck**: `run` / `serve` now launch a real operator console on `:48879` with its own login/session flow, runtime snapshot, grouped settings lane, shared deck memory/activity, safe actions/workflows, and CSRF-protected state changes instead of a thin JSON/debug wrapper.
