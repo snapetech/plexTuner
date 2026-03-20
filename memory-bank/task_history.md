@@ -23,6 +23,17 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: Tests — deterministic HLS playlist retry wait + autotune-off host penalty subtest
+  Summary:
+    - **`TestGateway_relayHLSAsTS_survivesPlaylistConcurrencyRetry`**: **`sync.Once`** + channel when third playlist response succeeds (after **509** retry); **30s** timeout; atomic playlist hit count.
+    - **`TestGateway_shouldPreferGoRelayForHLSRemux_hostPenalty`**: subtests **`penalized_host`** / **`autotune_off_no_penalty_signal`** (`IPTV_TUNERR_PROVIDER_AUTOTUNE=false`).
+    - **CHANGELOG** Testing note.
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+
+- Date: 2026-03-21
   Title: HLS — prefer Go relay when upstream host penalized + playlist 509 retry integration test
   Summary:
     - **`shouldPreferGoRelayForHLSRemux(streamURL)`**: after provider-pressure checks, return true when **`hostPenalty`** for the stream authority is **> 0** (e.g. ffmpeg remux already failed for that host).
@@ -3001,6 +3012,17 @@ Verification:
 - `go test ./internal/plex ./cmd/iptv-tunerr -run '^$'`
 
 ---
+
+- Date: 2026-03-21
+  Title: Add a dedicated multi-stream contention harness
+  Summary:
+    - Added `scripts/multi-stream-harness.sh` to run 2+ staggered live pulls against a real Tunerr instance and capture per-stream curl/body artifacts plus periodic `/provider/profile.json`, `/debug/stream-attempts.json`, and `/debug/runtime.json` snapshots.
+    - Added `scripts/multi-stream-harness-report.py` to summarize sustained reads, premature exits, zero-byte opens, recent final statuses, and provider concurrency signals into `report.txt` / `report.json`.
+    - Updated the troubleshooting runbook, features matrix, changelog, and `memory-bank/commands.yml` so the new harness is discoverable for “second stream starts, first dies” investigations.
+  Verification:
+    - `bash -n scripts/multi-stream-harness.sh`
+    - `python3 -m py_compile scripts/multi-stream-harness-report.py`
+    - `python3 scripts/multi-stream-harness-report.py --dir <synthetic-run-dir> --print`
 
 ## 2026-02-27: Resolve iptvtunerr-supervisor EPG/DVR connectivity (firewall root cause)
 

@@ -2,6 +2,10 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-21):** **Two-stream collapse harness:** adding **`scripts/multi-stream-harness.sh`** + **`scripts/multi-stream-harness-report.py`** so “load one channel, start another, first dies” reports turn into a reproducible bundle with staggered live pulls, provider/runtime/attempt snapshots, optional Plex session evidence, and a compact sustained-vs-premature report.
+
+**Latest (2026-03-21):** **Test hardening:** **`TestGateway_relayHLSAsTS_survivesPlaylistConcurrencyRetry`** uses completion signal (no **1.5s** sleep); **`TestGateway_shouldPreferGoRelayForHLSRemux_hostPenalty`** **`autotune_off`** subtest. **`./scripts/verify`** OK.
+
 **Latest (2026-03-21):** **HLS go-relay + tests (restored):** **`shouldPreferGoRelayForHLSRemux(streamURL)`** considers **`hostPenalty`** for flaky hosts; **`TestGateway_shouldPreferGoRelayForHLSRemux_hostPenalty`**, **`TestGateway_relayHLSAsTS_survivesPlaylistConcurrencyRetry`**; **CHANGELOG** + **`recurring_loops`** note: do not **`git restore`** unrelated dirty files (multi-agent WIP). **`./scripts/verify`** OK.
 
 **Latest (2026-03-21):** **Handoff / doc closure:** Confirmed gateway integration test **`TestGateway_stream_prefersAutopilotRememberedURL_normalizedTrailingSlash`** lives on **`origin/main`** (not part of the LP/LTV feature commit); expanded **`streamURLsSemanticallyEqual`** godoc + **`known_issues.md`** **Gateway / Autopilot** row so “by design” URL-match limits are single-source in code + memory bank. **`./scripts/verify`** OK.
