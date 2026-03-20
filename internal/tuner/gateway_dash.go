@@ -1,7 +1,6 @@
 package tuner
 
 import (
-	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -25,6 +24,20 @@ var reDashSegEscapedTimePad = regexp.MustCompile(`\$Time(%25[0-9]*[dD])\$`)
 type dashRepl struct {
 	a, b int
 	s    string
+}
+
+// dashAttrURLValue returns the quoted URL from a dashAttrURL submatch (groups: name, double-quoted, single-quoted).
+func dashAttrURLValue(loc []int, body []byte) string {
+	if len(loc) < 8 {
+		return ""
+	}
+	if loc[4] >= 0 && loc[5] > loc[4] {
+		return string(body[loc[4]:loc[5]])
+	}
+	if loc[6] >= 0 && loc[7] > loc[6] {
+		return string(body[loc[6]:loc[7]])
+	}
+	return ""
 }
 
 type dashBaseEv struct {
@@ -134,6 +147,7 @@ func dashAlreadyMuxProxy(val string) bool {
 // SegmentTemplate placeholders ($Number$, …) are preserved in seg= (see dashSegQueryEscape) unless
 // IPTV_TUNERR_HLS_MUX_DASH_EXPAND_SEGMENT_TEMPLATE expands uniform templates to SegmentList first.
 func rewriteDASHManifestToGatewayProxy(body []byte, upstreamURL, channelID string) []byte {
+	body = stripLeadingUTF8BOM(body)
 	if dashExpandSegmentTemplatesEnabled() {
 		body = expandDASHSegmentTemplatesToSegmentList(body)
 	}

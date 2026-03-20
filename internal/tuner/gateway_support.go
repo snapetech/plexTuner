@@ -1,6 +1,7 @@
 package tuner
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -10,6 +11,13 @@ import (
 	"strings"
 	"syscall"
 )
+
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+
+// stripLeadingUTF8BOM removes a UTF-8 BOM if present (some CDNs/packagers prefix playlists/MPDs).
+func stripLeadingUTF8BOM(b []byte) []byte {
+	return bytes.TrimPrefix(b, utf8BOM)
+}
 
 func gatewayReqIDFromContext(ctx context.Context) string {
 	if ctx == nil {
