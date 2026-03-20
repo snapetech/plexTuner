@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-19):** **Backlog validation:** [docs-gaps.md](../docs/docs-gaps.md) stale rows removed (cli-and-env + existing docs cover prior “gaps”); [EPIC-live-tv-intelligence](../docs/epics/EPIC-live-tv-intelligence.md) / [EPIC-lineup-parity](../docs/epics/EPIC-lineup-parity.md) + [work_breakdown](work_breakdown.md) + [opportunities](opportunities.md) (guide-health opportunity partially superseded). **CHANGELOG** doc bullet.
+
 **Latest (2026-03-19):** **LTV `INT-006` — hot-start by M3U `group_title`:** **`IPTV_TUNERR_HOT_START_GROUP_TITLES`**; **`/debug/runtime.json`** **`tuner.hot_start_*`**; tests **`gateway_hotstart_test.go`**. **`Gateway`**: removed dead **`hlsPackager*`** fields (undefined type). **`./scripts/verify`** OK.
 
 **Latest (2026-03-20):** **LP-010 / LP-011:** named profiles can now prefer **`output_mux: "hls"`** for **ffmpeg-packaged HLS**. Tunerr starts a short-lived packager, keeps a background tuner hold while it runs, serves packaged playlist/segment files back through Tunerr session URLs, and leaves explicit **`?mux=hls`** on the existing native rewrite/proxy path. Docs/tests updated; **`./scripts/verify`** OK.
