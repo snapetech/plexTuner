@@ -14,7 +14,7 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/epgdoctor"
 	"github.com/snapetech/iptvtunerr/internal/epglink"
 	"github.com/snapetech/iptvtunerr/internal/guidehealth"
-	"github.com/snapetech/iptvtunerr/internal/refio"
+	"github.com/snapetech/iptvtunerr/internal/guideinput"
 )
 
 func guideReportCommands() []commandSpec {
@@ -148,7 +148,7 @@ func loadGuideInputs(cfg *config.Config, catalogPath, guideRef, xmltvRef, aliase
 		log.Print("Set -guide to a local file or http(s) guide.xml URL")
 		os.Exit(1)
 	}
-	data, err := refio.ReadAll(guideRef, 45*time.Second)
+	data, err := guideinput.LoadGuideData(guideRef)
 	if err != nil {
 		log.Printf("Open guide %s: %v", guideRef, err)
 		os.Exit(1)

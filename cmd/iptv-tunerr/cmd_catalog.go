@@ -13,10 +13,10 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/channeldna"
 	"github.com/snapetech/iptvtunerr/internal/config"
 	"github.com/snapetech/iptvtunerr/internal/epglink"
+	"github.com/snapetech/iptvtunerr/internal/guideinput"
 	"github.com/snapetech/iptvtunerr/internal/hdhomerun"
 	"github.com/snapetech/iptvtunerr/internal/indexer"
 	"github.com/snapetech/iptvtunerr/internal/provider"
-	"github.com/snapetech/iptvtunerr/internal/refio"
 	"github.com/snapetech/iptvtunerr/internal/tuner"
 )
 
@@ -280,7 +280,7 @@ func buildCatchupCapsulePreviewFromRef(path, xmltvRef string, horizon time.Durat
 		return tuner.CatchupCapsulePreview{}, fmt.Errorf("load catalog %s: %w", path, err)
 	}
 	live := c.SnapshotLive()
-	data, err := refio.ReadAll(xmltvRef, 45*time.Second)
+	data, err := guideinput.LoadGuideData(xmltvRef)
 	if err != nil {
 		return tuner.CatchupCapsulePreview{}, fmt.Errorf("open guide/XMLTV %s: %w", xmltvRef, err)
 	}
@@ -610,35 +610,12 @@ func catalogStats(live []catalog.LiveChannel) (epgLinked, withBackups int) {
 	return
 }
 
-func providerXMLTVURL(baseURL, user, pass string) string {
-	baseURL = strings.TrimSuffix(strings.TrimSpace(baseURL), "/")
-	user = strings.TrimSpace(user)
-	pass = strings.TrimSpace(pass)
-	if baseURL == "" || user == "" || pass == "" {
-		return ""
-	}
-	return baseURL + "/xmltv.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass)
-}
-
 func loadAliasOverrides(ref string) (epglink.AliasOverrides, error) {
-	if strings.TrimSpace(ref) == "" {
-		return epglink.AliasOverrides{NameToXMLTVID: map[string]string{}}, nil
-	}
-	r, err := refio.Open(ref, 45*time.Second)
-	if err != nil {
-		return epglink.AliasOverrides{}, err
-	}
-	defer r.Close()
-	return epglink.LoadAliasOverrides(r)
+	return guideinput.LoadAliasOverrides(ref)
 }
 
 func loadXMLTVChannels(ref string) ([]epglink.XMLTVChannel, error) {
-	r, err := refio.Open(ref, 45*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	defer r.Close()
-	return epglink.ParseXMLTVChannels(r)
+	return guideinput.LoadXMLTVChannels(ref)
 }
 
 func unresolvedLiveChannels(live []catalog.LiveChannel, protected map[string]bool) []catalog.LiveChannel {
@@ -668,7 +645,7 @@ func applyRuntimeEPGRepairs(cfg *config.Config, live []catalog.LiveChannel, prov
 	}
 	var sources []xmltvSource
 	if cfg.ProviderEPGEnabled {
-		if ref := providerXMLTVURL(providerBase, providerUser, providerPass); ref != "" {
+		if ref := guideinput.ProviderXMLTVURL(providerBase, providerUser, providerPass); ref != "" {
 			if chans, err := loadXMLTVChannels(ref); err != nil {
 				log.Printf("EPG repair provider source unavailable: %v", err)
 			} else if len(chans) > 0 {

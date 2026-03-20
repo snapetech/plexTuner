@@ -1,0 +1,68 @@
+package guideinput
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/snapetech/iptvtunerr/internal/catalog"
+)
+
+func TestProviderXMLTVURL(t *testing.T) {
+	got := ProviderXMLTVURL("https://example.test/base/", "user name", "p@ss")
+	want := "https://example.test/base/xmltv.php?username=user+name&password=p%40ss"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+func TestLoadGuideData_LocalAndHTTP(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "guide.xml")
+	const body = "<tv></tv>"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadGuideData(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != body {
+		t.Fatalf("local got %q", got)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	got, err = LoadGuideData(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != body {
+		t.Fatalf("http got %q", got)
+	}
+}
+
+func TestLoadOptionalMatchReport(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<?xml version="1.0"?><tv><channel id="id.1"><display-name>Alpha</display-name></channel></tv>`))
+	}))
+	defer srv.Close()
+
+	live := []catalog.LiveChannel{{
+		ChannelID:   "ch1",
+		GuideNumber: "1",
+		GuideName:   "Alpha",
+	}}
+	rep, err := LoadOptionalMatchReport(live, srv.URL, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep == nil || rep.TotalChannels != 1 || rep.Matched != 1 {
+		t.Fatalf("unexpected report: %#v", rep)
+	}
+}

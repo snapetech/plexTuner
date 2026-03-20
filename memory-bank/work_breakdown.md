@@ -101,6 +101,13 @@ For each story:
 
 ### Progress notes (2026-03-18)
 
+- **INT-001 (in progress, begin→end lane):** Added shared **`internal/guideinput`** helpers for provider XMLTV URL generation plus local-file / URL loading of guide XML, XMLTV channels, alias overrides, and optional match reports using the repo’s shared transport defaults. Current callers rewired: guide report tooling, catch-up preview helpers, and tuner guide-health/report paths.
+- **HR-010 (slice):** Shared **`internal/httpclient`** transport now documents Plex/Lavf parallel-segment behavior; new env **`IPTV_TUNERR_HTTP_MAX_IDLE_CONNS`**, **`IPTV_TUNERR_HTTP_IDLE_CONN_TIMEOUT_SEC`**; **`parseSharedTransportEnv`** unit tests; **`/debug/runtime.json`** echoes **`tuner.http_max_idle_conns`** + **`tuner.http_idle_conn_timeout_sec`**. Reference: **`docs/reference/plex-livetv-http-tuning.md`**.
+- **HR-009 (slice):** Runbook **§9** adds a **DVR recording soak baseline** checklist (short record, size, playback, logs).
+- **HR-008 (slice):** Runbook + **`plex-livetv-http-tuning`** document live-path **primary→backup** failover (no hot-path backoff) vs **`seg=`** diagnostics.
+- **HR-007 (slice):** **`IPTV_TUNERR_TRANSCODE_OVERRIDES_FILE`** now layers on **`off`/`on`/`auto`** (per-channel remux or transcode vs global mode), not only **`auto_cached`**; policy decisions logged as **`gateway: transcode policy ...`**; tests in **`gateway_policy_test.go`**; **`/debug/runtime.json`** includes override file paths; docs **cli-and-env**, **plex-livetv-http-tuning**, **`.env.example`**, **README**.
+- **HR-006 (slice):** **`catalog.ReplaceWithLive`** sorts **`live_channels`** in place by **`channel_id`** (then **guide_number**, **guide_name**) so catalog saves and lineup iteration stay deterministic when M3U order drifts.
+
 - `INT-007` now has a shipped first slice:
   - catch-up capsules/publishing accept `IPTV_TUNERR_CATCHUP_REPLAY_URL_TEMPLATE`
   - replay mode is explicit in preview/publish outputs

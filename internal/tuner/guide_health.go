@@ -3,7 +3,6 @@ package tuner
 import (
 	"encoding/json"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -12,7 +11,7 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/epgdoctor"
 	"github.com/snapetech/iptvtunerr/internal/epglink"
 	"github.com/snapetech/iptvtunerr/internal/guidehealth"
-	"github.com/snapetech/iptvtunerr/internal/refio"
+	"github.com/snapetech/iptvtunerr/internal/guideinput"
 )
 
 func (x *XMLTV) GuideHealth(now time.Time, aliasesRef string) (guidehealth.Report, error) {
@@ -64,7 +63,7 @@ func (x *XMLTV) buildMatchReport(aliasesRef string) (*epglink.Report, error) {
 	}
 	var sources []source
 	if x.ProviderEPGEnabled {
-		if ref := providerXMLTVURL(x.ProviderBaseURL, x.ProviderUser, x.ProviderPass); ref != "" {
+		if ref := guideinput.ProviderXMLTVURL(x.ProviderBaseURL, x.ProviderUser, x.ProviderPass); ref != "" {
 			if chans, err := loadGuideHealthXMLTVChannels(ref); err == nil && len(chans) > 0 {
 				sources = append(sources, source{ref: ref, ch: chans})
 			}
@@ -142,34 +141,11 @@ func (x *XMLTV) buildMatchReport(aliasesRef string) (*epglink.Report, error) {
 }
 
 func loadGuideHealthAliases(ref string) (epglink.AliasOverrides, error) {
-	if strings.TrimSpace(ref) == "" {
-		return epglink.AliasOverrides{NameToXMLTVID: map[string]string{}}, nil
-	}
-	r, err := refio.Open(ref, 45*time.Second)
-	if err != nil {
-		return epglink.AliasOverrides{}, err
-	}
-	defer r.Close()
-	return epglink.LoadAliasOverrides(r)
+	return guideinput.LoadAliasOverrides(ref)
 }
 
 func loadGuideHealthXMLTVChannels(ref string) ([]epglink.XMLTVChannel, error) {
-	r, err := refio.Open(ref, 45*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	defer r.Close()
-	return epglink.ParseXMLTVChannels(r)
-}
-
-func providerXMLTVURL(baseURL, user, pass string) string {
-	baseURL = strings.TrimSuffix(strings.TrimSpace(baseURL), "/")
-	user = strings.TrimSpace(user)
-	pass = strings.TrimSpace(pass)
-	if baseURL == "" || user == "" || pass == "" {
-		return ""
-	}
-	return baseURL + "/xmltv.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass)
+	return guideinput.LoadXMLTVChannels(ref)
 }
 
 func (s *Server) serveGuideHealth() http.Handler {

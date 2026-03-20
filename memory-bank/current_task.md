@@ -2,6 +2,14 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-19, work breakdown begin→end):** Working the intelligence cross-wiring epic from the **front** while another agent works the **back**. Current slice is **`INT-001`**: new shared **`internal/guideinput`** helpers centralize provider XMLTV URL generation plus local-file / URL loading for guide XML, XMLTV channels, alias overrides, and match reports on the repo’s shared HTTP path. Report tooling, catch-up preview helpers, and tuner guide-health callers are rewired; next is full **`./scripts/verify`**, then landing **`INT-001`** cleanly before moving into the first real **`INT-002`** gap.
+
+**Latest (2026-03-19, work breakdown HR-006):** **`catalog.ReplaceWithLive`** sorts live rows by **`channel_id`** for stable **`catalog.json`** / lineup order when M3U order drifts. **`./scripts/verify`** OK.
+
+**Latest (2026-03-19, work breakdown HR-007):** **`TRANSCODE_OVERRIDES_FILE`** merges with **`STREAM_TRANSCODE`** **`off`/`on`/`auto`** (per-channel remux/transcode vs global); policy logs + **`gateway_policy_test.go`**; runtime paths in **`/debug/runtime.json`**. **`./scripts/verify`** OK.
+
+**Latest (2026-03-19, work breakdown end→begin):** **HR-010**: shared HTTP idle pool env + **`plex-livetv-http-tuning`** ref + runtime echo. **HR-009**: DVR recording soak checklist in runbook §9. **HR-008**: live-path failover vs **`seg=`** diagnostics documented. **`./scripts/verify`** OK.
+
 **Latest (2026-03-19, mux regression-fixture closure):** Promoted synthetic stream-compare captures into committed HLS and DASH goldens under **`internal/tuner/testdata/`** and finished the native mux follow-up around them. HLS rewrite now strips a leading **UTF-8 BOM**, rewrites non-standard **`URI='...'`**, and keeps strict golden bodies. DASH rewrite/expansion now covers single-quoted URL attrs, quote-aware **`SegmentTimeline`** **`<S>`** scanning, paired **`SegmentTemplate`**, **`$Time$`** / padded **`$Number%0Nd$`**, and a DASH stream-compare golden that intentionally runs with **`IPTV_TUNERR_HLS_MUX_DASH_EXPAND_SEGMENT_TEMPLATE=1`** so expected output is fully expanded **`SegmentList`** + Tunerr proxy URLs. Docs, testdata README, `.gitignore` for **`.diag/`**, and runbook guidance for promoting captures to fixtures are all aligned. **`./scripts/verify`** OK.
 
 **Latest (2026-03-19, mux toolkit — continuation):** **`SegmentTimeline`** **`<S></S>`** (empty paired) + **UTF-8 BOM** strip on HLS/DASH rewrite (**`stripLeadingUTF8BOM`** in **`gateway_support.go`**). Docs/tests/CHANGELOG. **`./scripts/verify`** OK.
