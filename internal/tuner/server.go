@@ -199,6 +199,9 @@ func (s *Server) UpdateChannels(live []catalog.LiveChannel) {
 		s.xmltv.cachedMatchExp = time.Time{}
 		s.xmltv.cachedGuideHealth = nil
 		s.xmltv.mu.Unlock()
+		if len(live) > 0 {
+			s.xmltv.TriggerRefresh("lineup_update")
+		}
 	}
 	if s.m3uServe != nil {
 		s.m3uServe.Channels = live

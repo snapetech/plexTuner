@@ -684,6 +684,11 @@ func (x *XMLTV) runRefresh(trigger string) {
 	x.refreshStateMu.Unlock()
 
 	channels := x.filteredChannels()
+	if len(channels) == 0 {
+		log.Printf("xmltv: refresh skipped with no lineup channels loaded yet (preserving existing cache)")
+		x.finishRefresh(started, nil)
+		return
+	}
 	data, err := x.buildMergedEPG(channels)
 	if err != nil {
 		log.Printf("xmltv: EPG refresh failed: %v (serving stale cache if available)", err)
@@ -746,15 +751,31 @@ func (x *XMLTV) runRefresh(trigger string) {
 }
 
 func (x *XMLTV) finishRefresh(started time.Time, err error) {
+	var queuedTrigger string
 	x.refreshStateMu.Lock()
-	defer x.refreshStateMu.Unlock()
-	x.refreshInFlight = false
+	if x.refreshQueued {
+		queuedTrigger = strings.TrimSpace(x.queuedRefreshTrigger)
+		if queuedTrigger == "" {
+			queuedTrigger = "queued"
+		}
+		x.refreshQueued = false
+		x.queuedRefreshTrigger = ""
+		x.refreshInFlight = true
+		x.lastRefreshStartedAt = time.Now().UTC()
+		x.lastRefreshTrigger = queuedTrigger
+	} else {
+		x.refreshInFlight = false
+	}
 	x.lastRefreshEndedAt = time.Now().UTC()
 	x.lastRefreshDuration = time.Since(started)
 	if err != nil {
 		x.lastRefreshError = err.Error()
 	} else {
 		x.lastRefreshError = ""
+	}
+	x.refreshStateMu.Unlock()
+	if queuedTrigger != "" {
+		go x.runRefresh(queuedTrigger)
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -182,6 +183,28 @@ func TestSummarizeLineupIntegrity(t *testing.T) {
 	if got.DuplicateChannelIDs != 1 {
 		t.Fatalf("duplicate_channel_ids=%d want 1", got.DuplicateChannelIDs)
 	}
+}
+
+func TestServer_UpdateChannelsTriggersXMLTVRefresh(t *testing.T) {
+	s := &Server{
+		xmltv: &XMLTV{},
+	}
+	s.UpdateChannels([]catalog.LiveChannel{
+		{GuideNumber: "101", GuideName: "Alpha"},
+	})
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		s.xmltv.mu.RLock()
+		data := append([]byte(nil), s.xmltv.cachedXML...)
+		s.xmltv.mu.RUnlock()
+		if strings.Contains(string(data), `<channel id="101">`) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	s.xmltv.mu.RLock()
+	defer s.xmltv.mu.RUnlock()
+	t.Fatalf("xmltv cache was not refreshed after UpdateChannels; cachedXML=%q", string(s.xmltv.cachedXML))
 }
 
 func TestServer_channelReport(t *testing.T) {

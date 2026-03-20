@@ -83,6 +83,8 @@ type XMLTV struct {
 
 	refreshStateMu       sync.Mutex
 	refreshInFlight      bool
+	refreshQueued        bool
+	queuedRefreshTrigger string
 	lastRefreshStartedAt time.Time
 	lastRefreshEndedAt   time.Time
 	lastRefreshTrigger   string
@@ -139,6 +141,8 @@ func (x *XMLTV) TriggerRefresh(trigger string) bool {
 	}
 	x.refreshStateMu.Lock()
 	if x.refreshInFlight {
+		x.refreshQueued = true
+		x.queuedRefreshTrigger = trigger
 		x.refreshStateMu.Unlock()
 		return false
 	}

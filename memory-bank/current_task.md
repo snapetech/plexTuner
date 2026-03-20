@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-20):** **Guide startup race fix:** tester logs showed `guide.xml` serving an 82-byte empty `<tv>` for the full 10-minute TTL because XMLTV startup refresh ran before the lineup loaded. The refresh path now skips caching when there are zero lineup channels, and `UpdateChannels` queues a real refresh immediately when channels arrive. **`./scripts/verify`** OK.
+
 **Latest (2026-03-20):** **Release cut `v0.1.18`:** package the lineup-integrity logs, first-run mapping repair, guide-force-lineup-match mode, and new **`/guide/lineup-match.json`** debug surface into the next patch build. **`./scripts/verify`** OK; next is pushing the release tag and watching the workflow.
 
 **Latest (2026-03-20):** **Guide debug payload enrichment:** **`/guide/lineup-match.json`** sampled missing rows now include observed **`channel_id`** and **`tvg_id`** in addition to **`guide_number`** / **`guide_name`** / URL so tester reports show real upstream linkage state instead of only lineup labels.

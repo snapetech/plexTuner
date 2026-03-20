@@ -3889,6 +3889,18 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
 ---
 
 - Date: 2026-03-20
+  Title: Fix guide.xml startup race before lineup load
+  Summary:
+    - Stopped XMLTV startup refresh from caching an empty guide when zero lineup channels are loaded, preserving placeholder behavior instead of serving an 82-byte empty `<tv>` document for the full cache TTL.
+    - Taught `UpdateChannels` to trigger a follow-up XMLTV refresh when the lineup arrives so `guide.xml` populates immediately after the catalog load rather than waiting for the next ticker.
+    - Added tuner tests that prove the no-lineup refresh preserves an empty cache and that `UpdateChannels` refreshes XMLTV once guideable channels exist.
+  Verification:
+    - `go test ./internal/tuner -run 'Test(XMLTV_runRefresh_noChannelsPreservesEmptyCache|Server_UpdateChannelsTriggersXMLTVRefresh|XMLTV_GuideLineupMatchReport|Server_guideLineupMatch)'`
+    - `./scripts/verify`
+
+---
+
+- Date: 2026-03-20
   Title: Enrich guide-lineup mismatch samples with TVG identifiers
   Summary:
     - Added `channel_id` and observed `tvg_id` to `/guide/lineup-match.json` sample rows so mismatch reports show the lineup record and upstream guide-link state together.

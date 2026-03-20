@@ -238,6 +238,18 @@ func TestXMLTV_GuideLineupMatchReport(t *testing.T) {
 	}
 }
 
+func TestXMLTV_runRefresh_noChannelsPreservesEmptyCache(t *testing.T) {
+	x := &XMLTV{}
+	x.runRefresh("startup")
+	if len(x.cachedXML) != 0 {
+		t.Fatalf("cachedXML=%q want empty", string(x.cachedXML))
+	}
+	st := x.RefreshStatus()
+	if st.CachePopulated {
+		t.Fatalf("refresh status unexpectedly reports populated cache: %+v", st)
+	}
+}
+
 func TestXMLTV_cacheHit(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
 	// refresh() fetches once; subsequent ServeHTTP calls read from cache without re-fetching.
