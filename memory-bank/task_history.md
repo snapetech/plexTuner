@@ -22,6 +22,16 @@ Append-only. One entry per completed task.
 
 ## Entries
 
+- Date: 2026-03-21
+  Title: LP/LTV close-by-design — Autopilot URL norm + HDHR directed broadcast + LP-012 checklist
+  Summary:
+    - **`gateway_adapt`**: **`streamURLsSemanticallyEqual`** + tests; **HDHR**: **`IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS`**.
+    - **Docs:** [lineup-parity-lp012-closure](../docs/how-to/lineup-parity-lp012-closure.md), indexes, **cli-and-env**, **CHANGELOG**, epics; **`hdhr-scan`** summary.
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+
 - Date: 2026-03-20
   Title: Harden HLS provider-pressure handling for multi-stream playback
   Summary:

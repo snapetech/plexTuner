@@ -17,6 +17,8 @@ iptv-tunerr hdhr-scan
 iptv-tunerr hdhr-scan -addr http://192.168.1.50 -lineup
 ```
 
+If UDP discovery finds **no** devices but you know the LAN subnet, set **`IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS`** to a comma-separated list of directed IPv4 broadcasts (e.g. `192.168.1.255`) or `ip:65001` — Tunerr sends discovery to **`255.255.255.255`** and each listed address. See [cli-and-env-reference](../reference/cli-and-env-reference.md).
+
 Note the device **base URL** (e.g. `http://192.168.1.50`).
 
 ## 2. Merge hardware channels into the catalog (index)
@@ -69,3 +71,4 @@ Cross-reference: [EPIC-live-tv-intelligence](../epics/EPIC-live-tv-intelligence.
 - [features](../features.md)
 - [hls-mux-toolkit](../reference/hls-mux-toolkit.md) — Tunerr-native **`?mux=hls|dash`** proxy headers and caps
 - [Troubleshooting runbook](../runbooks/iptvtunerr-troubleshooting.md) — **`/healthz`**, **`/readyz`**, harnesses, **HR-*** checklists
+- [LP-012 operator checklist](lineup-parity-lp012-closure.md)

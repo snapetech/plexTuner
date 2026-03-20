@@ -27,6 +27,7 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[how-to/cloudflare-bypass.md](how-to/cloudflare-bypass.md)** | Cloudflare-protected providers: UA cycling, cookies, headers, troubleshooting. |
 | **[how-to/debug-bundle.md](how-to/debug-bundle.md)** | Collect a shareable `debug-bundle` and analyze with `scripts/analyze-bundle.py`. |
 | **[how-to/hybrid-hdhr-iptv.md](how-to/hybrid-hdhr-iptv.md)** | Merge HDHR `lineup.json` + `guide.xml` with IPTV index and `/guide.xml`. |
+| **[how-to/lineup-parity-lp012-closure.md](how-to/lineup-parity-lp012-closure.md)** | **LP-012** operator checklist (hybrid HDHR, mux, readiness, LTV links). |
 | **[how-to/hls-mux-proxy.md](how-to/hls-mux-proxy.md)** | HLS/DASH-through-Tunerr: `?mux=hls` / experimental `?mux=dash`, optional **`IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`**, CORS, web demo. |
 | **[reference/hls-mux-toolkit.md](reference/hls-mux-toolkit.md)** | Native mux diagnostics (**HLS** + **DASH**), operator **`curl`** snippets, metrics, DNS SSRF options, remaining backlog. |
 | **[reference/hls-mux-ll-hls-tags.md](reference/hls-mux-ll-hls-tags.md)** | LL-HLS / low-latency tag coverage for **`?mux=hls`** playlist rewrite. |

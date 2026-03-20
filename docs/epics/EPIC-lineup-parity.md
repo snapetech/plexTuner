@@ -67,7 +67,7 @@ IPTV Tunerr’s mission stays **IPTV/Xtream → HDHR-shaped bridge for Plex/Emby
 | **LP-009** | SQLite **cleanup** | Expired programme eviction; disk bounds; logging. |
 | **LP-010** | **Profile** config model | Named profiles: bitrate caps, resolution, container (HLS/fMP4), codec policy. |
 | **LP-011** | ffmpeg **profile execution** | Gateway or sub-handler selects profile; integration test or scripted probe. |
-| **LP-012** | Docs + runbook | `docs/how-to/` for hybrid HDHR+IPTV; env reference updates; troubleshooting. |
+| **LP-012** | Docs + runbook | Continuous sweep: hybrid how-to, env reference, troubleshooting, k8s readiness, LTV cross-links. **Closure checklist:** [lineup-parity-lp012-closure](../how-to/lineup-parity-lp012-closure.md). |
 
 ## Suggested PR plan
 
@@ -100,7 +100,7 @@ IPTV Tunerr’s mission stays **IPTV/Xtream → HDHR-shaped bridge for Plex/Emby
 - **PR-5**: **`LP-007`** — `internal/epgstore`, [ADR 0003](../adr/0003-epg-sqlite-vs-postgres.md).
 - **PR-6**: **`LP-008`/`LP-009`** — SQLite sync, retain/VACUUM/max-bytes, `/guide/epg-store.json`. Full **provider** incremental fetch (not pulling whole `xmltv.php`) is still a future optimization; Tunerr SQLite remains snapshot replace per refresh.
 - **PR-7**: **`LP-010`/`LP-011`** — profiles + ffmpeg TS default; optional **`?mux=fmp4`** (transcode). **Update (2026-03):** Tunerr-native **HLS playlist proxy** via **`?mux=hls`** (rewrite + proxy; not ffmpeg segment packaging). *Optional* separate **ffmpeg-generated** multi-file HLS packaging remains future if product needs it.
-- **`LP-012`**: [how-to/hybrid-hdhr-iptv.md](../how-to/hybrid-hdhr-iptv.md) (See also: [hls-mux-toolkit](../reference/hls-mux-toolkit.md), [troubleshooting runbook](../runbooks/iptvtunerr-troubleshooting.md)); **`k8s/README.md`** verify includes **`/readyz`** / **`/healthz`**; ongoing env/docs sweep.
+- **`LP-012`**: [how-to/hybrid-hdhr-iptv.md](../how-to/hybrid-hdhr-iptv.md) (See also: [hls-mux-toolkit](../reference/hls-mux-toolkit.md), [troubleshooting runbook](../runbooks/iptvtunerr-troubleshooting.md)); **`k8s/README.md`** verify includes **`/readyz`** / **`/healthz`**; [lineup-parity-lp012-closure](../how-to/lineup-parity-lp012-closure.md) checklist; **`IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS`** for subnet discovery.
 
 ## Coordination with other epics
 

@@ -78,7 +78,7 @@ Make IPTV Tunerr feel less like a tuner bridge and more like a live-TV intellige
   - **Operator surfacing (2026-03):** **`GET /provider/profile.json`** includes **`intelligence.autopilot`** (enabled, state file, decision count, top hot channels) beside provider-runtime fields so the deck and scripts see LTV signals in one JSON fetch. Stream-investigate workflow actions link **`/autopilot/report.json`** and **`autopilot-reset`**.
 - Next recommended slices:
   - Richer **Channel DNA** graph (cross-provider relationships, long-lived match provenance store)
-  - **Autopilot**: deeper **URL ordering** (multi-host failover priority) and provider-level memory beyond per-channel host hints
+  - **Autopilot**: provider-level / multi-host **policy** memory beyond per-channel **`preferred_url`** / host reranking (exact + normalized URL matching for catalog drift is **shipped**)
   - **Ghost Hunter** + **hidden-grab** runbook automation (already scripts/runbooks — tighter product loop)
   - **Provider profile → active remediation** (auto cap / strip hosts beyond today’s autotune hooks)
   - **Always-on recorder** for non-replay sources ([catchup-daemon](../explanations/always-on-recorder-daemon.md) extensions)

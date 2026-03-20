@@ -1080,6 +1080,7 @@ Fetches EPG directly from your IPTV provider using existing credentials. No sepa
 - `IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX` — optional string appended to provider `xmltv.php` as `&…` (e.g. panel-specific query params). **Not** part of stock Xtream; only use if your provider documents extra parameters.
 - `IPTV_TUNERR_HDHR_GUIDE_URL` — optional http(s) URL to a **physical HDHomeRun-style** `guide.xml` (e.g. `http://192.168.1.50/guide.xml`). Merged **after** provider + external gap-fill; see [ADR 0004](../adr/0004-hdhr-guide-epg-merge.md).
 - `IPTV_TUNERR_HDHR_GUIDE_TIMEOUT` — fetch timeout for the HDHR guide URL (default `90s`).
+- `IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS` — optional comma-separated **IPv4** directed broadcast addresses for **UDP** HDHR discovery (`hdhr-scan` without **`-addr`**, and **`DiscoverLAN`**). Each entry is an IP (e.g. `192.168.1.255`, uses port **65001**) or `host:port`. Global `255.255.255.255` is always tried first. Non-IPv4 entries are skipped.
   - Tunerr HTTP: `GET /guide/epg-store.json` — row counts, `last_sync_utc`, `global_max_stop_unix`, `retain_past_hours`, `db_file_bytes`, `db_file_modified_utc`, `vacuum_after_prune`; add `?detail=1` for `channel_max_stop_unix` (incremental fetch horizon).
 
 ### XMLTV language normalization

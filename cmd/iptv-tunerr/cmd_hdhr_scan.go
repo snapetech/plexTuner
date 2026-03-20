@@ -28,7 +28,7 @@ func hdhrScanCommands() []commandSpec {
 		{
 			Name:    "hdhr-scan",
 			Section: "Lab/ops",
-			Summary: "Discover physical HDHomeRun tuners on LAN (UDP) or fetch discover/lineup via HTTP",
+			Summary: "Discover physical HDHomeRun tuners on LAN (UDP) or fetch discover/lineup via HTTP; optional IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS for directed subnet UDP broadcasts",
 			FlagSet: fs,
 			Run: func(cfg *config.Config, args []string) {
 				_ = cfg

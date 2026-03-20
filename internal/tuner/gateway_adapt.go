@@ -313,6 +313,57 @@ func autopilotURLHost(raw string) string {
 	return strings.ToLower(strings.TrimSpace(u.Hostname()))
 }
 
+// streamURLsSemanticallyEqual treats trailing-slash paths and default HTTP(S) ports as equivalent
+// so Autopilot remembered URLs still match catalog URLs after minor normalization drift.
+func streamURLsSemanticallyEqual(a, b string) bool {
+	a = strings.TrimSpace(a)
+	b = strings.TrimSpace(b)
+	if a == b {
+		return true
+	}
+	ua, err1 := url.Parse(a)
+	ub, err2 := url.Parse(b)
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	if !strings.EqualFold(ua.Scheme, ub.Scheme) {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(ua.Hostname()), strings.TrimSpace(ub.Hostname())) {
+		return false
+	}
+	ap := ua.Port()
+	bp := ub.Port()
+	if ap == "" {
+		ap = defaultPortForScheme(ua.Scheme)
+	}
+	if bp == "" {
+		bp = defaultPortForScheme(ub.Scheme)
+	}
+	if ap != bp {
+		return false
+	}
+	pa := strings.TrimSuffix(ua.EscapedPath(), "/")
+	pb := strings.TrimSuffix(ub.EscapedPath(), "/")
+	if pa == "" {
+		pa = "/"
+	}
+	if pb == "" {
+		pb = "/"
+	}
+	if pa != pb {
+		return false
+	}
+	return ua.RawQuery == ub.RawQuery
+}
+
+func defaultPortForScheme(scheme string) string {
+	if strings.EqualFold(scheme, "https") {
+		return "443"
+	}
+	return "80"
+}
+
 func upstreamURLAuthority(raw string) string {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
@@ -329,7 +380,7 @@ func (g *Gateway) autopilotPreferredStreamURL(channel *catalog.LiveChannel, clie
 	wantURL := strings.TrimSpace(row.PreferredURL)
 	wantHost := strings.TrimSpace(row.PreferredHost)
 	for _, candidate := range urls {
-		if wantURL != "" && candidate == wantURL {
+		if wantURL != "" && (candidate == wantURL || streamURLsSemanticallyEqual(candidate, wantURL)) {
 			return candidate
 		}
 	}

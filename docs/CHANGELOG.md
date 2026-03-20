@@ -21,6 +21,9 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **LP / LTV epics:** [EPIC-lineup-parity](epics/EPIC-lineup-parity.md) **Implementation status** aligned with shipped **LP-007–LP-009** / **LP-002–LP-003**; [EPIC-live-tv-intelligence](epics/EPIC-live-tv-intelligence.md) **Current status** updated (**INT-003**, Autopilot URL/host, **`intelligence.autopilot`** on **`/provider/profile.json`**). [hybrid-hdhr-iptv](how-to/hybrid-hdhr-iptv.md) §6 LTV endpoint table.
 
 ### Live TV intelligence (LTV) / lineup parity (LP)
+- **Autopilot URL normalization:** remembered **`preferred_url`** matches catalog **`StreamURLs`** when paths differ only by a trailing slash, scheme/host casing differs, or default **:80** / **:443** is omitted (**`streamURLsSemanticallyEqual`** in **`gateway_adapt.go`**); tests **`TestStreamURLsSemanticallyEqual`**, **`TestGateway_stream_prefersAutopilotRememberedURL_normalizedTrailingSlash`**.
+- **HDHR discovery (LP-001 polish):** **`IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS`** sends UDP discover probes to comma-separated directed IPv4 broadcasts (and optional **`ip:port`**) after the global **`255.255.255.255`** send — helps when global broadcast is filtered. **`iptv-tunerr hdhr-scan`** command summary documents the env.
+- **LP-012:** new [lineup-parity-lp012-closure](how-to/lineup-parity-lp012-closure.md) checklist; indexed from [docs/index](index.md) and [how-to index](how-to/index.md); **EPIC-lineup-parity** / **hybrid-hdhr** cross-links.
 - **`GET /provider/profile.json`**: includes **`intelligence.autopilot`** (`enabled`, `state_file`, `decision_count`, `hot_channels` sample) when Autopilot memory is configured — aggregates provider-runtime + learned playback signals for operator UIs. **`stream-investigate`** workflow actions include **`/autopilot/report.json`** and **`/ops/actions/autopilot-reset`**.
 
 ### Testing

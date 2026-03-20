@@ -7,6 +7,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -82,6 +84,42 @@ func trimNull(b []byte) []byte {
 	return b
 }
 
+// extraDiscoverBroadcastAddrs returns optional directed IPv4 broadcast targets from
+// IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS (comma-separated IPs or host:port).
+// Useful when 255.255.255.255 is filtered but e.g. 192.168.1.255 works.
+func extraDiscoverBroadcastAddrs() []*net.UDPAddr {
+	raw := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS"))
+	if raw == "" {
+		return nil
+	}
+	var out []*net.UDPAddr
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		host, portStr, err := net.SplitHostPort(part)
+		if err != nil {
+			host = part
+			portStr = strconv.Itoa(DiscoverPort)
+		}
+		port, err := strconv.Atoi(portStr)
+		if err != nil || port <= 0 || port > 65535 {
+			port = DiscoverPort
+		}
+		ip := net.ParseIP(host)
+		if ip == nil {
+			continue
+		}
+		v4 := ip.To4()
+		if v4 == nil {
+			continue
+		}
+		out = append(out, &net.UDPAddr{IP: v4, Port: port})
+	}
+	return out
+}
+
 func enableBroadcast(c *net.UDPConn) error {
 	raw, err := c.SyscallConn()
 	if err != nil {
@@ -98,7 +136,8 @@ func enableBroadcast(c *net.UDPConn) error {
 }
 
 // DiscoverLAN broadcasts an HDHomeRun discovery request and collects responses until timeout.
-// Requires IPv4; broadcast to 255.255.255.255:DiscoverPort.
+// Uses IPv4 global broadcast (255.255.255.255:DiscoverPort) plus any
+// IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS directed subnet broadcasts.
 func DiscoverLAN(ctx context.Context, timeout time.Duration) ([]DiscoveredDevice, error) {
 	if timeout <= 0 {
 		timeout = 3 * time.Second
@@ -122,6 +161,9 @@ func DiscoverLAN(ctx context.Context, timeout time.Duration) ([]DiscoveredDevice
 	broadcast := &net.UDPAddr{IP: net.IPv4(255, 255, 255, 255), Port: DiscoverPort}
 	if _, err := conn.WriteToUDP(payload, broadcast); err != nil {
 		return nil, fmt.Errorf("hdhomerun: broadcast discover: %w", err)
+	}
+	for _, dst := range extraDiscoverBroadcastAddrs() {
+		_, _ = conn.WriteToUDP(payload, dst)
 	}
 
 	seen := make(map[uint32]struct{})
