@@ -18,11 +18,14 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Runtime settings snapshot**: added **`/debug/runtime.json`** so operators can inspect effective tuner/guide/provider/HDHR/web UI settings without spelunking env files or logs.
 - **Web UI envs**: added **`IPTV_TUNERR_WEBUI_DISABLED`**, **`IPTV_TUNERR_WEBUI_PORT`**, and **`IPTV_TUNERR_WEBUI_ALLOW_LAN`**. The older `/ui/` pages on the tuner port remain available.
 - **Operator actions + workflows**: the deck now drives safe control endpoints under **`/ops/actions/*`** plus workflow/playbook endpoints under **`/ops/workflows/*`** (`guide-repair`, `stream-investigate`, `ops-recovery`), and the UI exposes them with action docks, workflow modals, and signal boards instead of treating operations as raw payloads only.
+- **Session telemetry**: the deck now keeps a browser-local rolling history of key signals (guide, stream, recorder, ops) and renders trend cards/sparklines so operators can see direction of travel instead of only the latest snapshot.
 
 ### Streaming / HLS (Tunerr-native mux)
 - **`?mux=hls`** on **`/stream/<channel>`**: returns a rewritten **HLS playlist** whose media lines point back through Tunerr (`/stream/<id>?mux=hls&seg=<encoded-upstream-url>`), and fetches segments/variants through the same proxy. **MPEG-TS relay** remains the default when `mux` is omitted or set to `mpegts`.
 - **`IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`**: optional prefix (e.g. `http://192.168.1.10:5004`) so playlist lines use **absolute** Tunerr URLs; exposed in **`/debug/runtime.json`** (`tuner.stream_public_base_url`).
 - **How-to:** [docs/how-to/hls-mux-proxy.md](how-to/hls-mux-proxy.md); transcode reference updated in [transcode-profiles.md](reference/transcode-profiles.md).
+- **`?mux=hls` playlist rewrite:** tag lines with **`URI="..."`** (e.g. **`#EXT-X-KEY`**, **`#EXT-X-MAP`**, **`#EXT-X-STREAM-INF`**) are rewritten through the same Tunerr proxy as media lines so keys/init/variant playlists can use upstream auth and cookies.
+- **Upstream forwarding:** **`Range`** / **`If-Range`** are forwarded on gateway upstream requests (with **`Cookie`**, **`Referer`**, **`Origin`**). **`?mux=hls&seg=`** segment/key responses preserve **`206 Partial Content`** and **`Content-Range`** when the CDN uses byte ranges.
 
 ### Provider EPG + SQLite (incremental follow-ups)
 - **`IPTV_TUNERR_PROVIDER_EPG_INCREMENTAL`** + suffix tokens `{from_unix}` / `{to_unix}` / `{from_ymd}` / `{to_ymd}` on **`IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX`** (horizon from SQLite when available).

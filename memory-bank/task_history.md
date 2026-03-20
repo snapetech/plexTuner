@@ -22,6 +22,34 @@ Append-only. One entry per completed task.
 
 ## Entries
 
+- Date: 2026-03-20
+  Title: HLS mux — forward Range/If-Range; preserve 206 + Content-Range on seg=
+  Summary:
+    - `forwardedUpstreamHeaderNames`: `Range`, `If-Range`; `serveHLSMuxTarget` accepts 200/206, copies Content-Range/Accept-Ranges/etc. for binary responses; playlists still require 200.
+    - Test `TestGateway_serveHLSMuxTarget_forwardsRangeAndPartialContent`; docs/cli CHANGELOG.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Applies to all gateway upstream requests, not only mux (helps any ranged upstream fetch).
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway_upstream.go`, `internal/tuner/gateway_hls.go`
+
+- Date: 2026-03-20
+  Title: HLS mux proxy — rewrite URI= on #EXT-X-KEY / MAP / STREAM-INF
+  Summary:
+    - `rewriteHLSQuotedURIAttrs` + `resolveHLSMediaRef` in `internal/tuner/gateway_hls.go`; tag lines with `URI="..."` now proxy like segment lines.
+    - Test `TestRewriteHLSPlaylistToGatewayProxy_rewritesExtXKeyAndStreamInfURI`; CHANGELOG + how-to caveat update.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Widevine/FairPlay DRM not in scope.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway_hls.go`
+
 - Date: 2026-03-19
   Title: HLS mux proxy how-to + doc/index sweep
   Summary:
@@ -2694,6 +2722,18 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - Added a third operator workflow (`ops-recovery`) that summarizes recorder, ghost-hunter, and Autopilot state into a guided recovery playbook instead of leaving operations as disconnected cards.
     - Reworked the deck with a visual signal board and stronger ops affordances so the surface leads with operator judgment and lane health, not only text summaries.
     - Folded in the previously dirty HLS mux follow-up work: `?mux=hls` docs/how-to, `IPTV_TUNERR_STREAM_PUBLIC_BASE_URL` runtime snapshot exposure, README/reference/features/index updates, and regression coverage for the HLS playlist path.
+  Verification:
+    - `go test ./...`
+    - `./scripts/verify`
+
+---
+
+- Date: 2026-03-20
+  Title: Add session-local telemetry trends to the control deck
+  Summary:
+    - Added browser-session telemetry sampling in the integrated web UI so the deck keeps a rolling memory of key signals instead of re-rendering each fetch as an isolated snapshot.
+    - Introduced trend cards and lightweight sparkline visuals for guide confidence, stream stability, recorder yield, and ops cleanliness, making the page read more like an active control room than a static report.
+    - Kept telemetry capture tied to the fetch/reload path rather than the render path so searches, mode changes, and modal interactions do not distort the sampled history.
   Verification:
     - `go test ./...`
     - `./scripts/verify`

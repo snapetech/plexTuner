@@ -342,7 +342,7 @@ Runtime-only provider intelligence surface:
 What it exposes:
 - configured tuner limit
 - learned/effective tuner limit after upstream concurrency-cap signals
-- forwarded auth-context headers (`Cookie`, `Referer`, `Origin`)
+- forwarded auth-context / fetch headers (`Cookie`, `Referer`, `Origin`, `Range`, `If-Range`)
 - whether provider basic auth is configured
 - whether `IPTV_TUNERR_FFMPEG_HLS_RECONNECT` and `IPTV_TUNERR_FETCH_CF_REJECT` are active
 - whether provider autotune is enabled and whether HLS reconnect has been auto-armed
@@ -952,6 +952,7 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
 - `IPTV_TUNERR_STREAM_BUFFER_BYTES` (`0|auto|<bytes>`) — `auto` enables adaptive buffering when transcoding; `0` disables; a fixed integer (e.g. `2097152`) sets a 2 MiB buffer.
 - `IPTV_TUNERR_STREAM_PUBLIC_BASE_URL` — optional **no-trailing-slash** base URL (e.g. `http://192.168.1.10:5004`) prepended to **`?mux=hls`** playlist media lines so clients that mishandle relative URLs still resolve Tunerr. Empty = relative `/stream/...` lines only.
 - **HLS mux query** — `GET /stream/<channel>?mux=hls` on an **HLS** upstream returns an **MPEG-URL playlist** proxied through Tunerr (not MPEG-TS). Nested playlists and segments use `?mux=hls&seg=<url>`. Default stream behavior remains TS remux/transcode when `mux` is omitted.
+- **Byte-range segments:** client **`Range`** / **`If-Range`** headers are forwarded to upstream playlist/segment/key fetches; **`206`** + **`Content-Range`** are passed back for **`?mux=hls&seg=`** binary responses (e.g. **`#EXT-X-BYTERANGE`**).
 - `IPTV_TUNERR_FFMPEG_PATH` — override the ffmpeg binary path (e.g. `/opt/ffmpeg-static/current/ffmpeg`).
 - `IPTV_TUNERR_FFMPEG_DISABLED` — disable ffmpeg entirely for HLS relay and stay on the Go playlist/segment fetch path. Useful when ffmpeg cannot satisfy provider header/cookie requirements.
 - `IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE` — keep the original ffmpeg input hostname instead of rewriting it to a resolved IP. Useful for CDNs that validate the hostname against `Host` or TLS state.

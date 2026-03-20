@@ -38,6 +38,8 @@ This mode is **not** ffmpeg segment packaging: Tunerr **rewrites** playlist line
 
 5. Inspect effective settings at **`/debug/runtime.json`** (`tuner.stream_public_base_url`) and SQLite/EPG flags at **`/guide/epg-store.json`** when using incremental provider suffixes.
 
+Byte-range HLS (**`#EXT-X-BYTERANGE`**) requires the player’s **`Range`** request to reach the CDN: Tunerr forwards **`Range`** / **`If-Range`** on upstream fetches and returns **`206 Partial Content`** with **`Content-Range`** when the CDN responds that way.
+
 ## Verify
 
 - `curl -sI 'http://127.0.0.1:5004/stream/<id>?mux=hls'` → `200` and `Content-Type` containing `mpegurl`.
@@ -46,7 +48,7 @@ This mode is **not** ffmpeg segment packaging: Tunerr **rewrites** playlist line
 ## Caveats
 
 - This path **does not** replace Plex’s usual **MPEG-TS** HDHR stream expectation; use it where HLS-through-Tunerr is intentional.
-- **DRM / encrypted HLS** (`#EXT-X-KEY`) is not specially rewritten; if your provider uses keys, test end-to-end with your client.
+- **AES-128 / init map:** Tunerr rewrites **`URI="..."`** on common HLS tags (including **`#EXT-X-KEY`**, **`#EXT-X-MAP`**, variant **`#EXT-X-STREAM-INF`**) so keys and fMP4 init segments are fetched through the same **`?mux=hls&seg=`** proxy. **Widevine / FairPlay** and other DRM systems are not handled here—test with your client.
 
 See also
 --------

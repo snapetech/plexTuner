@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -268,14 +269,22 @@ func (g *Gateway) serveHLSMuxTarget(w http.ResponseWriter, r *http.Request, clie
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusPartialContent:
+	default:
 		return errors.New("hls target http status " + strconv.Itoa(resp.StatusCode))
 	}
+
 	effectiveURL := targetURL
 	if resp.Request != nil && resp.Request.URL != nil {
 		effectiveURL = resp.Request.URL.String()
 	}
+
 	if isHLSResponse(resp, effectiveURL) {
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("hls playlist unexpected status %d", resp.StatusCode)
+		}
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
@@ -287,13 +296,19 @@ func (g *Gateway) serveHLSMuxTarget(w http.ResponseWriter, r *http.Request, clie
 		_, _ = w.Write(out)
 		return nil
 	}
+
+	for _, h := range []string{"Content-Range", "Accept-Ranges", "Content-Length", "ETag", "Last-Modified"} {
+		if v := resp.Header.Get(h); v != "" {
+			w.Header().Set(h, v)
+		}
+	}
 	if ct := strings.TrimSpace(resp.Header.Get("Content-Type")); ct != "" {
 		w.Header().Set("Content-Type", ct)
 	} else {
 		w.Header().Set("Content-Type", "video/mp2t")
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(resp.StatusCode)
 	_, err = io.Copy(w, resp.Body)
 	return err
 }

@@ -115,6 +115,39 @@ seg.ts
 	}
 }
 
+func TestGateway_serveHLSMuxTarget_forwardsRangeAndPartialContent(t *testing.T) {
+	var gotRange string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRange = r.Header.Get("Range")
+		w.Header().Set("Content-Type", "video/mp2t")
+		w.Header().Set("Content-Range", "bytes 0-3/99")
+		w.Header().Set("Content-Length", "4")
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write([]byte("1234"))
+	}))
+	defer up.Close()
+
+	g := &Gateway{}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/ch1?mux=hls&seg="+url.QueryEscape(up.URL+"/seg.ts"), nil)
+	req.Header.Set("Range", "bytes=0-3")
+	w := httptest.NewRecorder()
+	if err := g.serveHLSMuxTarget(w, req, up.Client(), "ch1", up.URL+"/seg.ts"); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != http.StatusPartialContent {
+		t.Fatalf("code=%d want 206", w.Code)
+	}
+	if gotRange != "bytes=0-3" {
+		t.Fatalf("upstream Range header: got %q", gotRange)
+	}
+	if w.Header().Get("Content-Range") == "" {
+		t.Fatal("expected Content-Range on downstream response")
+	}
+	if got := w.Body.String(); got != "1234" {
+		t.Fatalf("body=%q", got)
+	}
+}
+
 func TestGateway_stream_hlsMux_returnsRewrittenPlaylist(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")

@@ -432,6 +432,11 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
+.trend-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
 .signal-card {
   padding: 16px;
   border-radius: 22px;
@@ -474,6 +479,64 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
 }
 .signal-fill.bad {
   background: linear-gradient(90deg, rgba(141,45,45,0.92), rgba(200,81,81,0.92));
+}
+.trend-card {
+  padding: 16px;
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.76);
+  box-shadow: var(--shadow);
+}
+.trend-card strong {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+.trend-meta {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.trend-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.trend-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+.trend-delta {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+.trend-delta.up {
+  color: var(--good);
+}
+.trend-delta.down {
+  color: var(--bad);
+}
+.sparkline {
+  display: grid;
+  grid-auto-flow: column;
+  align-items: end;
+  gap: 4px;
+  height: 62px;
+  margin-top: 12px;
+}
+.sparkline span {
+  display: block;
+  min-width: 0;
+  border-radius: 999px 999px 6px 6px;
+  background: linear-gradient(180deg, rgba(191,79,38,0.8), rgba(15,108,115,0.8));
+}
+.sparkline span.good {
+  background: linear-gradient(180deg, rgba(29,115,72,0.88), rgba(46,147,95,0.88));
+}
+.sparkline span.warn {
+  background: linear-gradient(180deg, rgba(155,107,18,0.9), rgba(210,148,30,0.88));
+}
+.sparkline span.bad {
+  background: linear-gradient(180deg, rgba(141,45,45,0.92), rgba(200,81,81,0.9));
 }
 .action-banner {
   padding: 14px 18px;
@@ -729,7 +792,7 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
 @media (max-width: 860px) {
   .content { padding: 16px; }
   .hero { padding: 22px; border-radius: 26px; }
-  .hero-grid, .panel-grid, .stats, .story-grid, .route-grid, .index-grid, .action-grid, .signal-grid {
+  .hero-grid, .panel-grid, .stats, .story-grid, .route-grid, .index-grid, .action-grid, .signal-grid, .trend-grid {
     grid-template-columns: 1fr;
   }
   .hero-meta, .alert-board {
@@ -858,6 +921,7 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
     <section class="alert-board" id="alert-board"></section>
     <section class="action-dock" id="action-dock"></section>
     <section class="signal-grid" id="signal-grid"></section>
+    <section class="trend-grid" id="trend-grid"></section>
 
     <div class="surface">
       <section class="section active" data-mode="overview">
@@ -1085,7 +1149,11 @@ const state = {
   modalView: { kind: "raw", key: "runtime" },
   refreshTimer: null,
   refreshRateSec: 30,
-  actionFeedback: null
+  actionFeedback: null,
+  telemetry: {
+    samples: [],
+    maxSamples: 18
+  }
 };
 
 const healthPill = document.getElementById("health-pill");
@@ -1097,6 +1165,7 @@ const heroMeta = document.getElementById("hero-meta");
 const alertBoard = document.getElementById("alert-board");
 const actionDock = document.getElementById("action-dock");
 const signalGrid = document.getElementById("signal-grid");
+const trendGrid = document.getElementById("trend-grid");
 const sessionKV = document.getElementById("session-kv");
 const decisionBoard = document.getElementById("decision-board");
 const postureCopy = document.getElementById("posture-copy");
@@ -1226,6 +1295,42 @@ function createSignalCard(title, value, percent, meta, tone = "") {
       <div class="signal-value">${esc(value)}</div>
       <div class="signal-bar"><div class="signal-fill ${tone}" style="width:${clampPercent(percent)}%"></div></div>
       <div class="meta">${esc(meta)}</div>
+    </article>
+  `;
+}
+
+function deltaLabel(delta, suffix = "%") {
+  if (!Number.isFinite(delta) || Math.abs(delta) < 0.5) return { label: "flat", tone: "" };
+  const rounded = Math.round(delta);
+  return {
+    label: `${rounded > 0 ? "+" : ""}${rounded}${suffix}`,
+    tone: rounded > 0 ? "up" : "down"
+  };
+}
+
+function sparkTone(value) {
+  if (value >= 85) return "good";
+  if (value >= 55) return "warn";
+  return "bad";
+}
+
+function createTrendCard(title, value, history, meta, suffix = "%") {
+  const values = history.map((item) => Number(item.value || 0));
+  const latest = values.length ? values[values.length - 1] : 0;
+  const previous = values.length > 1 ? values[values.length - 2] : latest;
+  const delta = deltaLabel(latest - previous, suffix);
+  const bars = values.length
+    ? values.map((item) => `<span class="${sparkTone(item)}" style="height:${Math.max(8, clampPercent(item) * 0.62)}px"></span>`).join("")
+    : `<span class="warn" style="height:8px"></span>`;
+  return `
+    <article class="trend-card">
+      <strong>${esc(title)}</strong>
+      <div class="trend-head">
+        <div class="trend-value">${esc(value)}</div>
+        <div class="trend-delta ${delta.tone}">${esc(delta.label)}</div>
+      </div>
+      <div class="sparkline">${bars}</div>
+      <div class="trend-meta">${esc(meta)}</div>
     </article>
   `;
 }
@@ -1421,7 +1526,61 @@ function fillRawSelectors() {
 function renderFilters() {
   activeFilters.innerHTML = state.filter
     ? `<span class="pill">Filter active: ${esc(state.filter)}</span>`
-    : `<span class="pill">Mode: ${esc(modeTitles[state.mode][0])}</span><span class="pill">Deck target: [[.TunerBase]]</span>`;
+    : `<span class="pill">Mode: ${esc(modeTitles[state.mode][0])}</span><span class="pill">Deck target: [[.TunerBase]]</span><span class="pill">Session memory: ${state.telemetry.samples.length} samples</span>`;
+}
+
+function deriveMetrics(payloads) {
+  const health = payloads.health || { ok: false, status: 0, body: {} };
+  const guideHealth = payloads.guideHealth?.body || {};
+  const recorder = payloads.recorder?.body || {};
+  const attempts = normalizeArray(payloads.attempts?.body);
+  const opsWorkflow = payloads.opsWorkflow?.body || {};
+  const totalGuideChannels = Number(guideHealth.summary?.total_channels || guideHealth.channel_count || 0);
+  const guideReal = Number(guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes || 0);
+  const guidePercent = totalGuideChannels > 0 ? (guideReal / totalGuideChannels) * 100 : 0;
+  const failedAttempts = attempts.filter((item) => {
+    const val = `${item.reason || item.result || item.status || ""}`.toLowerCase();
+    return val && val !== "ok";
+  });
+  const streamPercent = attempts.length > 0 ? ((attempts.length - failedAttempts.length) / attempts.length) * 100 : 100;
+  const recorderTotal = Number((recorder.summary?.completed_count || 0) + (recorder.summary?.failed_count || 0));
+  const recorderPercent = recorderTotal > 0 ? ((recorder.summary?.completed_count || 0) / recorderTotal) * 100 : (recorder.summary ? 100 : 0);
+  const opsRisk = Number((opsWorkflow.summary?.ghost?.stale_count || 0) + (opsWorkflow.summary?.recorder?.failed_count || 0) + (opsWorkflow.summary?.recorder?.interrupted_count || 0));
+  const opsPercent = opsRisk > 0 ? Math.max(15, 100 - (opsRisk * 20)) : 100;
+  return {
+    healthOK: !!health.ok,
+    guidePercent,
+    streamPercent,
+    recorderPercent,
+    opsPercent,
+    attemptsCount: attempts.length,
+    failedAttemptCount: failedAttempts.length,
+    recorderFailed: Number(recorder.summary?.failed_count || 0),
+    recorderCompleted: Number(recorder.summary?.completed_count || 0),
+    opsRisk,
+    guideReal,
+    totalGuideChannels
+  };
+}
+
+function recordTelemetry(metrics) {
+  const samples = state.telemetry.samples;
+  const last = samples.length ? samples[samples.length - 1] : null;
+  if (last && last.tick === metrics.attemptsCount && last.guidePercent === metrics.guidePercent && last.streamPercent === metrics.streamPercent && last.recorderPercent === metrics.recorderPercent && last.opsPercent === metrics.opsPercent && last.healthOK === metrics.healthOK) {
+    return;
+  }
+  samples.push({
+    at: Date.now(),
+    tick: metrics.attemptsCount,
+    healthOK: metrics.healthOK,
+    guidePercent: metrics.guidePercent,
+    streamPercent: metrics.streamPercent,
+    recorderPercent: metrics.recorderPercent,
+    opsPercent: metrics.opsPercent
+  });
+  if (samples.length > state.telemetry.maxSamples) {
+    samples.splice(0, samples.length - state.telemetry.maxSamples);
+  }
 }
 
 function renderDeck() {
@@ -1444,6 +1603,7 @@ function renderDeck() {
   const guideWorkflow = state.payloads.guideWorkflow?.body || {};
   const streamWorkflow = state.payloads.streamWorkflow?.body || {};
   const opsWorkflow = state.payloads.opsWorkflow?.body || {};
+  const metrics = deriveMetrics(state.payloads);
   const failedAttempts = attempts.filter((item) => {
     const val = `${item.reason || item.result || item.status || ""}`.toLowerCase();
     return val && val !== "ok";
@@ -1499,20 +1659,18 @@ function renderDeck() {
   ].join("");
   renderActionDock(operatorStatus, guideWorkflow, streamWorkflow, opsWorkflow);
 
-  const totalGuideChannels = Number(guideHealth.summary?.total_channels || guideHealth.channel_count || 0);
-  const guideReal = Number(guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes || 0);
-  const guidePercent = totalGuideChannels > 0 ? (guideReal / totalGuideChannels) * 100 : 0;
-  const streamPercent = attempts.length > 0 ? ((attempts.length - failedAttempts.length) / attempts.length) * 100 : 100;
-  const recorderTotal = Number((recorder.summary?.completed_count || 0) + (recorder.summary?.failed_count || 0));
-  const recorderPercent = recorderTotal > 0 ? ((recorder.summary?.completed_count || 0) / recorderTotal) * 100 : (recorder.summary ? 100 : 0);
-  const opsRisk = Number((opsWorkflow.summary?.ghost?.stale_count || 0) + (opsWorkflow.summary?.recorder?.failed_count || 0) + (opsWorkflow.summary?.recorder?.interrupted_count || 0));
-  const opsPercent = opsRisk > 0 ? Math.max(15, 100 - (opsRisk * 20)) : 100;
-
   signalGrid.innerHTML = [
-    createSignalCard("Guide Confidence", `${clampPercent(guidePercent)}%`, guidePercent, `${guideReal} of ${totalGuideChannels || 0} channels carry listings.`, guidePercent >= 85 ? "good" : guidePercent >= 55 ? "warn" : "bad"),
-    createSignalCard("Stream Stability", `${clampPercent(streamPercent)}%`, streamPercent, `${failedAttempts.length} non-OK outcomes across ${attempts.length} recent attempts.`, streamPercent >= 85 ? "good" : streamPercent >= 55 ? "warn" : "bad"),
-    createSignalCard("Recorder Yield", recorder.summary ? `${clampPercent(recorderPercent)}%` : "n/a", recorderPercent, recorder.summary ? `${recorder.summary.completed_count || 0} completed vs ${recorder.summary.failed_count || 0} failed.` : "Recorder state is not configured.", recorder.summary ? (recorderPercent >= 85 ? "good" : recorderPercent >= 55 ? "warn" : "bad") : "warn"),
-    createSignalCard("Ops Cleanliness", `${clampPercent(opsPercent)}%`, opsPercent, opsRisk > 0 ? `${opsRisk} active ops recovery signals need attention.` : "No recorder/ghost recovery pressure in the current snapshot.", opsPercent >= 85 ? "good" : opsPercent >= 55 ? "warn" : "bad")
+    createSignalCard("Guide Confidence", `${clampPercent(metrics.guidePercent)}%`, metrics.guidePercent, `${metrics.guideReal} of ${metrics.totalGuideChannels || 0} channels carry listings.`, metrics.guidePercent >= 85 ? "good" : metrics.guidePercent >= 55 ? "warn" : "bad"),
+    createSignalCard("Stream Stability", `${clampPercent(metrics.streamPercent)}%`, metrics.streamPercent, `${metrics.failedAttemptCount} non-OK outcomes across ${metrics.attemptsCount} recent attempts.`, metrics.streamPercent >= 85 ? "good" : metrics.streamPercent >= 55 ? "warn" : "bad"),
+    createSignalCard("Recorder Yield", recorder.summary ? `${clampPercent(metrics.recorderPercent)}%` : "n/a", metrics.recorderPercent, recorder.summary ? `${metrics.recorderCompleted} completed vs ${metrics.recorderFailed} failed.` : "Recorder state is not configured.", recorder.summary ? (metrics.recorderPercent >= 85 ? "good" : metrics.recorderPercent >= 55 ? "warn" : "bad") : "warn"),
+    createSignalCard("Ops Cleanliness", `${clampPercent(metrics.opsPercent)}%`, metrics.opsPercent, metrics.opsRisk > 0 ? `${metrics.opsRisk} active ops recovery signals need attention.` : "No recorder/ghost recovery pressure in the current snapshot.", metrics.opsPercent >= 85 ? "good" : metrics.opsPercent >= 55 ? "warn" : "bad")
+  ].join("");
+
+  trendGrid.innerHTML = [
+    createTrendCard("Guide Trend", `${clampPercent(metrics.guidePercent)}%`, state.telemetry.samples.map((item) => ({ value: item.guidePercent })), `${state.telemetry.samples.length} refresh samples in this browser session.`),
+    createTrendCard("Stream Trend", `${clampPercent(metrics.streamPercent)}%`, state.telemetry.samples.map((item) => ({ value: item.streamPercent })), `${metrics.failedAttemptCount} failures in the current attempt window.`),
+    createTrendCard("Recorder Trend", recorder.summary ? `${clampPercent(metrics.recorderPercent)}%` : "n/a", state.telemetry.samples.map((item) => ({ value: item.recorderPercent })), recorder.summary ? "Completion ratio across the current loaded recorder summary." : "Recorder not configured in this process."),
+    createTrendCard("Ops Trend", `${clampPercent(metrics.opsPercent)}%`, state.telemetry.samples.map((item) => ({ value: item.opsPercent })), metrics.opsRisk > 0 ? "Recovery pressure is rising inside this session." : "Recovery pressure is flat or absent.")
   ].join("");
 
   decisionBoard.innerHTML = filterCards([
@@ -1642,6 +1800,7 @@ async function reloadDeck() {
     fetchJSON(key, path).catch((error) => ({ label: key, path, ok: false, status: 0, body: { error: String(error) } }))
   ));
   state.payloads = Object.fromEntries(entries.map((item) => [item.label, item]));
+  recordTelemetry(deriveMetrics(state.payloads));
   renderDeck();
   rawSelect.value = state.selectedRaw;
   await renderRaw();
