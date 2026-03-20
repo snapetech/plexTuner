@@ -176,6 +176,12 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
   background: rgba(255,255,255,0.75);
   padding: 0.8rem 1rem;
 }
+.control-select {
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.75);
+  padding: 0.78rem 1rem;
+}
 .hero {
   position: relative;
   overflow: hidden;
@@ -222,6 +228,26 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
   flex-wrap: wrap;
   margin-top: 18px;
 }
+.hero-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+.meta-pill {
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.66);
+}
+.meta-pill strong {
+  display: block;
+  margin-bottom: 0.3rem;
+}
+.meta-pill span {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
 .pill {
   display: inline-flex;
   align-items: center;
@@ -267,6 +293,42 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-top: 18px;
+}
+.alert-board {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+.alert-card {
+  padding: 16px;
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.74);
+  box-shadow: var(--shadow);
+}
+.alert-card h3 {
+  margin: 0 0 0.75rem;
+  font-family: Georgia, "Times New Roman", serif;
+  letter-spacing: -0.02em;
+}
+.alert-card ul {
+  margin: 0;
+  padding-left: 1rem;
+  color: var(--muted);
+  font-size: 0.93rem;
+}
+.alert-card li + li {
+  margin-top: 0.45rem;
+}
+.alert-card.incident {
+  background: rgba(255,245,243,0.92);
+}
+.alert-card.watch {
+  background: rgba(255,250,238,0.92);
+}
+.alert-card.win {
+  background: rgba(244,251,246,0.92);
 }
 .stat {
   padding: 18px;
@@ -334,6 +396,18 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
   background: rgba(255,255,255,0.64);
   border: 1px solid rgba(60, 46, 32, 0.08);
 }
+.card.tone-warn {
+  background: rgba(255,248,236,0.9);
+  border-color: rgba(155,107,18,0.18);
+}
+.card.tone-bad {
+  background: rgba(255,244,241,0.92);
+  border-color: rgba(141,45,45,0.18);
+}
+.card.tone-good {
+  background: rgba(243,251,245,0.92);
+  border-color: rgba(29,115,72,0.18);
+}
 .card strong {
   display: block;
   margin-bottom: 0.35rem;
@@ -341,6 +415,16 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
 .card .meta {
   color: var(--muted);
   font-size: 0.9rem;
+}
+.card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.tiny {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.82rem;
 }
 .story-grid {
   display: grid;
@@ -508,6 +592,9 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
   .hero-grid, .panel-grid, .stats, .story-grid, .route-grid, .index-grid {
     grid-template-columns: 1fr;
   }
+  .hero-meta, .alert-board {
+    grid-template-columns: 1fr;
+  }
   .detail-line { grid-template-columns: 1fr; gap: 4px; }
 }
 </style>
@@ -572,6 +659,12 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
         </div>
         <div class="controls">
           <input id="deck-search" class="search" type="search" placeholder="Filter cards, endpoints, hosts, channels, settings">
+          <select id="refresh-rate" class="control-select" aria-label="Auto refresh">
+            <option value="0">Refresh: manual</option>
+            <option value="15">Refresh: 15s</option>
+            <option value="30" selected>Refresh: 30s</option>
+            <option value="60">Refresh: 60s</option>
+          </select>
           <button id="reload-all" type="button">Reload Deck</button>
           <button id="open-modal" type="button">Open Raw Modal</button>
         </div>
@@ -593,6 +686,7 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
               <a class="pill" href="/api/debug/stream-attempts.json?limit=20" target="_blank" rel="noreferrer">Stream Attempts</a>
               <a class="pill" href="/api/recordings/recorder.json?limit=20" target="_blank" rel="noreferrer">Recorder Report</a>
             </div>
+            <div class="hero-meta" id="hero-meta"></div>
             <div class="mode-strip" id="active-filters"></div>
           </div>
           <div class="spotlight">
@@ -621,6 +715,7 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
     </header>
 
     <section class="stats" id="stats"></section>
+    <section class="alert-board" id="alert-board"></section>
 
     <div class="surface">
       <section class="section active" data-mode="overview">
@@ -816,7 +911,9 @@ const state = {
   mode: "overview",
   filter: "",
   payloads: {},
-  selectedRaw: "runtime"
+  selectedRaw: "runtime",
+  refreshTimer: null,
+  refreshRateSec: 30
 };
 
 const healthPill = document.getElementById("health-pill");
@@ -824,6 +921,8 @@ const sidebarHealth = document.getElementById("sidebar-health");
 const crumbMode = document.getElementById("crumb-mode");
 const crumbFocus = document.getElementById("crumb-focus");
 const activeFilters = document.getElementById("active-filters");
+const heroMeta = document.getElementById("hero-meta");
+const alertBoard = document.getElementById("alert-board");
 const sessionKV = document.getElementById("session-kv");
 const decisionBoard = document.getElementById("decision-board");
 const postureCopy = document.getElementById("posture-copy");
@@ -845,6 +944,7 @@ const rawModal = document.getElementById("raw-modal");
 const modalOutput = document.getElementById("modal-output");
 const modalTitle = document.getElementById("modal-title");
 const modalLabel = document.getElementById("modal-label");
+const refreshRate = document.getElementById("refresh-rate");
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"]/g, (ch) => ({
@@ -867,8 +967,11 @@ function normalizeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
-function createCard(title, body, meta = "", tone = "") {
-  return `<div class="card ${tone}"><strong>${esc(title)}</strong><div>${body}</div>${meta ? `<div class="meta">${meta}</div>` : ""}</div>`;
+function createCard(title, body, meta = "", tone = "", endpointKey = "") {
+  const actions = endpointKey
+    ? `<div class="card-actions"><button class="tiny" type="button" data-inspect="${esc(endpointKey)}">Inspect Payload</button></div>`
+    : "";
+  return `<div class="card ${tone}"><strong>${esc(title)}</strong><div>${body}</div>${meta ? `<div class="meta">${meta}</div>` : ""}${actions}</div>`;
 }
 
 function createStat(label, value, note) {
@@ -877,6 +980,22 @@ function createStat(label, value, note) {
 
 function createTimeline(title, body, tone = "") {
   return `<div class="timeline-item ${tone}"><strong>${esc(title)}</strong><div class="meta">${body}</div></div>`;
+}
+
+function createAlertCard(kind, title, items) {
+  return `<article class="alert-card ${kind}"><h3>${esc(title)}</h3><ul>${items.map((item) => `<li>${esc(item)}</li>`).join("")}</ul></article>`;
+}
+
+function scheduleRefresh() {
+  if (state.refreshTimer) {
+    clearInterval(state.refreshTimer);
+    state.refreshTimer = null;
+  }
+  if (state.refreshRateSec > 0) {
+    state.refreshTimer = setInterval(() => {
+      reloadDeck();
+    }, state.refreshRateSec * 1000);
+  }
 }
 
 function filterCards(items) {
@@ -963,6 +1082,10 @@ function renderDeck() {
   const provider = state.payloads.provider?.body || {};
   const recorder = state.payloads.recorder?.body || {};
   const attempts = normalizeArray(state.payloads.attempts?.body);
+  const failedAttempts = attempts.filter((item) => {
+    const val = `${item.reason || item.result || item.status || ""}`.toLowerCase();
+    return val && val !== "ok";
+  });
 
   setHealth(health.ok, health.ok ? "Healthy" : `HTTP ${health.status}`);
   renderFilters();
@@ -980,11 +1103,44 @@ function renderDeck() {
     `<div class="detail-line"><dt>${esc(label)}</dt><dd>${esc(pretty(value))}</dd></div>`
   ).join("");
 
+  heroMeta.innerHTML = [
+    `<div class="meta-pill"><strong>Active mode</strong><span>${esc(modeTitles[state.mode][0])}</span></div>`,
+    `<div class="meta-pill"><strong>Refresh cadence</strong><span>${state.refreshRateSec > 0 ? `${state.refreshRateSec}s auto` : "manual only"}</span></div>`,
+    `<div class="meta-pill"><strong>Payload posture</strong><span>${health.ok ? "live deck with reachable tuner" : "deck up, tuner degraded"}</span></div>`
+  ].join("");
+
+  const incidents = [];
+  if (!health.ok) incidents.push(`Tuner health endpoint is returning HTTP ${health.status}.`);
+  if ((guideHealth.summary?.stale_channels || 0) > 0) incidents.push(`${guideHealth.summary.stale_channels} guide channels are stale.`);
+  if ((guideHealth.summary?.placeholder_only_channels || 0) > 0) incidents.push(`${guideHealth.summary.placeholder_only_channels} guide channels are placeholder-only.`);
+  if ((recorder.summary?.failed_count || 0) > 0) incidents.push(`${recorder.summary.failed_count} recorder items are failed.`);
+  if (failedAttempts.length > 0) incidents.push(`${failedAttempts.length} recent stream attempts are non-OK.`);
+  if (incidents.length === 0) incidents.push("No immediate red flags in the currently loaded payloads.");
+
+  const watchItems = [];
+  watchItems.push(`Provider entry count: ${pretty(runtime.provider?.entry_count || runtime.provider?.base_urls?.length || 0)}.`);
+  watchItems.push(`Block Cloudflare providers: ${pretty(runtime.provider?.block_cf_providers)}.`);
+  watchItems.push(`Web UI LAN access: ${pretty(runtime.webui?.allow_lan)}.`);
+  watchItems.push(`EPG SQLite incremental upsert: ${pretty(runtime.guide?.epg_sqlite_incremental_upsert)}.`);
+
+  const wins = [];
+  if (health.ok) wins.push("Deck can reach the tuner through the dedicated proxy origin.");
+  if ((guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes || 0) > 0) wins.push("Guide payload contains real programme coverage.");
+  if ((channelReport.summary?.channels_with_backup_streams || 0) > 0) wins.push("Channel catalog includes backup-capable streams.");
+  if (runtime.generated_at) wins.push("Runtime snapshot is available for settings auditing.");
+  if (wins.length === 0) wins.push("No positive confirmations yet because the deck is still in a degraded state.");
+
+  alertBoard.innerHTML = [
+    createAlertCard("incident", "Incidents", incidents),
+    createAlertCard("watch", "Watch Items", watchItems),
+    createAlertCard("win", "Confirmed Wins", wins)
+  ].join("");
+
   decisionBoard.innerHTML = filterCards([
-    createCard("Is the guide believable?", `${pretty(guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes)} channels have programme data; ${pretty(guideHealth.summary?.placeholder_only_channels)} are placeholder-only.`),
-    createCard("Are streams falling back?", `${attempts.length} recent attempts tracked; ${attempts.slice(0, 2).map((item) => item.reason || item.result || item.status || "unknown").join(" | ") || "no recent evidence"}`),
-    createCard("Is recording alive?", recorder.summary ? `${pretty(recorder.summary.active_count)} active, ${pretty(recorder.summary.failed_count)} failed, ${pretty(recorder.summary.completed_count)} completed.` : pretty(recorder.error || "No recorder state file configured")),
-    createCard("What config am I really running?", `Read-only snapshot exposed at /api/debug/runtime.json and summarized in the Settings lane.`)
+    createCard("Is the guide believable?", `${pretty(guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes)} channels have programme data; ${pretty(guideHealth.summary?.placeholder_only_channels)} are placeholder-only.`, "", (guideHealth.summary?.placeholder_only_channels || 0) > 0 ? "tone-warn" : "tone-good", "guideHealth"),
+    createCard("Are streams falling back?", `${attempts.length} recent attempts tracked; ${attempts.slice(0, 2).map((item) => item.reason || item.result || item.status || "unknown").join(" | ") || "no recent evidence"}`, "", failedAttempts.length > 0 ? "tone-warn" : "tone-good", "attempts"),
+    createCard("Is recording alive?", recorder.summary ? `${pretty(recorder.summary.active_count)} active, ${pretty(recorder.summary.failed_count)} failed, ${pretty(recorder.summary.completed_count)} completed.` : pretty(recorder.error || "No recorder state file configured"), "", (recorder.summary?.failed_count || 0) > 0 ? "tone-warn" : "", "recorder"),
+    createCard("What config am I really running?", `Read-only snapshot exposed at /api/debug/runtime.json and summarized in the Settings lane.`, "", "", "runtime")
   ]).join("");
 
   statsEl.innerHTML = filterCards([
@@ -995,10 +1151,10 @@ function renderDeck() {
   ]).join("");
 
   overviewStories.innerHTML = filterCards([
-    createCard("Guide posture", `${pretty(guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes)} real programme channels, ${pretty(guideHealth.summary?.stale_channels)} stale, ${pretty(guideHealth.summary?.placeholder_only_channels)} placeholder-only.`, "Guide confidence from /guide/health.json"),
-    createCard("Provider posture", provider.summary ? esc(JSON.stringify(provider.summary)) : esc(pretty(provider.error)), "Runtime provider behavior from /provider/profile.json"),
-    createCard("Channel posture", channelReport.summary ? `${pretty(channelReport.summary.total_channels)} total, ${pretty(channelReport.summary.epg_linked_channels)} linked, ${pretty(channelReport.summary.channels_with_backup_streams)} backup-capable.` : pretty(channelReport.error), "Channel intelligence summary"),
-    createCard("Ops posture", recorder.summary ? `${pretty(recorder.summary.active_count)} active recordings with automation memory and publishing state available.` : pretty(recorder.error || "No recorder state"), "Recorder + automation surface")
+    createCard("Guide posture", `${pretty(guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes)} real programme channels, ${pretty(guideHealth.summary?.stale_channels)} stale, ${pretty(guideHealth.summary?.placeholder_only_channels)} placeholder-only.`, "Guide confidence from /guide/health.json", (guideHealth.summary?.stale_channels || 0) > 0 ? "tone-warn" : "tone-good", "guideHealth"),
+    createCard("Provider posture", provider.summary ? esc(JSON.stringify(provider.summary)) : esc(pretty(provider.error)), "Runtime provider behavior from /provider/profile.json", "", "provider"),
+    createCard("Channel posture", channelReport.summary ? `${pretty(channelReport.summary.total_channels)} total, ${pretty(channelReport.summary.epg_linked_channels)} linked, ${pretty(channelReport.summary.channels_with_backup_streams)} backup-capable.` : pretty(channelReport.error), "Channel intelligence summary", "", "channelReport"),
+    createCard("Ops posture", recorder.summary ? `${pretty(recorder.summary.active_count)} active recordings with automation memory and publishing state available.` : pretty(recorder.error || "No recorder state"), "Recorder + automation surface", "", "recorder")
   ]).join("");
 
   overviewTimeline.innerHTML = filterCards([
@@ -1009,18 +1165,18 @@ function renderDeck() {
   ]).join("");
 
   fastLanes.innerHTML = filterCards([
-    createCard("Guide lane", "Guide health, doctor, highlights, capsules, and SQLite horizon in one place.", `<button type="button" onclick="window.deckMode('guide')">Open Guide</button>`),
-    createCard("Routing lane", "Fallback evidence, provider posture, attempt trail, and mux behavior.", `<button type="button" onclick="window.deckMode('routing')">Open Routing</button>`),
-    createCard("Operations lane", "Recorder status, autopilot memory, Plex ghost state, and media hooks.", `<button type="button" onclick="window.deckMode('ops')">Open Ops</button>`),
-    createCard("Settings lane", "Effective runtime config, endpoint index, and raw payload drill-down.", `<button type="button" onclick="window.deckMode('settings')">Open Settings</button>`)
+    createCard("Guide lane", "Guide health, doctor, highlights, capsules, and SQLite horizon in one place.", `<button class="tiny" type="button" data-mode-jump="guide">Open Guide</button>`),
+    createCard("Routing lane", "Fallback evidence, provider posture, attempt trail, and mux behavior.", `<button class="tiny" type="button" data-mode-jump="routing">Open Routing</button>`),
+    createCard("Operations lane", "Recorder status, autopilot memory, Plex ghost state, and media hooks.", `<button class="tiny" type="button" data-mode-jump="ops">Open Ops</button>`),
+    createCard("Settings lane", "Effective runtime config, endpoint index, and raw payload drill-down.", `<button class="tiny" type="button" data-mode-jump="settings">Open Settings</button>`)
   ]).join("");
 
   guideList.innerHTML = filterCards([
-    createCard("Guide health", `${pretty(guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes)} channels with real listings, ${pretty(guideHealth.summary?.placeholder_only_channels)} placeholder-only, ${pretty(guideHealth.summary?.stale_channels)} stale.`),
-    createCard("Guide doctor", guideDoctor.summary ? `${pretty(guideDoctor.summary.channel_count)} channels inspected, ${pretty(guideDoctor.summary.programme_count)} programmes parsed.` : pretty(guideDoctor.error)),
-    createCard("SQLite horizon", epgStore.source_ready ? `${pretty(epgStore.programme_count)} programmes, DB file ${pretty(epgStore.db_file_bytes)} bytes, max stop ${pretty(epgStore.global_max_stop_unix)}.` : pretty(epgStore.error || "SQLite disabled")),
-    createCard("Provider EPG mode", `enabled=${pretty(runtime.guide?.provider_epg_enabled)}, incremental=${pretty(runtime.guide?.provider_epg_incremental)}, disk_cache=${pretty(runtime.guide?.provider_epg_disk_cache_path)}`),
-    createCard("Guide shaping", `xmltv=${pretty(runtime.guide?.xmltv_url)}, prune_unlinked=${pretty(runtime.tuner?.epg_prune_unlinked)}, suffix=${pretty(runtime.guide?.provider_epg_url_suffix)}`)
+    createCard("Guide health", `${pretty(guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes)} channels with real listings, ${pretty(guideHealth.summary?.placeholder_only_channels)} placeholder-only, ${pretty(guideHealth.summary?.stale_channels)} stale.`, "", (guideHealth.summary?.stale_channels || 0) > 0 ? "tone-warn" : "tone-good", "guideHealth"),
+    createCard("Guide doctor", guideDoctor.summary ? `${pretty(guideDoctor.summary.channel_count)} channels inspected, ${pretty(guideDoctor.summary.programme_count)} programmes parsed.` : pretty(guideDoctor.error), "", "", "guideDoctor"),
+    createCard("SQLite horizon", epgStore.source_ready ? `${pretty(epgStore.programme_count)} programmes, DB file ${pretty(epgStore.db_file_bytes)} bytes, max stop ${pretty(epgStore.global_max_stop_unix)}.` : pretty(epgStore.error || "SQLite disabled"), "", "", "epgStore"),
+    createCard("Provider EPG mode", `enabled=${pretty(runtime.guide?.provider_epg_enabled)}, incremental=${pretty(runtime.guide?.provider_epg_incremental)}, disk_cache=${pretty(runtime.guide?.provider_epg_disk_cache_path)}`, "", "", "runtime"),
+    createCard("Guide shaping", `xmltv=${pretty(runtime.guide?.xmltv_url)}, prune_unlinked=${pretty(runtime.tuner?.epg_prune_unlinked)}, suffix=${pretty(runtime.guide?.provider_epg_url_suffix)}`, "", "", "runtime")
   ]).join("");
 
   guideTimeline.innerHTML = filterCards([
@@ -1031,11 +1187,11 @@ function renderDeck() {
   ]).join("");
 
   routingList.innerHTML = filterCards([
-    createCard("Provider profile", provider.summary ? esc(JSON.stringify(provider.summary)) : esc(pretty(provider.error)), provider.client_behavior ? `client_behavior=${esc(JSON.stringify(provider.client_behavior))}` : ""),
-    createCard("Attempt volume", `${attempts.length} recent attempts in buffer. Top host pressure: ${attempts.slice(0, 3).map((item) => item.upstream_url_host || item.upstream_host || "unknown").join(", ") || "none"}`),
-    createCard("Fallback evidence", attempts.slice(0, 4).map((item) => `${item.channel_name || item.channel_id || "channel"} -> ${item.reason || item.result || item.status || "unknown"}`).join(" | ") || "No fallback evidence"),
-    createCard("HDHR contract", "discover.json, lineup.json, lineup_status.json, device.xml, and guide.xml still live on the tuner and are proxied here under /api."),
-    createCard("Mux choices", "Native TS/fMP4/HLS surfaces exist; the deck is a supervisor over those capabilities, not a stream path itself.")
+    createCard("Provider profile", provider.summary ? esc(JSON.stringify(provider.summary)) : esc(pretty(provider.error)), provider.client_behavior ? `client_behavior=${esc(JSON.stringify(provider.client_behavior))}` : "", "", "provider"),
+    createCard("Attempt volume", `${attempts.length} recent attempts in buffer. Top host pressure: ${attempts.slice(0, 3).map((item) => item.upstream_url_host || item.upstream_host || "unknown").join(", ") || "none"}`, "", failedAttempts.length > 0 ? "tone-warn" : "", "attempts"),
+    createCard("Fallback evidence", attempts.slice(0, 4).map((item) => `${item.channel_name || item.channel_id || "channel"} -> ${item.reason || item.result || item.status || "unknown"}`).join(" | ") || "No fallback evidence", "", "", "attempts"),
+    createCard("HDHR contract", "discover.json, lineup.json, lineup_status.json, device.xml, and guide.xml still live on the tuner and are proxied here under /api.", "", "", "runtime"),
+    createCard("Mux choices", "Native TS/fMP4/HLS surfaces exist; the deck is a supervisor over those capabilities, not a stream path itself.", "", "", "provider")
   ]).join("");
 
   attemptTrail.innerHTML = filterCards(attempts.slice(0, 8).map((item) =>
@@ -1046,27 +1202,27 @@ function renderDeck() {
   )).join("") || createTimeline("Attempts", "No recent stream attempts recorded.");
 
   opsList.innerHTML = filterCards([
-    createCard("Recorder state", recorder.summary ? `${pretty(recorder.summary.active_count)} active, ${pretty(recorder.summary.completed_count)} completed, ${pretty(recorder.summary.failed_count)} failed.` : pretty(recorder.error || "Recorder not configured")),
-    createCard("Autopilot memory", autopilot.hot_channels ? `${autopilot.hot_channels.length} hot channels with remembered preferences.` : pretty(autopilot.error || "Autopilot memory unavailable")),
-    createCard("Ghost hunter", ghost.summary ? esc(JSON.stringify(ghost.summary)) : esc(pretty(ghost.error || "Plex report unavailable"))),
-    createCard("Media hooks", runtime.media_servers ? `Emby host=${pretty(runtime.media_servers.emby_host_configured)}, Jellyfin host=${pretty(runtime.media_servers.jellyfin_host_configured)}` : "No runtime snapshot"),
-    createCard("Recorder files", `state=${pretty(runtime.recorder?.state_file)}, autopilot=${pretty(runtime.tuner?.autopilot_state_file)}`)
+    createCard("Recorder state", recorder.summary ? `${pretty(recorder.summary.active_count)} active, ${pretty(recorder.summary.completed_count)} completed, ${pretty(recorder.summary.failed_count)} failed.` : pretty(recorder.error || "Recorder not configured"), "", (recorder.summary?.failed_count || 0) > 0 ? "tone-warn" : "", "recorder"),
+    createCard("Autopilot memory", autopilot.hot_channels ? `${autopilot.hot_channels.length} hot channels with remembered preferences.` : pretty(autopilot.error || "Autopilot memory unavailable"), "", "", "autopilot"),
+    createCard("Ghost hunter", ghost.summary ? esc(JSON.stringify(ghost.summary)) : esc(pretty(ghost.error || "Plex report unavailable")), "", "", "ghost"),
+    createCard("Media hooks", runtime.media_servers ? `Emby host=${pretty(runtime.media_servers.emby_host_configured)}, Jellyfin host=${pretty(runtime.media_servers.jellyfin_host_configured)}` : "No runtime snapshot", "", "", "runtime"),
+    createCard("Recorder files", `state=${pretty(runtime.recorder?.state_file)}, autopilot=${pretty(runtime.tuner?.autopilot_state_file)}`, "", "", "runtime")
   ]).join("");
 
   channelList.innerHTML = filterCards([
-    createCard("Channel report", channelReport.summary ? `${pretty(channelReport.summary.total_channels)} total, ${pretty(channelReport.summary.epg_linked_channels)} linked, ${pretty(channelReport.summary.channels_with_backup_streams)} backup-stream channels.` : pretty(channelReport.error)),
-    createCard("Leaderboard", normalizeArray(leaderboard.channels || leaderboard.items || leaderboard).slice(0, 5).map((item) => `${item.name || item.channel_name || item.channel_id} (${item.score || item.health_score || "n/a"})`).join(" | ") || "No leaderboard data"),
-    createCard("DNA grouping", `${pretty(dna.summary?.channel_count || dna.channel_count)} channels, ${pretty(dna.summary?.dna_group_count || dna.group_count)} grouped identities.`),
+    createCard("Channel report", channelReport.summary ? `${pretty(channelReport.summary.total_channels)} total, ${pretty(channelReport.summary.epg_linked_channels)} linked, ${pretty(channelReport.summary.channels_with_backup_streams)} backup-stream channels.` : pretty(channelReport.error), "", "", "channelReport"),
+    createCard("Leaderboard", normalizeArray(leaderboard.channels || leaderboard.items || leaderboard).slice(0, 5).map((item) => `${item.name || item.channel_name || item.channel_id} (${item.score || item.health_score || "n/a"})`).join(" | ") || "No leaderboard data", "", "", "channelLeaderboard"),
+    createCard("DNA grouping", `${pretty(dna.summary?.channel_count || dna.channel_count)} channels, ${pretty(dna.summary?.dna_group_count || dna.group_count)} grouped identities.`, "", "", "channelDNA"),
     createCard("What this means", "This lane is where duplicate-provider chaos becomes operator-readable channel structure.")
   ]).join("");
 
   settingsList.innerHTML = filterCards([
-    createCard("Tuner", `count=${pretty(runtime.tuner?.count)}, lineup_cap=${pretty(runtime.tuner?.lineup_max_channels)}, transcode=${pretty(runtime.tuner?.stream_transcode)}, buffer=${pretty(runtime.tuner?.stream_buffer_bytes)}`),
-    createCard("Guide", `xmltv=${pretty(runtime.guide?.xmltv_url)}, provider_epg=${pretty(runtime.guide?.provider_epg_enabled)}, sqlite=${pretty(runtime.guide?.epg_sqlite_path)}`),
-    createCard("Provider", `entries=${pretty(runtime.provider?.entry_count)}, base_urls=${pretty(runtime.provider?.base_urls)}, block_cf=${pretty(runtime.provider?.block_cf_providers)}`),
-    createCard("Web UI", `enabled=${pretty(runtime.webui?.enabled)}, port=${pretty(runtime.webui?.port)}, allow_lan=${pretty(runtime.webui?.allow_lan)}, legacy_ui=${pretty(runtime.webui?.legacy_ui)}`),
-    createCard("HDHR", `network_mode=${pretty(runtime.hdhr?.network_mode)}, device_id=${pretty(runtime.hdhr?.device_id)}, discover_port=${pretty(runtime.hdhr?.discover_port)}`),
-    createCard("Recorder + ops", `recorder_state=${pretty(runtime.recorder?.state_file)}, autopilot_state=${pretty(runtime.tuner?.autopilot_state_file)}`)
+    createCard("Tuner", `count=${pretty(runtime.tuner?.count)}, lineup_cap=${pretty(runtime.tuner?.lineup_max_channels)}, transcode=${pretty(runtime.tuner?.stream_transcode)}, buffer=${pretty(runtime.tuner?.stream_buffer_bytes)}`, "", "", "runtime"),
+    createCard("Guide", `xmltv=${pretty(runtime.guide?.xmltv_url)}, provider_epg=${pretty(runtime.guide?.provider_epg_enabled)}, sqlite=${pretty(runtime.guide?.epg_sqlite_path)}`, "", "", "runtime"),
+    createCard("Provider", `entries=${pretty(runtime.provider?.entry_count)}, base_urls=${pretty(runtime.provider?.base_urls)}, block_cf=${pretty(runtime.provider?.block_cf_providers)}`, "", "", "runtime"),
+    createCard("Web UI", `enabled=${pretty(runtime.webui?.enabled)}, port=${pretty(runtime.webui?.port)}, allow_lan=${pretty(runtime.webui?.allow_lan)}, legacy_ui=${pretty(runtime.webui?.legacy_ui)}`, "", "", "runtime"),
+    createCard("HDHR", `network_mode=${pretty(runtime.hdhr?.network_mode)}, device_id=${pretty(runtime.hdhr?.device_id)}, discover_port=${pretty(runtime.hdhr?.discover_port)}`, "", "", "runtime"),
+    createCard("Recorder + ops", `recorder_state=${pretty(runtime.recorder?.state_file)}, autopilot_state=${pretty(runtime.tuner?.autopilot_state_file)}`, "", "", "runtime")
   ]).join("");
 }
 
@@ -1113,11 +1269,30 @@ function bindUI() {
   document.querySelectorAll("#mode-nav button").forEach((button) => {
     button.addEventListener("click", () => applyMode(button.dataset.mode));
   });
+  document.body.addEventListener("click", (event) => {
+    const inspect = event.target.closest("[data-inspect]");
+    if (inspect) {
+      state.selectedRaw = inspect.getAttribute("data-inspect");
+      rawSelect.value = state.selectedRaw;
+      renderRaw();
+      openModal();
+      return;
+    }
+    const jump = event.target.closest("[data-mode-jump]");
+    if (jump) {
+      applyMode(jump.getAttribute("data-mode-jump"));
+    }
+  });
   document.getElementById("reload-all").addEventListener("click", reloadDeck);
   document.getElementById("open-modal").addEventListener("click", openModal);
   document.getElementById("modal-close").addEventListener("click", closeModal);
   document.getElementById("modal-refresh").addEventListener("click", renderRaw);
   rawSelect.addEventListener("change", renderRaw);
+  refreshRate.addEventListener("change", (event) => {
+    state.refreshRateSec = Number(event.target.value || 0);
+    scheduleRefresh();
+    renderFilters();
+  });
   document.getElementById("deck-search").addEventListener("input", (event) => {
     state.filter = event.target.value || "";
     renderFilters();
@@ -1135,6 +1310,7 @@ function bindUI() {
 async function boot() {
   bindUI();
   applyMode(state.mode);
+  scheduleRefresh();
   await reloadDeck();
 }
 
