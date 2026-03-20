@@ -75,3 +75,13 @@ func TestRemediationHintsForProfile_sortedCodes(t *testing.T) {
 		t.Fatalf("want concurrency then fetch_cf_reject, got %#v", h)
 	}
 }
+
+func TestRemediationHintsForProfile_hostQuarantineActive(t *testing.T) {
+	h := remediationHintsForProfile(ProviderBehaviorProfile{
+		AutoHostQuarantine: true,
+		QuarantinedHosts:   []ProviderHostPenalty{{Host: "bad.example", Failures: 4, QuarantinedUntil: "2026-03-20T12:00:00Z"}},
+	})
+	if len(h) != 1 || h[0].Code != "host_quarantine_active" {
+		t.Fatalf("got %#v", h)
+	}
+}

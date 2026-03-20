@@ -127,6 +127,10 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"fetch_cf_reject":                          cfg.FetchCFReject,
 			"epg_prune_unlinked":                       cfg.EpgPruneUnlinked,
 			"autopilot_state_file":                     cfg.AutopilotStateFile,
+			"autopilot_global_preferred_hosts":         strings.TrimSpace(os.Getenv("IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS")),
+			"provider_autotune_host_quarantine":        strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE")),
+			"provider_autotune_host_quarantine_after":  strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_AFTER")),
+			"provider_autotune_host_quarantine_sec":    strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_SEC")),
 		},
 		Guide: map[string]interface{}{
 			"xmltv_url":                     cfg.XMLTVURL,

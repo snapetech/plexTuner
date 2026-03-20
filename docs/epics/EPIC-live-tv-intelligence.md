@@ -80,9 +80,9 @@ Make IPTV Tunerr feel less like a tuner bridge and more like a live-TV intellige
   - **Autopilot consensus host (2026-03):** optional **`IPTV_TUNERR_AUTOPILOT_CONSENSUS_HOST`** — aggregate **`preferred_host`** agreement across multiple **`dna_id`** rows can steer **`StreamURLs`** for channels without per-DNA memory (thresholds via **`IPTV_TUNERR_AUTOPILOT_CONSENSUS_MIN_DNA`** / **`_MIN_HIT_SUM`**); reported on **`/autopilot/report.json`** and **`intelligence.autopilot`**.
 - Next recommended slices (still open — validated 2026-03-19):
   - Richer **Channel DNA** graph (cross-provider relationships, long-lived match provenance store beyond current **`dna_id`** + reports)
-  - **Autopilot**: provider-level / multi-host **policy** memory beyond per-channel **`preferred_url`** / host reranking + consensus host (exact + normalized URL matching is **shipped**)
+  - **Autopilot**: provider-level / multi-host **policy** memory — **`IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS`** (comma hostnames; **`reorderStreamURLs`** after per-DNA memory, before consensus) **shipped**; richer cross-provider **policy file** / automatic host strips beyond **`STRIP_STREAM_HOSTS`** remain future
   - **Ghost Hunter**: deeper product loop on top of existing **`ghost-hunter`**, **`/plex/ghost-report.json`**, and [plex-hidden-live-grab-recovery](../runbooks/plex-hidden-live-grab-recovery.md)
-  - **Provider profile → active remediation** (automatic cap / strip hosts beyond today’s autotune hooks and read-only **`remediation_hints`**)
+  - **Provider profile → active remediation:** optional **host quarantine** (**`IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE`**) skips repeatedly failing upstreams when backups exist; further work: automatic strip / cap beyond quarantine + read-only **`remediation_hints`**
   - **Always-on recorder** extensions for non-replay sources beyond **[catchup-daemon](../explanations/always-on-recorder-daemon.md)** MVP (**`catchup-daemon`** already schedules + records + publish hooks)
 
 See also

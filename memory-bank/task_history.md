@@ -23,6 +23,20 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Autopilot global preferred hosts (IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS)
+  Summary:
+    - **`internal/tuner/gateway_adapt.go`**: **`parseAutopilotGlobalPreferredHosts`**, **`pickFirstURLMatchingGlobalPreferredHosts`**; **`autopilotPreferredStreamURL`** order: per-DNA memory → global hosts → consensus.
+    - **`internal/tuner/autopilot.go`**: **`AutopilotReport.GlobalPreferredHosts`**; **`gateway_provider_profile.go`**: **`intelligence.autopilot.global_preferred_hosts`** (including env-only when no state file).
+    - **`internal/tuner/gateway_stream_upstream.go`** + **`gateway_provider_profile.go`**: optional **host quarantine** (**`IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE`**), **`filterQuarantinedUpstreams`**, profile **`quarantined_hosts`** / **`remediation_hints`**.
+    - **`cmd/iptv-tunerr/cmd_runtime_server.go`**: **`tuner.autopilot_global_preferred_hosts`**, **`provider_autotune_host_quarantine_*`** on **`/debug/runtime.json`**.
+    - **Tests:** **`gateway_test.go`**, **`autopilot_test.go`**.
+    - **Docs:** **CHANGELOG**, **cli-and-env**, **.env.example**, **features**, **README**, **EPIC-live-tv-intelligence**, **opportunities**.
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - partial entry for provider-level policy (remaining: quarantine / file policy)
+
+- Date: 2026-03-19
   Title: Architecture Mermaid diagram + docs-gaps Medium cleared
   Summary:
     - **`docs/explanations/architecture.md`**: **Visual (Mermaid)** `flowchart` mirroring ASCII overview.

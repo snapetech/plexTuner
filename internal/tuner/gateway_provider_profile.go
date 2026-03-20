@@ -19,12 +19,13 @@ type hostFailureStat struct {
 }
 
 type ProviderHostPenalty struct {
-	Host       string `json:"host"`
-	Failures   int    `json:"failures"`
-	LastStatus int    `json:"last_status,omitempty"`
-	LastKind   string `json:"last_kind,omitempty"`
-	LastURL    string `json:"last_url,omitempty"`
-	LastAt     string `json:"last_at,omitempty"`
+	Host             string `json:"host"`
+	Failures         int    `json:"failures"`
+	LastStatus       int    `json:"last_status,omitempty"`
+	LastKind         string `json:"last_kind,omitempty"`
+	LastURL          string `json:"last_url,omitempty"`
+	LastAt           string `json:"last_at,omitempty"`
+	QuarantinedUntil string `json:"quarantined_until,omitempty"`
 }
 
 // ProviderRemediationHint is a stable, machine-readable suggestion derived from
@@ -52,6 +53,7 @@ type ProviderBehaviorProfile struct {
 	LastCFBlockAt              string                `json:"last_cf_block_at,omitempty"`
 	LastCFBlockURL             string                `json:"last_cf_block_url,omitempty"`
 	ProviderAutotune           bool                  `json:"provider_autotune"`
+	AutoHostQuarantine         bool                  `json:"auto_host_quarantine"`
 	AutoHLSReconnect           bool                  `json:"auto_hls_reconnect"`
 	HLSPlaylistFailures        int                   `json:"hls_playlist_failures"`
 	LastHLSPlaylistAt          string                `json:"last_hls_playlist_at,omitempty"`
@@ -84,6 +86,7 @@ type ProviderBehaviorProfile struct {
 	LastDashMuxAt              string                `json:"last_dash_mux_at,omitempty"`
 	LastDashMuxURL             string                `json:"last_dash_mux_url,omitempty"`
 	PenalizedHosts             []ProviderHostPenalty `json:"penalized_hosts,omitempty"`
+	QuarantinedHosts           []ProviderHostPenalty `json:"quarantined_hosts,omitempty"`
 	// RemediationHints are heuristic suggestions from current counters (empty when none apply).
 	RemediationHints []ProviderRemediationHint `json:"remediation_hints,omitempty"`
 	// Intelligence surfaces Live TV intelligence (LTV epic) next to provider-runtime quirks.
@@ -105,6 +108,7 @@ type AutopilotIntelSnapshot struct {
 	ConsensusDNACount           int                 `json:"consensus_dna_count,omitempty"`
 	ConsensusHitSum             int                 `json:"consensus_hit_sum,omitempty"`
 	ConsensusHostRuntimeEnabled bool                `json:"consensus_host_runtime_enabled,omitempty"`
+	GlobalPreferredHosts        []string            `json:"global_preferred_hosts,omitempty"`
 }
 
 func (g *Gateway) noteHLSSegmentFailure(segURL string) {
@@ -120,6 +124,26 @@ func (g *Gateway) noteHLSSegmentFailure(segURL string) {
 
 func providerAutotuneEnabled() bool {
 	return envBool("IPTV_TUNERR_PROVIDER_AUTOTUNE", true)
+}
+
+func providerHostQuarantineEnabled() bool {
+	return providerAutotuneEnabled() && envBool("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE", false)
+}
+
+func providerHostQuarantineAfterFailures() int {
+	n := getenvInt("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_AFTER", 3)
+	if n < 1 {
+		n = 1
+	}
+	return n
+}
+
+func providerHostQuarantineDuration() time.Duration {
+	sec := getenvInt("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_SEC", 900)
+	if sec < 10 {
+		sec = 10
+	}
+	return time.Duration(sec) * time.Second
 }
 
 func (g *Gateway) noteMuxSegRecentOutcome(mux, outcome, rawURL string) {
@@ -216,6 +240,29 @@ func (g *Gateway) hostPenalty(host string) int {
 	return g.hostFailures[host].Failures
 }
 
+func (g *Gateway) hostQuarantined(host string, now time.Time) bool {
+	if g == nil || !providerHostQuarantineEnabled() {
+		return false
+	}
+	host = strings.TrimSpace(strings.ToLower(host))
+	if host == "" {
+		return false
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	g.providerStateMu.Lock()
+	defer g.providerStateMu.Unlock()
+	row, ok := g.hostFailures[host]
+	if !ok {
+		return false
+	}
+	if row.Failures < providerHostQuarantineAfterFailures() {
+		return false
+	}
+	return now.Before(row.LastAt.Add(providerHostQuarantineDuration()))
+}
+
 func (g *Gateway) penalizedHostsLocked() []ProviderHostPenalty {
 	if len(g.hostFailures) == 0 {
 		return nil
@@ -231,6 +278,12 @@ func (g *Gateway) penalizedHostsLocked() []ProviderHostPenalty {
 		}
 		if !row.LastAt.IsZero() {
 			item.LastAt = row.LastAt.Format(time.RFC3339)
+			if providerHostQuarantineEnabled() && row.Failures >= providerHostQuarantineAfterFailures() {
+				until := row.LastAt.Add(providerHostQuarantineDuration())
+				if until.After(time.Now()) {
+					item.QuarantinedUntil = until.Format(time.RFC3339)
+				}
+			}
 		}
 		out = append(out, item)
 	}
@@ -240,6 +293,22 @@ func (g *Gateway) penalizedHostsLocked() []ProviderHostPenalty {
 		}
 		return out[i].Failures > out[j].Failures
 	})
+	return out
+}
+
+func quarantinedHostsFromPenalties(in []ProviderHostPenalty) []ProviderHostPenalty {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]ProviderHostPenalty, 0, len(in))
+	for _, item := range in {
+		if strings.TrimSpace(item.QuarantinedUntil) != "" {
+			out = append(out, item)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
 	return out
 }
 
@@ -264,6 +333,14 @@ func remediationHintsForProfile(p ProviderBehaviorProfile) []ProviderRemediation
 			Severity: "warn",
 			Message:  "Multiple upstream hosts are penalized; review backup stream URLs in the catalog and consider stripping persistently bad hosts.",
 			Env:      "IPTV_TUNERR_STRIP_STREAM_HOSTS",
+		})
+	}
+	if len(p.QuarantinedHosts) > 0 {
+		out = append(out, ProviderRemediationHint{
+			Code:     "host_quarantine_active",
+			Severity: "info",
+			Message:  "Runtime host quarantine is suppressing repeatedly bad upstream hosts while backup URLs remain available.",
+			Env:      "IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE",
 		})
 	}
 	if p.ConcurrencySignalsSeen > 0 {
@@ -389,6 +466,7 @@ func (g *Gateway) ProviderBehaviorProfile() ProviderBehaviorProfile {
 		CFBlockHits:                cfBlockHits,
 		LastCFBlockURL:             lastCFBlockURL,
 		ProviderAutotune:           providerAutotuneEnabled(),
+		AutoHostQuarantine:         providerHostQuarantineEnabled(),
 		AutoHLSReconnect:           g.shouldAutoEnableHLSReconnect(),
 		HLSPlaylistFailures:        hlsPlaylistFailures,
 		LastHLSPlaylistURL:         lastHLSPlaylistURL,
@@ -418,6 +496,7 @@ func (g *Gateway) ProviderBehaviorProfile() ProviderBehaviorProfile {
 		LastDashMuxURL:             lastDashMuxURL,
 		PenalizedHosts:             penalizedHosts,
 	}
+	prof.QuarantinedHosts = quarantinedHostsFromPenalties(prof.PenalizedHosts)
 	if !lastConcurrencyAt.IsZero() {
 		prof.LastConcurrencyAt = lastConcurrencyAt.Format(time.RFC3339)
 	}
@@ -448,6 +527,11 @@ func (g *Gateway) ProviderBehaviorProfile() ProviderBehaviorProfile {
 		prof.Intelligence.Autopilot.ConsensusDNACount = rep.ConsensusDNACount
 		prof.Intelligence.Autopilot.ConsensusHitSum = rep.ConsensusHitSum
 		prof.Intelligence.Autopilot.ConsensusHostRuntimeEnabled = rep.ConsensusHostRuntimeEnabled
+		if len(rep.GlobalPreferredHosts) > 0 {
+			prof.Intelligence.Autopilot.GlobalPreferredHosts = rep.GlobalPreferredHosts
+		}
+	} else if gh := parseAutopilotGlobalPreferredHosts(); len(gh) > 0 {
+		prof.Intelligence.Autopilot.GlobalPreferredHosts = gh
 	}
 	prof.RemediationHints = remediationHintsForProfile(prof)
 	return prof

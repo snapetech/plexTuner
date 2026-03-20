@@ -1,6 +1,7 @@
 package tuner
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -112,6 +113,16 @@ func TestAutopilotStoreHotDecisionAndReport(t *testing.T) {
 	}
 	if rep.HotChannels[0].PreferredHost != "preferred.example" {
 		t.Fatalf("preferred_host=%q want preferred.example", rep.HotChannels[0].PreferredHost)
+	}
+}
+
+func TestAutopilot_report_includesGlobalPreferredHosts(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS", "cdn.a.example, cdn.b.example")
+	t.Cleanup(func() { _ = os.Unsetenv("IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS") })
+	store := &autopilotStore{byKey: map[string]autopilotDecision{}}
+	rep := store.report(1)
+	if len(rep.GlobalPreferredHosts) != 2 || rep.GlobalPreferredHosts[0] != "cdn.a.example" || rep.GlobalPreferredHosts[1] != "cdn.b.example" {
+		t.Fatalf("global_preferred_hosts=%v", rep.GlobalPreferredHosts)
 	}
 }
 

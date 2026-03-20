@@ -22,6 +22,14 @@ It exists to encourage quality gains without derailing the current task.
 
 ## Entries
 
+- Date: 2026-03-19
+  Category: operability
+  Title: (partially addressed 2026-03-19) Autopilot **provider-level** host policy beyond per-DNA JSON
+  Context: [EPIC-live-tv-intelligence](../../docs/epics/EPIC-live-tv-intelligence.md) “next” listed multi-host policy memory; operators needed a no-state-file knob for trusted CDN hostnames.
+  Status: **`IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS`** shipped — **`reorderStreamURLs`** / **`/autopilot/report.json`** / **`intelligence.autopilot`** / **`/debug/runtime.json`**. Remaining: file-based or UI-driven policy, auto strip hosts from **`remediation_hints`**, etc.
+  Risk/Scope: n/a
+  User decision needed?: no
+
 - Date: 2026-03-22
   Category: operability
   Title: Unified **`.diag/`** harness index (optional static `index.html` or `scripts/harness-index.py`)

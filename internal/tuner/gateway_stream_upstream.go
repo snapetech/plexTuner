@@ -30,6 +30,7 @@ func (g *Gateway) walkStreamUpstreams(
 	inUseNow, limit int,
 ) (finalStatus, finalMode, finalEffectiveURL string, upstreamConcurrencyLimited, ok bool) {
 	upstreamConcurrencyLimited = false
+	urls = g.filterQuarantinedUpstreams(urls)
 	// Try primary then backups until one works. Do not retry or backoff on 429/423 here:
 	// that would block stream throughput. We only fail over to next URL and return 502 if all fail.
 	// Reject non-http(s) URLs to prevent SSRF (e.g. file:// or provider-supplied internal URLs).
@@ -95,4 +96,24 @@ func (g *Gateway) walkStreamUpstreams(
 		}
 	}
 	return "", "", "", upstreamConcurrencyLimited, false
+}
+
+func (g *Gateway) filterQuarantinedUpstreams(urls []string) []string {
+	if len(urls) < 2 || g == nil || !providerHostQuarantineEnabled() {
+		return urls
+	}
+	now := time.Now()
+	out := make([]string, 0, len(urls))
+	quarantined := make([]string, 0, len(urls))
+	for _, raw := range urls {
+		if g.hostQuarantined(upstreamURLAuthority(raw), now) {
+			quarantined = append(quarantined, raw)
+			continue
+		}
+		out = append(out, raw)
+	}
+	if len(out) == 0 {
+		return urls
+	}
+	return out
 }

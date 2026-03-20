@@ -1147,6 +1147,8 @@ Verify the build:
 
 ## Recent Changes
 
+- **Autopilot global host preference:** **`IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS`** — comma-separated hostnames preferred for every channel (after per-DNA memory, before consensus) — [cli-and-env-reference](docs/reference/cli-and-env-reference.md).
+- **Host quarantine (INT-010):** optional **`IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE`** — skip repeatedly failing upstream hosts when backup URLs remain — [cli-and-env-reference](docs/reference/cli-and-env-reference.md).
 - **Architecture diagram:** [docs/explanations/architecture.md](docs/explanations/architecture.md) includes a **Mermaid** flowchart (provider → catalog → tuner + intelligence → registration).
 - **Hot-start by category:** **`IPTV_TUNERR_HOT_START_GROUP_TITLES`** marks whole M3U **`group_title`** buckets (substring match) for faster startup tuning — [cli-and-env-reference](docs/reference/cli-and-env-reference.md).
 - **Plex onboarding how-to**: [docs/how-to/connect-plex-to-iptv-tunerr.md](docs/how-to/connect-plex-to-iptv-tunerr.md) (wizard vs **`-register-plex`** vs API; channelmap, **480** limit). See [plex-dvr-lifecycle-and-api](docs/reference/plex-dvr-lifecycle-and-api.md).

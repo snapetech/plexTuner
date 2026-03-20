@@ -1240,6 +1240,43 @@ func TestGateway_reorderStreamURLs_autopilotConsensusHost(t *testing.T) {
 	}
 }
 
+func TestGateway_reorderStreamURLs_autopilotGlobalPreferredHosts(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_AUTOPILOT_CONSENSUS_HOST", "false")
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE", "false")
+	t.Setenv("IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS", "cdn.good.example")
+	t.Cleanup(func() { _ = os.Unsetenv("IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS") })
+
+	g := &Gateway{TunerCount: 2, Autopilot: &autopilotStore{byKey: map[string]autopilotDecision{}}}
+	ch := &catalog.LiveChannel{DNAID: "dna:new", GuideNumber: "1", GuideName: "Ch", StreamURLs: []string{
+		"https://zbad.example.com/a",
+		"https://cdn.good.example/b",
+	}}
+	got := g.reorderStreamURLs(ch, "web", ch.StreamURLs)
+	if len(got) != 2 || got[0] != "https://cdn.good.example/b" {
+		t.Fatalf("got %v want global preferred host first", got)
+	}
+}
+
+func TestGateway_reorderStreamURLs_autopilotMemoryBeatsGlobalPreferredHosts(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_AUTOPILOT_CONSENSUS_HOST", "false")
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE", "false")
+	t.Setenv("IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS", "cdn.good.example")
+	t.Cleanup(func() { _ = os.Unsetenv("IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS") })
+
+	st := &autopilotStore{byKey: map[string]autopilotDecision{
+		autopilotKey("dna:x", "web"): {DNAID: "dna:x", ClientClass: "web", PreferredHost: "zbad.example.com", Hits: 3},
+	}}
+	g := &Gateway{TunerCount: 2, Autopilot: st}
+	ch := &catalog.LiveChannel{DNAID: "dna:x", GuideNumber: "1", StreamURLs: []string{
+		"https://zbad.example.com/a",
+		"https://cdn.good.example/b",
+	}}
+	got := g.reorderStreamURLs(ch, "web", ch.StreamURLs)
+	if len(got) != 2 || got[0] != "https://zbad.example.com/a" {
+		t.Fatalf("got %v want per-DNA autopilot memory first", got)
+	}
+}
+
 func TestGateway_stream_penalizedHostFallsBehindHealthyHost(t *testing.T) {
 	hits := []string{}
 	penalized := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1437,6 +1474,35 @@ func TestGateway_shouldPreferGoRelayForHLSRemux_hostPenalty(t *testing.T) {
 	})
 }
 
+func TestGateway_filterQuarantinedUpstreams_prefersHealthyAlternatives(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE", "true")
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_AFTER", "3")
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_SEC", "900")
+	g := &Gateway{TunerCount: 4}
+	g.noteUpstreamFailure("http://bad.example/live/1.m3u8", 502, "http_status")
+	g.noteUpstreamFailure("http://bad.example/live/1.m3u8", 502, "http_status")
+	g.noteUpstreamFailure("http://bad.example/live/1.m3u8", 502, "http_status")
+	got := g.filterQuarantinedUpstreams([]string{
+		"http://bad.example/live/1.m3u8",
+		"http://good.example/live/1.m3u8",
+	})
+	if len(got) != 1 || got[0] != "http://good.example/live/1.m3u8" {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestGateway_filterQuarantinedUpstreams_keepsOnlyChoice(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE", "true")
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_AFTER", "1")
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_SEC", "900")
+	g := &Gateway{TunerCount: 4}
+	g.noteUpstreamFailure("http://only.example/live/1.m3u8", 502, "http_status")
+	got := g.filterQuarantinedUpstreams([]string{"http://only.example/live/1.m3u8"})
+	if len(got) != 1 || got[0] != "http://only.example/live/1.m3u8" {
+		t.Fatalf("got %v", got)
+	}
+}
+
 func TestGateway_learnsUpstreamConcurrencyLimitAndRejectsLocally(t *testing.T) {
 	hits := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1484,6 +1550,25 @@ func TestGateway_learnsUpstreamConcurrencyLimitAndRejectsLocally(t *testing.T) {
 	}
 	if hits != 1 {
 		t.Fatalf("upstream hits=%d want=1", hits)
+	}
+}
+
+func TestGateway_ProviderBehaviorProfile_quarantinedHosts(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE", "true")
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_AFTER", "2")
+	t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_SEC", "900")
+	g := &Gateway{TunerCount: 4}
+	g.noteUpstreamFailure("http://bad.example/live/1.m3u8", 502, "http_status")
+	g.noteUpstreamFailure("http://bad.example/live/1.m3u8", 502, "http_status")
+	p := g.ProviderBehaviorProfile()
+	if !p.AutoHostQuarantine {
+		t.Fatal("expected auto_host_quarantine")
+	}
+	if len(p.QuarantinedHosts) != 1 || p.QuarantinedHosts[0].Host != "bad.example" {
+		t.Fatalf("quarantined_hosts=%#v", p.QuarantinedHosts)
+	}
+	if p.QuarantinedHosts[0].QuarantinedUntil == "" {
+		t.Fatalf("missing quarantined_until: %#v", p.QuarantinedHosts[0])
 	}
 }
 

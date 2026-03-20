@@ -54,6 +54,8 @@ type AutopilotReport struct {
 	ConsensusDNACount           int    `json:"consensus_dna_count,omitempty"`
 	ConsensusHitSum             int    `json:"consensus_hit_sum,omitempty"`
 	ConsensusHostRuntimeEnabled bool   `json:"consensus_host_runtime_enabled,omitempty"`
+	// GlobalPreferredHosts mirrors IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS (provider-level host policy).
+	GlobalPreferredHosts []string `json:"global_preferred_hosts,omitempty"`
 }
 
 func loadAutopilotStore(path string) (*autopilotStore, error) {
@@ -303,6 +305,7 @@ func (s *autopilotStore) report(limit int) AutopilotReport {
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		Enabled:     s != nil,
 	}
+	rep.GlobalPreferredHosts = parseAutopilotGlobalPreferredHosts()
 	if s == nil {
 		return rep
 	}

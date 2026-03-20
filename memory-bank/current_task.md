@@ -2,6 +2,10 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-19):** **LTV epic code:** **`IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS`** + optional **`IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE`** (**`walkStreamUpstreams`**, **`/provider/profile.json`**, **`/debug/runtime.json`**). **`./scripts/verify`** OK.
+
+**Latest (2026-03-20):** **INT-010 next slice:** promote provider intelligence into **active remediation** with optional runtime **host quarantine**. Scope: repeated host failures can temporarily quarantine a bad upstream host (with threshold + cooldown env knobs), stream selection skips quarantined hosts when backups exist, provider profile surfaces active quarantine state, tests/docs updated.
+
 **Latest (2026-03-19):** **Closed last docs gap:** [architecture.md](../docs/explanations/architecture.md) **Visual (Mermaid)**; [docs-gaps.md](../docs/docs-gaps.md) has no open High/Medium/Low rows. **`./scripts/verify`** OK.
 
 **Latest (2026-03-19):** **Backlog validation:** [docs-gaps.md](../docs/docs-gaps.md) stale rows removed (cli-and-env + existing docs cover prior “gaps”); [EPIC-live-tv-intelligence](../docs/epics/EPIC-live-tv-intelligence.md) / [EPIC-lineup-parity](../docs/epics/EPIC-lineup-parity.md) + [work_breakdown](work_breakdown.md) + [opportunities](opportunities.md) (guide-health opportunity partially superseded). **CHANGELOG** doc bullet.

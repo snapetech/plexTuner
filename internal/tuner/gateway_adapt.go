@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -422,7 +423,50 @@ func (g *Gateway) autopilotPreferredStreamURL(channel *catalog.LiveChannel, clie
 			}
 		}
 	}
+	if u := pickFirstURLMatchingGlobalPreferredHosts(urls, parseAutopilotGlobalPreferredHosts()); u != "" {
+		return u
+	}
 	return g.autopilotConsensusPreferredURL(urls)
+}
+
+// parseAutopilotGlobalPreferredHosts returns hostnames from IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS
+// (comma-separated). When non-empty, reorderStreamURLs may prefer a catalog URL whose host matches
+// any entry (case-insensitive) after per-channel Autopilot memory and before consensus host — LTV
+// provider-level policy without touching the JSON state file.
+func parseAutopilotGlobalPreferredHosts() []string {
+	raw := strings.TrimSpace(os.Getenv("IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS"))
+	if raw == "" {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		out = append(out, part)
+	}
+	return out
+}
+
+func pickFirstURLMatchingGlobalPreferredHosts(urls []string, preferredHosts []string) string {
+	if len(preferredHosts) == 0 || len(urls) == 0 {
+		return ""
+	}
+	set := make(map[string]struct{}, len(preferredHosts))
+	for _, h := range preferredHosts {
+		set[strings.ToLower(h)] = struct{}{}
+	}
+	for _, u := range urls {
+		ch := strings.ToLower(strings.TrimSpace(autopilotURLHost(u)))
+		if ch == "" {
+			continue
+		}
+		if _, ok := set[ch]; ok {
+			return u
+		}
+	}
+	return ""
 }
 
 func (g *Gateway) reorderStreamURLs(channel *catalog.LiveChannel, clientClass string, urls []string) []string {
