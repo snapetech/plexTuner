@@ -1081,6 +1081,7 @@ Fetches EPG directly from your IPTV provider using existing credentials. No sepa
 
 - `IPTV_TUNERR_XMLTV_URL` — external XMLTV source URL; fetched, filtered to your channels, remapped to guide numbers
 - `IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP` — allow private/loopback `http(s)` refs for external XMLTV / alias fetches. Default is **off** as a hardening measure; prefer filesystem paths for local files and enable this only when you intentionally fetch from localhost/LAN.
+- `IPTV_TUNERR_GUIDE_INPUT_ROOTS` — comma-separated safe root directories for local XMLTV / alias files. Relative paths resolve under the current working directory by default; absolute paths outside these roots are rejected.
 - `IPTV_TUNERR_XMLTV_ALIASES` — optional file path or `http(s)` URL for alias overrides used in deterministic EPG repair
 - `IPTV_TUNERR_CATCHUP_GUIDE_POLICY` — optional `off|healthy|strict`; applies guide-quality filtering to `/guide/capsules.json`, `catchup-capsules`, and `catchup-publish`
 - `IPTV_TUNERR_CATCHUP_REPLAY_URL_TEMPLATE` — optional source-backed replay URL template for capsules/publishing; when set, replay URLs are rendered with programme and channel tokens instead of falling back to live-channel launchers

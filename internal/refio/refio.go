@@ -24,16 +24,9 @@ func PrepareLocalFileRef(raw string) (LocalFileRef, error) {
 	if strings.ContainsRune(raw, 0) {
 		return "", fmt.Errorf("invalid local ref")
 	}
-	path := filepath.Clean(raw)
-	info, err := os.Stat(path)
+	path, err := resolveGuideInputPath(raw)
 	if err != nil {
 		return "", err
-	}
-	if info.IsDir() {
-		return "", fmt.Errorf("local ref is a directory")
-	}
-	if !info.Mode().IsRegular() {
-		return "", fmt.Errorf("local ref must be a regular file")
 	}
 	return LocalFileRef(path), nil
 }
@@ -71,6 +64,52 @@ func (r RemoteHTTPRef) URL() string {
 
 func (r LocalFileRef) Path() string {
 	return strings.TrimSpace(string(r))
+}
+
+func resolveGuideInputPath(raw string) (string, error) {
+	absPath, err := filepath.Abs(filepath.Clean(raw))
+	if err != nil {
+		return "", err
+	}
+	allowedRoots, err := guideInputRoots()
+	if err != nil {
+		return "", err
+	}
+	for _, root := range allowedRoots {
+		rel, err := filepath.Rel(root, absPath)
+		if err != nil {
+			continue
+		}
+		if rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
+			return absPath, nil
+		}
+	}
+	return "", fmt.Errorf("local ref outside allowed guide roots")
+}
+
+func guideInputRoots() ([]string, error) {
+	roots := []string{}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	cwd, err = filepath.Abs(cwd)
+	if err != nil {
+		return nil, err
+	}
+	roots = append(roots, cwd)
+	for _, part := range strings.Split(os.Getenv("IPTV_TUNERR_GUIDE_INPUT_ROOTS"), ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		abs, err := filepath.Abs(part)
+		if err != nil {
+			continue
+		}
+		roots = append(roots, abs)
+	}
+	return roots, nil
 }
 
 func allowPrivateHTTPRefs() bool {

@@ -1011,6 +1011,7 @@ Full reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-a
 | `IPTV_TUNERR_EPG_SQLITE_INCREMENTAL_UPSERT` | Overlap-window SQLite sync instead of full replace |
 | `IPTV_TUNERR_XMLTV_URL` | External XMLTV source — gap-fills provider EPG |
 | `IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP` | Allow private/loopback `http(s)` guide or alias refs when intentionally loading XMLTV from localhost/LAN |
+| `IPTV_TUNERR_GUIDE_INPUT_ROOTS` | Comma-separated safe root directories for local XMLTV/alias files; refs outside these roots are rejected |
 | `IPTV_TUNERR_XMLTV_CACHE_TTL` | External XMLTV refresh interval (default `10m`) |
 | `IPTV_TUNERR_EPG_PRUNE_UNLINKED` | Exclude unlinked channels from guide and lineup |
 | `IPTV_TUNERR_EPG_SQLITE_PATH` | Optional SQLite file for durable EPG rows ([ADR](docs/adr/0003-epg-sqlite-vs-postgres.md)); merged guide sync + `/guide/epg-store.json` |

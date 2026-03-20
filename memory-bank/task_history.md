@@ -3791,6 +3791,18 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
 ---
 
 - Date: 2026-03-20
+  Title: Add safe-root policy for local guide inputs
+  Summary:
+    - Local XMLTV and alias refs now resolve only within the working directory or explicit `IPTV_TUNERR_GUIDE_INPUT_ROOTS` entries instead of allowing arbitrary file paths.
+    - `internal/guideinput` now parses alias/XMLTV content from a single validated load path rather than reopening extra local-file sinks after validation.
+    - Docs and env examples were updated so the new guide-input sandbox is discoverable before operators hit it.
+  Verification:
+    - `go test ./internal/refio ./internal/guideinput ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+
+---
+
+- Date: 2026-03-20
   Title: Remove more CodeQL dataflow sinks from refio and deck auth
   Summary:
     - Removed free-form deck post-login redirects and now always land successful deck sessions on `/`, which drops the remaining `next=` redirect surface from the login path.

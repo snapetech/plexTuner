@@ -21,6 +21,7 @@ func TestProviderXMLTVURL(t *testing.T) {
 func TestLoadGuideData_LocalAndHTTP(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
 	dir := t.TempDir()
+	t.Setenv("IPTV_TUNERR_GUIDE_INPUT_ROOTS", dir)
 	path := filepath.Join(dir, "guide.xml")
 	const body = "<tv></tv>"
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {

@@ -1,6 +1,7 @@
 package guideinput
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -54,21 +55,19 @@ func LoadAliasOverrides(ref string) (epglink.AliasOverrides, error) {
 	if strings.TrimSpace(ref) == "" {
 		return epglink.AliasOverrides{NameToXMLTVID: map[string]string{}}, nil
 	}
-	r, err := openGuideRef(ref)
+	data, err := LoadGuideData(ref)
 	if err != nil {
 		return epglink.AliasOverrides{}, err
 	}
-	defer r.Close()
-	return epglink.LoadAliasOverrides(r)
+	return epglink.LoadAliasOverrides(bytes.NewReader(data))
 }
 
 func LoadXMLTVChannels(ref string) ([]epglink.XMLTVChannel, error) {
-	r, err := openGuideRef(ref)
+	data, err := LoadGuideData(ref)
 	if err != nil {
 		return nil, err
 	}
-	defer r.Close()
-	return epglink.ParseXMLTVChannels(r)
+	return epglink.ParseXMLTVChannels(bytes.NewReader(data))
 }
 
 func LoadOptionalMatchReport(live []catalog.LiveChannel, xmltvRef, aliasesRef string) (*epglink.Report, error) {
@@ -86,19 +85,6 @@ func LoadOptionalMatchReport(live []catalog.LiveChannel, xmltvRef, aliasesRef st
 	}
 	rep := epglink.MatchLiveChannels(live, xmltvChans, aliases)
 	return &rep, nil
-}
-
-func openGuideRef(ref string) (io.ReadCloser, error) {
-	if remote, ok, err := prepareRemoteGuideRef(ref); err != nil {
-		return nil, err
-	} else if ok {
-		return openRemoteGuideRef(context.Background(), remote)
-	}
-	local, err := refio.PrepareLocalFileRef(ref)
-	if err != nil {
-		return nil, err
-	}
-	return os.Open(local.Path())
 }
 
 func prepareRemoteGuideRef(ref string) (refio.RemoteHTTPRef, bool, error) {

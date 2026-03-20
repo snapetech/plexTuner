@@ -2,7 +2,7 @@
 
 <!-- Update at session start and when focus changes. -->
 
-**Latest (2026-03-20):** **Security / CodeQL burn-down:** follow-up pass removed free-form deck `next` redirects entirely, moved guide-input file/network I/O out of **`internal/refio`** into **`internal/guideinput`** after validation, eliminated more request/header-derived debug logging, and avoided preallocating flagged guide/attempt slices from request-sized limits. **`./scripts/verify`** OK; waiting on fresh CodeQL rescan for the new head.
+**Latest (2026-03-20):** **Security / CodeQL burn-down:** follow-up pass added local guide-input safe roots (**`IPTV_TUNERR_GUIDE_INPUT_ROOTS`**), removed alias/XMLTV reopen sinks in **`internal/guideinput`**, and documented the new guide-file sandboxing. **`./scripts/verify`** OK; next rescan should tell us whether only the wrapper-level XSS findings remain.
 
 **Latest (2026-03-20):** **INT-005/INT-010 bridge:** Autopilot now supports a JSON **host policy file** (**`IPTV_TUNERR_AUTOPILOT_HOST_POLICY_FILE`**) with **preferred** and **blocked** hosts. Preferred hosts merge with **`IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS`**; blocked hosts are skipped in **`reorderStreamURLs`** only when backups remain. Runtime/report/docs/tests updated.
 
