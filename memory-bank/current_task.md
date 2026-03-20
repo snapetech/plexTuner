@@ -4,6 +4,8 @@
 
 **Goal:** Start the new Live TV Intelligence product track: map the multi-PR roadmap, then ship the first visible foundation feature so IPTV Tunerr feels like an intelligent control plane instead of only a tuner bridge.
 
+**Approved epic (2026-03-19):** User confirmed **all four** tracks in [docs/epics/EPIC-lineup-parity.md](../docs/epics/EPIC-lineup-parity.md) — real HDHomeRun **client**, **web dashboard**, **SQLite EPG** model, **HLS/fMP4 profiles** (see stories `LP-001`–`LP-012`). Implementation is multi-PR; do not scope-creep unrelated refactors.
+
 **Shipped 2026-03-19 (recorder + CF ops bundle):** Same-spool HTTP Range resume for `catchup-daemon`, Retry-After + status-aware transient backoff, capture metrics on items and in `recorder-state.json` statistics; CF learned persistence, `cf-status`, host UA override, CF bootstrap header parity + freshness monitor. Docs: `docs/CHANGELOG.md` [Unreleased], `docs/features.md`, `docs/reference/cli-and-env-reference.md`; history: `memory-bank/task_history.md`.
 
 **Shipped 2026-03-19 (recorder gaps):** Multi-upstream capture failover (Tunerr URL + catalog `stream_url`/`stream_urls`), catalog `preferred_ua` on capture requests, time-based completed retention (`-retain-completed-max-age*`), `scripts/recorder-daemon-soak.sh`, metrics `capture_upstream_switches` / `sum_capture_upstream_switches`.

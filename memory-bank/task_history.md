@@ -23,6 +23,20 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Epic: Lineup-app parity (HDHR client, dashboard, SQLite EPG, transcode profiles)
+  Summary:
+    - User approved all four product tracks vs [am385/lineup](https://github.com/am385/lineup); added [docs/epics/EPIC-lineup-parity.md](../docs/epics/EPIC-lineup-parity.md) with stories `LP-001`–`LP-012`, milestones, PR plan, decision defaults, coordination with `INT-*` epic.
+    - Linked epic from [docs/index.md](../docs/index.md); [memory-bank/work_breakdown.md](../memory-bank/work_breakdown.md) overlay; [memory-bank/current_task.md](../memory-bank/current_task.md) approval note.
+  Verification:
+    - N/A (docs/memory-bank only)
+  Notes:
+    - Existing `internal/hdhomerun/` is virtual-server discovery; epic distinguishes client-side hardware integration.
+  Opportunities filed:
+    - none
+  Links:
+    - `docs/epics/EPIC-lineup-parity.md` · `memory-bank/work_breakdown.md` · `memory-bank/current_task.md` · `docs/index.md`
+
+- Date: 2026-03-19
   Title: README refresh for catch-up recording (daemon, env, CLI)
   Summary:
     - README: What's New for `catchup-daemon`; After Catch-Up Publishing subsection (commands, fallbacks, deprioritize hosts, retention, observability, doc links); CLI table row for `catchup-record`; Key Environment Variables for catch-up guide/replay plus subsection **Catch-up recording (daemon / CLI)** with `IPTV_TUNERR_CATCHUP_RECORDER_STATE_FILE` and `IPTV_TUNERR_RECORD_DEPRIORITIZE_HOSTS`.

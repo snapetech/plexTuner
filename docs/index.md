@@ -29,6 +29,7 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[explanations/always-on-recorder-daemon.md](explanations/always-on-recorder-daemon.md)** | Rolling catch-up recorder daemon (`catchup-daemon`): MVP shipped, extensions noted. |
 | **[k8s/README.md](../k8s/README.md)** | Kubernetes deployment (HDHR in cluster). |
 | **[epics/](epics/EPIC-template.md)** | Multi-PR epic template. Use with [memory-bank/work_breakdown.md](../memory-bank/work_breakdown.md). |
+| **[epics/EPIC-lineup-parity.md](epics/EPIC-lineup-parity.md)** | Optional **Lineup-app-style** track: real HDHomeRun client, web dashboard, SQLite EPG, HLS/fMP4 profiles ([inspiration](https://github.com/am385/lineup)). |
 | **product/** · **stories/** | [PRD template](product/PRD-template.md), [STORY template](stories/STORY-template.md). |
 | **[features.md](features.md)** | Full feature list. |
 | **[CHANGELOG.md](CHANGELOG.md)** | Version and change history. |

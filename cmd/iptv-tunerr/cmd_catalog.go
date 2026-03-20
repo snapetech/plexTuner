@@ -490,6 +490,19 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 
 	res.Movies, res.Series = catalog.ApplyVODTaxonomy(res.Movies, res.Series)
 	res.Live = stripStreamHosts(res.Live, cfg.StripStreamHosts)
+
+	// Merge free public sources (iptv-org, custom M3U URLs) into catalog.
+	if freeURLs := freeSourceURLs(cfg); len(freeURLs) > 0 {
+		log.Printf("free-sources: fetching %d public source URL(s) (mode=%s)...", len(freeURLs), cfg.FreeSourceMode)
+		if free, err := fetchFreeSources(cfg); err != nil {
+			log.Printf("free-sources: fetch failed: %v (continuing without)", err)
+		} else if len(free) > 0 {
+			before := len(res.Live)
+			res.Live = applyFreeSources(res.Live, free, cfg.FreeSourceMode)
+			log.Printf("free-sources: catalog grew from %d to %d channels", before, len(res.Live))
+		}
+	}
+
 	applyRuntimeEPGRepairs(cfg, res.Live, res.ProviderBase, res.ProviderUser, res.ProviderPass)
 
 	channeldna.Assign(res.Live)

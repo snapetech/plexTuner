@@ -122,6 +122,13 @@ catalog.json
 /iptv-tunerr
 
 # =========================
+# Local M3U test data (large third-party playlists, not for redistribution)
+# =========================
+*.m3u
+*.m3u8
+!testdata/**
+
+# =========================
 # Secrets — never commit these
 # =========================
 # Runtime catalogs with embedded provider credentials

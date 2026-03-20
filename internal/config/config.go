@@ -103,60 +103,85 @@ type Config struct {
 	ProviderEPGEnabled  bool
 	ProviderEPGTimeout  time.Duration
 	ProviderEPGCacheTTL time.Duration
+
+	// Free public sources: supplement or enrich the paid catalog with public M3U feeds
+	// (e.g. iptv-org/iptv). No credentials required. Never redistributed — fetched at index time.
+	//
+	// IPTV_TUNERR_FREE_SOURCES        comma-separated M3U URLs
+	// IPTV_TUNERR_FREE_SOURCE_MODE    supplement | merge | full (default: supplement)
+	// IPTV_TUNERR_FREE_SOURCE_SMOKETEST   probe channels before adding (default: false)
+	// IPTV_TUNERR_FREE_SOURCE_REQUIRE_TVGID  only include channels with a tvg-id (default: true)
+	// IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_COUNTRIES  comma-separated ISO-3166-1 alpha-2 codes (e.g. us,gb,ca)
+	// IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_CATEGORIES comma-separated categories (e.g. news,sports,movies)
+	// IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_ALL        fetch iptv-org index.m3u (all channels, ~40k)
+	FreeSources                 []string
+	FreeSourceMode              string // "supplement" | "merge" | "full"
+	FreeSourceSmoketest         bool
+	FreeSourceRequireTVGID      bool
+	FreeSourceIptvOrgCountries  []string
+	FreeSourceIptvOrgCategories []string
+	FreeSourceIptvOrgAll        bool
 }
 
 // Load reads config from environment. Call LoadEnvFile(".env") before Load() to use a .env file.
 // If ProviderUser or ProviderPass are empty, Load tries IPTV_TUNERR_SUBSCRIPTION_FILE (or default path) with "Username:" / "Password:" lines.
 func Load() *Config {
 	c := &Config{
-		ProviderBaseURL:      getEnvURL("IPTV_TUNERR_PROVIDER_URL"),
-		ProviderUser:         os.Getenv("IPTV_TUNERR_PROVIDER_USER"),
-		ProviderPass:         os.Getenv("IPTV_TUNERR_PROVIDER_PASS"),
-		M3UURL:               getEnvURL("IPTV_TUNERR_M3U_URL"),
-		MountPoint:           getEnv("IPTV_TUNERR_MOUNT", "/mnt/vodfs"),
-		CacheDir:             getEnv("IPTV_TUNERR_CACHE", "/var/cache/iptvtunerr"),
-		CatalogPath:          getEnv("IPTV_TUNERR_CATALOG", "./catalog.json"),
-		VODFSAllowOther:      getEnvBool("IPTV_TUNERR_VODFS_ALLOW_OTHER", false),
-		TunerCount:           getEnvInt("IPTV_TUNERR_TUNER_COUNT", 2),
-		LineupMaxChannels:    getEnvInt("IPTV_TUNERR_LINEUP_MAX_CHANNELS", 480),
-		GuideNumberOffset:    getEnvInt("IPTV_TUNERR_GUIDE_NUMBER_OFFSET", 0),
-		BaseURL:              os.Getenv("IPTV_TUNERR_BASE_URL"),
-		DeviceID:             getEnv("IPTV_TUNERR_DEVICE_ID", "iptvtunerr01"),
-		FriendlyName:         os.Getenv("IPTV_TUNERR_FRIENDLY_NAME"),
-		StreamBufferBytes:    getEnvIntOrAuto("IPTV_TUNERR_STREAM_BUFFER_BYTES", -1),
-		StreamTranscodeMode:  getEnvTranscodeMode("IPTV_TUNERR_STREAM_TRANSCODE", "off"),
-		AutopilotStateFile:   os.Getenv("IPTV_TUNERR_AUTOPILOT_STATE_FILE"),
-		XMLTVURL:             getEnvURL("IPTV_TUNERR_XMLTV_URL"),
-		XMLTVAliases:         os.Getenv("IPTV_TUNERR_XMLTV_ALIASES"),
-		XMLTVMatchEnable:     getEnvBool("IPTV_TUNERR_XMLTV_MATCH_ENABLE", true),
-		XMLTVTimeout:         getEnvDuration("IPTV_TUNERR_XMLTV_TIMEOUT", 45*time.Second),
-		LiveEPGOnly:          getEnvBool("IPTV_TUNERR_LIVE_EPG_ONLY", false),
-		LiveOnly:             getEnvBool("IPTV_TUNERR_LIVE_ONLY", false),
-		EpgPruneUnlinked:     getEnvBool("IPTV_TUNERR_EPG_PRUNE_UNLINKED", false),
-		BlockCFProviders:     getEnvBool("IPTV_TUNERR_BLOCK_CF_PROVIDERS", false),
-		FetchCFReject:        getEnvBool("IPTV_TUNERR_FETCH_CF_REJECT", false),
-		StripStreamHosts:     getEnvHosts("IPTV_TUNERR_STRIP_STREAM_HOSTS"),
-		SmoketestEnabled:     getEnvBool("IPTV_TUNERR_SMOKETEST_ENABLED", false),
-		SmoketestTimeout:     getEnvDuration("IPTV_TUNERR_SMOKETEST_TIMEOUT", 8*time.Second),
-		SmoketestConcurrency: getEnvInt("IPTV_TUNERR_SMOKETEST_CONCURRENCY", 10),
-		SmoketestMaxChannels: getEnvInt("IPTV_TUNERR_SMOKETEST_MAX_CHANNELS", 0),
-		SmoketestMaxDuration: getEnvDuration("IPTV_TUNERR_SMOKETEST_MAX_DURATION", 5*time.Minute),
-		SmoketestCacheFile:   os.Getenv("IPTV_TUNERR_SMOKETEST_CACHE_FILE"),
-		SmoketestCacheTTL:    getEnvDuration("IPTV_TUNERR_SMOKETEST_CACHE_TTL", 4*time.Hour),
-		XMLTVCacheTTL:        getEnvDuration("IPTV_TUNERR_XMLTV_CACHE_TTL", 10*time.Minute),
-		HDHREnabled:          getEnvBool("IPTV_TUNERR_HDHR_NETWORK_MODE", false),
-		HDHRDeviceID:         getEnvUint32("IPTV_TUNERR_HDHR_DEVICE_ID", 0x12345678),
-		HDHRTunerCount:       getEnvInt("IPTV_TUNERR_HDHR_TUNER_COUNT", 2),
-		HDHRDiscoverPort:     getEnvInt("IPTV_TUNERR_HDHR_DISCOVER_PORT", 65001),
-		HDHRControlPort:      getEnvInt("IPTV_TUNERR_HDHR_CONTROL_PORT", 65001),
-		HDHRFriendlyName:     os.Getenv("IPTV_TUNERR_HDHR_FRIENDLY_NAME"),
-		EmbyHost:             getEnvURL("IPTV_TUNERR_EMBY_HOST"),
-		EmbyToken:            os.Getenv("IPTV_TUNERR_EMBY_TOKEN"),
-		JellyfinHost:         getEnvURL("IPTV_TUNERR_JELLYFIN_HOST"),
-		JellyfinToken:        os.Getenv("IPTV_TUNERR_JELLYFIN_TOKEN"),
-		ProviderEPGEnabled:   getEnvBool("IPTV_TUNERR_PROVIDER_EPG_ENABLED", true),
-		ProviderEPGTimeout:   getEnvDuration("IPTV_TUNERR_PROVIDER_EPG_TIMEOUT", 90*time.Second),
-		ProviderEPGCacheTTL:  getEnvDuration("IPTV_TUNERR_PROVIDER_EPG_CACHE_TTL", 10*time.Minute),
+		ProviderBaseURL:             getEnvURL("IPTV_TUNERR_PROVIDER_URL"),
+		ProviderUser:                os.Getenv("IPTV_TUNERR_PROVIDER_USER"),
+		ProviderPass:                os.Getenv("IPTV_TUNERR_PROVIDER_PASS"),
+		M3UURL:                      getEnvURL("IPTV_TUNERR_M3U_URL"),
+		MountPoint:                  getEnv("IPTV_TUNERR_MOUNT", "/mnt/vodfs"),
+		CacheDir:                    getEnv("IPTV_TUNERR_CACHE", "/var/cache/iptvtunerr"),
+		CatalogPath:                 getEnv("IPTV_TUNERR_CATALOG", "./catalog.json"),
+		VODFSAllowOther:             getEnvBool("IPTV_TUNERR_VODFS_ALLOW_OTHER", false),
+		TunerCount:                  getEnvInt("IPTV_TUNERR_TUNER_COUNT", 2),
+		LineupMaxChannels:           getEnvInt("IPTV_TUNERR_LINEUP_MAX_CHANNELS", 480),
+		GuideNumberOffset:           getEnvInt("IPTV_TUNERR_GUIDE_NUMBER_OFFSET", 0),
+		BaseURL:                     os.Getenv("IPTV_TUNERR_BASE_URL"),
+		DeviceID:                    getEnv("IPTV_TUNERR_DEVICE_ID", "iptvtunerr01"),
+		FriendlyName:                os.Getenv("IPTV_TUNERR_FRIENDLY_NAME"),
+		StreamBufferBytes:           getEnvIntOrAuto("IPTV_TUNERR_STREAM_BUFFER_BYTES", -1),
+		StreamTranscodeMode:         getEnvTranscodeMode("IPTV_TUNERR_STREAM_TRANSCODE", "off"),
+		AutopilotStateFile:          os.Getenv("IPTV_TUNERR_AUTOPILOT_STATE_FILE"),
+		XMLTVURL:                    getEnvURL("IPTV_TUNERR_XMLTV_URL"),
+		XMLTVAliases:                os.Getenv("IPTV_TUNERR_XMLTV_ALIASES"),
+		XMLTVMatchEnable:            getEnvBool("IPTV_TUNERR_XMLTV_MATCH_ENABLE", true),
+		XMLTVTimeout:                getEnvDuration("IPTV_TUNERR_XMLTV_TIMEOUT", 45*time.Second),
+		LiveEPGOnly:                 getEnvBool("IPTV_TUNERR_LIVE_EPG_ONLY", false),
+		LiveOnly:                    getEnvBool("IPTV_TUNERR_LIVE_ONLY", false),
+		EpgPruneUnlinked:            getEnvBool("IPTV_TUNERR_EPG_PRUNE_UNLINKED", false),
+		BlockCFProviders:            getEnvBool("IPTV_TUNERR_BLOCK_CF_PROVIDERS", false),
+		FetchCFReject:               getEnvBool("IPTV_TUNERR_FETCH_CF_REJECT", false),
+		StripStreamHosts:            getEnvHosts("IPTV_TUNERR_STRIP_STREAM_HOSTS"),
+		SmoketestEnabled:            getEnvBool("IPTV_TUNERR_SMOKETEST_ENABLED", false),
+		SmoketestTimeout:            getEnvDuration("IPTV_TUNERR_SMOKETEST_TIMEOUT", 8*time.Second),
+		SmoketestConcurrency:        getEnvInt("IPTV_TUNERR_SMOKETEST_CONCURRENCY", 10),
+		SmoketestMaxChannels:        getEnvInt("IPTV_TUNERR_SMOKETEST_MAX_CHANNELS", 0),
+		SmoketestMaxDuration:        getEnvDuration("IPTV_TUNERR_SMOKETEST_MAX_DURATION", 5*time.Minute),
+		SmoketestCacheFile:          os.Getenv("IPTV_TUNERR_SMOKETEST_CACHE_FILE"),
+		SmoketestCacheTTL:           getEnvDuration("IPTV_TUNERR_SMOKETEST_CACHE_TTL", 4*time.Hour),
+		XMLTVCacheTTL:               getEnvDuration("IPTV_TUNERR_XMLTV_CACHE_TTL", 10*time.Minute),
+		HDHREnabled:                 getEnvBool("IPTV_TUNERR_HDHR_NETWORK_MODE", false),
+		HDHRDeviceID:                getEnvUint32("IPTV_TUNERR_HDHR_DEVICE_ID", 0x12345678),
+		HDHRTunerCount:              getEnvInt("IPTV_TUNERR_HDHR_TUNER_COUNT", 2),
+		HDHRDiscoverPort:            getEnvInt("IPTV_TUNERR_HDHR_DISCOVER_PORT", 65001),
+		HDHRControlPort:             getEnvInt("IPTV_TUNERR_HDHR_CONTROL_PORT", 65001),
+		HDHRFriendlyName:            os.Getenv("IPTV_TUNERR_HDHR_FRIENDLY_NAME"),
+		EmbyHost:                    getEnvURL("IPTV_TUNERR_EMBY_HOST"),
+		EmbyToken:                   os.Getenv("IPTV_TUNERR_EMBY_TOKEN"),
+		JellyfinHost:                getEnvURL("IPTV_TUNERR_JELLYFIN_HOST"),
+		JellyfinToken:               os.Getenv("IPTV_TUNERR_JELLYFIN_TOKEN"),
+		ProviderEPGEnabled:          getEnvBool("IPTV_TUNERR_PROVIDER_EPG_ENABLED", true),
+		ProviderEPGTimeout:          getEnvDuration("IPTV_TUNERR_PROVIDER_EPG_TIMEOUT", 90*time.Second),
+		ProviderEPGCacheTTL:         getEnvDuration("IPTV_TUNERR_PROVIDER_EPG_CACHE_TTL", 10*time.Minute),
+		FreeSources:                 getEnvCSV("IPTV_TUNERR_FREE_SOURCES"),
+		FreeSourceMode:              getEnvFreeSourceMode("IPTV_TUNERR_FREE_SOURCE_MODE", "supplement"),
+		FreeSourceSmoketest:         getEnvBool("IPTV_TUNERR_FREE_SOURCE_SMOKETEST", false),
+		FreeSourceRequireTVGID:      getEnvBool("IPTV_TUNERR_FREE_SOURCE_REQUIRE_TVGID", true),
+		FreeSourceIptvOrgCountries:  getEnvCSV("IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_COUNTRIES"),
+		FreeSourceIptvOrgCategories: getEnvCSV("IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_CATEGORIES"),
+		FreeSourceIptvOrgAll:        getEnvBool("IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_ALL", false),
 	}
 	if c.TunerCount <= 0 {
 		c.TunerCount = 2
@@ -409,6 +434,34 @@ func getEnvUint32(key string, defaultVal uint32) uint32 {
 		return defaultVal
 	}
 	return uint32(n)
+}
+
+// getEnvCSV parses a comma-separated list of strings from an env var. Empty entries are dropped.
+func getEnvCSV(key string) []string {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return nil
+	}
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// getEnvFreeSourceMode returns one of "supplement", "merge", or "full". Defaults to defaultVal on unknown input.
+func getEnvFreeSourceMode(key, defaultVal string) string {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	switch v {
+	case "supplement", "merge", "full":
+		return v
+	default:
+		return defaultVal
+	}
 }
 
 // getEnvHosts parses a comma-separated list of hostnames from an env var.

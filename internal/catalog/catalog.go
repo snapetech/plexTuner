@@ -20,7 +20,9 @@ type LiveChannel struct {
 	StreamAuths []StreamAuth `json:"stream_auths,omitempty"` // optional per-stream auth rules for fallback URLs
 	EPGLinked   bool         `json:"epg_linked"`             // has tvg-id / can be matched to guide
 	TVGID       string       `json:"tvg_id,omitempty"`
+	GroupTitle  string       `json:"group_title,omitempty"`  // M3U group-title (e.g. "News", "US", "Sports")
 	PreferredUA string       `json:"preferred_ua,omitempty"` // UA found to work for this channel (CF bypass); pre-seeds gateway learnedUAByHost
+	FreeSource  bool         `json:"free_source,omitempty"`  // channel came from a free public source (not paid provider)
 }
 
 type StreamAuth struct {

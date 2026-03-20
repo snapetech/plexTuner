@@ -20,6 +20,7 @@ func init() {
 			MaxIdleConns:        100,
 			MaxIdleConnsPerHost: MaxIdleConnsPerHost,
 			IdleConnTimeout:     DefaultIdleConnTimeout,
+			ForceAttemptHTTP2:   true, // enable h2 via ALPN, matches http.DefaultTransport behaviour
 		},
 	}
 }

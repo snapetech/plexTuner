@@ -86,6 +86,7 @@ func parseM3UBody(r interface {
 			StreamURLs:  urls,
 			EPGLinked:   tvgID != "",
 			TVGID:       tvgID,
+			GroupTitle:  extinf["group-title"],
 		}
 		out = append(out, ch)
 		extinf = nil

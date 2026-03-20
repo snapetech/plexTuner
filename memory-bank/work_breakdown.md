@@ -31,6 +31,13 @@ Create or update this file when **any** of these are true:
 - **Goal (2–5 sentences):** Turn the catch-up/recording path from a one-shot operator tool into a policy-driven subsystem that can automatically capture current and upcoming programmes across as many supported feeds as the provider/system budget allows. Success means Tunerr can schedule and persist recordings headlessly, dedupe duplicate channel variants, and produce real recorded assets instead of only launcher/replay links for non-replay sources.
 - **Non-goals (scope fence):** Shipping a full archive/DVR product in one patch, implementing every future retention/publisher heuristic immediately, or claiming gapless perfect mid-stream failover across all providers without proving it.
 
+### Active epic overlay (Lineup-app parity, 2026-03-19) — user approved “yes to all”
+
+- **Doc:** [docs/epics/EPIC-lineup-parity.md](../docs/epics/EPIC-lineup-parity.md) (inspired by [am385/lineup](https://github.com/am385/lineup)).
+- **Goal:** Add optional **real HDHomeRun client** ingestion, **operator web dashboard**, **SQLite-backed EPG** persistence with incremental fetch/cleanup, and **named HLS/fMP4 transcoding profiles** — without replacing Tunerr’s IPTV core or single-binary model.
+- **Non-goals:** Rewriting in .NET, full upstream Lineup feature parity in one PR, or replacing Plex Live TV UX.
+- **Story IDs:** `LP-001` … `LP-012` — work only on stories listed in that epic file; park extras in [opportunities.md](opportunities.md).
+
 ### Active story list (2026-03-18)
 
 | ID | Acceptance criteria | Files/areas (expected) | Verification | Risk flags |

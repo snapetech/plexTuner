@@ -13,6 +13,7 @@
 //	index  Fetch M3U/Xtream, parse, save catalog (live channels + VOD + series)
 //	mount  Load catalog and mount VODFS (optional -cache for on-demand download)
 //	probe  Cycle through provider URLs, probe each, report OK / Cloudflare / fail
+//	hdhr-scan  Discover physical HDHomeRun tuners on LAN (UDP) or fetch discover/lineup via HTTP
 package main
 
 import (
@@ -86,6 +87,8 @@ func main() {
 	commands = append(commands, cookieImportCommands()...)
 	commands = append(commands, cfStatusCommands()...)
 	commands = append(commands, debugBundleCommands()...)
+	commands = append(commands, freeSourcesCommands()...)
+	commands = append(commands, hdhrScanCommands()...)
 	commandByName := make(map[string]commandSpec, len(commands))
 	sections := []string{"Core", "Guide/EPG", "VOD (Linux)", "Lab/ops"}
 	for _, cmd := range commands {
