@@ -50,6 +50,8 @@ Environment variables (**`TUNER_PORT`**, **`REPLAY_TS_FILE`**, **`PMS_URL`**, **
 
 **`./scripts/verify`** runs **`bash -n`** on **`scripts/live-race-harness.sh`** and **`python3 -m py_compile`** on **`scripts/live-race-harness-report.py`**.
 
+**List recent harness output dirs:** **`python3 scripts/harness-index.py`**
+
 See also
 --------
 - [plex-client-compatibility-matrix.md](../reference/plex-client-compatibility-matrix.md) (**HR-003**).

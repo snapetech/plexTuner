@@ -907,7 +907,7 @@ Full K8s guide: [`k8s/README.md`](k8s/README.md)
 | `run` | Index + health check + serve (use for systemd/containers) |
 | `serve` | Tuner server only (requires existing catalog) |
 | `index` | Fetch provider data and write `catalog.json` |
-| `probe` | Test and rank provider hosts |
+| `probe` | Test and rank provider hosts — [interpreting probe results](docs/how-to/interpreting-probe-results.md) |
 | `supervise` | Run multiple child tuner instances from a JSON config |
 | `channel-report` | Score channels by guide confidence, stream resilience, and EPG match quality |
 | `channel-leaderboard` | Hall of fame/shame plus guide-risk and stream-risk channel leaderboards |

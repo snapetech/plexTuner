@@ -59,6 +59,8 @@ Header files, **`RUN_SECONDS`**, **`USE_FFPLAY=false`**, manifest analysis limit
 
 **`./scripts/verify`** runs **`bash -n`** on **`scripts/stream-compare-harness.sh`** and **`python3 -m py_compile`** on **`scripts/stream-compare-report.py`**.
 
+**List recent harness output dirs:** **`python3 scripts/harness-index.py`**
+
 See also
 --------
 - [memory-bank/commands.yml](../../memory-bank/commands.yml) — **`stream_compare_harness`** example.

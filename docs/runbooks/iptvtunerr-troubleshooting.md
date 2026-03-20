@@ -81,6 +81,8 @@ go run ./cmd/iptv-tunerr probe -urls=http://host1.com,http://host2.com -timeout=
 
 **What you get:** For each host, get.php and player_api.php status (OK / Cloudflare / fail) and latency. Use to choose a working host or confirm creds/network.
 
+Task-oriented guide to every status line: **[how-to: interpreting probe results](../how-to/interpreting-probe-results.md)**.
+
 **If all hosts fail:** Check credentials, network, firewall. See [Common failures](#5-common-failures-and-fixes) below.
 
 ---

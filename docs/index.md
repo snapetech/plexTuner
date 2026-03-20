@@ -26,6 +26,7 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[how-to/tester-release-notes-draft.md](how-to/tester-release-notes-draft.md)** | Draft tester-facing release notes for current validation builds. |
 | **[how-to/cloudflare-bypass.md](how-to/cloudflare-bypass.md)** | Cloudflare-protected providers: UA cycling, cookies, headers, troubleshooting. |
 | **[how-to/debug-bundle.md](how-to/debug-bundle.md)** | Collect a shareable `debug-bundle` and analyze with `scripts/analyze-bundle.py`. |
+| **[how-to/interpreting-probe-results.md](how-to/interpreting-probe-results.md)** | **`iptv-tunerr probe`**: status strings, **`get.php`** vs **`player_api`**, what to do next. |
 | **[how-to/stream-compare-harness.md](how-to/stream-compare-harness.md)** | Stream-compare: direct vs Tunerr + **`stream-compare-report.py`** (**runbook §9**). |
 | **[how-to/live-race-harness.md](how-to/live-race-harness.md)** | Live-race harness: synthetic/replay + **`live-race-harness-report.py`** (**runbook §7**). |
 | **[how-to/multi-stream-harness.md](how-to/multi-stream-harness.md)** | Two-stream collapse: **`scripts/multi-stream-harness.sh`** + report (**runbook §10**). |

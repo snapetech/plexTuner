@@ -11,6 +11,7 @@ Goal → preconditions → steps → verify.
 
 | Doc | Description |
 |-----|-------------|
+| [interpreting-probe-results](interpreting-probe-results.md) | Read **`iptv-tunerr probe`** output (`get.php` vs **`player_api`**, CF, ranked order). |
 | [first-push](first-push.md) | Add remote and push (GitHub / GitLab / self-hosted). |
 | [deployment](deployment.md) | Deploy IPTV Tunerr: binary, Docker, systemd; local QA/smoke script. |
 | [fix-guide-data-with-epg-doctor](fix-guide-data-with-epg-doctor.md) | Diagnose and fix bad guide data, placeholder-only channels, and weak XMLTV matches. |

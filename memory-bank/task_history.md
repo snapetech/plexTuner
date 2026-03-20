@@ -23,6 +23,16 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-22
+  Title: interpreting-probe-results.md + harness-index.py (backlog closure)
+  Summary:
+    - **`docs/how-to/interpreting-probe-results.md`**: **`get.php`** vs **`player_api`**, status table, common patterns; **README** **`probe`**, **runbook §4**, **features**, **docs-gaps** (probe row → **Resolved**).
+    - **`scripts/harness-index.py`**: newest runs per **`.diag/`** family; **`commands.yml`** **`harness_index`**; harness how-tos; **`opportunities.md`** status lines.
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - **`connect-plex`** how-to still open in **`opportunities.md`**
+
+- Date: 2026-03-22
   Title: How-to — stream-compare-harness.md + opportunities backlog (harness index, probe, Plex connect)
   Summary:
     - **`docs/how-to/stream-compare-harness.md`**: **§9** quick start + report; indexes, README, **runbook §9** lead-in, **live-race**/**multi-stream** related sections, **`features`**, **`repo_map`**.
@@ -3054,6 +3064,17 @@ Verification:
 - `go test ./internal/plex ./cmd/iptv-tunerr -run '^$'`
 
 ---
+
+- Date: 2026-03-22
+  Title: Make run startup visible and diagnose slow catalog phases
+  Summary:
+    - Changed `run` startup so the tuner listener comes up before long catalog and guide warm-up work, allowing `/healthz` and `/readyz` to report `loading` / `not_ready` instead of the process appearing dead while indexing.
+    - Moved XMLTV startup refresh off the listener critical path; `/guide.xml` already serves placeholder content until the merged guide cache is ready.
+    - Added timing logs for catalog phases and for `IndexFromPlayerAPI` substeps (`resolveStreamBaseURL`, `fetchLiveStreams`, `fetchVODStreams`, `fetchSeries`) so provider-specific startup stalls identify the exact slow phase.
+  Verification:
+    - `go test ./cmd/iptv-tunerr ./internal/indexer ./internal/tuner`
+    - `go build ./cmd/iptv-tunerr`
+    - manual `go run ./cmd/iptv-tunerr run` repro confirming `:5004` binds and `/readyz` returns `503 not_ready` during startup
 
 - Date: 2026-03-21
   Title: Add a dedicated multi-stream contention harness

@@ -26,6 +26,7 @@ It exists to encourage quality gains without derailing the current task.
   Category: operability
   Title: Unified **`.diag/`** harness index (optional static `index.html` or `scripts/harness-index.py`)
   Context: **§7** / **§9** / **§10** now have matching [how-to docs](../../docs/how-to/) (`live-race`, `stream-compare`, `multi-stream`), but operators still dig through timestamped folders by hand.
+  Status: **MVP shipped** — **`scripts/harness-index.py`** lists newest runs per family (**`--json`**); linked from harness how-tos + **`commands.yml`** **`harness_index`**. Optional future: HTML index or **`--open`** — file under [opportunities](../../memory-bank/opportunities.md) if needed.
   Why it matters: Faster triage when multiple harness runs exist under **`.diag/live-race`**, **`.diag/stream-compare`**, **`.diag/multi-stream`**.
   Evidence: Runbooks + how-tos; no single directory browser.
   Suggested fix: Small script that lists latest N runs per family + embeds **`report.json`** / **`summary.txt`** excerpts; optional **`--open`** for file manager. Keep out of **`scripts/verify`** (not CI-critical).
@@ -36,6 +37,7 @@ It exists to encourage quality gains without derailing the current task.
   Category: operability
   Title: **Probe** results — “what to do next” how-to (closes [docs-gaps.md](../../docs/docs-gaps.md) high row)
   Context: **`iptv-tunerr probe`** output is clear to maintainers but not always actionable for new operators (CF vs auth vs DNS vs empty categories).
+  Status: **Shipped** — [docs/how-to/interpreting-probe-results.md](../../docs/how-to/interpreting-probe-results.md); README **`probe`** row; runbook §4 link; [docs-gaps.md](../../docs/docs-gaps.md) **Resolved** row.
   Why it matters: Reduces chat loops after “probe says …”.
   Evidence: [docs-gaps.md](../../docs/docs-gaps.md) § High; **`cmd`** probe + [cli-and-env-reference](../../docs/reference/cli-and-env-reference.md).
   Suggested fix: **`docs/how-to/interpreting-probe-results.md`** with decision table (symptom → env/flag → next command); link from README **Quick Start** and runbook §4.

@@ -51,6 +51,8 @@ Artifact layout, **`CHANNEL_URLS_FILE`**, tuning **`POLL_SECS`**, **`ATTEMPTS_LI
 
 **`./scripts/verify`** runs **`bash -n`** on **`scripts/multi-stream-harness.sh`** and **`python3 -m py_compile`** on **`scripts/multi-stream-harness-report.py`** (see **`scripts/verify-steps.sh`**).
 
+**List recent harness output dirs** (this family + live-race + stream-compare): **`python3 scripts/harness-index.py`** ( **`--json`** optional).
+
 See also
 --------
 - [features.md](../features.md) (multi-stream harness row).

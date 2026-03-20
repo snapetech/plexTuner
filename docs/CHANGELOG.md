@@ -14,6 +14,8 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 ## [Unreleased]
 
 ### Documentation
+- **`iptv-tunerr probe`:** new [how-to/interpreting-probe-results.md](how-to/interpreting-probe-results.md) (status table, **`get.php`** vs **`player_api`** patterns); **README** **`probe`** row; **runbook §4**; **`docs/docs-gaps.md`** moves probe row to **Resolved**; **`features.md`** row.
+- **Harness index helper:** **`scripts/harness-index.py`** lists newest **`.diag/live-race`**, **`.diag/stream-compare`**, **`.diag/multi-stream`** runs (**`--json`**); **`memory-bank/commands.yml`** **`harness_index`**; harness how-tos + **`opportunities.md`** (MVP for unified **`.diag/`** index).
 - **Stream-compare harness:** new [how-to/stream-compare-harness.md](how-to/stream-compare-harness.md); **runbook §9** lead-in; **`features.md`** row; cross-links with **live-race** / **multi-stream** how-tos; **`docs/docs-gaps.md`** **Resolved** table; backlog in **`memory-bank/opportunities.md`** (2026-03-22).
 - **Live-race harness:** new [how-to/live-race-harness.md](how-to/live-race-harness.md); **runbook §7** lead-in; **`commands.yml`** **`live_race_harness`**; **`features.md`** harness rows link how-tos; cross-links with **multi-stream** how-to (fixed wrong §6 pointer → **§7** for live-race).
 - **Multi-stream harness:** new [how-to/multi-stream-harness.md](how-to/multi-stream-harness.md) (quick start + pointers); linked from **`docs/how-to/index`**, **`docs/index`**, **`README`** (Documentation + Recent Changes), **runbook §10** + **runbooks index**.
@@ -39,6 +41,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ### Operability
 - **`GET /readyz`**: Kubernetes-oriented readiness JSON — **503** `not_ready` until **`UpdateChannels`** has live channels, then **200** `ready` (same gate as **`/healthz`**, which returns **`loading`** / **`ok`** plus **`source_ready`**). Example **`k8s/`** manifests probe **`/readyz`** for **`readinessProbe`**; **`/discover.json`** remains a better **liveness** target during long first catalog builds. See runbook §8 and **`TestServer_readyz`**.
+- **Startup visibility for `run`:** the tuner now binds before long catalog and guide startup work completes, so **`/healthz`** and **`/readyz`** report **`loading`** / **`not_ready`** instead of looking dead during big provider indexes. Catalog startup also logs phase timings (`provider probe + rank`, `index provider ...`, free-source fetch, HDHR merge, EPG repair, smoketest), and **`IndexFromPlayerAPI`** now logs per-step durations for stream-base resolve, live, VOD, and series fetches.
 
 ### Reliability / Plex ops (work breakdown slices)
 

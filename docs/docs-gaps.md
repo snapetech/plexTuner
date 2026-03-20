@@ -23,7 +23,6 @@ Known missing or incomplete documentation. Address these when touching the relev
 |-----|----------------|----------------|
 | **No step-by-step Plex setup** | New users may not know: add tuner in Plex UI vs `-register-plex`, channelmap activation, 480-channel limit. | Add a [how-to](how-to/index.md): "Connect IPTV Tunerr to Plex (UI vs headless)". Link from README. |
 | **`.env.example` not fully documented in one place** | All env vars are in .env.example and config.go; no single reference table in docs. | README has a short table; add a [reference](reference/index.md) page "Configuration reference" with every env var, default, and effect. |
-| **Probe output interpretation** | Users run `probe` and see OK/Cloudflare/fail but may not know what to do next. | Add a short "Interpreting probe results" in how-to or explanations; link from README probe section. |
 | **Plex DB registration caveats** | RegisterTuner updates DB rows; does not create DVR via API or do channelmap activation. Guide can stay empty without channelmap. | Document in reference or how-to: when to use `-register-plex`, stop Plex, backup DB, and that channelmap activation is separate. |
 
 ---
@@ -56,6 +55,7 @@ Known missing or incomplete documentation. Address these when touching the relev
 | Closed | What | Link |
 |--------|------|------|
 | 2026-03 | **Operator harness how-tos** (task-oriented entrypoints mirroring runbook §7 / §9 / §10) | [live-race-harness.md](how-to/live-race-harness.md), [stream-compare-harness.md](how-to/stream-compare-harness.md), [multi-stream-harness.md](how-to/multi-stream-harness.md) |
+| 2026-03 | **`probe` output interpretation** | [interpreting-probe-results.md](how-to/interpreting-probe-results.md); **`scripts/harness-index.py`** lists recent **`.diag/`** harness runs |
 
 ---
 
