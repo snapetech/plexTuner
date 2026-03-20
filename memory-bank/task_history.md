@@ -23,6 +23,20 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: HLS mux — pass through upstream 4xx/5xx for seg= (vs always 502)
+  Summary:
+    - `hlsMuxUpstreamHTTPError` + `respondHLSMuxUpstreamHTTP`; preview body up to **8 KiB**; diagnostic **`X-IptvTunerr-Hls-Mux-Error: upstream_http_<status>`**; **`finalStatus`** **`hls_mux_upstream_http_<status>`**; playlist branch uses same type for unexpected non-200 HLS responses.
+    - Tests `TestServeHLSMuxTarget_returnsUpstreamHTTPError`, `TestGateway_hlsMuxSeg_upstreamHTTP_passedThrough`; docs CHANGELOG/cli/how-to; removed unused **`fmt`** import from **`gateway_hls.go`**.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Transport failures and bad `newUpstreamRequest` still surface as gateway **502**.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway_hls.go`, `internal/tuner/gateway.go`, `internal/tuner/gateway_test.go`
+
+- Date: 2026-03-19
   Title: HLS mux — diagnostic header on unsupported seg= (X-IptvTunerr-Hls-Mux-Error)
   Summary:
     - `respondHLSMuxUnsupportedTargetScheme`: **`applyHLSMuxCORS`** + **`X-IptvTunerr-Hls-Mux-Error: unsupported_target_scheme`** + **400**; **`Access-Control-Expose-Headers`** includes that header when CORS is on.
