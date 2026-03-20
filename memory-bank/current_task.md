@@ -2,7 +2,17 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-19, low-overlap follow-up):** Continued on the non-epic lane alongside parallel product work. **`gateway_stream_upstream.go`** is slimmer again: non-OK upstream handling + success relay branches moved into **`gateway_stream_response.go`**. Native mux operability also improved: **`/provider_profile.json`** now exposes **`last_hls_mux_outcome`** / **`last_dash_mux_outcome`** with redacted target URLs + timestamps so operators can see the latest mux failure/success reason without scraping logs. **`./scripts/verify`** OK.
+
 **Latest (2026-03-19, HR-002 harnessing):** Bridging the repo-local proof gap for Plex Web startup validation. Current slice wires the optional external **`plex-web-livetv-probe.py`** into **`scripts/live-race-harness.sh`** via **`PWPROBE_SCRIPT`** / **`PWPROBE_ARGS`**, captures probe JSON/log/exit code in the harness bundle, and teaches **`live-race-harness-report.py`** to summarize those artifacts when present.
+
+**Latest (2026-03-19):** **cli-and-env** documents **`IPTV_TUNERR_HTTP_*`** scope across subsystems; **`opportunities.md`** drops duplicate **`main.go`** split ticket (superseded by **INT-005**). **`./scripts/verify`** OK.
+
+**Latest (2026-03-19):** **HR-010** — **`plex-livetv-http-tuning`** documents full **`httpclient`** footprint; **`gateway_test`** mux scheme test uses **`httpclient.Default()`**. **`./scripts/verify`** OK.
+
+**Latest (2026-03-19):** **HR-010** — **`internal/plex`** (dvr + library), **`internal/provider/probe`**, **`internal/emby`** now use **`httpclient.WithTimeout`** (same timeouts as before). **`./scripts/verify`** OK.
+
+**Latest (2026-03-19):** **HR-010** continued: **`httpClientOrDefault`** (EPG pipeline), **`internal/health`**, **`internal/probe`** use **`httpclient.WithTimeout`**; architecture doc tuner pointers updated. **`./scripts/verify`** OK.
 
 **Latest (2026-03-19):** Lineup-parity **documentation + hygiene slice:** **`gateway_upstream_cf.go`** (**`tryRecoverCFUpstream`**); **`internal/hdhomerun`** + **`hdhr-scan`** on **`httpclient`**; [EPIC-lineup-parity](docs/epics/EPIC-lineup-parity.md) **implementation status**; **`work_breakdown`** LP progress; **`opportunities.md`** superseded stale audit rows; **hls-mux-toolkit** related-code paths updated. **`./scripts/verify`** OK. *Deferred (multi-PR):* SQLite guide **LP-007–009**, Postgres, incremental XMLTV contract, always-on recorder.
 

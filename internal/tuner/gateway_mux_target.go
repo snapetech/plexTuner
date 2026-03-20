@@ -37,6 +37,7 @@ func (g *Gateway) maybeServeNativeMuxTarget(w http.ResponseWriter, r *http.Reque
 		log.Printf("gateway: req=%s channel=%q id=%s native-mux-seg (%s) param too large bytes=%d max=%d ua=%q",
 			reqID, channel.GuideName, channelID, requestMux, len(target), maxSeg, r.UserAgent())
 		g.noteMuxSegOutcome(requestMux, "err_param", channelID, PromNoMuxSegHistogram)
+		g.noteMuxSegRecentOutcome(requestMux, "seg_param_too_large", target)
 		respondHLSMuxClientError(w, r, http.StatusBadRequest, hlsMuxDiagSegParamTooLarge, requestMux+" mux seg parameter too large")
 		return gatewayHandledResult{handled: true, finalStatus: muxPrefix + "_seg_param_too_large", finalErr: errHLSMuxSegParamTooLarge}
 	}
@@ -44,6 +45,7 @@ func (g *Gateway) maybeServeNativeMuxTarget(w http.ResponseWriter, r *http.Reque
 		log.Printf("gateway: req=%s channel=%q id=%s native-mux-seg (%s) rate limited remote=%q",
 			reqID, channel.GuideName, channelID, requestMux, r.RemoteAddr)
 		g.noteMuxSegOutcome(requestMux, "429_rate", channelID, PromNoMuxSegHistogram)
+		g.noteMuxSegRecentOutcome(requestMux, "seg_rate_limited", target)
 		respondHLSMuxClientError(w, r, http.StatusTooManyRequests, hlsMuxDiagSegRateLimited, "mux segment rate limit exceeded")
 		return gatewayHandledResult{handled: true, finalStatus: muxPrefix + "_seg_rate_limited", finalErr: errors.New("native mux segment rate limited")}
 	}
@@ -51,6 +53,7 @@ func (g *Gateway) maybeServeNativeMuxTarget(w http.ResponseWriter, r *http.Reque
 		log.Printf("gateway: req=%s channel=%q id=%s native-mux-seg (%s) unsupported scheme target=%s ua=%q",
 			reqID, channel.GuideName, channelID, requestMux, safeurl.RedactURL(target), r.UserAgent())
 		g.noteMuxSegOutcome(requestMux, "err_scheme", channelID, PromNoMuxSegHistogram)
+		g.noteMuxSegRecentOutcome(requestMux, "unsupported_target_scheme", target)
 		respondHLSMuxUnsupportedTargetScheme(w, r)
 		return gatewayHandledResult{handled: true, finalStatus: muxPrefix + "_unsupported_target_scheme", finalErr: errHLSMuxUnsupportedTargetScheme}
 	}
@@ -58,6 +61,7 @@ func (g *Gateway) maybeServeNativeMuxTarget(w http.ResponseWriter, r *http.Reque
 		log.Printf("gateway: req=%s channel=%q id=%s native-mux-seg (%s) blocked literal-private upstream=%s ua=%q",
 			reqID, channel.GuideName, channelID, requestMux, safeurl.RedactURL(target), r.UserAgent())
 		g.noteMuxSegOutcome(requestMux, "err_private", channelID, PromNoMuxSegHistogram)
+		g.noteMuxSegRecentOutcome(requestMux, "blocked_private_upstream", target)
 		respondHLSMuxClientError(w, r, http.StatusForbidden, hlsMuxDiagBlockedPrivateUpstream, "mux upstream host is not allowed")
 		return gatewayHandledResult{handled: true, finalStatus: muxPrefix + "_blocked_private_upstream", finalErr: errHLSMuxBlockedPrivateUpstream}
 	}
@@ -73,6 +77,7 @@ func (g *Gateway) maybeServeNativeMuxTarget(w http.ResponseWriter, r *http.Reque
 			log.Printf("gateway: req=%s channel=%q id=%s native-mux-seg (%s) blocked resolved-private upstream=%s ua=%q",
 				reqID, channel.GuideName, channelID, requestMux, safeurl.RedactURL(target), r.UserAgent())
 			g.noteMuxSegOutcome(requestMux, "err_private", channelID, PromNoMuxSegHistogram)
+			g.noteMuxSegRecentOutcome(requestMux, "blocked_private_upstream", target)
 			respondHLSMuxClientError(w, r, http.StatusForbidden, hlsMuxDiagBlockedPrivateUpstream, "mux upstream host is not allowed")
 			return gatewayHandledResult{handled: true, finalStatus: muxPrefix + "_blocked_private_upstream", finalErr: errHLSMuxBlockedPrivateUpstream}
 		}
@@ -87,6 +92,7 @@ func (g *Gateway) maybeServeNativeMuxTarget(w http.ResponseWriter, r *http.Reque
 		w.Header().Set("X-HDHomeRun-Error", "805")
 		http.Error(w, "All tuners in use", http.StatusServiceUnavailable)
 		g.noteMuxSegOutcome(requestMux, "503_limit", channelID, PromNoMuxSegHistogram)
+		g.noteMuxSegRecentOutcome(requestMux, "seg_limit", target)
 		return gatewayHandledResult{handled: true, finalStatus: muxPrefix + "_seg_limit", finalErr: errors.New("native mux segment concurrency limit")}
 	}
 	g.hlsMuxSegInUse++
@@ -107,12 +113,14 @@ func (g *Gateway) maybeServeNativeMuxTarget(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		if errors.Is(err, errHLSMuxUnsupportedTargetScheme) {
 			g.noteMuxSegOutcome(requestMux, "err_scheme", channelID, time.Since(start))
+			g.noteMuxSegRecentOutcome(requestMux, "unsupported_target_scheme", target)
 			respondHLSMuxUnsupportedTargetScheme(w, r)
 			return gatewayHandledResult{handled: true, finalStatus: muxPrefix + "_unsupported_target_scheme", finalErr: err}
 		}
 		var upHTTP *hlsMuxUpstreamHTTPError
 		if errors.As(err, &upHTTP) {
 			g.noteMuxSegOutcome(requestMux, "upstream_http", channelID, time.Since(start))
+			g.noteMuxSegRecentOutcome(requestMux, "upstream_http_"+strconv.Itoa(upHTTP.Status), target)
 			respondHLSMuxUpstreamHTTP(w, r, upHTTP.Status, upHTTP.Body)
 			return gatewayHandledResult{handled: true, finalStatus: muxPrefix + "_upstream_http_" + strconv.Itoa(upHTTP.Status), finalErr: err}
 		}
@@ -120,14 +128,17 @@ func (g *Gateway) maybeServeNativeMuxTarget(w http.ResponseWriter, r *http.Reque
 			msg := strings.ToLower(err.Error())
 			if strings.Contains(msg, "blocked") || strings.Contains(msg, "private") {
 				g.noteMuxSegOutcome(requestMux, "err_private", channelID, time.Since(start))
+				g.noteMuxSegRecentOutcome(requestMux, "blocked_private_upstream", target)
 				respondHLSMuxClientError(w, r, http.StatusForbidden, hlsMuxDiagBlockedPrivateUpstream, "mux upstream host is not allowed")
 				return gatewayHandledResult{handled: true, finalStatus: muxPrefix + "_blocked_private_upstream", finalErr: err}
 			}
 			g.noteMuxSegOutcome(requestMux, "err_redirect", channelID, time.Since(start))
+			g.noteMuxSegRecentOutcome(requestMux, "redirect_rejected", target)
 			respondHLSMuxClientError(w, r, http.StatusBadGateway, hlsMuxDiagRedirectRejected, "mux upstream redirect rejected")
 			return gatewayHandledResult{handled: true, finalStatus: muxPrefix + "_redirect_rejected", finalErr: err}
 		}
 		g.noteMuxSegOutcome(requestMux, "502", channelID, time.Since(start))
+		g.noteMuxSegRecentOutcome(requestMux, "target_failed", target)
 		http.Error(w, "Native mux target failed", http.StatusBadGateway)
 		return gatewayHandledResult{handled: true, finalStatus: muxPrefix + "_target_failed", finalErr: err}
 	}
@@ -135,6 +146,7 @@ func (g *Gateway) maybeServeNativeMuxTarget(w http.ResponseWriter, r *http.Reque
 		appendMuxSegAccessLogLine(p, muxAccessLogJSON(requestMux, channelID, target, time.Since(start)))
 	}
 	g.noteMuxSegOutcome(requestMux, "success", channelID, time.Since(start))
+	g.noteMuxSegRecentOutcome(requestMux, "success", target)
 	return gatewayHandledResult{
 		handled:      true,
 		finalStatus:  "ok",

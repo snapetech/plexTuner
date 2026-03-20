@@ -50,6 +50,9 @@ type ProviderBehaviorProfile struct {
 	HLSSegmentFailures         int                   `json:"hls_segment_failures"`
 	LastHLSSegmentAt           string                `json:"last_hls_segment_at,omitempty"`
 	LastHLSSegmentURL          string                `json:"last_hls_segment_url,omitempty"`
+	LastHLSMuxOutcome          string                `json:"last_hls_mux_outcome,omitempty"`
+	LastHLSMuxAt               string                `json:"last_hls_mux_at,omitempty"`
+	LastHLSMuxURL              string                `json:"last_hls_mux_url,omitempty"`
 	HlsMuxSegInUse             int                   `json:"hls_mux_seg_in_use"`
 	HlsMuxSegLimit             int                   `json:"hls_mux_seg_limit"`
 	HlsMuxSegSuccess           uint64                `json:"hls_mux_seg_success"`
@@ -68,6 +71,9 @@ type ProviderBehaviorProfile struct {
 	DashMuxSeg502              uint64                `json:"dash_mux_seg_502"`
 	DashMuxSeg503LimitHits     uint64                `json:"dash_mux_seg_503_limit_hits"`
 	DashMuxSegRateLimited      uint64                `json:"dash_mux_seg_rate_limited"`
+	LastDashMuxOutcome         string                `json:"last_dash_mux_outcome,omitempty"`
+	LastDashMuxAt              string                `json:"last_dash_mux_at,omitempty"`
+	LastDashMuxURL             string                `json:"last_dash_mux_url,omitempty"`
 	PenalizedHosts             []ProviderHostPenalty `json:"penalized_hosts,omitempty"`
 }
 
@@ -84,6 +90,28 @@ func (g *Gateway) noteHLSSegmentFailure(segURL string) {
 
 func providerAutotuneEnabled() bool {
 	return envBool("IPTV_TUNERR_PROVIDER_AUTOTUNE", true)
+}
+
+func (g *Gateway) noteMuxSegRecentOutcome(mux, outcome, rawURL string) {
+	if g == nil {
+		return
+	}
+	mux = strings.TrimSpace(strings.ToLower(mux))
+	outcome = strings.TrimSpace(outcome)
+	at := time.Now().UTC()
+	redactedURL := safeurl.RedactURL(rawURL)
+	g.providerStateMu.Lock()
+	defer g.providerStateMu.Unlock()
+	switch mux {
+	case "dash":
+		g.lastDashMuxOutcome = outcome
+		g.lastDashMuxAt = at
+		g.lastDashMuxURL = redactedURL
+	default:
+		g.lastHLSMuxOutcome = outcome
+		g.lastHLSMuxAt = at
+		g.lastHLSMuxURL = redactedURL
+	}
 }
 
 func (g *Gateway) noteUpstreamCFBlock(rawURL string) {
@@ -226,6 +254,12 @@ func (g *Gateway) ProviderBehaviorProfile() ProviderBehaviorProfile {
 	hlsSegmentFailures := g.hlsSegmentFailures
 	lastHLSSegmentAt := g.lastHLSSegmentAt
 	lastHLSSegmentURL := g.lastHLSSegmentURL
+	lastHLSMuxOutcome := g.lastHLSMuxOutcome
+	lastHLSMuxAt := g.lastHLSMuxAt
+	lastHLSMuxURL := g.lastHLSMuxURL
+	lastDashMuxOutcome := g.lastDashMuxOutcome
+	lastDashMuxAt := g.lastDashMuxAt
+	lastDashMuxURL := g.lastDashMuxURL
 	penalizedHosts := g.penalizedHostsLocked()
 	g.providerStateMu.Unlock()
 
@@ -248,6 +282,8 @@ func (g *Gateway) ProviderBehaviorProfile() ProviderBehaviorProfile {
 		LastHLSPlaylistURL:         lastHLSPlaylistURL,
 		HLSSegmentFailures:         hlsSegmentFailures,
 		LastHLSSegmentURL:          lastHLSSegmentURL,
+		LastHLSMuxOutcome:          lastHLSMuxOutcome,
+		LastHLSMuxURL:              lastHLSMuxURL,
 		HlsMuxSegInUse:             hlsMuxSegInUse,
 		HlsMuxSegLimit:             hlsMuxSegLimit,
 		HlsMuxSegSuccess:           g.hlsMuxSegSuccess.Load(),
@@ -266,6 +302,8 @@ func (g *Gateway) ProviderBehaviorProfile() ProviderBehaviorProfile {
 		DashMuxSeg502:              g.dashMuxSeg502Fail.Load(),
 		DashMuxSeg503LimitHits:     g.dashMuxSeg503LimitHits.Load(),
 		DashMuxSegRateLimited:      g.dashMuxSegRateLimited.Load(),
+		LastDashMuxOutcome:         lastDashMuxOutcome,
+		LastDashMuxURL:             lastDashMuxURL,
 		PenalizedHosts:             penalizedHosts,
 	}
 	if !lastConcurrencyAt.IsZero() {
@@ -279,6 +317,12 @@ func (g *Gateway) ProviderBehaviorProfile() ProviderBehaviorProfile {
 	}
 	if !lastHLSSegmentAt.IsZero() {
 		prof.LastHLSSegmentAt = lastHLSSegmentAt.Format(time.RFC3339)
+	}
+	if !lastHLSMuxAt.IsZero() {
+		prof.LastHLSMuxAt = lastHLSMuxAt.Format(time.RFC3339)
+	}
+	if !lastDashMuxAt.IsZero() {
+		prof.LastDashMuxAt = lastDashMuxAt.Format(time.RFC3339)
 	}
 	return prof
 }
@@ -305,6 +349,12 @@ func (g *Gateway) ResetProviderBehaviorProfile() {
 	g.hlsSegmentFailures = 0
 	g.lastHLSSegmentAt = time.Time{}
 	g.lastHLSSegmentURL = ""
+	g.lastHLSMuxOutcome = ""
+	g.lastHLSMuxAt = time.Time{}
+	g.lastHLSMuxURL = ""
+	g.lastDashMuxOutcome = ""
+	g.lastDashMuxAt = time.Time{}
+	g.lastDashMuxURL = ""
 	g.hostFailures = nil
 	g.providerStateMu.Unlock()
 }

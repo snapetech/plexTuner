@@ -88,6 +88,12 @@ type Gateway struct {
 	hlsSegmentFailures         int
 	lastHLSSegmentAt           time.Time
 	lastHLSSegmentURL          string
+	lastHLSMuxOutcome          string
+	lastHLSMuxAt               time.Time
+	lastHLSMuxURL              string
+	lastDashMuxOutcome         string
+	lastDashMuxAt              time.Time
+	lastDashMuxURL             string
 	hostFailures               map[string]hostFailureStat
 	attemptsMu                 sync.Mutex
 	recentAttempts             []StreamAttemptRecord

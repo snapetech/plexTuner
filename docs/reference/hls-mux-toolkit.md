@@ -107,6 +107,7 @@ See [cli-and-env-reference](cli-and-env-reference.md#stream-behavior).
 | `/debug/hls-mux-demo.html` | Static demo player (**`IPTV_TUNERR_HLS_MUX_WEB_DEMO`**) |
 | `/metrics` | Prometheus scrape (**`IPTV_TUNERR_METRICS_ENABLE`**) |
 | `/ops/actions/mux-seg-decode` | **POST** `{"seg_b64":"..."}` → **`redacted_url`**, **`http_ok`** (localhost / **UI_ALLOW_LAN** policy) |
+| `/provider_profile.json` | Runtime/operator snapshot with mux counters plus **`last_hls_mux_outcome`** / **`last_dash_mux_outcome`** and matching redacted target URLs |
 
 ## Copy-paste checks
 
@@ -119,6 +120,7 @@ grep -E 'mux=hls&seg=' /tmp/tunerr.m3u8 | head -1
 curl -sS 'http://127.0.0.1:5004/stream/<id>?mux=dash' | head
 
 curl -sS 'http://127.0.0.1:5004/provider_profile.json' | jq '.hls_mux_seg_success, .dash_mux_seg_success, .forwarded_headers'
+curl -sS 'http://127.0.0.1:5004/provider_profile.json' | jq '.last_hls_mux_outcome, .last_hls_mux_url, .last_dash_mux_outcome, .last_dash_mux_url'
 
 # Soak helper
 # HLS_MUX_URL='http://127.0.0.1:5004/stream/0?mux=hls' ./scripts/hls-mux-soak.sh

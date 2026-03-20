@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
+	"github.com/snapetech/iptvtunerr/internal/httpclient"
 )
 
 func TestGateway_stream_backwardCompat(t *testing.T) {
@@ -820,7 +821,7 @@ func TestServeHLSMuxTarget_unsupportedScheme(t *testing.T) {
 	g := &Gateway{}
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
-	err := g.serveHLSMuxTarget(w, req, http.DefaultClient, "ch", "skd://example/key")
+	err := g.serveHLSMuxTarget(w, req, httpclient.Default(), "ch", "skd://example/key")
 	if !errors.Is(err, errHLSMuxUnsupportedTargetScheme) {
 		t.Fatalf("want errHLSMuxUnsupportedTargetScheme, got %v", err)
 	}
@@ -867,6 +868,48 @@ func TestGateway_hlsMuxSeg_upstreamHTTP_passedThrough(t *testing.T) {
 	}
 	if w.Body.String() != "gone" {
 		t.Fatalf("body: %q", w.Body.String())
+	}
+	p := g.ProviderBehaviorProfile()
+	if p.LastHLSMuxOutcome != "upstream_http_404" {
+		t.Fatalf("LastHLSMuxOutcome=%q want upstream_http_404", p.LastHLSMuxOutcome)
+	}
+	if p.LastHLSMuxURL == "" {
+		t.Fatal("expected LastHLSMuxURL")
+	}
+	if p.LastHLSMuxAt == "" {
+		t.Fatal("expected LastHLSMuxAt")
+	}
+}
+
+func TestGateway_dashMuxSeg_successUpdatesRecentOutcome(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/mp4")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("dash"))
+	}))
+	defer up.Close()
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "0", GuideName: "Ch", StreamURL: "http://x/a.mpd"},
+		},
+		TunerCount: 2,
+	}
+	seg := url.QueryEscape(up.URL + "/seg.m4s")
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0?mux=dash&seg="+seg, nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200 got %d body=%q", w.Code, w.Body.String())
+	}
+	p := g.ProviderBehaviorProfile()
+	if p.LastDashMuxOutcome != "success" {
+		t.Fatalf("LastDashMuxOutcome=%q want success", p.LastDashMuxOutcome)
+	}
+	if p.LastDashMuxURL == "" {
+		t.Fatal("expected LastDashMuxURL")
+	}
+	if p.LastDashMuxAt == "" {
+		t.Fatal("expected LastDashMuxAt")
 	}
 }
 

@@ -23,6 +23,76 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Docs + backlog — **`HTTP_*`** scope in cli-and-env; supersede stale **`main.go`** split opportunity
+  Summary:
+    - [cli-and-env-reference](../docs/reference/cli-and-env-reference.md): paragraph under **`IPTV_TUNERR_HTTP_MAX_IDLE_*`** / idle timeout listing **`httpclient`** consumers and mux **`seg=`** exception.
+    - [opportunities.md](opportunities.md): replaced duplicate “split **`main.go`**” entry with **INT-005** superseded note.
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - Superseded row for monolithic **`main.go`**.
+  Links:
+    - `docs/reference/cli-and-env-reference.md`, `memory-bank/opportunities.md`, `docs/CHANGELOG.md`
+
+- Date: 2026-03-19
+  Title: Split stream relay branches again and surface recent mux outcomes
+  Summary:
+    - **`internal/tuner/gateway_stream_response.go`** now owns non-OK upstream handling plus DASH/HLS/raw success relay branches, leaving **`walkStreamUpstreams`** in **`gateway_stream_upstream.go`** as the top-level URL loop.
+    - **`/provider_profile.json`** now includes **`last_hls_mux_outcome`** / **`last_dash_mux_outcome`** with matching redacted target URLs + timestamps so operators can see the most recent native-mux success/failure mode without scraping logs.
+    - Docs updated in [hls-mux-toolkit](../docs/reference/hls-mux-toolkit.md) and [CHANGELOG](../docs/CHANGELOG.md); regression tests extended in **`gateway_test.go`**.
+  Verification:
+    - `go test ./internal/tuner -run 'TestGateway_(hlsMuxSeg_upstreamHTTP_passedThrough|dashMuxSeg_successUpdatesRecentOutcome|ProviderBehaviorProfile_hlsMuxSegLimit|hlsMuxSeg_successIncrementsProfileCounter)'`
+    - `./scripts/verify`
+  Opportunities filed:
+    - Marked the old **`gateway_stream_upstream.go`** split opportunity as superseded in **`memory-bank/opportunities.md`**.
+  Links:
+    - `internal/tuner/gateway_stream_response.go`, `internal/tuner/gateway_stream_upstream.go`, `internal/tuner/gateway_mux_target.go`, `internal/tuner/gateway_provider_profile.go`
+
+- Date: 2026-03-19
+  Title: **HR-010** docs + test — **`plex-livetv-http-tuning`**, mux negative test client
+  Summary:
+    - [plex-livetv-http-tuning](../docs/reference/plex-livetv-http-tuning.md): expanded **`httpclient`** consumer list + mux **`seg=`** exception; HR-007 link → **`gateway_adapt.go`** / **`gateway_policy.go`**.
+    - **`gateway_test.go`**: **`serveHLSMuxTarget`** scheme test uses **`httpclient.Default()`** instead of **`http.DefaultClient`**.
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+  Links:
+    - `docs/reference/plex-livetv-http-tuning.md`, `internal/tuner/gateway_test.go`, `docs/CHANGELOG.md`
+
+- Date: 2026-03-19
+  Title: **HR-010** — Plex, Emby, provider probe on **`httpclient.WithTimeout`**
+  Summary:
+    - **`internal/plex/dvr.go`**: all former **`&http.Client{Timeout:…}`** → **`httpclient.WithTimeout`** (15s / 30s / 60s preserved).
+    - **`internal/plex/library.go`**: **`plexHTTPClient`** → **`httpclient.WithTimeout(60s)`**.
+    - **`internal/provider/probe.go`**: default client → **`httpclient.WithTimeout(15s)`**.
+    - **`internal/emby/register.go`**: **`newHTTPClient`** → **`httpclient.WithTimeout(30s)`**.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Mux **`seg=`** client stays custom (**`mux_http_client.go`**) for **`CheckRedirect`**.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/plex/dvr.go`, `internal/plex/library.go`, `internal/provider/probe.go`, `internal/emby/register.go`
+
+- Date: 2026-03-19
+  Title: **HR-010** alignment — EPG pipeline, health, probe on **`httpclient.WithTimeout`**
+  Summary:
+    - **`internal/tuner/epg_pipeline.go`**: **`httpClientOrDefault`** uses **`httpclient.WithTimeout`** (shared transport + idle pool).
+    - **`internal/health/health.go`**: provider + endpoint checks use **`httpclient.WithTimeout`** (15s / 5s).
+    - **`internal/probe/probe.go`**: default **`Probe`** client uses **`httpclient.WithTimeout(8s)`**.
+    - **`docs/explanations/architecture.md`**: tuner primary code points at **`gateway_servehttp.go`** + **`gateway_*.go`**.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - Plex / provider / Emby migration completed in a follow-up task same day.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/epg_pipeline.go`, `internal/health/health.go`, `internal/probe/probe.go`, `docs/CHANGELOG.md`
+
+- Date: 2026-03-19
   Title: Lineup-parity slice — CF upstream helper, HDHR **`httpclient`, epic status, backlog cleanup
   Summary:
     - **`internal/tuner/gateway_upstream_cf.go`**: **`tryRecoverCFUpstream`**; **`walkStreamUpstreams`** delegates CF UA cycle + bootstrap.

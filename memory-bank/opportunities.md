@@ -24,12 +24,10 @@ It exists to encourage quality gains without derailing the current task.
 
 - Date: 2026-03-19
   Category: maintainability
-  Title: Optional — smaller pieces inside **`gateway_stream_upstream.go`**
-  Context: **`walkStreamUpstreams`** holds the URL loop + DASH/HLS/raw branches; CF UA/bootstrap recovery is **`tryRecoverCFUpstream`** in **`gateway_upstream_cf.go`**.
-  Why it matters: **`gateway_stream_upstream.go`** remains a large merge hotspot.
-  Evidence: `wc -l internal/tuner/gateway_stream_upstream.go`.
-  Suggested fix: Extract non-OK HTTP logging / concurrency-limit handling vs success relay into testable helpers if churn stays high.
-  Risk/Scope: med | fits current scope? no
+  Title: (superseded 2026-03-19) Optional — smaller pieces inside **`gateway_stream_upstream.go`**
+  Context: Earlier audit flagged **`walkStreamUpstreams`** as the remaining merge hotspot after the first gateway split.
+  Status: Non-OK upstream handling + success relay branches now live in **`gateway_stream_response.go`**; **`gateway_stream_upstream.go`** is back to the orchestration loop. Reopen only if churn concentrates again inside the new helper file.
+  Risk/Scope: n/a (historical)
   User decision needed?: no
 
 - Date: 2026-03-19
@@ -125,14 +123,12 @@ It exists to encourage quality gains without derailing the current task.
   Risk/Scope: low-med | fits current scope? no
   User decision needed?: no
 
-- Date: 2026-03-18
+- Date: 2026-03-19
   Category: maintainability
-  Title: Split `cmd/iptv-tunerr/main.go` into command-specific modules
-  Context: Architecture review of active command, DVR, EPG, and catch-up flows.
-  Why it matters: `cmd/iptv-tunerr/main.go` now owns CLI parsing and orchestration for indexing, serving, Plex/Emby/Jellyfin registration, EPG repair, oracle tooling, channel intelligence, catch-up export, and catch-up publishing. That raises the risk of regression and makes command-specific changes expensive to review.
-  Evidence: `cmd/iptv-tunerr/main.go` contains all command flags and execution paths for `run`, `serve`, `index`, `supervise`, `epg-link-report`, `channel-report`, `channel-dna-report`, `ghost-hunter`, `catchup-capsules`, and `catchup-publish`.
-  Suggested fix: Move command wiring into per-command files or a small dispatcher package (for example `cmd/iptv-tunerr/cmd_run.go`, `cmd_guide.go`, `cmd_catchup.go`, `cmd_registration.go`) while keeping shared helpers in a small common file.
-  Risk/Scope: med | fits current scope? no
+  Title: (superseded) Split monolithic **`cmd/iptv-tunerr/main.go`**
+  Context: Pre-**INT-005** note assumed **`main.go`** owned all command flags and handlers.
+  Status: **`main.go`** is a thin dispatcher (**~100** lines); **`cmd_registry.go`** + **`cmd_*.go`** (25+ modules) own flags and **`Run`** handlers (**`cmd_util.go`** helpers). Further splits are optional polish only.
+  Risk/Scope: n/a
   User decision needed?: no
 
 - Date: 2026-02-26
