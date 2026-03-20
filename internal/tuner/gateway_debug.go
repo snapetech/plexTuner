@@ -103,6 +103,27 @@ func debugHeaderLines(h http.Header) []string {
 	return lines
 }
 
+func debugHeaderNameLines(h http.Header) []string {
+	if len(h) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(h))
+	for name := range h {
+		names = append(names, http.CanonicalHeaderKey(name))
+	}
+	sort.Strings(names)
+	lines := make([]string, 0, len(names))
+	seen := map[string]bool{}
+	for _, name := range names {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		lines = append(lines, name+": <present>")
+	}
+	return lines
+}
+
 type cappedBodyTee struct {
 	reqID       string
 	channelName string
@@ -248,6 +269,7 @@ func (w *streamDebugResponseWriter) Write(p []byte) (int, error) {
 	if w.status == 0 {
 		w.status = http.StatusOK
 	}
+	w.ResponseWriter.Header().Set("X-Content-Type-Options", "nosniff")
 	if !w.headerLogged {
 		w.logResponseHeaders(true)
 	}

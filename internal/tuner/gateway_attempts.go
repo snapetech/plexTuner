@@ -288,8 +288,7 @@ func (g *Gateway) RecentStreamAttempts(limit int) StreamAttemptReport {
 	}
 	rep.Limit = limit
 	rep.Count = limit
-	rep.Attempts = make([]StreamAttemptRecord, limit)
-	copy(rep.Attempts, g.recentAttempts[:limit])
+	rep.Attempts = append([]StreamAttemptRecord(nil), g.recentAttempts[:limit]...)
 	return rep
 }
 

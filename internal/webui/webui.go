@@ -572,8 +572,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		s.clearFailedLogins(r)
 		s.startSession(w, r)
 		s.recordActivity("auth", "login", "Deck session opened.", map[string]interface{}{"username": user})
-		next := normalizeDeckRedirectTarget(r.Form.Get("next"))
-		http.Redirect(w, r, next, http.StatusSeeOther)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -603,10 +602,6 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, status int, errText string) {
-	next := normalizeDeckRedirectTarget(r.URL.Query().Get("next"))
-	if next == "" {
-		next = normalizeDeckRedirectTarget(r.Form.Get("next"))
-	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	if status > 0 {
@@ -615,7 +610,6 @@ func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, status int,
 	_ = s.loginTmpl.Execute(w, map[string]interface{}{
 		"Version":         fallbackVersion(s.Version),
 		"Now":             time.Now().UTC().Format(time.RFC3339),
-		"Next":            next,
 		"Error":           errText,
 		"User":            s.deckSettingsReport().AuthUser,
 		"DefaultPassword": s.deckSettingsReport().AuthDefaultPassword,
@@ -669,11 +663,7 @@ func (s *Server) handleUnauthorized(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 		return
 	}
-	next := r.URL.RequestURI()
-	if next == "" {
-		next = "/"
-	}
-	http.Redirect(w, r, "/login?next="+url.QueryEscape(next), http.StatusSeeOther)
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
 func (s *Server) validCredentials(user, pass string) bool {
@@ -801,40 +791,6 @@ func (s *Server) requireCSRFForToken(w http.ResponseWriter, r *http.Request, tok
 		return false
 	}
 	return true
-}
-
-func normalizeDeckRedirectTarget(raw string) string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "/"
-	}
-	if strings.Contains(raw, "\\") {
-		return "/"
-	}
-	u, err := url.Parse(raw)
-	if err != nil || u == nil {
-		return "/"
-	}
-	if u.IsAbs() || strings.TrimSpace(u.Host) != "" || strings.TrimSpace(u.Opaque) != "" {
-		return "/"
-	}
-	path := strings.TrimSpace(u.EscapedPath())
-	if path == "" {
-		path = strings.TrimSpace(u.Path)
-	}
-	if path == "" || !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
-		return "/"
-	}
-	if clean := filepath.Clean(path); clean != "" && clean != "." {
-		path = clean
-		if !strings.HasPrefix(path, "/") {
-			path = "/" + path
-		}
-	}
-	if u.RawQuery != "" {
-		path += "?" + u.RawQuery
-	}
-	return path
 }
 
 func requestCookieSecure(r *http.Request) bool {

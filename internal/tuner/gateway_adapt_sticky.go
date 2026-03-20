@@ -97,7 +97,7 @@ func (g *Gateway) noteAdaptStickyFallback(channelID string, h plexForwardedHints
 	g.pruneAdaptStickyLocked(now)
 	g.adaptStickyUntil[key] = now.Add(ttl)
 	if getenvBool("IPTV_TUNERR_STREAM_DEBUG", false) || strings.TrimSpace(os.Getenv("IPTV_TUNERR_CLIENT_ADAPT_STICKY_LOG")) == "1" {
-		log.Printf("gateway: adapt sticky websafe channel=%q key=%q ttl=%s", channelID, key, ttl)
+		log.Printf("gateway: adapt sticky websafe channel=%q key_present=%t ttl=%s", channelID, key != "", ttl)
 		return
 	}
 	log.Printf("gateway: adapt sticky websafe channel=%q ttl=%s", channelID, ttl)

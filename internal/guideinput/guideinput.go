@@ -1,6 +1,8 @@
 package guideinput
 
 import (
+	"context"
+	"io"
 	"net/url"
 	"strings"
 	"time"
@@ -23,14 +25,26 @@ func ProviderXMLTVURL(baseURL, user, pass string) string {
 }
 
 func LoadGuideData(ref string) ([]byte, error) {
-	return refio.ReadAll(ref, defaultTimeout)
+	if strings.TrimSpace(ref) == "" {
+		return nil, nil
+	}
+	if remote, ok, err := prepareRemoteGuideRef(ref); err != nil {
+		return nil, err
+	} else if ok {
+		return refio.ReadRemoteHTTP(context.Background(), remote, defaultTimeout)
+	}
+	local, err := refio.PrepareLocalFileRef(ref)
+	if err != nil {
+		return nil, err
+	}
+	return refio.ReadLocalFile(local)
 }
 
 func LoadAliasOverrides(ref string) (epglink.AliasOverrides, error) {
 	if strings.TrimSpace(ref) == "" {
 		return epglink.AliasOverrides{NameToXMLTVID: map[string]string{}}, nil
 	}
-	r, err := refio.Open(ref, defaultTimeout)
+	r, err := openGuideRef(ref)
 	if err != nil {
 		return epglink.AliasOverrides{}, err
 	}
@@ -39,7 +53,7 @@ func LoadAliasOverrides(ref string) (epglink.AliasOverrides, error) {
 }
 
 func LoadXMLTVChannels(ref string) ([]epglink.XMLTVChannel, error) {
-	r, err := refio.Open(ref, defaultTimeout)
+	r, err := openGuideRef(ref)
 	if err != nil {
 		return nil, err
 	}
@@ -62,4 +76,29 @@ func LoadOptionalMatchReport(live []catalog.LiveChannel, xmltvRef, aliasesRef st
 	}
 	rep := epglink.MatchLiveChannels(live, xmltvChans, aliases)
 	return &rep, nil
+}
+
+func openGuideRef(ref string) (io.ReadCloser, error) {
+	if remote, ok, err := prepareRemoteGuideRef(ref); err != nil {
+		return nil, err
+	} else if ok {
+		return refio.OpenRemoteHTTP(context.Background(), remote, defaultTimeout)
+	}
+	local, err := refio.PrepareLocalFileRef(ref)
+	if err != nil {
+		return nil, err
+	}
+	return refio.OpenLocalFile(local)
+}
+
+func prepareRemoteGuideRef(ref string) (refio.RemoteHTTPRef, bool, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" || !strings.HasPrefix(strings.ToLower(ref), "http") {
+		return refio.RemoteHTTPRef{}, false, nil
+	}
+	remote, err := refio.PrepareRemoteHTTPRef(context.Background(), ref)
+	if err != nil {
+		return refio.RemoteHTTPRef{}, false, err
+	}
+	return remote, true, nil
 }

@@ -171,7 +171,7 @@ button {
       </div>
       <div class="mini">
         <strong>Target after login</strong>
-        <span><code>[[.Next]]</code></span>
+        <span><code>/</code></span>
       </div>
     </div>
   </section>
@@ -181,7 +181,6 @@ button {
       <p>Access is scoped to the dedicated deck origin. Tuner endpoints still stay behind the deck proxy.</p>
       [[if .Error]]<div class="error">[[.Error]]</div>[[end]]
       <form method="post" action="/login">
-        <input type="hidden" name="next" value="[[.Next]]">
         <label>
           Username
           <input type="text" name="username" value="[[.User]]" autocomplete="username" required>

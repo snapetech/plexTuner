@@ -1176,6 +1176,7 @@ func (w *loggingResponseWriter) Write(p []byte) (int, error) {
 	if w.status == 0 {
 		w.status = http.StatusOK
 	}
+	w.ResponseWriter.Header().Set("X-Content-Type-Options", "nosniff")
 	n, err := w.ResponseWriter.Write(p)
 	w.bytes += n
 	return n, err

@@ -490,12 +490,10 @@ type CatchupCapsulePreview struct {
 }
 
 const (
-	defaultGuideHighlightsLimit    = 12
-	defaultGuidePreviewLimit       = 50
-	defaultCatchupCapsuleLimit     = 20
-	maxGuidePreviewLimit           = 250
-	maxGuideAllocationChannelCount = 10000
-	maxGuideAllocationProgrammeCap = 20000
+	defaultGuideHighlightsLimit = 12
+	defaultGuidePreviewLimit    = 50
+	defaultCatchupCapsuleLimit  = 20
+	maxGuidePreviewLimit        = 250
 )
 
 func (x *XMLTV) GuideHighlights(now time.Time, soonWindow time.Duration, limit int) (GuideHighlights, error) {
@@ -517,14 +515,14 @@ func (x *XMLTV) GuideHighlights(now time.Time, soonWindow time.Duration, limit i
 	if err := xml.Unmarshal(data, &tv); err != nil {
 		return out, err
 	}
-	channelNames := make(map[string]string, boundedGuideAlloc(len(tv.Channels), maxGuideAllocationChannelCount))
+	channelNames := map[string]string{}
 	for _, ch := range tv.Channels {
 		channelNames[strings.TrimSpace(ch.ID)] = strings.TrimSpace(ch.Display)
 	}
-	current := make([]GuideHighlight, 0, limit)
-	soon := make([]GuideHighlight, 0, limit)
-	sportsNow := make([]GuideHighlight, 0, limit)
-	moviesSoon := make([]GuideHighlight, 0, limit)
+	var current []GuideHighlight
+	var soon []GuideHighlight
+	var sportsNow []GuideHighlight
+	var moviesSoon []GuideHighlight
 	for _, p := range tv.Programmes {
 		start, okStart := parseXMLTVTime(p.Start)
 		stop, okStop := parseXMLTVTime(p.Stop)
@@ -596,7 +594,7 @@ func (x *XMLTV) GuidePreview(limit int) (GuidePreview, error) {
 	out.ChannelCount = len(tv.Channels)
 	out.ProgrammeCount = len(tv.Programmes)
 
-	channelNames := make(map[string]string, boundedGuideAlloc(len(tv.Channels), maxGuideAllocationChannelCount))
+	channelNames := map[string]string{}
 	for _, ch := range tv.Channels {
 		channelNames[strings.TrimSpace(ch.ID)] = strings.TrimSpace(ch.Display)
 	}
@@ -605,7 +603,7 @@ func (x *XMLTV) GuidePreview(limit int) (GuidePreview, error) {
 		start time.Time
 		row   GuidePreviewRow
 	}
-	buf := make([]keyed, 0, boundedGuideAlloc(limit, maxGuideAllocationProgrammeCap))
+	var buf []keyed
 	for _, p := range tv.Programmes {
 		start, okStart := parseXMLTVTime(p.Start)
 		stop, okStop := parseXMLTVTime(p.Stop)
@@ -737,11 +735,11 @@ func BuildCatchupCapsulePreview(channels []catalog.LiveChannel, data []byte, now
 	for _, ch := range channels {
 		byChannel[strings.TrimSpace(ch.GuideNumber)] = ch
 	}
-	channelNames := make(map[string]string, boundedGuideAlloc(len(tv.Channels), maxGuideAllocationChannelCount))
+	channelNames := map[string]string{}
 	for _, ch := range tv.Channels {
 		channelNames[strings.TrimSpace(ch.ID)] = strings.TrimSpace(ch.Display)
 	}
-	capsules := make([]CatchupCapsule, 0, limit)
+	var capsules []CatchupCapsule
 	windowEnd := now.Add(horizon)
 	for _, p := range tv.Programmes {
 		start, okStart := parseXMLTVTime(p.Start)
@@ -806,16 +804,6 @@ func clampGuidePreviewLimit(n, def int) int {
 	}
 	if n > maxGuidePreviewLimit {
 		n = maxGuidePreviewLimit
-	}
-	return n
-}
-
-func boundedGuideAlloc(n, max int) int {
-	if n <= 0 {
-		return 0
-	}
-	if max > 0 && n > max {
-		return max
 	}
 	return n
 }

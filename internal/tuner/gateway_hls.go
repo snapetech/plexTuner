@@ -439,7 +439,7 @@ func (g *Gateway) fetchAndWriteSegment(
 		return 0, err
 	}
 	if debugOpts := streamDebugOptionsFromEnv(); debugOpts.HTTPHeaders {
-		for _, line := range debugHeaderLines(req.Header) {
+		for _, line := range debugHeaderNameLines(req.Header) {
 			reqID := gatewayReqIDFromContext(r.Context())
 			log.Printf("gateway: req=%s segment-fetch > %s", reqID, line)
 		}

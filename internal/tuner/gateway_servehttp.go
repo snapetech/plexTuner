@@ -32,7 +32,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if maybeServeHLSMuxOPTIONS(w, r) {
 		return
 	}
-	log.Printf("gateway: req=%s recv path=%q channel=%q remote=%q ua=%q", reqID, r.URL.Path, channelID, r.RemoteAddr, r.UserAgent())
+	log.Printf("gateway: req=%s recv path=%q channel=%q remote=%t ua=%t", reqID, r.URL.Path, channelID, strings.TrimSpace(r.RemoteAddr) != "", strings.TrimSpace(r.UserAgent()) != "")
 	debugOpts := streamDebugOptionsFromEnv()
 	if debugOpts.HTTPHeaders {
 		for _, line := range debugHeaderLines(r.Header) {
@@ -90,7 +90,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.mu.Unlock()
 		finalStatus = "all_tuners_in_use"
 		finalErr = errors.New("all tuners in use")
-		log.Printf("gateway: req=%s channel=%q id=%s reject all-tuners-in-use limit=%d ua=%q", reqID, channel.GuideName, channelID, limit, r.UserAgent())
+		log.Printf("gateway: req=%s channel=%q id=%s reject all-tuners-in-use limit=%d ua=%t", reqID, channel.GuideName, channelID, limit, strings.TrimSpace(r.UserAgent()) != "")
 		w.Header().Set("X-HDHomeRun-Error", "805") // All Tuners In Use
 		http.Error(w, "All tuners in use", http.StatusServiceUnavailable)
 		return

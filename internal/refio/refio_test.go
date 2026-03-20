@@ -1,6 +1,7 @@
 package refio
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,9 +17,13 @@ func TestOpenFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("hello"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	r, err := Open(path, 0)
+	ref, err := PrepareLocalFileRef(path)
 	if err != nil {
-		t.Fatalf("Open file: %v", err)
+		t.Fatalf("PrepareLocalFileRef: %v", err)
+	}
+	r, err := OpenLocalFile(ref)
+	if err != nil {
+		t.Fatalf("OpenLocalFile: %v", err)
 	}
 	defer r.Close()
 	buf := make([]byte, 5)
@@ -37,9 +42,13 @@ func TestReadAllURL(t *testing.T) {
 		_, _ = w.Write([]byte("ok"))
 	}))
 	defer srv.Close()
-	data, err := ReadAll(srv.URL, 2*time.Second)
+	ref, err := PrepareRemoteHTTPRef(context.Background(), srv.URL)
 	if err != nil {
-		t.Fatalf("ReadAll URL: %v", err)
+		t.Fatalf("PrepareRemoteHTTPRef: %v", err)
+	}
+	data, err := ReadRemoteHTTP(context.Background(), ref, 2*time.Second)
+	if err != nil {
+		t.Fatalf("ReadRemoteHTTP: %v", err)
 	}
 	if got := string(data); got != "ok" {
 		t.Fatalf("data=%q want ok", got)
@@ -54,9 +63,13 @@ func TestOpenURLKeepsBodyReadableAfterOpenReturns(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	r, err := Open(srv.URL, 2*time.Second)
+	ref, err := PrepareRemoteHTTPRef(context.Background(), srv.URL)
 	if err != nil {
-		t.Fatalf("Open URL: %v", err)
+		t.Fatalf("PrepareRemoteHTTPRef: %v", err)
+	}
+	r, err := OpenRemoteHTTP(context.Background(), ref, 2*time.Second)
+	if err != nil {
+		t.Fatalf("OpenRemoteHTTP: %v", err)
 	}
 	defer r.Close()
 
@@ -70,14 +83,14 @@ func TestOpenURLKeepsBodyReadableAfterOpenReturns(t *testing.T) {
 }
 
 func TestOpenRejectsDirectoryRef(t *testing.T) {
-	_, err := Open(t.TempDir(), 0)
+	_, err := PrepareLocalFileRef(t.TempDir())
 	if err == nil || !strings.Contains(err.Error(), "directory") {
 		t.Fatalf("err=%v want directory rejection", err)
 	}
 }
 
 func TestOpenRejectsLoopbackURL(t *testing.T) {
-	_, err := Open("http://127.0.0.1:12345/guide.xml", time.Second)
+	_, err := PrepareRemoteHTTPRef(context.Background(), "http://127.0.0.1:12345/guide.xml")
 	if err == nil || !strings.Contains(err.Error(), "blocked private host") {
 		t.Fatalf("err=%v want blocked private host", err)
 	}

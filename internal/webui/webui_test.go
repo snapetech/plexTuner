@@ -155,7 +155,7 @@ func TestSessionAuthOnlyRedirectsBrowserRequests(t *testing.T) {
 	if w.Code != http.StatusSeeOther {
 		t.Fatalf("status=%d want 303", w.Code)
 	}
-	if location := w.Header().Get("Location"); !strings.HasPrefix(location, "/login?next=") {
+	if location := w.Header().Get("Location"); location != "/login" {
 		t.Fatalf("location=%q", location)
 	}
 }
@@ -218,15 +218,15 @@ func TestLoginAndLogoutFlow(t *testing.T) {
 		t.Fatalf("bad login body=%q", badW.Body.String())
 	}
 
-	okReq := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("username=admin&password=admin&next=%2Frouting"))
+	okReq := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("username=admin&password=admin"))
 	okReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	okW := httptest.NewRecorder()
 	s.login(okW, okReq)
 	if okW.Code != http.StatusSeeOther {
 		t.Fatalf("ok login status=%d", okW.Code)
 	}
-	if location := okW.Header().Get("Location"); location != "/routing" {
-		t.Fatalf("location=%q want /routing", location)
+	if location := okW.Header().Get("Location"); location != "/" {
+		t.Fatalf("location=%q want /", location)
 	}
 	cookies := okW.Result().Cookies()
 	if len(cookies) == 0 {
@@ -249,7 +249,7 @@ func TestLoginAndLogoutFlow(t *testing.T) {
 	}
 }
 
-func TestLoginRejectsUnsafeRedirectTargets(t *testing.T) {
+func TestLoginIgnoresRedirectTargets(t *testing.T) {
 	s := &Server{
 		Version:         "test",
 		loginTmpl:       templateMustLogin(t),
@@ -266,25 +266,6 @@ func TestLoginRejectsUnsafeRedirectTargets(t *testing.T) {
 	}
 	if got := w.Header().Get("Location"); got != "/" {
 		t.Fatalf("location=%q want /", got)
-	}
-}
-
-func TestNormalizeDeckRedirectTarget(t *testing.T) {
-	tests := []struct {
-		raw  string
-		want string
-	}{
-		{raw: "", want: "/"},
-		{raw: "/routing?mode=ops", want: "/routing?mode=ops"},
-		{raw: "https://evil.example/pwn", want: "/"},
-		{raw: "//evil.example/pwn", want: "/"},
-		{raw: "/../../ops", want: "/ops"},
-		{raw: "\\\\evil", want: "/"},
-	}
-	for _, tc := range tests {
-		if got := normalizeDeckRedirectTarget(tc.raw); got != tc.want {
-			t.Fatalf("normalizeDeckRedirectTarget(%q)=%q want %q", tc.raw, got, tc.want)
-		}
 	}
 }
 
