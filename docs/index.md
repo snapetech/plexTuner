@@ -9,6 +9,8 @@ tags: [docs, index]
 
 Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split by reader need.
 
+**Quick entrypoints:** [README](../README.md) (product overview + doc map) · [CHANGELOG](CHANGELOG.md) (**[Unreleased]** = current engineering slices) · [features.md](features.md) (canonical capability table) · [cli-and-env-reference](reference/cli-and-env-reference.md).
+
 | Section | Purpose |
 |--------|--------|
 | **[tutorials/](tutorials/index.md)** | Learning-oriented: get started, first run. |
@@ -16,7 +18,7 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[reference/](reference/index.md)** | Facts: commands, config. |
 | **[explanations/](explanations/index.md)** | Why and concepts. Add project docs here. |
 | **[adr/](adr/index.md)** | Decision log: architecture decision records. |
-| **[runbooks/](runbooks/index.md)** | Operational procedures. |
+| **[runbooks/](runbooks/index.md)** | Operational procedures ([troubleshooting](runbooks/iptvtunerr-troubleshooting.md) §8: **`/healthz`**, **`/readyz`**). |
 | **[how-to/deployment.md](how-to/deployment.md)** | Deploy IPTV Tunerr (binary, Docker, systemd, local test script). |
 | **[how-to/plex-ops-patterns.md](how-to/plex-ops-patterns.md)** | Advanced Plex-only operating patterns: zero-touch, category DVR fleets, injected DVRs. |
 | **[how-to/package-test-builds.md](how-to/package-test-builds.md)** | Build cross-platform test bundles for testers (Linux/macOS/Windows). |
@@ -49,5 +51,5 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 
 See also
 --------
-- [AGENTS.md](../AGENTS.md) and [memory-bank/](../memory-bank/).
-- [README](../README.md).
+- [AGENTS.md](../AGENTS.md) and [memory-bank/](../memory-bank/) (**[repo_map.md](../memory-bank/repo_map.md)** for code navigation).
+- [README](../README.md) (Kubernetes probe notes, **Recent Changes**, full documentation map).

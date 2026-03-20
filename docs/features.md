@@ -11,7 +11,9 @@ Canonical feature list for the current app.
 
 See also:
 - [README](../README.md)
+- [Docs index](index.md) · [CHANGELOG](CHANGELOG.md) (version history + **[Unreleased]** slices)
 - [cli-and-env-reference](reference/cli-and-env-reference.md)
+- [hls-mux-toolkit](reference/hls-mux-toolkit.md) · [plex-livetv-http-tuning](reference/plex-livetv-http-tuning.md)
 - [plex-dvr-lifecycle-and-api](reference/plex-dvr-lifecycle-and-api.md)
 
 ## 1. Input and indexing
@@ -42,6 +44,7 @@ See also:
 |---------|-------------|
 | **`discover.json`** | HDHR discovery endpoint (Plex-compatible). |
 | **`lineup.json` / `lineup_status.json`** | Tuner channel lineup and status endpoints. |
+| **`/healthz` / `/readyz`** | Catalog readiness for operators and Kubernetes: **`/readyz`** returns JSON **`ready`** / **`not_ready`** (**503** until **`UpdateChannels`** has live rows); **`/healthz`** returns **`ok`** / **`loading`** plus **`source_ready`**, **`channels`**, **`last_refresh`**. Example **`k8s/`** readiness probes use **`/readyz`**; **`/discover.json`** is often a better **liveness** target during long cold starts. See [runbook §8](runbooks/iptvtunerr-troubleshooting.md#8-tuner-endpoints-sanity-check). |
 | **`guide.xml`** | Layered XMLTV guide output (provider `xmltv.php` > external XMLTV > optional HDHR device `guide.xml` gap-fill > placeholder). |
 | **`live.m3u`** | Live channel M3U export. |
 | **`/stream/<id>`** | Stream gateway with provider auth/failover and tuner count limiting. |
@@ -60,7 +63,8 @@ See also:
 | Feature | Description |
 |---------|-------------|
 | **HLS -> MPEG-TS relay** | Native relay path for HLS inputs to Plex-facing TS output. |
-| **Tunerr-native HLS / DASH manifest proxy** | **`?mux=hls`** returns a rewritten **M3U8**; experimental **`?mux=dash`** rewrites **MPD** absolutes to **`?mux=dash&seg=…`**. Optional **`IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`**, **`IPTV_TUNERR_HLS_MUX_CORS`**, concurrency caps, literal + **DNS-resolved** private blocking, per-IP **`seg=`** rate limit, Prometheus **`/metrics`**, demo page, **`POST .../mux-seg-decode`**. Counters: **`hls_mux_seg_*`** and **`dash_mux_seg_*`** on **`provider_profile.json`**. |
+| **Tunerr-native HLS / DASH manifest proxy** | **`?mux=hls`** returns a rewritten **M3U8**; experimental **`?mux=dash`** rewrites **MPD** absolutes to **`?mux=dash&seg=…`**. Successful native mux responses may set response header **`X-IptvTunerr-Native-Mux: hls`** or **`dash`** (entry playlist/MPD, **`seg=`** relay incl. **304**, internal mux target paths); listed in **`Access-Control-Expose-Headers`** when **`IPTV_TUNERR_HLS_MUX_CORS`** is on. Optional **`IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`**, **`IPTV_TUNERR_HLS_MUX_CORS`**, concurrency caps, literal + **DNS-resolved** private blocking, per-IP **`seg=`** rate limit, Prometheus **`/metrics`**, demo page, **`POST .../mux-seg-decode`**. Counters: **`hls_mux_seg_*`** and **`dash_mux_seg_*`** + **`last_*_mux_outcome`** breadcrumbs on **`provider_profile.json`**. See [hls-mux-toolkit](reference/hls-mux-toolkit.md). |
+| **Named stream profile matrix** | Optional **`IPTV_TUNERR_STREAM_PROFILES_FILE`** JSON maps operator profile names → **`base_profile`**, **`transcode`**, preferred **`output_mux`** (`mpegts` / `fmp4`), used with **`?profile=`**, env defaults, and **`IPTV_TUNERR_PROFILE_OVERRIDES_FILE`** (**LP-010** / **LP-011**) — [transcode-profiles](reference/transcode-profiles.md). |
 | **ffmpeg transcode path** | Optional ffmpeg remux/transcode; MPEG-TS default; experimental **`?mux=fmp4`** fragmented MP4 when transcoding HLS — [transcode-profiles](reference/transcode-profiles.md). |
 | **Transcode modes** | `off`, `on`, `auto` (codec/probe-driven behavior depending config/runtime). |
 | **Startup/bootstrap controls** | Web-safe bootstrap and startup-gate tuning for Plex web playback behavior. |
@@ -162,7 +166,7 @@ Reference:
 |---------|-------------|
 | **VOD cataloging** | Movies/series stored in catalog from provider feeds/APIs. |
 | **VODFS mount** | FUSE-based filesystem exposing `Movies/` and `TV/`. |
-| **On-demand cache** | Optional cache materialization for direct-file VOD paths. |
+| **On-demand cache** | Optional cache materialization for direct-file (and HLS→MP4 via ffmpeg) VOD paths (`internal/materializer`, `internal/probe` for stream-type sniff). |
 | **Plex library registration helper** | `plex-vod-register` creates/reuses Plex TV/Movie libraries for a VODFS mount, with optional VOD-safe library prefs. |
 | **One-sided VOD registration** | `plex-vod-register --shows-only` / `--movies-only` for lane-specific library creation without unwanted companion sections. |
 | **Platform scope** | `mount` / VODFS is Linux-only. Non-Linux builds provide a stub. |
@@ -206,6 +210,7 @@ Supplement or enrich the paid catalog with public M3U feeds fetched at index tim
 | **`debug-bundle`** | `iptv-tunerr debug-bundle` collects stream attempts, provider profile, CF learned, cookie metadata, env (redacted). See [how-to/debug-bundle.md](how-to/debug-bundle.md). |
 | **`analyze-bundle.py`** | Correlates bundle artifacts with PMS.log, Tunerr stdout, and optional pcap. |
 | **HLS mux toolkit docs** | [reference/hls-mux-toolkit](reference/hls-mux-toolkit.md) plus [observability-prometheus-and-otel](explanations/observability-prometheus-and-otel.md) document mux diagnostics, soak helpers, `/metrics`, and OTEL bridge posture. |
+| **Runtime snapshot URL map** | **`/debug/runtime.json`** (tuner **`URLs`**) includes **`health`** → **`/healthz`** and **`ready`** → **`/readyz`** for automation. |
 
 ## 15. Packaging, testing, and ops tooling
 
@@ -218,6 +223,7 @@ Supplement or enrich the paid catalog with public M3U feeds fetched at index tim
 | **Hidden Plex grab recovery** | `scripts/plex-hidden-grab-recover.sh` + runbook for Plex Live TV hidden active-grab wedges. |
 | **Plex stream override analysis helper** | `scripts/plex-generate-stream-overrides.py` for feed/profile override candidate generation. |
 | **Live TV provider label rewrite proxy** | `scripts/plex-media-providers-label-proxy.py` + k8s deploy helper to rewrite `/media/providers` labels (client-dependent effect). |
+| **Live-race harness + Plex sessions** | With **`PMS_URL`** + **`PMS_TOKEN`** (or Tunerr/Plex env aliases), **`scripts/live-race-harness.sh`** can snapshot Plex **`/status/sessions`** into the bundle; **`live-race-harness-report.py`** summarizes players/products for **HR-002** / **HR-003** correlation. |
 
 ## 16. Platform support summary
 

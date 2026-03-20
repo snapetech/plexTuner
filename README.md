@@ -170,7 +170,7 @@ Why that matters:
 - you get one stable endpoint even if your real provider setup is messy underneath
 
 - Indexes channels from M3U playlists or Xtream `player_api`
-- Serves `/discover.json`, `/lineup.json`, `/stream/{id}` (HDHomeRun-compatible)
+- Serves `/discover.json`, `/lineup.json`, `/stream/{id}`, `/healthz`, `/readyz` (HDHomeRun-compatible + ops readiness)
 - Proxies live streams; optional ffmpeg transcode (`auto` probes codec, transcodes only if needed)
 - Multi-host failover, Cloudflare detection, client-adaptive codec (Plex Web)
 - Tuner count enforcement, per-instance guide number offsets for multi-DVR setups
@@ -896,6 +896,8 @@ IPTV_TUNERR_PROVIDER_URL='https://provider.com' \
 
 Full K8s guide: [`k8s/README.md`](k8s/README.md)
 
+**Probes:** example manifests use **`GET /readyz`** for **`readinessProbe`** (JSON **`ready`** / **`not_ready`**; **503** until the catalog has live channels). **`GET /healthz`** is the same HTTP gate with **`ok`** / **`loading`** plus **`source_ready`**. Prefer **`/discover.json`** for **liveness** during long first-time catalog builds (it stays **200** even with zero channels). Quick checks: [runbook §8](docs/runbooks/iptvtunerr-troubleshooting.md#8-tuner-endpoints-sanity-check).
+
 ---
 
 ## CLI Commands
@@ -1070,6 +1072,8 @@ internal/supervisor/  Multi-instance supervisor runtime
 internal/plex/        Plex registration helpers (API + DB-assisted)
 internal/emby/        Emby / Jellyfin registration and watchdog
 internal/provider/    Xtream / M3U probing and indexing
+internal/probe/       Stream URL classification + lineup.json helpers (VODFS path)
+internal/materializer/ On-demand VOD download/cache (range GET, HLS via ffmpeg)
 internal/catalog/     Normalized channel/VOD data model
 internal/vodfs/       VOD filesystem mount (Linux only)
 internal/epglink/     EPG match reporting
@@ -1092,11 +1096,23 @@ docs/                 Reference, how-to guides, runbooks
 
 ## Documentation
 
+**Maps (start here)**
+- [`docs/index.md`](docs/index.md) — Diátaxis index: tutorials, how-to, reference, runbooks, epics
+- [`docs/CHANGELOG.md`](docs/CHANGELOG.md) — Release notes and **[Unreleased]** work breakdown (mux, HR/LP slices, web UI, …)
+- [`docs/features.md`](docs/features.md) — Canonical capability table (kept in sync with major user-facing behavior)
+
 **Reference**
-- [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-and-env-reference.md) — All CLI flags and environment variables
-- [`docs/reference/plex-dvr-lifecycle-and-api.md`](docs/reference/plex-dvr-lifecycle-and-api.md) — Plex DVR lifecycle, HDHR wizard flow, injection API
-- [`docs/reference/testing-and-supervisor-config.md`](docs/reference/testing-and-supervisor-config.md) — Supervisor config, guide offsets, overflow shards
+- [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-and-env-reference.md) — Commands, flags, environment variables
+- [`docs/reference/plex-livetv-http-tuning.md`](docs/reference/plex-livetv-http-tuning.md) — Shared **`httpclient`** pool, **`seg=`** exception, **HR-008**–**HR-010**
+- [`docs/reference/hls-mux-toolkit.md`](docs/reference/hls-mux-toolkit.md) — Native **`?mux=hls` / `?mux=dash`**, **`X-IptvTunerr-Native-Mux`**, diagnostics, **`curl`** recipes
+- [`docs/reference/transcode-profiles.md`](docs/reference/transcode-profiles.md) — Profiles, **`IPTV_TUNERR_STREAM_PROFILES_FILE`**, **`?mux=`** interplay
+- [`docs/reference/plex-client-compatibility-matrix.md`](docs/reference/plex-client-compatibility-matrix.md) — Tier-1 clients, **HR-002** / **HR-003**
+- [`docs/reference/lineup-epg-hygiene.md`](docs/reference/lineup-epg-hygiene.md) — Dedupe, strip hosts, **HR-005** / **HR-006**
+- [`docs/reference/plex-dvr-lifecycle-and-api.md`](docs/reference/plex-dvr-lifecycle-and-api.md) — Plex DVR lifecycle, HDHR wizard, injection API
+- [`docs/reference/testing-and-supervisor-config.md`](docs/reference/testing-and-supervisor-config.md) — Supervisor, offsets, overflow shards
 - [`docs/reference/epg-linking-pipeline.md`](docs/reference/epg-linking-pipeline.md) — EPG match strategy
+- [`docs/potential_fixes.md`](docs/potential_fixes.md) — WebSafe / startup-gate context (**HR-001** pointers)
+- [`docs/explanations/architecture.md`](docs/explanations/architecture.md) — Layered codebase map ( **`cmd_*`**, **`gateway_*`** )
 
 **How-To**
 - [`docs/how-to/deployment.md`](docs/how-to/deployment.md) — Binary, Docker, systemd deployment
@@ -1104,15 +1120,18 @@ docs/                 Reference, how-to guides, runbooks
 - [`docs/how-to/mount-vodfs-and-register-plex-libraries.md`](docs/how-to/mount-vodfs-and-register-plex-libraries.md) — VOD filesystem setup
 - [`docs/how-to/cloudflare-bypass.md`](docs/how-to/cloudflare-bypass.md) — Cloudflare bypass guide
 - [`docs/how-to/debug-bundle.md`](docs/how-to/debug-bundle.md) — Debug bundle and log correlation
+- [`docs/how-to/hls-mux-proxy.md`](docs/how-to/hls-mux-proxy.md) — **`?mux=hls` / `dash`** proxy setup
+- [`docs/how-to/hybrid-hdhr-iptv.md`](docs/how-to/hybrid-hdhr-iptv.md) — Merge hardware HDHR lineup + IPTV (**LP-012** pointers)
 
 **Runbooks**
-- [`docs/runbooks/iptvtunerr-troubleshooting.md`](docs/runbooks/iptvtunerr-troubleshooting.md)
+- [`docs/runbooks/iptvtunerr-troubleshooting.md`](docs/runbooks/iptvtunerr-troubleshooting.md) — **`/healthz`**, **`/readyz`**, harnesses, **HR-***
 - [`docs/runbooks/plex-hidden-live-grab-recovery.md`](docs/runbooks/plex-hidden-live-grab-recovery.md)
 - [`docs/runbooks/plex-in-cluster.md`](docs/runbooks/plex-in-cluster.md)
+- [`k8s/README.md`](k8s/README.md) — Cluster deploy, verify **`curl`** snippets
 
 **Development**
 - [`AGENTS.md`](AGENTS.md) — Agent/handoff workflow
-- [`docs/features.md`](docs/features.md) — Full feature list
+- [`memory-bank/repo_map.md`](memory-bank/repo_map.md) — Code navigation for contributors
 
 Verify the build:
 
@@ -1124,6 +1143,11 @@ Verify the build:
 
 ## Recent Changes
 
+- **`/healthz` + `/readyz`**: JSON readiness gates for ops and Kubernetes (**503** until live channels load). Examples probe **`/readyz`**; see [runbook §8](docs/runbooks/iptvtunerr-troubleshooting.md#8-tuner-endpoints-sanity-check) and [k8s/README.md](k8s/README.md).
+- **Native mux visibility**: successful Tunerr **`?mux=hls` / `?mux=dash`** responses can include **`X-IptvTunerr-Native-Mux: hls|dash`** (also exposed for CORS when mux CORS is on) — [hls-mux-toolkit](docs/reference/hls-mux-toolkit.md).
+- **Named stream profiles**: optional **`IPTV_TUNERR_STREAM_PROFILES_FILE`** matrix (**LP-010** / **LP-011**) — [transcode-profiles](docs/reference/transcode-profiles.md).
+- **Shared HTTP idle pool**: **`IPTV_TUNERR_HTTP_MAX_IDLE_CONNS`**, **`IPTV_TUNERR_HTTP_IDLE_CONN_TIMEOUT_SEC`** across most subsystems (**HR-010**) — [plex-livetv-http-tuning](docs/reference/plex-livetv-http-tuning.md).
+- **Live-race harness + PMS**: optional Plex **`/status/sessions`** snapshots during **`scripts/live-race-harness.sh`** when **`PMS_URL`** + token are set — report summarizes players/sessions (**HR-002** / **HR-003**).
 - **Dedicated control deck**: `run` / `serve` now launch a real operator console on `:48879` with its own login/session flow, runtime snapshot, grouped settings lane, shared deck memory/activity, safe actions/workflows, and CSRF-protected state changes instead of a thin JSON/debug wrapper.
 - **HLS mux toolkit and observability**: Tunerr-native `?mux=hls` / experimental `?mux=dash` now have stronger SSRF/redirect policy, grouped diagnostics, Prometheus `/metrics`, soak/demo tooling, and a dedicated operator reference at [docs/reference/hls-mux-toolkit.md](docs/reference/hls-mux-toolkit.md).
 - **Runtime EPG repair**: fixes bad or missing channel IDs before guide pruning, so "channel name only" guide entries stop surviving just because a source had a bogus `tvg-id`.

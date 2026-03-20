@@ -25,5 +25,6 @@ Goal → preconditions → steps → verify.
 
 See also
 --------
+- [Docs index](../index.md) · [features](../features.md) · [CHANGELOG](../CHANGELOG.md).
 - [Runbooks](../runbooks/index.md).
 - [Reference](../reference/index.md).

@@ -11,7 +11,7 @@ Deploy, rollback, troubleshoot. Goal → preconditions → steps → verify → 
 
 | Doc | Description |
 |-----|-------------|
-| [iptvtunerr-troubleshooting](iptvtunerr-troubleshooting.md) | **IPTV Tunerr:** fail-fast checklist, short test cycle, probe, log patterns, common failures, endpoint sanity checks, tier-1 client matrix pointer (**HR-003**), Plex HTTP pool / DVR soak (**HR-008**–**HR-010**). |
+| [iptvtunerr-troubleshooting](iptvtunerr-troubleshooting.md) | **IPTV Tunerr:** fail-fast checklist, short test cycle, probe, log patterns, common failures, **`/healthz`** / **`/readyz`** sanity (**§8**), tier-1 client matrix (**HR-003**), Plex HTTP pool / DVR soak (**HR-008**–**HR-010**). |
 | [how-to: fix-guide-data-with-epg-doctor](../how-to/fix-guide-data-with-epg-doctor.md) | **Guide debugging:** one workflow for XMLTV matching, placeholder-only rows, and missing programme blocks. |
 | [plex-in-cluster](plex-in-cluster.md) | **Plex in cluster:** Check if Plex is running; why it's missing (not in this repo); where it went (k3s/external); how to restore. |
 | [plex-hidden-live-grab-recovery](plex-hidden-live-grab-recovery.md) | **Plex Live TV recovery:** detect hidden active-grab wedges and safely restart Plex when no active viewers remain. |

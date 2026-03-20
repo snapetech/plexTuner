@@ -23,6 +23,17 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-20
+  Title: README + features + doc indexes — cross-reference sync
+  Summary:
+    - **README**: documentation map (**CHANGELOG**, **features**, HR/mux refs, **architecture**); Kubernetes **`/readyz`** / **`/healthz`** / **`/discover.json`**; **Recent Changes** (native mux header, **`STREAM_PROFILES_FILE`**, **HR-010**, live-race PMS); tuner + **repo layout** (**probe**, **materializer**).
+    - **`docs/features.md`**, **`docs/index.md`**, **`reference/index.md`**, **`runbooks/index.md`**, **`how-to/index.md`**.
+    - **`docs/CHANGELOG.md`** **[Unreleased · Documentation]**.
+  Verification:
+    - N/A (markdown)
+  Opportunities filed:
+    - none
+
+- Date: 2026-03-20
   Title: Capture Plex session snapshots in the live-race harness (**HR-002** / **HR-003**)
   Summary:
     - [live-race-harness.sh](../scripts/live-race-harness.sh) now polls Plex **`/status/sessions`** during the run window when **`PMS_URL`** + **`PMS_TOKEN`** (or Tunerr/Plex env aliases) are configured, storing XML snapshots under **`pms-sessions/`**.

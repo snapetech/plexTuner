@@ -13,6 +13,12 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+### Documentation
+- **README:** expanded **Documentation** map (CHANGELOG, features, HR/mux references, architecture); **Kubernetes** probe guidance (**`/readyz`** / **`/healthz`** vs **`/discover.json`**); **Recent Changes** bullets for native mux header, profiles file, **HR-010** pool, live-race PMS snapshots; **Repo layout** lists **`internal/probe`**, **`internal/materializer`**; tuner endpoints mention readiness paths.
+- **`docs/features.md`:** **`/healthz`** / **`/readyz`**, **`X-IptvTunerr-Native-Mux`**, named profile matrix row, **`provider_profile.json`** mux breadcrumbs, runtime **`URLs.ready`**, materializer scope, live-race harness + Plex sessions; **See also** links **CHANGELOG** / tuning docs.
+- **`docs/index.md`:** quick entrypoints (**README**, **CHANGELOG**, **features**, CLI ref); runbooks row points at troubleshooting §8; **See also** → **repo_map**.
+- **`docs/reference/index.md`:** **features** + **CHANGELOG** rows for discoverability.
+
 ### Testing
 - **`internal/probe`**: unit tests for **`Probe`** (path classification, HTTP content-types, body sniff, redirects) plus **`Lineup`**, **`LineupHandler`**, **`DiscoveryHandler`** (`probe_test.go`).
 - **`internal/materializer`**: unit tests for **`Stub`**, **`DownloadToFile`** (SSRF guard, full GET, ranged GET, HTTP errors), **`DirectFile`**, and **`Cache`** materialization (`materializer_test.go`). HLS/ffmpeg paths remain integration-only.
