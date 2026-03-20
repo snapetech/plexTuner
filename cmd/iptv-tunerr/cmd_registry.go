@@ -13,3 +13,28 @@ type commandSpec struct {
 	FlagSet *flag.FlagSet
 	Run     func(cfg *config.Config, args []string)
 }
+
+var defaultCommandSections = []string{"Core", "Guide/EPG", "VOD (Linux)", "Lab/ops"}
+
+func allCommands() []commandSpec {
+	commands := append(coreCommands(), reportCommands()...)
+	commands = append(commands, guideReportCommands()...)
+	commands = append(commands, vodCommands()...)
+	commands = append(commands, opsCommands()...)
+	commands = append(commands, catchupOpsCommands()...)
+	commands = append(commands, oracleOpsCommands()...)
+	commands = append(commands, cookieImportCommands()...)
+	commands = append(commands, cfStatusCommands()...)
+	commands = append(commands, debugBundleCommands()...)
+	commands = append(commands, freeSourcesCommands()...)
+	commands = append(commands, hdhrScanCommands()...)
+	return commands
+}
+
+func commandIndex(commands []commandSpec) map[string]commandSpec {
+	byName := make(map[string]commandSpec, len(commands))
+	for _, cmd := range commands {
+		byName[cmd.Name] = cmd
+	}
+	return byName
+}

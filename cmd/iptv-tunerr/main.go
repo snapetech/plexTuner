@@ -78,25 +78,11 @@ func main() {
 		os.Exit(0)
 	}
 
-	commands := append(coreCommands(), reportCommands()...)
-	commands = append(commands, guideReportCommands()...)
-	commands = append(commands, vodCommands()...)
-	commands = append(commands, opsCommands()...)
-	commands = append(commands, catchupOpsCommands()...)
-	commands = append(commands, oracleOpsCommands()...)
-	commands = append(commands, cookieImportCommands()...)
-	commands = append(commands, cfStatusCommands()...)
-	commands = append(commands, debugBundleCommands()...)
-	commands = append(commands, freeSourcesCommands()...)
-	commands = append(commands, hdhrScanCommands()...)
-	commandByName := make(map[string]commandSpec, len(commands))
-	sections := []string{"Core", "Guide/EPG", "VOD (Linux)", "Lab/ops"}
-	for _, cmd := range commands {
-		commandByName[cmd.Name] = cmd
-	}
+	commands := allCommands()
+	commandByName := commandIndex(commands)
 
 	if topLevelUsageRequested(os.Args) {
-		fmt.Fprint(os.Stderr, usageText(os.Args[0], commands, Version, sections))
+		fmt.Fprint(os.Stderr, usageText(os.Args[0], commands, Version, defaultCommandSections))
 		if len(os.Args) < 2 {
 			os.Exit(1)
 		}

@@ -6,6 +6,8 @@
 
 **Latest (2026-03-19, work breakdown begin→end, INT-002):** Guide policy is being promoted from a hidden boolean filter into a reusable decision surface. Current code adds **`GuidePolicySummary`** / **`GuidePolicyReport`**, richer policy-application logging, **`/guide/policy.json`**, and catch-up preview metadata that shows what the active guide policy kept or dropped and why.
 
+**Latest (2026-03-19, work breakdown begin→end, INT-003/INT-004 audit):** The runtime lineup and catch-up paths were already consuming guide policy from the earlier cross-wiring work; this pass confirmed that **`UpdateChannels`**, **`/guide/capsules.json`**, **`catchup-capsules`**, and **`catchup-publish`** were already on the policy path. The real missing piece was inspectability, which **`INT-002`** now supplies through **`/guide/policy.json`** and catch-up preview policy summaries. Current next step: land the small **`INT-005`** CLI registry cleanup so command aggregation/indexing is owned by **`cmd_registry.go`** with tests instead of remaining ad hoc in **`main.go`**.
+
 **Latest (2026-03-19, work breakdown HR-006):** **`catalog.ReplaceWithLive`** sorts live rows by **`channel_id`** for stable **`catalog.json`** / lineup order when M3U order drifts. **`./scripts/verify`** OK.
 
 **Latest (2026-03-19, work breakdown HR-007):** **`TRANSCODE_OVERRIDES_FILE`** merges with **`STREAM_TRANSCODE`** **`off`/`on`/`auto`** (per-channel remux/transcode vs global); policy logs + **`gateway_policy_test.go`**; runtime paths in **`/debug/runtime.json`**. **`./scripts/verify`** OK.
