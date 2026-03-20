@@ -357,15 +357,70 @@ On **`/stream/<channel>`**, Tunerr walks **primary then backup** catalog URLs **
 
 After deploy or provider changes, run a **short Plex DVR recording** through the Tunerr tuner: (1) schedule **1–5 minutes** on a known-good channel, (2) confirm the job **completes** in PMS with plausible duration, (3) check the artifact **size** is non-trivial, (4) **spot-play** start/mid in a client, (5) grep Tunerr logs for **`805` All Tuners In Use**, **`503`**, or repeated **`gateway:`** upstream errors during the window. On failure, capture **`/debug/stream-attempts.json`** and the PMS DVR log slice.
 
+## 10. Two-stream collapse / "second stream kills the first"
+
+When a tester says "one stream plays, the second starts, then the first dies a few seconds later," use **`scripts/multi-stream-harness.sh`** instead of trying to line up two manual VLC/Plex clicks and a pile of ad hoc curls.
+
+Typical case:
+
+```bash
+TUNERR_BASE_URL='http://127.0.0.1:5004' \
+CHANNEL_IDS='325824,123456' \
+RUN_SECONDS=40 \
+START_STAGGER_SECS=3 \
+./scripts/multi-stream-harness.sh
+```
+
+You can also pass fully built stream URLs from a file:
+
+```bash
+cat > /tmp/multi-stream.targets <<'EOF'
+cozi=http://127.0.0.1:5004/stream/325824
+me-tv=http://127.0.0.1:5004/stream/123456?profile=websafe
+EOF
+
+TUNERR_BASE_URL='http://127.0.0.1:5004' \
+CHANNEL_URLS_FILE=/tmp/multi-stream.targets \
+RUN_SECONDS=40 \
+./scripts/multi-stream-harness.sh
+```
+
+Artifacts are written under **`.diag/multi-stream/<timestamp>/`**:
+
+- **`channel-*/body.ts`**: captured bytes for each live pull
+- **`channel-*/headers.txt`**, **`curl.stderr`**, **`meta.json`**: per-stream HTTP result, bytes, timing, and exit code
+- **`provider-profile/*.json`**: sampled **`/provider/profile.json`** state across the run
+- **`stream-attempts/*.json`**: sampled **`/debug/stream-attempts.json`** windows
+- **`runtime/*.json`**: sampled **`/debug/runtime.json`**
+- **`pms-sessions/*.xml`**: optional Plex session snapshots when **`PMS_URL`** + **`PMS_TOKEN`** are set
+- **`report.txt`** / **`report.json`**: synthesized verdict for sustained reads, premature exits, zero-byte opens, and provider-pressure clues
+
+Useful knobs:
+
+- **`START_STAGGER_SECS=1`** to create a tighter overlap and stress provider concurrency
+- **`READ_TIMEOUT_SECS=0`** to let each pull run for the full harness window, or set a shorter value to force quicker turnaround
+- **`POLL_SECS=2`** to sample provider/runtime state more densely during collapses
+- **`ATTEMPTS_LIMIT=50`** if the provider is noisy and you want a larger stream-attempt window in each snapshot
+- **`PMS_URL`** + **`PMS_TOKEN`** to correlate Tunerr behavior with real Plex sessions during the same run
+
+Use the report as triage, not as the final truth:
+
+- **`sustained_reads >= 2`** with no premature exits means the sample did **not** reproduce the collapse
+- **`premature_exits > 0`** means one or more streams produced bytes but ended far earlier than the expected run window
+- **`zero_byte_streams > 0`** points at admission/open-path failure rather than mid-stream collapse
+- provider-profile concurrency fields tell you whether Tunerr learned or observed upstream pressure while the collapse happened
+
+This harness pairs well with **`scripts/stream-compare-harness.sh`**: use multi-stream first to catch the collapse pattern, then use stream-compare on the failing channel/provider path if the issue looks mux- or CDN-specific.
+
 ---
 
-## 10. Tier-1 Plex client matrix (HR-003)
+## 11. Tier-1 Plex client matrix (HR-003)
 
 Cross-client Live TV validation (which devices, what adaptation class, what evidence to save) lives in **[plex-client-compatibility-matrix](../reference/plex-client-compatibility-matrix.md)**. Use it after transport/tuner sanity (§8–§9) when the bug is **client-specific** (Web vs TV app) rather than upstream-only.
 
 ---
 
-## 11. Checklist for "is the tuner OK?"
+## 12. Checklist for "is the tuner OK?"
 
 1. **Verify passes:** `./scripts/verify`
 2. **Probe OK (if using provider):** `iptv-tunerr probe` shows at least one get.php or player_api OK
@@ -374,7 +429,7 @@ Cross-client Live TV validation (which devices, what adaptation class, what evid
 
 ---
 
-## 12. Category DVRs empty / "no live channels available" / guides stuck updating
+## 13. Category DVRs empty / "no live channels available" / guides stuck updating
 
 **Symptom:** Main HDHR lineup and guide work; category tuners (bcastus, newsus, generalent, etc.) log `xmltv: external source failed (no live channels available); falling back to placeholder guide` and serve tiny placeholder guides.
 

@@ -224,6 +224,7 @@ Supplement or enrich the paid catalog with public M3U feeds fetched at index tim
 | **Plex stream override analysis helper** | `scripts/plex-generate-stream-overrides.py` for feed/profile override candidate generation. |
 | **Live TV provider label rewrite proxy** | `scripts/plex-media-providers-label-proxy.py` + k8s deploy helper to rewrite `/media/providers` labels (client-dependent effect). |
 | **Live-race harness + Plex sessions** | With **`PMS_URL`** + **`PMS_TOKEN`** (or Tunerr/Plex env aliases), **`scripts/live-race-harness.sh`** can snapshot Plex **`/status/sessions`** into the bundle; **`live-race-harness-report.py`** summarizes players/products for **HR-002** / **HR-003** correlation. |
+| **Multi-stream contention harness** | **`scripts/multi-stream-harness.sh`** runs 2+ staggered live pulls against a real tuner, samples **`/provider/profile.json`** + **`/debug/stream-attempts.json`** + **`/debug/runtime.json`**, optionally snapshots Plex sessions, and emits **`report.txt`** / **`report.json`** for “second stream starts, first dies” regressions. |
 
 ## 16. Platform support summary
 
