@@ -13,6 +13,9 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+### Web UI (Control Deck)
+- **Host quarantine visibility:** **`internal/webui/deck.js`** **`summarizeProviderProfile`** includes **`quarantined_hosts`**, **`auto_host_quarantine`**, **`upstream_quarantine_skips_total`**; **Watch** / **Routing** lanes surface cumulative skips and current quarantine counts.
+
 ### Documentation
 - **Architecture Mermaid diagram:** [explanations/architecture.md](explanations/architecture.md) adds **Visual (Mermaid)** flowchart (provider → catalog → core + intelligence → registration/publishing); [docs-gaps.md](docs-gaps.md) **Medium** section cleared; [explanations/index](explanations/index.md) + [docs/index](index.md) point at diagram.
 - **Docs gaps audit (2026-03-19):** [docs-gaps.md](docs-gaps.md) — cleared stale **High**/**Medium**/**Low** rows (canonical env map is [cli-and-env-reference](reference/cli-and-env-reference.md); architecture/VODFS/XMLTV/CF/run-vs-serve/glossary/runbooks/deployment already documented); **Resolved** table expanded; **Medium** keeps optional Mermaid polish for [architecture](explanations/architecture.md). [how-to/index](how-to/index.md) lists [mount-vodfs-and-register-plex-libraries](how-to/mount-vodfs-and-register-plex-libraries.md). [EPIC-live-tv-intelligence](epics/EPIC-live-tv-intelligence.md) / [EPIC-lineup-parity](epics/EPIC-lineup-parity.md) **next** / **PR-6** notes aligned with shipped guide/policy/EPG features. **`memory-bank/opportunities.md`**: superseded narrative on guide-health → policy (partially).

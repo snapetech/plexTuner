@@ -23,6 +23,19 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-19
+  Title: Control Deck host quarantine + EPIC LTV observability note
+  Summary:
+    - **`internal/webui/deck.js`**: **`summarizeProviderProfile`** adds **`quarantined_hosts`**, **`auto_host_quarantine`**, **`upstream_quarantine_skips_total`**; Watch / Routing / wins copy.
+    - **`docs/epics/EPIC-live-tv-intelligence.md`**: quarantine observability shipped; further work scoped.
+    - **`docs/CHANGELOG.md`**, **`docs/features.md`** (Deck row).
+  Verification:
+    - `./scripts/verify`
+  Opportunities filed:
+    - none
+  Links:
+    - INT-010 operator UX
+
+- Date: 2026-03-19
   Title: Provider profile upstream_quarantine_skips_total (INT-010)
   Summary:
     - **`Gateway.upstreamQuarantineSkips`** atomic + **`noteUpstreamQuarantineFilterSkipped`** (Prometheus + profile).

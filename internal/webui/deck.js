@@ -175,6 +175,9 @@ function summarizeProviderProfile(body) {
     effective_tuner_limit: body.effective_tuner_limit,
     learned_tuner_limit: body.learned_tuner_limit,
     penalized_hosts: (body.penalized_hosts || []).length,
+    quarantined_hosts: (body.quarantined_hosts || []).length,
+    auto_host_quarantine: !!body.auto_host_quarantine,
+    upstream_quarantine_skips_total: Number(body.upstream_quarantine_skips_total) || 0,
     cf_block_hits: body.cf_block_hits,
     concurrency_signals_seen: body.concurrency_signals_seen,
     remediation_hint_count: hints.length,
@@ -849,6 +852,17 @@ function renderDeck() {
   } else if (providerSummary?.autopilot_consensus_runtime) {
     watchItems.push("Autopilot consensus reorder is enabled; no qualifying host in the current snapshot.");
   }
+  if (
+    providerSummary &&
+    (providerSummary.auto_host_quarantine ||
+      (providerSummary.upstream_quarantine_skips_total || 0) > 0 ||
+      (providerSummary.quarantined_hosts || 0) > 0)
+  ) {
+    const skips = providerSummary.upstream_quarantine_skips_total || 0;
+    const qh = providerSummary.quarantined_hosts || 0;
+    const on = providerSummary.auto_host_quarantine ? "on" : "off";
+    watchItems.push(`Host quarantine (${on}): ${skips} upstream URL(s) skipped cumulatively; ${qh} host(s) quarantined now.`);
+  }
 
   const wins = [];
   if (health.ok) wins.push("Deck can reach the tuner through the dedicated proxy origin.");
@@ -858,6 +872,9 @@ function renderDeck() {
   if (remediationHints.length === 0 && providerSummary) wins.push("No advisory provider remediation hints in the current profile snapshot.");
   if (providerSummary?.autopilot_consensus_host) {
     wins.push(`Autopilot reports a consensus host (${providerSummary.autopilot_consensus_host}) across multiple channel memories.`);
+  }
+  if (providerSummary && (providerSummary.upstream_quarantine_skips_total || 0) > 0) {
+    wins.push(`Host quarantine skipped ${providerSummary.upstream_quarantine_skips_total} bad upstream URL(s) while backups existed (see /api/provider/profile.json).`);
   }
   if (wins.length === 0) wins.push("No positive confirmations yet because the deck is still in a degraded state.");
 
@@ -950,7 +967,15 @@ function renderDeck() {
   ]).join("");
 
   routingList.innerHTML = filterCards([
-    createCard("Provider profile", providerSummary ? esc(JSON.stringify(providerSummary)) : esc(pretty(providerLoadErr || "Profile unavailable")), remediationHints.length ? `remediation_hints=${remediationHints.length} (open JSON for full text)` : (provider.client_behavior ? `client_behavior=${esc(JSON.stringify(provider.client_behavior))}` : ""), "", "provider", `${createActionButton("provider_profile_reset")}`),
+    createCard("Provider profile", providerSummary ? esc(JSON.stringify(providerSummary)) : esc(pretty(providerLoadErr || "Profile unavailable")), (() => {
+      const parts = [];
+      if (remediationHints.length) parts.push(`remediation_hints=${remediationHints.length} (open JSON for full text)`);
+      if (providerSummary && (providerSummary.upstream_quarantine_skips_total || 0) > 0) {
+        parts.push(`upstream_quarantine_skips_total=${providerSummary.upstream_quarantine_skips_total}`);
+      }
+      if (provider.client_behavior) parts.push(`client_behavior=${esc(JSON.stringify(provider.client_behavior))}`);
+      return parts.join(" · ");
+    })(), "", "provider", `${createActionButton("provider_profile_reset")}`),
     createCard("Attempt volume", `${attempts.length} recent attempts in buffer. Top host pressure: ${attempts.slice(0, 3).map((item) => item.upstream_url_host || item.upstream_host || "unknown").join(", ") || "none"}`, "", failedAttempts.length > 0 ? "tone-warn" : "", "attempts", `${createWorkflowButton("streamWorkflow", "Failure Workflow")}${createActionButton("stream_attempts_clear")}`),
     createCard("Fallback evidence", attempts.slice(0, 4).map((item) => `${item.channel_name || item.channel_id || "channel"} -> ${item.reason || item.result || item.status || "unknown"}`).join(" | ") || "No fallback evidence", "", "", "attempts", `<button class="tiny" type="button" data-inspect="streamWorkflow">Workflow Payload</button>`),
     createCard("HDHR contract", "discover.json, lineup.json, lineup_status.json, device.xml, and guide.xml still live on the tuner and are proxied here under /api.", "", "", "runtime"),
