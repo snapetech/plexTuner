@@ -134,6 +134,7 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"provider_autotune_host_quarantine":        strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE")),
 			"provider_autotune_host_quarantine_after":  strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_AFTER")),
 			"provider_autotune_host_quarantine_sec":    strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_SEC")),
+			"provider_account_max_concurrent":          strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT")),
 		},
 		Guide: map[string]interface{}{
 			"xmltv_url":                     cfg.XMLTVURL,

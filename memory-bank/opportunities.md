@@ -26,14 +26,13 @@ It exists to encourage quality gains without derailing the current task.
 
 - Date: 2026-03-21
   Category: reliability
-  Title: Account-aware provider pool for real multi-account concurrency
-  Context: User wants the system to run with many generated provider accounts and genuinely support the same number of concurrent viewers. The repo already supports numbered provider entries (`IPTV_TUNERR_PROVIDER_URL_2`, `_3`, etc.), including same-host different-credential entries, and channel stream variants preserve per-entry auth. But the live gateway still starts from ranked variant order and falls through on failure/limit signals instead of leasing an account slot deliberately.
-  Why it matters: "10 accounts" is not the same as "10 guaranteed concurrent viewers" unless the tuner schedules active streams across distinct accounts instead of only treating extra entries as failover variants.
-  Evidence: `internal/config/config.go` `ProviderEntries()`, `cmd/iptv-tunerr/cmd_catalog.go` `streamVariantsFromRankedEntries`, and tester/user expectation around multi-account concurrency.
-  Suggested fix: Add an explicit provider-account pool in the gateway: lease one entry per live stream, track per-entry pressure/caps, prefer healthy free slots before trying per-channel fallback, and surface that in provider profile/runtime/debug endpoints.
-  Risk/Scope: high | fits current scope? no
-  User decision needed?: yes
-  If yes: options = (A) keep opportunistic fallback only, (B) add explicit account-slot scheduler with learned per-account limits (recommended), (C) full weighted pool + persisted policy memory; default if no answer = B
+  Title: Adaptive per-account contract learning for provider pools
+  Context: The gateway now has explicit provider-account leasing and can enforce `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT`, but that cap is still operator-tuned. Different panels can allow different concurrent counts per credential set, and those limits may need to be learned independently per account rather than assumed globally.
+  Why it matters: Multi-account concurrency is now real, but it still relies on one static knob instead of learning or persisting per-account stream limits from actual upstream behavior.
+  Evidence: `internal/tuner/gateway_accounts.go`, `internal/tuner/gateway_stream_upstream.go`, and the new `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT` runtime surface.
+  Suggested fix: Teach the gateway to learn, persist, and expose per-account stream caps or contention signals from upstream responses so multi-account setups self-tune instead of relying only on a single env cap.
+  Risk/Scope: medium | fits current scope? no
+  User decision needed?: no
 
 - Date: 2026-03-21
   Category: reliability

@@ -2,6 +2,12 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-21):** **Account-aware provider pooling + VOD mount helpers:** deduplicated multi-account channels now derive a stable provider-account identity per URL, prefer less-loaded accounts during stream ordering, keep active leases for successful live sessions, and can enforce `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT` as a per-credential cap with local HDHR-style `805` / `503` rejection when every account for a channel is busy. In parallel, the first VOD ergonomics slice landed: `iptv-tunerr vod-webdav-mount-hint` prints platform-specific mount commands, and `vod-webdav` startup logs now include concrete mount commands instead of only generic prose. **`./scripts/verify`** OK.
+
+Assumptions:
+1. The first safe scheduler model is lease-aware ordering/capping in the existing upstream walk, not a full provider broker rewrite.
+2. Some panels allow >1 stream per credential set, so hard per-account caps must stay operator-tunable via env instead of being guessed globally.
+
 **Latest (2026-03-21):** **Cross-platform VOD parity slice 1:** extracted VOD naming/tree logic out of Linux-only files so it can back more than the `go-fuse` path, kept Linux `mount` wired to the same shared tree, and added a new cross-platform `vod-webdav` command backed by `internal/vodwebdav` using read-only WebDAV over the same catalog/materializer model. README/features/platform/CLI docs now describe Linux `mount` vs macOS/Windows `vod-webdav` parity. **`./scripts/verify`** OK.
 
 **Latest (2026-03-21):** **Intermittent channel-class diff harness:** tester feedback narrowed the remaining live-stream issue to "some channels work, some don't" on the same build, so the right next tool is a paired good-vs-bad capture instead of more global guesses. Added `scripts/channel-diff-harness.sh` and `scripts/channel-diff-report.py`: seed one good and one bad channel through Tunerr, infer the paired direct upstream URLs from `/debug/stream-attempts.json`, run two `stream-compare` captures, and emit a compact classification report (upstream-only vs Tunerr-only vs channel-class split). **`./scripts/verify`** OK.

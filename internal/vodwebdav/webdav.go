@@ -307,3 +307,25 @@ func MountHint(goos, addr string) string {
 		return fmt.Sprintf("Mount a WebDAV client against http://%s/", addr)
 	}
 }
+
+func MountCommand(goos, addr, target string) string {
+	addr = strings.TrimSpace(addr)
+	target = strings.TrimSpace(target)
+	switch strings.ToLower(strings.TrimSpace(goos)) {
+	case "darwin":
+		if target == "" {
+			target = "/Volumes/IPTVTunerrVOD"
+		}
+		return fmt.Sprintf("mkdir -p %q && mount_webdav -S http://%s/ %q", target, addr, target)
+	case "windows":
+		if target == "" {
+			target = "Z:"
+		}
+		return fmt.Sprintf("net use %s http://%s/ /persistent:no", target, addr)
+	default:
+		if target == "" {
+			target = "/mnt/iptvtunerr-vod"
+		}
+		return fmt.Sprintf("gio mount dav://%s/  # or map with your preferred WebDAV client, mount point %s", addr, target)
+	}
+}

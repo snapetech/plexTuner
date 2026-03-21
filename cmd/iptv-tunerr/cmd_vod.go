@@ -41,6 +41,11 @@ func vodCommands() []commandSpec {
 	vodWebDAVCache := vodWebDAVCmd.String("cache", "", "Cache dir for VOD materialization (default: IPTV_TUNERR_CACHE)")
 	vodWebDAVAddr := vodWebDAVCmd.String("addr", "127.0.0.1:58188", "Listen address for the WebDAV VOD server")
 
+	vodWebDAVMountHintCmd := flag.NewFlagSet("vod-webdav-mount-hint", flag.ExitOnError)
+	vodWebDAVMountHintAddr := vodWebDAVMountHintCmd.String("addr", "127.0.0.1:58188", "Listen address for the WebDAV VOD server")
+	vodWebDAVMountHintOS := vodWebDAVMountHintCmd.String("os", runtime.GOOS, "Target OS for the mount hint (darwin, windows, linux)")
+	vodWebDAVMountHintTarget := vodWebDAVMountHintCmd.String("target", "", "Suggested mount target (path or drive letter)")
+
 	return []commandSpec{
 		{
 			Name:    "mount",
@@ -80,6 +85,17 @@ func vodCommands() []commandSpec {
 			Run: func(cfg *config.Config, args []string) {
 				_ = vodWebDAVCmd.Parse(args)
 				handleVODWebDAV(cfg, *vodWebDAVCatalog, *vodWebDAVAddr, *vodWebDAVCache)
+			},
+		},
+		{
+			Name:    "vod-webdav-mount-hint",
+			Section: "VOD",
+			Summary: "Print a platform-specific command for mounting the VOD WebDAV surface",
+			FlagSet: vodWebDAVMountHintCmd,
+			Run: func(cfg *config.Config, args []string) {
+				_ = vodWebDAVMountHintCmd.Parse(args)
+				log.Printf("Mount hint (%s): %s", *vodWebDAVMountHintOS, vodwebdav.MountHint(*vodWebDAVMountHintOS, *vodWebDAVMountHintAddr))
+				log.Printf("Mount command (%s): %s", *vodWebDAVMountHintOS, vodwebdav.MountCommand(*vodWebDAVMountHintOS, *vodWebDAVMountHintAddr, *vodWebDAVMountHintTarget))
 			},
 		},
 	}
@@ -136,6 +152,7 @@ func handleVODWebDAV(cfg *config.Config, catalogPath, addr, cacheDir string) {
 	}
 	log.Printf("Starting VOD WebDAV on http://%s/ with %d movies and %d series", addr, len(movies), len(series))
 	log.Printf("Mount hint (%s): %s", runtime.GOOS, vodwebdav.MountHint(runtime.GOOS, addr))
+	log.Printf("Mount command (%s): %s", runtime.GOOS, vodwebdav.MountCommand(runtime.GOOS, addr, ""))
 	if cache == "" {
 		log.Printf("VOD WebDAV is using the stub materializer; directory scans work, but reads need -cache or IPTV_TUNERR_CACHE for on-demand bytes")
 	}

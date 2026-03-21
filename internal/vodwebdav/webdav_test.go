@@ -56,6 +56,15 @@ func TestMountHint(t *testing.T) {
 	}
 }
 
+func TestMountCommand(t *testing.T) {
+	if got := MountCommand("darwin", "127.0.0.1:8123", "/Volumes/Test"); got == "" {
+		t.Fatal("expected darwin mount command")
+	}
+	if got := MountCommand("windows", "127.0.0.1:8123", "Z:"); got == "" {
+		t.Fatal("expected windows mount command")
+	}
+}
+
 func NewTestTree() *vodfs.Tree {
 	return vodfs.NewTree(
 		[]catalog.Movie{{ID: "m1", Title: "Movie", Year: 2024, StreamURL: "http://example.com/movie.mp4"}},

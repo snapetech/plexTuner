@@ -13,6 +13,12 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+### Streaming
+- **Provider-account stream pooling:** deduplicated multi-account live channels now derive a stable provider-account identity per URL, prefer less-loaded accounts during upstream ordering, and can enforce **`IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT`** as a per-credential stream cap. When every candidate account for a channel is already at the cap, Tunerr now rejects the tune locally with HDHR-style **805** / HTTP **503** instead of waiting for a later upstream failure.
+
+### VOD
+- **WebDAV mount helper UX:** added **`iptv-tunerr vod-webdav-mount-hint`** plus concrete platform-specific mount commands so the cross-platform WebDAV VOD surface is easier to mount on macOS, Windows, and Linux without manually translating the server URL each time.
+
 ## [v0.1.26] — 2026-03-21
 
 ### Security / Web UI

@@ -85,3 +85,13 @@ func TestRemediationHintsForProfile_hostQuarantineActive(t *testing.T) {
 		t.Fatalf("got %#v", h)
 	}
 }
+
+func TestRemediationHintsForProfile_accountPoolActive(t *testing.T) {
+	h := remediationHintsForProfile(ProviderBehaviorProfile{
+		AccountPoolLimit: 1,
+		AccountLeases:    []providerAccountLease{{Label: "provider/u1", InUse: 1}},
+	})
+	if len(h) != 1 || h[0].Code != "account_pool_active" {
+		t.Fatalf("got %#v", h)
+	}
+}

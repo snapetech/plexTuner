@@ -28,25 +28,41 @@ func (g *Gateway) walkStreamUpstreams(
 	forcedProfile, adaptReason, clientClass string,
 	requestMux string,
 	inUseNow, limit int,
-) (finalStatus, finalMode, finalEffectiveURL string, upstreamConcurrencyLimited, ok bool) {
+) (finalStatus, finalMode, finalEffectiveURL, leasedAccountKey string, upstreamConcurrencyLimited, providerAccountLimited, ok bool) {
 	upstreamConcurrencyLimited = false
+	providerAccountLimited = false
+	attemptedAnyUpstream := false
 	urls = g.filterQuarantinedUpstreams(urls)
 	// Try primary then backups until one works. Do not retry or backoff on 429/423 here:
 	// that would block stream throughput. We only fail over to next URL and return 502 if all fail.
 	// Reject non-http(s) URLs to prevent SSRF (e.g. file:// or provider-supplied internal URLs).
 	for i, streamURL := range urls {
+		lease, leaseHeld, leaseAllowed := g.tryAcquireProviderAccountLease(channel, streamURL)
+		if !leaseAllowed {
+			attemptIdx := attempt.addUpstream(i+1, streamURL, nil, false, false, false, false)
+			attempt.markUpstreamError(attemptIdx, "provider_account_limited", errors.New("provider account concurrency limit"))
+			providerAccountLimited = true
+			continue
+		}
 		if !safeurl.IsHTTPOrHTTPS(streamURL) {
 			attemptIdx := attempt.addUpstream(i+1, streamURL, nil, false, false, false, false)
 			attempt.markUpstreamError(attemptIdx, "rejected_scheme", errors.New("invalid stream URL scheme"))
+			if leaseHeld {
+				g.releaseProviderAccountLease(lease.Key)
+			}
 			if i == 0 {
 				log.Printf("gateway: channel %s: invalid stream URL scheme (rejected)", channel.GuideName)
 			}
 			continue
 		}
+		attemptedAnyUpstream = true
 		req, err := g.newUpstreamRequest(r.Context(), r, streamURL)
 		if err != nil {
 			attemptIdx := attempt.addUpstream(i+1, streamURL, nil, false, false, false, false)
 			attempt.markUpstreamError(attemptIdx, "request_build_error", err)
+			if leaseHeld {
+				g.releaseProviderAccountLease(lease.Key)
+			}
 			continue
 		}
 		authApplied := req.Header.Get("Authorization") != ""
@@ -64,6 +80,9 @@ func (g *Gateway) walkStreamUpstreams(
 		if err != nil {
 			attempt.markUpstreamError(attemptIdx, "request_error", err)
 			g.noteUpstreamFailure(streamURL, 0, "request_error")
+			if leaseHeld {
+				g.releaseProviderAccountLease(lease.Key)
+			}
 			log.Printf("gateway: channel=%q id=%s upstream[%d/%d] error url=%s err=%v",
 				channel.GuideName, channelID, i+1, len(urls), safeurl.RedactURL(streamURL), err)
 			continue
@@ -81,6 +100,9 @@ func (g *Gateway) walkStreamUpstreams(
 				upstreamConcurrencyLimited = true
 			}
 			if !proceed {
+				if leaseHeld {
+					g.releaseProviderAccountLease(lease.Key)
+				}
 				continue
 			}
 			resp = recovered
@@ -92,10 +114,19 @@ func (g *Gateway) walkStreamUpstreams(
 			inUseNow, limit, i+1, len(urls),
 		)
 		if ok {
-			return finalStatus, finalMode, finalEffectiveURL, upstreamConcurrencyLimited, true
+			if leaseHeld {
+				leasedAccountKey = lease.Key
+			}
+			return finalStatus, finalMode, finalEffectiveURL, leasedAccountKey, upstreamConcurrencyLimited, providerAccountLimited, true
+		}
+		if leaseHeld {
+			g.releaseProviderAccountLease(lease.Key)
 		}
 	}
-	return "", "", "", upstreamConcurrencyLimited, false
+	if !attemptedAnyUpstream && providerAccountLimited {
+		return "", "", "", "", upstreamConcurrencyLimited, true, false
+	}
+	return "", "", "", "", upstreamConcurrencyLimited, false, false
 }
 
 func (g *Gateway) filterQuarantinedUpstreams(urls []string) []string {

@@ -39,13 +39,28 @@ Create or update this file when **any** of these are true:
 - **Story IDs:** `LP-001` … `LP-012` — work only on stories listed in that epic file; park extras in [opportunities.md](opportunities.md).
 - **LP progress (2026-03-21):** **LP-012** [lineup-parity-lp012-closure](../docs/how-to/lineup-parity-lp012-closure.md) checklist + doc index wiring; **LP-001** slice: **`IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS`** for directed UDP discovery (**IPv6 literal targets + UDP6** merged with IPv4). **LP-010/011** now include named-profile **ffmpeg-packaged HLS** (`output_mux: "hls"`) in addition to `mpegts` / `fmp4`. **LTV slice:** Autopilot **normalized URL** match (trailing slash / default port / scheme·host casing) for **`preferred_url`** vs catalog. **Next depth:** packager tuning/soak, not missing product mode. **Park:** Postgres, **catchup-daemon**-scale “always-on” extensions beyond MVP, provider **`xmltv.php`** bandwidth when panels omit HTTP validators (disk cache + incremental SQLite already shipped) — [opportunities.md](opportunities.md). **Docs (2026-03-19):** [docs-gaps.md](../docs/docs-gaps.md) high/medium rows cleared after validation; optional Mermaid in [architecture.md](../docs/explanations/architecture.md) remains nice-to-have.
 
+### Active epic overlay (Account-aware concurrency + VOD ergonomics, 2026-03-21)
+
+- **Goal (2–5 sentences):** Turn multi-provider catalogs into real concurrent capacity by leasing streams against provider-account identities instead of treating extra accounts as passive failover only, and finish the first operator-usable non-Linux VOD parity path with mount ergonomics. Success means operators can point several accounts at Tunerr and get predictable spread across them, while macOS/Windows users have a documented, mountable `vod-webdav` workflow from the same binary.
+- **Non-goals (scope fence):** Solving every provider-specific concurrency contract in one pass, rewriting the entire gateway selection engine, or shipping native macFUSE/WinFsp backends before the shared VOD/WebDAV story is solid.
+- **Story IDs:** `ACC-001` … `ACC-003`, `VODX-003`
+- **ACC progress (2026-03-21):** `ACC-001`, `ACC-002`, and the first visible `ACC-003` slice are in: the gateway now tracks active provider-account leases, prefers lower-load accounts during URL ordering, can reject locally when every distinct account for a channel is already at `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT`, and exposes current account lease state plus the configured cap on provider/runtime surfaces. Remaining depth is smarter per-account contract learning rather than raw URL retry order.
+
+### Account-aware concurrency story list (2026-03-21)
+
+| ID | Acceptance criteria | Files/areas (expected) | Verification | Risk flags |
+|----|---------------------|------------------------|--------------|------------|
+| ACC-001 | Gateway derives a stable provider-account identity per stream URL and tracks active leases for successful live sessions. | `internal/tuner/gateway*.go`, tests | targeted gateway tests + `./scripts/verify` | runtime regression |
+| ACC-002 | URL ordering/account selection prefers less-loaded accounts and can enforce a per-account concurrent-stream cap without breaking single-account behavior. | `internal/tuner/gateway*.go`, docs/runtime/profile surfaces | targeted gateway tests + `./scripts/verify` | behavior / compatibility |
+| ACC-003 | Operator/runtime surfaces expose account-pool state clearly enough to debug “10 accounts should mean 10 viewers”. | `internal/tuner/server.go`, `cmd_runtime_server.go`, docs/tests | targeted tests + `./scripts/verify` | operability |
+
 ### Active epic overlay (Cross-platform VOD parity, 2026-03-21)
 
 - **Goal (2–5 sentences):** Replicate Linux VODFS behavior on macOS and Windows without insisting on the same kernel/filesystem stack. Success means Tunerr can expose the VOD catalog as a mountable `Movies/` / `TV/` tree on all supported desktop/server OSes, with on-demand file reads and Plex-scannable paths, while Linux keeps the existing `go-fuse` mount path.
 - **Non-goals (scope fence):** Rewriting the current Linux VODFS stack in one shot, shipping cgo-heavy macFUSE/WinFsp backends before there is a stable shared VOD tree layer, or pretending WebDAV is identical to kernel-native FUSE semantics in every corner case.
 - **Story IDs:** `VODX-001` … `VODX-005`
 - **Initial implementation stance:** Linux stays on `internal/vodfs` `go-fuse`; macOS/Windows parity starts with a cross-platform WebDAV mount surface and native mount helpers, then native per-OS backends can layer later if still needed.
-- **Progress (2026-03-21):** `VODX-001` and the first visible `VODX-002` slice are in: naming/tree logic now lives in cross-platform files under `internal/vodfs`, Linux `Root` uses the shared `Tree`, and `internal/vodwebdav` + `iptv-tunerr vod-webdav` now expose the same synthetic `Movies/` / `TV/` tree over read-only WebDAV for non-Linux parity. Next depth: mount-helper ergonomics and broader real-client validation on macOS/Windows.
+- **Progress (2026-03-21):** `VODX-001` and the first visible `VODX-002` slice are in: naming/tree logic now lives in cross-platform files under `internal/vodfs`, Linux `Root` uses the shared `Tree`, and `internal/vodwebdav` + `iptv-tunerr vod-webdav` now expose the same synthetic `Movies/` / `TV/` tree over read-only WebDAV for non-Linux parity. `VODX-003` has its first operator slice too: `iptv-tunerr vod-webdav-mount-hint` prints platform-specific mount commands and `vod-webdav` now logs concrete mount commands at startup. Next depth: broader real-client validation on macOS/Windows.
 
 ### Cross-platform VOD parity story list (2026-03-21)
 

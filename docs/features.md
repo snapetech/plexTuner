@@ -23,7 +23,7 @@ See also:
 | **M3U URL** | Fetch and parse IPTV M3U lineups (live, and VOD/series when present). |
 | **Xtream `player_api`** | First-class indexing for live, movies, and series. |
 | **Multi-host probing + ranking** | Probe all provider URLs, rank by health/latency, index from the best host, and store backup stream URLs for failover. |
-| **Multi-subscription merge** | Numbered env suffix (`_2`, `_3`, ...) to pull from separate provider accounts and merge into one catalog; channels with duplicate `tvg-id` are deduplicated with all stream URLs available as fallbacks. |
+| **Multi-subscription merge** | Numbered env suffix (`_2`, `_3`, ...) to pull from separate provider accounts and merge into one catalog; channels with duplicate `tvg-id` are deduplicated with all stream URLs available as fallbacks, and live playback can now spread active streams across distinct provider-account credential sets. |
 | **Subscription-file credentials** | Load `Username:` / `Password:` from a subscription file when env vars are not set. |
 | **Live-only / EPG-only** | Filter catalog generation to live-only or EPG-linked channels only. |
 | **Stream smoketest (optional)** | Post-index stream validation: probe each channel's primary URL (Range/HEAD for MPEG-TS, playlist GET for HLS), drop channels that fail. Persistent cache avoids re-probing fresh URLs on subsequent index runs (`IPTV_TUNERR_SMOKETEST_CACHE_FILE`). |

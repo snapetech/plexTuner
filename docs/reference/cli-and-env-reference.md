@@ -92,6 +92,16 @@ Notes:
 - The WebDAV server is read-only.
 - Directory scans work without `-cache`, but actual file reads need a working materializer/cache path.
 
+## `iptv-tunerr vod-webdav-mount-hint`
+
+Print a platform-specific mount hint and example command for the read-only VOD
+WebDAV surface.
+
+Common flags:
+- `-addr`
+- `-os`
+- `-target`
+
 ## `iptv-tunerr plex-vod-register`
 
 Create or reuse Plex libraries for a mounted VODFS tree.
@@ -373,6 +383,7 @@ What it exposes:
 Related env:
 - `IPTV_TUNERR_PROVIDER_AUTOTUNE` — default `true`; enables conservative provider-aware runtime tuning when the operator has not explicitly set the relevant knob
 - `IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE` — when `true`/`1`/`on` **and** autotune is on, upstream hosts that exceed **`IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_AFTER`** consecutive failure signals are **skipped** in **`walkStreamUpstreams`** while at least one non-quarantined backup URL remains (per-host cooldown **`IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_SEC`**, default **900**). Surfaced on **`/provider/profile.json`** as **`auto_host_quarantine`**, **`upstream_quarantine_skips_total`** (cumulative), **`penalized_hosts[].quarantined_until`**, **`quarantined_hosts`**, and **`remediation_hints`** (`host_quarantine_active`). With **`IPTV_TUNERR_METRICS_ENABLE`**, Prometheus **`iptv_tunerr_upstream_quarantine_skips_total`** matches the same events.
+- `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT` — optional per-provider-account concurrent-stream cap for deduplicated multi-account channels. When set to a positive integer, live stream ordering prefers less-loaded credential sets and rejects new tunes with HDHR-style **805** / HTTP **503** when every distinct provider account for that channel is already at the cap. If unset, Tunerr still uses account-aware spreading for channels that carry multiple distinct credential sets, but only as a best-effort ordering hint.
 
 ## Guide highlights endpoint
 

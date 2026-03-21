@@ -63,13 +63,25 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	attempt := newStreamAttemptBuilder(reqID, r, channelID, channel.GuideName, len(urls))
 	var finalStatus, finalMode, finalEffectiveURL string
 	var finalErr error
+	var leasedAccountKey string
 	defer func() {
+		if leasedAccountKey != "" {
+			g.releaseProviderAccountLease(leasedAccountKey)
+		}
 		g.appendStreamAttempt(attempt.finish(finalStatus, finalMode, finalErr, finalEffectiveURL))
 		if adaptStickyCandidate && (finalStatus == "all_upstreams_failed" || finalStatus == "upstream_concurrency_limited") {
 			g.noteAdaptStickyFallback(channelID, plexRequestHints(r))
 		}
 	}()
 	urls = g.reorderStreamURLs(channel, clientClass, urls)
+	if g.providerAccountPoolExhausted(channel, urls) {
+		finalStatus = "provider_accounts_in_use"
+		finalErr = errors.New("all provider accounts in use")
+		log.Printf("gateway: req=%s channel=%q id=%s reject provider-accounts-in-use limit=%d", reqID, channel.GuideName, channelID, g.effectiveProviderAccountLimit(channel))
+		w.Header().Set("X-HDHomeRun-Error", "805")
+		http.Error(w, "All provider accounts in use", http.StatusServiceUnavailable)
+		return
+	}
 	requestMux := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mux")))
 	if g.maybeServeFFmpegPackagedHLSTarget(w, r, channelID) {
 		finalStatus = "ok"
@@ -112,12 +124,21 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("gateway: req=%s channel=%q id=%s release inuse=%d/%d dur=%s", reqID, channel.GuideName, channelID, inUseLeft, limit, time.Since(start).Round(time.Millisecond))
 	}()
 
-	finalStatus, finalMode, finalEffectiveURL, upstreamConcurrencyLimited, streamHandled := g.walkStreamUpstreams(
+	var providerAccountLimited bool
+	finalStatus, finalMode, finalEffectiveURL, leasedAccountKey, upstreamConcurrencyLimited, providerAccountLimited, streamHandled := g.walkStreamUpstreams(
 		w, r, channel, channelID, reqID, start, urls, attempt,
 		hasTranscodeOverride, forceTranscode, forcedProfile, adaptReason, clientClass,
 		requestMux, inUseNow, limit,
 	)
 	if streamHandled {
+		return
+	}
+	if providerAccountLimited {
+		finalStatus = "provider_accounts_in_use"
+		finalErr = errors.New("all provider accounts in use")
+		log.Printf("gateway: req=%s channel=%q id=%s provider account pool exhausted while walking upstreams", reqID, channel.GuideName, channelID)
+		w.Header().Set("X-HDHomeRun-Error", "805")
+		http.Error(w, "All provider accounts in use", http.StatusServiceUnavailable)
 		return
 	}
 	if upstreamConcurrencyLimited {

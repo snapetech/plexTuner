@@ -78,6 +78,8 @@ type Gateway struct {
 	muxSegAutoRejectAt         []time.Time // timestamps of 503 seg-limit rejects (for IPTV_TUNERR_HLS_MUX_SEG_SLOTS_AUTO)
 	learnedUpstreamLimit       int
 	reqSeq                     uint64
+	accountLeaseMu             sync.Mutex
+	accountLeases              map[string]int
 	providerStateMu            sync.Mutex
 	concurrencyHits            int
 	lastConcurrencyAt          time.Time

@@ -1457,6 +1457,61 @@ func TestGateway_stream_localTunerLimitRecordsAttemptStatus(t *testing.T) {
 	}
 }
 
+func TestGateway_reorderStreamURLsByAccountLoad_prefersFreeAccount(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT", "1")
+	ch := &catalog.LiveChannel{
+		StreamURLs: []string{
+			"http://provider.example/live/u1/p1/1001.m3u8",
+			"http://provider.example/live/u2/p2/1001.m3u8",
+		},
+		StreamAuths: []catalog.StreamAuth{
+			{Prefix: "http://provider.example/live/u1/p1/", User: "u1", Pass: "p1"},
+			{Prefix: "http://provider.example/live/u2/p2/", User: "u2", Pass: "p2"},
+		},
+	}
+	g := &Gateway{ProviderUser: "u1", ProviderPass: "p1"}
+	identity, ok := providerAccountIdentityForURL(g, ch, ch.StreamURLs[0])
+	if !ok {
+		t.Fatal("expected account identity")
+	}
+	g.accountLeases = map[string]int{identity.Key: 1}
+	got := g.reorderStreamURLsByAccountLoad(ch, ch.StreamURLs)
+	if len(got) != 2 || got[0] != ch.StreamURLs[1] {
+		t.Fatalf("reordered urls=%v", got)
+	}
+}
+
+func TestGateway_stream_providerAccountLimitRejectsLocally(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT", "1")
+	ch := catalog.LiveChannel{
+		GuideNumber: "1",
+		GuideName:   "Ch1",
+		StreamURLs:  []string{"http://provider.example/live/u1/p1/1001.m3u8"},
+		StreamAuths: []catalog.StreamAuth{{Prefix: "http://provider.example/live/u1/p1/", User: "u1", Pass: "p1"}},
+	}
+	g := &Gateway{
+		Channels:     []catalog.LiveChannel{ch},
+		TunerCount:   4,
+		ProviderUser: "u1",
+		ProviderPass: "p1",
+	}
+	identity, ok := providerAccountIdentityForURL(g, &ch, ch.StreamURLs[0])
+	if !ok {
+		t.Fatal("expected account identity")
+	}
+	g.accountLeases = map[string]int{identity.Key: 1}
+
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("code=%d", w.Code)
+	}
+	if got := g.recentAttempts[0].FinalStatus; got != "provider_accounts_in_use" {
+		t.Fatalf("final status=%q", got)
+	}
+}
+
 func TestParseUpstreamConcurrencyLimit(t *testing.T) {
 	cases := []struct {
 		preview string

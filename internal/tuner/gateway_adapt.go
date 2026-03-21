@@ -478,7 +478,7 @@ func (g *Gateway) reorderStreamURLs(channel *catalog.LiveChannel, clientClass st
 			}
 			return left < right
 		})
-		return out
+		return g.reorderStreamURLsByAccountLoad(channel, out)
 	}
 	out := make([]string, 0, len(urls))
 	out = append(out, preferred)
@@ -498,10 +498,7 @@ func (g *Gateway) reorderStreamURLs(channel *catalog.LiveChannel, clientClass st
 		return left < right
 	})
 	out = append(out, rest...)
-	if len(out) == len(urls) && preferred == urls[0] {
-		return out
-	}
-	return out
+	return g.reorderStreamURLsByAccountLoad(channel, out)
 }
 
 func (g *Gateway) rememberAutopilotDecision(channel *catalog.LiveChannel, clientClass string, transcode bool, profile, reason, preferredURL string) {

@@ -249,6 +249,8 @@ IPTV_TUNERR_PROVIDER_PASS_2=pass2
 ```
 Each numbered provider is independently probed. The best host indexes the catalog; all provider hosts become stream URL fallbacks per channel. Channels with duplicate `tvg-id` values across providers are deduplicated — one entry in the lineup with all matching stream URLs ranked and available for failover.
 
+When a deduplicated channel has several distinct provider-account credential sets behind it, the gateway now spreads active streams across those accounts instead of always retrying the first ranked URL. Use `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT` if one credential set should allow more than one active viewer.
+
 ### 4. Post-index stream validation
 
 After indexing, IPTV Tunerr can optionally probe every channel's primary stream URL and drop channels that don't respond — so dead channels never appear in the lineup.
@@ -935,6 +937,7 @@ Full K8s guide: [`k8s/README.md`](k8s/README.md)
 | `epg-link-report` | Report EPG coverage and unmatched channels |
 | `mount` | Mount VODFS (Linux only) |
 | `vod-webdav` | Serve the VOD catalog over read-only WebDAV for native macOS/Windows mounting |
+| `vod-webdav-mount-hint` | Print a platform-specific mount command for the VOD WebDAV surface |
 | `plex-vod-register` | Create or reuse Plex VOD libraries for a VODFS mount |
 | `import-cookies` | Import browser cookies (inline, Netscape, or HAR) into the cookie jar |
 | `cf-status` | Show per-host Cloudflare state: cf_clearance freshness, working UA, CF-tagged flag |

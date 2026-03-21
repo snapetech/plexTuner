@@ -41,6 +41,8 @@ type ProviderBehaviorProfile struct {
 	ConfiguredTunerLimit   int      `json:"configured_tuner_limit"`
 	LearnedTunerLimit      int      `json:"learned_tuner_limit"`
 	EffectiveTunerLimit    int      `json:"effective_tuner_limit"`
+	AccountPoolLimit       int      `json:"account_pool_limit"`
+	AccountPoolConfigured  bool     `json:"account_pool_configured"`
 	BasicAuthConfigured    bool     `json:"basic_auth_configured"`
 	ForwardedHeaders       []string `json:"forwarded_headers"`
 	FFMPEGHLSReconnect     bool     `json:"ffmpeg_hls_reconnect"`
@@ -55,40 +57,41 @@ type ProviderBehaviorProfile struct {
 	ProviderAutotune       bool     `json:"provider_autotune"`
 	AutoHostQuarantine     bool     `json:"auto_host_quarantine"`
 	// UpstreamQuarantineSkipsTotal counts stream URLs dropped by host quarantine (per process lifetime).
-	UpstreamQuarantineSkipsTotal uint64                `json:"upstream_quarantine_skips_total"`
-	AutoHLSReconnect             bool                  `json:"auto_hls_reconnect"`
-	HLSPlaylistFailures          int                   `json:"hls_playlist_failures"`
-	LastHLSPlaylistAt            string                `json:"last_hls_playlist_at,omitempty"`
-	LastHLSPlaylistURL           string                `json:"last_hls_playlist_url,omitempty"`
-	HLSSegmentFailures           int                   `json:"hls_segment_failures"`
-	LastHLSSegmentAt             string                `json:"last_hls_segment_at,omitempty"`
-	LastHLSSegmentURL            string                `json:"last_hls_segment_url,omitempty"`
-	LastHLSMuxOutcome            string                `json:"last_hls_mux_outcome,omitempty"`
-	LastHLSMuxAt                 string                `json:"last_hls_mux_at,omitempty"`
-	LastHLSMuxURL                string                `json:"last_hls_mux_url,omitempty"`
-	HlsMuxSegInUse               int                   `json:"hls_mux_seg_in_use"`
-	HlsMuxSegLimit               int                   `json:"hls_mux_seg_limit"`
-	HlsMuxSegSuccess             uint64                `json:"hls_mux_seg_success"`
-	HlsMuxSegErrScheme           uint64                `json:"hls_mux_seg_err_scheme"`
-	HlsMuxSegErrPrivate          uint64                `json:"hls_mux_seg_err_private"`
-	HlsMuxSegErrParam            uint64                `json:"hls_mux_seg_err_param"`
-	HlsMuxSegUpstreamHTTPErrs    uint64                `json:"hls_mux_seg_upstream_http_errs"`
-	HlsMuxSeg502                 uint64                `json:"hls_mux_seg_502"`
-	HlsMuxSeg503LimitHits        uint64                `json:"hls_mux_seg_503_limit_hits"`
-	HlsMuxSegRateLimited         uint64                `json:"hls_mux_seg_rate_limited"`
-	DashMuxSegSuccess            uint64                `json:"dash_mux_seg_success"`
-	DashMuxSegErrScheme          uint64                `json:"dash_mux_seg_err_scheme"`
-	DashMuxSegErrPrivate         uint64                `json:"dash_mux_seg_err_private"`
-	DashMuxSegErrParam           uint64                `json:"dash_mux_seg_err_param"`
-	DashMuxSegUpstreamHTTPErrs   uint64                `json:"dash_mux_seg_upstream_http_errs"`
-	DashMuxSeg502                uint64                `json:"dash_mux_seg_502"`
-	DashMuxSeg503LimitHits       uint64                `json:"dash_mux_seg_503_limit_hits"`
-	DashMuxSegRateLimited        uint64                `json:"dash_mux_seg_rate_limited"`
-	LastDashMuxOutcome           string                `json:"last_dash_mux_outcome,omitempty"`
-	LastDashMuxAt                string                `json:"last_dash_mux_at,omitempty"`
-	LastDashMuxURL               string                `json:"last_dash_mux_url,omitempty"`
-	PenalizedHosts               []ProviderHostPenalty `json:"penalized_hosts,omitempty"`
-	QuarantinedHosts             []ProviderHostPenalty `json:"quarantined_hosts,omitempty"`
+	UpstreamQuarantineSkipsTotal uint64                 `json:"upstream_quarantine_skips_total"`
+	AutoHLSReconnect             bool                   `json:"auto_hls_reconnect"`
+	HLSPlaylistFailures          int                    `json:"hls_playlist_failures"`
+	LastHLSPlaylistAt            string                 `json:"last_hls_playlist_at,omitempty"`
+	LastHLSPlaylistURL           string                 `json:"last_hls_playlist_url,omitempty"`
+	HLSSegmentFailures           int                    `json:"hls_segment_failures"`
+	LastHLSSegmentAt             string                 `json:"last_hls_segment_at,omitempty"`
+	LastHLSSegmentURL            string                 `json:"last_hls_segment_url,omitempty"`
+	LastHLSMuxOutcome            string                 `json:"last_hls_mux_outcome,omitempty"`
+	LastHLSMuxAt                 string                 `json:"last_hls_mux_at,omitempty"`
+	LastHLSMuxURL                string                 `json:"last_hls_mux_url,omitempty"`
+	HlsMuxSegInUse               int                    `json:"hls_mux_seg_in_use"`
+	HlsMuxSegLimit               int                    `json:"hls_mux_seg_limit"`
+	HlsMuxSegSuccess             uint64                 `json:"hls_mux_seg_success"`
+	HlsMuxSegErrScheme           uint64                 `json:"hls_mux_seg_err_scheme"`
+	HlsMuxSegErrPrivate          uint64                 `json:"hls_mux_seg_err_private"`
+	HlsMuxSegErrParam            uint64                 `json:"hls_mux_seg_err_param"`
+	HlsMuxSegUpstreamHTTPErrs    uint64                 `json:"hls_mux_seg_upstream_http_errs"`
+	HlsMuxSeg502                 uint64                 `json:"hls_mux_seg_502"`
+	HlsMuxSeg503LimitHits        uint64                 `json:"hls_mux_seg_503_limit_hits"`
+	HlsMuxSegRateLimited         uint64                 `json:"hls_mux_seg_rate_limited"`
+	DashMuxSegSuccess            uint64                 `json:"dash_mux_seg_success"`
+	DashMuxSegErrScheme          uint64                 `json:"dash_mux_seg_err_scheme"`
+	DashMuxSegErrPrivate         uint64                 `json:"dash_mux_seg_err_private"`
+	DashMuxSegErrParam           uint64                 `json:"dash_mux_seg_err_param"`
+	DashMuxSegUpstreamHTTPErrs   uint64                 `json:"dash_mux_seg_upstream_http_errs"`
+	DashMuxSeg502                uint64                 `json:"dash_mux_seg_502"`
+	DashMuxSeg503LimitHits       uint64                 `json:"dash_mux_seg_503_limit_hits"`
+	DashMuxSegRateLimited        uint64                 `json:"dash_mux_seg_rate_limited"`
+	LastDashMuxOutcome           string                 `json:"last_dash_mux_outcome,omitempty"`
+	LastDashMuxAt                string                 `json:"last_dash_mux_at,omitempty"`
+	LastDashMuxURL               string                 `json:"last_dash_mux_url,omitempty"`
+	PenalizedHosts               []ProviderHostPenalty  `json:"penalized_hosts,omitempty"`
+	QuarantinedHosts             []ProviderHostPenalty  `json:"quarantined_hosts,omitempty"`
+	AccountLeases                []providerAccountLease `json:"account_leases,omitempty"`
 	// RemediationHints are heuristic suggestions from current counters (empty when none apply).
 	RemediationHints []ProviderRemediationHint `json:"remediation_hints,omitempty"`
 	// Intelligence surfaces Live TV intelligence (LTV epic) next to provider-runtime quirks.
@@ -420,6 +423,14 @@ func remediationHintsForProfile(p ProviderBehaviorProfile) []ProviderRemediation
 			Env:      "IPTV_TUNERR_TUNER_COUNT",
 		})
 	}
+	if p.AccountPoolLimit > 0 && len(p.AccountLeases) > 0 {
+		out = append(out, ProviderRemediationHint{
+			Code:     "account_pool_active",
+			Severity: "info",
+			Message:  "Provider-account pooling is active; concurrent streams are being spread across distinct credential sets.",
+			Env:      "IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT",
+		})
+	}
 	if p.HlsMuxSeg503LimitHits > 3 {
 		out = append(out, ProviderRemediationHint{
 			Code:     "hls_mux_session_limit",
@@ -520,11 +531,15 @@ func (g *Gateway) ProviderBehaviorProfile() ProviderBehaviorProfile {
 	lastDashMuxURL := g.lastDashMuxURL
 	penalizedHosts := g.penalizedHostsLocked()
 	g.providerStateMu.Unlock()
+	accountLeases := g.providerAccountLeases()
+	accountPoolLimit := configuredProviderAccountLimit()
 
 	prof := ProviderBehaviorProfile{
 		ConfiguredTunerLimit:         configured,
 		LearnedTunerLimit:            learned,
 		EffectiveTunerLimit:          effective,
+		AccountPoolLimit:             accountPoolLimit,
+		AccountPoolConfigured:        accountPoolLimit > 0,
 		BasicAuthConfigured:          strings.TrimSpace(g.ProviderUser) != "" || strings.TrimSpace(g.ProviderPass) != "",
 		ForwardedHeaders:             append([]string(nil), forwardedUpstreamHeaderNames...),
 		FFMPEGHLSReconnect:           getenvBool("IPTV_TUNERR_FFMPEG_HLS_RECONNECT", false),
@@ -565,6 +580,7 @@ func (g *Gateway) ProviderBehaviorProfile() ProviderBehaviorProfile {
 		LastDashMuxOutcome:           lastDashMuxOutcome,
 		LastDashMuxURL:               lastDashMuxURL,
 		PenalizedHosts:               penalizedHosts,
+		AccountLeases:                accountLeases,
 	}
 	prof.QuarantinedHosts = quarantinedHostsFromPenalties(prof.PenalizedHosts)
 	if !lastConcurrencyAt.IsZero() {
