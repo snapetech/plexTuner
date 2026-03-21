@@ -26,16 +26,31 @@ func TestXMLTV_serve(t *testing.T) {
 	}
 	dec := xml.NewDecoder(w.Body)
 	var tv struct {
+		Source   string `xml:"source-info-name,attr"`
 		Channels []struct {
 			ID      string `xml:"id,attr"`
 			Display string `xml:"display-name"`
 		} `xml:"channel"`
+		Programmes []struct {
+			Channel string `xml:"channel,attr"`
+			Title   string `xml:"title"`
+			Desc    string `xml:"desc"`
+		} `xml:"programme"`
 	}
 	if err := dec.Decode(&tv); err != nil {
 		t.Fatal(err)
 	}
+	if tv.Source != "IPTV Tunerr (guide loading placeholder)" {
+		t.Fatalf("source=%q", tv.Source)
+	}
 	if len(tv.Channels) != 1 || tv.Channels[0].ID != "1" || tv.Channels[0].Display != "Ch1" {
 		t.Errorf("channels: %+v", tv.Channels)
+	}
+	if len(tv.Programmes) != 1 || tv.Programmes[0].Title != "Ch1 (guide loading)" {
+		t.Fatalf("programmes: %+v", tv.Programmes)
+	}
+	if !strings.Contains(tv.Programmes[0].Desc, "Temporary placeholder") {
+		t.Fatalf("programme desc=%q", tv.Programmes[0].Desc)
 	}
 }
 

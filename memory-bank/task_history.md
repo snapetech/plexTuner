@@ -3889,6 +3889,18 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
 ---
 
 - Date: 2026-03-21
+  Title: Make startup guide placeholders visibly provisional
+  Summary:
+    - Updated the placeholder `/guide.xml` path so XMLTV source metadata explicitly says it is a guide-loading placeholder instead of looking like a normal guide feed.
+    - Placeholder programme titles now include `(guide loading)` and carry a short description explaining that IPTV Tunerr is still building the full guide.
+    - Added XMLTV tests so the placeholder labeling remains visible on future startup-guide changes.
+  Verification:
+    - `go test ./internal/tuner -run 'TestXMLTV_serve'`
+    - `./scripts/verify`
+
+---
+
+- Date: 2026-03-21
   Title: Add standardized evidence intake path for tester cases
   Summary:
     - Added `scripts/evidence-intake.sh` to scaffold or populate `.diag/evidence/<case-id>/` with a consistent layout for debug-bundle output, PMS logs, Tunerr logs, pcap captures, and analyst notes.

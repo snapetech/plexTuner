@@ -13,7 +13,8 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
-- *(none)*
+### Guide / XMLTV
+- **Visible guide-loading placeholders:** when `/guide.xml` is still on the startup placeholder path, programme titles now include **`(guide loading)`**, the XMLTV source metadata is marked as a loading placeholder, and each placeholder row carries a short description explaining that IPTV Tunerr is still building the full guide.
 
 ## [v0.1.20] — 2026-03-21
 

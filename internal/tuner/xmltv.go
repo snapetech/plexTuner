@@ -207,9 +207,14 @@ func (x *XMLTV) servePlaceholderXMLTV(w http.ResponseWriter, channels []catalog.
 
 	tv := &xmlTVRoot{
 		XMLName: xml.Name{Local: "tv"},
-		Source:  "IPTV Tunerr",
+		Source:  "IPTV Tunerr (guide loading placeholder)",
 	}
 	for _, c := range channels {
+		title := strings.TrimSpace(c.GuideName)
+		if title == "" {
+			title = "Channel"
+		}
+		title += " (guide loading)"
 		tv.Channels = append(tv.Channels, xmlChannel{
 			ID:      c.GuideNumber,
 			Display: c.GuideName,
@@ -218,7 +223,8 @@ func (x *XMLTV) servePlaceholderXMLTV(w http.ResponseWriter, channels []catalog.
 			Start:   start,
 			Stop:    stop,
 			Channel: c.GuideNumber,
-			Title:   xmlValue{Value: c.GuideName},
+			Title:   xmlValue{Value: title},
+			Desc:    xmlValue{Value: "Temporary placeholder while IPTV Tunerr finishes building the full guide."},
 		})
 	}
 

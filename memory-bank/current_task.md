@@ -6,6 +6,8 @@
 
 **Latest (2026-03-21):** **Evidence intake path:** added **`scripts/evidence-intake.sh`**, [how-to/evidence-intake](../docs/how-to/evidence-intake.md), and **`planning/README.md`** so working-vs-failing tester cases can be staged consistently under **`.diag/evidence/<case-id>/`** with debug-bundle output, PMS logs, Tunerr logs, pcaps, and notes before running **`scripts/analyze-bundle.py`**.
 
+**Latest (2026-03-21):** **Visible placeholder guide content:** the startup placeholder `/guide.xml` now labels itself as a loading placeholder in XMLTV source metadata and emits programme titles like **`<channel> (guide loading)`** with a short description so Plex users can tell the guide is still building instead of reading the temporary rows as normal data.
+
 **Latest (2026-03-20):** **Release cut `v0.1.18`:** package the lineup-integrity logs, first-run mapping repair, guide-force-lineup-match mode, and new **`/guide/lineup-match.json`** debug surface into the next patch build. **`./scripts/verify`** OK; next is pushing the release tag and watching the workflow.
 
 **Latest (2026-03-20):** **Guide debug payload enrichment:** **`/guide/lineup-match.json`** sampled missing rows now include observed **`channel_id`** and **`tvg_id`** in addition to **`guide_number`** / **`guide_name`** / URL so tester reports show real upstream linkage state instead of only lineup labels.
