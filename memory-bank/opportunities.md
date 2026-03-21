@@ -26,6 +26,17 @@ It exists to encourage quality gains without derailing the current task.
 
 - Date: 2026-03-21
   Category: reliability
+  Title: Account-aware provider pool for real multi-account concurrency
+  Context: User wants the system to run with many generated provider accounts and genuinely support the same number of concurrent viewers. The repo already supports numbered provider entries (`IPTV_TUNERR_PROVIDER_URL_2`, `_3`, etc.), including same-host different-credential entries, and channel stream variants preserve per-entry auth. But the live gateway still starts from ranked variant order and falls through on failure/limit signals instead of leasing an account slot deliberately.
+  Why it matters: "10 accounts" is not the same as "10 guaranteed concurrent viewers" unless the tuner schedules active streams across distinct accounts instead of only treating extra entries as failover variants.
+  Evidence: `internal/config/config.go` `ProviderEntries()`, `cmd/iptv-tunerr/cmd_catalog.go` `streamVariantsFromRankedEntries`, and tester/user expectation around multi-account concurrency.
+  Suggested fix: Add an explicit provider-account pool in the gateway: lease one entry per live stream, track per-entry pressure/caps, prefer healthy free slots before trying per-channel fallback, and surface that in provider profile/runtime/debug endpoints.
+  Risk/Scope: high | fits current scope? no
+  User decision needed?: yes
+  If yes: options = (A) keep opportunistic fallback only, (B) add explicit account-slot scheduler with learned per-account limits (recommended), (C) full weighted pool + persisted policy memory; default if no answer = B
+
+- Date: 2026-03-21
+  Category: reliability
   Title: Tighten startup registration contract beyond placeholder `guide.xml`
   Context: Security/control-plane hardening fixed empty-guide caching and made placeholders visibly provisional, but `run` still binds early and serves `200` placeholder XMLTV while lineup/catalog work is still underway.
   Status: **Shipped 2026-03-21** — `/guide.xml` now returns `503` + `Retry-After: 5` + `X-IptvTunerr-Guide-State: loading` while only the placeholder body exists, and HDHR discovery/lineup surfaces add `X-IptvTunerr-Startup-State: loading` before lineup load. Regression lane added to `memory-bank/commands.yml` as `release_smoke`.
