@@ -58,6 +58,9 @@ func TestNewGeneratesPasswordWhenUnset(t *testing.T) {
 	if s.settings.AuthPass == "" || s.settings.AuthPass == "admin" {
 		t.Fatalf("auth pass=%q want generated non-default password", s.settings.AuthPass)
 	}
+	if s.generatedPass == "" || s.generatedPass != s.settings.AuthPass {
+		t.Fatalf("generatedPass=%q settingsAuthPass=%q", s.generatedPass, s.settings.AuthPass)
+	}
 }
 
 func TestTelemetryGETAndDeleteOnly(t *testing.T) {
@@ -196,7 +199,7 @@ func TestSessionAuthOnlyAllowsBasicAuthFallback(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/debug/runtime.json", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.SetBasicAuth("admin", "admin")
 	w := httptest.NewRecorder()
 	protected.ServeHTTP(w, req)
@@ -205,6 +208,57 @@ func TestSessionAuthOnlyAllowsBasicAuthFallback(t *testing.T) {
 	}
 	if len(w.Result().Cookies()) == 0 {
 		t.Fatal("expected session cookie")
+	}
+}
+
+func TestSessionAuthOnlyAllowsScriptableBasicAuthWithoutSession(t *testing.T) {
+	s := &Server{
+		settings: DeckSettings{AuthUser: "admin", AuthPass: "admin"},
+		sessions: map[string]deckSession{},
+	}
+	protected := s.sessionAuthOnly(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/debug/runtime.json", nil)
+	req.SetBasicAuth("admin", "admin")
+	w := httptest.NewRecorder()
+	protected.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status=%d want 204", w.Code)
+	}
+	if len(w.Result().Cookies()) != 0 {
+		t.Fatalf("unexpected session cookies=%v", w.Result().Cookies())
+	}
+	if len(s.activityEntries) != 0 {
+		t.Fatalf("unexpected activity entries=%d", len(s.activityEntries))
+	}
+}
+
+func TestProxyStripsDeckAuthHeaders(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Fatalf("authorization leaked upstream: %q", got)
+		}
+		if got := r.Header.Get("Cookie"); got != "" {
+			t.Fatalf("cookie leaked upstream: %q", got)
+		}
+		if got := r.Header.Get("X-IPTVTunerr-Deck-CSRF"); got != "" {
+			t.Fatalf("csrf leaked upstream: %q", got)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+
+	s := &Server{tunerBase: upstream.URL}
+	req := httptest.NewRequest(http.MethodGet, "/api/debug/runtime.json", nil)
+	req.Header.Set("Authorization", "Basic abc")
+	req.Header.Set("Cookie", "iptvtunerr_deck_session=abc")
+	req.Header.Set("X-IPTVTunerr-Deck-CSRF", "csrf")
+	w := httptest.NewRecorder()
+	s.proxy(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
 }
 

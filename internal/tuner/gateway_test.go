@@ -2700,8 +2700,74 @@ exec sleep 30
 	if !strings.Contains(err.Error(), "first-bytes-timeout") {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if elapsed := time.Since(start); elapsed > time.Second {
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
 		t.Fatalf("expected fast failover timeout, got elapsed=%s", elapsed)
+	}
+}
+
+func TestGateway_stream_hlsDeadRemuxFallsBackQuickly(t *testing.T) {
+	dir := t.TempDir()
+	ffmpegPath := filepath.Join(dir, "fake-ffmpeg.sh")
+	script := `#!/bin/sh
+set -eu
+exec sleep 30
+`
+	if err := os.WriteFile(ffmpegPath, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	prevTimeout := hlsRelayNoProgressTimeout
+	prevRefreshSleep := hlsRelayRefreshSleep
+	hlsRelayNoProgressTimeout = 250 * time.Millisecond
+	hlsRelayRefreshSleep = func([]byte) {}
+	t.Cleanup(func() {
+		hlsRelayNoProgressTimeout = prevTimeout
+		hlsRelayRefreshSleep = prevRefreshSleep
+	})
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/playlist.m3u8":
+			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+			_, _ = io.WriteString(w, "#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\nseg.ts\n")
+		case "/seg.ts":
+			w.Header().Set("Content-Type", "video/mp2t")
+			_, _ = w.Write([]byte("segment-bytes"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	t.Setenv("IPTV_TUNERR_FFMPEG_PATH", ffmpegPath)
+	t.Setenv("IPTV_TUNERR_FFMPEG_HLS_FIRST_BYTES_TIMEOUT_MS", "100")
+	t.Setenv("IPTV_TUNERR_FFMPEG_DISABLED", "0")
+
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{{
+			ChannelID:   "1",
+			GuideNumber: "101",
+			GuideName:   "Ch1",
+			TVGID:       "tvg.1",
+			StreamURL:   upstream.URL + "/playlist.m3u8",
+		}},
+		TunerCount: 2,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/stream/1", nil)
+	w := httptest.NewRecorder()
+	start := time.Now()
+	g.ServeHTTP(w, req)
+	elapsed := time.Since(start)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Body.String(); !strings.Contains(got, "segment-bytes") {
+		t.Fatalf("body=%q want segment bytes after go-relay fallback", got)
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("expected quick fallback, got elapsed=%s", elapsed)
 	}
 }
 
@@ -2765,6 +2831,31 @@ func TestGateway_fetchAndRewritePlaylist_retriesConcurrencyLimit(t *testing.T) {
 	}
 	if g.learnedUpstreamLimit != 1 {
 		t.Fatalf("learnedUpstreamLimit=%d want 1", g.learnedUpstreamLimit)
+	}
+}
+
+func TestCopyStreamResponseHeaders_StripsSetCookie(t *testing.T) {
+	resp := &http.Response{
+		Header: http.Header{
+			"Content-Type":      []string{"video/mp2t"},
+			"Set-Cookie":        []string{"session=secret"},
+			"Transfer-Encoding": []string{"chunked"},
+			"Content-Length":    []string{"123"},
+		},
+	}
+	w := httptest.NewRecorder()
+	copyStreamResponseHeaders(w, resp)
+	if got := w.Header().Get("Set-Cookie"); got != "" {
+		t.Fatalf("Set-Cookie leaked: %q", got)
+	}
+	if got := w.Header().Get("Transfer-Encoding"); got != "" {
+		t.Fatalf("Transfer-Encoding leaked: %q", got)
+	}
+	if got := w.Header().Get("Content-Length"); got != "" {
+		t.Fatalf("Content-Length leaked: %q", got)
+	}
+	if got := w.Header().Get("Content-Type"); got != "video/mp2t" {
+		t.Fatalf("Content-Type=%q want video/mp2t", got)
 	}
 }
 

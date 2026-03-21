@@ -167,8 +167,14 @@ button {
       </div>
       <div class="mini">
         <strong>Credential posture</strong>
-        <span>[[if .DefaultPassword]]Default password is still active. Change it with <code>IPTV_TUNERR_WEBUI_PASS</code>.[[else]]Custom deck password is configured.[[end]]</span>
+        <span>[[if .DefaultPassword]]Default password is still active. Change it with <code>IPTV_TUNERR_WEBUI_PASS</code>.[[else if .ShowGeneratedPassword]]A one-time startup password was generated for this local deck session.[[else]]Custom deck password is configured.[[end]]</span>
       </div>
+      [[if .ShowGeneratedPassword]]
+      <div class="mini">
+        <strong>One-time password</strong>
+        <span><code>[[.GeneratedPassword]]</code></span>
+      </div>
+      [[end]]
       <div class="mini">
         <strong>Target after login</strong>
         <span><code>/</code></span>

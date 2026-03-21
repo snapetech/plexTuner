@@ -64,6 +64,7 @@ type Server struct {
 
 	settingsMu       sync.RWMutex
 	settings         DeckSettings
+	generatedPass    string
 	telemetryMu      sync.Mutex
 	telemetrySamples []DeckTelemetrySample
 	activityMu       sync.Mutex
@@ -143,9 +144,11 @@ func New(port int, tunerAddr, version string, allowLAN bool, stateFile, user, pa
 	if user == "" {
 		user = "admin"
 	}
+	generatedPass := ""
 	if pass == "" {
 		pass = mustGenerateDeckPassword(generatedDeckPasswordLength)
-		log.Printf("webui: generated one-time password for %q; set IPTV_TUNERR_WEBUI_PASS to pin it", user)
+		generatedPass = pass
+		log.Printf("webui: generated one-time password for %q: %s (set IPTV_TUNERR_WEBUI_PASS to pin it)", user, pass)
 	}
 	return &Server{
 		Port:      port,
@@ -158,6 +161,7 @@ func New(port int, tunerAddr, version string, allowLAN bool, stateFile, user, pa
 			AuthPass:          pass,
 			DefaultRefreshSec: defaultDeckRefreshSec,
 		},
+		generatedPass: generatedPass,
 	}
 }
 
@@ -438,6 +442,10 @@ func (s *Server) proxy(w http.ResponseWriter, r *http.Request) {
 		req.URL.RawPath = req.URL.Path
 		req.Host = base.Host
 		req.Header.Del("X-Forwarded-For")
+		req.Header.Del("Authorization")
+		req.Header.Del("Proxy-Authorization")
+		req.Header.Del("Cookie")
+		req.Header.Del("X-IPTVTunerr-Deck-CSRF")
 	}
 	rp.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -538,11 +546,13 @@ func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, status int,
 		w.WriteHeader(status)
 	}
 	_ = s.loginTmpl.Execute(w, map[string]interface{}{
-		"Version":         fallbackVersion(s.Version),
-		"Now":             time.Now().UTC().Format(time.RFC3339),
-		"Error":           errText,
-		"User":            s.deckSettingsReport().AuthUser,
-		"DefaultPassword": s.deckSettingsReport().AuthDefaultPassword,
+		"Version":               fallbackVersion(s.Version),
+		"Now":                   time.Now().UTC().Format(time.RFC3339),
+		"Error":                 errText,
+		"User":                  s.deckSettingsReport().AuthUser,
+		"DefaultPassword":       s.deckSettingsReport().AuthDefaultPassword,
+		"GeneratedPassword":     s.generatedPass,
+		"ShowGeneratedPassword": s.generatedPass != "" && !s.AllowLAN,
 	})
 }
 
@@ -569,8 +579,10 @@ func (s *Server) sessionAuthOnly(h http.Handler) http.Handler {
 		user, pass, ok := r.BasicAuth()
 		if ok && s.validCredentials(user, pass) {
 			s.clearFailedLogins(r)
-			s.startSession(w, r)
-			s.recordActivity("auth", "basic_auth", "Deck session opened via HTTP Basic auth.", map[string]interface{}{"username": user})
+			if !isScriptableDeckPath(r.URL.Path) {
+				s.startSession(w, r)
+				s.recordActivity("auth", "basic_auth", "Deck session opened via HTTP Basic auth.", map[string]interface{}{"username": user})
+			}
 			h.ServeHTTP(w, r)
 			return
 		}
@@ -741,6 +753,10 @@ func (s *Server) requireCSRFForToken(w http.ResponseWriter, r *http.Request, tok
 
 func requestCookieSecure(r *http.Request) bool {
 	return r != nil && r.TLS != nil
+}
+
+func isScriptableDeckPath(path string) bool {
+	return strings.HasPrefix(path, "/api/") || path == "/api" || strings.HasPrefix(path, "/deck/")
 }
 
 func (s *Server) recordActivity(kind, title, message string, detail map[string]interface{}) {

@@ -96,6 +96,7 @@ func (h *HDHR) serveDiscover(w http.ResponseWriter) {
 }
 
 func (h *HDHR) serveLineupStatus(w http.ResponseWriter) {
+	loading := len(h.Channels) == 0
 	if len(h.Channels) == 0 {
 		w.Header().Set(hdhrStartupStateHeader, "loading")
 		w.Header().Set("Cache-Control", "no-store")
@@ -109,6 +110,10 @@ func (h *HDHR) serveLineupStatus(w http.ResponseWriter) {
 	out := map[string]interface{}{
 		"ScanInProgress": 0,
 		"ScanPossible":   scanPossible,
+		"LineupReady":    !loading,
+	}
+	if loading {
+		out["ScanInProgress"] = 1
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out)
@@ -122,6 +127,7 @@ func (h *HDHR) serveLineup(w http.ResponseWriter) {
 	if len(channels) == 0 {
 		w.Header().Set(hdhrStartupStateHeader, "loading")
 		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Retry-After", "5")
 	}
 	base := h.BaseURL
 	if base == "" {

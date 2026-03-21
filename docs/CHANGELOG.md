@@ -13,6 +13,22 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.26] — 2026-03-21
+
+### Security / Web UI
+- **Deck startup auth is usable again:** when `IPTV_TUNERR_WEBUI_PASS` is unset, the generated one-time password is now logged once at startup and shown on the localhost login page instead of silently locking operators out behind an unknown random secret.
+- **Deck proxy header hygiene:** the dedicated `/api/*` proxy now strips deck `Authorization`, `Proxy-Authorization`, session `Cookie`, and CSRF headers before forwarding to the tuner, and direct script/API Basic-auth calls no longer mint browser sessions or spam deck activity history.
+
+### Streaming
+- **Upstream cookie containment:** stream proxy header copying now strips upstream `Set-Cookie` before responses are relayed back to Plex/clients, so provider session or clearance tokens do not get rebound onto the Tunerr origin.
+- **Higher-level HLS dead-remux regression:** added an end-to-end `/stream/<id>` regression proving a dead non-transcode ffmpeg-remux path times out and falls back quickly enough to deliver bytes through the Go relay.
+
+### Startup / HDHR
+- **Lineup status loading signal:** during cold start, `/lineup_status.json` now reports `ScanInProgress=1` and `LineupReady=false`, and empty `/lineup.json` responses add `Retry-After: 5` to make the loading state more machine-readable without breaking HDHR-style `200` semantics.
+
+### Licensing
+- **Repository license set:** added an explicit `LICENSE` file for **AGPL-3.0-only** and linked it from the README.
+
 ## [v0.1.24] — 2026-03-21
 
 ### Streaming

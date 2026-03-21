@@ -27,7 +27,8 @@ func normalizeStreamOutputMux(requestMux string, transcode bool) string {
 
 func copyStreamResponseHeaders(w http.ResponseWriter, resp *http.Response) {
 	for k, v := range resp.Header {
-		if k == "Content-Length" || k == "Transfer-Encoding" {
+		switch http.CanonicalHeaderKey(k) {
+		case "Content-Length", "Transfer-Encoding", "Set-Cookie":
 			continue
 		}
 		for _, vv := range v {

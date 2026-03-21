@@ -1148,6 +1148,10 @@ Verify the build:
 ./scripts/verify
 ```
 
+## License
+
+This project is licensed under the GNU Affero General Public License v3.0 only. See [LICENSE](LICENSE).
+
 ---
 
 ## Recent Changes

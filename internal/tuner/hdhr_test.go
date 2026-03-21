@@ -96,6 +96,12 @@ func TestHDHR_lineup_status(t *testing.T) {
 	if got, ok := out["ScanPossible"].(float64); !ok || got != 1 {
 		t.Fatalf("expected ScanPossible=1 default, got: %v", out["ScanPossible"])
 	}
+	if got, ok := out["ScanInProgress"].(float64); !ok || got != 1 {
+		t.Fatalf("expected ScanInProgress=1 while loading, got: %v", out["ScanInProgress"])
+	}
+	if got, ok := out["LineupReady"].(bool); !ok || got {
+		t.Fatalf("expected LineupReady=false while loading, got: %v", out["LineupReady"])
+	}
 }
 
 func TestHDHR_lineup_status_scan_possible_false(t *testing.T) {
@@ -113,6 +119,9 @@ func TestHDHR_lineup_status_scan_possible_false(t *testing.T) {
 	}
 	if got, ok := out["ScanPossible"].(float64); !ok || got != 0 {
 		t.Fatalf("expected ScanPossible=0, got: %v", out["ScanPossible"])
+	}
+	if got, ok := out["LineupReady"].(bool); !ok || got {
+		t.Fatalf("expected LineupReady=false, got: %v", out["LineupReady"])
 	}
 }
 
@@ -207,6 +216,9 @@ func TestHDHR_lineup_empty(t *testing.T) {
 	h.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("code: %d", w.Code)
+	}
+	if got := w.Header().Get("Retry-After"); got != "5" {
+		t.Fatalf("retry-after=%q want 5", got)
 	}
 	var out []map[string]string
 	if err := json.NewDecoder(w.Body).Decode(&out); err != nil {

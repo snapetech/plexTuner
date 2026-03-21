@@ -23,6 +23,24 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: Harden deck proxy/auth flow and add end-to-end dead-remux fallback proof
+  Summary:
+    - Fixed the dedicated web UI’s generated-password path so a random startup password is actually usable: it is logged once at startup and shown on the localhost login page until a real password is pinned.
+    - Stopped `/api/*` proxy forwarding of deck `Authorization`, `Proxy-Authorization`, `Cookie`, and CSRF headers to the tuner, and prevented script/API Basic-auth calls from minting browser sessions or polluting shared deck activity.
+    - Stripped upstream `Set-Cookie` from relayed stream responses and added a higher-level `/stream/<id>` regression proving a dead non-transcode ffmpeg-remux path falls back quickly enough to deliver bytes through the Go relay; also made HDHR startup status more explicit with `ScanInProgress=1`, `LineupReady=false`, and `Retry-After` on empty lineup responses.
+    - Added an explicit `LICENSE` file and switched the repo to AGPL-3.0-only in README/docs metadata.
+  Verification:
+    - `go test ./internal/webui ./internal/tuner -run 'Test(NewGeneratesPasswordWhenUnset|SessionAuthOnlyAllowsScriptableBasicAuthWithoutSession|ProxyStripsDeckAuthHeaders|HDHR_lineup_status|HDHR_lineup_empty|CopyStreamResponseHeaders_StripsSetCookie|Gateway_stream_hlsDeadRemuxFallsBackQuickly|Gateway_relayHLSWithFFmpeg_nonTranscodeFirstBytesTimeout|Gateway_relaySuccessfulHLSUpstream_crossHostPlaylistPrefersGoBeforeFFmpegFailure)'`
+    - `node --check internal/webui/deck.js`
+    - `./scripts/verify`
+  Notes:
+    - HDHR lineup still stays `200 OK` during startup for compatibility; the fix here is stronger machine-readable loading state, not a protocol break.
+  Opportunities filed:
+    - none
+  Links:
+    - deck hardening / HLS fallback proof / AGPL-3.0-only
+
+- Date: 2026-03-21
   Title: Add binary startup smoke to verify, CI, and release
   Summary:
     - Added **`scripts/ci-smoke.sh`** to build a temporary binary, start `serve` against synthetic full and empty catalogs, and assert the real endpoint contract for `readyz`, `guide.xml`, `discover.json`, and `lineup.json`.
