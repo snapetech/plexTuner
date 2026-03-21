@@ -16,8 +16,8 @@ iptvTunerr cross-compiles and runs on Linux, macOS, and Windows. The core tuner 
 | Platform | Architecture | Core tuner | `mount` command | SIGHUP reload |
 |----------|-------------|------------|-----------------|---------------|
 | Linux | amd64, arm64, arm/v7 | ✓ | ✓ (requires libfuse) | ✓ |
-| macOS | amd64, arm64 (Apple Silicon) | ✓ | ✓ (requires macFUSE) | ✓ |
-| Windows | amd64, arm64 | ✓ | ✗ (no FUSE driver) | no-op (signal never fires; use `-refresh` flag for scheduled reload instead) |
+| macOS | amd64, arm64 (Apple Silicon) | ✓ | ✗ (current VODFS implementation is Linux-only) | ✓ |
+| Windows | amd64, arm64 | ✓ | ✗ (current VODFS implementation is Linux-only) | no-op (signal never fires; use `-refresh` flag for scheduled reload instead) |
 
 ---
 
@@ -121,17 +121,9 @@ sudo apt-get install fuse3
 sudo dnf install fuse3
 ```
 
-### macOS
+### macOS and Windows
 
-Install [macFUSE](https://osxfuse.github.io/) (free, open-source):
-```bash
-brew install --cask macfuse
-```
-Note: macFUSE requires a kernel extension. On Apple Silicon (M1/M2/M3) you must enable it in System Settings → Privacy & Security after the first install.
-
-### Windows
-
-FUSE is not natively available on Windows. The `mount` command will fail at runtime with an unsupported error. Use the tuner's HTTP endpoints (`/lineup.json`, `/stream/`) directly instead.
+The current `mount` implementation is compiled only on Linux. Non-Linux builds return an unsupported error for `iptv-tunerr mount`, even if a platform FUSE layer exists. Use the tuner's HTTP endpoints directly instead, or run the Linux build where the mount is needed.
 
 ---
 
