@@ -43,6 +43,45 @@ func TestApplyRecipe_CategoryIncludeExcludeAndCustomOrder(t *testing.T) {
 	}
 }
 
+func TestApplyRecipe_ExcludedCategoriesAndRecommendedOrder(t *testing.T) {
+	channels := []catalog.LiveChannel{
+		{ChannelID: "sports", GuideNumber: "300", GuideName: "ESPN", GroupTitle: "Sports", SourceTag: "iptv"},
+		{ChannelID: "news", GuideNumber: "200", GuideName: "CNN", GroupTitle: "News", SourceTag: "iptv"},
+		{ChannelID: "local", GuideNumber: "100", GuideName: "NBC 4", GroupTitle: "Local", SourceTag: "iptv"},
+		{ChannelID: "intl", GuideNumber: "900", GuideName: "TV5 Monde", GroupTitle: "French", SourceTag: "iptv", TVGID: "tv5.fr"},
+	}
+	recipe := Recipe{
+		ExcludedCategories: []string{"iptv--french"},
+		OrderMode:          "recommended",
+		CustomOrder:        []string{"news"},
+	}
+	got := ApplyRecipe(channels, recipe)
+	if len(got) != 3 {
+		t.Fatalf("filtered=%#v", got)
+	}
+	if got[0].ChannelID != "local" || got[1].ChannelID != "news" || got[2].ChannelID != "sports" {
+		t.Fatalf("recommended order=%#v", got)
+	}
+}
+
+func TestUpdateRecipeMutations(t *testing.T) {
+	recipe := UpdateRecipeCategories(Recipe{}, "include", []string{"cat-a", "cat-b"})
+	recipe = UpdateRecipeCategories(recipe, "exclude", []string{"cat-c"})
+	recipe = UpdateRecipeChannels(recipe, "include", []string{"ch1"})
+	recipe = UpdateRecipeChannels(recipe, "exclude", []string{"ch2"})
+	if len(recipe.SelectedCategories) != 2 || len(recipe.ExcludedCategories) != 1 {
+		t.Fatalf("category recipe=%#v", recipe)
+	}
+	if len(recipe.IncludedChannelIDs) != 1 || len(recipe.ExcludedChannelIDs) != 1 {
+		t.Fatalf("channel recipe=%#v", recipe)
+	}
+	recipe = UpdateRecipeCategories(recipe, "remove", []string{"cat-b", "cat-c"})
+	recipe = UpdateRecipeChannels(recipe, "clear", []string{"ch1", "ch2"})
+	if len(recipe.SelectedCategories) != 1 || len(recipe.ExcludedCategories) != 0 || len(recipe.IncludedChannelIDs) != 0 || len(recipe.ExcludedChannelIDs) != 0 {
+		t.Fatalf("mutated recipe=%#v", recipe)
+	}
+}
+
 func TestLoadSaveRecipeFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "programming.json")
 	saved, err := SaveRecipeFile(path, Recipe{

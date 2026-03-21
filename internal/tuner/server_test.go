@@ -179,6 +179,7 @@ func TestServer_programmingEndpoints(t *testing.T) {
 	s.UpdateChannels([]catalog.LiveChannel{
 		{ChannelID: "1", GuideNumber: "101", GuideName: "News One", GroupTitle: "News", SourceTag: "iptv", StreamURL: "http://a/1"},
 		{ChannelID: "2", GuideNumber: "102", GuideName: "Sports Two", GroupTitle: "Sports", SourceTag: "iptv", StreamURL: "http://a/2"},
+		{ChannelID: "3", GuideNumber: "103", GuideName: "NBC 4", GroupTitle: "Local", SourceTag: "iptv", StreamURL: "http://a/3"},
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/programming/categories.json?category=iptv--news", nil)
@@ -194,7 +195,7 @@ func TestServer_programmingEndpoints(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &categories); err != nil {
 		t.Fatalf("categories unmarshal: %v", err)
 	}
-	if len(categories.Categories) != 2 || len(categories.Members) != 1 {
+	if len(categories.Categories) != 3 || len(categories.Members) != 1 {
 		t.Fatalf("categories body=%s", w.Body.String())
 	}
 
@@ -215,6 +216,36 @@ func TestServer_programmingEndpoints(t *testing.T) {
 		t.Fatalf("curated channels=%#v", s.Channels)
 	}
 
+	postBody = strings.NewReader(`{
+  "action": "include",
+  "category_id": "iptv--local"
+}`)
+	req = httptest.NewRequest(http.MethodPost, "/programming/categories.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveProgrammingCategories().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("category mutate status=%d body=%s", w.Code, w.Body.String())
+	}
+	if len(s.Channels) != 3 {
+		t.Fatalf("channels after category include=%#v", s.Channels)
+	}
+
+	postBody = strings.NewReader(`{
+  "action": "exclude",
+  "channel_id": "1"
+}`)
+	req = httptest.NewRequest(http.MethodPost, "/programming/channels.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveProgrammingChannels().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("channel mutate status=%d body=%s", w.Code, w.Body.String())
+	}
+	if len(s.Channels) != 2 || s.Channels[0].ChannelID != "2" || s.Channels[1].ChannelID != "3" {
+		t.Fatalf("channels after channel exclude=%#v", s.Channels)
+	}
+
 	req = httptest.NewRequest(http.MethodGet, "/programming/preview.json?limit=1", nil)
 	w = httptest.NewRecorder()
 	s.serveProgrammingPreview().ServeHTTP(w, req)
@@ -225,8 +256,11 @@ func TestServer_programmingEndpoints(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &preview); err != nil {
 		t.Fatalf("preview unmarshal: %v", err)
 	}
-	if preview.RawChannels != 2 || preview.CuratedChannels != 2 || len(preview.Lineup) != 1 || preview.Lineup[0].ChannelID != "2" {
+	if preview.RawChannels != 3 || preview.CuratedChannels != 2 || len(preview.Lineup) != 1 || preview.Lineup[0].ChannelID != "2" {
 		t.Fatalf("preview=%+v", preview)
+	}
+	if preview.Buckets["sports"] != 1 || preview.Buckets["local_broadcast"] != 1 {
+		t.Fatalf("preview buckets=%+v", preview.Buckets)
 	}
 }
 

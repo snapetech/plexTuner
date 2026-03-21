@@ -561,7 +561,7 @@ IPTV_TUNERR_REGISTER_RECIPE=healthy        # use channel-intelligence scoring to
 # or: sports_now | kids_safe | locals_first
 ```
 
-For durable server-side curation beyond the built-in lineup recipes, set `IPTV_TUNERR_PROGRAMMING_RECIPE_FILE=/path/to/programming.json`. Tunerr will then expose `/programming/categories.json`, `/programming/recipe.json`, and `/programming/preview.json`, and apply the saved category/channel selection before the final lineup is exposed to Plex.
+For durable server-side curation beyond the built-in lineup recipes, set `IPTV_TUNERR_PROGRAMMING_RECIPE_FILE=/path/to/programming.json`. Tunerr will then expose `/programming/categories.json`, `/programming/channels.json`, `/programming/recipe.json`, and `/programming/preview.json`, apply category/channel overrides before the final lineup is exposed to Plex, and support `order_mode: "recommended"` for a server-side Local/News/Sports/etc. ordering.
 
 For catch-up preview/publish flows:
 

@@ -226,6 +226,7 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"guide_aliases":          "/guide/aliases.json",
 			"guide_lineup_match":     "/guide/lineup-match.json",
 			"programming_categories": "/programming/categories.json",
+			"programming_channels":   "/programming/channels.json",
 			"programming_recipe":     "/programming/recipe.json",
 			"programming_preview":    "/programming/preview.json",
 			"guide_highlights":       "/guide/highlights.json",

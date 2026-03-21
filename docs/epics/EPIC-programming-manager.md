@@ -114,9 +114,15 @@ This needs a stable, testable classifier rather than a hand-wavy UI-only label.
   - `Server.UpdateChannels` now preserves `raw catalog -> intelligence/dedupe` input separately from the final exposed lineup, then applies the saved programming recipe before existing lineup-shape/cap logic.
   - First backend endpoints are live:
     - `/programming/categories.json`
+    - `/programming/channels.json`
     - `/programming/recipe.json`
     - `/programming/preview.json`
   - This is intentionally backend-first. The control-deck UI lane (`PM-008`) and explicit mutation conveniences (`PM-003` / `PM-004`) still follow.
+- **2026-03-21:** `PM-003`, `PM-004`, and the first visible `PM-005` slice shipped.
+  - `/programming/categories.json` now supports operator-guarded bulk include/exclude/remove mutations for category selection.
+  - `/programming/channels.json` now supports operator-guarded include/exclude/remove mutations for exact channel overrides.
+  - `order_mode: "recommended"` now classifies channels into the requested taxonomy buckets and sorts deterministically by bucket -> saved manual rank -> guide number/name.
+  - `/programming/preview.json` now reports bucket counts so the output shape is inspectable without scraping the lineup by hand.
 
 ## Technical approach
 

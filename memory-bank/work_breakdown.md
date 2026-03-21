@@ -53,7 +53,8 @@ Create or update this file when **any** of these are true:
 - **Non-goals:** Replacing Plex’s own channel UI, doing every fuzzy match heuristic in one pass, or shipping a public internet-facing admin portal.
 - **Story IDs:** `PM-001` … `PM-009`
 - **Planning status (2026-03-21):** Epic defined from tester requirements plus external UX patterns (Channels collections and xTeVe/XEPG mapping/order control).
-- **Progress (2026-03-21):** `PM-001` and `PM-002` foundation slice shipped. `internal/programming` now builds category inventory from the raw post-intelligence lineup and persists a durable recipe file (`IPTV_TUNERR_PROGRAMMING_RECIPE_FILE`). Tuner endpoints `/programming/categories.json`, `/programming/recipe.json`, and `/programming/preview.json` are live, and `Server.UpdateChannels` now applies the programming recipe before final lineup shaping/cap logic. Next depth: `PM-003` / `PM-004` category/channel mutation conveniences and `PM-005` taxonomy ordering.
+- **Progress (2026-03-21):** `PM-001` and `PM-002` foundation slice shipped. `internal/programming` now builds category inventory from the raw post-intelligence lineup and persists a durable recipe file (`IPTV_TUNERR_PROGRAMMING_RECIPE_FILE`). Tuner endpoints `/programming/categories.json`, `/programming/recipe.json`, and `/programming/preview.json` are live, and `Server.UpdateChannels` now applies the programming recipe before final lineup shaping/cap logic.
+- **Progress (2026-03-21):** `PM-003`, `PM-004`, and the first visible `PM-005` slice are now in. `/programming/categories.json` supports bulk category include/exclude/remove mutations, `/programming/channels.json` supports exact channel include/exclude/remove mutations, and `order_mode: "recommended"` now applies the requested server taxonomy order. Next depth: `PM-006` manual drag/order UX refinement, `PM-007` exact-match backup grouping, then `PM-008` deck UI.
 
 ### Account-aware concurrency story list (2026-03-21)
 

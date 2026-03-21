@@ -1208,6 +1208,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/guide/aliases.json", s.serveSuggestedAliasOverrides())
 	mux.Handle("/guide/lineup-match.json", s.serveGuideLineupMatch())
 	mux.Handle("/programming/categories.json", s.serveProgrammingCategories())
+	mux.Handle("/programming/channels.json", s.serveProgrammingChannels())
 	mux.Handle("/programming/recipe.json", s.serveProgrammingRecipe())
 	mux.Handle("/programming/preview.json", s.serveProgrammingPreview())
 	mux.Handle("/guide/highlights.json", s.serveGuideHighlights())
@@ -2134,11 +2135,49 @@ type programmingPreviewReport struct {
 	Recipe          programming.Recipe            `json:"recipe"`
 	Inventory       []programming.CategorySummary `json:"inventory,omitempty"`
 	Lineup          []catalog.LiveChannel         `json:"lineup,omitempty"`
+	Buckets         map[string]int                `json:"buckets,omitempty"`
 }
 
 func (s *Server) serveProgrammingCategories() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodGet:
+		case http.MethodPost:
+			if !operatorUIAllowed(w, r) {
+				return
+			}
+			if strings.TrimSpace(s.ProgrammingRecipeFile) == "" {
+				http.Error(w, `{"error":"programming recipe file not configured"}`, http.StatusServiceUnavailable)
+				return
+			}
+			limited := http.MaxBytesReader(w, r.Body, 65536)
+			defer limited.Close()
+			var req struct {
+				Action      string   `json:"action"`
+				CategoryID  string   `json:"category_id"`
+				CategoryIDs []string `json:"category_ids"`
+			}
+			if err := json.NewDecoder(limited).Decode(&req); err != nil {
+				http.Error(w, `{"error":"invalid programming category json"}`, http.StatusBadRequest)
+				return
+			}
+			ids := append([]string(nil), req.CategoryIDs...)
+			if strings.TrimSpace(req.CategoryID) != "" {
+				ids = append(ids, strings.TrimSpace(req.CategoryID))
+			}
+			recipe := programming.UpdateRecipeCategories(s.reloadProgrammingRecipe(), req.Action, ids)
+			saved, err := programming.SaveRecipeFile(s.ProgrammingRecipeFile, recipe)
+			if err != nil {
+				http.Error(w, `{"error":"save programming recipe failed"}`, http.StatusBadGateway)
+				return
+			}
+			s.ProgrammingRecipe = saved
+			s.rebuildCuratedChannelsFromRaw()
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 		inventory := programming.BuildCategoryInventory(s.RawChannels)
 		resp := map[string]interface{}{
 			"generated_at":  time.Now().UTC().Format(time.RFC3339),
@@ -2146,7 +2185,8 @@ func (s *Server) serveProgrammingCategories() http.Handler {
 			"raw_channels":  len(s.RawChannels),
 			"categories":    inventory,
 			"recipe_file":   strings.TrimSpace(s.ProgrammingRecipeFile),
-			"recipe_loaded": s.ProgrammingRecipe.Version > 0,
+			"recipe_loaded": s.reloadProgrammingRecipe().Version > 0,
+			"recipe":        s.reloadProgrammingRecipe(),
 		}
 		if categoryID := strings.TrimSpace(r.URL.Query().Get("category")); categoryID != "" {
 			resp["members"] = programming.CategoryMembers(s.RawChannels, categoryID)
@@ -2157,6 +2197,74 @@ func (s *Server) serveProgrammingCategories() http.Handler {
 			return
 		}
 		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveProgrammingChannels() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodGet:
+			recipe := s.reloadProgrammingRecipe()
+			resp := map[string]interface{}{
+				"generated_at":      time.Now().UTC().Format(time.RFC3339),
+				"recipe_file":       strings.TrimSpace(s.ProgrammingRecipeFile),
+				"included_channels": recipe.IncludedChannelIDs,
+				"excluded_channels": recipe.ExcludedChannelIDs,
+			}
+			if categoryID := strings.TrimSpace(r.URL.Query().Get("category")); categoryID != "" {
+				resp["members"] = programming.CategoryMembers(s.RawChannels, categoryID)
+			}
+			body, err := json.MarshalIndent(resp, "", "  ")
+			if err != nil {
+				http.Error(w, `{"error":"encode programming channels"}`, http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write(body)
+		case http.MethodPost:
+			if !operatorUIAllowed(w, r) {
+				return
+			}
+			if strings.TrimSpace(s.ProgrammingRecipeFile) == "" {
+				http.Error(w, `{"error":"programming recipe file not configured"}`, http.StatusServiceUnavailable)
+				return
+			}
+			limited := http.MaxBytesReader(w, r.Body, 65536)
+			defer limited.Close()
+			var req struct {
+				Action     string   `json:"action"`
+				ChannelID  string   `json:"channel_id"`
+				ChannelIDs []string `json:"channel_ids"`
+			}
+			if err := json.NewDecoder(limited).Decode(&req); err != nil {
+				http.Error(w, `{"error":"invalid programming channel json"}`, http.StatusBadRequest)
+				return
+			}
+			ids := append([]string(nil), req.ChannelIDs...)
+			if strings.TrimSpace(req.ChannelID) != "" {
+				ids = append(ids, strings.TrimSpace(req.ChannelID))
+			}
+			recipe := programming.UpdateRecipeChannels(s.reloadProgrammingRecipe(), req.Action, ids)
+			saved, err := programming.SaveRecipeFile(s.ProgrammingRecipeFile, recipe)
+			if err != nil {
+				http.Error(w, `{"error":"save programming recipe failed"}`, http.StatusBadGateway)
+				return
+			}
+			s.ProgrammingRecipe = saved
+			s.rebuildCuratedChannelsFromRaw()
+			body, err := json.MarshalIndent(map[string]interface{}{
+				"ok":               true,
+				"recipe":           saved,
+				"curated_channels": len(s.Channels),
+			}, "", "  ")
+			if err != nil {
+				http.Error(w, `{"error":"encode programming channels"}`, http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write(body)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
 	})
 }
 
@@ -2233,6 +2341,10 @@ func (s *Server) serveProgrammingPreview() http.Handler {
 			limit = len(s.Channels)
 		}
 		report.Lineup = append([]catalog.LiveChannel(nil), s.Channels[:limit]...)
+		report.Buckets = make(map[string]int)
+		for _, ch := range s.Channels {
+			report.Buckets[string(programming.ClassifyChannel(ch))]++
+		}
 		body, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
 			http.Error(w, `{"error":"encode programming preview"}`, http.StatusInternalServerError)

@@ -391,7 +391,10 @@ Related env:
 
 Server-backed lineup-curation primitives for the upcoming Programming Manager UI:
 - `GET /programming/categories.json`
+- `POST /programming/categories.json`
 - `GET /programming/categories.json?category=<id>`
+- `GET /programming/channels.json`
+- `POST /programming/channels.json`
 - `GET /programming/recipe.json`
 - `POST /programming/recipe.json`
 - `GET /programming/preview.json`
@@ -399,8 +402,15 @@ Server-backed lineup-curation primitives for the upcoming Programming Manager UI
 What they expose:
 - stable category inventory built from the raw post-intelligence lineup (`group_title` / `source_tag`)
 - optional per-category member listing
+- bulk category include/exclude/remove mutations
+- exact channel include/exclude/remove mutations
 - the durable saved recipe (`selected_categories`, `included_channel_ids`, `excluded_channel_ids`, `order_mode`, `custom_order`)
-- a preview of the currently curated lineup after the recipe is applied
+- a preview of the currently curated lineup after the recipe is applied, including taxonomy bucket counts
+
+Supported `order_mode` values:
+- `source` — keep source order after existing lineup intelligence and filters
+- `custom` — use `custom_order` first, then preserve the remaining source order
+- `recommended` — classify channels into the server taxonomy buckets (`local_broadcast`, `general_entertainment`, `news_info`, `sports`, `lifestyle_home`, `documentary_history`, `children_family`, `reality_specialized`, `premium_networks`, `regional_sports`, `religious`, `international`) and sort by bucket, then by saved `custom_order`, then by guide number/name
 
 Notes:
 - `POST /programming/recipe.json` is localhost/LAN-operator guarded with the same policy as other tuner-side operator mutation endpoints.

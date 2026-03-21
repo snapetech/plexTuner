@@ -23,9 +23,10 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ### Programming Manager
 - **PM-001 / PM-002 foundations:** added a durable lineup-recipe layer via **`IPTV_TUNERR_PROGRAMMING_RECIPE_FILE`** and the first Programming Manager endpoints: **`/programming/categories.json`**, **`/programming/recipe.json`**, and **`/programming/preview.json`**. Tunerr now keeps the raw post-intelligence lineup separate from the final exposed lineup so category-first curation and saved custom order can sit between ingest intelligence and Plex-visible output.
+- **PM-003 / PM-004 / PM-005 slice:** category-first curation is now mutable over HTTP, not just via recipe-file edits. **`/programming/categories.json`** supports bulk include/exclude/remove actions, **`/programming/channels.json`** supports exact channel include/exclude/remove actions, and `order_mode: "recommended"` now sorts channels into the requested Local/Entertainment/News/Sports/... taxonomy on the server. `programming/preview.json` also reports taxonomy bucket counts.
 
 ### Testing / CI
-- **Provider-pool + WebDAV smoke coverage:** `scripts/ci-smoke.sh` now exercises `vod-webdav-mount-hint` for macOS/Windows output, runs live WebDAV `OPTIONS` / `PROPFIND` smoke against `iptv-tunerr vod-webdav`, and validates the new Programming Manager category/preview endpoints against a real temporary binary. Targeted gateway tests also now cover provider-account local rejection, lease release after successful playback, learned per-account caps, and provider-profile account-pool visibility.
+- **Provider-pool + WebDAV smoke coverage:** `scripts/ci-smoke.sh` now exercises `vod-webdav-mount-hint` for macOS/Windows output, runs live WebDAV `OPTIONS` / `PROPFIND` smoke against `iptv-tunerr vod-webdav`, and validates the new Programming Manager category/channel mutation flow plus preview endpoints against a real temporary binary. Targeted gateway tests also now cover provider-account local rejection, lease release after successful playback, learned per-account caps, and provider-profile account-pool visibility.
 
 ## [v0.1.26] — 2026-03-21
 
