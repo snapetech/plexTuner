@@ -13,6 +13,8 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.22] — 2026-03-21
+
 ### Testing / CI
 - **Binary startup smoke:** added **`scripts/ci-smoke.sh`**, which builds a temporary binary, runs `serve` against synthetic full/empty catalogs, and asserts the real HTTP startup contract (`/readyz`, `/guide.xml`, `X-IptvTunerr-Guide-State`, `X-IptvTunerr-Startup-State`, lineup/discovery behavior). It now runs inside **`./scripts/verify`**, CI, and the GitHub release workflow before packaging.
 
