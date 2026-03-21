@@ -13,11 +13,11 @@ iptvTunerr cross-compiles and runs on Linux, macOS, and Windows. The core tuner 
 
 ## Supported platforms
 
-| Platform | Architecture | Core tuner | `mount` command | SIGHUP reload |
-|----------|-------------|------------|-----------------|---------------|
-| Linux | amd64, arm64, arm/v7 | ✓ | ✓ (requires libfuse) | ✓ |
-| macOS | amd64, arm64 (Apple Silicon) | ✓ | ✗ (current VODFS implementation is Linux-only) | ✓ |
-| Windows | amd64, arm64 | ✓ | ✗ (current VODFS implementation is Linux-only) | no-op (signal never fires; use `-refresh` flag for scheduled reload instead) |
+| Platform | Architecture | Core tuner | `mount` command | `vod-webdav` | SIGHUP reload |
+|----------|-------------|------------|-----------------|--------------|---------------|
+| Linux | amd64, arm64, arm/v7 | ✓ | ✓ (requires libfuse) | ✓ | ✓ |
+| macOS | amd64, arm64 (Apple Silicon) | ✓ | ✗ (current VODFS implementation is Linux-only) | ✓ | ✓ |
+| Windows | amd64, arm64 | ✓ | ✗ (current VODFS implementation is Linux-only) | ✓ | no-op (signal never fires; use `-refresh` flag for scheduled reload instead) |
 
 ---
 
@@ -124,6 +124,15 @@ sudo dnf install fuse3
 ### macOS and Windows
 
 The current `mount` implementation is compiled only on Linux. Non-Linux builds return an unsupported error for `iptv-tunerr mount`, even if a platform FUSE layer exists. Use the tuner's HTTP endpoints directly instead, or run the Linux build where the mount is needed.
+
+## `vod-webdav` command (cross-platform VOD parity)
+
+`iptv-tunerr vod-webdav` exposes the same synthetic `Movies/` and `TV/` tree over read-only WebDAV so macOS and Windows can mount it natively without the Linux FUSE path.
+
+Notes:
+- Linux can use it too, but `mount` / VODFS remains the primary native path there.
+- Actual file reads still need `-cache` / `IPTV_TUNERR_CACHE` so the materializer has somewhere to place bytes.
+- The command logs a platform-specific mount hint when it starts.
 
 ---
 

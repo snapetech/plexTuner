@@ -61,7 +61,7 @@ You can inspect channel health, guide confidence, provider behavior, stale Plex-
 - [Free Public Sources](#free-public-sources)
 - [Setup Paths](#setup-paths) — wizard · programmatic · supervisor · HDHR network mode
 - [Supervisor Mode](#supervisor-mode)
-- [VOD Filesystem](#vod-filesystem-linux-only)
+- [VOD Filesystem and WebDAV](#vod-filesystem-and-webdav)
 - [Kubernetes](#kubernetes)
 - [CLI Commands](#cli-commands)
 - [Key Environment Variables](#key-environment-variables)
@@ -857,9 +857,9 @@ Config reference: [`docs/reference/testing-and-supervisor-config.md`](docs/refer
 
 ---
 
-## VOD Filesystem (Linux Only)
+## VOD Filesystem and WebDAV
 
-Mount IPTV VOD catalog as a browsable filesystem that Plex can index as libraries.
+Linux native mount:
 
 ```bash
 iptv-tunerr mount -catalog ./catalog.json -mount /srv/iptvtunerr-vodfs
@@ -874,6 +874,16 @@ By default this creates `VOD` (TV) and `VOD-Movies` libraries. Use `-shows-only`
 The mount path must be visible to the Plex server. In Kubernetes, VODFS mounts inside a helper container are not automatically visible to the Plex pod without host-level mounts or `MountPropagation`.
 
 Guide: [`docs/how-to/mount-vodfs-and-register-plex-libraries.md`](docs/how-to/mount-vodfs-and-register-plex-libraries.md)
+
+macOS / Windows parity path:
+
+```bash
+iptv-tunerr vod-webdav -catalog ./catalog.json -cache ./cache -addr 127.0.0.1:58188
+```
+
+That serves the same synthetic `Movies/` / `TV/` tree over read-only WebDAV so the OS can mount it natively. Reads still need `-cache` / `IPTV_TUNERR_CACHE` so Tunerr has somewhere to materialize bytes on demand.
+
+Platform details: [`docs/how-to/platform-requirements.md`](docs/how-to/platform-requirements.md)
 
 ---
 
@@ -924,6 +934,7 @@ Full K8s guide: [`k8s/README.md`](k8s/README.md)
 | `catchup-recorder-report` | Summarize the persistent recorder state file |
 | `epg-link-report` | Report EPG coverage and unmatched channels |
 | `mount` | Mount VODFS (Linux only) |
+| `vod-webdav` | Serve the VOD catalog over read-only WebDAV for native macOS/Windows mounting |
 | `plex-vod-register` | Create or reuse Plex VOD libraries for a VODFS mount |
 | `import-cookies` | Import browser cookies (inline, Netscape, or HAR) into the cookie jar |
 | `cf-status` | Show per-host Cloudflare state: cf_clearance freshness, working UA, CF-tagged flag |
@@ -1062,6 +1073,7 @@ Full variable reference: [`docs/reference/cli-and-env-reference.md`](docs/refere
 | XMLTV remap / normalization | ✓ | ✓ | ✓ |
 | Plex session reaper | ✓ | ✓ | ✓ |
 | `mount` / VODFS (FUSE) | ✓ | — | — |
+| `vod-webdav` | ✓ | ✓ | ✓ |
 
 Platform requirements: [`docs/how-to/platform-requirements.md`](docs/how-to/platform-requirements.md)
 
@@ -1080,6 +1092,7 @@ internal/probe/       Stream URL classification + lineup.json helpers (VODFS pat
 internal/materializer/ On-demand VOD download/cache (range GET, HLS via ffmpeg)
 internal/catalog/     Normalized channel/VOD data model
 internal/vodfs/       VOD filesystem mount (Linux only)
+internal/vodwebdav/   Read-only WebDAV VOD surface for cross-platform mounting
 internal/epglink/     EPG match reporting
 k8s/                  Manifests, supervisor examples, deploy scripts
 scripts/              Packaging, Plex ops helpers, analysis tools

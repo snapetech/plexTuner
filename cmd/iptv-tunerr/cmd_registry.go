@@ -14,7 +14,7 @@ type commandSpec struct {
 	Run     func(cfg *config.Config, args []string)
 }
 
-var defaultCommandSections = []string{"Core", "Guide/EPG", "VOD (Linux)", "Lab/ops"}
+var defaultCommandSections = []string{"Core", "Guide/EPG", "VOD", "Lab/ops"}
 
 func allCommands() []commandSpec {
 	commands := append(coreCommands(), reportCommands()...)

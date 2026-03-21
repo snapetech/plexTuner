@@ -77,6 +77,21 @@ Common flags:
 Notes:
 - Linux-only (`FUSE`)
 
+## `iptv-tunerr vod-webdav`
+
+Serve the VOD catalog over a read-only WebDAV surface so macOS and Windows can
+mount the same synthetic `Movies/` / `TV/` tree without the Linux FUSE path.
+
+Common flags:
+- `-addr`
+- `-catalog`
+- `-cache`
+
+Notes:
+- Cross-platform (`Linux`, `macOS`, `Windows`)
+- The WebDAV server is read-only.
+- Directory scans work without `-cache`, but actual file reads need a working materializer/cache path.
+
 ## `iptv-tunerr plex-vod-register`
 
 Create or reuse Plex libraries for a mounted VODFS tree.
@@ -1156,6 +1171,7 @@ Typical use:
 ## Platform notes
 
 - `mount` / VODFS is Linux-only
+- `vod-webdav` is cross-platform and provides the non-Linux VOD parity path
 - Core tuner paths (`run`, `serve`, `supervise`) are cross-platform
 - HDHR network mode compiles on Linux/macOS/Windows; validate native Windows networking on a real Windows host (not `wine`)
 

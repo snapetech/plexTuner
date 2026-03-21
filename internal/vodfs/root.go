@@ -20,6 +20,7 @@ type Root struct {
 	Movies          []catalog.Movie
 	Series          []catalog.Series
 	Mat             materializer.Interface
+	Tree            *Tree
 	movieDirNames   map[string]string // movieID -> unique dir name
 	seriesDirNames  map[string]string // seriesID -> unique dir name
 	movieByDirName  map[string]int    // unique movie dir name -> index in Movies
@@ -80,22 +81,16 @@ func (r *Root) showDirName(s *catalog.Series) string {
 }
 
 func (r *Root) buildNameIndexes() {
-	r.movieDirNames = buildUniqueMovieDirNames(r.Movies)
-	r.seriesDirNames = buildUniqueSeriesDirNames(r.Series)
-	r.movieByDirName = make(map[string]int, len(r.Movies))
-	for i := range r.Movies {
-		m := &r.Movies[i]
-		name := r.movieDirName(m)
-		if name != "" {
-			r.movieByDirName[name] = i
-		}
+	r.Tree = NewTree(r.Movies, r.Series)
+	if r.Tree == nil {
+		r.movieDirNames = nil
+		r.seriesDirNames = nil
+		r.movieByDirName = nil
+		r.seriesByDirName = nil
+		return
 	}
-	r.seriesByDirName = make(map[string]int, len(r.Series))
-	for i := range r.Series {
-		s := &r.Series[i]
-		name := r.showDirName(s)
-		if name != "" {
-			r.seriesByDirName[name] = i
-		}
-	}
+	r.movieDirNames = r.Tree.movieDirNames
+	r.seriesDirNames = r.Tree.seriesDirNames
+	r.movieByDirName = r.Tree.movieByDirName
+	r.seriesByDirName = r.Tree.seriesByDirName
 }

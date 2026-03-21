@@ -23,6 +23,22 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: Start cross-platform VOD parity with shared tree and WebDAV backend
+  Summary:
+    - Extracted VOD naming/tree generation out of Linux-only files so it can back more than the existing `go-fuse` mount path.
+    - Kept Linux `mount` behavior on the shared tree and added `internal/vodwebdav` plus a new `iptv-tunerr vod-webdav` command to expose the same synthetic `Movies/` / `TV/` tree over read-only WebDAV.
+    - Updated README/features/platform/CLI docs so Linux `mount` and macOS/Windows `vod-webdav` parity are documented explicitly.
+  Verification:
+    - `go test ./internal/vodfs ./internal/vodwebdav ./cmd/iptv-tunerr -count=1`
+    - `./scripts/verify`
+  Notes:
+    - This is the first non-Linux parity slice, not the final platform story; mount-helper ergonomics and real macOS/Windows validation still need follow-through.
+  Opportunities filed:
+    - none
+  Links:
+    - cross-platform VOD parity / WebDAV backend
+
+- Date: 2026-03-21
   Title: Add channel-class diff harness for intermittent live failures
   Summary:
     - Added `scripts/channel-diff-harness.sh` to capture one known-good and one known-bad channel with matched `stream-compare` runs, inferring paired direct upstream URLs from Tunerr's own `/debug/stream-attempts.json`.

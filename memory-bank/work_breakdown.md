@@ -45,6 +45,7 @@ Create or update this file when **any** of these are true:
 - **Non-goals (scope fence):** Rewriting the current Linux VODFS stack in one shot, shipping cgo-heavy macFUSE/WinFsp backends before there is a stable shared VOD tree layer, or pretending WebDAV is identical to kernel-native FUSE semantics in every corner case.
 - **Story IDs:** `VODX-001` … `VODX-005`
 - **Initial implementation stance:** Linux stays on `internal/vodfs` `go-fuse`; macOS/Windows parity starts with a cross-platform WebDAV mount surface and native mount helpers, then native per-OS backends can layer later if still needed.
+- **Progress (2026-03-21):** `VODX-001` and the first visible `VODX-002` slice are in: naming/tree logic now lives in cross-platform files under `internal/vodfs`, Linux `Root` uses the shared `Tree`, and `internal/vodwebdav` + `iptv-tunerr vod-webdav` now expose the same synthetic `Movies/` / `TV/` tree over read-only WebDAV for non-Linux parity. Next depth: mount-helper ergonomics and broader real-client validation on macOS/Windows.
 
 ### Cross-platform VOD parity story list (2026-03-21)
 

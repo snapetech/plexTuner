@@ -1,6 +1,3 @@
-//go:build linux
-// +build linux
-
 package vodfs
 
 import "testing"

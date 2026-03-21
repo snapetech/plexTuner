@@ -3,12 +3,15 @@ package main
 import (
 	"flag"
 	"log"
+	"net/http"
 	"os"
+	"runtime"
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
 	"github.com/snapetech/iptvtunerr/internal/config"
 	"github.com/snapetech/iptvtunerr/internal/materializer"
 	"github.com/snapetech/iptvtunerr/internal/vodfs"
+	"github.com/snapetech/iptvtunerr/internal/vodwebdav"
 )
 
 func vodCommands() []commandSpec {
@@ -33,10 +36,15 @@ func vodCommands() []commandSpec {
 	vodSplitCatalog := vodSplitCmd.String("catalog", "", "Input catalog.json (default: IPTV_TUNERR_CATALOG)")
 	vodSplitOutDir := vodSplitCmd.String("out-dir", "", "Output directory for per-lane catalogs (required)")
 
+	vodWebDAVCmd := flag.NewFlagSet("vod-webdav", flag.ExitOnError)
+	vodWebDAVCatalog := vodWebDAVCmd.String("catalog", "", "Catalog JSON path (default: IPTV_TUNERR_CATALOG)")
+	vodWebDAVCache := vodWebDAVCmd.String("cache", "", "Cache dir for VOD materialization (default: IPTV_TUNERR_CACHE)")
+	vodWebDAVAddr := vodWebDAVCmd.String("addr", "127.0.0.1:58188", "Listen address for the WebDAV VOD server")
+
 	return []commandSpec{
 		{
 			Name:    "mount",
-			Section: "VOD (Linux)",
+			Section: "VOD",
 			Summary: "Mount VOD catalog as a browsable filesystem (FUSE)",
 			FlagSet: mountCmd,
 			Run: func(cfg *config.Config, args []string) {
@@ -46,7 +54,7 @@ func vodCommands() []commandSpec {
 		},
 		{
 			Name:    "plex-vod-register",
-			Section: "VOD (Linux)",
+			Section: "VOD",
 			Summary: "Create/reuse Plex VOD libraries for a VODFS mount",
 			FlagSet: vodRegisterCmd,
 			Run: func(cfg *config.Config, args []string) {
@@ -56,12 +64,22 @@ func vodCommands() []commandSpec {
 		},
 		{
 			Name:    "vod-split",
-			Section: "VOD (Linux)",
+			Section: "VOD",
 			Summary: "Split VOD catalog into category/region lane catalogs",
 			FlagSet: vodSplitCmd,
 			Run: func(cfg *config.Config, args []string) {
 				_ = vodSplitCmd.Parse(args)
 				handleVODSplit(cfg, *vodSplitCatalog, *vodSplitOutDir)
+			},
+		},
+		{
+			Name:    "vod-webdav",
+			Section: "VOD",
+			Summary: "Serve the VOD catalog over read-only WebDAV for native macOS/Windows mounting",
+			FlagSet: vodWebDAVCmd,
+			Run: func(cfg *config.Config, args []string) {
+				_ = vodWebDAVCmd.Parse(args)
+				handleVODWebDAV(cfg, *vodWebDAVCatalog, *vodWebDAVAddr, *vodWebDAVCache)
 			},
 		},
 	}
@@ -93,6 +111,36 @@ func handleMount(cfg *config.Config, catalogPath, mountPoint, cacheDir string, a
 	}
 	if err := vodfs.MountWithAllowOther(mp, movies, series, mat, allowOther || cfg.VODFSAllowOther); err != nil {
 		log.Printf("Mount failed: %v", err)
+		os.Exit(1)
+	}
+}
+
+func handleVODWebDAV(cfg *config.Config, catalogPath, addr, cacheDir string) {
+	path := catalogPath
+	if path == "" {
+		path = cfg.CatalogPath
+	}
+	c := catalog.New()
+	if err := c.Load(path); err != nil {
+		log.Printf("Load catalog %s: %v", path, err)
+		os.Exit(1)
+	}
+	movies, series := c.Snapshot()
+	cache := cacheDir
+	if cache == "" {
+		cache = cfg.CacheDir
+	}
+	var mat materializer.Interface = &materializer.Stub{}
+	if cache != "" {
+		mat = &materializer.Cache{CacheDir: cache}
+	}
+	log.Printf("Starting VOD WebDAV on http://%s/ with %d movies and %d series", addr, len(movies), len(series))
+	log.Printf("Mount hint (%s): %s", runtime.GOOS, vodwebdav.MountHint(runtime.GOOS, addr))
+	if cache == "" {
+		log.Printf("VOD WebDAV is using the stub materializer; directory scans work, but reads need -cache or IPTV_TUNERR_CACHE for on-demand bytes")
+	}
+	if err := http.ListenAndServe(addr, vodwebdav.NewHandler(movies, series, mat)); err != nil {
+		log.Printf("VOD WebDAV failed: %v", err)
 		os.Exit(1)
 	}
 }

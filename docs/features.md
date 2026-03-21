@@ -167,10 +167,11 @@ Reference:
 |---------|-------------|
 | **VOD cataloging** | Movies/series stored in catalog from provider feeds/APIs. |
 | **VODFS mount** | FUSE-based filesystem exposing `Movies/` and `TV/`. |
+| **WebDAV VOD surface** | Read-only WebDAV export of the same synthetic `Movies/` / `TV/` tree for native macOS/Windows mounting. |
 | **On-demand cache** | Optional cache materialization for direct-file (and HLS→MP4 via ffmpeg) VOD paths (`internal/materializer`, `internal/probe` for stream-type sniff). |
 | **Plex library registration helper** | `plex-vod-register` creates/reuses Plex TV/Movie libraries for a VODFS mount, with optional VOD-safe library prefs. |
 | **One-sided VOD registration** | `plex-vod-register --shows-only` / `--movies-only` for lane-specific library creation without unwanted companion sections. |
-| **Platform scope** | `mount` / VODFS is Linux-only. Non-Linux builds provide a stub. |
+| **Platform scope** | Linux keeps `mount` / VODFS; macOS and Windows use `vod-webdav` for parity. |
 
 ## 12. Cloudflare resilience
 
@@ -232,14 +233,14 @@ Supplement or enrich the paid catalog with public M3U feeds fetched at index tim
 
 ## 16. Platform support summary
 
-| Platform | Core app (`run/serve/index/probe/supervise`) | HDHR HTTP endpoints | HDHR network mode | `mount` / VODFS |
-|----------|----------------------------------------------|---------------------|-------------------|-----------------|
-| Linux | Yes | Yes | Yes | Yes |
-| macOS | Yes | Yes | Compiles (runtime validation depends on environment) | No |
-| Windows | Yes | Yes | Compiles (native validation recommended; `wine` smoke not authoritative) | No |
+| Platform | Core app (`run/serve/index/probe/supervise`) | HDHR HTTP endpoints | HDHR network mode | Linux `mount` / VODFS | `vod-webdav` |
+|----------|----------------------------------------------|---------------------|-------------------|------------------------|--------------|
+| Linux | Yes | Yes | Yes | Yes | Yes |
+| macOS | Yes | Yes | Compiles (runtime validation depends on environment) | No | Yes |
+| Windows | Yes | Yes | Compiles (native validation recommended; `wine` smoke not authoritative) | No | Yes |
 
 ## 17. Not supported / limits (current)
 
 - **Public-grade multi-user admin plane** (the dedicated deck is a strong operator console, but it is not a hardened internet-facing admin product with roles/SSO/audit persistence)
 - **Plex wizard checkbox preselection for >479 channels** (HDHR protocol/wizard limitation; serve only the channels you want selectable)
-- **VODFS on non-Linux** (current platform scope)
+- **Native macFUSE / WinFsp backends** (not shipped yet; current non-Linux parity path is `vod-webdav`)

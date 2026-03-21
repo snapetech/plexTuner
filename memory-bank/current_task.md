@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-21):** **Cross-platform VOD parity slice 1:** extracted VOD naming/tree logic out of Linux-only files so it can back more than the `go-fuse` path, kept Linux `mount` wired to the same shared tree, and added a new cross-platform `vod-webdav` command backed by `internal/vodwebdav` using read-only WebDAV over the same catalog/materializer model. README/features/platform/CLI docs now describe Linux `mount` vs macOS/Windows `vod-webdav` parity. **`./scripts/verify`** OK.
+
 **Latest (2026-03-21):** **Intermittent channel-class diff harness:** tester feedback narrowed the remaining live-stream issue to "some channels work, some don't" on the same build, so the right next tool is a paired good-vs-bad capture instead of more global guesses. Added `scripts/channel-diff-harness.sh` and `scripts/channel-diff-report.py`: seed one good and one bad channel through Tunerr, infer the paired direct upstream URLs from `/debug/stream-attempts.json`, run two `stream-compare` captures, and emit a compact classification report (upstream-only vs Tunerr-only vs channel-class split). **`./scripts/verify`** OK.
 
 **Latest (2026-03-21):** **Cross-platform VOD parity kick-off:** user approved native macOS/Windows parity work for Linux VODFS, but the implementation does **not** need to be FUSE specifically. This track is being formalized as multi-PR work: extract shared VOD tree/naming logic out of Linux-only files, add a cross-platform virtual filesystem surface that macOS/Windows can mount natively, and keep Linux `mount` intact. First slice targets a shared tree model plus a WebDAV-backed VOD surface and mount helpers for non-Linux OSes. 
