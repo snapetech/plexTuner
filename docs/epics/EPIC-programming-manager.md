@@ -123,6 +123,10 @@ This needs a stable, testable classifier rather than a hand-wavy UI-only label.
   - `/programming/channels.json` now supports operator-guarded include/exclude/remove mutations for exact channel overrides.
   - `order_mode: "recommended"` now classifies channels into the requested taxonomy buckets and sorts deterministically by bucket -> saved manual rank -> guide number/name.
   - `/programming/preview.json` now reports bucket counts so the output shape is inspectable without scraping the lineup by hand.
+- **2026-03-21:** `PM-006` and `PM-007` backend slice shipped.
+  - `/programming/order.json` now supports durable server-side manual order mutations (`prepend`, `append`, `before`, `after`, `remove`) and automatically flips the recipe into `order_mode: "custom"` when operators start pinning rows deliberately.
+  - `/programming/backups.json` now reports exact-match sibling groups using strong identity only (`tvg_id` exact, else `dna_id` exact).
+  - `collapse_exact_backups: true` on the saved recipe now collapses those exact sibling rows into one visible lineup channel with merged `stream_urls`, so “Sling SyFy” and “DirecTV SyFy” can become one visible row with backup sources behind it.
 
 ## Technical approach
 

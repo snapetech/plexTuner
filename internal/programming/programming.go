@@ -15,14 +15,15 @@ import (
 const RecipeVersion = 1
 
 type Recipe struct {
-	Version            int      `json:"version"`
-	SelectedCategories []string `json:"selected_categories,omitempty"`
-	ExcludedCategories []string `json:"excluded_categories,omitempty"`
-	IncludedChannelIDs []string `json:"included_channel_ids,omitempty"`
-	ExcludedChannelIDs []string `json:"excluded_channel_ids,omitempty"`
-	OrderMode          string   `json:"order_mode,omitempty"` // source | custom | recommended
-	CustomOrder        []string `json:"custom_order,omitempty"`
-	UpdatedAt          string   `json:"updated_at,omitempty"`
+	Version              int      `json:"version"`
+	SelectedCategories   []string `json:"selected_categories,omitempty"`
+	ExcludedCategories   []string `json:"excluded_categories,omitempty"`
+	IncludedChannelIDs   []string `json:"included_channel_ids,omitempty"`
+	ExcludedChannelIDs   []string `json:"excluded_channel_ids,omitempty"`
+	OrderMode            string   `json:"order_mode,omitempty"` // source | custom | recommended
+	CustomOrder          []string `json:"custom_order,omitempty"`
+	CollapseExactBackups bool     `json:"collapse_exact_backups,omitempty"`
+	UpdatedAt            string   `json:"updated_at,omitempty"`
 }
 
 type CategorySummary struct {
@@ -46,6 +47,36 @@ type CategoryMember struct {
 }
 
 type TaxonomyBucket string
+
+type BackupMatchStrategy string
+
+const (
+	BackupMatchTVGID BackupMatchStrategy = "tvg_id_exact"
+	BackupMatchDNAID BackupMatchStrategy = "dna_id_exact"
+)
+
+type BackupGroupMember struct {
+	ChannelID   string `json:"channel_id"`
+	DNAID       string `json:"dna_id,omitempty"`
+	GuideNumber string `json:"guide_number"`
+	GuideName   string `json:"guide_name"`
+	TVGID       string `json:"tvg_id,omitempty"`
+	SourceTag   string `json:"source_tag,omitempty"`
+	GroupTitle  string `json:"group_title,omitempty"`
+	StreamCount int    `json:"stream_count"`
+	PrimaryURL  string `json:"primary_url,omitempty"`
+}
+
+type BackupGroup struct {
+	Key           string              `json:"key"`
+	MatchStrategy BackupMatchStrategy `json:"match_strategy"`
+	DisplayName   string              `json:"display_name"`
+	PrimaryID     string              `json:"primary_channel_id"`
+	PrimarySource string              `json:"primary_source_tag,omitempty"`
+	BackupCount   int                 `json:"backup_count"`
+	MemberCount   int                 `json:"member_count"`
+	Members       []BackupGroupMember `json:"members"`
+}
 
 const (
 	BucketLocalBroadcast       TaxonomyBucket = "local_broadcast"
@@ -232,6 +263,14 @@ func CategoryMembers(channels []catalog.LiveChannel, categoryID string) []Catego
 }
 
 func ApplyRecipe(channels []catalog.LiveChannel, recipe Recipe) []catalog.LiveChannel {
+	return applyRecipe(channels, recipe, true)
+}
+
+func ApplyRecipePreview(channels []catalog.LiveChannel, recipe Recipe) []catalog.LiveChannel {
+	return applyRecipe(channels, recipe, false)
+}
+
+func applyRecipe(channels []catalog.LiveChannel, recipe Recipe, collapseBackups bool) []catalog.LiveChannel {
 	if len(channels) == 0 {
 		return nil
 	}
@@ -285,6 +324,9 @@ func ApplyRecipe(channels []catalog.LiveChannel, recipe Recipe) []catalog.LiveCh
 	case "recommended":
 		filtered = applyRecommendedOrder(filtered, recipe.CustomOrder)
 	}
+	if collapseBackups && recipe.CollapseExactBackups {
+		filtered = CollapseExactBackupGroups(filtered)
+	}
 	return filtered
 }
 
@@ -335,6 +377,88 @@ func applyCustomOrder(channels []catalog.LiveChannel, order []string) []catalog.
 		}
 	})
 	return out
+}
+
+func UpdateRecipeOrder(recipe Recipe, action string, channelIDs []string, beforeID, afterID string) Recipe {
+	recipe = NormalizeRecipe(recipe)
+	order := dedupeKeepOrder(recipe.CustomOrder)
+	ids := dedupeKeepOrder(channelIDs)
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "append":
+		order = append(orderWithout(order, ids), ids...)
+	case "prepend":
+		order = append(ids, orderWithout(order, ids)...)
+	case "before":
+		order = insertRelative(order, ids, strings.TrimSpace(beforeID), true)
+	case "after":
+		order = insertRelative(order, ids, strings.TrimSpace(afterID), false)
+	case "remove", "clear":
+		order = orderWithout(order, ids)
+	default:
+		return recipe
+	}
+	recipe.CustomOrder = dedupeKeepOrder(order)
+	if len(recipe.CustomOrder) > 0 {
+		recipe.OrderMode = "custom"
+	} else if recipe.OrderMode == "custom" {
+		recipe.OrderMode = "source"
+	}
+	return NormalizeRecipe(recipe)
+}
+
+func orderWithout(order, remove []string) []string {
+	if len(order) == 0 || len(remove) == 0 {
+		return dedupeKeepOrder(order)
+	}
+	rm := map[string]struct{}{}
+	for _, id := range remove {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			rm[id] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(order))
+	for _, id := range order {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, drop := rm[id]; drop {
+			continue
+		}
+		out = append(out, id)
+	}
+	return dedupeKeepOrder(out)
+}
+
+func insertRelative(order, ids []string, anchor string, before bool) []string {
+	base := orderWithout(order, ids)
+	if len(ids) == 0 {
+		return base
+	}
+	anchor = strings.TrimSpace(anchor)
+	if anchor == "" {
+		return append(base, ids...)
+	}
+	at := -1
+	for i, id := range base {
+		if strings.TrimSpace(id) == anchor {
+			at = i
+			break
+		}
+	}
+	if at < 0 {
+		return append(base, ids...)
+	}
+	insertAt := at
+	if !before {
+		insertAt = at + 1
+	}
+	out := make([]string, 0, len(base)+len(ids))
+	out = append(out, base[:insertAt]...)
+	out = append(out, ids...)
+	out = append(out, base[insertAt:]...)
+	return dedupeKeepOrder(out)
 }
 
 func applyRecommendedOrder(channels []catalog.LiveChannel, order []string) []catalog.LiveChannel {
@@ -468,6 +592,173 @@ func UpdateRecipeChannels(recipe Recipe, action string, channelIDs []string) Rec
 		recipe.ExcludedChannelIDs = subtractValues(recipe.ExcludedChannelIDs, ids)
 	}
 	return NormalizeRecipe(recipe)
+}
+
+func BuildBackupGroups(channels []catalog.LiveChannel) []BackupGroup {
+	type accum struct {
+		strategy BackupMatchStrategy
+		key      string
+		members  []catalog.LiveChannel
+	}
+	groups := map[string]*accum{}
+	order := make([]string, 0)
+	for _, ch := range channels {
+		key, strategy, ok := backupIdentity(ch)
+		if !ok {
+			continue
+		}
+		cur, exists := groups[key]
+		if !exists {
+			cur = &accum{strategy: strategy, key: key}
+			groups[key] = cur
+			order = append(order, key)
+		}
+		cur.members = append(cur.members, ch)
+	}
+	out := make([]BackupGroup, 0, len(groups))
+	for _, key := range order {
+		cur := groups[key]
+		if cur == nil || len(cur.members) < 2 {
+			continue
+		}
+		members := make([]BackupGroupMember, 0, len(cur.members))
+		for _, ch := range cur.members {
+			members = append(members, BackupGroupMember{
+				ChannelID:   strings.TrimSpace(ch.ChannelID),
+				DNAID:       strings.TrimSpace(ch.DNAID),
+				GuideNumber: strings.TrimSpace(ch.GuideNumber),
+				GuideName:   strings.TrimSpace(ch.GuideName),
+				TVGID:       strings.TrimSpace(ch.TVGID),
+				SourceTag:   strings.TrimSpace(ch.SourceTag),
+				GroupTitle:  strings.TrimSpace(ch.GroupTitle),
+				StreamCount: visibleStreamCount(ch),
+				PrimaryURL:  strings.TrimSpace(ch.StreamURL),
+			})
+		}
+		primary := cur.members[0]
+		display := strings.TrimSpace(primary.GuideName)
+		if display == "" {
+			display = strings.TrimSpace(primary.ChannelID)
+		}
+		out = append(out, BackupGroup{
+			Key:           cur.key,
+			MatchStrategy: cur.strategy,
+			DisplayName:   display,
+			PrimaryID:     strings.TrimSpace(primary.ChannelID),
+			PrimarySource: strings.TrimSpace(primary.SourceTag),
+			BackupCount:   len(cur.members) - 1,
+			MemberCount:   len(cur.members),
+			Members:       members,
+		})
+	}
+	return out
+}
+
+func CollapseExactBackupGroups(channels []catalog.LiveChannel) []catalog.LiveChannel {
+	if len(channels) < 2 {
+		return append([]catalog.LiveChannel(nil), channels...)
+	}
+	out := make([]catalog.LiveChannel, 0, len(channels))
+	indexByKey := map[string]int{}
+	for _, ch := range channels {
+		key, _, ok := backupIdentity(ch)
+		if !ok {
+			out = append(out, cloneChannel(ch))
+			continue
+		}
+		if idx, exists := indexByKey[key]; exists {
+			out[idx] = mergeBackupChannel(out[idx], ch)
+			continue
+		}
+		indexByKey[key] = len(out)
+		out = append(out, cloneChannel(ch))
+	}
+	return out
+}
+
+func mergeBackupChannel(primary, backup catalog.LiveChannel) catalog.LiveChannel {
+	out := cloneChannel(primary)
+	for _, url := range append([]string{backup.StreamURL}, backup.StreamURLs...) {
+		url = strings.TrimSpace(url)
+		if url == "" {
+			continue
+		}
+		if strings.TrimSpace(out.StreamURL) == "" {
+			out.StreamURL = url
+		}
+		if !containsString(out.StreamURLs, url) {
+			out.StreamURLs = append(out.StreamURLs, url)
+		}
+	}
+	for _, auth := range backup.StreamAuths {
+		if !containsStreamAuth(out.StreamAuths, auth) {
+			out.StreamAuths = append(out.StreamAuths, auth)
+		}
+	}
+	if strings.TrimSpace(out.TVGID) == "" {
+		out.TVGID = strings.TrimSpace(backup.TVGID)
+	}
+	if strings.TrimSpace(out.DNAID) == "" {
+		out.DNAID = strings.TrimSpace(backup.DNAID)
+	}
+	if !out.EPGLinked && backup.EPGLinked {
+		out.EPGLinked = true
+	}
+	return out
+}
+
+func cloneChannel(ch catalog.LiveChannel) catalog.LiveChannel {
+	out := ch
+	if len(ch.StreamURLs) > 0 {
+		out.StreamURLs = append([]string(nil), ch.StreamURLs...)
+	}
+	if len(ch.StreamAuths) > 0 {
+		out.StreamAuths = append([]catalog.StreamAuth(nil), ch.StreamAuths...)
+	}
+	return out
+}
+
+func backupIdentity(ch catalog.LiveChannel) (string, BackupMatchStrategy, bool) {
+	if tvg := strings.ToLower(strings.TrimSpace(ch.TVGID)); tvg != "" {
+		return "tvg:" + tvg, BackupMatchTVGID, true
+	}
+	if dna := strings.ToLower(strings.TrimSpace(ch.DNAID)); dna != "" {
+		return "dna:" + dna, BackupMatchDNAID, true
+	}
+	return "", "", false
+}
+
+func visibleStreamCount(ch catalog.LiveChannel) int {
+	seen := map[string]struct{}{}
+	for _, url := range append([]string{ch.StreamURL}, ch.StreamURLs...) {
+		url = strings.TrimSpace(url)
+		if url == "" {
+			continue
+		}
+		seen[url] = struct{}{}
+	}
+	return len(seen)
+}
+
+func containsString(in []string, want string) bool {
+	want = strings.TrimSpace(want)
+	for _, v := range in {
+		if strings.TrimSpace(v) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsStreamAuth(in []catalog.StreamAuth, want catalog.StreamAuth) bool {
+	for _, v := range in {
+		if strings.TrimSpace(v.Prefix) == strings.TrimSpace(want.Prefix) &&
+			strings.TrimSpace(v.User) == strings.TrimSpace(want.User) &&
+			strings.TrimSpace(v.Pass) == strings.TrimSpace(want.Pass) {
+			return true
+		}
+	}
+	return false
 }
 
 func subtractValues(existing, remove []string) []string {

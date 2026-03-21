@@ -16,6 +16,7 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/epglink"
 	"github.com/snapetech/iptvtunerr/internal/epgstore"
 	"github.com/snapetech/iptvtunerr/internal/guidehealth"
+	"github.com/snapetech/iptvtunerr/internal/programming"
 )
 
 func TestServer_healthz(t *testing.T) {
@@ -177,9 +178,10 @@ func TestServer_programmingEndpoints(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "programming.json")
 	s := &Server{ProgrammingRecipeFile: path}
 	s.UpdateChannels([]catalog.LiveChannel{
-		{ChannelID: "1", GuideNumber: "101", GuideName: "News One", GroupTitle: "News", SourceTag: "iptv", StreamURL: "http://a/1"},
+		{ChannelID: "1", DNAID: "dna-news", GuideNumber: "101", GuideName: "News One", GroupTitle: "News", SourceTag: "iptv", StreamURL: "http://a/1", TVGID: "news.one"},
 		{ChannelID: "2", GuideNumber: "102", GuideName: "Sports Two", GroupTitle: "Sports", SourceTag: "iptv", StreamURL: "http://a/2"},
 		{ChannelID: "3", GuideNumber: "103", GuideName: "NBC 4", GroupTitle: "Local", SourceTag: "iptv", StreamURL: "http://a/3"},
+		{ChannelID: "4", DNAID: "dna-news", GuideNumber: "1001", GuideName: "News One", GroupTitle: "DirecTV", SourceTag: "directv", StreamURL: "http://b/1", TVGID: "news.one"},
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/programming/categories.json?category=iptv--news", nil)
@@ -195,7 +197,7 @@ func TestServer_programmingEndpoints(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &categories); err != nil {
 		t.Fatalf("categories unmarshal: %v", err)
 	}
-	if len(categories.Categories) != 3 || len(categories.Members) != 1 {
+	if len(categories.Categories) != 4 || len(categories.Members) != 1 {
 		t.Fatalf("categories body=%s", w.Body.String())
 	}
 
@@ -256,11 +258,96 @@ func TestServer_programmingEndpoints(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &preview); err != nil {
 		t.Fatalf("preview unmarshal: %v", err)
 	}
-	if preview.RawChannels != 3 || preview.CuratedChannels != 2 || len(preview.Lineup) != 1 || preview.Lineup[0].ChannelID != "2" {
+	if preview.RawChannels != 4 || preview.CuratedChannels != 2 || len(preview.Lineup) != 1 || preview.Lineup[0].ChannelID != "2" {
 		t.Fatalf("preview=%+v", preview)
 	}
-	if preview.Buckets["sports"] != 1 || preview.Buckets["local_broadcast"] != 1 {
+	if preview.RawChannels != 4 || preview.Buckets["sports"] != 1 || preview.Buckets["local_broadcast"] != 1 {
 		t.Fatalf("preview buckets=%+v", preview.Buckets)
+	}
+	if len(preview.BackupGroups) != 0 {
+		t.Fatalf("preview backup groups=%+v", preview.BackupGroups)
+	}
+
+	postBody = strings.NewReader(`{
+  "action": "prepend",
+  "channel_id": "3"
+}`)
+	req = httptest.NewRequest(http.MethodPost, "/programming/order.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveProgrammingOrder().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("order mutate status=%d body=%s", w.Code, w.Body.String())
+	}
+	if len(s.Channels) != 2 || s.Channels[0].ChannelID != "3" {
+		t.Fatalf("channels after order mutate=%#v", s.Channels)
+	}
+
+	postBody = strings.NewReader(`{
+  "selected_categories": ["iptv--news", "directv", "iptv--local"],
+  "order_mode": "custom",
+  "custom_order": ["3", "1"],
+  "collapse_exact_backups": true
+}`)
+	req = httptest.NewRequest(http.MethodPost, "/programming/recipe.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveProgrammingRecipe().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("recipe collapse status=%d body=%s", w.Code, w.Body.String())
+	}
+	if len(s.Channels) != 2 {
+		t.Fatalf("collapsed curated channels=%#v", s.Channels)
+	}
+	if strings.TrimSpace(s.Channels[1].StreamURL) == "" || len(s.Channels[1].StreamURLs) < 1 {
+		t.Fatalf("collapsed backup streams=%#v", s.Channels[1])
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/programming/backups.json", nil)
+	w = httptest.NewRecorder()
+	s.serveProgrammingBackups().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("backups status=%d body=%s", w.Code, w.Body.String())
+	}
+	var backups struct {
+		GroupCount int                       `json:"group_count"`
+		Groups     []programming.BackupGroup `json:"groups"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &backups); err != nil {
+		t.Fatalf("backups unmarshal: %v", err)
+	}
+	if backups.GroupCount != 1 || len(backups.Groups) != 1 || backups.Groups[0].MemberCount != 2 {
+		t.Fatalf("backups=%+v", backups)
+	}
+}
+
+func TestServer_UpdateChannelsPreservesProgrammingCustomOrderAndCollapse(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "programming.json")
+	if err := os.WriteFile(path, []byte(`{
+  "selected_categories": ["iptv--news", "directv"],
+  "order_mode": "custom",
+  "custom_order": ["local", "sling-news"],
+  "collapse_exact_backups": true
+}`), 0o600); err != nil {
+		t.Fatalf("write recipe: %v", err)
+	}
+	s := &Server{ProgrammingRecipeFile: path, LineupMaxChannels: NoLineupCap}
+	raw := []catalog.LiveChannel{
+		{ChannelID: "sling-news", DNAID: "dna-news", TVGID: "news.one", GuideNumber: "101", GuideName: "News One", GroupTitle: "News", SourceTag: "iptv", StreamURL: "http://a/1"},
+		{ChannelID: "directv-news", DNAID: "dna-news", TVGID: "news.one", GuideNumber: "1101", GuideName: "News One", GroupTitle: "DirecTV", SourceTag: "directv", StreamURL: "http://b/1"},
+		{ChannelID: "local", GuideNumber: "3", GuideName: "NBC 4", GroupTitle: "News", SourceTag: "iptv", StreamURL: "http://c/1"},
+	}
+	s.UpdateChannels(raw)
+	if len(s.Channels) != 2 || s.Channels[0].ChannelID != "local" || strings.TrimSpace(s.Channels[1].StreamURL) == "" || len(s.Channels[1].StreamURLs) != 1 {
+		t.Fatalf("initial curated=%#v", s.Channels)
+	}
+	s.UpdateChannels([]catalog.LiveChannel{
+		raw[1],
+		raw[2],
+		raw[0],
+	})
+	if len(s.Channels) != 2 || s.Channels[0].ChannelID != "local" || strings.TrimSpace(s.Channels[1].StreamURL) == "" || len(s.Channels[1].StreamURLs) != 1 {
+		t.Fatalf("refreshed curated=%#v", s.Channels)
 	}
 }
 

@@ -82,12 +82,32 @@ func TestUpdateRecipeMutations(t *testing.T) {
 	}
 }
 
+func TestUpdateRecipeOrder(t *testing.T) {
+	recipe := Recipe{OrderMode: "source", CustomOrder: []string{"2", "3"}}
+	recipe = UpdateRecipeOrder(recipe, "prepend", []string{"1"}, "", "")
+	recipe = UpdateRecipeOrder(recipe, "after", []string{"4"}, "", "2")
+	recipe = UpdateRecipeOrder(recipe, "remove", []string{"3"}, "", "")
+	if recipe.OrderMode != "custom" {
+		t.Fatalf("order mode=%q", recipe.OrderMode)
+	}
+	want := []string{"1", "2", "4"}
+	if len(recipe.CustomOrder) != len(want) {
+		t.Fatalf("custom order=%v", recipe.CustomOrder)
+	}
+	for i := range want {
+		if recipe.CustomOrder[i] != want[i] {
+			t.Fatalf("custom order=%v want=%v", recipe.CustomOrder, want)
+		}
+	}
+}
+
 func TestLoadSaveRecipeFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "programming.json")
 	saved, err := SaveRecipeFile(path, Recipe{
-		SelectedCategories: []string{"iptv--directv"},
-		OrderMode:          "custom",
-		CustomOrder:        []string{"2", "1"},
+		SelectedCategories:   []string{"iptv--directv"},
+		OrderMode:            "custom",
+		CustomOrder:          []string{"2", "1"},
+		CollapseExactBackups: true,
 	})
 	if err != nil {
 		t.Fatalf("save: %v", err)
@@ -101,5 +121,44 @@ func TestLoadSaveRecipeFile(t *testing.T) {
 	}
 	if loaded.OrderMode != "custom" || len(loaded.CustomOrder) != 2 {
 		t.Fatalf("loaded=%#v", loaded)
+	}
+	if !loaded.CollapseExactBackups {
+		t.Fatalf("loaded=%#v", loaded)
+	}
+}
+
+func TestBuildBackupGroupsAndCollapse(t *testing.T) {
+	channels := []catalog.LiveChannel{
+		{ChannelID: "sling-syfy", DNAID: "dna-syfy", TVGID: "syfy.us", GuideNumber: "401", GuideName: "SyFy", SourceTag: "sling", StreamURL: "http://a/1", StreamURLs: []string{"http://a/1"}},
+		{ChannelID: "directv-syfy", DNAID: "dna-syfy", TVGID: "syfy.us", GuideNumber: "5401", GuideName: "SyFy", SourceTag: "directv", StreamURL: "http://b/1", StreamURLs: []string{"http://b/1"}},
+		{ChannelID: "cnn", DNAID: "dna-cnn", TVGID: "cnn.us", GuideNumber: "200", GuideName: "CNN", SourceTag: "iptv", StreamURL: "http://c/1"},
+	}
+	groups := BuildBackupGroups(channels)
+	if len(groups) != 1 {
+		t.Fatalf("groups=%#v", groups)
+	}
+	if groups[0].PrimaryID != "sling-syfy" || groups[0].BackupCount != 1 || groups[0].MatchStrategy != BackupMatchTVGID {
+		t.Fatalf("group=%#v", groups[0])
+	}
+	collapsed := CollapseExactBackupGroups(channels)
+	if len(collapsed) != 2 {
+		t.Fatalf("collapsed=%#v", collapsed)
+	}
+	if collapsed[0].ChannelID != "sling-syfy" || len(collapsed[0].StreamURLs) != 2 {
+		t.Fatalf("collapsed primary=%#v", collapsed[0])
+	}
+}
+
+func TestApplyRecipePreviewDoesNotCollapseBackups(t *testing.T) {
+	channels := []catalog.LiveChannel{
+		{ChannelID: "a", DNAID: "dna", TVGID: "tvg", GuideNumber: "1", GuideName: "One", GroupTitle: "News", SourceTag: "iptv", StreamURL: "http://a/1"},
+		{ChannelID: "b", DNAID: "dna", TVGID: "tvg", GuideNumber: "2", GuideName: "One", GroupTitle: "News", SourceTag: "iptv", StreamURL: "http://b/1"},
+	}
+	recipe := Recipe{CollapseExactBackups: true}
+	if got := ApplyRecipe(channels, recipe); len(got) != 1 {
+		t.Fatalf("collapsed len=%d want 1", len(got))
+	}
+	if got := ApplyRecipePreview(channels, recipe); len(got) != 2 {
+		t.Fatalf("preview len=%d want 2", len(got))
 	}
 }

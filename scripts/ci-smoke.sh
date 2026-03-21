@@ -83,6 +83,7 @@ cat >"$TMP_DIR/catalog-full.json" <<'JSON'
   "live_channels": [
     {
       "channel_id": "ch1",
+      "dna_id": "dna-news",
       "guide_number": "101",
       "guide_name": "Smoke One",
       "group_title": "News",
@@ -100,6 +101,18 @@ cat >"$TMP_DIR/catalog-full.json" <<'JSON'
       "stream_urls": ["http://example.invalid/stream-2.ts"],
       "epg_linked": true,
       "tvg_id": "smoke.two"
+    },
+    {
+      "channel_id": "ch3",
+      "dna_id": "dna-news",
+      "guide_number": "1001",
+      "guide_name": "Smoke One",
+      "group_title": "DirecTV",
+      "source_tag": "directv",
+      "stream_url": "http://example.invalid/stream-3.ts",
+      "stream_urls": ["http://example.invalid/stream-3.ts"],
+      "epg_linked": true,
+      "tvg_id": "smoke.one"
     }
   ]
 }
@@ -191,16 +204,24 @@ assert_header "http://127.0.0.1:$port_full/guide.xml" "X-IptvTunerr-Guide-State"
 assert_status "http://127.0.0.1:$port_full/lineup.json" "200"
 grep -q '"GuideNumber":"101"' <(curl -sS "http://127.0.0.1:$port_full/lineup.json") || fail "full catalog lineup missing expected guide number"
 ! grep -q '"GuideNumber":"102"' <(curl -sS "http://127.0.0.1:$port_full/lineup.json") || fail "programming recipe did not filter second category"
-grep -q '"raw_channels": 2' <(curl -sS "http://127.0.0.1:$port_full/programming/preview.json") || fail "programming preview missing raw channel count"
+grep -q '"raw_channels": 3' <(curl -sS "http://127.0.0.1:$port_full/programming/preview.json") || fail "programming preview missing raw channel count"
 grep -q '"curated_channels": 1' <(curl -sS "http://127.0.0.1:$port_full/programming/preview.json") || fail "programming preview missing curated channel count"
 grep -q '"id": "news"' <(curl -sS "http://127.0.0.1:$port_full/programming/categories.json") || fail "programming categories missing News"
 grep -q '"id": "sports"' <(curl -sS "http://127.0.0.1:$port_full/programming/categories.json") || fail "programming categories missing Sports"
+grep -q '"group_count": 0' <(curl -sS "http://127.0.0.1:$port_full/programming/backups.json") || fail "programming backups unexpected initial group"
 category_mutate_code="$(curl -sS -X POST -H 'Content-Type: application/json' --data '{"action":"include","category_id":"sports"}' -o "$body_file" -w '%{http_code}' "http://127.0.0.1:$port_full/programming/categories.json" || true)"
 [[ "$category_mutate_code" == "200" ]] || fail "programming category mutation status=$category_mutate_code body=$(cat "$body_file" 2>/dev/null)"
 channel_mutate_code="$(curl -sS -X POST -H 'Content-Type: application/json' --data '{"action":"exclude","channel_id":"ch1"}' -o "$body_file" -w '%{http_code}' "http://127.0.0.1:$port_full/programming/channels.json" || true)"
 [[ "$channel_mutate_code" == "200" ]] || fail "programming channel mutation status=$channel_mutate_code body=$(cat "$body_file" 2>/dev/null)"
+order_mutate_code="$(curl -sS -X POST -H 'Content-Type: application/json' --data '{"action":"prepend","channel_id":"ch2"}' -o "$body_file" -w '%{http_code}' "http://127.0.0.1:$port_full/programming/order.json" || true)"
+[[ "$order_mutate_code" == "200" ]] || fail "programming order mutation status=$order_mutate_code body=$(cat "$body_file" 2>/dev/null)"
 grep -q '"curated_channels": 1' <(curl -sS "http://127.0.0.1:$port_full/programming/preview.json") || fail "programming mutation preview missing updated curated count"
 grep -q '"sports": 1' <(curl -sS "http://127.0.0.1:$port_full/programming/preview.json") || fail "programming preview missing sports bucket"
+collapse_code="$(curl -sS -X POST -H 'Content-Type: application/json' --data '{"selected_categories":["news","directv","sports"],"order_mode":"custom","custom_order":["ch2","ch3"],"collapse_exact_backups":true}' -o "$body_file" -w '%{http_code}' "http://127.0.0.1:$port_full/programming/recipe.json" || true)"
+[[ "$collapse_code" == "200" ]] || fail "programming collapse recipe status=$collapse_code body=$(cat "$body_file" 2>/dev/null)"
+grep -q '"curated_channels": 2' <(curl -sS "http://127.0.0.1:$port_full/programming/preview.json") || fail "programming preview missing collapsed curated count"
+grep -q '"stream_urls": \[' <(curl -sS "http://127.0.0.1:$port_full/programming/preview.json") || fail "programming preview missing lineup stream urls"
+grep -q '"group_count": 1' <(curl -sS "http://127.0.0.1:$port_full/programming/backups.json") || fail "programming backups missing grouped exact match"
 
 port_empty="$(pick_port)"
 run_serve "$TMP_DIR/catalog-empty.json" "$port_empty"

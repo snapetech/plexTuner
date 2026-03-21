@@ -385,7 +385,7 @@ Related env:
 - `IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE` — when `true`/`1`/`on` **and** autotune is on, upstream hosts that exceed **`IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_AFTER`** consecutive failure signals are **skipped** in **`walkStreamUpstreams`** while at least one non-quarantined backup URL remains (per-host cooldown **`IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_SEC`**, default **900**). Surfaced on **`/provider/profile.json`** as **`auto_host_quarantine`**, **`upstream_quarantine_skips_total`** (cumulative), **`penalized_hosts[].quarantined_until`**, **`quarantined_hosts`**, and **`remediation_hints`** (`host_quarantine_active`). With **`IPTV_TUNERR_METRICS_ENABLE`**, Prometheus **`iptv_tunerr_upstream_quarantine_skips_total`** matches the same events.
 - `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT` — optional per-provider-account concurrent-stream cap for deduplicated multi-account channels. When set to a positive integer, live stream ordering prefers less-loaded credential sets and rejects new tunes with HDHR-style **805** / HTTP **503** when every distinct provider account for that channel is already at the cap. If unset, Tunerr still uses account-aware spreading for channels that carry multiple distinct credential sets, and now learns tighter per-account caps from upstream concurrency-limit signals when a specific credential set starts returning `423` / `458` / `509` / similar limit responses.
 - `/provider/profile.json` now includes `account_learned_limits[]` so operators can see which credential set has learned a tighter cap, how many contention signals were seen, and whether that account currently has leased streams.
-- `IPTV_TUNERR_PROGRAMMING_RECIPE_FILE` — optional JSON file storing the server-side Programming Manager recipe. When set, Tunerr applies the saved category/channel selection and custom order after guide/DNA intelligence and before final lineup exposure. Surfaced via `/programming/categories.json`, `/programming/recipe.json`, `/programming/preview.json`, and `/debug/runtime.json`.
+- `IPTV_TUNERR_PROGRAMMING_RECIPE_FILE` — optional JSON file storing the server-side Programming Manager recipe. When set, Tunerr applies the saved category/channel selection, manual/custom order, and optional exact-backup collapse after guide/DNA intelligence and before final lineup exposure. Surfaced via `/programming/categories.json`, `/programming/channels.json`, `/programming/order.json`, `/programming/backups.json`, `/programming/recipe.json`, `/programming/preview.json`, and `/debug/runtime.json`.
 
 ## Programming Manager foundation endpoints
 
@@ -395,6 +395,9 @@ Server-backed lineup-curation primitives for the upcoming Programming Manager UI
 - `GET /programming/categories.json?category=<id>`
 - `GET /programming/channels.json`
 - `POST /programming/channels.json`
+- `GET /programming/order.json`
+- `POST /programming/order.json`
+- `GET /programming/backups.json`
 - `GET /programming/recipe.json`
 - `POST /programming/recipe.json`
 - `GET /programming/preview.json`
@@ -404,13 +407,16 @@ What they expose:
 - optional per-category member listing
 - bulk category include/exclude/remove mutations
 - exact channel include/exclude/remove mutations
-- the durable saved recipe (`selected_categories`, `included_channel_ids`, `excluded_channel_ids`, `order_mode`, `custom_order`)
+- the durable saved recipe (`selected_categories`, `included_channel_ids`, `excluded_channel_ids`, `order_mode`, `custom_order`, `collapse_exact_backups`)
+- manual order mutations (`prepend`, `append`, `before`, `after`, `remove`) through `/programming/order.json`
+- exact-match backup grouping reports through `/programming/backups.json`
 - a preview of the currently curated lineup after the recipe is applied, including taxonomy bucket counts
 
 Supported `order_mode` values:
 - `source` — keep source order after existing lineup intelligence and filters
 - `custom` — use `custom_order` first, then preserve the remaining source order
 - `recommended` — classify channels into the server taxonomy buckets (`local_broadcast`, `general_entertainment`, `news_info`, `sports`, `lifestyle_home`, `documentary_history`, `children_family`, `reality_specialized`, `premium_networks`, `regional_sports`, `religious`, `international`) and sort by bucket, then by saved `custom_order`, then by guide number/name
+- `collapse_exact_backups: true` — collapse strong exact sibling rows (same `tvg_id`, else same `dna_id`) into one visible lineup row with merged `stream_urls`; inspect those candidate groups via `/programming/backups.json`
 
 Notes:
 - `POST /programming/recipe.json` is localhost/LAN-operator guarded with the same policy as other tuner-side operator mutation endpoints.
