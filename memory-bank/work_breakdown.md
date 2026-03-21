@@ -39,6 +39,23 @@ Create or update this file when **any** of these are true:
 - **Story IDs:** `LP-001` … `LP-012` — work only on stories listed in that epic file; park extras in [opportunities.md](opportunities.md).
 - **LP progress (2026-03-21):** **LP-012** [lineup-parity-lp012-closure](../docs/how-to/lineup-parity-lp012-closure.md) checklist + doc index wiring; **LP-001** slice: **`IPTV_TUNERR_HDHR_DISCOVER_BROADCASTS`** for directed UDP discovery (**IPv6 literal targets + UDP6** merged with IPv4). **LP-010/011** now include named-profile **ffmpeg-packaged HLS** (`output_mux: "hls"`) in addition to `mpegts` / `fmp4`. **LTV slice:** Autopilot **normalized URL** match (trailing slash / default port / scheme·host casing) for **`preferred_url`** vs catalog. **Next depth:** packager tuning/soak, not missing product mode. **Park:** Postgres, **catchup-daemon**-scale “always-on” extensions beyond MVP, provider **`xmltv.php`** bandwidth when panels omit HTTP validators (disk cache + incremental SQLite already shipped) — [opportunities.md](opportunities.md). **Docs (2026-03-19):** [docs-gaps.md](../docs/docs-gaps.md) high/medium rows cleared after validation; optional Mermaid in [architecture.md](../docs/explanations/architecture.md) remains nice-to-have.
 
+### Active epic overlay (Cross-platform VOD parity, 2026-03-21)
+
+- **Goal (2–5 sentences):** Replicate Linux VODFS behavior on macOS and Windows without insisting on the same kernel/filesystem stack. Success means Tunerr can expose the VOD catalog as a mountable `Movies/` / `TV/` tree on all supported desktop/server OSes, with on-demand file reads and Plex-scannable paths, while Linux keeps the existing `go-fuse` mount path.
+- **Non-goals (scope fence):** Rewriting the current Linux VODFS stack in one shot, shipping cgo-heavy macFUSE/WinFsp backends before there is a stable shared VOD tree layer, or pretending WebDAV is identical to kernel-native FUSE semantics in every corner case.
+- **Story IDs:** `VODX-001` … `VODX-005`
+- **Initial implementation stance:** Linux stays on `internal/vodfs` `go-fuse`; macOS/Windows parity starts with a cross-platform WebDAV mount surface and native mount helpers, then native per-OS backends can layer later if still needed.
+
+### Cross-platform VOD parity story list (2026-03-21)
+
+| ID | Acceptance criteria | Files/areas (expected) | Verification | Risk flags |
+|----|---------------------|------------------------|--------------|------------|
+| VODX-001 | Shared VOD naming/tree generation is no longer trapped behind Linux build tags and can feed more than one backend. | `internal/vodfs/*`, new shared package if needed, tests | `go test ./internal/vodfs ./...`; `./scripts/verify` | maintainability / regression |
+| VODX-002 | A cross-platform WebDAV VOD surface exposes the same `Movies/` and `TV/` tree with on-demand reads from the materializer. | new `internal/vodwebdav/*`, `cmd/iptv-tunerr/*`, tests/docs | targeted tests + `./scripts/verify` | behavior / interoperability |
+| VODX-003 | macOS and Windows mount helper flows exist so operators can mount the WebDAV surface natively from the same binary/operator docs. | `cmd/iptv-tunerr/*`, docs/how-to/reference, tests where practical | targeted tests + docs + `./scripts/verify` | operability |
+| VODX-004 | Linux `mount` and current VODFS behavior remain intact while sharing the extracted tree/naming layer. | `internal/vodfs/*`, tests | `go test ./internal/vodfs`; `./scripts/verify` | regression |
+| VODX-005 | Docs, features matrix, and platform requirements clearly describe Linux FUSE vs macOS/Windows WebDAV parity and operator tradeoffs. | `README.md`, `docs/*`, memory-bank | docs review + `./scripts/verify` | docs drift |
+
 ### Active story list (2026-03-18)
 
 | ID | Acceptance criteria | Files/areas (expected) | Verification | Risk flags |

@@ -23,6 +23,24 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: Add channel-class diff harness for intermittent live failures
+  Summary:
+    - Added `scripts/channel-diff-harness.sh` to capture one known-good and one known-bad channel with matched `stream-compare` runs, inferring paired direct upstream URLs from Tunerr's own `/debug/stream-attempts.json`.
+    - Added `scripts/channel-diff-report.py` to classify the pair as upstream-only, Tunerr-only, or a deeper channel-class split using final status/mode, startup duration, upstream status codes, and manifest host spread.
+    - Updated troubleshooting docs and `memory-bank/commands.yml` so intermittent reports follow a repeatable good-vs-bad workflow instead of treating all failing channels as one bug.
+  Verification:
+    - `bash -n scripts/channel-diff-harness.sh`
+    - `python3 -m py_compile scripts/channel-diff-report.py`
+    - synthetic `python3 scripts/channel-diff-report.py --good <tmp>/good --bad <tmp>/bad --print`
+    - `./scripts/verify`
+  Notes:
+    - This does not prove the tester's exact panel yet; it gives us a reproducible way to classify "some channels work, some don't" without waiting for ad hoc log snippets.
+  Opportunities filed:
+    - none
+  Links:
+    - intermittent live-stream diagnostics / good-vs-bad channel diff
+
+- Date: 2026-03-21
   Title: Harden deck proxy/auth flow and add end-to-end dead-remux fallback proof
   Summary:
     - Fixed the dedicated web UI’s generated-password path so a random startup password is actually usable: it is logged once at startup and shown on the localhost login page until a real password is pinned.

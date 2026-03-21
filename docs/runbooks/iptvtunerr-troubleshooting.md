@@ -264,6 +264,8 @@ Task-oriented entry (quick start + links): **[how-to: stream-compare harness](..
 
 When a provider/CDN path plays directly in `ffplay` but fails through Tunerr, use `scripts/stream-compare-harness.sh` to collect one reproducible evidence bundle instead of hand-running curl/ffplay/tcpdump commands.
 
+If the failure is intermittent and channel-specific ("some channels work, some don't"), use `scripts/channel-diff-harness.sh` first. It captures one known-good and one known-bad channel, infers the paired direct upstream URLs from Tunerr's own stream-attempt records, then produces a compact "good vs bad" report so you can see whether the split is upstream-only, Tunerr-only, or a channel-class difference.
+
 Typical case:
 
 ```bash
