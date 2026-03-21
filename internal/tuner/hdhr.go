@@ -20,6 +20,8 @@ type HDHR struct {
 	Channels     []catalog.LiveChannel
 }
 
+const hdhrStartupStateHeader = "X-IptvTunerr-Startup-State"
+
 func (h *HDHR) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/discover.json":
@@ -34,6 +36,10 @@ func (h *HDHR) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HDHR) serveDiscover(w http.ResponseWriter) {
+	if len(h.Channels) == 0 {
+		w.Header().Set(hdhrStartupStateHeader, "loading")
+		w.Header().Set("Cache-Control", "no-store")
+	}
 	tunerCount := h.TunerCount
 	if tunerCount <= 0 {
 		tunerCount = 2
@@ -90,6 +96,10 @@ func (h *HDHR) serveDiscover(w http.ResponseWriter) {
 }
 
 func (h *HDHR) serveLineupStatus(w http.ResponseWriter) {
+	if len(h.Channels) == 0 {
+		w.Header().Set(hdhrStartupStateHeader, "loading")
+		w.Header().Set("Cache-Control", "no-store")
+	}
 	scanPossible := 1
 	if v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HDHR_SCAN_POSSIBLE")); v != "" {
 		if strings.EqualFold(v, "0") || strings.EqualFold(v, "false") || strings.EqualFold(v, "no") {
@@ -108,6 +118,10 @@ func (h *HDHR) serveLineup(w http.ResponseWriter) {
 	channels := h.Channels
 	if channels == nil {
 		channels = []catalog.LiveChannel{}
+	}
+	if len(channels) == 0 {
+		w.Header().Set(hdhrStartupStateHeader, "loading")
+		w.Header().Set("Cache-Control", "no-store")
 	}
 	base := h.BaseURL
 	if base == "" {

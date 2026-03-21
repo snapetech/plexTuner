@@ -23,6 +23,22 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: Harden startup guide contract and release smoke coverage
+  Summary:
+    - Changed **`/guide.xml`** startup behavior so provisional placeholder XMLTV now returns `503 Service Unavailable` with `Retry-After: 5` and `X-IptvTunerr-Guide-State: loading` until a real merged guide cache exists.
+    - Added `X-IptvTunerr-Startup-State: loading` on HDHR discovery/lineup surfaces before the lineup is loaded so operators and probes can distinguish early startup from steady state.
+    - Added a named startup/registration **release_smoke** lane in **`memory-bank/commands.yml`** and corresponding regression tests in **`internal/tuner`**.
+  Verification:
+    - `go test -count=1 ./internal/tuner -run 'Test(XMLTV_serve|XMLTV_serveCachedGuideReady|HDHR_discover|HDHR_lineup|HDHR_lineup_status|Server_UpdateChannelsTriggersXMLTVRefresh)'`
+    - `./scripts/verify`
+  Notes:
+    - This keeps the placeholder visible for humans while making it non-successful for clients that would otherwise cache startup junk as a real guide.
+  Opportunities filed:
+    - none
+  Links:
+    - startup/registration contract
+
+- Date: 2026-03-21
   Title: Harden guide-input fetches and deck auth/state handling
   Summary:
     - Reworked **`internal/guideinput`** so remote guide fetches resolve only through a prepared exact allowlist map before any outbound request is built, addressing the CodeQL uncontrolled-network-request path cleanly.

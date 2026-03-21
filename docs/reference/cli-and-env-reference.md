@@ -758,6 +758,7 @@ Merge semantics for HDHR + IPTV catalogs: [adr/0002-hdhr-hardware-iptv-merge.md]
 Browser URLs:
 - Dedicated deck: `http://127.0.0.1:48879/` by default. It reverse-proxies tuner endpoints under `/api/*`, surfaces runtime settings from `/api/debug/runtime.json`, opens on a login page with a cookie-backed session, accepts direct HTTP Basic auth for scriptable/API access, generates a one-time startup password when `IPTV_TUNERR_WEBUI_PASS` is unset, and exposes read-only deck telemetry under `/deck/telemetry.json` plus server-derived operator activity under `/deck/activity.json`.
 - Guide/operator endpoints include `/guide/lineup-match.json`, which reports whether current `lineup.json` rows have exact-name counterparts in emitted `guide.xml`, plus duplicate-name/number signals and a sample of unmatched rows including `channel_id`, `guide_number`, `guide_name`, and observed `tvg_id`.
+- Startup contract: until the first real merged guide is cached, `/guide.xml` returns `503 Service Unavailable` with `Retry-After: 5`, `X-IptvTunerr-Guide-State: loading`, and a visible placeholder XMLTV body. HDHR discovery/lineup endpoints stay `200`, but emit `X-IptvTunerr-Startup-State: loading` while no lineup channels are loaded yet.
 - Legacy pages on the tuner port: `http://127.0.0.1:<port>/ui/` (home), `/ui/guide/` (merged guide preview from cache), `/ui/guide-preview.json` (JSON; optional `?limit=`).
 
 Transcode profile names, HDHomeRun-style aliases, and `?profile=` on `/stream/<id>`: [transcode-profiles.md](transcode-profiles.md).

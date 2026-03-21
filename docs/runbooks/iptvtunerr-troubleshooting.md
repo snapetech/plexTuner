@@ -248,9 +248,9 @@ BASE=http://localhost:5004   # or your IPTV_TUNERR_BASE_URL
 curl -sS "$BASE/healthz" | jq .   # 503 {"status":"loading",...} until channels loaded; then 200 {"status":"ok","source_ready":true,...}
 curl -sS "$BASE/readyz" | jq .   # same readiness gate: 503 {"status":"not_ready",...} until loaded; then 200 {"status":"ready",...}
 
-curl -s -o /dev/null -w "%{http_code}" "$BASE/discover.json"   # expect 200
-curl -s -o /dev/null -w "%{http_code}" "$BASE/lineup.json"     # expect 200
-curl -s -o /dev/null -w "%{http_code}" "$BASE/guide.xml"       # expect 200
+curl -s -o /dev/null -w "%{http_code}" "$BASE/discover.json"   # expect 200 (may include X-IptvTunerr-Startup-State: loading before lineup load)
+curl -s -o /dev/null -w "%{http_code}" "$BASE/lineup.json"     # expect 200 (may include X-IptvTunerr-Startup-State: loading before lineup load)
+curl -s -o /dev/null -w "%{http_code}" "$BASE/guide.xml"       # expect 503 + Retry-After during first guide build, then 200 once cached
 curl -s -o /dev/null -w "%{http_code}" "$BASE/live.m3u"        # expect 200
 ```
 

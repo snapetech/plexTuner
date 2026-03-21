@@ -28,12 +28,9 @@ It exists to encourage quality gains without derailing the current task.
   Category: reliability
   Title: Tighten startup registration contract beyond placeholder `guide.xml`
   Context: Security/control-plane hardening fixed empty-guide caching and made placeholders visibly provisional, but `run` still binds early and serves `200` placeholder XMLTV while lineup/catalog work is still underway.
-  Why it matters: Plex and other HDHR consumers can still treat provisional guide data as real state if they fetch too early during startup.
-  Evidence: `cmd/iptv-tunerr/cmd_runtime.go` starts the server before catalog completion; `internal/tuner/xmltv.go` still emits placeholder XML with `200 OK`.
-  Suggested fix: Add an explicit startup/registration policy for HDHR/XMLTV surfaces: either a stronger not-ready contract for initial registration flows, or a separate machine-readable readiness hint that Plex-safe consumers can use before trusting `guide.xml`.
-  Risk/Scope: med/high | fits current scope? no
-  User decision needed?: yes
-  If yes: 1) keep current placeholder UX (Recommended short-term), 2) return `503` on guide/discovery until lineup ready, 3) introduce separate registration gating/config for strict startup behavior.
+  Status: **Shipped 2026-03-21** — `/guide.xml` now returns `503` + `Retry-After: 5` + `X-IptvTunerr-Guide-State: loading` while only the placeholder body exists, and HDHR discovery/lineup surfaces add `X-IptvTunerr-Startup-State: loading` before lineup load. Regression lane added to `memory-bank/commands.yml` as `release_smoke`.
+  Risk/Scope: n/a
+  User decision needed?: no
 
 - Date: 2026-03-19
   Category: operability

@@ -15,6 +15,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ### Guide / XMLTV
 - **Visible guide-loading placeholders:** when `/guide.xml` is still on the startup placeholder path, programme titles now include **`(guide loading)`**, the XMLTV source metadata is marked as a loading placeholder, and each placeholder row carries a short description explaining that IPTV Tunerr is still building the full guide.
+- **Startup guide contract hardening:** while the real merged guide is still building, `/guide.xml` now returns **`503 Service Unavailable`** with **`Retry-After: 5`**, **`X-IptvTunerr-Guide-State: loading`**, and the visible placeholder XMLTV body instead of a misleading **`200`** success response. HDHR **`discover.json`** / **`lineup.json`** / **`lineup_status.json`** stay compatible but add **`X-IptvTunerr-Startup-State: loading`** before the lineup is loaded.
 
 ## [v0.1.20] — 2026-03-21
 

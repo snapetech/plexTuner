@@ -21,8 +21,14 @@ func TestXMLTV_serve(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/guide.xml", nil)
 	w := httptest.NewRecorder()
 	x.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
+	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("code: %d", w.Code)
+	}
+	if got := w.Header().Get(guideStateHeader); got != "loading" {
+		t.Fatalf("guide state header=%q want loading", got)
+	}
+	if got := w.Header().Get("Retry-After"); got != "5" {
+		t.Fatalf("retry-after=%q want 5", got)
 	}
 	dec := xml.NewDecoder(w.Body)
 	var tv struct {
@@ -51,6 +57,19 @@ func TestXMLTV_serve(t *testing.T) {
 	}
 	if !strings.Contains(tv.Programmes[0].Desc, "Temporary placeholder") {
 		t.Fatalf("programme desc=%q", tv.Programmes[0].Desc)
+	}
+}
+
+func TestXMLTV_serveCachedGuideReady(t *testing.T) {
+	x := &XMLTV{cachedXML: []byte(`<?xml version="1.0"?><tv></tv>`)}
+	req := httptest.NewRequest(http.MethodGet, "/guide.xml", nil)
+	w := httptest.NewRecorder()
+	x.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code: %d", w.Code)
+	}
+	if got := w.Header().Get(guideStateHeader); got != "ready" {
+		t.Fatalf("guide state header=%q want ready", got)
 	}
 }
 
@@ -146,6 +165,7 @@ func TestXMLTV_epgPruneUnlinked(t *testing.T) {
 		},
 		EpgPruneUnlinked: true,
 	}
+	x.runRefresh("test")
 	req := httptest.NewRequest(http.MethodGet, "/guide.xml", nil)
 	w := httptest.NewRecorder()
 	x.ServeHTTP(w, req)
@@ -184,6 +204,7 @@ func TestXMLTV_forceLineupMatchOverridesPrune(t *testing.T) {
 		EpgPruneUnlinked:    true,
 		EpgForceLineupMatch: true,
 	}
+	x.runRefresh("test")
 	req := httptest.NewRequest(http.MethodGet, "/guide.xml", nil)
 	w := httptest.NewRecorder()
 	x.ServeHTTP(w, req)
@@ -378,6 +399,7 @@ func TestXMLTV_externalSourceRemap(t *testing.T) {
 		},
 		SourceURL: upstream.URL,
 	}
+	x.runRefresh("test")
 	req := httptest.NewRequest(http.MethodGet, "/guide.xml", nil)
 	w := httptest.NewRecorder()
 	x.ServeHTTP(w, req)

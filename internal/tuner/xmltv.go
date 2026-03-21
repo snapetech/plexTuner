@@ -162,6 +162,8 @@ type xmltvTextPolicy struct {
 	NonLatinTitleFallback string // "", "channel"
 }
 
+const guideStateHeader = "X-IptvTunerr-Guide-State"
+
 func (x *XMLTV) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/guide.xml" {
 		http.NotFound(w, r)
@@ -173,10 +175,16 @@ func (x *XMLTV) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	x.mu.RUnlock()
 	if len(data) > 0 {
 		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+		w.Header().Set(guideStateHeader, "ready")
 		_, _ = w.Write(data)
 		return
 	}
-	// Cache empty (startup race before first refresh completes): serve placeholder.
+	// Cache empty (startup race before first refresh completes): serve a visible placeholder,
+	// but do not return a success status that consumers can cache as a real guide.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Retry-After", "5")
+	w.Header().Set(guideStateHeader, "loading")
+	w.WriteHeader(http.StatusServiceUnavailable)
 	x.servePlaceholderXMLTV(w, x.filteredChannels())
 }
 

@@ -26,6 +26,9 @@ func TestHDHR_discover(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("code: %d", w.Code)
 	}
+	if got := w.Header().Get(hdhrStartupStateHeader); got != "loading" {
+		t.Fatalf("startup state header=%q want loading", got)
+	}
 	var out map[string]interface{}
 	if err := json.NewDecoder(w.Body).Decode(&out); err != nil {
 		t.Fatal(err)
@@ -57,6 +60,9 @@ func TestHDHR_lineup(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("code: %d", w.Code)
 	}
+	if got := w.Header().Get(hdhrStartupStateHeader); got != "" {
+		t.Fatalf("startup state header=%q want empty", got)
+	}
 	var out []map[string]string
 	if err := json.NewDecoder(w.Body).Decode(&out); err != nil {
 		t.Fatal(err)
@@ -79,6 +85,9 @@ func TestHDHR_lineup_status(t *testing.T) {
 	h.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("code: %d", w.Code)
+	}
+	if got := w.Header().Get(hdhrStartupStateHeader); got != "loading" {
+		t.Fatalf("startup state header=%q want loading", got)
 	}
 	var out map[string]interface{}
 	if err := json.NewDecoder(w.Body).Decode(&out); err != nil {

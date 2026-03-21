@@ -192,7 +192,7 @@ Three guide sources, merged automatically in priority order — highest wins per
 2. **External XMLTV** — set `IPTV_TUNERR_XMLTV_URL` to fetch an upstream guide; filtered to your channels, remapped to local guide numbers. Gap-fills provider for time windows the provider EPG doesn't cover.
 3. **Built-in placeholder** — always available, zero config. Fallback for channels with no data from either source above.
 
-Guide cache is pre-warmed at startup, so the first guide request is not cold. If a fetch fails, stale data is served instead of blanking the guide. Language and script normalization can also clean up multilingual feeds (`IPTV_TUNERR_XMLTV_PREFER_LANGS`, `IPTV_TUNERR_XMLTV_PREFER_LATIN`).
+Guide cache is pre-warmed at startup, so the first guide request is not cold. Until the first real merged guide is ready, `/guide.xml` now returns `503 Service Unavailable` with a visible placeholder XMLTV body plus `Retry-After: 5` and `X-IptvTunerr-Guide-State: loading`, which keeps clients from caching provisional startup data as a real guide. If a later fetch fails, stale data is served instead of blanking the guide. Language and script normalization can also clean up multilingual feeds (`IPTV_TUNERR_XMLTV_PREFER_LANGS`, `IPTV_TUNERR_XMLTV_PREFER_LATIN`).
 
 During catalog build, IPTV Tunerr can also repair or assign channel `TVGID`s from
 provider/external XMLTV channel metadata before `LIVE_EPG_ONLY` filtering runs. That
