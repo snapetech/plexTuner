@@ -256,10 +256,12 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 		if ffmpegPath, ffmpegErr := resolveFFmpegPath(); ffmpegErr == nil {
 			attempt.setFFmpegHeaders(attemptIdx, ffmpegHeaderSummary(g.ffmpegInputHeaderBlock(r, effectiveURL, "")))
 			if err := g.relayHLSWithFFmpeg(w, r, ffmpegPath, streamURL, channel.GuideName, channelID, channel.GuideNumber, channel.TVGID, start, transcode, bufferSize, forcedProfile, hotStart, outputMux); err == nil {
+				g.noteHLSRemuxSuccess(streamURL)
 				g.rememberAutopilotDecision(channel, clientClass, transcode, effectiveProfileName(g, channel, channelID, forcedProfile), adaptReason, streamURL)
 				return "ok", "hls_ffmpeg", effectiveURL, true
 			}
 			attempt.markUpstreamError(attemptIdx, "ffmpeg_hls_failed", err)
+			g.noteHLSRemuxFailure(streamURL)
 			g.noteUpstreamFailure(streamURL, 0, "ffmpeg_hls_failed")
 			log.Printf("gateway: channel=%q id=%s ffmpeg-%s failed (falling back to go relay): %v",
 				channel.GuideName, channelID, mode, err)

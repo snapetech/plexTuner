@@ -14,6 +14,8 @@
 
 **Latest (2026-03-21):** **Cross-host HLS segment header fix:** tester logs still showed **Go relay** `.ts` fetches hitting **403** after the remux skip, so the remaining problem was HLS subrequest context, not ffmpeg. Playlist/segment subrequests now inherit fallback **`Referer`** and **`Origin`** from the current playlist URL when the client did not provide them, and the cross-host regression test now models a CDN that rejects segment fetches without that playlist context.
 
+**Latest (2026-03-21):** **Repeated remux-attempt fix:** later tester logs showed the same host still taking the ffmpeg-remux path on later tunes even after prior `ffmpeg_hls_failed` outcomes. Root cause was that generic playlist success cleared host penalty too early. Tunerr now keeps a dedicated HLS remux-failure penalty so later tunes on the same host prefer the Go relay instead of retrying the same dead remux path.
+
 **Latest (2026-03-21):** **Evidence intake path:** added **`scripts/evidence-intake.sh`**, [how-to/evidence-intake](../docs/how-to/evidence-intake.md), and **`planning/README.md`** so working-vs-failing tester cases can be staged consistently under **`.diag/evidence/<case-id>/`** with debug-bundle output, PMS logs, Tunerr logs, pcaps, and notes before running **`scripts/analyze-bundle.py`**.
 
 **Latest (2026-03-21):** **Visible placeholder guide content:** the startup placeholder `/guide.xml` now labels itself as a loading placeholder in XMLTV source metadata and emits programme titles like **`<channel> (guide loading)`** with a short description so Plex users can tell the guide is still building instead of reading the temporary rows as normal data.

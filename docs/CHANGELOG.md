@@ -13,11 +13,14 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.24] — 2026-03-21
+
 ## [v0.1.23] — 2026-03-21
 
 ### Streaming
 - **Cross-host HLS remux guardrail:** non-transcode HLS now skips ffmpeg remux and goes straight to the Go relay when a playlist references media/key/map/variant URLs on a different host than the playlist itself, avoiding static ffmpeg header/Host context leaking across host boundaries. Added **`IPTV_TUNERR_HLS_RELAY_ALLOW_FFMPEG_CROSS_HOST`** as an explicit opt-out.
 - **Cross-host HLS segment context:** Go-relay HLS playlist/segment subrequests now inherit the current playlist as fallback **`Referer`** and **`Origin`** when the client did not provide them, which helps provider/CDN segment hosts that reject cross-host `.ts` fetches without playlist context.
+- **Remux failure memory now sticks:** ffmpeg-remux failure preference is no longer erased by a later successful playlist fetch on the same host. Tunerr now keeps a dedicated remux-failure penalty for HLS hosts, so later tunes on the same provider/CDN path prefer the Go relay instead of retrying the same dead ffmpeg-remux path.
 
 ## [v0.1.22] — 2026-03-21
 

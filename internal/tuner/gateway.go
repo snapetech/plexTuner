@@ -99,6 +99,7 @@ type Gateway struct {
 	lastDashMuxAt              time.Time
 	lastDashMuxURL             string
 	hostFailures               map[string]hostFailureStat
+	hlsRemuxFailures           map[string]hostFailureStat
 	attemptsMu                 sync.Mutex
 	recentAttempts             []StreamAttemptRecord
 	adaptStickyMu              sync.Mutex
