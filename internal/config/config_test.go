@@ -481,8 +481,8 @@ func TestWebUIConfig(t *testing.T) {
 	if c.WebUIStateFile != "" {
 		t.Fatalf("WebUIStateFile default: got %q want empty", c.WebUIStateFile)
 	}
-	if c.WebUIUser != "admin" || c.WebUIPass != "admin" {
-		t.Fatalf("default webui creds: got %q/%q want admin/admin", c.WebUIUser, c.WebUIPass)
+	if c.WebUIUser != "" || c.WebUIPass != "" {
+		t.Fatalf("default webui creds: got %q/%q want empty/empty", c.WebUIUser, c.WebUIPass)
 	}
 
 	os.Setenv("IPTV_TUNERR_WEBUI_DISABLED", "1")

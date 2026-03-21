@@ -22,6 +22,23 @@ Append-only. One entry per completed task.
 
 ## Entries
 
+- Date: 2026-03-21
+  Title: Harden guide-input fetches and deck auth/state handling
+  Summary:
+    - Reworked **`internal/guideinput`** so remote guide fetches resolve only through a prepared exact allowlist map before any outbound request is built, addressing the CodeQL uncontrolled-network-request path cleanly.
+    - Removed the dedicated deck’s `admin/admin` fallback: unset **`IPTV_TUNERR_WEBUI_PASS`** now generates a one-time startup password, and persisted web UI state no longer stores deck credentials or browser-authored telemetry.
+    - Narrowed **`/deck/settings.json`** to non-secret refresh preferences and kept **`/deck/activity.json`** read-only/server-derived; updated runtime/docs/tests to match.
+  Verification:
+    - `go test ./internal/guideinput ./internal/webui ./internal/config ./cmd/iptv-tunerr`
+    - `node --check internal/webui/deck.js`
+    - `./scripts/verify`
+  Notes:
+    - Browser-local trend cards still exist, but shared deck telemetry is no longer client-authored server state.
+  Opportunities filed:
+    - `memory-bank/opportunities.md` startup/registration readiness contract follow-up
+  Links:
+    - CodeQL issue #34 + control-deck hardening
+
 - Date: 2026-03-20
   Title: Project-backlog shipped vs open audit + opportunities status
   Summary:

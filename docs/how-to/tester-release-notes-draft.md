@@ -25,7 +25,7 @@ Highlights:
 
 - Does the dedicated deck at `http://127.0.0.1:48879/` feel complete and coherent, not like a debug slab?
 - Can you log in, navigate between lanes, run safe actions, and inspect grouped runtime/settings surfaces without getting lost?
-- Do deck trends, shared operator activity, and deck settings survive reloads or restarts when `IPTV_TUNERR_WEBUI_STATE_FILE` is configured?
+- Do browser-local deck trends, server-derived operator activity, and deck refresh preferences behave sensibly across reloads or restarts when `IPTV_TUNERR_WEBUI_STATE_FILE` is configured?
 - Do sign-out and other state-changing controls behave normally with the new session/CSRF guardrails?
 
 ### Live TV / DVR behavior
@@ -60,7 +60,7 @@ If testing a supervisor build (single app managing multiple child tuners):
 
 ### Operator deck
 
-- Added the dedicated deck on `:48879` with its own login/session flow, shared operator activity, shared telemetry memory, safe actions/workflows, richer settings/runtime inspection, and grouped endpoint drill-down.
+- Added the dedicated deck on `:48879` with its own login/session flow, server-derived operator activity, browser-local trend memory, safe actions/workflows, richer settings/runtime inspection, and grouped endpoint drill-down.
 - Deck mutations now use a session-bound CSRF header, and sign-out is a deliberate POST instead of a GET side effect.
 
 ### HLS / DASH / observability

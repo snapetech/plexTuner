@@ -100,3 +100,23 @@ func TestLoadGuideData_RemoteRequiresConfiguredURL(t *testing.T) {
 		t.Fatalf("http got %q", got)
 	}
 }
+
+func TestLookupAllowedRemoteGuideRefReturnsAllowlistedTarget(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
+	allowed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not used", http.StatusNotImplemented)
+	}))
+	defer allowed.Close()
+	t.Setenv("IPTV_TUNERR_XMLTV_URL", allowed.URL)
+
+	remote, ok, err := lookupAllowedRemoteGuideRef(allowed.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected remote ref to be allowed")
+	}
+	if remote.URL() != allowed.URL {
+		t.Fatalf("remote URL=%q want %q", remote.URL(), allowed.URL)
+	}
+}

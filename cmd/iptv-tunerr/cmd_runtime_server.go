@@ -189,23 +189,24 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"friendly_name": cfg.HDHRFriendlyName,
 		},
 		WebUI: map[string]interface{}{
-			"enabled":               cfg.WebUIEnabled,
-			"port":                  cfg.WebUIPort,
-			"allow_lan":             cfg.WebUIAllowLAN,
-			"state_file":            cfg.WebUIStateFile,
-			"memory_persisted":      strings.TrimSpace(cfg.WebUIStateFile) != "",
-			"auth_user":             cfg.WebUIUser,
-			"auth_default_password": cfg.WebUIUser == "admin" && cfg.WebUIPass == "admin",
-			"legacy_ui":             os.Getenv("IPTV_TUNERR_UI_DISABLED") != "1",
-			"legacy_lan":            os.Getenv("IPTV_TUNERR_UI_ALLOW_LAN") == "1",
-			"telemetry_endpoint":    "/deck/telemetry.json",
-			"activity_endpoint":     "/deck/activity.json",
-			"settings_endpoint":     "/deck/settings.json",
-			"csrf_header":           "X-IPTVTunerr-Deck-CSRF",
-			"telemetry_history_max": 96,
-			"activity_history_max":  64,
-			"login_failure_limit":   8,
-			"login_failure_window":  "15m",
+			"enabled":                 cfg.WebUIEnabled,
+			"port":                    cfg.WebUIPort,
+			"allow_lan":               cfg.WebUIAllowLAN,
+			"state_file":              cfg.WebUIStateFile,
+			"memory_persisted":        strings.TrimSpace(cfg.WebUIStateFile) != "",
+			"auth_user":               effectiveWebUIUser(cfg),
+			"auth_default_password":   effectiveWebUIUser(cfg) == "admin" && strings.TrimSpace(cfg.WebUIPass) == "admin",
+			"auth_generated_password": strings.TrimSpace(cfg.WebUIPass) == "",
+			"legacy_ui":               os.Getenv("IPTV_TUNERR_UI_DISABLED") != "1",
+			"legacy_lan":              os.Getenv("IPTV_TUNERR_UI_ALLOW_LAN") == "1",
+			"telemetry_endpoint":      "/deck/telemetry.json",
+			"activity_endpoint":       "/deck/activity.json",
+			"settings_endpoint":       "/deck/settings.json",
+			"csrf_header":             "X-IPTVTunerr-Deck-CSRF",
+			"telemetry_history_max":   96,
+			"activity_history_max":    64,
+			"login_failure_limit":     8,
+			"login_failure_window":    "15m",
 		},
 		MediaServers: map[string]interface{}{
 			"emby_host_configured":      strings.TrimSpace(cfg.EmbyHost) != "",
@@ -256,4 +257,11 @@ func nowUTC() string {
 		return forced
 	}
 	return time.Now().UTC().Format(time.RFC3339)
+}
+
+func effectiveWebUIUser(cfg *config.Config) string {
+	if user := strings.TrimSpace(cfg.WebUIUser); user != "" {
+		return user
+	}
+	return "admin"
 }

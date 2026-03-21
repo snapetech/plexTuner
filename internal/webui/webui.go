@@ -36,6 +36,7 @@ const csrfHeaderName = "X-IPTVTunerr-Deck-CSRF"
 const sessionTTL = 12 * time.Hour
 const failedLoginLimit = 8
 const failedLoginWindow = 15 * time.Minute
+const generatedDeckPasswordLength = 18
 
 //go:embed index.html
 var indexHTML string
@@ -143,7 +144,8 @@ func New(port int, tunerAddr, version string, allowLAN bool, stateFile, user, pa
 		user = "admin"
 	}
 	if pass == "" {
-		pass = "admin"
+		pass = mustGenerateDeckPassword(generatedDeckPasswordLength)
+		log.Printf("webui: generated one-time password for %q; set IPTV_TUNERR_WEBUI_PASS to pin it", user)
 	}
 	return &Server{
 		Port:      port,
@@ -225,28 +227,6 @@ func (s *Server) telemetry(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		s.writeTelemetry(w)
-	case http.MethodPost:
-		var sample DeckTelemetrySample
-		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
-		if err != nil {
-			http.Error(w, `{"error":"read telemetry body"}`, http.StatusBadRequest)
-			return
-		}
-		if err := json.Unmarshal(body, &sample); err != nil {
-			http.Error(w, `{"error":"invalid telemetry json"}`, http.StatusBadRequest)
-			return
-		}
-		if strings.TrimSpace(sample.SampledAt) == "" {
-			sample.SampledAt = time.Now().UTC().Format(time.RFC3339)
-		}
-		s.telemetryMu.Lock()
-		s.telemetrySamples = append(s.telemetrySamples, sample)
-		s.trimTelemetryLocked()
-		s.telemetryMu.Unlock()
-		if err := s.persistState(); err != nil {
-			log.Printf("webui state persist: %v", err)
-		}
-		s.writeTelemetry(w)
 	case http.MethodDelete:
 		s.telemetryMu.Lock()
 		s.telemetrySamples = nil
@@ -281,23 +261,6 @@ func (s *Server) activity(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	switch r.Method {
 	case http.MethodGet:
-		s.writeActivity(w)
-	case http.MethodPost:
-		var entry DeckActivityEntry
-		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
-		if err != nil {
-			http.Error(w, `{"error":"read activity body"}`, http.StatusBadRequest)
-			return
-		}
-		if err := json.Unmarshal(body, &entry); err != nil {
-			http.Error(w, `{"error":"invalid activity json"}`, http.StatusBadRequest)
-			return
-		}
-		if strings.TrimSpace(entry.Kind) == "" || strings.TrimSpace(entry.Title) == "" {
-			http.Error(w, `{"error":"activity kind and title required"}`, http.StatusBadRequest)
-			return
-		}
-		s.recordActivityWithEntry(entry)
 		s.writeActivity(w)
 	case http.MethodDelete:
 		s.activityMu.Lock()
@@ -342,32 +305,14 @@ func (s *Server) deckSettings(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"invalid settings json"}`, http.StatusBadRequest)
 			return
 		}
-		req.AuthUser = strings.TrimSpace(req.AuthUser)
-		req.AuthPass = strings.TrimSpace(req.AuthPass)
-		if req.AuthUser == "" {
-			http.Error(w, `{"error":"auth_user required"}`, http.StatusBadRequest)
-			return
-		}
-		if req.AuthPass == "" {
-			s.settingsMu.RLock()
-			req.AuthPass = s.settings.AuthPass
-			s.settingsMu.RUnlock()
-		}
-		if len(req.AuthPass) < 3 {
-			http.Error(w, `{"error":"auth_pass must be at least 3 characters"}`, http.StatusBadRequest)
-			return
-		}
 		if req.DefaultRefreshSec < 0 || req.DefaultRefreshSec > 3600 {
 			http.Error(w, `{"error":"default_refresh_sec must be between 0 and 3600"}`, http.StatusBadRequest)
 			return
 		}
 		s.settingsMu.Lock()
-		s.settings.AuthUser = req.AuthUser
-		s.settings.AuthPass = req.AuthPass
 		s.settings.DefaultRefreshSec = req.DefaultRefreshSec
 		s.settingsMu.Unlock()
 		s.recordActivity("settings", "deck_settings_updated", "Deck settings were updated.", map[string]interface{}{
-			"auth_user":           req.AuthUser,
 			"default_refresh_sec": req.DefaultRefreshSec,
 			"persisted":           strings.TrimSpace(s.StateFile) != "",
 		})
@@ -424,22 +369,12 @@ func (s *Server) loadState() error {
 	if err := json.Unmarshal(data, &state); err != nil {
 		return fmt.Errorf("decode %s: %w", s.StateFile, err)
 	}
-	s.telemetryMu.Lock()
-	s.telemetrySamples = append([]DeckTelemetrySample(nil), state.Samples...)
-	s.trimTelemetryLocked()
-	s.telemetryMu.Unlock()
 	s.activityMu.Lock()
 	s.activityEntries = append([]DeckActivityEntry(nil), state.Activity...)
 	s.trimActivityLocked()
 	s.activityMu.Unlock()
 	if state.Settings != nil {
 		s.settingsMu.Lock()
-		if strings.TrimSpace(state.Settings.AuthUser) != "" {
-			s.settings.AuthUser = strings.TrimSpace(state.Settings.AuthUser)
-		}
-		if strings.TrimSpace(state.Settings.AuthPass) != "" {
-			s.settings.AuthPass = strings.TrimSpace(state.Settings.AuthPass)
-		}
 		if state.Settings.DefaultRefreshSec >= 0 {
 			s.settings.DefaultRefreshSec = state.Settings.DefaultRefreshSec
 		}
@@ -452,22 +387,17 @@ func (s *Server) persistState() error {
 	if strings.TrimSpace(s.StateFile) == "" {
 		return nil
 	}
-	s.telemetryMu.Lock()
 	s.activityMu.Lock()
 	s.settingsMu.RLock()
 	state := persistedDeckState{
 		SavedAt:  time.Now().UTC().Format(time.RFC3339),
-		Samples:  append([]DeckTelemetrySample(nil), s.telemetrySamples...),
 		Activity: append([]DeckActivityEntry(nil), s.activityEntries...),
 		Settings: &DeckSettings{
-			AuthUser:          s.settings.AuthUser,
-			AuthPass:          s.settings.AuthPass,
 			DefaultRefreshSec: s.settings.DefaultRefreshSec,
 		},
 	}
 	s.settingsMu.RUnlock()
 	s.activityMu.Unlock()
-	s.telemetryMu.Unlock()
 	body, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode %s: %w", s.StateFile, err)
@@ -671,6 +601,22 @@ func (s *Server) validCredentials(user, pass string) bool {
 	defer s.settingsMu.RUnlock()
 	return subtle.ConstantTimeCompare([]byte(user), []byte(s.settings.AuthUser)) == 1 &&
 		subtle.ConstantTimeCompare([]byte(pass), []byte(s.settings.AuthPass)) == 1
+}
+
+func mustGenerateDeckPassword(length int) string {
+	if length < 12 {
+		length = 12
+	}
+	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+	buf := make([]byte, length)
+	if _, err := rand.Read(buf); err != nil {
+		panic(fmt.Errorf("generate deck password: %w", err))
+	}
+	out := make([]byte, length)
+	for i, b := range buf {
+		out[i] = alphabet[int(b)%len(alphabet)]
+	}
+	return string(out)
 }
 
 func (s *Server) hasValidSession(r *http.Request) bool {

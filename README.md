@@ -119,7 +119,7 @@ Three ways to add IPTV Tunerr to Plex, Emby, or Jellyfin — pick the one that f
 > Then: Dashboard → Live TV → + (guide) → XMLTV
 > Guide URL: `http://<this-host>:5004/guide.xml`
 
-Dedicated web UI: `http://127.0.0.1:48879/` by default (`0xBEEF`) with integrated health, guide, channel, recorder, provider, debug, and runtime-settings views. It opens on a dedicated login page and creates a cookie-backed deck session, defaulting to `admin` / `admin` unless `IPTV_TUNERR_WEBUI_USER` / `IPTV_TUNERR_WEBUI_PASS` override it; direct HTTP Basic auth still works for scripts. It stays localhost-only unless `IPTV_TUNERR_WEBUI_ALLOW_LAN=1`, optional `IPTV_TUNERR_WEBUI_STATE_FILE` persists shared deck telemetry/history/settings across web UI restarts, and the deck now includes shared operator activity, safe operator actions/workflows, grouped raw-endpoint indexing, and session-bound CSRF protection for state-changing controls.
+Dedicated web UI: `http://127.0.0.1:48879/` by default (`0xBEEF`) with integrated health, guide, channel, recorder, provider, debug, and runtime-settings views. It opens on a dedicated login page and creates a cookie-backed deck session; if `IPTV_TUNERR_WEBUI_PASS` is unset, Tunerr now generates a one-time startup password instead of falling back to `admin/admin`. Direct HTTP Basic auth still works for scripts. It stays localhost-only unless `IPTV_TUNERR_WEBUI_ALLOW_LAN=1`, optional `IPTV_TUNERR_WEBUI_STATE_FILE` persists server-derived operator activity plus non-secret deck preferences across web UI restarts, and the deck now includes safe operator actions/workflows, grouped raw-endpoint indexing, and session-bound CSRF protection for state-changing controls.
 
 **Programmatic (all servers, headless):**
 ```bash

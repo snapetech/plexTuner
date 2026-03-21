@@ -25,9 +25,9 @@ const endpoints = {
 };
 const csrfHeaderName = "X-IPTVTunerr-Deck-CSRF";
 const endpointCatalog = {
-  deckTelemetry: { title: "Deck Telemetry", category: "Deck Memory", summary: "Shared trend samples across reloads and browsers." },
-  deckActivity: { title: "Deck Activity", category: "Deck Memory", summary: "Shared operator activity trail for the dedicated deck." },
-  deckSettings: { title: "Deck Settings", category: "Deck Control", summary: "Editable login user and default refresh cadence for the dedicated deck." },
+  deckTelemetry: { title: "Deck Telemetry", category: "Deck Memory", summary: "Read-only deck telemetry endpoint; browser trend memory stays local to the current operator session." },
+  deckActivity: { title: "Deck Activity", category: "Deck Memory", summary: "Server-derived operator activity trail for the dedicated deck." },
+  deckSettings: { title: "Deck Settings", category: "Deck Control", summary: "Runtime-backed deck posture and editable refresh cadence for the dedicated deck." },
   runtime: { title: "Runtime Snapshot", category: "Runtime", summary: "Effective config and capability snapshot for the running tuner." },
   health: { title: "Health", category: "Runtime", summary: "Basic liveness and loaded-channel count." },
   guideHealth: { title: "Guide Health", category: "Guide", summary: "Guide quality, placeholder count, and stale-channel pressure." },
@@ -281,14 +281,6 @@ function renderDeckSettingsPanel(settings) {
   deckSettingsForm.innerHTML = `
     <div class="deck-settings-grid">
       <label>
-        Deck Username
-        <input id="deck-settings-user" type="text" value="${esc(settings?.auth_user || "admin")}" autocomplete="username">
-      </label>
-      <label>
-        New Deck Password
-        <input id="deck-settings-pass" type="password" value="" placeholder="Leave blank to keep current password" autocomplete="new-password">
-      </label>
-      <label>
         Default Refresh
         <select id="deck-settings-refresh">
           <option value="0"${refreshValue === 0 ? " selected" : ""}>Manual</option>
@@ -300,10 +292,10 @@ function renderDeckSettingsPanel(settings) {
       </label>
     </div>
     <div class="deck-settings-actions">
-      <button id="deck-settings-save" type="button">Save Deck Settings</button>
+      <button id="deck-settings-save" type="button">Save Deck Preferences</button>
     </div>
     <div class="deck-settings-note">
-      Session TTL: ${esc(pretty(settings?.effective_session_ttl_minutes))} minutes. Login rate limit: ${esc(pretty(settings?.login_failure_limit))} failures per ${esc(pretty(settings?.login_failure_window_minutes))} minutes. ${settings?.state_persisted ? "Changes persist across restarts." : "Without a web UI state file, changes last only until this process restarts."}
+      Session TTL: ${esc(pretty(settings?.effective_session_ttl_minutes))} minutes. Login rate limit: ${esc(pretty(settings?.login_failure_limit))} failures per ${esc(pretty(settings?.login_failure_window_minutes))} minutes. Authentication is configured from startup env only. ${settings?.state_persisted ? "Deck preferences persist across restarts." : "Without a web UI state file, deck preferences last only until this process restarts."}
     </div>
   `;
 }
@@ -727,23 +719,8 @@ function recordTelemetry(metrics) {
 
 async function syncDeckTelemetry(metrics) {
   recordTelemetry(metrics);
-  const sample = {
-    sampled_at: new Date().toISOString(),
-    health_ok: metrics.healthOK,
-    guide_percent: metrics.guidePercent,
-    stream_percent: metrics.streamPercent,
-    recorder_percent: metrics.recorderPercent,
-    ops_percent: metrics.opsPercent
-  };
   try {
-    const res = await fetch(endpoints.deckTelemetry, {
-      method: "POST",
-      headers: authHeaders({
-        "Accept": "application/json",
-        "Content-Type": "application/json"
-      }),
-      body: JSON.stringify(sample)
-    });
+    const res = await fetch(endpoints.deckTelemetry, { headers: authHeaders({ "Accept": "application/json" }) });
     const text = await res.text();
     const body = text ? JSON.parse(text) : {};
     state.sharedTelemetry.samples = normalizeArray(body.samples);
@@ -766,19 +743,16 @@ async function clearDeckTelemetry() {
 }
 
 async function syncDeckActivity(entry) {
+  if (entry) {
+    state.activity.entries = normalizeArray(state.activity.entries);
+  }
   try {
-    const res = await fetch(endpoints.deckActivity, {
-      method: "POST",
-      headers: authHeaders({
-        "Accept": "application/json",
-        "Content-Type": "application/json"
-      }),
-      body: JSON.stringify(entry)
-    });
+    const res = await fetch(endpoints.deckActivity, { headers: authHeaders({ "Accept": "application/json" }) });
     const text = await res.text();
     const body = text ? JSON.parse(text) : {};
     state.activity.entries = normalizeArray(body.entries);
   } catch {
+    state.activity.entries = [];
   }
 }
 
@@ -1183,13 +1157,9 @@ async function postAction(actionKey) {
 }
 
 async function saveDeckSettings() {
-  const userEl = document.getElementById("deck-settings-user");
-  const passEl = document.getElementById("deck-settings-pass");
   const refreshEl = document.getElementById("deck-settings-refresh");
-  if (!userEl || !passEl || !refreshEl) return;
+  if (!refreshEl) return;
   const payload = {
-    auth_user: userEl.value.trim(),
-    auth_pass: passEl.value,
     default_refresh_sec: Number(refreshEl.value || 0)
   };
   try {
@@ -1215,10 +1185,10 @@ async function saveDeckSettings() {
     await syncDeckActivity({
       kind: "settings",
       title: "deck_settings_saved",
-      message: `Deck controls updated for ${body.auth_user}.`,
+      message: "Deck preferences updated.",
       detail: { default_refresh_sec: body.default_refresh_sec }
     });
-    setActionFeedback({ ok: true, action: "deck_settings", message: "Deck settings saved." });
+    setActionFeedback({ ok: true, action: "deck_settings", message: "Deck preferences saved." });
     await reloadDeck();
   } catch (err) {
     setActionFeedback({ ok: false, action: "deck_settings", message: String(err) });

@@ -50,16 +50,20 @@ func TestProxyForwardsAPIPath(t *testing.T) {
 	}
 }
 
-func TestTelemetryPOSTGETAndDELETE(t *testing.T) {
-	s := &Server{}
-
-	postReq := httptest.NewRequest(http.MethodPost, "/deck/telemetry.json", bytes.NewBufferString(`{"sampled_at":"2026-03-20T03:00:00Z","health_ok":true,"guide_percent":92}`))
-	postW := httptest.NewRecorder()
-	s.telemetry(postW, postReq)
-	if postW.Code != http.StatusOK {
-		t.Fatalf("post status=%d body=%s", postW.Code, postW.Body.String())
+func TestNewGeneratesPasswordWhenUnset(t *testing.T) {
+	s := New(DefaultPort, ":5004", "test", false, "", "", "")
+	if s.settings.AuthUser != "admin" {
+		t.Fatalf("auth user=%q want admin", s.settings.AuthUser)
 	}
+	if s.settings.AuthPass == "" || s.settings.AuthPass == "admin" {
+		t.Fatalf("auth pass=%q want generated non-default password", s.settings.AuthPass)
+	}
+}
 
+func TestTelemetryGETAndDeleteOnly(t *testing.T) {
+	s := &Server{
+		telemetrySamples: []DeckTelemetrySample{{SampledAt: "2026-03-20T03:00:00Z", GuidePercent: 92}},
+	}
 	getReq := httptest.NewRequest(http.MethodGet, "/deck/telemetry.json", nil)
 	getW := httptest.NewRecorder()
 	s.telemetry(getW, getReq)
@@ -68,6 +72,13 @@ func TestTelemetryPOSTGETAndDELETE(t *testing.T) {
 	}
 	if got := getW.Body.String(); got == "" || !bytes.Contains(getW.Body.Bytes(), []byte(`"count": 1`)) {
 		t.Fatalf("unexpected get body=%s", got)
+	}
+
+	postReq := httptest.NewRequest(http.MethodPost, "/deck/telemetry.json", bytes.NewBufferString(`{"sampled_at":"2026-03-20T03:00:00Z","health_ok":true,"guide_percent":92}`))
+	postW := httptest.NewRecorder()
+	s.telemetry(postW, postReq)
+	if postW.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("post status=%d body=%s", postW.Code, postW.Body.String())
 	}
 
 	delReq := httptest.NewRequest(http.MethodDelete, "/deck/telemetry.json", nil)
@@ -81,44 +92,36 @@ func TestTelemetryPOSTGETAndDELETE(t *testing.T) {
 	}
 }
 
-func TestTelemetryPersistsToStateFile(t *testing.T) {
+func TestPersistStateExcludesTelemetryAndAuthSecret(t *testing.T) {
 	dir := t.TempDir()
 	stateFile := filepath.Join(dir, "deck-state.json")
-	s := &Server{StateFile: stateFile}
-
-	postReq := httptest.NewRequest(http.MethodPost, "/deck/telemetry.json", bytes.NewBufferString(`{"sampled_at":"2026-03-20T03:00:00Z","health_ok":true,"guide_percent":92}`))
-	postW := httptest.NewRecorder()
-	s.telemetry(postW, postReq)
-	if postW.Code != http.StatusOK {
-		t.Fatalf("post status=%d body=%s", postW.Code, postW.Body.String())
+	s := &Server{
+		StateFile:        stateFile,
+		telemetrySamples: []DeckTelemetrySample{{SampledAt: "2026-03-20T03:00:00Z", GuidePercent: 92}},
+		settings:         DeckSettings{AuthUser: "admin", AuthPass: "supersecret", DefaultRefreshSec: 45},
+	}
+	if err := s.persistState(); err != nil {
+		t.Fatalf("persistState: %v", err)
 	}
 	data, err := os.ReadFile(stateFile)
 	if err != nil {
 		t.Fatalf("read state file: %v", err)
 	}
-	if !bytes.Contains(data, []byte(`"guide_percent": 92`)) {
-		t.Fatalf("state file missing sample: %s", string(data))
+	if bytes.Contains(data, []byte(`"guide_percent"`)) {
+		t.Fatalf("state file should not persist telemetry: %s", string(data))
 	}
-
-	reloaded := &Server{StateFile: stateFile}
-	if err := reloaded.loadState(); err != nil {
-		t.Fatalf("loadState: %v", err)
+	if bytes.Contains(data, []byte(`supersecret`)) {
+		t.Fatalf("state file should not persist auth pass: %s", string(data))
 	}
-	if len(reloaded.telemetrySamples) != 1 {
-		t.Fatalf("telemetry samples=%d want 1", len(reloaded.telemetrySamples))
+	if !bytes.Contains(data, []byte(`"default_refresh_sec": 45`)) {
+		t.Fatalf("state file missing refresh setting: %s", string(data))
 	}
 }
 
-func TestActivityPOSTGETAndDELETE(t *testing.T) {
-	s := &Server{}
-
-	postReq := httptest.NewRequest(http.MethodPost, "/deck/activity.json", bytes.NewBufferString(`{"kind":"action","title":"guide_refresh","message":"started"}`))
-	postW := httptest.NewRecorder()
-	s.activity(postW, postReq)
-	if postW.Code != http.StatusOK {
-		t.Fatalf("post status=%d body=%s", postW.Code, postW.Body.String())
+func TestActivityGETAndDeleteOnly(t *testing.T) {
+	s := &Server{
+		activityEntries: []DeckActivityEntry{{Kind: "action", Title: "guide_refresh", Message: "started"}},
 	}
-
 	getReq := httptest.NewRequest(http.MethodGet, "/deck/activity.json", nil)
 	getW := httptest.NewRecorder()
 	s.activity(getW, getReq)
@@ -127,6 +130,13 @@ func TestActivityPOSTGETAndDELETE(t *testing.T) {
 	}
 	if got := getW.Body.String(); got == "" || !bytes.Contains(getW.Body.Bytes(), []byte(`"count": 1`)) {
 		t.Fatalf("unexpected get body=%s", got)
+	}
+
+	postReq := httptest.NewRequest(http.MethodPost, "/deck/activity.json", bytes.NewBufferString(`{"kind":"action","title":"guide_refresh","message":"started"}`))
+	postW := httptest.NewRecorder()
+	s.activity(postW, postReq)
+	if postW.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("post status=%d body=%s", postW.Code, postW.Body.String())
 	}
 
 	delReq := httptest.NewRequest(http.MethodDelete, "/deck/activity.json", nil)
@@ -271,7 +281,7 @@ func TestLoginIgnoresRedirectTargets(t *testing.T) {
 
 func TestDeckSettingsGETAndPOST(t *testing.T) {
 	s := &Server{
-		settings: DeckSettings{AuthUser: "admin", AuthPass: "admin", DefaultRefreshSec: 30},
+		settings: DeckSettings{AuthUser: "admin", AuthPass: "secret123", DefaultRefreshSec: 30},
 	}
 	getReq := httptest.NewRequest(http.MethodGet, "/deck/settings.json", nil)
 	getW := httptest.NewRecorder()
@@ -283,13 +293,13 @@ func TestDeckSettingsGETAndPOST(t *testing.T) {
 		t.Fatalf("unexpected get body=%s", getW.Body.String())
 	}
 
-	postReq := httptest.NewRequest(http.MethodPost, "/deck/settings.json", bytes.NewBufferString(`{"auth_user":"ops","auth_pass":"secret123","default_refresh_sec":60}`))
+	postReq := httptest.NewRequest(http.MethodPost, "/deck/settings.json", bytes.NewBufferString(`{"default_refresh_sec":60}`))
 	postW := httptest.NewRecorder()
 	s.deckSettings(postW, postReq)
 	if postW.Code != http.StatusOK {
 		t.Fatalf("post status=%d body=%s", postW.Code, postW.Body.String())
 	}
-	if s.settings.AuthUser != "ops" || s.settings.DefaultRefreshSec != 60 {
+	if s.settings.AuthUser != "admin" || s.settings.AuthPass != "secret123" || s.settings.DefaultRefreshSec != 60 {
 		t.Fatalf("unexpected settings %+v", s.settings)
 	}
 }

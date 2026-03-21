@@ -4,6 +4,8 @@
 
 **Latest (2026-03-20):** **Guide startup race fix:** tester logs showed `guide.xml` serving an 82-byte empty `<tv>` for the full 10-minute TTL because XMLTV startup refresh ran before the lineup loaded. The refresh path now skips caching when there are zero lineup channels, and `UpdateChannels` queues a real refresh immediately when channels arrive. **`./scripts/verify`** OK.
 
+**Latest (2026-03-21):** **Security/control-plane hardening pass:** fixed the CodeQL **guideinput** remote-fetch sink by resolving remote guide URLs only through a prepared allowlist map before any HTTP request is built, removed the dedicated deck’s `admin/admin` fallback by generating a one-time startup password when `IPTV_TUNERR_WEBUI_PASS` is unset, stopped persisting deck credentials/browser-authored telemetry to `IPTV_TUNERR_WEBUI_STATE_FILE`, and narrowed `/deck/settings.json` to non-secret refresh preferences while `/deck/activity.json` stays server-derived. **`./scripts/verify`** OK.
+
 **Latest (2026-03-21):** **Evidence intake path:** added **`scripts/evidence-intake.sh`**, [how-to/evidence-intake](../docs/how-to/evidence-intake.md), and **`planning/README.md`** so working-vs-failing tester cases can be staged consistently under **`.diag/evidence/<case-id>/`** with debug-bundle output, PMS logs, Tunerr logs, pcaps, and notes before running **`scripts/analyze-bundle.py`**.
 
 **Latest (2026-03-21):** **Visible placeholder guide content:** the startup placeholder `/guide.xml` now labels itself as a loading placeholder in XMLTV source metadata and emits programme titles like **`<channel> (guide loading)`** with a short description so Plex users can tell the guide is still building instead of reading the temporary rows as normal data.

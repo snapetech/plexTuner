@@ -38,7 +38,7 @@ func LoadGuideDataWithAllowed(ref string, extraAllowedRemoteRefs []string) ([]by
 	if strings.TrimSpace(ref) == "" {
 		return nil, nil
 	}
-	if remote, ok, err := prepareRemoteGuideRef(ref, extraAllowedRemoteRefs); err != nil {
+	if remote, ok, err := lookupAllowedRemoteGuideRef(ref, extraAllowedRemoteRefs); err != nil {
 		return nil, err
 	} else if ok {
 		r, err := openRemoteGuideRef(context.Background(), remote)
@@ -99,7 +99,7 @@ func LoadOptionalMatchReport(live []catalog.LiveChannel, xmltvRef, aliasesRef st
 	return &rep, nil
 }
 
-func prepareRemoteGuideRef(ref string, extraAllowedRemoteRefs []string) (refio.RemoteHTTPRef, bool, error) {
+func lookupAllowedRemoteGuideRef(ref string, extraAllowedRemoteRefs []string) (refio.RemoteHTTPRef, bool, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" || !strings.HasPrefix(strings.ToLower(ref), "http") {
 		return refio.RemoteHTTPRef{}, false, nil
@@ -108,14 +108,9 @@ func prepareRemoteGuideRef(ref string, extraAllowedRemoteRefs []string) (refio.R
 	if err != nil {
 		return refio.RemoteHTTPRef{}, false, err
 	}
-	for _, raw := range configuredGuideInputRemoteRefsFromEnv(extraAllowedRemoteRefs) {
-		allowed, err := refio.PrepareRemoteHTTPRef(context.Background(), raw)
-		if err != nil {
-			continue
-		}
-		if remote.URL() == allowed.URL() {
-			return allowed, true, nil
-		}
+	allowlist := configuredGuideInputRemoteAllowlist(extraAllowedRemoteRefs)
+	if allowed, ok := allowlist[remote.URL()]; ok {
+		return allowed, true, nil
 	}
 	return refio.RemoteHTTPRef{}, false, fmt.Errorf("remote ref not in guide allowlist")
 }
@@ -155,6 +150,18 @@ func (r *guideInputReadCloser) Close() error {
 		r.cancel()
 	}
 	return err
+}
+
+func configuredGuideInputRemoteAllowlist(extraAllowedRemoteRefs []string) map[string]refio.RemoteHTTPRef {
+	allowlist := make(map[string]refio.RemoteHTTPRef)
+	for _, raw := range configuredGuideInputRemoteRefsFromEnv(extraAllowedRemoteRefs) {
+		allowed, err := refio.PrepareRemoteHTTPRef(context.Background(), raw)
+		if err != nil {
+			continue
+		}
+		allowlist[allowed.URL()] = allowed
+	}
+	return allowlist
 }
 
 func configuredGuideInputRemoteRefsFromEnv(extraAllowedRemoteRefs []string) []string {

@@ -749,14 +749,14 @@ Merge semantics for HDHR + IPTV catalogs: [adr/0002-hdhr-hardware-iptv-merge.md]
 | `IPTV_TUNERR_WEBUI_DISABLED` | If `1`, disable the dedicated dashboard on port `48879` (`0xBEEF`). |
 | `IPTV_TUNERR_WEBUI_PORT` | Dedicated dashboard port (default `48879`). |
 | `IPTV_TUNERR_WEBUI_ALLOW_LAN` | If `1`, allow non-loopback clients to open the dedicated dashboard (default: **localhost only**). |
-| `IPTV_TUNERR_WEBUI_STATE_FILE` | Optional JSON state file for shared deck telemetry/history so the web UI keeps trend memory across process restarts. |
-| `IPTV_TUNERR_WEBUI_USER` | Dedicated deck HTTP Basic auth username (default `admin`). |
-| `IPTV_TUNERR_WEBUI_PASS` | Dedicated deck HTTP Basic auth password (default `admin`). |
+| `IPTV_TUNERR_WEBUI_STATE_FILE` | Optional JSON state file for server-derived deck activity plus non-secret deck preferences across process restarts. |
+| `IPTV_TUNERR_WEBUI_USER` | Dedicated deck HTTP Basic auth username (defaults to `admin` only when unset at startup). |
+| `IPTV_TUNERR_WEBUI_PASS` | Dedicated deck HTTP Basic auth password. When unset, Tunerr generates a one-time startup password instead of using `admin/admin`. |
 | `IPTV_TUNERR_UI_DISABLED` | If `1`, `/ui/` is not served. |
 | `IPTV_TUNERR_UI_ALLOW_LAN` | If `1`, allow non-loopback clients to open `/ui/` (default: **localhost only**). |
 
 Browser URLs:
-- Dedicated deck: `http://127.0.0.1:48879/` by default. It reverse-proxies tuner endpoints under `/api/*`, surfaces runtime settings from `/api/debug/runtime.json`, opens on a login page with a cookie-backed session, accepts direct HTTP Basic auth for scriptable/API access (`admin` / `admin` by default unless overridden), and exposes shared deck memory under `/deck/telemetry.json` plus operator activity under `/deck/activity.json`.
+- Dedicated deck: `http://127.0.0.1:48879/` by default. It reverse-proxies tuner endpoints under `/api/*`, surfaces runtime settings from `/api/debug/runtime.json`, opens on a login page with a cookie-backed session, accepts direct HTTP Basic auth for scriptable/API access, generates a one-time startup password when `IPTV_TUNERR_WEBUI_PASS` is unset, and exposes read-only deck telemetry under `/deck/telemetry.json` plus server-derived operator activity under `/deck/activity.json`.
 - Guide/operator endpoints include `/guide/lineup-match.json`, which reports whether current `lineup.json` rows have exact-name counterparts in emitted `guide.xml`, plus duplicate-name/number signals and a sample of unmatched rows including `channel_id`, `guide_number`, `guide_name`, and observed `tvg_id`.
 - Legacy pages on the tuner port: `http://127.0.0.1:<port>/ui/` (home), `/ui/guide/` (merged guide preview from cache), `/ui/guide-preview.json` (JSON; optional `?limit=`).
 
