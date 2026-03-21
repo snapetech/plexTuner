@@ -13,6 +13,9 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+### Streaming
+- **Cross-host HLS remux guardrail:** non-transcode HLS now skips ffmpeg remux and goes straight to the Go relay when a playlist references media/key/map/variant URLs on a different host than the playlist itself, avoiding static ffmpeg header/Host context leaking across host boundaries. Added **`IPTV_TUNERR_HLS_RELAY_ALLOW_FFMPEG_CROSS_HOST`** as an explicit opt-out.
+
 ## [v0.1.22] — 2026-03-21
 
 ### Testing / CI

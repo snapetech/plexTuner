@@ -240,8 +240,15 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 		log.Printf("gateway: channel=%q id=%s ffmpeg-hls-packager failed (falling back to normal relay): profile=%q",
 			channel.GuideName, channelID, profileName)
 	}
-	preferGoRelay := !transcode && g.shouldPreferGoRelayForHLSRemux(streamURL)
-	if preferGoRelay {
+	preferGoByProviderState := !transcode && g.shouldPreferGoRelayForHLSRemux(streamURL)
+	preferGoRelay := preferGoByProviderState
+	crossHostRefs := hlsPlaylistCrossHostRefs(body, effectiveURL)
+	if !transcode && len(crossHostRefs) > 0 && !getenvBool("IPTV_TUNERR_HLS_RELAY_ALLOW_FFMPEG_CROSS_HOST", false) {
+		preferGoRelay = true
+		log.Printf("gateway: channel=%q id=%s cross-host-hls prefers go relay over ffmpeg-remux playlist_host=%q refs=%q",
+			channel.GuideName, channelID, hostFromURL(effectiveURL), strings.Join(crossHostRefs, ","))
+	}
+	if preferGoByProviderState {
 		log.Printf("gateway: channel=%q id=%s provider-pressure prefers go relay over ffmpeg-remux",
 			channel.GuideName, channelID)
 	}

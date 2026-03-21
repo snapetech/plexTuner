@@ -10,6 +10,8 @@
 
 **Latest (2026-03-21):** **Binary smoke + CI/release hardening:** added `scripts/ci-smoke.sh`, which builds a temporary binary, runs `serve` against synthetic full/empty catalogs, and asserts the real HTTP startup contract (`readyz`, `guide.xml`, startup headers, lineup behavior). Wired that smoke into `scripts/verify`, CI, and the GitHub release workflow so tags now run real endpoint smoke before packaging. **`./scripts/verify`** OK.
 
+**Latest (2026-03-21):** **Direct-ffplay-vs-Tunerr HLS isolation:** narrowed one plausible playback split to non-transcode ffmpeg remux on cross-host HLS manifests. Added manifest-host regression coverage and changed the remux decision so playlists that reference media/key/map/variant URLs on a different host than the playlist itself prefer the Go relay by default instead of ffmpeg remux; this keeps a single static ffmpeg header context out of the path when direct playback works but Tunerr remux does not.
+
 **Latest (2026-03-21):** **Evidence intake path:** added **`scripts/evidence-intake.sh`**, [how-to/evidence-intake](../docs/how-to/evidence-intake.md), and **`planning/README.md`** so working-vs-failing tester cases can be staged consistently under **`.diag/evidence/<case-id>/`** with debug-bundle output, PMS logs, Tunerr logs, pcaps, and notes before running **`scripts/analyze-bundle.py`**.
 
 **Latest (2026-03-21):** **Visible placeholder guide content:** the startup placeholder `/guide.xml` now labels itself as a loading placeholder in XMLTV source metadata and emits programme titles like **`<channel> (guide loading)`** with a short description so Plex users can tell the guide is still building instead of reading the temporary rows as normal data.

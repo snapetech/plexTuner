@@ -1379,7 +1379,8 @@ func TestGateway_stream_noURL(t *testing.T) {
 
 func TestGateway_stream_allFail(t *testing.T) {
 	// Both URLs return 503
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	defer srv.Close()
@@ -1399,7 +1400,8 @@ func TestGateway_stream_allFail(t *testing.T) {
 }
 
 func TestGateway_stream_upstreamConcurrencyLimitReturnsAllTunersInUse(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "max connections reached", 458)
 	}))
 	defer srv.Close()
@@ -1621,7 +1623,8 @@ func TestGateway_stream_skipsQuarantinedPrimaryUsesBackup(t *testing.T) {
 
 func TestGateway_learnsUpstreamConcurrencyLimitAndRejectsLocally(t *testing.T) {
 	hits := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits++
 		http.Error(w, "maximum 1 connections allowed", 423)
 	}))
@@ -2510,6 +2513,129 @@ func TestGateway_ffmpegInputHeaderBlock_customHostOverridesResolvedHost(t *testi
 	}
 	if strings.Contains(block, "Host: resolved.example") {
 		t.Fatalf("resolved host should be overridden: %q", block)
+	}
+}
+
+func TestHLSPlaylistCrossHostRefs(t *testing.T) {
+	body := []byte(`#EXTM3U
+#EXT-X-KEY:METHOD=AES-128,URI="https://keys.example.com/key.bin"
+#EXT-X-MAP:URI='//init.example.com/init.mp4'
+#EXTINF:2,
+seg-1.ts
+#EXTINF:2,https://media.example.net/seg-2.ts
+#EXT-X-STREAM-INF:BANDWIDTH=1000000,URI="https://variants.example.org/low/index.m3u8"
+`)
+	got := hlsPlaylistCrossHostRefs(body, "http://playlist.example.com/live/start.m3u8")
+	want := []string{"init.example.com", "keys.example.com", "media.example.net", "variants.example.org"}
+	if len(got) != len(want) {
+		t.Fatalf("cross-host refs len=%d want %d (%v)", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("cross-host refs[%d]=%q want %q (all=%v)", i, got[i], want[i], got)
+		}
+	}
+}
+
+func TestHLSPlaylistCrossHostRefs_IgnoresSameHostRelativeRefs(t *testing.T) {
+	body := []byte(`#EXTM3U
+#EXT-X-KEY:METHOD=AES-128,URI="key.bin"
+#EXT-X-MAP:URI='//playlist.example.com/init.mp4'
+#EXTINF:2,
+seg-1.ts
+`)
+	got := hlsPlaylistCrossHostRefs(body, "http://playlist.example.com/live/start.m3u8")
+	if len(got) != 0 {
+		t.Fatalf("expected no cross-host refs, got %v", got)
+	}
+}
+
+func TestGateway_relaySuccessfulHLSUpstream_crossHostPlaylistPrefersGoBeforeFFmpegFailure(t *testing.T) {
+	if _, err := resolveFFmpegPath(); err != nil {
+		t.Skip("ffmpeg not installed; skipping cross-host HLS relay integration test")
+	}
+	t.Setenv("IPTV_TUNERR_FFMPEG_DISABLED", "0")
+	t.Setenv("IPTV_TUNERR_HLS_RELAY_ALLOW_FFMPEG_CROSS_HOST", "0")
+
+	prevTimeout := hlsRelayNoProgressTimeout
+	prevRefreshSleep := hlsRelayRefreshSleep
+	hlsRelayNoProgressTimeout = 250 * time.Millisecond
+	hlsRelayRefreshSleep = func([]byte) {}
+	t.Cleanup(func() {
+		hlsRelayNoProgressTimeout = prevTimeout
+		hlsRelayRefreshSleep = prevRefreshSleep
+	})
+
+	var badSegmentHost atomic.Int32
+	goodSegment := make(chan struct{})
+	var goodSegmentOnce sync.Once
+
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/playlist.m3u8":
+			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+			_, _ = io.WriteString(w, "#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\n"+srv.URL+"/seg.ts\n")
+		case "/seg.ts":
+			if strings.HasPrefix(r.Host, "localhost:") {
+				badSegmentHost.Add(1)
+				http.Error(w, "wrong host override", http.StatusForbidden)
+				return
+			}
+			w.Header().Set("Content-Type", "video/mp2t")
+			_, _ = w.Write([]byte("segment-bytes"))
+			goodSegmentOnce.Do(func() { close(goodSegment) })
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	playlistURL := strings.Replace(srv.URL, "127.0.0.1", "localhost", 1) + "/playlist.m3u8"
+	client := srv.Client()
+	resp, err := client.Get(playlistURL)
+	if err != nil {
+		t.Fatalf("initial playlist GET: %v", err)
+	}
+
+	channel := &catalog.LiveChannel{GuideName: "Ch1", GuideNumber: "101", TVGID: "tvg.1"}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/1", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	attempt := newStreamAttemptBuilder("req-cross-host", req, "1", channel.GuideName, 1)
+	attemptIdx := attempt.addUpstream(1, playlistURL, nil, false, false, false, false)
+
+	type result struct {
+		status string
+		mode   string
+		ok     bool
+	}
+	done := make(chan result, 1)
+	go func() {
+		status, mode, _, ok := (&Gateway{TunerCount: 2}).relaySuccessfulHLSUpstream(
+			rec, req, channel, "1", playlistURL, playlistURL, time.Now(), attempt, attemptIdx, client, resp,
+			false, "", "", "", "",
+		)
+		done <- result{status: status, mode: mode, ok: ok}
+	}()
+
+	select {
+	case <-goodSegment:
+		cancel()
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for successful segment fetch")
+	}
+
+	res := <-done
+	if !res.ok {
+		t.Fatalf("relaySuccessfulHLSUpstream ok=false status=%q mode=%q", res.status, res.mode)
+	}
+	if res.mode != "hls_go" {
+		t.Fatalf("final mode=%q want hls_go", res.mode)
+	}
+	if bad := badSegmentHost.Load(); bad != 0 {
+		t.Fatalf("ffmpeg attempted cross-host segment with stale Host header badSegmentHost=%d", bad)
 	}
 }
 

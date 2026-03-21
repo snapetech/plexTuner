@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -856,6 +857,57 @@ func hlsMediaLines(body []byte) []string {
 		out = append(out, line)
 	}
 	return out
+}
+
+func hlsPlaylistCrossHostRefs(body []byte, playlistURL string) []string {
+	body = stripLeadingUTF8BOM(body)
+	base, err := url.Parse(strings.TrimSpace(playlistURL))
+	if err != nil || base == nil {
+		return nil
+	}
+	playlistHost := strings.ToLower(strings.TrimSpace(base.Hostname()))
+	if playlistHost == "" {
+		return nil
+	}
+
+	seen := make(map[string]struct{})
+	var hosts []string
+	addRefHost := func(raw string) {
+		resolved := resolveHLSMediaRef(raw, base)
+		host := hostFromURL(resolved)
+		if host == "" || host == playlistHost {
+			return
+		}
+		if _, ok := seen[host]; ok {
+			return
+		}
+		seen[host] = struct{}{}
+		hosts = append(hosts, host)
+	}
+
+	for _, raw := range splitHLSLines(body) {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "#") {
+			for _, re := range []*regexp.Regexp{hlsQuotedURIAttr, hlsQuotedURIAttrSingle} {
+				matches := re.FindAllStringSubmatch(raw, -1)
+				for _, sm := range matches {
+					if len(sm) >= 3 {
+						addRefHost(sm[2])
+					}
+				}
+			}
+			if sm := extInfSameLineMedia.FindStringSubmatch(line); len(sm) == 3 {
+				addRefHost(sm[2])
+			}
+			continue
+		}
+		addRefHost(line)
+	}
+	sort.Strings(hosts)
+	return hosts
 }
 
 // hlsTargetDurationSeconds parses #EXT-X-TARGETDURATION from playlist body; returns 0 if missing/invalid.
