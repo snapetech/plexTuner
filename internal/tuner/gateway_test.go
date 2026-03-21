@@ -2582,6 +2582,16 @@ func TestGateway_relaySuccessfulHLSUpstream_crossHostPlaylistPrefersGoBeforeFFmp
 				http.Error(w, "wrong host override", http.StatusForbidden)
 				return
 			}
+			expectedReferer := strings.Replace(srv.URL, "127.0.0.1", "localhost", 1) + "/playlist.m3u8"
+			if got := r.Header.Get("Referer"); got != expectedReferer {
+				http.Error(w, "missing playlist referer", http.StatusForbidden)
+				return
+			}
+			expectedOrigin := strings.TrimSuffix(expectedReferer, "/playlist.m3u8")
+			if got := r.Header.Get("Origin"); got != expectedOrigin {
+				http.Error(w, "missing playlist origin", http.StatusForbidden)
+				return
+			}
 			w.Header().Set("Content-Type", "video/mp2t")
 			_, _ = w.Write([]byte("segment-bytes"))
 			goodSegmentOnce.Do(func() { close(goodSegment) })

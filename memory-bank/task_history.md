@@ -3356,6 +3356,7 @@ Verification:
     - Isolated one plausible `ffplay direct works, Tunerr remux fails` path to non-transcode ffmpeg remux on HLS manifests whose media/key/map/variant URLs live on a different host than the playlist itself.
     - Added manifest-shape regression coverage plus an end-to-end localhost-vs-127.0.0.1 integration test that proves Tunerr now prefers the Go relay before any bad ffmpeg subrequest can be made against the wrong host context.
     - Changed the non-transcode HLS decision path so cross-host manifests skip ffmpeg remux by default and go straight to the Go relay, with `IPTV_TUNERR_HLS_RELAY_ALLOW_FFMPEG_CROSS_HOST` as an explicit opt-out.
+    - Followed up on tester `403` segment logs by making HLS playlist/segment subrequests inherit fallback `Referer` and `Origin` from the current playlist URL when the client did not provide them; the same end-to-end test now models a CDN that rejects segment fetches without playlist context.
   Verification:
     - `go test -count=1 ./internal/tuner -run 'Test(HLSPlaylistCrossHostRefs|Gateway_relaySuccessfulHLSUpstream_crossHostPlaylistPrefersGoBeforeFFmpegFailure|Gateway_shouldPreferGoRelayForHLSRemux|Gateway_fetchAndRewritePlaylist_retriesConcurrencyLimit|Gateway_relayHLSAsTS_survivesPlaylistConcurrencyRetry)'`
     - `./scripts/verify`

@@ -371,7 +371,30 @@ func sleepWithContext(ctx context.Context, d time.Duration) error {
 	}
 }
 
+func applyHLSSubrequestContext(req *http.Request, playlistURL string) {
+	if req == nil {
+		return
+	}
+	playlistURL = strings.TrimSpace(playlistURL)
+	if playlistURL == "" {
+		return
+	}
+	if strings.TrimSpace(req.Header.Get("Referer")) == "" {
+		req.Header.Set("Referer", playlistURL)
+	}
+	if strings.TrimSpace(req.Header.Get("Origin")) == "" {
+		u, err := url.Parse(playlistURL)
+		if err == nil && u != nil && u.Scheme != "" && u.Host != "" {
+			req.Header.Set("Origin", u.Scheme+"://"+u.Host)
+		}
+	}
+}
+
 func (g *Gateway) fetchAndRewritePlaylist(r *http.Request, client *http.Client, playlistURL string) ([]byte, string, error) {
+	return g.fetchAndRewritePlaylistWithContext(r, client, playlistURL, "")
+}
+
+func (g *Gateway) fetchAndRewritePlaylistWithContext(r *http.Request, client *http.Client, playlistURL, parentPlaylistURL string) ([]byte, string, error) {
 	reqID := ""
 	ctx := context.Background()
 	if r != nil {
@@ -384,6 +407,7 @@ func (g *Gateway) fetchAndRewritePlaylist(r *http.Request, client *http.Client, 
 		if err != nil {
 			return nil, "", err
 		}
+		applyHLSSubrequestContext(req, parentPlaylistURL)
 		resp, err := client.Do(req)
 		if err != nil {
 			return nil, "", err
@@ -430,6 +454,7 @@ func (g *Gateway) fetchAndWriteSegment(
 	r *http.Request,
 	client *http.Client,
 	segURL string,
+	parentPlaylistURL string,
 	headerSent bool,
 ) (int64, error) {
 	if bodyOut == nil {
@@ -439,6 +464,7 @@ func (g *Gateway) fetchAndWriteSegment(
 	if err != nil {
 		return 0, err
 	}
+	applyHLSSubrequestContext(req, parentPlaylistURL)
 	if debugOpts := streamDebugOptionsFromEnv(); debugOpts.HTTPHeaders {
 		for _, line := range debugHeaderNameLines(req.Header) {
 			reqID := gatewayReqIDFromContext(r.Context())

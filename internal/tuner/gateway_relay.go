@@ -629,7 +629,7 @@ func (g *Gateway) relayHLSAsTS(
 			progressThisPass := false
 			for _, segURL := range mediaLines {
 				if strings.HasSuffix(strings.ToLower(segURL), ".m3u8") {
-					next, effectiveURL, err := g.fetchAndRewritePlaylist(r, client, segURL)
+					next, effectiveURL, err := g.fetchAndRewritePlaylistWithContext(r, client, segURL, currentPlaylistURL)
 					if err != nil {
 						if !clientStarted() {
 							return err
@@ -656,7 +656,7 @@ func (g *Gateway) relayHLSAsTS(
 					spliceWriter = newTSDiscontinuitySpliceWriter(r.Context(), sw, channelName, channelID)
 					segOut = spliceWriter
 				}
-				n, err := g.fetchAndWriteSegment(w, segOut, r, client, segURL, headerSent || normalizer != nil)
+				n, err := g.fetchAndWriteSegment(w, segOut, r, client, segURL, currentPlaylistURL, headerSent || normalizer != nil)
 				if err == nil && spliceWriter != nil {
 					if ferr := spliceWriter.FlushRemainder(); ferr != nil {
 						err = ferr
@@ -729,7 +729,7 @@ func (g *Gateway) relayHLSAsTS(
 			hlsRelayRefreshSleep(currentPlaylist)
 		}
 
-		next, effectiveURL, err := g.fetchAndRewritePlaylist(r, client, currentPlaylistURL)
+		next, effectiveURL, err := g.fetchAndRewritePlaylistWithContext(r, client, currentPlaylistURL, currentPlaylistURL)
 		if err != nil {
 			if !clientStarted() {
 				return err
