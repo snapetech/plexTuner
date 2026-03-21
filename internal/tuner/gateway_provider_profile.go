@@ -148,6 +148,14 @@ func providerHostQuarantineDuration() time.Duration {
 	return time.Duration(sec) * time.Second
 }
 
+func hlsRemuxPenaltyTTL() time.Duration {
+	sec := getenvInt("IPTV_TUNERR_HLS_RELAY_HOST_PENALTY_TTL_SEC", 1800)
+	if sec < 60 {
+		sec = 60
+	}
+	return time.Duration(sec) * time.Second
+}
+
 func (g *Gateway) noteMuxSegRecentOutcome(mux, outcome, rawURL string) {
 	if g == nil {
 		return
@@ -263,6 +271,65 @@ func (g *Gateway) hostQuarantined(host string, now time.Time) bool {
 		return false
 	}
 	return now.Before(row.LastAt.Add(providerHostQuarantineDuration()))
+}
+
+func (g *Gateway) noteHLSRemuxFailure(rawURL string) {
+	if g == nil {
+		return
+	}
+	host := upstreamURLAuthority(rawURL)
+	if host == "" {
+		return
+	}
+	g.providerStateMu.Lock()
+	defer g.providerStateMu.Unlock()
+	if g.hlsRemuxFailures == nil {
+		g.hlsRemuxFailures = map[string]hostFailureStat{}
+	}
+	row := g.hlsRemuxFailures[host]
+	row.Host = host
+	row.Failures++
+	row.LastKind = "ffmpeg_hls_failed"
+	row.LastURL = safeurl.RedactURL(rawURL)
+	row.LastAt = time.Now().UTC()
+	g.hlsRemuxFailures[host] = row
+}
+
+func (g *Gateway) noteHLSRemuxSuccess(rawURL string) {
+	if g == nil {
+		return
+	}
+	host := upstreamURLAuthority(rawURL)
+	if host == "" {
+		return
+	}
+	g.providerStateMu.Lock()
+	defer g.providerStateMu.Unlock()
+	if g.hlsRemuxFailures == nil {
+		return
+	}
+	delete(g.hlsRemuxFailures, host)
+}
+
+func (g *Gateway) hlsRemuxHostPenalty(host string) int {
+	if g == nil {
+		return 0
+	}
+	host = strings.TrimSpace(strings.ToLower(host))
+	if host == "" {
+		return 0
+	}
+	g.providerStateMu.Lock()
+	defer g.providerStateMu.Unlock()
+	row, ok := g.hlsRemuxFailures[host]
+	if !ok {
+		return 0
+	}
+	if ttl := hlsRemuxPenaltyTTL(); ttl > 0 && !row.LastAt.IsZero() && time.Since(row.LastAt) > ttl {
+		delete(g.hlsRemuxFailures, host)
+		return 0
+	}
+	return row.Failures
 }
 
 func (g *Gateway) penalizedHostsLocked() []ProviderHostPenalty {

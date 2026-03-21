@@ -1512,6 +1512,18 @@ func TestGateway_shouldPreferGoRelayForHLSRemux_hostPenalty(t *testing.T) {
 			t.Fatal("expected no host-penalty go-relay when autotune is off")
 		}
 	})
+	t.Run("remux_penalty_survives_playlist_success", func(t *testing.T) {
+		g := &Gateway{TunerCount: 4}
+		g.noteHLSRemuxFailure("http://provider.example/live/1.m3u8")
+		g.noteUpstreamSuccess("http://provider.example/live/1.m3u8")
+		if !g.shouldPreferGoRelayForHLSRemux("http://provider.example/live/2.m3u8") {
+			t.Fatal("expected remux-specific penalty to survive generic playlist success")
+		}
+		g.noteHLSRemuxSuccess("http://provider.example/live/1.m3u8")
+		if g.shouldPreferGoRelayForHLSRemux("http://provider.example/live/2.m3u8") {
+			t.Fatal("expected remux-specific penalty to clear after remux success")
+		}
+	})
 }
 
 func TestGateway_filterQuarantinedUpstreams_prefersHealthyAlternatives(t *testing.T) {

@@ -3351,6 +3351,16 @@ Verification:
 ---
 
 - Date: 2026-03-21
+  Title: Keep HLS remux failure memory across later playlist success
+  Summary:
+    - Tester logs showed the same playlist host retrying ffmpeg remux on later tunes even after prior `ffmpeg_hls_failed` outcomes, which meant the original Go-relay preference memory was not surviving long enough to help.
+    - Fixed that by separating HLS remux-failure memory from generic upstream-success clearing, so a later successful playlist fetch no longer erases the “prefer Go relay for this host” signal before the next tune.
+    - Extended HLS regressions to prove remux penalties survive generic playlist success and only clear on actual remux success.
+  Verification:
+    - `go test -count=1 ./internal/tuner -run 'Test(Gateway_shouldPreferGoRelayForHLSRemux|Gateway_relaySuccessfulHLSUpstream_crossHostPlaylistPrefersGoBeforeFFmpegFailure|Gateway_fetchAndRewritePlaylist_retriesConcurrencyLimit|Gateway_relayHLSAsTS_survivesPlaylistConcurrencyRetry)'`
+    - `./scripts/verify`
+
+- Date: 2026-03-21
   Title: Isolate and harden the cross-host HLS remux path
   Summary:
     - Isolated one plausible `ffplay direct works, Tunerr remux fails` path to non-transcode ffmpeg remux on HLS manifests whose media/key/map/variant URLs live on a different host than the playlist itself.

@@ -259,7 +259,7 @@ func (g *Gateway) shouldPreferGoRelayForHLSRemux(streamURL string) bool {
 		return true
 	}
 	host := upstreamURLAuthority(streamURL)
-	return host != "" && g.hostPenalty(host) > 0
+	return host != "" && (g.hostPenalty(host) > 0 || g.hlsRemuxHostPenalty(host) > 0)
 }
 
 func (g *Gateway) effectiveTranscode(ctx context.Context, streamURL string) bool {
