@@ -18,6 +18,12 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Verify
+        run: ./scripts/verify
+
+      - name: Release smoke
+        run: go test -count=1 ./internal/tuner -run 'Test(XMLTV_serve|XMLTV_serveCachedGuideReady|HDHR_discover|HDHR_lineup|HDHR_lineup_status|Server_UpdateChannelsTriggersXMLTVRefresh)'
+
       - name: Build binaries
         run: |
           set -euo pipefail

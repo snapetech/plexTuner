@@ -22,3 +22,17 @@ jobs:
 
       - name: Verify (runs scripts/verify-steps.sh or template default)
         run: ./scripts/verify
+
+  smoke:
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Binary smoke
+        run: bash ./scripts/ci-smoke.sh

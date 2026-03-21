@@ -23,6 +23,22 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: Add binary startup smoke to verify, CI, and release
+  Summary:
+    - Added **`scripts/ci-smoke.sh`** to build a temporary binary, start `serve` against synthetic full and empty catalogs, and assert the real endpoint contract for `readyz`, `guide.xml`, `discover.json`, and `lineup.json`.
+    - Wired that smoke into **`scripts/verify-steps.sh`**, **`memory-bank/commands.yml`**, **`.github/workflows/ci.yml`**, and **`.github/workflows/release.yml`** so endpoint startup regressions are checked before tags are packaged.
+    - Revalidated the tightened startup guide contract under both focused tuner tests and the new binary smoke lane.
+  Verification:
+    - `bash ./scripts/ci-smoke.sh`
+    - `./scripts/verify`
+  Notes:
+    - The smoke script intentionally allows a brief cold-start connection race and then asserts stable behavior once the listener is up, which matches real process startup better than assuming instant bind.
+  Opportunities filed:
+    - none
+  Links:
+    - release hardening / binary smoke
+
+- Date: 2026-03-21
   Title: Harden startup guide contract and release smoke coverage
   Summary:
     - Changed **`/guide.xml`** startup behavior so provisional placeholder XMLTV now returns `503 Service Unavailable` with `Retry-After: 5` and `X-IptvTunerr-Guide-State: loading` until a real merged guide cache exists.

@@ -50,4 +50,10 @@ if ! go build -o /dev/null ./cmd/iptv-tunerr; then
   err "build failed"
 fi
 
+# --- Binary smoke ---
+step "binary smoke (scripts/ci-smoke.sh)"
+if ! bash ./scripts/ci-smoke.sh; then
+  err "binary smoke failed"
+fi
+
 echo "[iptv-tunerr verify] ==> all steps OK"
