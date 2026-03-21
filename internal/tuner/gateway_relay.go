@@ -20,6 +20,17 @@ import (
 var hlsRelayNoProgressTimeout = 12 * time.Second
 var hlsRelayRefreshSleep = sleepHLSRefresh
 
+func ffmpegHLSFirstBytesTimeout() time.Duration {
+	ms := getenvInt("IPTV_TUNERR_FFMPEG_HLS_FIRST_BYTES_TIMEOUT_MS", 4000)
+	if ms <= 0 {
+		return 0
+	}
+	if ms < 100 {
+		ms = 100
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
 func resolveFFmpegPath() (string, error) {
 	if v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_FFMPEG_PATH")); v != "" {
 		return exec.LookPath(v)
@@ -432,6 +443,51 @@ func (g *Gateway) relayHLSWithFFmpeg(
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()
 			return nil
+		}
+	}
+
+	if !transcode {
+		if timeout := ffmpegHLSFirstBytesTimeout(); timeout > 0 {
+			type firstReadRes struct {
+				b   []byte
+				err error
+			}
+			ch := make(chan firstReadRes, 1)
+			go func() {
+				buf := make([]byte, 32768)
+				n, rerr := stdout.Read(buf)
+				if n > 0 {
+					ch <- firstReadRes{b: bytes.Clone(buf[:n]), err: rerr}
+					return
+				}
+				ch <- firstReadRes{err: rerr}
+			}()
+			select {
+			case fr := <-ch:
+				if len(fr.b) > 0 {
+					prefetch = fr.b
+					log.Printf("gateway:%s channel=%q id=%s %s startup-first-bytes=%d timeout_ms=%d",
+						reqField, channelName, channelID, modeLabel, len(prefetch), timeout.Milliseconds())
+				} else {
+					_ = cmd.Process.Kill()
+					_ = cmd.Wait()
+					errOut := fr.err
+					if errOut == nil {
+						errOut = errors.New("ffmpeg exited before first bytes")
+					}
+					return ffmpegRelayErr("startup-first-bytes", errOut, stderr.String())
+				}
+			case <-time.After(timeout):
+				_ = cmd.Process.Kill()
+				_ = cmd.Wait()
+				log.Printf("gateway:%s channel=%q id=%s %s first-bytes timeout after=%dms",
+					reqField, channelName, channelID, modeLabel, timeout.Milliseconds())
+				return ffmpegRelayErr("first-bytes-timeout", errors.New("ffmpeg produced no bytes before timeout"), stderr.String())
+			case <-r.Context().Done():
+				_ = cmd.Process.Kill()
+				_ = cmd.Wait()
+				return nil
+			}
 		}
 	}
 

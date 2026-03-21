@@ -1005,6 +1005,7 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
 - `IPTV_TUNERR_FFMPEG_HLS_PACKAGER_MAX_AGE_SEC` — hard cap on packaged-HLS session lifetime before janitor cleanup (default **300**).
 - `IPTV_TUNERR_FFMPEG_HLS_PACKAGER_LIST_SIZE` — ffmpeg HLS playlist window size for packaged-HLS mode (default **6**).
 - `IPTV_TUNERR_FFMPEG_HLS_PACKAGER_SEGMENT_SECONDS` — ffmpeg HLS segment target duration for packaged-HLS mode (default **2**).
+- `IPTV_TUNERR_FFMPEG_HLS_FIRST_BYTES_TIMEOUT_MS` — for non-transcode HLS ffmpeg-remux, wait this long for the first output bytes before aborting remux and falling back instead of letting the client sit on a dead remux attempt (default **4000**; `0` disables).
 - `IPTV_TUNERR_HLS_PLAYLIST_RETRY_LIMIT` / `IPTV_TUNERR_HLS_PLAYLIST_RETRY_BACKOFF_MS` — bounded retry/backoff for playlist refreshes that hit provider concurrency/limit responses; intended for short-lived `509`/similar contention rather than permanent failures.
 - `IPTV_TUNERR_HLS_RELAY_PREFER_GO_ON_PROVIDER_PRESSURE` — skip non-transcode ffmpeg remux and go straight to the Go playlist/segment relay when Tunerr has **learned concurrency pressure** *or* the upstream host already has **autotune penalty** (same process; requires **`IPTV_TUNERR_PROVIDER_AUTOTUNE`** so failures are recorded). Turning this **off** disables both signals unless **`IPTV_TUNERR_HLS_RELAY_PREFER_GO`** is on.
 - `IPTV_TUNERR_HLS_RELAY_PREFER_GO` — unconditional Go-relay preference (overrides the `false` branch above).

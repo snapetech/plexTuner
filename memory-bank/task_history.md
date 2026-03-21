@@ -3356,8 +3356,9 @@ Verification:
     - Tester logs showed the same playlist host retrying ffmpeg remux on later tunes even after prior `ffmpeg_hls_failed` outcomes, which meant the original Go-relay preference memory was not surviving long enough to help.
     - Fixed that by separating HLS remux-failure memory from generic upstream-success clearing, so a later successful playlist fetch no longer erases the “prefer Go relay for this host” signal before the next tune.
     - Extended HLS regressions to prove remux penalties survive generic playlist success and only clear on actual remux success.
+    - Added a separate non-transcode ffmpeg-remux first-byte timeout so dead remux attempts fail fast before Plex gives up; covered with a fake-ffmpeg integration test that sleeps without writing bytes.
   Verification:
-    - `go test -count=1 ./internal/tuner -run 'Test(Gateway_shouldPreferGoRelayForHLSRemux|Gateway_relaySuccessfulHLSUpstream_crossHostPlaylistPrefersGoBeforeFFmpegFailure|Gateway_fetchAndRewritePlaylist_retriesConcurrencyLimit|Gateway_relayHLSAsTS_survivesPlaylistConcurrencyRetry)'`
+    - `go test -count=1 ./internal/tuner -run 'Test(Gateway_shouldPreferGoRelayForHLSRemux|Gateway_relaySuccessfulHLSUpstream_crossHostPlaylistPrefersGoBeforeFFmpegFailure|Gateway_relayHLSWithFFmpeg_nonTranscodeFirstBytesTimeout|Gateway_fetchAndRewritePlaylist_retriesConcurrencyLimit|Gateway_relayHLSAsTS_survivesPlaylistConcurrencyRetry)'`
     - `./scripts/verify`
 
 - Date: 2026-03-21

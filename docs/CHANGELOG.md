@@ -17,6 +17,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ### Streaming
 - **Remux failure memory now sticks:** ffmpeg-remux failure preference is no longer erased by a later successful playlist fetch on the same host. Tunerr now keeps a dedicated remux-failure penalty for HLS hosts, so later tunes on the same provider/CDN path prefer the Go relay instead of retrying the same dead ffmpeg-remux path.
+- **Non-transcode remux first-byte timeout:** ffmpeg-remux on HLS now has a dedicated first-byte deadline, so dead remux attempts fail over quickly instead of sitting for many seconds until Plex gives up first. New env: **`IPTV_TUNERR_FFMPEG_HLS_FIRST_BYTES_TIMEOUT_MS`**.
 
 ## [v0.1.23] — 2026-03-21
 

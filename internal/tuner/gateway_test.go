@@ -2661,6 +2661,50 @@ func TestGateway_relaySuccessfulHLSUpstream_crossHostPlaylistPrefersGoBeforeFFmp
 	}
 }
 
+func TestGateway_relayHLSWithFFmpeg_nonTranscodeFirstBytesTimeout(t *testing.T) {
+	dir := t.TempDir()
+	ffmpegPath := filepath.Join(dir, "fake-ffmpeg.sh")
+	script := `#!/bin/sh
+set -eu
+exec sleep 30
+`
+	if err := os.WriteFile(ffmpegPath, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("IPTV_TUNERR_FFMPEG_HLS_FIRST_BYTES_TIMEOUT_MS", "100")
+
+	g := &Gateway{}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/1", nil)
+	rec := httptest.NewRecorder()
+	start := time.Now()
+	err := g.relayHLSWithFFmpeg(
+		rec,
+		req,
+		ffmpegPath,
+		"http://provider.example/live/1.m3u8",
+		"Ch1",
+		"1",
+		"101",
+		"tvg.1",
+		start,
+		false,
+		0,
+		"",
+		hotStartConfig{},
+		streamMuxMPEGTS,
+	)
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !strings.Contains(err.Error(), "first-bytes-timeout") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("expected fast failover timeout, got elapsed=%s", elapsed)
+	}
+}
+
 func TestGateway_fetchAndRewritePlaylist_usesRedirectedURLAsBase(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
