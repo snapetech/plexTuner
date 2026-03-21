@@ -46,6 +46,14 @@ Create or update this file when **any** of these are true:
 - **Story IDs:** `ACC-001` … `ACC-003`, `VODX-003`
 - **ACC progress (2026-03-21):** `ACC-001`, `ACC-002`, and the first visible `ACC-003` slice are in: the gateway now tracks active provider-account leases, prefers lower-load accounts during URL ordering, can reject locally when every distinct account for a channel is already at `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT`, and exposes current account lease state plus the configured cap on provider/runtime surfaces. Remaining depth is smarter per-account contract learning rather than raw URL retry order.
 
+### Active epic overlay (Programming Manager planning, 2026-03-21)
+
+- **Doc:** [docs/epics/EPIC-programming-manager.md](../docs/epics/EPIC-programming-manager.md)
+- **Goal:** Build a real server-backed channel-builder / programming-manager surface with category-first selection, per-channel include/exclude, saved lineup order, and exact-match backup grouping.
+- **Non-goals:** Replacing Plex’s own channel UI, doing every fuzzy match heuristic in one pass, or shipping a public internet-facing admin portal.
+- **Story IDs:** `PM-001` … `PM-009`
+- **Planning status (2026-03-21):** Epic defined from tester requirements plus external UX patterns (Channels collections and xTeVe/XEPG mapping/order control). No implementation has landed yet; future work should map to the PM stories instead of ad hoc UI edits.
+
 ### Account-aware concurrency story list (2026-03-21)
 
 | ID | Acceptance criteria | Files/areas (expected) | Verification | Risk flags |

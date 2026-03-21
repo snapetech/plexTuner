@@ -1512,6 +1512,38 @@ func TestGateway_stream_providerAccountLimitRejectsLocally(t *testing.T) {
 	}
 }
 
+func TestGateway_stream_successReleasesProviderAccountLease(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT", "1")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	ch := catalog.LiveChannel{
+		GuideNumber: "1",
+		GuideName:   "Ch1",
+		StreamURLs:  []string{srv.URL},
+		StreamAuths: []catalog.StreamAuth{{Prefix: srv.URL, User: "u1", Pass: "p1"}},
+	}
+	g := &Gateway{
+		Channels:     []catalog.LiveChannel{ch},
+		TunerCount:   2,
+		ProviderUser: "u1",
+		ProviderPass: "p1",
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code=%d body=%q", w.Code, w.Body.String())
+	}
+	if leases := g.providerAccountLeases(); len(leases) != 0 {
+		t.Fatalf("expected provider account leases to be released, got %#v", leases)
+	}
+}
+
 func TestParseUpstreamConcurrencyLimit(t *testing.T) {
 	cases := []struct {
 		preview string

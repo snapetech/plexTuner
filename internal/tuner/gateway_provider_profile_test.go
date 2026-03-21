@@ -95,3 +95,24 @@ func TestRemediationHintsForProfile_accountPoolActive(t *testing.T) {
 		t.Fatalf("got %#v", h)
 	}
 }
+
+func TestProviderBehaviorProfile_includesAccountPoolState(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT", "2")
+	g := &Gateway{
+		ProviderUser: "demo",
+		ProviderPass: "pass",
+		accountLeases: map[string]int{
+			"provider.example|demo|pass|http://provider.example/live/demo/pass/": 1,
+		},
+	}
+	prof := g.ProviderBehaviorProfile()
+	if !prof.AccountPoolConfigured || prof.AccountPoolLimit != 2 {
+		t.Fatalf("account pool config = %#v", prof)
+	}
+	if len(prof.AccountLeases) != 1 || prof.AccountLeases[0].InUse != 1 {
+		t.Fatalf("account leases = %#v", prof.AccountLeases)
+	}
+	if prof.AccountLeases[0].Host != "provider.example" {
+		t.Fatalf("lease host = %#v", prof.AccountLeases[0])
+	}
+}

@@ -4,6 +4,8 @@
 
 **Latest (2026-03-21):** **Account-aware provider pooling + VOD mount helpers:** deduplicated multi-account channels now derive a stable provider-account identity per URL, prefer less-loaded accounts during stream ordering, keep active leases for successful live sessions, and can enforce `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT` as a per-credential cap with local HDHR-style `805` / `503` rejection when every account for a channel is busy. In parallel, the first VOD ergonomics slice landed: `iptv-tunerr vod-webdav-mount-hint` prints platform-specific mount commands, and `vod-webdav` startup logs now include concrete mount commands instead of only generic prose. **`./scripts/verify`** OK.
 
+**Latest (2026-03-21):** **Release gating + Programming Manager mapping:** binary smoke now exercises `vod-webdav-mount-hint` and the live `vod-webdav` surface with a real WebDAV `PROPFIND`, while targeted gateway tests now cover provider-account local rejection, lease release after success, and provider-profile account-pool state. In parallel, the tester’s channel-builder request is now formalized as [EPIC-programming-manager](../docs/epics/EPIC-programming-manager.md): category-first selection, per-channel include/exclude, server-saved order, and exact-match backup grouping.
+
 Assumptions:
 1. The first safe scheduler model is lease-aware ordering/capping in the existing upstream walk, not a full provider broker rewrite.
 2. Some panels allow >1 stream per credential set, so hard per-account caps must stay operator-tunable via env instead of being guessed globally.

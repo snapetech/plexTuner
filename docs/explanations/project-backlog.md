@@ -15,6 +15,7 @@ This page is the **single entry point** for “what is left to work on” across
 |--------|------|
 | [EPIC-live-tv-intelligence](../epics/EPIC-live-tv-intelligence.md) | **LTV** strategic “next recommended slices” and **shipped** status narrative. |
 | [EPIC-lineup-parity](../epics/EPIC-lineup-parity.md) | **LP** hybrid HDHR + IPTV, SQLite EPG, mux profiles — implementation status and PR-sized history. |
+| [EPIC-programming-manager](../epics/EPIC-programming-manager.md) | **PM** channel-builder / lineup-curation product plan: categories, per-channel selection, custom order, backup grouping. |
 | [memory-bank/opportunities.md](../../memory-bank/opportunities.md) | **Continuous improvement** backlog: dated entries with **Status** where known (many items are **sibling-repo** / k8s / Plex-helper scripts — read each entry). |
 | [memory-bank/known_issues.md](../../memory-bank/known_issues.md) | **Operational** limitations, cluster quirks, and design tradeoffs (not always a code change in *this* repo). |
 | [docs-gaps.md](../docs-gaps.md) | **Documentation** gaps (currently none tracked at High/Medium/Low — see Resolved table). |

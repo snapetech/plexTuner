@@ -69,6 +69,11 @@ assert_header() {
   [[ "$got" == "$want" ]] || fail "$url header $header=$got want $want"
 }
 
+assert_contains() {
+  local haystack="$1" needle="$2" context="${3:-}"
+  [[ "$haystack" == *"$needle"* ]] || fail "expected output to contain '$needle' ${context:+($context)}"
+}
+
 PIDS=()
 
 cat >"$TMP_DIR/catalog-full.json" <<'JSON'
@@ -100,6 +105,12 @@ JSON
 log "building binary"
 go build -o "$BIN" ./cmd/iptv-tunerr
 
+darwin_hint="$("$BIN" vod-webdav-mount-hint -os darwin -addr 127.0.0.1:58188 2>&1)"
+assert_contains "$darwin_hint" "mount_webdav" "darwin mount hint"
+
+windows_hint="$("$BIN" vod-webdav-mount-hint -os windows -addr 127.0.0.1:58188 2>&1)"
+assert_contains "$windows_hint" "net use" "windows mount hint"
+
 run_serve() {
   local catalog="$1" port="$2"
   IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
@@ -107,6 +118,13 @@ run_serve() {
   IPTV_TUNERR_WEBUI_DISABLED=1 \
   "$BIN" serve -catalog "$catalog" -addr ":$port" -base-url "http://127.0.0.1:$port" \
     >"$TMP_DIR/serve-$port.log" 2>&1 &
+  PIDS+=("$!")
+}
+
+run_vod_webdav() {
+  local catalog="$1" port="$2"
+  "$BIN" vod-webdav -catalog "$catalog" -addr "127.0.0.1:$port" \
+    >"$TMP_DIR/vod-webdav-$port.log" 2>&1 &
   PIDS+=("$!")
 }
 
@@ -129,5 +147,14 @@ assert_header "http://127.0.0.1:$port_empty/guide.xml" "Retry-After" "5"
 assert_status "http://127.0.0.1:$port_empty/lineup.json" "200"
 assert_header "http://127.0.0.1:$port_empty/discover.json" "X-IptvTunerr-Startup-State" "loading"
 assert_header "http://127.0.0.1:$port_empty/lineup.json" "X-IptvTunerr-Startup-State" "loading"
+
+port_vod="$(pick_port)"
+run_vod_webdav "$TMP_DIR/catalog-full.json" "$port_vod"
+wait_http_code "http://127.0.0.1:$port_vod/" "405" || fail "vod-webdav root not ready"
+propfind_body="$TMP_DIR/propfind.xml"
+propfind_code="$(curl -sS -X PROPFIND -H 'Depth: 1' -H 'Content-Type: text/xml' --data '<propfind xmlns="DAV:"><allprop/></propfind>' -o "$propfind_body" -w '%{http_code}' "http://127.0.0.1:$port_vod/" || true)"
+[[ "$propfind_code" == "207" ]] || fail "vod-webdav PROPFIND status=$propfind_code body=$(cat "$propfind_body" 2>/dev/null)"
+grep -q "Movies" "$propfind_body" || fail "vod-webdav PROPFIND missing Movies"
+grep -q "TV" "$propfind_body" || fail "vod-webdav PROPFIND missing TV"
 
 log "smoke checks passed"

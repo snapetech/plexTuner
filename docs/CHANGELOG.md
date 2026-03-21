@@ -19,6 +19,9 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 ### VOD
 - **WebDAV mount helper UX:** added **`iptv-tunerr vod-webdav-mount-hint`** plus concrete platform-specific mount commands so the cross-platform WebDAV VOD surface is easier to mount on macOS, Windows, and Linux without manually translating the server URL each time.
 
+### Testing / CI
+- **Provider-pool + WebDAV smoke coverage:** `scripts/ci-smoke.sh` now exercises `vod-webdav-mount-hint` for macOS/Windows output and runs a live WebDAV `PROPFIND` smoke against `iptv-tunerr vod-webdav`. Targeted gateway tests also now cover provider-account local rejection, lease release after successful playback, and provider-profile account-pool visibility.
+
 ## [v0.1.26] — 2026-03-21
 
 ### Security / Web UI
