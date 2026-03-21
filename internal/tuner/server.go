@@ -24,6 +24,7 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/channelreport"
 	"github.com/snapetech/iptvtunerr/internal/epgstore"
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
+	"github.com/snapetech/iptvtunerr/internal/programming"
 	"github.com/snapetech/iptvtunerr/internal/safeurl"
 )
 
@@ -66,24 +67,27 @@ type Server struct {
 	DeviceID          string // HDHomeRun discover.json; set from IPTV_TUNERR_DEVICE_ID
 	FriendlyName      string // HDHomeRun discover.json; set from IPTV_TUNERR_FRIENDLY_NAME
 	// AppVersion is shown on /ui/ (optional; set from main.Version in cmd).
-	AppVersion          string
-	StreamBufferBytes   int    // 0 = no buffer; -1 = auto; e.g. 2097152 for 2 MiB
-	StreamTranscodeMode string // "off" | "on" | "auto"
-	AutopilotStateFile  string // optional JSON file for remembered dna_id+client_class playback decisions
-	RecorderStateFile   string // optional JSON file written by catchup-daemon for recorder status/reporting
-	Channels            []catalog.LiveChannel
-	ProviderUser        string
-	ProviderPass        string
-	ProviderBaseURL     string
-	XMLTVSourceURL      string
-	XMLTVTimeout        time.Duration
-	XMLTVCacheTTL       time.Duration // 0 = use default 10m
-	EpgPruneUnlinked    bool          // when true, guide.xml and /live.m3u only include channels with tvg-id
-	EpgForceLineupMatch bool          // when true, guide.xml keeps every lineup row even if prune-unlinked is enabled
-	FetchCFReject       bool          // abort HLS stream if segment redirected to CF abuse page (passed to Gateway)
-	ProviderEPGEnabled  bool
-	ProviderEPGTimeout  time.Duration
-	ProviderEPGCacheTTL time.Duration
+	AppVersion            string
+	StreamBufferBytes     int    // 0 = no buffer; -1 = auto; e.g. 2097152 for 2 MiB
+	StreamTranscodeMode   string // "off" | "on" | "auto"
+	AutopilotStateFile    string // optional JSON file for remembered dna_id+client_class playback decisions
+	RecorderStateFile     string // optional JSON file written by catchup-daemon for recorder status/reporting
+	Channels              []catalog.LiveChannel
+	RawChannels           []catalog.LiveChannel
+	ProgrammingRecipeFile string
+	ProgrammingRecipe     programming.Recipe
+	ProviderUser          string
+	ProviderPass          string
+	ProviderBaseURL       string
+	XMLTVSourceURL        string
+	XMLTVTimeout          time.Duration
+	XMLTVCacheTTL         time.Duration // 0 = use default 10m
+	EpgPruneUnlinked      bool          // when true, guide.xml and /live.m3u only include channels with tvg-id
+	EpgForceLineupMatch   bool          // when true, guide.xml keeps every lineup row even if prune-unlinked is enabled
+	FetchCFReject         bool          // abort HLS stream if segment redirected to CF abuse page (passed to Gateway)
+	ProviderEPGEnabled    bool
+	ProviderEPGTimeout    time.Duration
+	ProviderEPGCacheTTL   time.Duration
 	// ProviderEPGDiskCachePath: optional on-disk cache + conditional GET for provider xmltv.php.
 	ProviderEPGDiskCachePath  string
 	ProviderEPGIncremental    bool
@@ -161,11 +165,16 @@ var runGhostHunterRecoveryAction = RunGhostHunterRecoveryHelper
 // Caps at LineupMaxChannels (default PlexDVRMaxChannels) so Plex DVR can save the lineup when using the wizard (Plex fails above ~480).
 // When LineupMaxChannels is NoLineupCap, no cap is applied (for programmatic lineup sync; see -register-plex).
 func (s *Server) UpdateChannels(live []catalog.LiveChannel) {
-	live = applyLineupPreCapFilters(live)
+	live = applyLineupBaseFilters(live)
 	if s.xmltv != nil {
 		live = s.xmltv.applyGuidePolicyToChannels(live, os.Getenv("IPTV_TUNERR_GUIDE_POLICY"))
 	}
 	live = applyDNAPolicy(live, os.Getenv("IPTV_TUNERR_DNA_POLICY"))
+	s.RawChannels = cloneLiveChannels(live)
+	live = s.applyProgrammingRecipe(live)
+	live = applyLineupRecipe(live)
+	live = applyLineupWizardShape(live)
+	live = applyLineupShard(live)
 	if s.LineupMaxChannels == NoLineupCap {
 		// Full lineup for programmatic sync; do not cap.
 	} else {
@@ -179,6 +188,10 @@ func (s *Server) UpdateChannels(live []catalog.LiveChannel) {
 		}
 	}
 	live = applyGuideNumberOffset(live, s.GuideNumberOffset)
+	s.setExposedChannels(live)
+}
+
+func (s *Server) setExposedChannels(live []catalog.LiveChannel) {
 	summary := summarizeLineupIntegrity(live)
 	s.Channels = live
 	s.healthMu.Lock()
@@ -216,6 +229,51 @@ func (s *Server) UpdateChannels(live []catalog.LiveChannel) {
 		summary.DuplicateGuideNumbers,
 		summary.DuplicateChannelIDs,
 	)
+}
+
+func (s *Server) reloadProgrammingRecipe() programming.Recipe {
+	path := strings.TrimSpace(s.ProgrammingRecipeFile)
+	if path == "" {
+		s.ProgrammingRecipe = programming.NormalizeRecipe(s.ProgrammingRecipe)
+		return s.ProgrammingRecipe
+	}
+	recipe, err := programming.LoadRecipeFile(path)
+	if err != nil {
+		log.Printf("Programming recipe disabled: load %q failed: %v", path, err)
+		return s.ProgrammingRecipe
+	}
+	s.ProgrammingRecipe = recipe
+	return recipe
+}
+
+func (s *Server) applyProgrammingRecipe(live []catalog.LiveChannel) []catalog.LiveChannel {
+	recipe := s.reloadProgrammingRecipe()
+	return programming.ApplyRecipe(live, recipe)
+}
+
+func (s *Server) rebuildCuratedChannelsFromRaw() {
+	live := cloneLiveChannels(s.RawChannels)
+	live = s.applyProgrammingRecipe(live)
+	live = applyLineupRecipe(live)
+	live = applyLineupWizardShape(live)
+	live = applyLineupShard(live)
+	if s.LineupMaxChannels != NoLineupCap {
+		max := s.LineupMaxChannels
+		if max <= 0 {
+			max = PlexDVRMaxChannels
+		}
+		if len(live) > max {
+			live = live[:max]
+		}
+	}
+	live = applyGuideNumberOffset(live, s.GuideNumberOffset)
+	s.setExposedChannels(live)
+}
+
+func cloneLiveChannels(live []catalog.LiveChannel) []catalog.LiveChannel {
+	out := make([]catalog.LiveChannel, len(live))
+	copy(out, live)
+	return out
 }
 
 type lineupIntegritySummary struct {
@@ -290,11 +348,10 @@ func applyGuideNumberOffset(live []catalog.LiveChannel, offset int) []catalog.Li
 	return out
 }
 
-func applyLineupPreCapFilters(live []catalog.LiveChannel) []catalog.LiveChannel {
+func applyLineupBaseFilters(live []catalog.LiveChannel) []catalog.LiveChannel {
 	if len(live) == 0 {
 		return live
 	}
-	before := len(live)
 	out := live
 	if envBool("IPTV_TUNERR_LINEUP_DROP_MUSIC", false) {
 		filtered := make([]catalog.LiveChannel, 0, len(out))
@@ -345,9 +402,11 @@ func applyLineupPreCapFilters(live []catalog.LiveChannel) []catalog.LiveChannel 
 			}
 		}
 	}
-	if len(out) != before {
-		// Continue with optional wizard-shaping reordering before cap.
-	}
+	return out
+}
+
+func applyLineupPreCapFilters(live []catalog.LiveChannel) []catalog.LiveChannel {
+	out := applyLineupBaseFilters(live)
 	out = applyLineupRecipe(out)
 	out = applyLineupWizardShape(out)
 	out = applyLineupShard(out)
@@ -1148,6 +1207,9 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/guide/doctor.json", s.serveEPGDoctor())
 	mux.Handle("/guide/aliases.json", s.serveSuggestedAliasOverrides())
 	mux.Handle("/guide/lineup-match.json", s.serveGuideLineupMatch())
+	mux.Handle("/programming/categories.json", s.serveProgrammingCategories())
+	mux.Handle("/programming/recipe.json", s.serveProgrammingRecipe())
+	mux.Handle("/programming/preview.json", s.serveProgrammingPreview())
 	mux.Handle("/guide/highlights.json", s.serveGuideHighlights())
 	mux.Handle("/guide/epg-store.json", s.serveEpgStoreReport())
 	mux.Handle("/guide/capsules.json", s.serveCatchupCapsules())
@@ -2057,6 +2119,123 @@ func (s *Server) serveGuideLineupMatch() http.Handler {
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
 			http.Error(w, `{"error":"encode guide lineup match"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
+type programmingPreviewReport struct {
+	GeneratedAt     string                        `json:"generated_at"`
+	RecipeFile      string                        `json:"recipe_file,omitempty"`
+	RecipeWritable  bool                          `json:"recipe_writable"`
+	RawChannels     int                           `json:"raw_channels"`
+	CuratedChannels int                           `json:"curated_channels"`
+	Recipe          programming.Recipe            `json:"recipe"`
+	Inventory       []programming.CategorySummary `json:"inventory,omitempty"`
+	Lineup          []catalog.LiveChannel         `json:"lineup,omitempty"`
+}
+
+func (s *Server) serveProgrammingCategories() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		inventory := programming.BuildCategoryInventory(s.RawChannels)
+		resp := map[string]interface{}{
+			"generated_at":  time.Now().UTC().Format(time.RFC3339),
+			"source_ready":  len(s.RawChannels) > 0,
+			"raw_channels":  len(s.RawChannels),
+			"categories":    inventory,
+			"recipe_file":   strings.TrimSpace(s.ProgrammingRecipeFile),
+			"recipe_loaded": s.ProgrammingRecipe.Version > 0,
+		}
+		if categoryID := strings.TrimSpace(r.URL.Query().Get("category")); categoryID != "" {
+			resp["members"] = programming.CategoryMembers(s.RawChannels, categoryID)
+		}
+		body, err := json.MarshalIndent(resp, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode programming categories"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveProgrammingRecipe() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodGet:
+			recipe := s.reloadProgrammingRecipe()
+			resp := map[string]interface{}{
+				"recipe":          recipe,
+				"recipe_file":     strings.TrimSpace(s.ProgrammingRecipeFile),
+				"recipe_writable": strings.TrimSpace(s.ProgrammingRecipeFile) != "",
+			}
+			body, err := json.MarshalIndent(resp, "", "  ")
+			if err != nil {
+				http.Error(w, `{"error":"encode programming recipe"}`, http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write(body)
+		case http.MethodPost:
+			if !operatorUIAllowed(w, r) {
+				return
+			}
+			if strings.TrimSpace(s.ProgrammingRecipeFile) == "" {
+				http.Error(w, `{"error":"programming recipe file not configured"}`, http.StatusServiceUnavailable)
+				return
+			}
+			limited := http.MaxBytesReader(w, r.Body, 65536)
+			defer limited.Close()
+			var recipe programming.Recipe
+			if err := json.NewDecoder(limited).Decode(&recipe); err != nil {
+				http.Error(w, `{"error":"invalid programming recipe json"}`, http.StatusBadRequest)
+				return
+			}
+			saved, err := programming.SaveRecipeFile(s.ProgrammingRecipeFile, recipe)
+			if err != nil {
+				http.Error(w, `{"error":"save programming recipe failed"}`, http.StatusBadGateway)
+				return
+			}
+			s.ProgrammingRecipe = saved
+			s.rebuildCuratedChannelsFromRaw()
+			body, err := json.MarshalIndent(map[string]interface{}{
+				"ok":               true,
+				"recipe":           saved,
+				"recipe_file":      strings.TrimSpace(s.ProgrammingRecipeFile),
+				"curated_channels": len(s.Channels),
+			}, "", "  ")
+			if err != nil {
+				http.Error(w, `{"error":"encode programming recipe"}`, http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write(body)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+}
+
+func (s *Server) serveProgrammingPreview() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		limit := streamAttemptLimitFromQuery(r.URL.Query().Get("limit"), 25)
+		report := programmingPreviewReport{
+			GeneratedAt:     time.Now().UTC().Format(time.RFC3339),
+			RecipeFile:      strings.TrimSpace(s.ProgrammingRecipeFile),
+			RecipeWritable:  strings.TrimSpace(s.ProgrammingRecipeFile) != "",
+			RawChannels:     len(s.RawChannels),
+			CuratedChannels: len(s.Channels),
+			Recipe:          s.reloadProgrammingRecipe(),
+			Inventory:       programming.BuildCategoryInventory(s.RawChannels),
+		}
+		if limit > len(s.Channels) {
+			limit = len(s.Channels)
+		}
+		report.Lineup = append([]catalog.LiveChannel(nil), s.Channels[:limit]...)
+		body, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode programming preview"}`, http.StatusInternalServerError)
 			return
 		}
 		_, _ = w.Write(body)

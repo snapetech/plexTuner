@@ -116,3 +116,29 @@ func TestProviderBehaviorProfile_includesAccountPoolState(t *testing.T) {
 		t.Fatalf("lease host = %#v", prof.AccountLeases[0])
 	}
 }
+
+func TestProviderBehaviorProfile_includesLearnedAccountLimits(t *testing.T) {
+	g := &Gateway{
+		ProviderUser: "demo",
+		ProviderPass: "pass",
+		learnedAccountLimits: map[string]int{
+			"provider.example|demo|pass|http://provider.example/live/demo/pass/": 1,
+		},
+		accountConcurrencySignals: map[string]int{
+			"provider.example|demo|pass|http://provider.example/live/demo/pass/": 2,
+		},
+		accountLeases: map[string]int{
+			"provider.example|demo|pass|http://provider.example/live/demo/pass/": 1,
+		},
+	}
+	prof := g.ProviderBehaviorProfile()
+	if len(prof.AccountLearnedLimits) != 1 {
+		t.Fatalf("learned account limits = %#v", prof.AccountLearnedLimits)
+	}
+	if prof.AccountLearnedLimits[0].LearnedLimit != 1 || prof.AccountLearnedLimits[0].SignalCount != 2 {
+		t.Fatalf("learned account limit state = %#v", prof.AccountLearnedLimits[0])
+	}
+	if prof.AccountLearnedLimits[0].InUse != 1 {
+		t.Fatalf("learned account in_use = %#v", prof.AccountLearnedLimits[0])
+	}
+}

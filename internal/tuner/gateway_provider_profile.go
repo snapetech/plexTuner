@@ -38,24 +38,25 @@ type ProviderRemediationHint struct {
 }
 
 type ProviderBehaviorProfile struct {
-	ConfiguredTunerLimit   int      `json:"configured_tuner_limit"`
-	LearnedTunerLimit      int      `json:"learned_tuner_limit"`
-	EffectiveTunerLimit    int      `json:"effective_tuner_limit"`
-	AccountPoolLimit       int      `json:"account_pool_limit"`
-	AccountPoolConfigured  bool     `json:"account_pool_configured"`
-	BasicAuthConfigured    bool     `json:"basic_auth_configured"`
-	ForwardedHeaders       []string `json:"forwarded_headers"`
-	FFMPEGHLSReconnect     bool     `json:"ffmpeg_hls_reconnect"`
-	FetchCFReject          bool     `json:"fetch_cf_reject"`
-	ConcurrencySignalsSeen int      `json:"concurrency_signals_seen"`
-	LastConcurrencyStatus  int      `json:"last_concurrency_status,omitempty"`
-	LastConcurrencyBody    string   `json:"last_concurrency_body,omitempty"`
-	LastConcurrencyAt      string   `json:"last_concurrency_at,omitempty"`
-	CFBlockHits            int      `json:"cf_block_hits"`
-	LastCFBlockAt          string   `json:"last_cf_block_at,omitempty"`
-	LastCFBlockURL         string   `json:"last_cf_block_url,omitempty"`
-	ProviderAutotune       bool     `json:"provider_autotune"`
-	AutoHostQuarantine     bool     `json:"auto_host_quarantine"`
+	ConfiguredTunerLimit   int                         `json:"configured_tuner_limit"`
+	LearnedTunerLimit      int                         `json:"learned_tuner_limit"`
+	EffectiveTunerLimit    int                         `json:"effective_tuner_limit"`
+	AccountPoolLimit       int                         `json:"account_pool_limit"`
+	AccountPoolConfigured  bool                        `json:"account_pool_configured"`
+	AccountLearnedLimits   []providerAccountLimitState `json:"account_learned_limits,omitempty"`
+	BasicAuthConfigured    bool                        `json:"basic_auth_configured"`
+	ForwardedHeaders       []string                    `json:"forwarded_headers"`
+	FFMPEGHLSReconnect     bool                        `json:"ffmpeg_hls_reconnect"`
+	FetchCFReject          bool                        `json:"fetch_cf_reject"`
+	ConcurrencySignalsSeen int                         `json:"concurrency_signals_seen"`
+	LastConcurrencyStatus  int                         `json:"last_concurrency_status,omitempty"`
+	LastConcurrencyBody    string                      `json:"last_concurrency_body,omitempty"`
+	LastConcurrencyAt      string                      `json:"last_concurrency_at,omitempty"`
+	CFBlockHits            int                         `json:"cf_block_hits"`
+	LastCFBlockAt          string                      `json:"last_cf_block_at,omitempty"`
+	LastCFBlockURL         string                      `json:"last_cf_block_url,omitempty"`
+	ProviderAutotune       bool                        `json:"provider_autotune"`
+	AutoHostQuarantine     bool                        `json:"auto_host_quarantine"`
 	// UpstreamQuarantineSkipsTotal counts stream URLs dropped by host quarantine (per process lifetime).
 	UpstreamQuarantineSkipsTotal uint64                 `json:"upstream_quarantine_skips_total"`
 	AutoHLSReconnect             bool                   `json:"auto_hls_reconnect"`
@@ -532,6 +533,7 @@ func (g *Gateway) ProviderBehaviorProfile() ProviderBehaviorProfile {
 	penalizedHosts := g.penalizedHostsLocked()
 	g.providerStateMu.Unlock()
 	accountLeases := g.providerAccountLeases()
+	accountLearnedLimits := g.providerAccountLearnedLimits()
 	accountPoolLimit := configuredProviderAccountLimit()
 
 	prof := ProviderBehaviorProfile{
@@ -540,6 +542,7 @@ func (g *Gateway) ProviderBehaviorProfile() ProviderBehaviorProfile {
 		EffectiveTunerLimit:          effective,
 		AccountPoolLimit:             accountPoolLimit,
 		AccountPoolConfigured:        accountPoolLimit > 0,
+		AccountLearnedLimits:         accountLearnedLimits,
 		BasicAuthConfigured:          strings.TrimSpace(g.ProviderUser) != "" || strings.TrimSpace(g.ProviderPass) != "",
 		ForwardedHeaders:             append([]string(nil), forwardedUpstreamHeaderNames...),
 		FFMPEGHLSReconnect:           getenvBool("IPTV_TUNERR_FFMPEG_HLS_RECONNECT", false),
@@ -652,5 +655,7 @@ func (g *Gateway) ResetProviderBehaviorProfile() {
 	g.lastDashMuxAt = time.Time{}
 	g.lastDashMuxURL = ""
 	g.hostFailures = nil
+	g.learnedAccountLimits = nil
+	g.accountConcurrencySignals = nil
 	g.providerStateMu.Unlock()
 }

@@ -73,6 +73,10 @@ func (g *Gateway) handleNonOKStreamUpstream(
 	if limited {
 		upstreamConcurrencyLimited = true
 		g.noteUpstreamConcurrencySignal(resp.StatusCode, preview)
+		if learnedAccount := g.learnProviderAccountLimit(channel, streamURL, preview); learnedAccount > 0 {
+			log.Printf("gateway: channel=%q id=%s learned provider-account limit=%d from status=%d url=%s body=%q",
+				channel.GuideName, channelID, learnedAccount, resp.StatusCode, safeurl.RedactURL(streamURL), logPreview)
+		}
 		if learned := g.learnUpstreamConcurrencyLimit(preview); learned > 0 {
 			log.Printf("gateway: channel=%q id=%s learned upstream concurrency limit=%d from status=%d body=%q",
 				channel.GuideName, channelID, learned, resp.StatusCode, logPreview)

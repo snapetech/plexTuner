@@ -107,6 +107,17 @@ This needs a stable, testable classifier rather than a hand-wavy UI-only label.
 | PM-008 | Control-deck UI | Add a Programming Manager lane to the web UI with category picker, detail drawer, and order view. |
 | PM-009 | Release-grade testing | Unit tests, API tests, and smoke coverage prove category selection, saved order, and backup grouping survive refreshes. |
 
+## Status
+
+- **2026-03-21:** `PM-001` and `PM-002` foundation slice shipped.
+  - `internal/programming` now builds stable category inventory from the raw post-intelligence lineup and persists a durable JSON recipe file.
+  - `Server.UpdateChannels` now preserves `raw catalog -> intelligence/dedupe` input separately from the final exposed lineup, then applies the saved programming recipe before existing lineup-shape/cap logic.
+  - First backend endpoints are live:
+    - `/programming/categories.json`
+    - `/programming/recipe.json`
+    - `/programming/preview.json`
+  - This is intentionally backend-first. The control-deck UI lane (`PM-008`) and explicit mutation conveniences (`PM-003` / `PM-004`) still follow.
+
 ## Technical approach
 
 ### Data model

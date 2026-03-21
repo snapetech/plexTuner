@@ -81,6 +81,8 @@ type Gateway struct {
 	accountLeaseMu             sync.Mutex
 	accountLeases              map[string]int
 	providerStateMu            sync.Mutex
+	learnedAccountLimits       map[string]int
+	accountConcurrencySignals  map[string]int
 	concurrencyHits            int
 	lastConcurrencyAt          time.Time
 	lastConcurrencyBody        string

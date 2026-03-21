@@ -74,6 +74,10 @@ func maskProviderAccountUser(user string) string {
 }
 
 func (g *Gateway) effectiveProviderAccountLimit(ch *catalog.LiveChannel) int {
+	return g.effectiveProviderAccountLimitForKey(ch, "")
+}
+
+func (g *Gateway) defaultProviderAccountLimit(ch *catalog.LiveChannel) int {
 	if limit := configuredProviderAccountLimit(); limit > 0 {
 		return limit
 	}
@@ -94,6 +98,68 @@ func (g *Gateway) effectiveProviderAccountLimit(ch *catalog.LiveChannel) int {
 	return 0
 }
 
+func (g *Gateway) learnedProviderAccountLimit(key string) int {
+	if g == nil || strings.TrimSpace(key) == "" {
+		return 0
+	}
+	g.providerStateMu.Lock()
+	defer g.providerStateMu.Unlock()
+	if g.learnedAccountLimits == nil {
+		return 0
+	}
+	return g.learnedAccountLimits[key]
+}
+
+func (g *Gateway) effectiveProviderAccountLimitForKey(ch *catalog.LiveChannel, key string) int {
+	configured := configuredProviderAccountLimit()
+	learned := g.learnedProviderAccountLimit(key)
+	switch {
+	case configured > 0 && learned > 0 && learned < configured:
+		return learned
+	case configured > 0:
+		return configured
+	case learned > 0:
+		return learned
+	default:
+		return g.defaultProviderAccountLimit(ch)
+	}
+}
+
+func (g *Gateway) learnProviderAccountLimit(ch *catalog.LiveChannel, rawURL, preview string) int {
+	if g == nil {
+		return 0
+	}
+	identity, ok := providerAccountIdentityForURL(g, ch, rawURL)
+	if !ok || identity.Key == "" {
+		return 0
+	}
+	learned := parseUpstreamConcurrencyLimit(preview)
+	if learned <= 0 {
+		learned = 1
+	}
+	if learned < 1 {
+		return 0
+	}
+	configured := configuredProviderAccountLimit()
+	if configured > 0 && learned > configured {
+		learned = configured
+	}
+	g.providerStateMu.Lock()
+	defer g.providerStateMu.Unlock()
+	if g.learnedAccountLimits == nil {
+		g.learnedAccountLimits = map[string]int{}
+	}
+	if g.accountConcurrencySignals == nil {
+		g.accountConcurrencySignals = map[string]int{}
+	}
+	g.accountConcurrencySignals[identity.Key]++
+	if cur := g.learnedAccountLimits[identity.Key]; cur > 0 && cur <= learned {
+		return 0
+	}
+	g.learnedAccountLimits[identity.Key] = learned
+	return learned
+}
+
 func (g *Gateway) providerAccountLeaseCount(key string) int {
 	if g == nil || strings.TrimSpace(key) == "" {
 		return 0
@@ -108,7 +174,7 @@ func (g *Gateway) tryAcquireProviderAccountLease(ch *catalog.LiveChannel, rawURL
 	if !ok || identity.Key == "" {
 		return providerAccountLease{}, false, false
 	}
-	limit := g.effectiveProviderAccountLimit(ch)
+	limit := g.effectiveProviderAccountLimitForKey(ch, identity.Key)
 	if limit <= 0 {
 		return identity, false, true
 	}
@@ -147,7 +213,6 @@ func (g *Gateway) reorderStreamURLsByAccountLoad(ch *catalog.LiveChannel, urls [
 	if len(urls) < 2 {
 		return urls
 	}
-	limit := g.effectiveProviderAccountLimit(ch)
 	out := append([]string(nil), urls...)
 	sort.SliceStable(out, func(i, j int) bool {
 		leftID, leftOK := providerAccountIdentityForURL(g, ch, out[i])
@@ -156,11 +221,13 @@ func (g *Gateway) reorderStreamURLsByAccountLoad(ch *catalog.LiveChannel, urls [
 		leftSat, rightSat := false, false
 		if leftOK {
 			leftLoad = g.providerAccountLeaseCount(leftID.Key)
-			leftSat = limit > 0 && leftLoad >= limit
+			leftLimit := g.effectiveProviderAccountLimitForKey(ch, leftID.Key)
+			leftSat = leftLimit > 0 && leftLoad >= leftLimit
 		}
 		if rightOK {
 			rightLoad = g.providerAccountLeaseCount(rightID.Key)
-			rightSat = limit > 0 && rightLoad >= limit
+			rightLimit := g.effectiveProviderAccountLimitForKey(ch, rightID.Key)
+			rightSat = rightLimit > 0 && rightLoad >= rightLimit
 		}
 		if leftSat != rightSat {
 			return !leftSat
@@ -174,8 +241,7 @@ func (g *Gateway) reorderStreamURLsByAccountLoad(ch *catalog.LiveChannel, urls [
 }
 
 func (g *Gateway) providerAccountPoolExhausted(ch *catalog.LiveChannel, urls []string) bool {
-	limit := g.effectiveProviderAccountLimit(ch)
-	if limit <= 0 || len(urls) == 0 {
+	if len(urls) == 0 {
 		return false
 	}
 	seen := map[string]struct{}{}
@@ -189,7 +255,8 @@ func (g *Gateway) providerAccountPoolExhausted(ch *catalog.LiveChannel, urls []s
 			continue
 		}
 		seen[identity.Key] = struct{}{}
-		if g.providerAccountLeaseCount(identity.Key) >= limit {
+		limit := g.effectiveProviderAccountLimitForKey(ch, identity.Key)
+		if limit > 0 && g.providerAccountLeaseCount(identity.Key) >= limit {
 			saturated++
 		}
 	}
@@ -240,4 +307,49 @@ func parseProviderAccountKey(key string) (host, label string) {
 		label = "provider-account"
 	}
 	return host, label
+}
+
+type providerAccountLimitState struct {
+	Label        string `json:"label"`
+	Host         string `json:"host,omitempty"`
+	LearnedLimit int    `json:"learned_limit"`
+	SignalCount  int    `json:"signal_count,omitempty"`
+	InUse        int    `json:"in_use,omitempty"`
+}
+
+func (g *Gateway) providerAccountLearnedLimits() []providerAccountLimitState {
+	if g == nil {
+		return nil
+	}
+	g.providerStateMu.Lock()
+	limits := make(map[string]int, len(g.learnedAccountLimits))
+	for k, v := range g.learnedAccountLimits {
+		limits[k] = v
+	}
+	signals := make(map[string]int, len(g.accountConcurrencySignals))
+	for k, v := range g.accountConcurrencySignals {
+		signals[k] = v
+	}
+	g.providerStateMu.Unlock()
+	if len(limits) == 0 {
+		return nil
+	}
+	out := make([]providerAccountLimitState, 0, len(limits))
+	for key, learned := range limits {
+		host, label := parseProviderAccountKey(key)
+		out = append(out, providerAccountLimitState{
+			Label:        label,
+			Host:         host,
+			LearnedLimit: learned,
+			SignalCount:  signals[key],
+			InUse:        g.providerAccountLeaseCount(key),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].LearnedLimit == out[j].LearnedLimit {
+			return out[i].Label < out[j].Label
+		}
+		return out[i].LearnedLimit < out[j].LearnedLimit
+	})
+	return out
 }

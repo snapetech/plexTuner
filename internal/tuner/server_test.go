@@ -152,6 +152,84 @@ func TestServer_guideLineupMatch(t *testing.T) {
 	}
 }
 
+func TestServer_UpdateChannelsAppliesProgrammingRecipeFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "programming.json")
+	if err := os.WriteFile(path, []byte(`{
+  "selected_categories": ["iptv--news"],
+  "order_mode": "source"
+}`), 0o600); err != nil {
+		t.Fatalf("write programming recipe: %v", err)
+	}
+	s := &Server{ProgrammingRecipeFile: path}
+	s.UpdateChannels([]catalog.LiveChannel{
+		{ChannelID: "1", GuideNumber: "101", GuideName: "News One", GroupTitle: "News", SourceTag: "iptv", StreamURL: "http://a/1"},
+		{ChannelID: "2", GuideNumber: "102", GuideName: "Sports Two", GroupTitle: "Sports", SourceTag: "iptv", StreamURL: "http://a/2"},
+	})
+	if len(s.RawChannels) != 2 {
+		t.Fatalf("raw channels=%d", len(s.RawChannels))
+	}
+	if len(s.Channels) != 1 || s.Channels[0].ChannelID != "1" {
+		t.Fatalf("curated channels=%#v", s.Channels)
+	}
+}
+
+func TestServer_programmingEndpoints(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "programming.json")
+	s := &Server{ProgrammingRecipeFile: path}
+	s.UpdateChannels([]catalog.LiveChannel{
+		{ChannelID: "1", GuideNumber: "101", GuideName: "News One", GroupTitle: "News", SourceTag: "iptv", StreamURL: "http://a/1"},
+		{ChannelID: "2", GuideNumber: "102", GuideName: "Sports Two", GroupTitle: "Sports", SourceTag: "iptv", StreamURL: "http://a/2"},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/programming/categories.json?category=iptv--news", nil)
+	w := httptest.NewRecorder()
+	s.serveProgrammingCategories().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("categories status=%d", w.Code)
+	}
+	var categories struct {
+		Categories []map[string]interface{} `json:"categories"`
+		Members    []map[string]interface{} `json:"members"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &categories); err != nil {
+		t.Fatalf("categories unmarshal: %v", err)
+	}
+	if len(categories.Categories) != 2 || len(categories.Members) != 1 {
+		t.Fatalf("categories body=%s", w.Body.String())
+	}
+
+	postBody := strings.NewReader(`{
+  "selected_categories": ["iptv--news"],
+  "included_channel_ids": ["2"],
+  "order_mode": "custom",
+  "custom_order": ["2", "1"]
+}`)
+	req = httptest.NewRequest(http.MethodPost, "/programming/recipe.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveProgrammingRecipe().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("recipe status=%d body=%s", w.Code, w.Body.String())
+	}
+	if len(s.Channels) != 2 || s.Channels[0].ChannelID != "2" || s.Channels[1].ChannelID != "1" {
+		t.Fatalf("curated channels=%#v", s.Channels)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/programming/preview.json?limit=1", nil)
+	w = httptest.NewRecorder()
+	s.serveProgrammingPreview().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("preview status=%d", w.Code)
+	}
+	var preview programmingPreviewReport
+	if err := json.Unmarshal(w.Body.Bytes(), &preview); err != nil {
+		t.Fatalf("preview unmarshal: %v", err)
+	}
+	if preview.RawChannels != 2 || preview.CuratedChannels != 2 || len(preview.Lineup) != 1 || preview.Lineup[0].ChannelID != "2" {
+		t.Fatalf("preview=%+v", preview)
+	}
+}
+
 func TestSummarizeLineupIntegrity(t *testing.T) {
 	live := []catalog.LiveChannel{
 		{ChannelID: "1", GuideNumber: "101", GuideName: "Ch1", TVGID: "one", EPGLinked: true, StreamURL: "http://a/1"},

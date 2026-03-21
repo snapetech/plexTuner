@@ -85,12 +85,30 @@ cat >"$TMP_DIR/catalog-full.json" <<'JSON'
       "channel_id": "ch1",
       "guide_number": "101",
       "guide_name": "Smoke One",
+      "group_title": "News",
       "stream_url": "http://example.invalid/stream-1.ts",
       "stream_urls": ["http://example.invalid/stream-1.ts"],
       "epg_linked": true,
       "tvg_id": "smoke.one"
+    },
+    {
+      "channel_id": "ch2",
+      "guide_number": "102",
+      "guide_name": "Smoke Two",
+      "group_title": "Sports",
+      "stream_url": "http://example.invalid/stream-2.ts",
+      "stream_urls": ["http://example.invalid/stream-2.ts"],
+      "epg_linked": true,
+      "tvg_id": "smoke.two"
     }
   ]
+}
+JSON
+
+cat >"$TMP_DIR/programming.json" <<'JSON'
+{
+  "selected_categories": ["news"],
+  "order_mode": "source"
 }
 JSON
 
@@ -98,6 +116,41 @@ cat >"$TMP_DIR/catalog-empty.json" <<'JSON'
 {
   "movies": [],
   "series": [],
+  "live_channels": []
+}
+JSON
+
+cat >"$TMP_DIR/catalog-vod.json" <<'JSON'
+{
+  "movies": [
+    {
+      "id": "m1",
+      "title": "Smoke Movie",
+      "year": 2024,
+      "stream_url": "http://example.invalid/movie.mp4"
+    }
+  ],
+  "series": [
+    {
+      "id": "s1",
+      "title": "Smoke Show",
+      "year": 2023,
+      "seasons": [
+        {
+          "number": 1,
+          "episodes": [
+            {
+              "id": "e1",
+              "season_num": 1,
+              "episode_num": 1,
+              "title": "Pilot",
+              "stream_url": "http://example.invalid/show-s01e01.mp4"
+            }
+          ]
+        }
+      ]
+    }
+  ],
   "live_channels": []
 }
 JSON
@@ -116,6 +169,7 @@ run_serve() {
   IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
   IPTV_TUNERR_XMLTV_URL= \
   IPTV_TUNERR_WEBUI_DISABLED=1 \
+  IPTV_TUNERR_PROGRAMMING_RECIPE_FILE="$TMP_DIR/programming.json" \
   "$BIN" serve -catalog "$catalog" -addr ":$port" -base-url "http://127.0.0.1:$port" \
     >"$TMP_DIR/serve-$port.log" 2>&1 &
   PIDS+=("$!")
@@ -136,6 +190,11 @@ assert_status "http://127.0.0.1:$port_full/guide.xml" "200"
 assert_header "http://127.0.0.1:$port_full/guide.xml" "X-IptvTunerr-Guide-State" "ready"
 assert_status "http://127.0.0.1:$port_full/lineup.json" "200"
 grep -q '"GuideNumber":"101"' <(curl -sS "http://127.0.0.1:$port_full/lineup.json") || fail "full catalog lineup missing expected guide number"
+! grep -q '"GuideNumber":"102"' <(curl -sS "http://127.0.0.1:$port_full/lineup.json") || fail "programming recipe did not filter second category"
+grep -q '"raw_channels": 2' <(curl -sS "http://127.0.0.1:$port_full/programming/preview.json") || fail "programming preview missing raw channel count"
+grep -q '"curated_channels": 1' <(curl -sS "http://127.0.0.1:$port_full/programming/preview.json") || fail "programming preview missing curated channel count"
+grep -q '"id": "news"' <(curl -sS "http://127.0.0.1:$port_full/programming/categories.json") || fail "programming categories missing News"
+grep -q '"id": "sports"' <(curl -sS "http://127.0.0.1:$port_full/programming/categories.json") || fail "programming categories missing Sports"
 
 port_empty="$(pick_port)"
 run_serve "$TMP_DIR/catalog-empty.json" "$port_empty"
@@ -149,12 +208,20 @@ assert_header "http://127.0.0.1:$port_empty/discover.json" "X-IptvTunerr-Startup
 assert_header "http://127.0.0.1:$port_empty/lineup.json" "X-IptvTunerr-Startup-State" "loading"
 
 port_vod="$(pick_port)"
-run_vod_webdav "$TMP_DIR/catalog-full.json" "$port_vod"
+run_vod_webdav "$TMP_DIR/catalog-vod.json" "$port_vod"
 wait_http_code "http://127.0.0.1:$port_vod/" "405" || fail "vod-webdav root not ready"
+options_headers="$TMP_DIR/options.headers"
+options_code="$(curl -sS -X OPTIONS -D "$options_headers" -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port_vod/" || true)"
+[[ "$options_code" == "200" ]] || fail "vod-webdav OPTIONS status=$options_code"
+grep -qi '^DAV:' "$options_headers" || fail "vod-webdav OPTIONS missing DAV header"
 propfind_body="$TMP_DIR/propfind.xml"
 propfind_code="$(curl -sS -X PROPFIND -H 'Depth: 1' -H 'Content-Type: text/xml' --data '<propfind xmlns="DAV:"><allprop/></propfind>' -o "$propfind_body" -w '%{http_code}' "http://127.0.0.1:$port_vod/" || true)"
 [[ "$propfind_code" == "207" ]] || fail "vod-webdav PROPFIND status=$propfind_code body=$(cat "$propfind_body" 2>/dev/null)"
 grep -q "Movies" "$propfind_body" || fail "vod-webdav PROPFIND missing Movies"
 grep -q "TV" "$propfind_body" || fail "vod-webdav PROPFIND missing TV"
+movies_body="$TMP_DIR/propfind-movies.xml"
+movies_code="$(curl -sS -X PROPFIND -H 'Depth: 1' -H 'Content-Type: text/xml' --data '<a:propfind xmlns:a="DAV:"><a:allprop/></a:propfind>' -o "$movies_body" -w '%{http_code}' "http://127.0.0.1:$port_vod/Movies" || true)"
+[[ "$movies_code" == "207" ]] || fail "vod-webdav Movies PROPFIND status=$movies_code body=$(cat "$movies_body" 2>/dev/null)"
+grep -q "Smoke Movie" "$movies_body" || fail "vod-webdav Movies PROPFIND missing movie directory"
 
 log "smoke checks passed"

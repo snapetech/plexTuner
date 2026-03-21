@@ -28,10 +28,11 @@ It exists to encourage quality gains without derailing the current task.
   Category: reliability
   Title: Adaptive per-account contract learning for provider pools
   Context: The gateway now has explicit provider-account leasing and can enforce `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT`, but that cap is still operator-tuned. Different panels can allow different concurrent counts per credential set, and those limits may need to be learned independently per account rather than assumed globally.
-  Why it matters: Multi-account concurrency is now real, but it still relies on one static knob instead of learning or persisting per-account stream limits from actual upstream behavior.
-  Evidence: `internal/tuner/gateway_accounts.go`, `internal/tuner/gateway_stream_upstream.go`, and the new `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT` runtime surface.
-  Suggested fix: Teach the gateway to learn, persist, and expose per-account stream caps or contention signals from upstream responses so multi-account setups self-tune instead of relying only on a single env cap.
-  Risk/Scope: medium | fits current scope? no
+  Status: **Partially shipped 2026-03-21** — Tunerr now learns tighter per-account caps from upstream concurrency-limit signals and exposes them as `account_learned_limits` on `/provider/profile.json`.
+  Why it matters: Multi-account concurrency is now more truthful at runtime, but the learned limits are still process-local and do not yet decay or persist across restarts.
+  Evidence: `internal/tuner/gateway_accounts.go`, `internal/tuner/gateway_stream_response.go`, `internal/tuner/gateway_hls.go`, `/provider/profile.json`.
+  Suggested fix: Persist learned account limits (or at least account contention counters) alongside other provider/autopilot state, with a TTL/decay rule so temporary provider contention does not become permanent stickiness.
+  Risk/Scope: medium | fits current scope? yes
   User decision needed?: no
 
 - Date: 2026-03-21

@@ -383,7 +383,28 @@ What it exposes:
 Related env:
 - `IPTV_TUNERR_PROVIDER_AUTOTUNE` — default `true`; enables conservative provider-aware runtime tuning when the operator has not explicitly set the relevant knob
 - `IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE` — when `true`/`1`/`on` **and** autotune is on, upstream hosts that exceed **`IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_AFTER`** consecutive failure signals are **skipped** in **`walkStreamUpstreams`** while at least one non-quarantined backup URL remains (per-host cooldown **`IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE_SEC`**, default **900**). Surfaced on **`/provider/profile.json`** as **`auto_host_quarantine`**, **`upstream_quarantine_skips_total`** (cumulative), **`penalized_hosts[].quarantined_until`**, **`quarantined_hosts`**, and **`remediation_hints`** (`host_quarantine_active`). With **`IPTV_TUNERR_METRICS_ENABLE`**, Prometheus **`iptv_tunerr_upstream_quarantine_skips_total`** matches the same events.
-- `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT` — optional per-provider-account concurrent-stream cap for deduplicated multi-account channels. When set to a positive integer, live stream ordering prefers less-loaded credential sets and rejects new tunes with HDHR-style **805** / HTTP **503** when every distinct provider account for that channel is already at the cap. If unset, Tunerr still uses account-aware spreading for channels that carry multiple distinct credential sets, but only as a best-effort ordering hint.
+- `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT` — optional per-provider-account concurrent-stream cap for deduplicated multi-account channels. When set to a positive integer, live stream ordering prefers less-loaded credential sets and rejects new tunes with HDHR-style **805** / HTTP **503** when every distinct provider account for that channel is already at the cap. If unset, Tunerr still uses account-aware spreading for channels that carry multiple distinct credential sets, and now learns tighter per-account caps from upstream concurrency-limit signals when a specific credential set starts returning `423` / `458` / `509` / similar limit responses.
+- `/provider/profile.json` now includes `account_learned_limits[]` so operators can see which credential set has learned a tighter cap, how many contention signals were seen, and whether that account currently has leased streams.
+- `IPTV_TUNERR_PROGRAMMING_RECIPE_FILE` — optional JSON file storing the server-side Programming Manager recipe. When set, Tunerr applies the saved category/channel selection and custom order after guide/DNA intelligence and before final lineup exposure. Surfaced via `/programming/categories.json`, `/programming/recipe.json`, `/programming/preview.json`, and `/debug/runtime.json`.
+
+## Programming Manager foundation endpoints
+
+Server-backed lineup-curation primitives for the upcoming Programming Manager UI:
+- `GET /programming/categories.json`
+- `GET /programming/categories.json?category=<id>`
+- `GET /programming/recipe.json`
+- `POST /programming/recipe.json`
+- `GET /programming/preview.json`
+
+What they expose:
+- stable category inventory built from the raw post-intelligence lineup (`group_title` / `source_tag`)
+- optional per-category member listing
+- the durable saved recipe (`selected_categories`, `included_channel_ids`, `excluded_channel_ids`, `order_mode`, `custom_order`)
+- a preview of the currently curated lineup after the recipe is applied
+
+Notes:
+- `POST /programming/recipe.json` is localhost/LAN-operator guarded with the same policy as other tuner-side operator mutation endpoints.
+- A configured `IPTV_TUNERR_PROGRAMMING_RECIPE_FILE` is required for durable writes; without it, the recipe endpoint is read-only and reports that no writable file is configured.
 
 ## Guide highlights endpoint
 

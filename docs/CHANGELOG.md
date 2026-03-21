@@ -15,12 +15,17 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ### Streaming
 - **Provider-account stream pooling:** deduplicated multi-account live channels now derive a stable provider-account identity per URL, prefer less-loaded accounts during upstream ordering, and can enforce **`IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT`** as a per-credential stream cap. When every candidate account for a channel is already at the cap, Tunerr now rejects the tune locally with HDHR-style **805** / HTTP **503** instead of waiting for a later upstream failure.
+- **Adaptive provider-account limits:** provider-account pooling is no longer purely static. When a specific credential set starts returning upstream concurrency-limit responses, Tunerr now learns a tighter cap for that account, applies it on later tune attempts, and surfaces the learned state in **`/provider/profile.json`** as **`account_learned_limits`**.
 
 ### VOD
 - **WebDAV mount helper UX:** added **`iptv-tunerr vod-webdav-mount-hint`** plus concrete platform-specific mount commands so the cross-platform WebDAV VOD surface is easier to mount on macOS, Windows, and Linux without manually translating the server URL each time.
+- **Broader WebDAV client validation:** WebDAV coverage now exercises `OPTIONS` + multi-client `PROPFIND` behavior in unit tests and binary smoke, including a live `PROPFIND /Movies` pass against `iptv-tunerr vod-webdav` so macOS/Windows-style clients are less likely to regress silently.
+
+### Programming Manager
+- **PM-001 / PM-002 foundations:** added a durable lineup-recipe layer via **`IPTV_TUNERR_PROGRAMMING_RECIPE_FILE`** and the first Programming Manager endpoints: **`/programming/categories.json`**, **`/programming/recipe.json`**, and **`/programming/preview.json`**. Tunerr now keeps the raw post-intelligence lineup separate from the final exposed lineup so category-first curation and saved custom order can sit between ingest intelligence and Plex-visible output.
 
 ### Testing / CI
-- **Provider-pool + WebDAV smoke coverage:** `scripts/ci-smoke.sh` now exercises `vod-webdav-mount-hint` for macOS/Windows output and runs a live WebDAV `PROPFIND` smoke against `iptv-tunerr vod-webdav`. Targeted gateway tests also now cover provider-account local rejection, lease release after successful playback, and provider-profile account-pool visibility.
+- **Provider-pool + WebDAV smoke coverage:** `scripts/ci-smoke.sh` now exercises `vod-webdav-mount-hint` for macOS/Windows output, runs live WebDAV `OPTIONS` / `PROPFIND` smoke against `iptv-tunerr vod-webdav`, and validates the new Programming Manager category/preview endpoints against a real temporary binary. Targeted gateway tests also now cover provider-account local rejection, lease release after successful playback, learned per-account caps, and provider-profile account-pool visibility.
 
 ## [v0.1.26] — 2026-03-21
 

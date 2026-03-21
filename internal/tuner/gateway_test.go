@@ -1544,6 +1544,43 @@ func TestGateway_stream_successReleasesProviderAccountLease(t *testing.T) {
 	}
 }
 
+func TestGateway_stream_learnsProviderAccountLimit(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "maximum 1 connections allowed", 423)
+	}))
+	defer srv.Close()
+
+	ch := catalog.LiveChannel{
+		GuideNumber: "1",
+		GuideName:   "Ch1",
+		StreamURLs:  []string{srv.URL},
+		StreamAuths: []catalog.StreamAuth{{Prefix: srv.URL, User: "u1", Pass: "p1"}},
+	}
+	g := &Gateway{
+		Channels:     []catalog.LiveChannel{ch},
+		TunerCount:   4,
+		ProviderUser: "u1",
+		ProviderPass: "p1",
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("code=%d", w.Code)
+	}
+	limits := g.providerAccountLearnedLimits()
+	if len(limits) != 1 {
+		t.Fatalf("learned account limits=%#v", limits)
+	}
+	if limits[0].LearnedLimit != 1 || limits[0].SignalCount != 1 {
+		t.Fatalf("limit state=%#v", limits[0])
+	}
+	if got := g.effectiveProviderAccountLimitForKey(&ch, providerAccountMustKey(t, g, &ch, srv.URL)); got != 1 {
+		t.Fatalf("effective account limit=%d want 1", got)
+	}
+}
+
 func TestParseUpstreamConcurrencyLimit(t *testing.T) {
 	cases := []struct {
 		preview string
@@ -2919,6 +2956,51 @@ func TestGateway_fetchAndRewritePlaylist_retriesConcurrencyLimit(t *testing.T) {
 	if g.learnedUpstreamLimit != 1 {
 		t.Fatalf("learnedUpstreamLimit=%d want 1", g.learnedUpstreamLimit)
 	}
+}
+
+func TestGateway_fetchAndRewritePlaylist_learnsProviderAccountLimitFromContext(t *testing.T) {
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if hits == 1 {
+			http.Error(w, "maximum 1 connections allowed", 509)
+			return
+		}
+		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		_, _ = w.Write([]byte("#EXTM3U\n#EXT-X-TARGETDURATION:1\nseg.ts\n"))
+	}))
+	defer srv.Close()
+
+	t.Setenv("IPTV_TUNERR_HLS_PLAYLIST_RETRY_LIMIT", "1")
+	t.Setenv("IPTV_TUNERR_HLS_PLAYLIST_RETRY_BACKOFF_MS", "1")
+	ch := &catalog.LiveChannel{
+		GuideNumber: "1",
+		GuideName:   "Ch1",
+		StreamAuths: []catalog.StreamAuth{{Prefix: srv.URL, User: "u1", Pass: "p1"}},
+	}
+	g := &Gateway{TunerCount: 4, ProviderUser: "u1", ProviderPass: "p1"}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/1", nil)
+	req = req.WithContext(context.WithValue(req.Context(), gatewayChannelKey{}, ch))
+	_, _, err := g.fetchAndRewritePlaylist(req, srv.Client(), srv.URL+"/playlist.m3u8")
+	if err != nil {
+		t.Fatalf("fetchAndRewritePlaylist retry: %v", err)
+	}
+	limits := g.providerAccountLearnedLimits()
+	if len(limits) != 1 {
+		t.Fatalf("learned account limits=%#v", limits)
+	}
+	if limits[0].LearnedLimit != 1 || limits[0].SignalCount != 1 {
+		t.Fatalf("limit state=%#v", limits[0])
+	}
+}
+
+func providerAccountMustKey(t *testing.T, g *Gateway, ch *catalog.LiveChannel, rawURL string) string {
+	t.Helper()
+	identity, ok := providerAccountIdentityForURL(g, ch, rawURL)
+	if !ok {
+		t.Fatal("expected provider account identity")
+	}
+	return identity.Key
 }
 
 func TestCopyStreamResponseHeaders_StripsSetCookie(t *testing.T) {

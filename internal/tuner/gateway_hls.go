@@ -419,6 +419,12 @@ func (g *Gateway) fetchAndRewritePlaylistWithContext(r *http.Request, client *ht
 			limited := isUpstreamConcurrencyLimit(resp.StatusCode, preview)
 			if limited {
 				g.noteUpstreamConcurrencySignal(resp.StatusCode, preview)
+				if ch := gatewayChannelFromContext(ctx); ch != nil {
+					if learnedAccount := g.learnProviderAccountLimit(ch, playlistURL, preview); learnedAccount > 0 {
+						log.Printf("gateway: req=%s playlist concurrency learned provider-account limit=%d status=%d url=%s body=%q",
+							reqID, learnedAccount, resp.StatusCode, safeurl.RedactURL(playlistURL), logPreview)
+					}
+				}
 				if learned := g.learnUpstreamConcurrencyLimit(preview); learned > 0 {
 					log.Printf("gateway: req=%s playlist concurrency learned limit=%d status=%d url=%s body=%q",
 						reqID, learned, resp.StatusCode, safeurl.RedactURL(playlistURL), logPreview)

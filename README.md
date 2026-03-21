@@ -249,7 +249,7 @@ IPTV_TUNERR_PROVIDER_PASS_2=pass2
 ```
 Each numbered provider is independently probed. The best host indexes the catalog; all provider hosts become stream URL fallbacks per channel. Channels with duplicate `tvg-id` values across providers are deduplicated — one entry in the lineup with all matching stream URLs ranked and available for failover.
 
-When a deduplicated channel has several distinct provider-account credential sets behind it, the gateway now spreads active streams across those accounts instead of always retrying the first ranked URL. Use `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT` if one credential set should allow more than one active viewer.
+When a deduplicated channel has several distinct provider-account credential sets behind it, the gateway now spreads active streams across those accounts instead of always retrying the first ranked URL. Use `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT` if one credential set should allow more than one active viewer. If one specific credential set starts returning upstream concurrency-limit responses, Tunerr now learns a tighter cap for that account and exposes it on `/provider/profile.json`.
 
 ### 4. Post-index stream validation
 
@@ -560,6 +560,8 @@ IPTV_TUNERR_GUIDE_POLICY=healthy           # keep only channels with real progra
 IPTV_TUNERR_REGISTER_RECIPE=healthy        # use channel-intelligence scoring to prune/reorder channels before Plex/Emby/Jellyfin registration
 # or: sports_now | kids_safe | locals_first
 ```
+
+For durable server-side curation beyond the built-in lineup recipes, set `IPTV_TUNERR_PROGRAMMING_RECIPE_FILE=/path/to/programming.json`. Tunerr will then expose `/programming/categories.json`, `/programming/recipe.json`, and `/programming/preview.json`, and apply the saved category/channel selection before the final lineup is exposed to Plex.
 
 For catch-up preview/publish flows:
 
