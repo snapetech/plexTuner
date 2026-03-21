@@ -3888,6 +3888,18 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
 
 ---
 
+- Date: 2026-03-21
+  Title: Add standardized evidence intake path for tester cases
+  Summary:
+    - Added `scripts/evidence-intake.sh` to scaffold or populate `.diag/evidence/<case-id>/` with a consistent layout for debug-bundle output, PMS logs, Tunerr logs, pcap captures, and analyst notes.
+    - Documented the workflow in `docs/how-to/evidence-intake.md`, indexed it from the docs entrypoints, and added `planning/README.md` so future plans point at the evidence bundle instead of mixing raw captures into planning files.
+    - Added an `evidence_intake` helper to `memory-bank/commands.yml` so the intake path is discoverable alongside the existing harness/debug commands.
+  Verification:
+    - `bash -n scripts/evidence-intake.sh`
+    - `./scripts/verify`
+
+---
+
 - Date: 2026-03-20
   Title: Fix guide.xml startup race before lineup load
   Summary:

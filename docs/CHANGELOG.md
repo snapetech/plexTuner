@@ -16,6 +16,9 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 ### Guide / XMLTV
 - **Startup guide refresh race:** XMLTV startup refresh now skips caching an empty guide when no lineup channels have been loaded yet, and `UpdateChannels` triggers a follow-up refresh as soon as the lineup arrives. This prevents `guide.xml` from getting stuck as an 82-byte empty `<tv>` document for the full cache TTL during startup.
 
+### Operability
+- **Evidence intake scaffold:** added **`scripts/evidence-intake.sh`** plus [how-to/evidence-intake](how-to/evidence-intake.md) and **`planning/README.md`** so real tester cases can be staged consistently under **`.diag/evidence/<case-id>/`** with debug-bundle output, PMS logs, Tunerr logs, pcaps, and analyst notes before running **`scripts/analyze-bundle.py`**.
+
 ## [v0.1.18] — 2026-03-20
 
 ### Guide / XMLTV

@@ -23,6 +23,7 @@ Goal → preconditions → steps → verify.
 | [tester-release-notes-draft](tester-release-notes-draft.md) | Draft release notes / tester-facing summary for current validation builds. |
 | [cloudflare-bypass](cloudflare-bypass.md) | Cloudflare-protected IPTV: UA cycling, cookies, clearance, operator knobs. |
 | [debug-bundle](debug-bundle.md) | Collect `iptv-tunerr debug-bundle` and analyze with `scripts/analyze-bundle.py`. |
+| [evidence-intake](evidence-intake.md) | Standardize real tester cases into `.diag/evidence/<case-id>/` with debug-bundle, PMS logs, Tunerr logs, pcap, and notes. |
 | [hybrid-hdhr-iptv](hybrid-hdhr-iptv.md) | Physical HDHomeRun + IPTV: lineup merge, guide.xml, optional SQLite caps. |
 | [lineup-parity-lp012-closure](lineup-parity-lp012-closure.md) | **LP-012** operator checklist (parity epic doc sweep). |
 | [stream-compare-harness](stream-compare-harness.md) | Direct upstream vs Tunerr: **`stream-compare-harness.sh`**, manifests, optional pcap (**§9**). |

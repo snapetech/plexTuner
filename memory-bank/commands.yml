@@ -30,6 +30,7 @@ stream_compare_harness: "DIRECT_URL=<upstream.m3u8> TUNERR_URL=<base/stream/id> 
 multi_stream_harness: "TUNERR_BASE_URL=http://127.0.0.1:5004 CHANNEL_IDS=123,456 ./scripts/multi-stream-harness.sh  # staggered parallel live pulls + provider/runtime/attempt snapshots + summary for 'second stream kills the first'"
 live_race_harness: "RUN_SECONDS=30 CONCURRENCY=6 ./scripts/live-race-harness.sh  # synthetic/replay + concurrent probes + optional PMS/tcpdump/Plex Web probe; .diag/live-race/<id>/"
 harness_index: "python3 scripts/harness-index.py  # list newest .diag/live-race|stream-compare|multi-stream runs; add --json"
+evidence_intake: "./scripts/evidence-intake.sh -id <case-id> -print  # scaffold .diag/evidence/<case-id>/ for debug-bundle + PMS logs + Tunerr logs + pcap"
 build_test_packages: "./scripts/build-test-packages.sh  # cross-platform tester archives + checksums"
 build_tester_release: "./scripts/build-tester-release.sh  # staged tester handoff bundle (packages/examples/docs/manifest)"
 plex_hidden_grab_recover: "./scripts/plex-hidden-grab-recover.sh --dry-run  # detect Plex hidden active-grab wedge; add --restart when safe"
