@@ -229,7 +229,10 @@ Supplement or enrich the paid catalog with public M3U feeds fetched at index tim
 | Feature | Description |
 |---------|-------------|
 | **Cross-platform tester package builder** | `scripts/build-test-packages.sh` builds archives + checksums for Linux/macOS/Windows. |
+| **Release-readiness gate** | `scripts/release-readiness.sh` is now the explicit pre-tag gate: full `./scripts/verify`, focused parity/programming/provider/WebDAV suites, and optional `--include-mac` / `--include-windows-package` host lanes. The matching [release-readiness matrix](explanations/release-readiness-matrix.md) tracks which surfaces are unit-, smoke-, or host-proven. |
 | **Tester handoff bundle builder** | `scripts/build-tester-release.sh` stages packages + docs + examples + manifest for distribution. |
+| **macOS bare-metal smoke** | `scripts/mac-baremetal-smoke.sh` cross-builds `darwin/arm64`, optionally sends Wake-on-LAN, stages a temp binary over SSH, and proves startup/web UI/Xtream/virtual-channel/WebDAV behavior on a real Mac host. |
+| **Windows bare-metal smoke package** | `scripts/windows-baremetal-package.sh` prepares the Windows package, and `scripts/windows-baremetal-smoke.ps1` is ready to prove the same startup/web UI/WebDAV contract once the host/VM is up. |
 | **Tester handoff docs** | Packaging and tester checklists are documented under `docs/how-to/`. |
 | **CI tester bundles** | GitHub Actions workflow builds tester bundles on demand/tag. |
 | **Hidden Plex grab recovery** | `scripts/plex-hidden-grab-recover.sh` + runbook for Plex Live TV hidden active-grab wedges. |
@@ -239,13 +242,14 @@ Supplement or enrich the paid catalog with public M3U feeds fetched at index tim
 | **Stream-compare harness** | **`scripts/stream-compare-harness.sh`** diffs direct upstream vs Tunerr (`curl`/`ffprobe`/optional `ffplay`, optional pcap, **`manifest.json`**, **`stream-compare-report.py`**). How-to: [stream-compare-harness.md](how-to/stream-compare-harness.md). |
 | **Live-race harness + Plex sessions** | With **`PMS_URL`** + **`PMS_TOKEN`** (or Tunerr/Plex env aliases), **`scripts/live-race-harness.sh`** can snapshot Plex **`/status/sessions`** into the bundle; **`live-race-harness-report.py`** summarizes players/products for **HR-002** / **HR-003** correlation. How-to: [live-race-harness.md](how-to/live-race-harness.md). |
 | **Multi-stream contention harness** | **`scripts/multi-stream-harness.sh`** runs 2+ staggered live pulls against a real tuner, samples **`/provider/profile.json`** + **`/debug/stream-attempts.json`** + **`/debug/runtime.json`**, optionally snapshots Plex sessions, and emits **`report.txt`** / **`report.json`** for “second stream starts, first dies” regressions. How-to: [multi-stream-harness.md](how-to/multi-stream-harness.md). |
+| **WebDAV client-matrix harness** | **`scripts/vod-webdav-client-harness.sh`** replays Finder/WebDAVFS and Windows MiniRedir request patterns against a real `vod-webdav` binary, and **`scripts/vod-webdav-client-diff.py`** compares host bundles against a known-good baseline. |
 
 ## 16. Platform support summary
 
 | Platform | Core app (`run/serve/index/probe/supervise`) | HDHR HTTP endpoints | HDHR network mode | Linux `mount` / VODFS | `vod-webdav` |
 |----------|----------------------------------------------|---------------------|-------------------|------------------------|--------------|
 | Linux | Yes | Yes | Yes | Yes | Yes |
-| macOS | Yes | Yes | Compiles (runtime validation depends on environment) | No | Yes |
+| macOS | Yes | Yes | Yes (bare-metal smoke proven) | No | Yes |
 | Windows | Yes | Yes | Compiles (native validation recommended; `wine` smoke not authoritative) | No | Yes |
 
 ## 17. Not supported / limits (current)

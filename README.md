@@ -890,6 +890,7 @@ iptv-tunerr vod-webdav -catalog ./catalog.json -cache ./cache -addr 127.0.0.1:58
 That serves the same synthetic `Movies/` / `TV/` tree over read-only WebDAV so the OS can mount it natively. Reads still need `-cache` / `IPTV_TUNERR_CACHE` so Tunerr has somewhere to materialize bytes on demand.
 
 Platform details: [`docs/how-to/platform-requirements.md`](docs/how-to/platform-requirements.md)
+Host validation paths: [`docs/how-to/mac-baremetal-smoke.md`](docs/how-to/mac-baremetal-smoke.md) · [`docs/how-to/windows-baremetal-smoke.md`](docs/how-to/windows-baremetal-smoke.md) · [`docs/how-to/vod-webdav-client-harness.md`](docs/how-to/vod-webdav-client-harness.md)
 
 ---
 
@@ -1169,6 +1170,16 @@ Verify the build:
 ./scripts/verify
 ```
 
+Release gate before tagging:
+
+```bash
+./scripts/release-readiness.sh
+# optional extra host proof when the Mac is available
+./scripts/release-readiness.sh --include-mac
+```
+
+That gate now layers the full repo verify, focused parity/programming/provider/WebDAV suites, and optional host-proof lanes instead of pretending every surface is proven by one `go test ./...`.
+
 ## License
 
 This project is licensed under the GNU Affero General Public License v3.0 only. See [LICENSE](LICENSE).
@@ -1177,15 +1188,14 @@ This project is licensed under the GNU Affero General Public License v3.0 only. 
 
 ## Recent Changes
 
-- **Autopilot global host preference:** **`IPTV_TUNERR_AUTOPILOT_GLOBAL_PREFERRED_HOSTS`** — comma-separated hostnames preferred for every channel (after per-DNA memory, before consensus) — [cli-and-env-reference](docs/reference/cli-and-env-reference.md).
-- **Host quarantine (INT-010):** optional **`IPTV_TUNERR_PROVIDER_AUTOTUNE_HOST_QUARANTINE`** — skip repeatedly failing upstream hosts when backup URLs remain — [cli-and-env-reference](docs/reference/cli-and-env-reference.md).
-- **Architecture diagram:** [docs/explanations/architecture.md](docs/explanations/architecture.md) includes a **Mermaid** flowchart (provider → catalog → tuner + intelligence → registration).
-- **Hot-start by category:** **`IPTV_TUNERR_HOT_START_GROUP_TITLES`** marks whole M3U **`group_title`** buckets (substring match) for faster startup tuning — [cli-and-env-reference](docs/reference/cli-and-env-reference.md).
-- **Plex onboarding how-to**: [docs/how-to/connect-plex-to-iptv-tunerr.md](docs/how-to/connect-plex-to-iptv-tunerr.md) (wizard vs **`-register-plex`** vs API; channelmap, **480** limit). See [plex-dvr-lifecycle-and-api](docs/reference/plex-dvr-lifecycle-and-api.md).
-- **Prometheus / Autopilot consensus**: with **`IPTV_TUNERR_METRICS_ENABLE`**, **`GET /metrics`** includes **`iptv_tunerr_autopilot_consensus_*`** gauges — [cli-and-env-reference](docs/reference/cli-and-env-reference.md).
-- **`/healthz` + `/readyz`**: JSON readiness gates for ops and Kubernetes (**503** until live channels load). Examples probe **`/readyz`**; see [runbook §8](docs/runbooks/iptvtunerr-troubleshooting.md#8-tuner-endpoints-sanity-check) and [k8s/README.md](k8s/README.md).
-- **Native mux visibility**: successful Tunerr **`?mux=hls` / `?mux=dash`** responses can include **`X-IptvTunerr-Native-Mux: hls|dash`** (also exposed for CORS when mux CORS is on) — [hls-mux-toolkit](docs/reference/hls-mux-toolkit.md).
-- **Named stream profiles**: optional **`IPTV_TUNERR_STREAM_PROFILES_FILE`** matrix (**LP-010** / **LP-011**) — [transcode-profiles](docs/reference/transcode-profiles.md).
+- **Release-readiness is explicit now:** use [`scripts/release-readiness.sh`](scripts/release-readiness.sh) plus [`docs/explanations/release-readiness-matrix.md`](docs/explanations/release-readiness-matrix.md) to see which surfaces are unit-proven, smoke-proven, or host-proven before tagging.
+- **Programming Manager is now a real product surface:** server-backed category browse, quick filters, manual order, exact-backup grouping and preference, harvest assists/import, and live preview all ship in the dedicated deck — see [`docs/features.md`](docs/features.md) and [`docs/epics/EPIC-programming-manager.md`](docs/epics/EPIC-programming-manager.md).
+- **Virtual channels now publish downstream, not just preview:** the owned-media schedule path now has `/virtual-channels/guide.xml`, focused detail/schedule surfaces, and Xtream live exposure through `player_api.php`, `get.php`, and `/live/<user>/<pass>/virtual.<id>.mp4`.
+- **Diagnostics moved into the operator plane:** the deck can now launch bounded `stream-compare` / `channel-diff` runs, scaffold evidence bundles, and summarize the latest `.diag` findings instead of leaving those workflows buried in shell scripts.
+- **Provider-account pooling is deeper:** Tunerr now spreads live sessions across distinct account credentials, learns tighter per-account upstream caps from real limit responses, persists those learned caps across restarts, and exposes them on `/provider/profile.json`.
+- **Cross-platform VOD parity is stronger:** Linux keeps native `mount`, while macOS/Windows use the read-only `vod-webdav` surface with explicit protocol contract, client-matrix harnesses, baseline-vs-host diff tooling, and a passing macOS bare-metal smoke lane.
+- **Xtream parity is broader:** downstream users now get entitled `player_api.php`, `get.php`, and `xmltv.php` exports backed by Tunerr’s real live/VOD/series/guide/virtual-channel pipeline instead of a live-only starter.
+- **Startup and guide readiness are less deceptive:** `/guide.xml` returns `503` with a visible loading placeholder until the first real merged guide is ready, and `/readyz` / `/healthz` remain the canonical startup gates for operators and k8s.
 - **Shared HTTP idle pool**: **`IPTV_TUNERR_HTTP_MAX_IDLE_CONNS`**, **`IPTV_TUNERR_HTTP_IDLE_CONN_TIMEOUT_SEC`** across most subsystems (**HR-010**) — [plex-livetv-http-tuning](docs/reference/plex-livetv-http-tuning.md).
 - **Live-race harness + PMS**: optional Plex **`/status/sessions`** snapshots during **`scripts/live-race-harness.sh`** when **`PMS_URL`** + token are set — report summarizes players/sessions (**HR-002** / **HR-003**).
 - **Stream-compare harness how-to**: [docs/how-to/stream-compare-harness.md](docs/how-to/stream-compare-harness.md) (direct vs Tunerr + **`stream-compare-report.py`**; [runbook §9](docs/runbooks/iptvtunerr-troubleshooting.md#9-direct-upstream-vs-tunerr-comparison-harness)).

@@ -4545,3 +4545,21 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
   Links:
     - `internal/webui/deck.js`
     - `docs/epics/EPIC-lineup-harvest.md`
+- Date: 2026-03-21
+  Title: Refresh top-level docs for the shipped `v0.1.28` surface
+  Summary:
+    - Synced `README.md` with the current product story: release-readiness gate, stronger recent-changes list, and explicit macOS/Windows WebDAV host-validation paths.
+    - Updated `docs/features.md` to call out the release-readiness gate, macOS bare-metal smoke, Windows smoke package prep, and the WebDAV client-matrix tooling as first-class shipped features.
+    - Expanded `docs/index.md`, `docs/how-to/index.md`, and `docs/reference/index.md` so the release-readiness matrix, lineup-harvest guide, and host-smoke docs are discoverable from the top-level doc map instead of buried in changelog/task history.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - `v0.1.28` was already pushed before this pass; this task was documentation catch-up, not another code/release cut.
+  Opportunities filed:
+    - none
+  Links:
+    - `README.md`
+    - `docs/features.md`
+    - `docs/index.md`
+    - `docs/how-to/index.md`
+    - `docs/reference/index.md`

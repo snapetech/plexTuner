@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-21):** **Docs sync after `v0.1.28` is complete:** README plus the docs/reference/how-to indexes now reflect the shipped Programming Manager, diagnostics workflows, Xtream/virtual outputs, release-readiness gate, and macOS/Windows host-validation paths. Immediate next depth returns to the release-readiness weak cells that still depend on external/live environments rather than stale docs.
+
 **Latest (2026-03-21):** **Release-proofing pass is now explicit:** added a real release-readiness matrix and a runnable `scripts/release-readiness.sh` gate so "can we prove it before release?" has a concrete answer per feature family. The gate layers full repo verify, focused parity/programming/provider/WebDAV suites, and optional host proofs (`--include-mac`, `--include-windows-package`) instead of pretending every surface is equally proven. Next depth: keep shrinking the weak cells in that matrix, especially broader live/shared-output proof and real Windows-host validation.
 
 **Latest (2026-03-21):** **Mac host proof now covers more than startup and WebDAV:** the bare-metal macOS lane now exercises Xtream `get.php`, `xmltv.php`, virtual-channel live/short-EPG/schedule/playback, plus the dedicated deck and startup contract on a real host, and `./scripts/release-readiness.sh --include-mac` passed with that expanded scope. The remaining weak cells are increasingly the ones that truly require external provider/client environments, not missing host coverage on the surfaces we control.

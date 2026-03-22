@@ -9,18 +9,21 @@ tags: [docs, index]
 
 Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split by reader need.
 
-**Quick entrypoints:** [README](../README.md) (product overview + doc map) · [CHANGELOG](CHANGELOG.md) (**[Unreleased]** = current engineering slices) · [features.md](features.md) (canonical capability table) · [cli-and-env-reference](reference/cli-and-env-reference.md) · [project-backlog](explanations/project-backlog.md) (open work index: epics, opportunities, constraints).
+**Quick entrypoints:** [README](../README.md) (product overview + doc map) · [CHANGELOG](CHANGELOG.md) (**[Unreleased]** = current engineering slices) · [features.md](features.md) (canonical capability table) · [cli-and-env-reference](reference/cli-and-env-reference.md) · [release-readiness-matrix](explanations/release-readiness-matrix.md) (what is actually proven before a tag) · [project-backlog](explanations/project-backlog.md) (open work index: epics, opportunities, constraints).
 
 | Section | Purpose |
 |--------|--------|
 | **[tutorials/](tutorials/index.md)** | Learning-oriented: get started, first run. |
 | **[how-to/](how-to/index.md)** | Task-oriented: first push, add remote. |
 | **[reference/](reference/index.md)** | Facts: commands, config. |
-| **[explanations/](explanations/index.md)** | Why and concepts. Add project docs here. |
+| **[explanations/](explanations/index.md)** | Why and concepts. Includes [release-readiness-matrix](explanations/release-readiness-matrix.md) for current proof/gate coverage. |
 | **[adr/](adr/index.md)** | Decision log: architecture decision records. |
 | **[runbooks/](runbooks/index.md)** | Operational procedures ([troubleshooting](runbooks/iptvtunerr-troubleshooting.md) §8: **`/healthz`**, **`/readyz`**). |
 | **[how-to/deployment.md](how-to/deployment.md)** | Deploy IPTV Tunerr (binary, Docker, systemd, local test script). |
+| **[how-to/mac-baremetal-smoke.md](how-to/mac-baremetal-smoke.md)** | Cross-build, wake, SSH, and prove the app on a real macOS host. |
+| **[how-to/windows-baremetal-smoke.md](how-to/windows-baremetal-smoke.md)** | Prepare and run the Windows bare-metal smoke lane when the host/VM is available. |
 | **[how-to/vod-webdav-client-harness.md](how-to/vod-webdav-client-harness.md)** | Replay macOS/Windows WebDAV client request shapes against `vod-webdav`. |
+| **[how-to/plex-lineup-harvest.md](how-to/plex-lineup-harvest.md)** | Probe Plex lineup variants, capture harvest bundles, and feed Programming Manager import/assist flows. |
 | **[how-to/plex-ops-patterns.md](how-to/plex-ops-patterns.md)** | Advanced Plex-only operating patterns: zero-touch, category DVR fleets, injected DVRs. |
 | **[how-to/package-test-builds.md](how-to/package-test-builds.md)** | Build cross-platform test bundles for testers (Linux/macOS/Windows). |
 | **[how-to/tester-handoff-checklist.md](how-to/tester-handoff-checklist.md)** | Tester handoff checklist (bundle contents, platform expectations, bug report capture). |
@@ -49,9 +52,13 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[explanations/media-server-integration-modes.md](explanations/media-server-integration-modes.md)** | Where the common tuner story ends and Plex-heavy ops begin. |
 | **[explanations/observability-prometheus-and-otel.md](explanations/observability-prometheus-and-otel.md)** | **`/metrics`** and bridging to OpenTelemetry via collector scrape. |
 | **[explanations/always-on-recorder-daemon.md](explanations/always-on-recorder-daemon.md)** | Rolling catch-up recorder daemon (`catchup-daemon`): MVP shipped, extensions noted. |
+| **[explanations/release-readiness-matrix.md](explanations/release-readiness-matrix.md)** | Feature-family proof table for `./scripts/release-readiness.sh`, binary smoke, and host lanes. |
 | **[k8s/README.md](../k8s/README.md)** | Kubernetes deployment (HDHR in cluster). |
 | **[epics/](epics/EPIC-template.md)** | Multi-PR epic template. Use with [memory-bank/work_breakdown.md](../memory-bank/work_breakdown.md). |
 | **[epics/EPIC-lineup-parity.md](epics/EPIC-lineup-parity.md)** | Optional **Lineup-app-style** track: real HDHomeRun client, web dashboard, SQLite EPG, HLS/fMP4 profiles ([inspiration](https://github.com/am385/lineup)). |
+| **[epics/EPIC-programming-manager.md](epics/EPIC-programming-manager.md)** | Category-driven lineup curation, backup groups, quick-add flows, and operator preview UX. |
+| **[epics/EPIC-lineup-harvest.md](epics/EPIC-lineup-harvest.md)** | Harvest Plex local-market lineups and bridge them into Programming Manager. |
+| **[epics/EPIC-feature-parity.md](epics/EPIC-feature-parity.md)** | Broader ecosystem parity roadmap: downstream outputs, operator workflows, users, and publishing. |
 | **product/** · **stories/** | [PRD template](product/PRD-template.md), [STORY template](stories/STORY-template.md). |
 | **[features.md](features.md)** | Full feature list. |
 | **[CHANGELOG.md](CHANGELOG.md)** | Version and change history. |
