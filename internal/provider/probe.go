@@ -35,12 +35,13 @@ type Result struct {
 type Status string
 
 const (
-	StatusOK          Status = "ok"
-	StatusCloudflare  Status = "cloudflare"
-	StatusBadStatus   Status = "bad_status"
-	StatusRateLimited Status = "rate_limited" // 429 Too Many Requests
-	StatusTimeout     Status = "timeout"
-	StatusError       Status = "error"
+	StatusOK           Status = "ok"
+	StatusCloudflare   Status = "cloudflare"
+	StatusAccessDenied Status = "access_denied"
+	StatusBadStatus    Status = "bad_status"
+	StatusRateLimited  Status = "rate_limited" // 429 Too Many Requests
+	StatusTimeout      Status = "timeout"
+	StatusError        Status = "error"
 )
 
 // DefaultLavfUA is the Lavf User-Agent used as a media-client fallback when probing CF-protected URLs.
@@ -53,7 +54,7 @@ func classifyCFResponse(code int, server, previewStr string) bool {
 	bodyHasCFChallenge := strings.Contains(previewStr, "checking your browser") ||
 		strings.Contains(previewStr, "cf-bypass") ||
 		strings.Contains(previewStr, "ray id")
-	if code == 403 || code == 503 || code == 520 || code == 521 || code == 524 {
+	if code == 403 || code == 503 || code == 520 || code == 521 || code == 524 || code == 884 {
 		return bodyHasCFChallenge || isCFServer
 	}
 	return isCFServer && code != http.StatusOK
@@ -224,6 +225,18 @@ func ProbePlayerAPI(ctx context.Context, baseURL, user, pass string, client *htt
 		}
 		return Result{URL: baseURL, Status: StatusCloudflare, StatusCode: code, LatencyMs: latency, BodyPreview: previewStr}
 	}
+	// Some providers gate only on UA without Cloudflare headers. Retry with media-client
+	// candidates to recover from this common "403 from bot filter" class.
+	if code == http.StatusUnauthorized || code == http.StatusForbidden {
+		apiURL := baseURL + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass)
+		for _, ua := range probeUACandidates {
+			if r2 := probePlayerAPIWithUA(ctx, baseURL, apiURL, ua, client, start); r2.Status == StatusOK {
+				r2.WorkingUA = ua
+				return r2
+			}
+		}
+		return Result{URL: probeURL, Status: StatusAccessDenied, StatusCode: code, LatencyMs: latency}
+	}
 	if code != http.StatusOK {
 		return Result{URL: probeURL, Status: StatusBadStatus, StatusCode: code, LatencyMs: latency}
 	}
@@ -370,6 +383,31 @@ func RankedEntries(ctx context.Context, entries []Entry, client *http.Client, op
 	}
 	if opt.BlockCloudflare && cfBlocked > 0 && len(out) == 0 {
 		logf("%s", ErrAllCloudflare)
+	}
+	if len(out) == 0 {
+		accessDenied := 0
+		rateLimited := 0
+		badStatus := 0
+		timeout := 0
+		otherErr := 0
+		for _, er := range results {
+			switch er.Result.Status {
+			case StatusAccessDenied:
+				accessDenied++
+			case StatusRateLimited:
+				rateLimited++
+			case StatusBadStatus:
+				badStatus++
+			case StatusTimeout:
+				timeout++
+			case StatusError:
+				otherErr++
+			}
+		}
+		if accessDenied > 0 || rateLimited > 0 {
+			logf("WARNING: provider probe found no usable player_api endpoint; provider lockout/bot-filter suspected (access_denied=%d rate_limited=%d bad_status=%d timeout=%d error=%d)",
+				accessDenied, rateLimited, badStatus, timeout, otherErr)
+		}
 	}
 	return out
 }

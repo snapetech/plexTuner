@@ -203,6 +203,7 @@ Supplement or enrich the paid catalog with public M3U feeds fetched at index tim
 | Feature | Description |
 |---------|-------------|
 | **Custom M3U URLs** | `IPTV_TUNERR_FREE_SOURCES=url1,url2` — any public M3U URL is fetched and merged. |
+| **Numbered env slots** | `IPTV_TUNERR_FREE_SOURCE_2=https://raw.githubusercontent.com/iptv-org/iptv/master/streams/ca.m3u` adds another public source directly from env without rewriting the `FREE_SOURCES` CSV. |
 | **iptv-org preset** | Built-in support for `iptv-org/iptv` per-country/per-category feeds via `IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_COUNTRIES=us,gb`, `_CATEGORIES=news,sports`, or `_ALL=true`. |
 | **Merge modes** | `supplement` (default) — add channels absent from paid lineup; `merge` — append free URLs as paid-channel fallbacks; `full` — deduplicate combined catalog, paid takes precedence. |
 | **M3U content caching** | Downloaded playlists cached on disk (default 6 h TTL via `IPTV_TUNERR_FREE_SOURCE_CACHE_TTL`). Avoids re-downloading large feeds on every index run. |

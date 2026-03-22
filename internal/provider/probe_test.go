@@ -57,6 +57,24 @@ func TestProbeOne_cloudflare(t *testing.T) {
 	}
 }
 
+func TestProbeOne_provider884Cloudflare(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Server", "cloudflare")
+		w.WriteHeader(884)
+		w.Write([]byte("Checking your browser"))
+	}))
+	defer srv.Close()
+
+	ctx := context.Background()
+	r := ProbeOne(ctx, srv.URL, nil)
+	if r.Status != StatusCloudflare {
+		t.Errorf("Status: %s", r.Status)
+	}
+	if r.StatusCode != 884 {
+		t.Errorf("StatusCode: %d", r.StatusCode)
+	}
+}
+
 func TestProbeAll_sort(t *testing.T) {
 	okSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -165,6 +183,27 @@ func TestProbePlayerAPI_cloudflareServer200JSONStillOK(t *testing.T) {
 	}
 }
 
+func TestProbePlayerAPI_forbiddenThenAcceptedWithFallbackUA(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.UserAgent() == DefaultLavfUA {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"user_info":{"auth":1}}`))
+			return
+		}
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	ctx := context.Background()
+	r := ProbePlayerAPI(ctx, srv.URL, "u", "p", nil)
+	if r.Status != StatusOK {
+		t.Fatalf("Status=%s", r.Status)
+	}
+	if r.WorkingUA != DefaultLavfUA {
+		t.Fatalf("WorkingUA=%q want %q", r.WorkingUA, DefaultLavfUA)
+	}
+}
+
 func TestProbePlayerAPI_badStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(503)
@@ -175,6 +214,53 @@ func TestProbePlayerAPI_badStatus(t *testing.T) {
 	r := ProbePlayerAPI(ctx, srv.URL, "u", "p", nil)
 	if r.Status != StatusBadStatus {
 		t.Errorf("Status: %s", r.Status)
+	}
+}
+
+func TestProbePlayerAPI_forbiddenClassifiedAsAccessDenied(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	ctx := context.Background()
+	r := ProbePlayerAPI(ctx, srv.URL, "u", "p", nil)
+	if r.Status != StatusAccessDenied {
+		t.Fatalf("Status=%s want %s", r.Status, StatusAccessDenied)
+	}
+	if r.StatusCode != http.StatusForbidden {
+		t.Fatalf("StatusCode=%d want %d", r.StatusCode, http.StatusForbidden)
+	}
+}
+
+func TestRankedEntries_logsLockoutSuspicionWhenAllProvidersDenied(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	var logs []string
+	ctx := context.Background()
+	ranked := RankedEntries(ctx, []Entry{
+		{BaseURL: srv.URL, User: "u1", Pass: "p1"},
+		{BaseURL: srv.URL, User: "u2", Pass: "p2"},
+	}, nil, ProbeOptions{
+		Logger: func(format string, args ...any) {
+			logs = append(logs, format)
+		},
+	})
+	if len(ranked) != 0 {
+		t.Fatalf("ranked len=%d want 0", len(ranked))
+	}
+	found := false
+	for _, line := range logs {
+		if strings.Contains(line, "provider lockout/bot-filter suspected") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected lockout warning in logs, got %v", logs)
 	}
 }
 

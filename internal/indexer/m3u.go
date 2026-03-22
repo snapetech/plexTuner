@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -17,15 +18,16 @@ import (
 // are returned empty (plain M3U from get.php typically has only live). client may be nil
 // to use default. The second return is for optional future use (e.g. progress).
 func ParseM3U(m3uURL string, client *http.Client) (movies []catalog.Movie, series []catalog.Series, live []catalog.LiveChannel, err error) {
+	return ParseM3UWithUserAgents(m3uURL, client)
+}
+
+// ParseM3UWithUserAgents behaves like ParseM3U but allows caller supplied User-Agent
+// candidates for provider anti-bot behavior.
+func ParseM3UWithUserAgents(m3uURL string, client *http.Client, userAgents ...string) (movies []catalog.Movie, series []catalog.Series, live []catalog.LiveChannel, err error) {
 	if client == nil {
 		client = httpclient.WithTimeout(httpclient.DefaultTimeout)
 	}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, m3uURL, nil)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	req.Header.Set("User-Agent", "IptvTunerr/1.0")
-	resp, err := client.Do(req)
+	resp, err := doGetWithRetry(context.Background(), client, m3uURL, userAgents...)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -52,6 +54,18 @@ type m3uError struct {
 
 func (e *m3uError) Error() string {
 	return "m3u: " + strconv.Itoa(e.status) + " " + e.msg
+}
+
+// IsM3UErrorStatus reports whether err is an M3U HTTP error and matches status.
+func IsM3UErrorStatus(err error, status int) bool {
+	var mErr *m3uError
+	if err == nil {
+		return false
+	}
+	if !errors.As(err, &mErr) {
+		return false
+	}
+	return mErr.status == status
 }
 
 // parseM3UBody reads M3U lines and builds live channels. EXTINF lines may have

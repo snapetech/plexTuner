@@ -152,6 +152,7 @@ type Config struct {
 	// IPTV_TUNERR_FREE_SOURCE_MODE    supplement | merge | full (default: supplement)
 	// IPTV_TUNERR_FREE_SOURCE_SMOKETEST   probe channels before adding (default: false)
 	// IPTV_TUNERR_FREE_SOURCE_REQUIRE_TVGID  only include channels with a tvg-id (default: true)
+	// IPTV_TUNERR_FREE_SOURCE(_N)                 individual public M3U URLs (e.g. _2, _3) in addition to FREE_SOURCES csv
 	// IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_COUNTRIES  comma-separated ISO-3166-1 alpha-2 codes (e.g. us,gb,ca)
 	// IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_CATEGORIES comma-separated categories (e.g. news,sports,movies)
 	// IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_ALL        fetch iptv-org index.m3u (all channels, ~40k)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -32,6 +34,7 @@ const (
 func freeSourceURLs(cfg *config.Config) []string {
 	var urls []string
 	urls = append(urls, cfg.FreeSources...)
+	urls = append(urls, numberedFreeSourceEnvURLs()...)
 	if cfg.FreeSourceIptvOrgAll {
 		urls = append(urls, iptvOrgBase+"/index.m3u")
 	}
@@ -56,6 +59,41 @@ func freeSourceURLs(cfg *config.Config) []string {
 		}
 	}
 	return out
+}
+
+func numberedFreeSourceEnvURLs() []string {
+	urls := make([]string, 0, 8)
+	if u := strings.TrimSpace(os.Getenv("IPTV_TUNERR_FREE_SOURCE")); u != "" {
+		urls = append(urls, u)
+	}
+	type indexedURL struct {
+		index int
+		url   string
+	}
+	var indexed []indexedURL
+	for _, env := range os.Environ() {
+		key, value, ok := strings.Cut(env, "=")
+		if !ok || !strings.HasPrefix(key, "IPTV_TUNERR_FREE_SOURCE_") {
+			continue
+		}
+		suffix := strings.TrimPrefix(key, "IPTV_TUNERR_FREE_SOURCE_")
+		n, err := strconv.Atoi(suffix)
+		if err != nil || n <= 0 {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		indexed = append(indexed, indexedURL{index: n, url: value})
+	}
+	slices.SortFunc(indexed, func(a, b indexedURL) int {
+		return cmp.Compare(a.index, b.index)
+	})
+	for _, item := range indexed {
+		urls = append(urls, item.url)
+	}
+	return urls
 }
 
 // freeSourceCacheDir returns the effective cache directory.

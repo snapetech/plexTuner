@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -16,11 +17,32 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
 )
 
+const indexerDefaultUserAgent = "IptvTunerr/1.0"
+
+var indexerUserAgentCandidates = []string{
+	indexerDefaultUserAgent,
+	"Lavf/60.16.100",
+	"Lavf/61.7.100",
+	"VLC/3.0.21 LibVLC/3.0.21",
+	"mpv/0.38.0",
+	"Kodi/21.0 (X11; Linux x86_64) App_Bitness/64 Version/21.0-Git:20240205-a9cf89e8fd",
+	"Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+	"curl/8.4.0",
+}
+
 // IndexFromPlayerAPI indexes live (and optionally VOD/series) from Xtream player_api.
 // apiBase is the base URL of the working player_api (e.g. http://host:port). ext is the
 // stream extension (e.g. "m3u8"). If liveOnly is true, only live channels are fetched.
 // baseURLs is used to resolve a non-Cloudflare stream base when possible. client may be nil.
 func IndexFromPlayerAPI(apiBase, user, pass, ext string, liveOnly bool, baseURLs []string, client *http.Client) (
+	movies []catalog.Movie, series []catalog.Series, live []catalog.LiveChannel, err error) {
+	return IndexFromPlayerAPIWithUserAgents(apiBase, user, pass, ext, liveOnly, baseURLs, nil, client)
+}
+
+// IndexFromPlayerAPIWithUserAgents is the same as IndexFromPlayerAPI but allows probing
+// fallback user agents for provider endpoints if the default UA is rejected.
+func IndexFromPlayerAPIWithUserAgents(apiBase, user, pass, ext string, liveOnly bool, baseURLs []string, userAgents []string, client *http.Client) (
 	movies []catalog.Movie, series []catalog.Series, live []catalog.LiveChannel, err error) {
 	if client == nil {
 		client = httpclient.WithTimeout(60 * time.Second)
@@ -29,7 +51,7 @@ func IndexFromPlayerAPI(apiBase, user, pass, ext string, liveOnly bool, baseURLs
 	log.Printf("indexer: player_api start base=%s live_only=%v base_url_candidates=%d", apiBase, liveOnly, len(baseURLs))
 
 	resolveStart := time.Now()
-	streamBase, err := resolveStreamBaseURL(context.Background(), apiBase, user, pass, baseURLs, client)
+	streamBase, err := resolveStreamBaseURL(context.Background(), apiBase, user, pass, baseURLs, client, userAgents)
 	if err != nil {
 		log.Printf("indexer: player_api resolveStreamBaseURL failed base=%s after=%s: %v", apiBase, time.Since(resolveStart).Round(time.Millisecond), err)
 		return nil, nil, nil, err
@@ -37,7 +59,7 @@ func IndexFromPlayerAPI(apiBase, user, pass, ext string, liveOnly bool, baseURLs
 	log.Printf("indexer: player_api resolveStreamBaseURL base=%s stream_base=%s dur=%s", apiBase, streamBase, time.Since(resolveStart).Round(time.Millisecond))
 
 	liveStart := time.Now()
-	live, err = fetchLiveStreams(context.Background(), apiBase, user, pass, streamBase, ext, client)
+	live, err = fetchLiveStreams(context.Background(), apiBase, user, pass, streamBase, ext, client, userAgents)
 	if err != nil {
 		log.Printf("indexer: player_api fetchLiveStreams failed base=%s after=%s: %v", apiBase, time.Since(liveStart).Round(time.Millisecond), err)
 		return nil, nil, nil, err
@@ -49,7 +71,7 @@ func IndexFromPlayerAPI(apiBase, user, pass, ext string, liveOnly bool, baseURLs
 	}
 
 	vodStart := time.Now()
-	movies, err = fetchVODStreams(context.Background(), apiBase, user, pass, streamBase, client)
+	movies, err = fetchVODStreams(context.Background(), apiBase, user, pass, streamBase, client, userAgents)
 	if err != nil {
 		log.Printf("indexer: player_api fetchVODStreams failed base=%s after=%s: %v", apiBase, time.Since(vodStart).Round(time.Millisecond), err)
 		return nil, nil, nil, err
@@ -57,7 +79,7 @@ func IndexFromPlayerAPI(apiBase, user, pass, ext string, liveOnly bool, baseURLs
 	log.Printf("indexer: player_api fetchVODStreams base=%s movies=%d dur=%s", apiBase, len(movies), time.Since(vodStart).Round(time.Millisecond))
 
 	seriesStart := time.Now()
-	series, err = fetchSeries(context.Background(), apiBase, user, pass, streamBase, client)
+	series, err = fetchSeries(context.Background(), apiBase, user, pass, streamBase, client, userAgents)
 	if err != nil {
 		log.Printf("indexer: player_api fetchSeries failed base=%s after=%s: %v", apiBase, time.Since(seriesStart).Round(time.Millisecond), err)
 		return nil, nil, nil, err
@@ -68,19 +90,139 @@ func IndexFromPlayerAPI(apiBase, user, pass, ext string, liveOnly bool, baseURLs
 	return movies, series, live, nil
 }
 
-// doGetWithRetry performs a GET with 429/5xx retry. Caller must close resp.Body.
-func doGetWithRetry(ctx context.Context, client *http.Client, u string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, err
+func browserHeadersForUA(ua string) map[string]string {
+	lower := strings.ToLower(ua)
+	if strings.Contains(lower, "firefox") {
+		return map[string]string{
+			"Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+			"Accept-Language":           "en-US,en;q=0.5",
+			"Accept-Encoding":           "gzip, deflate, br",
+			"Connection":                "keep-alive",
+			"Upgrade-Insecure-Requests": "1",
+			"Cache-Control":             "max-age=0",
+		}
 	}
-	req.Header.Set("User-Agent", "IptvTunerr/1.0")
-	return httpclient.DoWithRetry(ctx, client, req, httpclient.DefaultRetryPolicy)
+	if strings.Contains(lower, "chrome") || strings.Contains(lower, "safari") {
+		return map[string]string{
+			"Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+			"Accept-Language":           "en-US,en;q=0.9",
+			"Accept-Encoding":           "gzip, deflate, br",
+			"Connection":                "keep-alive",
+			"Upgrade-Insecure-Requests": "1",
+			"Sec-Ch-Ua":                 `"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"`,
+			"Sec-Ch-Ua-Mobile":          "?0",
+			"Sec-Ch-Ua-Platform":        `"Linux"`,
+			"Cache-Control":             "max-age=0",
+		}
+	}
+	return nil
 }
 
-func resolveStreamBaseURL(ctx context.Context, apiBase, user, pass string, baseURLs []string, client *http.Client) (string, error) {
+// doGetWithRetry performs a GET with retries and rotates User-Agent for
+// 401/403 responses. Caller must close resp.Body.
+func doGetWithRetry(ctx context.Context, client *http.Client, u string, userAgents ...string) (*http.Response, error) {
+	uas := normalizeUserAgents(userAgents...)
+	const maxUserAgentPasses = 3
+	const passBackoff = 250 * time.Millisecond
+
+	for pass := 0; pass < maxUserAgentPasses; pass++ {
+		for i, ua := range uas {
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+			if err != nil {
+				return nil, err
+			}
+			req.Header.Set("User-Agent", ua)
+			for name, value := range browserHeadersForUA(ua) {
+				req.Header.Set(name, value)
+			}
+			resp, err := httpclient.DoWithRetry(ctx, client, req, httpclient.DefaultRetryPolicy)
+			if err != nil {
+				return nil, err
+			}
+			if !shouldRetryStatusWithUserAgent(resp.StatusCode) {
+				return resp, nil
+			}
+
+			// Retry with a different UA if this attempt indicates a likely auth/ACL block.
+			// Consume response body so the connection can be reused before the next attempt.
+			if i+1 < len(uas) {
+				io.Copy(io.Discard, resp.Body) //nolint:errcheck
+				_ = resp.Body.Close()
+				continue
+			}
+			// Exhausted this UA pass; if this is not the last pass, wait briefly
+			// and retry with the full UA list in case of transient host-level throttling.
+			if pass+1 < maxUserAgentPasses {
+				io.Copy(io.Discard, resp.Body) //nolint:errcheck
+				_ = resp.Body.Close()
+				delay := passBackoff * (1 << pass)
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(delay):
+				}
+				continue
+			}
+			return resp, nil
+		}
+	}
+	return nil, &apiError{url: u, status: http.StatusForbidden}
+}
+
+func shouldRetryStatusWithUserAgent(code int) bool {
+	switch code {
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests, http.StatusServiceUnavailable,
+		http.StatusBadGateway, http.StatusNetworkAuthenticationRequired:
+		return true
+	case 520, 521, 524:
+		return true
+	case 884:
+		return true
+	}
+	return false
+}
+
+func normalizeUserAgents(userAgents ...string) []string {
+	if len(userAgents) == 0 {
+		base := make([]string, len(indexerUserAgentCandidates))
+		copy(base, indexerUserAgentCandidates)
+		return base
+	}
+
+	seen := map[string]struct{}{}
+	ordered := make([]string, 0, len(indexerUserAgentCandidates))
+	for _, ua := range userAgents {
+		ua = strings.TrimSpace(ua)
+		if ua == "" {
+			continue
+		}
+		if _, ok := seen[ua]; ok {
+			continue
+		}
+		seen[ua] = struct{}{}
+		ordered = append(ordered, ua)
+	}
+	for _, ua := range indexerUserAgentCandidates {
+		ua = strings.TrimSpace(ua)
+		if ua == "" {
+			continue
+		}
+		if _, ok := seen[ua]; ok {
+			continue
+		}
+		seen[ua] = struct{}{}
+		ordered = append(ordered, ua)
+	}
+	// Keep behavior stable even if dedupe collapses all entries.
+	if len(ordered) == 0 {
+		ordered = []string{indexerDefaultUserAgent}
+	}
+	return ordered
+}
+
+func resolveStreamBaseURL(ctx context.Context, apiBase, user, pass string, baseURLs []string, client *http.Client, userAgents []string) (string, error) {
 	u := apiBase + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass)
-	resp, err := doGetWithRetry(ctx, client, u)
+	resp, err := doGetWithRetry(ctx, client, u, userAgents...)
 	if err != nil {
 		return "", err
 	}
@@ -128,9 +270,9 @@ func validateStreamBase(ctx context.Context, base string, client *http.Client) b
 	return resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode == http.StatusBadRequest
 }
 
-func fetchLiveStreams(ctx context.Context, apiBase, user, pass, streamBase, ext string, client *http.Client) ([]catalog.LiveChannel, error) {
+func fetchLiveStreams(ctx context.Context, apiBase, user, pass, streamBase, ext string, client *http.Client, userAgents []string) ([]catalog.LiveChannel, error) {
 	u := apiBase + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&action=get_live_streams"
-	resp, err := doGetWithRetry(ctx, client, u)
+	resp, err := doGetWithRetry(ctx, client, u, userAgents...)
 	if err != nil {
 		return nil, err
 	}
@@ -272,10 +414,10 @@ func parseSeriesEpisodes(v interface{}) []seriesEpisodeRaw {
 	return list
 }
 
-func fetchVODStreams(ctx context.Context, apiBase, user, pass, streamBase string, client *http.Client) ([]catalog.Movie, error) {
-	vodCats, _ := fetchXtreamCategoryMap(ctx, apiBase, user, pass, "get_vod_categories", client)
+func fetchVODStreams(ctx context.Context, apiBase, user, pass, streamBase string, client *http.Client, userAgents []string) ([]catalog.Movie, error) {
+	vodCats, _ := fetchXtreamCategoryMap(ctx, apiBase, user, pass, "get_vod_categories", client, userAgents...)
 	u := apiBase + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&action=get_vod_streams"
-	resp, err := doGetWithRetry(ctx, client, u)
+	resp, err := doGetWithRetry(ctx, client, u, userAgents...)
 	if err != nil {
 		return nil, err
 	}
@@ -328,10 +470,10 @@ func fetchVODStreams(ctx context.Context, apiBase, user, pass, streamBase string
 
 const maxConcurrentSeriesInfo = 10
 
-func fetchSeries(ctx context.Context, apiBase, user, pass, streamBase string, client *http.Client) ([]catalog.Series, error) {
-	seriesCats, _ := fetchXtreamCategoryMap(ctx, apiBase, user, pass, "get_series_categories", client)
+func fetchSeries(ctx context.Context, apiBase, user, pass, streamBase string, client *http.Client, userAgents []string) ([]catalog.Series, error) {
+	seriesCats, _ := fetchXtreamCategoryMap(ctx, apiBase, user, pass, "get_series_categories", client, userAgents...)
 	u := apiBase + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&action=get_series"
-	resp, err := doGetWithRetry(ctx, client, u)
+	resp, err := doGetWithRetry(ctx, client, u, userAgents...)
 	if err != nil {
 		return nil, err
 	}
@@ -362,7 +504,7 @@ func fetchSeries(ctx context.Context, apiBase, user, pass, streamBase string, cl
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			results[i].info, results[i].err = fetchSeriesInfo(ctx, apiBase, user, pass, streamBase, seriesID, client)
+			results[i].info, results[i].err = fetchSeriesInfo(ctx, apiBase, user, pass, streamBase, seriesID, client, userAgents...)
 		}(i, s.SeriesID)
 	}
 	wg.Wait()
@@ -395,9 +537,9 @@ func fetchSeries(ctx context.Context, apiBase, user, pass, streamBase string, cl
 	return out, nil
 }
 
-func fetchXtreamCategoryMap(ctx context.Context, apiBase, user, pass, action string, client *http.Client) (map[string]string, error) {
+func fetchXtreamCategoryMap(ctx context.Context, apiBase, user, pass, action string, client *http.Client, userAgents ...string) (map[string]string, error) {
 	u := apiBase + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&action=" + url.QueryEscape(action)
-	resp, err := doGetWithRetry(ctx, client, u)
+	resp, err := doGetWithRetry(ctx, client, u, userAgents...)
 	if err != nil {
 		return nil, err
 	}
@@ -424,9 +566,9 @@ func fetchXtreamCategoryMap(ctx context.Context, apiBase, user, pass, action str
 	return out, nil
 }
 
-func fetchSeriesInfo(ctx context.Context, apiBase, user, pass, streamBase string, seriesID int, client *http.Client) ([]catalog.Season, error) {
+func fetchSeriesInfo(ctx context.Context, apiBase, user, pass, streamBase string, seriesID int, client *http.Client, userAgents ...string) ([]catalog.Season, error) {
 	u := apiBase + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&action=get_series_info&series_id=" + strconv.Itoa(seriesID)
-	resp, err := doGetWithRetry(ctx, client, u)
+	resp, err := doGetWithRetry(ctx, client, u, userAgents...)
 	if err != nil {
 		return nil, err
 	}

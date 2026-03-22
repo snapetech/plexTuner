@@ -1,7 +1,11 @@
 package indexer
 
 import (
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -42,5 +46,85 @@ func TestParseM3UBody(t *testing.T) {
 	}
 	if live[1].ChannelID != "id2" || len(live[1].StreamURLs) != 2 {
 		t.Errorf("channel 1: id=%q urls=%d", live[1].ChannelID, len(live[1].StreamURLs))
+	}
+}
+
+func TestParseM3UWithUserAgentsFallsBackOnForbidden(t *testing.T) {
+	mu := sync.Mutex{}
+	uaHits := map[string]int{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ua := strings.TrimSpace(r.UserAgent())
+		mu.Lock()
+		uaHits[ua]++
+		mu.Unlock()
+		if ua == "bad-ua-1" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		_, _ = w.Write([]byte("#EXTM3U\n#EXTINF:-1 tvg-id=\"id3\",Channel Three\nhttp://provider/live/3.m3u8\n"))
+	}))
+	defer srv.Close()
+
+	_, _, live, err := ParseM3UWithUserAgents(srv.URL, nil, "bad-ua-1", "good-ua-2")
+	if err != nil {
+		t.Fatalf("ParseM3UWithUserAgents: %v", err)
+	}
+	if len(live) != 1 {
+		t.Fatalf("live len=%d want 1", len(live))
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if uaHits["bad-ua-1"] == 0 {
+		t.Fatal("expected initial UA to be tried")
+	}
+	if uaHits["good-ua-2"] == 0 {
+		t.Fatal("expected fallback UA to be tried")
+	}
+}
+
+func TestParseM3UWithUserAgentsFallsBackOnProvider884(t *testing.T) {
+	mu := sync.Mutex{}
+	uaHits := map[string]int{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ua := strings.TrimSpace(r.UserAgent())
+		mu.Lock()
+		uaHits[ua]++
+		mu.Unlock()
+		if ua == "bad-ua-1" {
+			w.WriteHeader(884)
+			return
+		}
+		_, _ = w.Write([]byte("#EXTM3U\n#EXTINF:-1 tvg-id=\"id4\",Channel Four\nhttp://provider/live/4.m3u8\n"))
+	}))
+	defer srv.Close()
+
+	_, _, live, err := ParseM3UWithUserAgents(srv.URL, nil, "bad-ua-1", "good-ua-2")
+	if err != nil {
+		t.Fatalf("ParseM3UWithUserAgents: %v", err)
+	}
+	if len(live) != 1 {
+		t.Fatalf("live len=%d want 1", len(live))
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if uaHits["bad-ua-1"] == 0 {
+		t.Fatal("expected initial UA to be tried")
+	}
+	if uaHits["good-ua-2"] == 0 {
+		t.Fatal("expected fallback UA to be tried after 884")
+	}
+}
+
+func TestIsM3UErrorStatus(t *testing.T) {
+	if !IsM3UErrorStatus(&m3uError{status: http.StatusForbidden, msg: "Forbidden"}, http.StatusForbidden) {
+		t.Fatalf("expected 403 status to match")
+	}
+	if IsM3UErrorStatus(&m3uError{status: http.StatusBadGateway, msg: "Bad Gateway"}, http.StatusForbidden) {
+		t.Fatalf("expected non-403 status not to match")
+	}
+	if IsM3UErrorStatus(errors.New("m3u: 403 Forbidden"), http.StatusForbidden) {
+		t.Fatalf("did not expect generic error to match m3u status")
 	}
 }

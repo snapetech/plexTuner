@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +15,21 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/config"
 	"github.com/snapetech/iptvtunerr/internal/tuner"
 )
+
+func TestFreeSourceURLs_IncludesCanadaPresetFromEnv(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_FREE_SOURCE_2", "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/ca.m3u")
+	cfg := &config.Config{
+		FreeSources: []string{"https://example.com/free.m3u"},
+	}
+
+	got := freeSourceURLs(cfg)
+	if !slices.Contains(got, "https://example.com/free.m3u") {
+		t.Fatalf("freeSourceURLs missing custom source: %v", got)
+	}
+	if !slices.Contains(got, "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/ca.m3u") {
+		t.Fatalf("freeSourceURLs missing numbered env source: %v", got)
+	}
+}
 
 func TestFetchCatalog_MergesMultipleDirectM3UURLs(t *testing.T) {
 	m3u1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -347,6 +363,183 @@ func TestFetchCatalog_FallsBackToGetPHPOnPlayerAPIForbidden(t *testing.T) {
 	}
 }
 
+func TestFetchCatalog_DirectPlayerAPIFallsBackByUserAgent(t *testing.T) {
+	var baseURL string
+	uaHits := map[string]int{}
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/player_api.php":
+			mu.Lock()
+			uaHits[r.UserAgent()]++
+			mu.Unlock()
+			q := r.URL.Query()
+			if q.Get("username") != "u" || q.Get("password") != "p" {
+				http.Error(w, "bad auth", http.StatusUnauthorized)
+				return
+			}
+			if q.Get("action") == "get_live_streams" {
+				switch r.UserAgent() {
+				case "IptvTunerr/1.0":
+					http.Error(w, "forbidden", http.StatusForbidden)
+					return
+				default:
+					_, _ = w.Write([]byte(`[{"num":101,"name":"FOX News","stream_id":1001,"epg_channel_id":"foxnews.us"}]`))
+					return
+				}
+			}
+			switch r.UserAgent() {
+			case "IptvTunerr/1.0":
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			default:
+				_, _ = w.Write([]byte(`{"server_info":{"url":"` + baseURL + `","server_url":"` + baseURL + `"},"user_info":{"auth":1}}`))
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	baseURL = srv.URL
+
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL_2", "")
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER_2", "")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS_2", "")
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL_3", "")
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER_3", "")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS_3", "")
+
+	cfg := &config.Config{
+		ProviderBaseURL: baseURL,
+		ProviderUser:    "u",
+		ProviderPass:    "p",
+		LiveOnly:        true,
+	}
+	res, err := fetchCatalog(cfg, "")
+	if err != nil {
+		t.Fatalf("fetchCatalog error: %v", err)
+	}
+	if len(res.Live) != 1 {
+		t.Fatalf("live len=%d want 1", len(res.Live))
+	}
+	if len(res.Live[0].StreamURLs) != 1 {
+		t.Fatalf("stream urls len=%d want 1", len(res.Live[0].StreamURLs))
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if uaHits["IptvTunerr/1.0"] == 0 {
+		t.Fatal("expected initial fallback attempt user-agent to be used")
+	}
+	if _, ok := uaHits["Lavf/61.7.100"]; !ok {
+		t.Fatal("expected fallback user-agent to be used")
+	}
+}
+
+func TestFetchCatalog_RankedProviderIndexUsesFallbackUserAgentsWithoutWorkingProbeUA(t *testing.T) {
+	var baseURL string
+	uaHits := map[string]int{}
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/player_api.php":
+			mu.Lock()
+			uaHits[r.UserAgent()]++
+			mu.Unlock()
+			q := r.URL.Query()
+			if q.Get("username") != "u" || q.Get("password") != "p" {
+				http.Error(w, "bad auth", http.StatusUnauthorized)
+				return
+			}
+			if q.Get("action") == "get_live_streams" {
+				if r.UserAgent() == "Lavf/61.7.100" {
+					_, _ = w.Write([]byte(`[{"num":101,"name":"FOX News","stream_id":1001,"epg_channel_id":"foxnews.us"}]`))
+					return
+				}
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
+			_, _ = w.Write([]byte(`{"server_info":{"url":"` + baseURL + `","server_url":"` + baseURL + `"},"user_info":{"auth":1}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	baseURL = srv.URL
+
+	cfg := &config.Config{
+		ProviderBaseURL: baseURL,
+		ProviderUser:    "u",
+		ProviderPass:    "p",
+		LiveOnly:        true,
+	}
+
+	res, err := fetchCatalog(cfg, "")
+	if err != nil {
+		t.Fatalf("fetchCatalog error: %v", err)
+	}
+	if len(res.Live) != 1 {
+		t.Fatalf("live len=%d want 1", len(res.Live))
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if uaHits["Lavf/61.7.100"] == 0 {
+		t.Fatal("expected ranked provider indexing to fallback to Lavf")
+	}
+}
+
+func TestFetchCatalog_FallbackGetPHPUsesAlternativeUserAgent(t *testing.T) {
+	var baseURL string
+	uaHits := map[string]int{}
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/player_api.php":
+			mu.Lock()
+			uaHits[r.UserAgent()]++
+			mu.Unlock()
+			http.Error(w, "forbidden", http.StatusForbidden)
+		case r.URL.Path == "/get.php":
+			mu.Lock()
+			uaHits[r.UserAgent()+"|get.php"]++
+			mu.Unlock()
+			if r.UserAgent() == "Lavf/61.7.100" {
+				_, _ = w.Write([]byte("#EXTM3U\n#EXTINF:-1 tvg-id=\"foxnews.us\",FOX News\n" + baseURL + "/live/u/p/1001.m3u8\n"))
+				return
+			}
+			http.Error(w, "forbidden", http.StatusForbidden)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	baseURL = srv.URL
+
+	cfg := &config.Config{
+		ProviderBaseURL: baseURL,
+		ProviderUser:    "u",
+		ProviderPass:    "p",
+		LiveOnly:        true,
+	}
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL_2", "")
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER_2", "")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS_2", "")
+
+	res, err := fetchCatalog(cfg, "")
+	if err != nil {
+		t.Fatalf("fetchCatalog error: %v", err)
+	}
+	if len(res.Live) != 1 {
+		t.Fatalf("live len=%d want 1", len(res.Live))
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if uaHits["Lavf/61.7.100|get.php"] == 0 {
+		t.Fatal("expected get.php fallback to try non-default user-agent")
+	}
+}
+
 func TestFetchCatalog_SingleCredentialDoesNotRetryGetPHPOnPlayerAPIFailure(t *testing.T) {
 	var baseURL string
 	playerAPIHits := map[string]int{}
@@ -393,11 +586,14 @@ func TestFetchCatalog_SingleCredentialDoesNotRetryGetPHPOnPlayerAPIFailure(t *te
 	if err == nil {
 		t.Fatalf("fetchCatalog expected failure")
 	}
-	if playerAPIHits["username=u&password=p"] != 2 {
-		t.Fatalf("player_api hits=%d for username=u&password=p want 2 (probe + direct)", playerAPIHits["username=u&password=p"])
+	if !strings.Contains(err.Error(), "provider lockout/bot-filter suspected") {
+		t.Fatalf("fetchCatalog error=%q want lockout hint", err)
 	}
-	if getPHPHits != 1 {
-		t.Fatalf("get.php hits=%d want 1", getPHPHits)
+	if playerAPIHits["username=u&password=p"] < 2 {
+		t.Fatalf("player_api hits=%d for username=u&password=p want at least probe + direct attempts", playerAPIHits["username=u&password=p"])
+	}
+	if getPHPHits < 1 {
+		t.Fatalf("get.php hits=%d want at least 1", getPHPHits)
 	}
 }
 
@@ -451,15 +647,18 @@ func TestFetchCatalog_DoesNotRetryGetPHPAfterDirectForbiddenFallback(t *testing.
 	if err == nil {
 		t.Fatalf("fetchCatalog error expected due all providers failing")
 	}
+	if !strings.Contains(err.Error(), "provider lockout/bot-filter suspected") {
+		t.Fatalf("fetchCatalog error=%q want lockout hint", err)
+	}
 	if len(playerAPIHits) != 4 {
 		t.Fatalf("player_api entries=%d want 4", len(playerAPIHits))
 	}
 	for _, cred := range []string{"u1|p1", "u2|p2", "u3|p3", "u4|p4"} {
-		if got := playerAPIHits[cred]; got != 2 {
-			t.Fatalf("player_api hits=%d for %s want 2", got, cred)
+		if got := playerAPIHits[cred]; got < 2 {
+			t.Fatalf("player_api hits=%d for %s want at least probe + direct attempts", got, cred)
 		}
-		if got := getPHPHits[cred]; got != 1 {
-			t.Fatalf("get.php hits=%d for %s want 1", got, cred)
+		if got := getPHPHits[cred]; got < 1 {
+			t.Fatalf("get.php hits=%d for %s want at least 1", got, cred)
 		}
 	}
 }

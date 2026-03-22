@@ -11,8 +11,10 @@ import (
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
 	"github.com/snapetech/iptvtunerr/internal/config"
+	"github.com/snapetech/iptvtunerr/internal/httpclient"
 	"github.com/snapetech/iptvtunerr/internal/provider"
 	"github.com/snapetech/iptvtunerr/internal/safeurl"
+	"github.com/snapetech/iptvtunerr/internal/tuner"
 )
 
 func coreCommands() []commandSpec {
@@ -178,10 +180,12 @@ func handleProbe(cfg *config.Config, probeURLs string, timeout time.Duration) {
 		os.Exit(1)
 	}
 	log.Printf("Probing %d host(s) — get.php and player_api.php (timeout %v)...", len(baseURLs), timeout)
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	getResults := provider.ProbeAll(ctx, m3uURLs, nil)
+	sharedClient := httpclient.WithTimeout(timeout)
 	var getOK, apiOK []string
+	getCloudflare := 0
+	getAccessDenied := 0
+	getRateLimited := 0
+	getTimeoutOrError := 0
 	for _, base := range baseURLs {
 		entry, ok := entryByBase[base]
 		user, pass := cfg.ProviderUser, cfg.ProviderPass
@@ -193,17 +197,31 @@ func handleProbe(cfg *config.Config, probeURLs string, timeout time.Duration) {
 			log.Printf("    skipped     missing credentials")
 			continue
 		}
-		var getR *provider.Result
-		for i := range getResults {
-			if strings.HasPrefix(getResults[i].URL, base+"/") {
-				getR = &getResults[i]
-				break
-			}
+		client := httpclient.WithTimeout(timeout)
+		getURL := base + "/get.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&type=m3u_plus&output=ts"
+		getClient, _, prepErr := tuner.PrepareCloudflareAwareClient(context.Background(), getURL, client, "")
+		if prepErr != nil {
+			log.Printf("    get.php CF assist setup failed for %s: %v", base, prepErr)
+			getClient = client
 		}
+		getRes := provider.ProbeOne(context.Background(), getURL, getClient)
+		getR := &getRes
 		if getR != nil && getR.Status == provider.StatusOK {
 			getOK = append(getOK, base)
 		}
-		apiR := provider.ProbePlayerAPI(ctx, base, user, pass, nil)
+		if getR != nil {
+			switch getR.Status {
+			case provider.StatusCloudflare:
+				getCloudflare++
+			case provider.StatusAccessDenied:
+				getAccessDenied++
+			case provider.StatusRateLimited:
+				getRateLimited++
+			case provider.StatusTimeout, provider.StatusError:
+				getTimeoutOrError++
+			}
+		}
+		apiR := provider.ProbePlayerAPI(context.Background(), base, user, pass, client)
 		if apiR.Status == provider.StatusOK {
 			apiOK = append(apiOK, base)
 		}
@@ -234,14 +252,14 @@ func handleProbe(cfg *config.Config, probeURLs string, timeout time.Duration) {
 			}
 			probeEntries = append(probeEntries, provider.Entry{BaseURL: base, User: entry.User, Pass: entry.Pass})
 		}
-		for _, er := range provider.RankedEntries(ctx, probeEntries, nil, provider.ProbeOptions{
+		for _, er := range provider.RankedEntries(context.Background(), probeEntries, sharedClient, provider.ProbeOptions{
 			BlockCloudflare: cfg.BlockCFProviders,
 			Logger:          log.Printf,
 		}) {
 			ranked = append(ranked, er.Entry.BaseURL)
 		}
 	} else if cfg.ProviderUser != "" || cfg.ProviderPass != "" {
-		ranked = provider.RankedPlayerAPI(ctx, baseURLs, cfg.ProviderUser, cfg.ProviderPass, nil)
+		ranked = provider.RankedPlayerAPI(context.Background(), baseURLs, cfg.ProviderUser, cfg.ProviderPass, sharedClient)
 	}
 	if len(ranked) > 0 {
 		log.Printf("Ranked order (best first; index uses #1, stream failover tries #2, #3, …):")
@@ -253,8 +271,11 @@ func handleProbe(cfg *config.Config, probeURLs string, timeout time.Duration) {
 		log.Printf("Use get.php URL from: %s", getOK[0])
 	}
 	if len(apiOK) > 0 && len(getOK) == 0 {
-		log.Printf("get.php failed on all hosts; player_api works on: %s", apiOK[0])
-		log.Print("Index/run will use API fallback (build M3U from player_api.php like your xtream-to-m3u.js).")
+		log.Printf("get.php is unusable on all probed hosts, but player_api works on %d/%d host(s); catalog/index should still work via API fallback", len(apiOK), len(baseURLs))
+		if getCloudflare > 0 || getAccessDenied > 0 || getRateLimited > 0 || getTimeoutOrError > 0 {
+			log.Printf("get.php failure breakdown: cloudflare=%d access_denied=%d rate_limited=%d timeout_or_error=%d", getCloudflare, getAccessDenied, getRateLimited, getTimeoutOrError)
+		}
+		log.Printf("API fallback is expected here; direct get.php/M3U access is what is blocked or degraded, not the player_api ingest path. First working player_api host: %s", apiOK[0])
 	}
 	if len(getOK) == 0 && len(apiOK) == 0 {
 		log.Print("No viable host. Check credentials and network.")

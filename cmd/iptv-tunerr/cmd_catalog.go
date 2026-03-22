@@ -332,7 +332,21 @@ func streamVariantsFromRankedEntries(streamURL string, ranked []provider.EntryRe
 func catalogFromGetPHP(baseURL, user, pass string) (movies []catalog.Movie, series []catalog.Series, live []catalog.LiveChannel, err error) {
 	base := strings.TrimSuffix(baseURL, "/")
 	m3uURL := base + "/get.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&type=m3u_plus&output=ts"
-	return indexer.ParseM3U(m3uURL, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	client, userAgents, prepErr := tuner.PrepareCloudflareAwareClient(ctx, m3uURL, nil, "")
+	if prepErr != nil {
+		log.Printf("get.php CF assist setup failed for %s: %v", base, prepErr)
+	}
+	return indexer.ParseM3UWithUserAgents(m3uURL, client, userAgents...)
+}
+
+func providerUserAgents(result provider.EntryResult) []string {
+	ua := strings.TrimSpace(result.Result.WorkingUA)
+	if ua == "" {
+		return nil
+	}
+	return []string{ua}
 }
 
 func streamAuthPrefix(rawURL string) string {
@@ -392,6 +406,55 @@ type catalogResult struct {
 type streamVariant struct {
 	URL  string
 	Auth catalog.StreamAuth
+}
+
+type providerLockoutTracker struct {
+	playerAPIAccessDenied map[string]struct{}
+	playerAPIRateLimited  map[string]struct{}
+	getPHPAccessDenied    map[string]struct{}
+	getPHPRateLimited     map[string]struct{}
+}
+
+func newProviderLockoutTracker() *providerLockoutTracker {
+	return &providerLockoutTracker{
+		playerAPIAccessDenied: map[string]struct{}{},
+		playerAPIRateLimited:  map[string]struct{}{},
+		getPHPAccessDenied:    map[string]struct{}{},
+		getPHPRateLimited:     map[string]struct{}{},
+	}
+}
+
+func (t *providerLockoutTracker) notePlayerAPI(providerKey string, err error) {
+	switch {
+	case indexer.IsPlayerAPIErrorStatus(err, http.StatusUnauthorized), indexer.IsPlayerAPIErrorStatus(err, http.StatusForbidden):
+		t.playerAPIAccessDenied[providerKey] = struct{}{}
+	case indexer.IsPlayerAPIErrorStatus(err, http.StatusTooManyRequests):
+		t.playerAPIRateLimited[providerKey] = struct{}{}
+	}
+}
+
+func (t *providerLockoutTracker) noteGetPHP(providerKey string, err error) {
+	switch {
+	case indexer.IsM3UErrorStatus(err, http.StatusUnauthorized), indexer.IsM3UErrorStatus(err, http.StatusForbidden):
+		t.getPHPAccessDenied[providerKey] = struct{}{}
+	case indexer.IsM3UErrorStatus(err, http.StatusTooManyRequests):
+		t.getPHPRateLimited[providerKey] = struct{}{}
+	}
+}
+
+func (t *providerLockoutTracker) suspected() bool {
+	return len(t.playerAPIAccessDenied) > 0 || len(t.playerAPIRateLimited) > 0 ||
+		len(t.getPHPAccessDenied) > 0 || len(t.getPHPRateLimited) > 0
+}
+
+func (t *providerLockoutTracker) summary() string {
+	return fmt.Sprintf(
+		"provider lockout/bot-filter suspected: player_api access_denied=%d rate_limited=%d get.php access_denied=%d rate_limited=%d",
+		len(t.playerAPIAccessDenied),
+		len(t.playerAPIRateLimited),
+		len(t.getPHPAccessDenied),
+		len(t.getPHPRateLimited),
+	)
 }
 
 func logCatalogPhase(name string, fn func() error) error {
@@ -478,6 +541,7 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 		for i, e := range entries {
 			provEntries[i] = provider.Entry{BaseURL: e.BaseURL, User: e.User, Pass: e.Pass}
 		}
+		lockoutTracker := newProviderLockoutTracker()
 		var ranked []provider.EntryResult
 		if err := logCatalogPhase("provider probe + rank", func() error {
 			ranked = provider.RankedEntries(ctx, provEntries, nil, probeOpts)
@@ -498,8 +562,9 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 			for _, candidate := range ranked {
 				err := logCatalogPhase("index provider "+candidate.Entry.BaseURL, func() error {
 					var err error
-					res.Movies, res.Series, res.Live, err = indexer.IndexFromPlayerAPI(
-						candidate.Entry.BaseURL, candidate.Entry.User, candidate.Entry.Pass, "m3u8", cfg.LiveOnly, allBases, nil,
+					res.Movies, res.Series, res.Live, err = indexer.IndexFromPlayerAPIWithUserAgents(
+						candidate.Entry.BaseURL, candidate.Entry.User, candidate.Entry.Pass, "m3u8", cfg.LiveOnly, allBases,
+						providerUserAgents(candidate), nil,
 					)
 					return err
 				})
@@ -512,6 +577,7 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 					applyStreamVariants(res.Live, ranked)
 					break
 				}
+				lockoutTracker.notePlayerAPI(strings.TrimSuffix(candidate.Entry.BaseURL, "/")+"|"+candidate.Entry.User+"|"+candidate.Entry.Pass, fetchErr)
 				log.Printf("Ranked provider index failed on %s: %v", candidate.Entry.BaseURL, fetchErr)
 			}
 		}
@@ -564,6 +630,7 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 					fetchErr = nil
 					break
 				}
+				lockoutTracker.notePlayerAPI(providerKey(e), err)
 				if indexer.IsPlayerAPIErrorStatus(err, http.StatusForbidden) {
 					var gMovies []catalog.Movie
 					var gSeries []catalog.Series
@@ -574,6 +641,7 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 						return err
 					})
 					getPHPAttempted[providerKey(e)] = struct{}{}
+					lockoutTracker.noteGetPHP(providerKey(e), fallbackErr)
 					if fallbackErr == nil {
 						if getPHPCount == 0 {
 							getPHPFirst = provider.Entry{BaseURL: e.BaseURL, User: e.User, Pass: e.Pass}
@@ -633,6 +701,7 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 					return err
 				})
 				fallbackErr = err
+				lockoutTracker.noteGetPHP(providerKey(e), fallbackErr)
 				if fallbackErr == nil {
 					if okCount == 0 {
 						firstProvider = provider.Entry{BaseURL: e.BaseURL, User: e.User, Pass: e.Pass}
@@ -645,6 +714,10 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 				}
 			}
 			if okCount == 0 {
+				if lockoutTracker.suspected() {
+					log.Printf("ALERT: %s", lockoutTracker.summary())
+					return res, fmt.Errorf("no player_api OK and no get.php OK on any provider (%s)", lockoutTracker.summary())
+				}
 				return res, fmt.Errorf("no player_api OK and no get.php OK on any provider")
 			}
 			res.Movies, res.Series, res.Live = mergedMovies, mergedSeries, mergedLive

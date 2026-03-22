@@ -53,6 +53,7 @@ func init() {
 	defaultClient = &http.Client{
 		Timeout:   DefaultTimeout,
 		Transport: TransportWithOptionalBrotli(defaultTransportTemplate),
+		Jar:       maybeCookieJarFromEnv(),
 	}
 }
 
@@ -72,6 +73,7 @@ func WithTimeout(timeout time.Duration) *http.Client {
 	return &http.Client{
 		Timeout:   timeout,
 		Transport: TransportWithOptionalBrotli(defaultTransportTemplate.Clone()),
+		Jar:       maybeCookieJarFromEnv(),
 	}
 }
 
@@ -79,5 +81,6 @@ func WithTimeout(timeout time.Duration) *http.Client {
 func ForStreaming() *http.Client {
 	return &http.Client{
 		Transport: TransportWithOptionalBrotli(defaultTransportTemplate.Clone()),
+		Jar:       maybeCookieJarFromEnv(),
 	}
 }
