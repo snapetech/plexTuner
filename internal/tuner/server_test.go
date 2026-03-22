@@ -1,6 +1,7 @@
 package tuner
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -2076,6 +2077,7 @@ func TestServer_EventHooksReport(t *testing.T) {
 }
 
 func TestServer_ActiveStreamsReport(t *testing.T) {
+	cancelCalled := make(chan struct{}, 1)
 	srv := &Server{
 		gateway: &Gateway{
 			inUse: 1,
@@ -2085,7 +2087,11 @@ func TestServer_ActiveStreamsReport(t *testing.T) {
 					ChannelID:   "100",
 					GuideName:   "Test",
 					GuideNumber: "100",
+					ClientUA:    "PlexMediaServer",
 					StartedAt:   time.Now().Add(-2 * time.Second),
+					Cancel: func() {
+						cancelCalled <- struct{}{}
+					},
 				},
 			},
 		},
@@ -2096,7 +2102,50 @@ func TestServer_ActiveStreamsReport(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d; want 200", rr.Code)
 	}
-	if !strings.Contains(rr.Body.String(), `"channel_id": "100"`) {
+	if !strings.Contains(rr.Body.String(), `"channel_id": "100"`) || !strings.Contains(rr.Body.String(), `"cancelable": true`) {
+		t.Fatalf("unexpected body: %s", rr.Body.String())
+	}
+	if got := srv.gateway.cancelActiveStreams("r000001", ""); len(got) != 1 || !got[0].CancelRequested {
+		t.Fatalf("cancelled=%+v", got)
+	}
+	select {
+	case <-cancelCalled:
+	default:
+		t.Fatal("expected cancel func to run")
+	}
+}
+
+func TestServer_StreamStopAction(t *testing.T) {
+	cancelCalled := make(chan struct{}, 1)
+	srv := &Server{
+		gateway: &Gateway{
+			activeStreams: map[string]activeStreamEntry{
+				"r000001": {
+					RequestID:   "r000001",
+					ChannelID:   "100",
+					GuideName:   "Test",
+					GuideNumber: "100",
+					StartedAt:   time.Now().Add(-2 * time.Second),
+					Cancel: func() {
+						cancelCalled <- struct{}{}
+					},
+				},
+			},
+		},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/ops/actions/stream-stop", bytes.NewBufferString(`{"request_id":"r000001"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rr := httptest.NewRecorder()
+	srv.serveStreamStopAction().ServeHTTP(rr, req)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("status = %d body=%s", rr.Code, rr.Body.String())
+	}
+	select {
+	case <-cancelCalled:
+	default:
+		t.Fatal("expected cancel func to run")
+	}
+	if !strings.Contains(rr.Body.String(), `"count": 1`) {
 		t.Fatalf("unexpected body: %s", rr.Body.String())
 	}
 }

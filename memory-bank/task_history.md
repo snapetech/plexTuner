@@ -39,6 +39,22 @@ Append-only. One entry per completed task.
     - recording rules / recorder history starter
 
 - Date: 2026-03-21
+  Title: Add active-stream stop control
+  Summary:
+    - Extended the active-stream registry so sessions now carry client UA, cancelability, and cancellation-request state.
+    - Added `/ops/actions/stream-stop`, which cancels matching active stream contexts by request ID or channel ID from the localhost operator plane.
+    - Added targeted server tests so active-stream cancellation is covered alongside the existing report surface.
+  Verification:
+    - `go test ./internal/tuner ./cmd/iptv-tunerr -run 'Test(Server_(ActiveStreamsReport|StreamStopAction)|RecordingRulesFileRoundTrip|Server_recording(RulesEndpoint|RulePreview|History))' -count=1`
+    - `./scripts/verify`
+  Notes:
+    - This is the next `PAR-007` control slice, not full fanout/reuse yet.
+  Opportunities filed:
+    - none
+  Links:
+    - active stream stop control
+
+- Date: 2026-03-21
   Title: Prepare Windows bare-metal smoke package
   Summary:
     - Added `scripts/windows-baremetal-package.sh` to cross-build a `windows/amd64` `iptv-tunerr.exe` and bundle it with a Windows-local smoke runner.

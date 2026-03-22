@@ -161,7 +161,10 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	g.inUse++
 	inUseNow := g.inUse
 	g.mu.Unlock()
-	g.beginActiveStream(reqID, channelID, channel.GuideName, channel.GuideNumber, start)
+	streamCtx, streamCancel := context.WithCancel(r.Context())
+	defer streamCancel()
+	r = r.WithContext(streamCtx)
+	g.beginActiveStream(reqID, channelID, channel.GuideName, channel.GuideNumber, r.UserAgent(), start, streamCancel)
 	log.Printf("gateway: req=%s channel=%q id=%s acquire inuse=%d/%d", reqID, channel.GuideName, channelID, inUseNow, limit)
 	defer func() {
 		if g.persistentCookieJar != nil {

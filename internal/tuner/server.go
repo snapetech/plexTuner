@@ -1343,6 +1343,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/ops/workflows/ops-recovery.json", s.serveOpsRecoveryWorkflow())
 	mux.Handle("/ops/actions/guide-refresh", s.serveGuideRefreshAction())
 	mux.Handle("/ops/actions/stream-attempts-clear", s.serveStreamAttemptsClearAction())
+	mux.Handle("/ops/actions/stream-stop", s.serveStreamStopAction())
 	mux.Handle("/ops/actions/provider-profile-reset", s.serveProviderProfileResetAction())
 	mux.Handle("/ops/actions/autopilot-reset", s.serveAutopilotResetAction())
 	mux.Handle("/ops/actions/ghost-visible-stop", s.serveGhostVisibleStopAction())
@@ -1818,6 +1819,13 @@ func (s *Server) serveOperatorActionStatus() http.Handler {
 				"available": s.gateway != nil,
 				"endpoint":  "/debug/active-streams.json",
 			},
+			"stream_stop": map[string]interface{}{
+				"available":    s.gateway != nil,
+				"endpoint":     "/ops/actions/stream-stop",
+				"method":       "POST",
+				"body":         `{"request_id":"r000001"}` + " or " + `{"channel_id":"espn.us"}`,
+				"localhost_ui": true,
+			},
 			"provider_profile_reset": map[string]interface{}{
 				"available": s.gateway != nil,
 			},
@@ -2068,6 +2076,49 @@ func (s *Server) serveStreamAttemptsClearAction() http.Handler {
 		}
 		n := s.gateway.ClearRecentStreamAttempts()
 		writeOperatorActionJSON(w, http.StatusOK, OperatorActionResponse{OK: true, Action: "stream_attempts_clear", Message: "recent stream attempts cleared", Detail: map[string]int{"cleared": n}})
+	})
+}
+
+func (s *Server) serveStreamStopAction() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
+		if s.gateway == nil {
+			writeOperatorActionJSON(w, http.StatusServiceUnavailable, OperatorActionResponse{OK: false, Action: "stream_stop", Message: "gateway unavailable"})
+			return
+		}
+		limited := http.MaxBytesReader(w, r.Body, 65536)
+		var req struct {
+			RequestID string `json:"request_id"`
+			ChannelID string `json:"channel_id"`
+		}
+		if err := json.NewDecoder(limited).Decode(&req); err != nil {
+			writeOperatorActionJSON(w, http.StatusBadRequest, OperatorActionResponse{OK: false, Action: "stream_stop", Message: "invalid json"})
+			return
+		}
+		cancelled := s.gateway.cancelActiveStreams(req.RequestID, req.ChannelID)
+		if len(cancelled) == 0 {
+			writeOperatorActionJSON(w, http.StatusNotFound, OperatorActionResponse{OK: false, Action: "stream_stop", Message: "no matching active streams"})
+			return
+		}
+		if s.EventHooks != nil {
+			s.EventHooks.Dispatch("stream.cancelled", "operator", map[string]interface{}{
+				"request_id": req.RequestID,
+				"channel_id": req.ChannelID,
+				"count":      len(cancelled),
+			})
+		}
+		writeOperatorActionJSON(w, http.StatusAccepted, OperatorActionResponse{
+			OK:      true,
+			Action:  "stream_stop",
+			Message: "stream cancellation requested",
+			Detail:  map[string]interface{}{"count": len(cancelled), "streams": cancelled},
+		})
 	})
 }
 
