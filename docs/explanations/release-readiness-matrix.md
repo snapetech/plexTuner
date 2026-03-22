@@ -35,7 +35,7 @@ every release should at least make those gaps explicit.
 | Startup contract (`/healthz`, `/readyz`, `guide.xml`, `lineup.json`) | Yes | Yes | Partial | Release-gated |
 | HDHR discovery / lineup exposure | Yes | Yes | Partial | Release-gated |
 | HLS relay / mux fallback / provider-pressure logic | Yes | Partial | Partial live evidence | Release-gated with known live variance |
-| Provider account pooling / rollover | Yes | Indirect | Partial live evidence | Release-gated |
+| Provider account pooling / rollover | Yes | Yes | Partial live evidence | Release-gated with stronger binary proof |
 | Shared HLS relay reuse | Yes | Yes | Not broadly host-proven | Release-gated with stronger binary proof |
 | Xtream live / VOD / series output | Yes | Yes | Partial | Release-gated |
 | Xtream `get.php` / `xmltv.php` / short EPG | Yes | Yes | Partial | Release-gated |

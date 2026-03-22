@@ -23,6 +23,24 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: Add provider-account rollover binary smoke proof
+  Summary:
+    - Extended `scripts/ci-smoke.sh` with a three-channel synthetic Xtream-path account-pool run against a real temp binary.
+    - The smoke now asserts `/provider/profile.json` exposes three distinct active account leases while the requests overlap, turning provider-account rollover into release-gated binary proof.
+    - Updated the release-readiness matrix to move provider-account pooling out of the "indirect" smoke tier.
+  Verification:
+    - `bash -n ./scripts/ci-smoke.sh`
+    - `bash ./scripts/ci-smoke.sh`
+    - `./scripts/verify`
+  Notes:
+    - This still does not replace real live/provider proof, but it materially reduces the chance of regressing the "second device did not roll over credentials" class.
+  Opportunities filed:
+    - none
+  Links:
+    - `scripts/ci-smoke.sh`
+    - `docs/explanations/release-readiness-matrix.md`
+
+- Date: 2026-03-21
   Title: Add shared-relay binary smoke proof
   Summary:
     - Extended `scripts/ci-smoke.sh` with a throttled local HLS upstream and a two-consumer same-channel run against a real temp binary.

@@ -339,6 +339,54 @@ cat >"$TMP_DIR/catalog-shared.json" <<'JSON'
 }
 JSON
 
+cat >"$TMP_DIR/catalog-accounts.json" <<'JSON'
+{
+  "movies": [],
+  "series": [],
+  "live_channels": [
+    {
+      "channel_id": "acct1",
+      "guide_number": "211",
+      "guide_name": "Account Relay 1",
+      "group_title": "News",
+      "stream_urls": [
+        "REPLACE_ACCOUNT_U1_CH1",
+        "REPLACE_ACCOUNT_U2_CH1",
+        "REPLACE_ACCOUNT_U3_CH1"
+      ],
+      "epg_linked": true,
+      "tvg_id": "account.relay.1"
+    },
+    {
+      "channel_id": "acct2",
+      "guide_number": "212",
+      "guide_name": "Account Relay 2",
+      "group_title": "News",
+      "stream_urls": [
+        "REPLACE_ACCOUNT_U1_CH2",
+        "REPLACE_ACCOUNT_U2_CH2",
+        "REPLACE_ACCOUNT_U3_CH2"
+      ],
+      "epg_linked": true,
+      "tvg_id": "account.relay.2"
+    },
+    {
+      "channel_id": "acct3",
+      "guide_number": "213",
+      "guide_name": "Account Relay 3",
+      "group_title": "News",
+      "stream_urls": [
+        "REPLACE_ACCOUNT_U1_CH3",
+        "REPLACE_ACCOUNT_U2_CH3",
+        "REPLACE_ACCOUNT_U3_CH3"
+      ],
+      "epg_linked": true,
+      "tvg_id": "account.relay.3"
+    }
+  ]
+}
+JSON
+
 mkdir -p "$TMP_DIR/assets"
 printf 'movie-bytes' >"$TMP_DIR/assets/movie.bin"
 printf 'episode-bytes' >"$TMP_DIR/assets/episode.bin"
@@ -391,34 +439,36 @@ import os
 import socketserver
 import time
 from http.server import BaseHTTPRequestHandler
+from urllib.parse import urlparse
 
 PORT = int(os.environ["HLS_PORT"])
-ROOT = os.environ["HLS_ROOT"]
-
-PLAYLIST = """#EXTM3U
-#EXT-X-VERSION:3
-#EXT-X-TARGETDURATION:2
-#EXT-X-MEDIA-SEQUENCE:1
-#EXTINF:2.0,
-/seg1.ts
-#EXTINF:2.0,
-/seg2.ts
-"""
 
 SEGMENT = bytes([0x47]) + b"\x00" * 187
 SEGMENT = SEGMENT * 2000
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path == "/shared.m3u8":
-            body = PLAYLIST.encode("utf-8")
+        parsed = urlparse(self.path)
+        path = parsed.path
+        if path.endswith(".m3u8"):
+            base = path.rsplit("/", 1)[0]
+            body = (
+                "#EXTM3U\n"
+                "#EXT-X-VERSION:3\n"
+                "#EXT-X-TARGETDURATION:2\n"
+                "#EXT-X-MEDIA-SEQUENCE:1\n"
+                "#EXTINF:2.0,\n"
+                f"{base}/seg1.ts\n"
+                "#EXTINF:2.0,\n"
+                f"{base}/seg2.ts\n"
+            ).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/x-mpegURL")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
             return
-        if self.path in ("/seg1.ts", "/seg2.ts"):
+        if path.endswith("/seg1.ts") or path.endswith("/seg2.ts"):
             self.send_response(200)
             self.send_header("Content-Type", "video/mp2t")
             self.send_header("Content-Length", str(len(SEGMENT)))
@@ -455,6 +505,15 @@ port_hls="$(pick_port)"
 run_slow_hls_server "$port_hls"
 wait_http_code "http://127.0.0.1:$port_hls/shared.m3u8" "200" || fail "slow hls server not ready"
 sed -i "s|REPLACE_SHARED_HLS_URL|http://127.0.0.1:$port_hls/shared.m3u8|g" "$TMP_DIR/catalog-shared.json"
+sed -i "s|REPLACE_ACCOUNT_U1_CH1|http://127.0.0.1:$port_hls/live/alpha01/pass1/ch1.m3u8|g" "$TMP_DIR/catalog-accounts.json"
+sed -i "s|REPLACE_ACCOUNT_U2_CH1|http://127.0.0.1:$port_hls/live/bravo02/pass2/ch1.m3u8|g" "$TMP_DIR/catalog-accounts.json"
+sed -i "s|REPLACE_ACCOUNT_U3_CH1|http://127.0.0.1:$port_hls/live/charly3/pass3/ch1.m3u8|g" "$TMP_DIR/catalog-accounts.json"
+sed -i "s|REPLACE_ACCOUNT_U1_CH2|http://127.0.0.1:$port_hls/live/alpha01/pass1/ch2.m3u8|g" "$TMP_DIR/catalog-accounts.json"
+sed -i "s|REPLACE_ACCOUNT_U2_CH2|http://127.0.0.1:$port_hls/live/bravo02/pass2/ch2.m3u8|g" "$TMP_DIR/catalog-accounts.json"
+sed -i "s|REPLACE_ACCOUNT_U3_CH2|http://127.0.0.1:$port_hls/live/charly3/pass3/ch2.m3u8|g" "$TMP_DIR/catalog-accounts.json"
+sed -i "s|REPLACE_ACCOUNT_U1_CH3|http://127.0.0.1:$port_hls/live/alpha01/pass1/ch3.m3u8|g" "$TMP_DIR/catalog-accounts.json"
+sed -i "s|REPLACE_ACCOUNT_U2_CH3|http://127.0.0.1:$port_hls/live/bravo02/pass2/ch3.m3u8|g" "$TMP_DIR/catalog-accounts.json"
+sed -i "s|REPLACE_ACCOUNT_U3_CH3|http://127.0.0.1:$port_hls/live/charly3/pass3/ch3.m3u8|g" "$TMP_DIR/catalog-accounts.json"
 
 port_full="$(pick_port)"
 run_serve "$TMP_DIR/catalog-full.json" "$port_full"
@@ -622,5 +681,49 @@ wait "$second_stream_pid"
 grep -qi '^X-IptvTunerr-Shared-Upstream: hls_go' "$shared_headers" || fail "shared relay second consumer missing shared upstream header"
 [[ -s "$TMP_DIR/shared-first.out" ]] || fail "shared relay first consumer got no bytes"
 [[ -s "$TMP_DIR/shared-second.out" ]] || fail "shared relay second consumer got no bytes"
+
+port_accounts="$(pick_port)"
+IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
+IPTV_TUNERR_XMLTV_URL= \
+IPTV_TUNERR_WEBUI_DISABLED=1 \
+IPTV_TUNERR_FFMPEG_DISABLED=1 \
+IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT=1 \
+IPTV_TUNERR_TUNER_COUNT=4 \
+"$BIN" serve -catalog "$TMP_DIR/catalog-accounts.json" -addr ":$port_accounts" -base-url "http://127.0.0.1:$port_accounts" \
+  >"$TMP_DIR/serve-accounts-$port_accounts.log" 2>&1 &
+PIDS+=("$!")
+wait_http_code "http://127.0.0.1:$port_accounts/discover.json" "200" || fail "account pool discover.json not ready"
+curl -sS "http://127.0.0.1:$port_accounts/stream/acct1" -o "$TMP_DIR/account-first.out" &
+account_stream_1=$!
+sleep 0.15
+curl -sS "http://127.0.0.1:$port_accounts/stream/acct2" -o "$TMP_DIR/account-second.out" &
+account_stream_2=$!
+sleep 0.15
+curl -sS "http://127.0.0.1:$port_accounts/stream/acct3" -o "$TMP_DIR/account-third.out" &
+account_stream_3=$!
+sleep 0.3
+python3 - "$port_accounts" <<'PY'
+import json
+import sys
+from urllib.request import urlopen
+
+port = sys.argv[1]
+with urlopen(f"http://127.0.0.1:{port}/provider/profile.json", timeout=5) as resp:
+    profile = json.load(resp)
+leases = profile.get("account_leases", [])
+if len(leases) != 3:
+    raise SystemExit(f"expected 3 account leases, got {leases!r}")
+labels = {lease.get("label") for lease in leases}
+if len(labels) != 3:
+    raise SystemExit(f"expected 3 distinct account labels, got {leases!r}")
+if any(int(lease.get("in_use", 0)) != 1 for lease in leases):
+    raise SystemExit(f"expected each account lease to be in_use=1, got {leases!r}")
+PY
+wait "$account_stream_1"
+wait "$account_stream_2"
+wait "$account_stream_3"
+[[ -s "$TMP_DIR/account-first.out" ]] || fail "account pool first consumer got no bytes"
+[[ -s "$TMP_DIR/account-second.out" ]] || fail "account pool second consumer got no bytes"
+[[ -s "$TMP_DIR/account-third.out" ]] || fail "account pool third consumer got no bytes"
 
 log "smoke checks passed"
