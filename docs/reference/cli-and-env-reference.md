@@ -343,6 +343,7 @@ Common flags:
 - `-dvr-key`
 - `-tuner-url`
 - `-tuner-count`
+- `-include-libraries`
 - `-out`
 
 Use for:
@@ -353,6 +354,7 @@ Use for:
 Notes:
 - Requires `-dvr-key` when Plex exposes multiple DVRs so the export does not silently pick the wrong fleet.
 - Produces a neutral bundle artifact; it does not write Emby/Jellyfin state directly.
+- With `-include-libraries`, the same bundle also captures Plex library sections and shared storage paths for later library migration planning.
 
 ## `iptv-tunerr live-tv-bundle-convert`
 
@@ -394,6 +396,25 @@ Notes:
 - `-host` / `-token` can also come from `IPTV_TUNERR_EMBY_HOST` + `IPTV_TUNERR_EMBY_TOKEN` or `IPTV_TUNERR_JELLYFIN_HOST` + `IPTV_TUNERR_JELLYFIN_TOKEN`, based on the plan target.
 - `-state-file` uses the same idempotent registration-state mechanism as runtime Emby/Jellyfin registration.
 
+## `iptv-tunerr live-tv-bundle-diff`
+
+Compare a saved Live TV registration plan against a live Emby or Jellyfin server.
+
+Common flags:
+- `-in`
+- `-target` (`emby` or `jellyfin`, optional override)
+- `-host`
+- `-token`
+- `-out`
+
+Use for:
+- checking whether the planned tuner host and XMLTV listing provider would be reused, created, or blocked by conflicts
+- validating the destination server before applying a Live TV migration plan
+
+Notes:
+- `-host` / `-token` use the same env fallback as `live-tv-bundle-apply`.
+- The diff reports tuner-host and listing-provider entries separately so conflicts are visible before registration.
+
 ## `iptv-tunerr live-tv-bundle-rollout`
 
 Build or apply a multi-target Emby/Jellyfin rollout from one neutral bundle.
@@ -418,6 +439,176 @@ Use for:
 Notes:
 - Without `-apply`, the command emits a rollout plan JSON artifact.
 - With `-apply`, the command registers only the requested non-Plex targets and intentionally leaves Plex untouched.
+
+## `iptv-tunerr live-tv-bundle-rollout-diff`
+
+Compare one neutral Live TV bundle against live Emby and/or Jellyfin targets.
+
+Common flags:
+- `-in`
+- `-targets` (default `emby,jellyfin`)
+- `-emby-host`
+- `-emby-token`
+- `-jellyfin-host`
+- `-jellyfin-token`
+- `-out`
+
+Use for:
+- validating the full non-Plex Live TV overlap state in one pass from the same neutral bundle
+- seeing per-target tuner-host and listing-provider reuse/create/conflict outcomes before apply
+
+Notes:
+- Uses the same target filtering and env fallback as `live-tv-bundle-rollout`.
+- Returns one diff result per requested target instead of changing server state.
+
+## `iptv-tunerr library-migration-convert`
+
+Convert bundled Plex library sections into an Emby or Jellyfin library plan.
+
+Common flags:
+- `-in`
+- `-target`
+- `-host`
+- `-out`
+
+Use for:
+- recreating Plex movie/show library definitions on Emby/Jellyfin against the same shared storage paths
+- staging non-Live-TV migration work without hand-recreating libraries in each server UI
+
+Notes:
+- Requires a bundle created with `live-tv-bundle-build -include-libraries`.
+- Converts names, media type, and shared paths only; it does not promise metadata DB portability.
+
+## `iptv-tunerr library-migration-apply`
+
+Apply an Emby or Jellyfin library migration plan to a live server.
+
+Common flags:
+- `-in`
+- `-target`
+- `-host`
+- `-token`
+- `-refresh`
+- `-out`
+
+Use for:
+- creating or reusing target libraries from a saved migration plan
+- refreshing the destination server after the shared paths are registered
+
+Notes:
+- `-host` / `-token` can reuse the same `IPTV_TUNERR_EMBY_*` or `IPTV_TUNERR_JELLYFIN_*` env vars as the Live TV registration flows.
+- This applies library definitions, not vendor-specific metadata/state translation.
+
+## `iptv-tunerr library-migration-diff`
+
+Compare a library migration plan against a live Emby or Jellyfin server before applying it.
+
+Common flags:
+- `-in`
+- `-target`
+- `-host`
+- `-token`
+- `-out`
+
+Use for:
+- seeing exactly which bundled libraries would be reused, created, or blocked by type/path conflicts
+- validating overlap migrations against a live destination before touching server state
+
+Notes:
+- `-host` / `-token` can reuse the same `IPTV_TUNERR_EMBY_*` or `IPTV_TUNERR_JELLYFIN_*` env vars as the apply path.
+- Same name + same type + same path is reported as `reuse`, missing libraries are `create`, and mismatched type/path cases are reported as conflicts to resolve manually.
+
+## `iptv-tunerr library-migration-rollout`
+
+Build or apply a multi-target Emby/Jellyfin library rollout from one bundle.
+
+Common flags:
+- `-in`
+- `-targets` (default `emby,jellyfin`)
+- `-emby-host`
+- `-emby-token`
+- `-jellyfin-host`
+- `-jellyfin-token`
+- `-refresh`
+- `-apply`
+- `-out`
+
+Use for:
+- recreating the same Plex movie/show library definitions on both Emby and Jellyfin from one shared bundle
+- pre-rolling the non-Plex library side together while Plex stays live
+
+Notes:
+- Without `-apply`, the command emits a library rollout plan artifact.
+- With `-apply`, it creates or reuses the requested non-Plex library targets and intentionally leaves Plex untouched.
+
+## `iptv-tunerr library-migration-rollout-diff`
+
+Compare one bundled library rollout against live Emby and/or Jellyfin targets.
+
+Common flags:
+- `-in`
+- `-targets` (default `emby,jellyfin`)
+- `-emby-host`
+- `-emby-token`
+- `-jellyfin-host`
+- `-jellyfin-token`
+- `-out`
+
+Use for:
+- seeing both destination servers' create/reuse/conflict outcomes from one neutral bundle
+- validating overlap migrations across the whole non-Plex side before applying anything
+
+Notes:
+- Uses the same target selection and env fallback rules as `library-migration-rollout`.
+- Returns one diff result per requested target instead of mutating server state.
+
+## `iptv-tunerr migration-rollout-audit`
+
+Audit one migration bundle against live Emby and/or Jellyfin targets.
+
+Common flags:
+- `-in`
+- `-targets` (default `emby,jellyfin`)
+- `-emby-host`
+- `-emby-token`
+- `-jellyfin-host`
+- `-jellyfin-token`
+- `-out`
+
+Use for:
+- getting one combined overlap-readiness report per target instead of stitching together separate Live TV and library diff commands
+- validating both tuner/guide registration and bundled library/catch-up surfaces before deciding whether a target is migration-ready
+
+Notes:
+- Reuses the same host/token env fallback and target filtering as the rollout/diff commands.
+- If the bundle does not carry shared libraries or attached catch-up lanes, the audit still returns Live TV results and marks the library side as skipped.
+- The report now also includes `ready_to_apply` at both the overall and per-target level, plus rolled-up conflict counts, so operators can answer "can I apply this now?" without manually interpreting each diff block.
+- The audit also reports `status` and `indexed_channel_count`. Current status values are:
+  - `blocked_conflicts`: definition conflicts exist
+  - `ready_to_apply`: no conflicts, but the target is not yet visibly converged
+  - `converged`: no conflicts, the target already exposes indexed Live TV channels, and the bundled libraries/catch-up lanes are already present when applicable
+- For operator use, the audit also includes `status_reason` plus `present_libraries` / `missing_libraries` so a partial migration shows exactly what is still absent on the target.
+- When a bundled library is already being reused, the audit also exposes `populated_libraries` / `empty_libraries` based on the target server's current item counts. These are visibility hints only; they do not currently change readiness or convergence logic.
+- When the bundle carries source Plex library counts, reused libraries also report parity via `synced_libraries` / `lagging_libraries`, plus per-library `source_item_count`, `existing_item_count`, and `parity_status` values in the nested library diff rows.
+- When the target server exposes a recognizable library-refresh scheduled task, the audit also includes `library_scan` with best-effort running/state/progress fields. This is visibility only and is intentionally not required for readiness.
+
+## `iptv-tunerr live-tv-bundle-attach-catchup`
+
+Attach a saved catch-up publish manifest to an existing migration bundle.
+
+Common flags:
+- `-bundle`
+- `-manifest`
+- `-out`
+
+Use for:
+- carrying Tunerr-generated catch-up library layouts in the same migration artifact as Live TV and shared Plex library definitions
+- pre-rolling `.strm`/`.nfo` catch-up libraries on Emby and Jellyfin from the same neutral bundle used for the rest of the migration
+
+Notes:
+- The manifest should come from `iptv-tunerr catchup-publish` output, specifically its `publish-manifest.json`.
+- Attached catch-up lanes are treated as movie libraries backed by generated shared paths; they do not imply metadata DB conversion.
+
 - `GET /provider/profile.json` — runtime provider profile including learned tuner caps, HLS instability, Cloudflare hits, penalized upstream hosts, and **`remediation_hints`** (advisory heuristic suggestions with optional related **`IPTV_TUNERR_*`** env names)
 
 Use for:
@@ -1324,10 +1515,13 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
 - `IPTV_TUNERR_HLS_RELAY_PREFER_GO_ON_PROVIDER_PRESSURE` — skip non-transcode ffmpeg remux and go straight to the Go playlist/segment relay when Tunerr has **learned concurrency pressure** *or* the upstream host already has **autotune penalty** (same process; requires **`IPTV_TUNERR_PROVIDER_AUTOTUNE`** so failures are recorded). Turning this **off** disables both signals unless **`IPTV_TUNERR_HLS_RELAY_PREFER_GO`** is on.
 - `IPTV_TUNERR_HLS_RELAY_PREFER_GO` — unconditional Go-relay preference (overrides the `false` branch above).
 - `IPTV_TUNERR_HLS_RELAY_ALLOW_FFMPEG_CROSS_HOST` — default `false`; when disabled, non-transcode HLS playlists that reference media/key/map/variant URLs on a different host than the playlist itself skip ffmpeg remux and use the Go relay. This avoids one static ffmpeg request-header context being reused across cross-host HLS subrequests.
-- `IPTV_TUNERR_CLIENT_ADAPT` — when `true`, resolve the Plex client from the active session and force websafe (transcode + MP3 audio) for web/browser clients and for internal fetchers (Lavf/PMS). Ensures Chrome and Firefox get compatible audio without transcoding non-browser clients.
+- `IPTV_TUNERR_CLIENT_ADAPT` — when `true`, resolve the Plex client from the active session and adapt stream mode by client class. By default, web/browser clients still get websafe (transcode + MP3 audio), while non-web/native clients stay on the direct/remux path unless another override wins.
 - `IPTV_TUNERR_CLIENT_ADAPT_STICKY_FALLBACK` — when enabled (default), if adaptation chose the **non-websafe** path and the tune ends with **`all_upstreams_failed`** or **`upstream_concurrency_limited`**, register a **session-scoped** WebSafe fallback for that channel + Plex session/client id until TTL (see [plex-livetv-http-tuning](plex-livetv-http-tuning.md) **HR-004**).
 - `IPTV_TUNERR_CLIENT_ADAPT_STICKY_TTL_SEC` — sticky lifetime in seconds (default **14400**; clamped **120**–**604800**).
 - `IPTV_TUNERR_CLIENT_ADAPT_STICKY_LOG` — set `1` to include internal sticky map keys in logs (with **`IPTV_TUNERR_STREAM_DEBUG`**).
+- `IPTV_TUNERR_PLEX_UNKNOWN_CLIENT_POLICY` — adaptation policy when Plex session lookup does not resolve a client. Values: `websafe` (default), `direct`, `inherit`. `direct` is the remux-first posture for host-local smart-TV testing when PMS often forwards no client hints to Tunerr.
+- `IPTV_TUNERR_PLEX_INTERNAL_FETCHER_POLICY` — adaptation policy when the resolved client looks like PMS/Lavf/ffmpeg rather than the actual end client. Values: `websafe` (default), `direct`, `inherit`.
+- `IPTV_TUNERR_PLEX_RESOLVE_ERROR_POLICY` — adaptation policy when PMS session lookup itself errors. Values: `websafe` (default), `direct`, `inherit`.
 - `IPTV_TUNERR_UPSTREAM_HEADERS` — comma-separated extra headers applied to upstream playlist and segment requests, for example `Referer`, `Origin`, or `Host`.
 - `IPTV_TUNERR_UPSTREAM_ADD_SEC_FETCH` — add `Sec-Fetch-Site: cross-site` and `Sec-Fetch-Mode: cors` on upstream requests and ffmpeg inputs.
 - `IPTV_TUNERR_UPSTREAM_USER_AGENT` — override the upstream `User-Agent` while leaving downstream client detection untouched. Accepts preset names (`lavf`, `vlc`, `mpv`, `kodi`, `firefox`) or a literal UA string. When set to a preset, the resolved string matches the installed ffmpeg version (for `lavf`) or a canonical media-player/browser value.
@@ -1350,7 +1544,10 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
 - `IPTV_TUNERR_HOT_START_BOOTSTRAP_SECONDS` — bootstrap burst duration for hot channels (default `2.0`)
 - `IPTV_TUNERR_HOT_START_PROGRAM_KEEPALIVE` — enable PAT/PMT keepalive automatically for hot channels (default `true`)
 - `IPTV_TUNERR_FORCE_WEBSAFE` — when `true`, always force the Plex-safe transcode path regardless of client. Default forced profile is `plexsafe` unless `IPTV_TUNERR_FORCE_WEBSAFE_PROFILE` is set.
-- `IPTV_TUNERR_FORCE_WEBSAFE_PROFILE` — built-in or named profile used when `IPTV_TUNERR_FORCE_WEBSAFE=true`. Useful for compatibility testing with higher quality than the default `plexsafe`; for example `plexsafehq` keeps MP3 audio for compatibility, adds `setsar=1`, and raises the video/mux bitrate ceiling substantially.
+- `IPTV_TUNERR_FORCE_WEBSAFE_PROFILE` — built-in or named profile used when `IPTV_TUNERR_FORCE_WEBSAFE=true`, and the default profile family for the Plex adaptation `websafe` branch when no client-class-specific override is set. Useful profiles include `plexsafehq` for full compatibility re-encode at higher quality, `plexsafemax` for the same TV-safe shape with more bitrate headroom, `plexsafeaac` for experimental AAC-based A/B tests, or `copyvideomp3` when you want to preserve source video while normalizing audio/subtitle behavior for Plex Live TV clients.
+- `IPTV_TUNERR_PLEX_WEB_CLIENT_PROFILE` — optional built-in or named profile override for resolved Plex Web/browser clients when the adaptation logic chooses the `websafe` branch. Falls back to `IPTV_TUNERR_FORCE_WEBSAFE_PROFILE` when unset.
+- `IPTV_TUNERR_PLEX_NATIVE_CLIENT_PROFILE` — optional built-in or named profile override for resolved native Plex clients if you deliberately put that lane on `websafe`. Falls back to `IPTV_TUNERR_FORCE_WEBSAFE_PROFILE` when unset.
+- `IPTV_TUNERR_PLEX_INTERNAL_FETCHER_PROFILE` — optional built-in or named profile override for unresolved/resolved PMS internal fetchers (`Lavf`, `PlexMediaServer`) when the adaptation logic chooses the `websafe` branch. This is useful when browsers are happy with `copyvideomp3` but TVs still need stricter `plexsafehq` or `plexsafemax`. `plexsafeaac` is available as an experimental AAC variant but should be A/B tested before replacing a known-good MP3-based lane.
 - `IPTV_TUNERR_STRIP_STREAM_HOSTS` — comma-separated hostnames (e.g. `cf.like-cdn.com,like-cdn.com`) whose stream URLs are removed at catalog build time. Channels with only stripped hosts are dropped entirely so the tuner never attempts CF-blocked endpoints.
 - `IPTV_TUNERR_DEDUPE_BY_TVG_ID` — when `true`/`1`/`on` (default), merge catalog rows that share the same **`tvg_id`** **and matching normalized guide-name identity** during **`index`** (including a **post-merge** pass after free sources + HDHR hardware lineup). This keeps intentional `tvg_id` variants like East/West or `Plus` variants separate. Set `false`/`0`/`off` to disable (niche debugging).
 

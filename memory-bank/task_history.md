@@ -23,6 +23,153 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-22
+  Title: Add experimental AAC variant of the TV-safe transcode profile
+  Summary:
+    - Added a new built-in profile `plexsafeaac` in `internal/tuner/gateway_profiles.go` so the high-quality TV-safe lane can be A/B tested with AAC audio instead of MP3.
+    - Added focused regression coverage for profile normalization and ffmpeg args in `internal/tuner/gateway_profiles_test.go`.
+    - Updated profile/env reference docs while intentionally leaving the live helper on the known-good `plexsafemax` runtime.
+  Verification:
+    - `go test ./internal/tuner -run 'Test(BuildFFmpegStreamCodecArgs_(plexsafeHQ|plexsafeMax|plexsafeAAC)|NormalizeProfileName_HDHRStyleAliases)$'`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - `plexsafeaac` is not live yet; it exists only as an explicit next-step experiment because AAC may not satisfy the same PMS/LG compatibility path that MP3 fixed.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway_profiles.go`
+    - `internal/tuner/gateway_profiles_test.go`
+    - `docs/reference/transcode-profiles.md`
+    - `docs/reference/cli-and-env-reference.md`
+
+- Date: 2026-03-22
+  Title: Add higher-quality TV-safe Plex transcode profile
+  Summary:
+    - Added a new built-in profile `plexsafemax` in `internal/tuner/gateway_profiles.go` so the TV-safe lane keeps the same compatibility shape as `plexsafehq` while using a slower preset, lower CRF, and higher bitrate ceilings.
+    - Updated the host-local `:5005` runtime so browser playback stays on `copyvideomp3` and ambiguous/internal PMS fetchers use `plexsafemax`.
+    - Fixed an unrelated compile blocker in `internal/emby/register.go` where `TriggerGuideRefresh` had lost local `client/status` declarations.
+  Verification:
+    - `go test ./internal/tuner ./cmd/iptv-tunerr`
+    - `go test ./internal/tuner -run 'TestBuildFFmpegStreamCodecArgs_(plexsafeHQ|plexsafeMax)$'`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+    - `curl -s http://127.0.0.1:5005/debug/runtime.json | jq '.tuner | {force_websafe_profile,plex_web_client_profile,plex_internal_fetcher_profile,stream_transcode,count}'`
+  Notes:
+    - The new profile still uses MP3 audio and preserves source resolution; this pass intentionally avoided AAC or forced upscaling.
+    - The live `:5005` helper is currently running in exec session `26611`.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway_profiles.go`
+    - `internal/tuner/gateway_profiles_test.go`
+    - `internal/emby/register.go`
+    - `docs/reference/transcode-profiles.md`
+    - `docs/reference/cli-and-env-reference.md`
+
+- Date: 2026-03-22
+  Title: Add source-vs-destination library parity hints to the migration audit
+  Summary:
+    - Added Plex library section item-count reads and carried those counts through the neutral migration bundle and library migration plans.
+    - Extended library diffs and the combined migration audit with `source_item_count`, `existing_item_count`, `parity_status`, and rolled-up `synced_libraries` / `lagging_libraries`.
+    - Updated README and migration docs so the audit is now described as comparing destination library presence against both destination counts and source Plex counts.
+  Verification:
+    - `go test ./internal/plex ./internal/emby ./internal/livetvbundle ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - Parity is still aggregate-count based; it does not yet verify title-level or metadata-level equivalence.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/plex/library.go`
+    - `internal/plex/library_test.go`
+    - `internal/livetvbundle/bundle.go`
+    - `internal/livetvbundle/bundle_test.go`
+    - `docs/reference/cli-and-env-reference.md`
+
+- Date: 2026-03-22
+  Title: Add best-effort library scan status to the migration audit
+  Summary:
+    - Added `GetLibraryScanStatus(...)` in `internal/emby`, backed by scheduled-task inspection for recognizable library refresh/scan tasks.
+    - Extended the combined migration audit with `library_scan` per target so overlap migrations can see coarse scan running/state/progress hints after library apply.
+    - Updated the migration docs to frame the new fields as visibility only, not a readiness or convergence gate.
+  Verification:
+    - `go test ./internal/emby ./internal/livetvbundle ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - Library scan status is best-effort and depends on the destination server exposing recognizable scheduled-task metadata.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/emby/library.go`
+    - `internal/emby/register.go`
+    - `internal/livetvbundle/bundle.go`
+    - `internal/livetvbundle/bundle_test.go`
+    - `docs/reference/cli-and-env-reference.md`
+
+- Date: 2026-03-22
+  Title: Add coarse library population hints to the migration audit
+  Summary:
+    - Added `GetLibraryItemCount(...)` in `internal/emby` and enriched reused library diff rows with `existing_item_count`.
+    - Extended the combined migration audit with `populated_libraries` and `empty_libraries` so reused library definitions can be distinguished from still-empty destination libraries.
+    - Updated README and migration docs to describe the new audit hints as visibility only, not a readiness/convergence gate change.
+  Verification:
+    - `go test ./internal/emby ./internal/livetvbundle ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - Population is currently a coarse item-count signal only; it does not yet model deeper scan/index/metadata ingest progress.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/emby/library.go`
+    - `internal/emby/library_test.go`
+    - `internal/livetvbundle/bundle.go`
+    - `internal/livetvbundle/bundle_test.go`
+    - `docs/reference/cli-and-env-reference.md`
+
+- Date: 2026-03-22
+  Title: Split Plex browser and TV-safe fallback profiles on the host-local helper
+  Summary:
+    - Added client-class-specific WebSafe profile selection in `internal/tuner/gateway_adapt.go` so the adaptation `websafe` branch no longer has to use one shared profile for browser and TV/internal PMS fetchers.
+    - Added new env overrides `IPTV_TUNERR_PLEX_WEB_CLIENT_PROFILE`, `IPTV_TUNERR_PLEX_NATIVE_CLIENT_PROFILE`, and `IPTV_TUNERR_PLEX_INTERNAL_FETCHER_PROFILE`, exposed them in `/debug/runtime.json`, and documented them in the CLI/env reference.
+    - Restarted the live `:5005` helper with `copyvideomp3` for resolved web clients and `plexsafehq` for internal/no-hints PMS fetchers so browser playback can stay lighter while TV playback keeps the stricter compatibility transcode.
+  Verification:
+    - `go test ./internal/tuner ./cmd/iptv-tunerr`
+    - `go test ./internal/tuner -run 'TestGateway_requestAdaptation_(resolvedWebUsesWebProfileOverride|internalFetcherUsesInternalProfileOverride|unknownInternalFetcherAmbiguousFallsBackToInternalPolicy)$'`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+    - `curl -s http://127.0.0.1:5005/debug/runtime.json | jq '.tuner | {stream_transcode,client_adapt,force_websafe_profile,plex_web_client_profile,plex_internal_fetcher_profile,plex_unknown_client_policy,plex_internal_fetcher_policy,plex_resolve_error_policy,count}'`
+  Notes:
+    - Global runtime still reports `stream_transcode="off"`; the new behavior only changes which profile the adaptation layer chooses when it decides a request must go to the `websafe` branch.
+    - The live `:5005` helper is currently running in exec session `40620`.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway_adapt.go`
+    - `internal/tuner/gateway_test.go`
+    - `cmd/iptv-tunerr/cmd_runtime_server.go`
+    - `docs/reference/cli-and-env-reference.md`
+
+- Date: 2026-03-22
+  Title: Restore remux-first host-local Plex adaptation policy
+  Summary:
+    - Added explicit Plex adaptation policy envs in `internal/tuner/gateway_adapt.go`: `IPTV_TUNERR_PLEX_UNKNOWN_CLIENT_POLICY`, `IPTV_TUNERR_PLEX_INTERNAL_FETCHER_POLICY`, and `IPTV_TUNERR_PLEX_RESOLVE_ERROR_POLICY`.
+    - Added request-adaptation tests proving `direct` policy keeps remux/transcode-off for unknown and internal-fetcher cases, and surfaced the new policy keys in `/debug/runtime.json`.
+    - Updated docs and restarted the host-local `:5005` helper in remux-first mode with the new policies set to `direct`, keeping the music-drop, lineup-shaping, and FFmpeg DNS-rewrite fixes in place.
+  Verification:
+    - `go test ./internal/tuner ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+    - `curl -fsS http://127.0.0.1:5005/debug/runtime.json | jq '.tuner | {stream_transcode, plex_unknown_client_policy, plex_internal_fetcher_policy, plex_resolve_error_policy}'`
+    - Fresh live stream probe on `15578` logged `plex-hints none`, `hls-mode transcode=false mode="off"`, and `ffmpeg-remux profile=default`
+  Notes:
+    - This restores remux as the first attempt, but it does not fully automate fallback for the PMS-only failure class where `universal/decision` fails after Tunerr already served a healthy stream.
+    - The live `:5005` helper is currently running in exec session `17057`.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway_adapt.go`
+    - `internal/tuner/gateway_test.go`
+    - `cmd/iptv-tunerr/cmd_runtime_server.go`
+    - `docs/reference/cli-and-env-reference.md`
+    - `docs/reference/transcode-profiles.md`
+
+- Date: 2026-03-22
   Title: Add multi-target Live TV rollout planning for Emby and Jellyfin
   Summary:
     - Added `RolloutPlan` / `RolloutApplyResult` helpers in `internal/livetvbundle` so one neutral Plex-derived bundle can build or apply coordinated Emby+Jellyfin Live TV targets.
@@ -34,6 +181,44 @@ Append-only. One entry per completed task.
     - `./scripts/verify`
   Notes:
     - This rollout lane is still intentionally scoped to Live TV registration state, not catch-up/library sync.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/livetvbundle/bundle.go`
+    - `cmd/iptv-tunerr/cmd_live_tv_bundle.go`
+    - `docs/emby-jellyfin-support.md`
+
+- Date: 2026-03-22
+  Title: Extend migration bundle flow into library definitions
+  Summary:
+    - Expanded `internal/livetvbundle` so migration bundles can optionally include Plex library sections and shared storage paths alongside Live TV data.
+    - Added `library-migration-convert` and `library-migration-apply` so bundled Plex movie/show libraries can be turned into Emby/Jellyfin library plans and applied through built-in server APIs.
+    - Updated README plus Emby/Jellyfin and CLI docs to make the migration boundary explicit: library definitions and paths migrate, but vendor metadata databases do not.
+  Verification:
+    - `gofmt -w internal/livetvbundle/bundle.go internal/livetvbundle/bundle_test.go cmd/iptv-tunerr/cmd_live_tv_bundle.go cmd/iptv-tunerr/cmd_live_tv_bundle_test.go`
+    - `go test ./internal/livetvbundle ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - This intentionally targets server-facing library config, not Plex watched-state/metadata-row translation.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/livetvbundle/bundle.go`
+    - `cmd/iptv-tunerr/cmd_live_tv_bundle.go`
+    - `docs/emby-jellyfin-support.md`
+
+- Date: 2026-03-22
+  Title: Add multi-target library rollout planning for Emby and Jellyfin
+  Summary:
+    - Added `LibraryRolloutPlan` / `LibraryRolloutApplyResult` helpers so one neutral bundle can drive coordinated Emby+Jellyfin library rollout from the same bundled Plex library definitions.
+    - Added `library-migration-rollout`, which can emit or apply a multi-target library rollout in one step while intentionally leaving Plex untouched.
+    - Updated the CLI reference, Emby/Jellyfin support docs, and changelog so coordinated library overlap migration is documented alongside the Live TV rollout flow.
+  Verification:
+    - `gofmt -w internal/livetvbundle/bundle.go internal/livetvbundle/bundle_test.go cmd/iptv-tunerr/cmd_live_tv_bundle.go cmd/iptv-tunerr/cmd_live_tv_bundle_test.go`
+    - `go test ./internal/livetvbundle ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - This still migrates server-facing library definitions only; vendor-specific metadata/state translation remains explicitly out of scope.
   Opportunities filed:
     - none
   Links:
@@ -6287,3 +6472,165 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - `internal/plex/dvr_test.go`
     - `internal/plex/cutover.go`
     - `cmd/iptv-tunerr/cmd_plex_ops.go`
+- Date: 2026-03-22
+  Title: Fold generated catch-up libraries into the migration bundle lane
+  Summary:
+    - Added `Bundle.Catchup` plus `AttachCatchupManifest(...)` in `internal/livetvbundle` so a saved `catchup-publish` manifest can be merged into the same neutral migration artifact as Live TV and bundled Plex libraries.
+    - Added `iptv-tunerr live-tv-bundle-attach-catchup` to import `publish-manifest.json` into an existing bundle.
+    - Updated library planning so attached catch-up lanes flow through the existing `library-migration-convert`, `library-migration-apply`, and `library-migration-rollout` commands without needing a separate script path.
+    - Updated migration docs/changelog to make the new artifact shape explicit.
+  Verification:
+    - `go test ./internal/livetvbundle ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - This still migrates generated library layouts and shared paths only; it does not attempt Plex metadata DB conversion.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/livetvbundle/bundle.go`
+    - `internal/livetvbundle/bundle_test.go`
+    - `cmd/iptv-tunerr/cmd_live_tv_bundle.go`
+    - `docs/emby-jellyfin-support.md`
+    - `docs/reference/cli-and-env-reference.md`
+- Date: 2026-03-22
+  Title: Add live target diffing for library migration plans
+  Summary:
+    - Added `DiffLibraryPlan(...)` in `internal/livetvbundle` so a planned Emby/Jellyfin library migration can be compared against the live target server before apply.
+    - Added `iptv-tunerr library-migration-diff`, which reports per-library `reuse`, `create`, `conflict_type`, and `conflict_path` outcomes using the same host/token resolution rules as the apply path.
+    - Updated README and migration/reference docs so the overlap workflow explicitly includes a dry-run validation stage, not just convert and apply.
+  Verification:
+    - `go test ./internal/livetvbundle ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - This is a server-state diff for library definitions and paths only; it is not a metadata DB reconciliation engine.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/livetvbundle/bundle.go`
+    - `internal/livetvbundle/bundle_test.go`
+    - `cmd/iptv-tunerr/cmd_live_tv_bundle.go`
+    - `docs/reference/cli-and-env-reference.md`
+- Date: 2026-03-22
+  Title: Add multi-target diffing for library rollout plans
+  Summary:
+    - Added `DiffLibraryRolloutPlan(...)` so one bundled library rollout can be compared against multiple live non-Plex targets in one pass.
+    - Added `iptv-tunerr library-migration-rollout-diff`, which uses the same target selection and host/token env fallback as the rollout/apply path but returns per-target diff results instead of mutating anything.
+    - Updated README and migration docs so the overlap workflow now explicitly supports one-shot multi-target validation as well as one-shot multi-target apply.
+  Verification:
+    - `go test ./internal/livetvbundle ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - This still validates library definitions/paths only; it does not attempt metadata synchronization between Plex and the destination servers.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/livetvbundle/bundle.go`
+    - `internal/livetvbundle/bundle_test.go`
+    - `cmd/iptv-tunerr/cmd_live_tv_bundle.go`
+    - `docs/emby-jellyfin-support.md`
+- Date: 2026-03-22
+  Title: Add Live TV diffing for single-target and rollout migration plans
+  Summary:
+    - Added Emby/Jellyfin read helpers for existing tuner hosts and listing providers so Live TV migration plans can be compared against live target state.
+    - Added `DiffEmbyPlan(...)` plus `iptv-tunerr live-tv-bundle-diff` for single-target tuner-host/XMLTV diffing.
+    - Added `DiffRolloutPlan(...)` plus `iptv-tunerr live-tv-bundle-rollout-diff` so the same neutral bundle can validate both Emby and Jellyfin targets in one pass before any registration apply.
+    - Updated README and migration/reference docs so the Live TV overlap workflow now explicitly includes dry-run validation, not just convert and apply.
+  Verification:
+    - `go test ./internal/emby ./internal/livetvbundle ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - This compares tuner-host and listing-provider definition/state only; it is not channel-level guide or metadata parity analysis.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/emby/register.go`
+    - `internal/emby/register_test.go`
+    - `internal/livetvbundle/bundle.go`
+    - `internal/livetvbundle/bundle_test.go`
+    - `cmd/iptv-tunerr/cmd_live_tv_bundle.go`
+- Date: 2026-03-22
+  Title: Add a combined overlap audit for migration bundles
+  Summary:
+    - Added `AuditBundleTargets(...)` in `internal/livetvbundle` to combine Live TV diffing and optional library/catch-up diffing into one per-target migration audit result.
+    - Added `iptv-tunerr migration-rollout-audit`, which uses the same target/env selection rules as the rollout commands but returns one combined readiness report instead of separate diff artifacts.
+    - Updated README and migration/reference docs so the binary now has a top-level answer for "is this whole bundle ready for Emby/Jellyfin?".
+  Verification:
+    - `go test ./internal/livetvbundle ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - Library audit is optional inside the combined report and is explicitly marked skipped when the bundle carries no shared libraries or catch-up lanes.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/livetvbundle/bundle.go`
+    - `internal/livetvbundle/bundle_test.go`
+    - `cmd/iptv-tunerr/cmd_live_tv_bundle.go`
+    - `docs/reference/cli-and-env-reference.md`
+- Date: 2026-03-22
+  Title: Add readiness verdicts to the combined migration audit
+  Summary:
+    - Extended the combined migration audit to compute `ready_to_apply` at both the overall and per-target level.
+    - Added rolled-up conflict counts plus surface-specific readiness so operators do not have to manually interpret nested Live TV and library diff counts before deciding whether to apply.
+    - Updated README and migration docs so the audit is now described as a real pre-apply gate, not just a raw diff aggregator.
+  Verification:
+    - `go test ./internal/livetvbundle ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - Readiness currently means "no definition conflicts detected"; it does not yet include post-cutover metadata/state progress.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/livetvbundle/bundle.go`
+    - `internal/livetvbundle/bundle_test.go`
+    - `docs/reference/cli-and-env-reference.md`
+- Date: 2026-03-22
+  Title: Add convergence status and indexed-channel visibility to the migration audit
+  Summary:
+    - Extended the combined migration audit with per-target and overall `status` values plus rolled-up indexed Live TV channel counts from the target server.
+    - The audit now distinguishes `blocked_conflicts`, `ready_to_apply`, and `converged`, so conflict-free targets that have not indexed channels yet are no longer conflated with already-visible cutovers.
+    - Updated README and migration docs so the audit is framed as both a pre-apply gate and a lightweight post-registration visibility signal.
+  Verification:
+    - `go test ./internal/livetvbundle ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - Convergence currently uses Live TV channel visibility as the post-cutover signal; library/catalog metadata convergence is not yet modeled.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/livetvbundle/bundle.go`
+    - `internal/livetvbundle/bundle_test.go`
+    - `docs/reference/cli-and-env-reference.md`
+- Date: 2026-03-22
+  Title: Make migration convergence library-aware
+  Summary:
+    - Extended library diffs with desired/present counts so the audit can tell whether bundled libraries are already present on the target, not just whether conflicts exist.
+    - Updated target/overall `status` so `converged` now requires both indexed Live TV and already-present bundled libraries/catch-up lanes when applicable.
+    - Added regression coverage for the partial-migration case where Live TV is indexed but bundled libraries are still missing; that now stays `ready_to_apply` instead of being overstated as converged.
+  Verification:
+    - `go test ./internal/livetvbundle ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - Convergence still does not model library metadata scans or watch-state parity; it currently means “definitions are present and Live TV is indexed.”
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/livetvbundle/bundle.go`
+    - `internal/livetvbundle/bundle_test.go`
+    - `docs/emby-jellyfin-support.md`
+- Date: 2026-03-22
+  Title: Add actionable status reasons and missing-library hints to the migration audit
+  Summary:
+    - Extended each target audit with `status_reason` plus explicit present/missing bundled library names.
+    - This turns partial-migration output into an actionable checklist instead of only a readiness/status label.
+    - Updated README and migration docs so the combined audit is framed as an operator workflow tool, not just a machine-readable gate.
+  Verification:
+    - `go test ./internal/livetvbundle ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - The library hints still reflect definition presence only; they do not yet expose deeper media-library scan or metadata ingestion progress.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/livetvbundle/bundle.go`
+    - `internal/livetvbundle/bundle_test.go`
+    - `docs/reference/cli-and-env-reference.md`
