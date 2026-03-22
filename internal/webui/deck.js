@@ -26,6 +26,7 @@ const endpoints = {
   programmingHarvestImport: "/api/programming/harvest-import.json",
   programmingRecipe: "/api/programming/recipe.json",
   programmingPreview: "/api/programming/preview.json?limit=12",
+  virtualChannelSchedule: "/api/virtual-channels/schedule.json?horizon=3h",
   operatorActionsStatus: "/api/ops/actions/status.json",
   guideWorkflow: "/api/ops/workflows/guide-repair.json",
   streamWorkflow: "/api/ops/workflows/stream-investigate.json",
@@ -59,6 +60,7 @@ const endpointCatalog = {
   programmingHarvestImport: { title: "Programming Harvest Import", category: "Programming", summary: "Preview/apply a harvested lineup as a real Programming Manager recipe." },
   programmingRecipe: { title: "Programming Recipe", category: "Programming", summary: "Durable saved recipe file backing category/channel/order decisions." },
   programmingPreview: { title: "Programming Preview", category: "Programming", summary: "Curated lineup preview with taxonomy buckets and backup groups." },
+  virtualChannelSchedule: { title: "Virtual Channel Schedule", category: "Programming", summary: "Synthetic schedule horizon for published virtual channels." },
   operatorActionsStatus: { title: "Operator Action Status", category: "Deck Control", summary: "Availability and current status of safe operator actions." },
   guideWorkflow: { title: "Guide Workflow", category: "Workflows", summary: "Guided checklist for guide repair and freshness issues." },
   streamWorkflow: { title: "Stream Workflow", category: "Workflows", summary: "Guided lane for routing and upstream stream failures." },
@@ -123,6 +125,12 @@ const state = {
   csrfToken: String(bootData.csrfToken || ""),
   actionFeedback: null,
   deckSettings: null,
+  programmingSelectedChannelId: "",
+  programmingPlayer: {
+    hls: null,
+    url: "",
+    videoId: ""
+  },
   telemetry: {
     samples: [],
     maxSamples: 18
@@ -166,6 +174,8 @@ const programmingList = document.getElementById("programming-list");
 const programmingCategories = document.getElementById("programming-categories");
 const programmingPreview = document.getElementById("programming-preview");
 const programmingBackups = document.getElementById("programming-backups");
+const programmingPlayer = document.getElementById("programming-player");
+const programmingDetail = document.getElementById("programming-detail");
 const settingsList = document.getElementById("settings-list");
 const deckSettingsForm = document.getElementById("deck-settings-form");
 const endpointGrid = document.getElementById("endpoint-grid");
@@ -320,7 +330,7 @@ function programmingCategoryButtons(category, recipe) {
 function programmingChannelButtons(channel, recipe) {
   const included = new Set(normalizeArray(recipe?.included_channel_ids));
   const excluded = new Set(normalizeArray(recipe?.excluded_channel_ids));
-  const id = channel?.ChannelID || channel?.channel_id || "";
+  const id = programmingChannelID(channel);
   const label = channelName(channel);
   return [
     createTinyButton(`data-programming-post="channel" data-programming-action="include" data-programming-id="${esc(id)}"`, included.has(id) ? "Pinned In" : "Include"),
@@ -331,8 +341,8 @@ function programmingChannelButtons(channel, recipe) {
 }
 
 function programmingOrderButtons(channel, lineup, recipe) {
-  const id = channel?.ChannelID || channel?.channel_id || "";
-  const ids = normalizeArray(lineup).map((item) => item?.ChannelID || item?.channel_id || "");
+  const id = programmingChannelID(channel);
+  const ids = normalizeArray(lineup).map((item) => programmingChannelID(item));
   const idx = ids.indexOf(id);
   const prev = idx > 0 ? ids[idx - 1] : "";
   const next = idx >= 0 && idx < ids.length - 1 ? ids[idx + 1] : "";
@@ -343,6 +353,18 @@ function programmingOrderButtons(channel, lineup, recipe) {
     createTinyButton(`data-programming-post="order" data-programming-action="remove" data-programming-id="${esc(id)}"`, "Drop Order"),
     createTinyButton(`data-programming-post="channel" data-programming-action="include" data-programming-id="${esc(id)}"`, normalizeArray(recipe?.included_channel_ids).includes(id) ? "Pinned In" : "Include")
   ].join("");
+}
+
+function programmingSelectButtons(channel, lineup, recipe) {
+  const id = programmingChannelID(channel);
+  const label = channelName(channel);
+  const selected = id === state.programmingSelectedChannelId;
+  return [
+    createTinyButton(`data-programming-select="${esc(id)}"`, selected ? "Previewing" : "Preview"),
+    createTinyButton(`data-open-path="/api/programming/channel-detail.json?channel_id=${encodeURIComponent(id)}" data-open-title="Programming Detail · ${esc(label)}"`, "Inspect Detail"),
+    `<a class="tiny" href="${esc(programmingPreviewURL(id))}" target="_blank" rel="noreferrer">Open Stream</a>`,
+    programmingOrderButtons(channel, lineup, recipe)
+  ].filter(Boolean).join(" ");
 }
 
 function programmingHarvestButtons(row) {
@@ -446,6 +468,7 @@ function loadPersistedState() {
       if (prefs.mode && modeTitles[prefs.mode]) state.mode = prefs.mode;
       if (Number.isFinite(Number(prefs.refreshRateSec))) state.refreshRateSec = Number(prefs.refreshRateSec);
       if (prefs.selectedRaw && endpoints[prefs.selectedRaw]) state.selectedRaw = prefs.selectedRaw;
+      if (prefs.programmingSelectedChannelId) state.programmingSelectedChannelId = String(prefs.programmingSelectedChannelId);
     }
   } catch {
   }
@@ -458,9 +481,111 @@ function persistPrefs() {
     storage.setItem(storageKeys.prefs, JSON.stringify({
       mode: state.mode,
       refreshRateSec: state.refreshRateSec,
-      selectedRaw: state.selectedRaw
+      selectedRaw: state.selectedRaw,
+      programmingSelectedChannelId: state.programmingSelectedChannelId
     }));
   } catch {}
+}
+
+function programmingChannelID(channel) {
+  return String(channel?.ChannelID || channel?.channel_id || "").trim();
+}
+
+function pickProgrammingSelection(curatedLineup, detailPayload = {}) {
+  const existing = String(state.programmingSelectedChannelId || "").trim();
+  if (existing && curatedLineup.some((item) => programmingChannelID(item) === existing)) {
+    return existing;
+  }
+  const detailID = programmingChannelID(detailPayload.Channel || detailPayload.channel);
+  if (detailID && curatedLineup.some((item) => programmingChannelID(item) === detailID)) {
+    return detailID;
+  }
+  return programmingChannelID(curatedLineup[0]);
+}
+
+function findProgrammingChannel(lineup, id) {
+  const wanted = String(id || "").trim();
+  return lineup.find((item) => programmingChannelID(item) === wanted) || null;
+}
+
+function programmingPreviewURL(channelID) {
+  const id = String(channelID || "").trim();
+  return id ? `/api/stream/${encodeURIComponent(id)}?mux=hls` : "";
+}
+
+function destroyProgrammingPlayer() {
+  if (state.programmingPlayer?.hls) {
+    try {
+      state.programmingPlayer.hls.destroy();
+    } catch {}
+  }
+  state.programmingPlayer = { hls: null, url: "", videoId: "" };
+}
+
+let hlsLibraryPromise = null;
+
+async function ensureHlsLibrary() {
+  if (window.Hls) return window.Hls;
+  if (!hlsLibraryPromise) {
+    hlsLibraryPromise = new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[data-hlsjs="deck"]');
+      if (existing) {
+        existing.addEventListener("load", () => resolve(window.Hls));
+        existing.addEventListener("error", () => reject(new Error("Failed to load hls.js")));
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://cdn.jsdelivr.net/npm/hls.js@1.5.7";
+      script.async = true;
+      script.dataset.hlsjs = "deck";
+      script.onload = () => resolve(window.Hls);
+      script.onerror = () => reject(new Error("Failed to load hls.js"));
+      document.head.appendChild(script);
+    });
+  }
+  return hlsLibraryPromise;
+}
+
+async function syncProgrammingPlayer() {
+  const video = document.getElementById("programming-live-video");
+  const fallback = document.getElementById("programming-live-fallback");
+  if (!video) {
+    destroyProgrammingPlayer();
+    return;
+  }
+  const url = video.getAttribute("data-stream-url") || "";
+  if (!url) {
+    destroyProgrammingPlayer();
+    return;
+  }
+  if (state.programmingPlayer.url === url && state.programmingPlayer.videoId === video.id) {
+    return;
+  }
+  destroyProgrammingPlayer();
+  state.programmingPlayer.url = url;
+  state.programmingPlayer.videoId = video.id;
+  video.muted = true;
+  if (video.canPlayType("application/vnd.apple.mpegurl")) {
+    video.src = url;
+    if (fallback) fallback.hidden = true;
+    return;
+  }
+  try {
+    const HlsCtor = await ensureHlsLibrary();
+    if (!HlsCtor?.isSupported?.()) {
+      throw new Error("HLS preview is not supported in this browser.");
+    }
+    const hls = new HlsCtor({ enableWorker: true, lowLatencyMode: false });
+    state.programmingPlayer.hls = hls;
+    hls.loadSource(url);
+    hls.attachMedia(video);
+    if (fallback) fallback.hidden = true;
+  } catch (err) {
+    if (fallback) {
+      fallback.hidden = false;
+      fallback.textContent = String(err);
+    }
+  }
 }
 
 function clampPercent(value) {
@@ -1098,6 +1223,8 @@ function renderDeck() {
     createCard("What this means", "This lane is where duplicate-provider chaos becomes operator-readable channel structure.")
   ]).join("");
 
+  const programmingDetailPayload = state.payloads.programmingChannelDetail?.body || {};
+  const virtualChannelSchedulePayload = state.payloads.virtualChannelSchedule?.body || {};
   const programmingRecipe = programmingRecipePayload.recipe || programmingPreviewPayload.recipe || {};
   const programmingInventory = normalizeArray(programmingCategoriesPayload.categories || programmingPreviewPayload.inventory);
   const curatedLineup = normalizeArray(programmingPreviewPayload.lineup);
@@ -1105,6 +1232,10 @@ function renderDeck() {
   const harvestPayload = state.payloads.programmingHarvest?.body || {};
   const harvestLineups = normalizeArray(harvestPayload.lineups || programmingPreviewPayload.harvest_lineups);
   const bucketEntries = Object.entries(programmingPreviewPayload.buckets || {});
+  const selectedProgrammingChannel = findProgrammingChannel(curatedLineup, state.programmingSelectedChannelId) || programmingDetailPayload.Channel || null;
+  const selectedProgrammingID = programmingChannelID(selectedProgrammingChannel);
+  const selectedProgrammingName = selectedProgrammingChannel ? channelName(selectedProgrammingChannel) : "No channel selected";
+  const virtualScheduleSlots = normalizeArray(virtualChannelSchedulePayload.report?.slots || virtualChannelSchedulePayload.slots);
   const topCategoryCards = programmingInventory.slice(0, 8).map((category) =>
     createCard(
       category.label || category.id,
@@ -1128,6 +1259,10 @@ function renderDeck() {
       ? harvestLineups.slice(0, 6).map((row) => `${row.lineup_title} (${row.best_channelmap_rows || 0})`).join(" | ")
       : "No persisted Plex lineup harvest report configured yet.", "", "", "programmingHarvest",
       `${harvestLineups[0] ? programmingHarvestButtons(harvestLineups[0]) : ""} <button class="tiny" type="button" data-inspect="programmingHarvest">Inspect Harvest</button>`),
+    createCard("Virtual schedule horizon", virtualScheduleSlots.length
+      ? virtualScheduleSlots.slice(0, 4).map((slot) => `${slot.display_name || slot.rule_name || slot.channel_id}: ${slot.asset_title || slot.asset_id || "asset"} @ ${formatWhen(slot.starts_at || slot.startsAt)}`).join(" | ")
+      : "No virtual-channel schedule is configured yet.", "", "", "virtualChannelSchedule",
+      `<button class="tiny" type="button" data-inspect="virtualChannelSchedule">Inspect Schedule</button>`),
     createCard("Recommended buckets", bucketEntries.length
       ? bucketEntries.sort((a, b) => b[1] - a[1]).map(([bucket, count]) => `${bucket}: ${count}`).slice(0, 8).join(" | ")
       : "No bucket counts yet.", "", "", "programmingPreview"),
@@ -1146,9 +1281,9 @@ function renderDeck() {
       channelName(channel),
       `${pretty(channel.GuideNumber || channel.guide_number)} · ${pretty(channel.TVGID || channel.tvg_id)} · source ${pretty(channel.SourceTag || channel.source_tag || "n/a")} · streams ${pretty((channel.StreamURLs || channel.stream_urls || []).length || (channel.StreamURL || channel.stream_url ? 1 : 0))}`,
       `${pretty(channel.GroupTitle || channel.group_title || "Uncategorized")} · bucket ${(programmingPreviewPayload.buckets && channel.GuideName) ? pretty("") : ""}`,
-      "",
+      programmingChannelID(channel) === state.programmingSelectedChannelId ? "tone-good" : "",
       "programmingPreview",
-      `<div class="card-actions">${programmingOrderButtons(channel, curatedLineup, programmingRecipe)}</div>`
+      `<div class="card-actions">${programmingSelectButtons(channel, curatedLineup, programmingRecipe)}</div>`
     )
   )).join("") || createCard("Preview", "No curated lineup preview is available yet.", "", "", "programmingPreview");
 
@@ -1174,6 +1309,32 @@ function renderDeck() {
       )
     )).join("");
   }
+
+  const previewCardBody = selectedProgrammingID
+    ? `
+      <div class="preview-shell">
+        <div class="preview-meta">${esc(selectedProgrammingName)} · ${esc(pretty(selectedProgrammingChannel?.GuideNumber || selectedProgrammingChannel?.guide_number))} · ${esc(pretty(selectedProgrammingChannel?.GroupTitle || selectedProgrammingChannel?.group_title || "Uncategorized"))}</div>
+        <video id="programming-live-video" class="preview-video" controls autoplay muted playsinline data-stream-url="${esc(programmingPreviewURL(selectedProgrammingID))}"></video>
+        <div id="programming-live-fallback" class="detail-chip" hidden>Loading preview…</div>
+        <div class="card-actions">
+          <button class="tiny" type="button" data-open-path="/api/programming/channel-detail.json?channel_id=${encodeURIComponent(selectedProgrammingID)}" data-open-title="Programming Detail · ${esc(selectedProgrammingName)}">Inspect Detail</button>
+          <a class="tiny" href="${esc(programmingPreviewURL(selectedProgrammingID))}" target="_blank" rel="noreferrer">Open HLS Stream</a>
+        </div>
+      </div>`
+    : "Select a curated channel to preview it in-place.";
+  if ((programmingPlayer.dataset.channelId || "") !== selectedProgrammingID) {
+    programmingPlayer.dataset.channelId = selectedProgrammingID;
+    programmingPlayer.innerHTML = `<div class="card embed-card"><strong>${esc(selectedProgrammingID ? `Preview · ${selectedProgrammingName}` : "Preview unavailable")}</strong><div>${selectedProgrammingID ? "Tunerr-native HLS preview through the same gateway path Programming Manager will expose for this channel." : "No curated channel is selected yet."}</div>${selectedProgrammingID ? `<div class="meta">Channel ${esc(pretty(selectedProgrammingID))} · mux=hls</div>` : ""}${previewCardBody}</div>`;
+  }
+
+  const upcomingProgrammes = normalizeArray(programmingDetailPayload.UpcomingProgrammes).slice(0, 4);
+  const alternativeSources = normalizeArray(programmingDetailPayload.AlternativeSources).slice(0, 5);
+  programmingDetail.innerHTML = [
+    `<div class="detail-chip"><strong>${esc(selectedProgrammingID ? selectedProgrammingName : "No selected channel")}</strong><span>${esc(selectedProgrammingID ? `${pretty(programmingDetailPayload.CategoryLabel || selectedProgrammingChannel?.GroupTitle || selectedProgrammingChannel?.group_title || "Uncategorized")} · bucket ${pretty(programmingDetailPayload.Bucket || "unknown")} · curated=${pretty(programmingDetailPayload.Curated)}` : "Choose a curated channel to inspect its detail and preview path.")}</span></div>`,
+    `<div class="detail-chip"><strong>Upcoming programmes</strong><span>${esc(upcomingProgrammes.length ? upcomingProgrammes.map((item) => `${item.title || item.Title || "programme"} @ ${formatWhen(item.start || item.Start)}`).join(" | ") : (selectedProgrammingID ? "No upcoming guide rows available for this channel yet." : "No channel selected."))}</span></div>`,
+    `<div class="detail-chip"><strong>Alternative sources</strong><span>${esc(alternativeSources.length ? alternativeSources.map((item) => `${channelName(item)} · ${pretty(item.SourceTag || item.source_tag || "source?")}`).join(" | ") : "No exact alternative sources detected for the current selection.")}</span></div>`,
+    `<div class="detail-chip"><strong>Virtual schedule context</strong><span>${esc(virtualScheduleSlots.length ? virtualScheduleSlots.slice(0, 4).map((slot) => `${slot.display_name || slot.rule_name || slot.channel_id} · ${slot.asset_title || slot.asset_id || "asset"} @ ${formatWhen(slot.starts_at || slot.startsAt)}`).join(" | ") : "No virtual-channel schedule configured yet.")}</span></div>`
+  ].join("");
 
   settingsList.innerHTML = filterCards([
     createSettingsCard("Deck security posture", "Dedicated web UI auth, session, and persistence posture.", [
@@ -1328,8 +1489,20 @@ async function reloadDeck() {
     fetchJSON(key, path).catch((error) => ({ label: key, path, ok: false, status: 0, body: { error: String(error) } }))
   ));
   state.payloads = Object.fromEntries(entries.map((item) => [item.label, item]));
+  const curatedLineup = normalizeArray(state.payloads.programmingPreview?.body?.lineup);
+  state.programmingSelectedChannelId = pickProgrammingSelection(curatedLineup, state.payloads.programmingChannelDetail?.body || {});
+  persistPrefs();
+  if (state.programmingSelectedChannelId) {
+    state.payloads.programmingChannelDetail = await fetchJSON(
+      "programmingChannelDetail",
+      `/api/programming/channel-detail.json?channel_id=${encodeURIComponent(state.programmingSelectedChannelId)}&limit=6`
+    ).catch((error) => ({ label: "programmingChannelDetail", path: "", ok: false, status: 0, body: { error: String(error) } }));
+  } else {
+    delete state.payloads.programmingChannelDetail;
+  }
   await syncDeckTelemetry(deriveMetrics(state.payloads));
   renderDeck();
+  await syncProgrammingPlayer();
   rawSelect.value = state.selectedRaw;
   await renderRaw();
 }
@@ -1512,6 +1685,13 @@ function bindUI() {
         replace: true,
         collapse_exact_backups: programmingHarvestImport.getAttribute("data-programming-harvest-collapse") === "1"
       }, "programming_harvest_import");
+      return;
+    }
+    const programmingSelect = event.target.closest("[data-programming-select]");
+    if (programmingSelect) {
+      state.programmingSelectedChannelId = programmingSelect.getAttribute("data-programming-select") || "";
+      persistPrefs();
+      reloadDeck();
       return;
     }
     const rawButton = event.target.closest("[data-select-raw]");

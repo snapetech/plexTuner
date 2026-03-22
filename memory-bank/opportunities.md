@@ -218,6 +218,16 @@ It exists to encourage quality gains without derailing the current task.
   Why it matters: 12 concurrent ffprobe workers testing streams sequentially per DVR exhaust CDN capacity by mid-run. newsus/sportsb/moviesprem/ukie/eusouth all dropped to 0 channels (100% false-fail). bcastus passed 136/136 (ran first, CDN not yet limited).
   Evidence: postvalidate run 2026-02-25: bcastus=136/136 (no drops), newsus=0/44, sportsb=0/281, moviesprem=0/253, ukie=0/112, eusouth=0/52 — all "Connection refused" in that order.
   Suggested fix: (a) Reduce POSTVALIDATE_WORKERS to 3-4 with random jitter, (b) add per-host rate limit delay, (c) skip postvalidate for EU buckets if cluster is US-based (geo-block), or (d) disable postvalidate entirely and rely on EPG prune + FALLBACK_RUN_GUARD.
+
+- Date: 2026-03-21
+  Category: operability
+  Title: Promote stream-compare/channel-diff/evidence intake from scripts into first-class operator workflows
+  Context: Programming Manager now has live preview and detail cards, but the strongest failure-isolation tooling still lives in shell/python helpers (`stream-compare-harness`, `channel-diff-harness`, `evidence-intake`, `analyze-bundle`) rather than the deck.
+  Why it matters: tester-driven failures are increasingly channel-class-specific, not one universal bug. Operators need to capture “good vs bad” evidence, PMS/Tunerr logs, and compare manifests without dropping to shell if this is going to scale beyond developer-led support.
+  Evidence: existing scripts already produce high-signal artifacts under `.diag/`, and the deck now has enough Programming/Routing context to select a failing channel and launch or summarize those workflows instead of only telling users to run scripts manually.
+  Suggested fix: add a deck/operator workflow that can 1) select a good/bad channel pair, 2) trigger stream-compare/channel-diff capture, 3) summarize mismatches in-card, and 4) package evidence bundles for upload/analysis.
+  Risk/Scope: med | fits current scope: yes
+  User decision needed?: no
   Risk/Scope: low code change | user decision needed on approach
   User decision needed?: yes
 

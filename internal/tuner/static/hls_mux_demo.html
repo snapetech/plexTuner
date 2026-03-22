@@ -11,20 +11,25 @@
     input { width: 100%; padding: 0.5rem; box-sizing: border-box; }
     code { background: #f4f4f4; padding: 0.1rem 0.3rem; }
     .hint { color: #555; font-size: 0.9rem; }
+    body.embed { max-width: none; margin: 0; padding: 0; background: #111; color: #f5f0e6; }
+    body.embed .chrome { display: none; }
+    body.embed video { min-height: 320px; border-radius: 0; }
   </style>
 </head>
 <body>
-  <h1>HLS mux demo</h1>
-  <p class="hint">Served when <code>IPTV_TUNERR_HLS_MUX_WEB_DEMO=1</code>. Requires Tunerr <code>IPTV_TUNERR_HLS_MUX_CORS</code> for cross-origin playlists. Paste your tuner base (e.g. <code>http://127.0.0.1:5004</code>) and stream path.</p>
+  <div class="chrome">
+    <h1>HLS mux demo</h1>
+    <p class="hint">Served when <code>IPTV_TUNERR_HLS_MUX_WEB_DEMO=1</code>. Requires Tunerr <code>IPTV_TUNERR_HLS_MUX_CORS</code> for cross-origin playlists. Paste your tuner base (e.g. <code>http://127.0.0.1:5004</code>) and stream path.</p>
 
-  <label for="base">Tunerr base URL (no trailing slash)</label>
-  <input id="base" type="text" placeholder="http://127.0.0.1:5004" />
+    <label for="base">Tunerr base URL (no trailing slash)</label>
+    <input id="base" type="text" placeholder="http://127.0.0.1:5004" />
 
-  <label for="path">Stream path (e.g. /stream/0?mux=hls)</label>
-  <input id="path" type="text" value="/stream/0?mux=hls" />
+    <label for="path">Stream path (e.g. /stream/0?mux=hls)</label>
+    <input id="path" type="text" value="/stream/0?mux=hls" />
 
-  <label for="url">Resolved playlist URL</label>
-  <input id="url" type="text" readonly />
+    <label for="url">Resolved playlist URL</label>
+    <input id="url" type="text" readonly />
+  </div>
 
   <video id="vid" controls playsinline></video>
 
@@ -33,6 +38,12 @@
     const pathEl = document.getElementById('path');
     const urlEl = document.getElementById('url');
     const vid = document.getElementById('vid');
+    const params = new URLSearchParams(window.location.search);
+    const embedMode = params.get('embed') === '1';
+
+    if (embedMode) {
+      document.body.classList.add('embed');
+    }
 
     function rebuildURL() {
       const b = (baseEl.value || '').replace(/\/+$/, '');
@@ -63,13 +74,22 @@
       } else {
         alert('HLS not supported in this browser');
       }
+      if (params.get('autoplay') === '1') {
+        vid.muted = true;
+        vid.play().catch(() => {});
+      }
     }
 
     ['input', 'change'].forEach(ev => {
       baseEl.addEventListener(ev, () => { rebuildURL(); });
       pathEl.addEventListener(ev, load);
     });
+    baseEl.value = params.get('base') || window.location.origin;
+    pathEl.value = params.get('path') || pathEl.value;
     rebuildURL();
+    if (params.get('path')) {
+      load();
+    }
   </script>
 </body>
 </html>

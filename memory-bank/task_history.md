@@ -4270,3 +4270,9 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
   - Added `/virtual-channels/schedule.json` so the synthetic-channel starter now exposes a rolling schedule horizon instead of only static preview JSON plus current-slot playback.
   - Expanded tuner tests and smoke coverage for the new strategy summary and schedule endpoint.
   - Verification: `go test ./internal/virtualchannels ./internal/tuner -run 'Test(BuildSchedule_coversHorizonAcrossLoop|Server_(virtualChannelRulesAndPreview|programmingHarvestImport))' -count=1`; `bash ./scripts/ci-smoke.sh`; `./scripts/verify`.
+- 2026-03-21: Productized live Programming Manager preview in the deck.
+  - Added a real in-place HLS preview for the selected curated channel using the same Tunerr `/stream/<id>?mux=hls` path that lineup consumers will hit.
+  - Surfaced focused channel detail, 3-hour upcoming guide rows, exact alternative sources, and virtual-channel schedule context in the Programming lane instead of forcing raw JSON inspection.
+  - Upgraded the old HLS mux demo page with embeddable query params (`base`, `path`, `embed`, `autoplay`) so it can serve as a reusable product surface instead of a standalone experiment.
+  - Filed the next productization opportunity for stream-compare / channel-diff / evidence-intake workflows.
+  - Verification: `node --check internal/webui/deck.js`; `go test ./internal/webui ./internal/tuner ./cmd/iptv-tunerr -count=1`; `./scripts/verify`.
