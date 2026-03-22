@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"sort"
 	"strings"
 
@@ -44,6 +45,13 @@ func providerAccountIdentityForURL(g *Gateway, ch *catalog.LiveChannel, rawURL s
 		if prefixHost := upstreamURLAuthority(prefix); prefixHost != "" {
 			host = prefixHost
 		}
+	} else if pathUser, pathPass, pathPrefix, ok := xtreamPathCredentials(rawURL); ok {
+		user = pathUser
+		pass = pathPass
+		prefix = pathPrefix
+		if prefixHost := upstreamURLAuthority(pathPrefix); prefixHost != "" {
+			host = prefixHost
+		}
 	}
 	if host == "" {
 		if parsed, err := url.Parse(rawURL); err == nil && parsed != nil {
@@ -60,6 +68,32 @@ func providerAccountIdentityForURL(g *Gateway, ch *catalog.LiveChannel, rawURL s
 		Label: strings.Trim(host+"/"+labelUser, "/"),
 		Host:  strings.ToLower(strings.TrimSpace(host)),
 	}, true
+}
+
+func xtreamPathCredentials(rawURL string) (user, pass, prefix string, ok bool) {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || u == nil {
+		return "", "", "", false
+	}
+	clean := path.Clean("/" + strings.TrimSpace(u.Path))
+	parts := strings.Split(strings.TrimPrefix(clean, "/"), "/")
+	if len(parts) < 3 {
+		return "", "", "", false
+	}
+	switch strings.ToLower(parts[0]) {
+	case "live", "movie", "series", "timeshift":
+	default:
+		return "", "", "", false
+	}
+	user = strings.TrimSpace(parts[1])
+	pass = strings.TrimSpace(parts[2])
+	if user == "" || pass == "" {
+		return "", "", "", false
+	}
+	u.RawQuery = ""
+	u.Fragment = ""
+	u.Path = "/" + strings.Join(parts[:3], "/") + "/"
+	return user, pass, u.String(), true
 }
 
 func maskProviderAccountUser(user string) string {

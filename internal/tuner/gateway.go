@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
+	"github.com/snapetech/iptvtunerr/internal/eventhooks"
 	"golang.org/x/time/rate"
 )
 
@@ -20,6 +21,7 @@ var errCFBlock = errors.New("cloudflare-abuse-block")
 // Limit concurrent streams to TunerCount (tuner semantics).
 type Gateway struct {
 	Channels                   []catalog.LiveChannel
+	EventHooks                 *eventhooks.Dispatcher
 	ProviderUser               string
 	ProviderPass               string
 	TunerCount                 int
@@ -78,6 +80,8 @@ type Gateway struct {
 	muxSegAutoRejectAt         []time.Time // timestamps of 503 seg-limit rejects (for IPTV_TUNERR_HLS_MUX_SEG_SLOTS_AUTO)
 	learnedUpstreamLimit       int
 	reqSeq                     uint64
+	activeMu                   sync.Mutex
+	activeStreams              map[string]activeStreamEntry
 	accountLeaseMu             sync.Mutex
 	accountLeases              map[string]int
 	accountLimitStore          *accountLimitStore

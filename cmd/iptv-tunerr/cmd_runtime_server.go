@@ -9,6 +9,7 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/catalog"
 	"github.com/snapetech/iptvtunerr/internal/channeldna"
 	"github.com/snapetech/iptvtunerr/internal/config"
+	"github.com/snapetech/iptvtunerr/internal/eventhooks"
 	"github.com/snapetech/iptvtunerr/internal/tuner"
 )
 
@@ -45,8 +46,11 @@ func newRuntimeServer(cfg *config.Config, addr, baseURL, deviceID, friendlyName 
 		AutopilotStateFile:         cfg.AutopilotStateFile,
 		RecorderStateFile:          os.Getenv("IPTV_TUNERR_CATCHUP_RECORDER_STATE_FILE"),
 		ProgrammingRecipeFile:      strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROGRAMMING_RECIPE_FILE")),
+		EventHooksFile:             strings.TrimSpace(cfg.EventWebhooksFile),
 		ProviderUser:               providerUser,
 		ProviderPass:               providerPass,
+		XtreamOutputUser:           strings.TrimSpace(os.Getenv("IPTV_TUNERR_XTREAM_USER")),
+		XtreamOutputPass:           strings.TrimSpace(os.Getenv("IPTV_TUNERR_XTREAM_PASS")),
 		ProviderBaseURL:            providerBase,
 		XMLTVSourceURL:             cfg.XMLTVURL,
 		XMLTVTimeout:               cfg.XMLTVTimeout,
@@ -68,6 +72,11 @@ func newRuntimeServer(cfg *config.Config, addr, baseURL, deviceID, friendlyName 
 		ProviderEPGURLSuffix:       cfg.ProviderEPGURLSuffix,
 		HDHRGuideURL:               cfg.HDHRGuideURL,
 		HDHRGuideTimeout:           cfg.HDHRGuideTimeout,
+	}
+	if dispatcher, err := eventhooks.Load(cfg.EventWebhooksFile); err != nil {
+		log.Printf("Event webhooks disabled: load %q failed: %v", cfg.EventWebhooksFile, err)
+	} else {
+		srv.EventHooks = dispatcher
 	}
 	srv.RuntimeSnapshot = buildRuntimeSnapshot(cfg, addr, baseURL, deviceID, friendlyName, lineupCap, providerBase, providerUser)
 	return srv
@@ -213,6 +222,10 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"login_failure_limit":     8,
 			"login_failure_window":    "15m",
 		},
+		Events: map[string]interface{}{
+			"webhooks_file": strings.TrimSpace(cfg.EventWebhooksFile),
+			"enabled":       strings.TrimSpace(cfg.EventWebhooksFile) != "",
+		},
 		MediaServers: map[string]interface{}{
 			"emby_host_configured":      strings.TrimSpace(cfg.EmbyHost) != "",
 			"emby_token_configured":     strings.TrimSpace(cfg.EmbyToken) != "",
@@ -233,6 +246,7 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"programming_backups":    "/programming/backups.json",
 			"programming_recipe":     "/programming/recipe.json",
 			"programming_preview":    "/programming/preview.json",
+			"xtream_player_api":      "/player_api.php",
 			"guide_highlights":       "/guide/highlights.json",
 			"guide_epg_store":        "/guide/epg-store.json",
 			"guide_capsules":         "/guide/capsules.json",
@@ -247,7 +261,9 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"ghost_hunter":           "/plex/ghost-report.json",
 			"provider_profile":       "/provider/profile.json",
 			"recorder":               "/recordings/recorder.json",
+			"active_streams":         "/debug/active-streams.json",
 			"stream_attempts":        "/debug/stream-attempts.json",
+			"event_hooks":            "/debug/event-hooks.json",
 			"runtime":                "/debug/runtime.json",
 			"hls_mux_demo":           "/debug/hls-mux-demo.html",
 			"metrics":                "/metrics",

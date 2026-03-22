@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
+	"github.com/snapetech/iptvtunerr/internal/eventhooks"
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
 )
 
@@ -1478,6 +1479,112 @@ func TestGateway_reorderStreamURLsByAccountLoad_prefersFreeAccount(t *testing.T)
 	got := g.reorderStreamURLsByAccountLoad(ch, ch.StreamURLs)
 	if len(got) != 2 || got[0] != ch.StreamURLs[1] {
 		t.Fatalf("reordered urls=%v", got)
+	}
+}
+
+func TestGateway_reorderStreamURLsByAccountLoad_prefersFreeXtreamPathAccountWithoutStreamAuths(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT", "1")
+	ch := &catalog.LiveChannel{
+		StreamURLs: []string{
+			"http://provider.example/live/u1/p1/1001.m3u8",
+			"http://provider.example/live/u2/p2/1001.m3u8",
+		},
+	}
+	g := &Gateway{ProviderUser: "fallback", ProviderPass: "fallback"}
+	identity, ok := providerAccountIdentityForURL(g, ch, ch.StreamURLs[0])
+	if !ok {
+		t.Fatal("expected account identity from Xtream path")
+	}
+	g.accountLeases = map[string]int{identity.Key: 1}
+	got := g.reorderStreamURLsByAccountLoad(ch, ch.StreamURLs)
+	if len(got) != 2 || got[0] != ch.StreamURLs[1] {
+		t.Fatalf("reordered urls=%v", got)
+	}
+}
+
+func TestGateway_authForURL_fallsBackToXtreamPathCredentials(t *testing.T) {
+	g := &Gateway{ProviderUser: "fallback", ProviderPass: "fallback"}
+	ch := &catalog.LiveChannel{}
+	ctx := context.WithValue(context.Background(), gatewayChannelKey{}, ch)
+	user, pass := g.authForURL(ctx, "http://provider.example/live/u2/p2/1001.m3u8")
+	if user != "u2" || pass != "p2" {
+		t.Fatalf("auth = %q/%q; want u2/p2", user, pass)
+	}
+}
+
+func TestGateway_stream_rollsAcrossThreeXtreamPathAccounts(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT", "1")
+	release := make(chan struct{})
+	seen := make(chan string, 4)
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen <- r.URL.Path
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			_, _ = w.Write([]byte("ok"))
+			f.Flush()
+		}
+		<-release
+	}))
+	defer up.Close()
+
+	ch := catalog.LiveChannel{
+		ChannelID:   "100",
+		GuideNumber: "100",
+		GuideName:   "Test",
+		StreamURLs: []string{
+			up.URL + "/live/u1/p1/1001.ts",
+			up.URL + "/live/u2/p2/1001.ts",
+			up.URL + "/live/u3/p3/1001.ts",
+		},
+	}
+	g := &Gateway{
+		Channels:     []catalog.LiveChannel{ch},
+		TunerCount:   4,
+		ProviderUser: "fallback",
+		ProviderPass: "fallback",
+	}
+
+	type result struct {
+		code int
+		body string
+	}
+	run := func() <-chan result {
+		done := make(chan result, 1)
+		go func() {
+			req := httptest.NewRequest(http.MethodGet, "http://local/stream/100", nil)
+			w := httptest.NewRecorder()
+			g.ServeHTTP(w, req)
+			done <- result{code: w.Code, body: w.Body.String()}
+		}()
+		return done
+	}
+
+	done1 := run()
+	if got := <-seen; got != "/live/u1/p1/1001.ts" {
+		t.Fatalf("first upstream path = %q; want u1", got)
+	}
+	done2 := run()
+	if got := <-seen; got != "/live/u2/p2/1001.ts" {
+		t.Fatalf("second upstream path = %q; want u2", got)
+	}
+	done3 := run()
+	if got := <-seen; got != "/live/u3/p3/1001.ts" {
+		t.Fatalf("third upstream path = %q; want u3", got)
+	}
+
+	req4 := httptest.NewRequest(http.MethodGet, "http://local/stream/100", nil)
+	w4 := httptest.NewRecorder()
+	g.ServeHTTP(w4, req4)
+	if w4.Code != http.StatusServiceUnavailable {
+		t.Fatalf("fourth code=%d body=%q; want 503", w4.Code, w4.Body.String())
+	}
+
+	close(release)
+	for i, done := range []<-chan result{done1, done2, done3} {
+		res := <-done
+		if res.code != http.StatusOK {
+			t.Fatalf("request %d code=%d body=%q", i+1, res.code, res.body)
+		}
 	}
 }
 
@@ -3228,5 +3335,57 @@ func TestGateway_ffmpegCookiesOptionForURL(t *testing.T) {
 	}
 	if !strings.Contains(got, "domain=provider2.example;") {
 		t.Fatalf("cookies option missing domain: %q", got)
+	}
+}
+
+func TestGateway_streamRejectEmitsWebhookEvent(t *testing.T) {
+	delivered := make(chan eventhooks.Event, 4)
+	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		var evt eventhooks.Event
+		if err := json.NewDecoder(r.Body).Decode(&evt); err != nil {
+			t.Fatalf("decode webhook event: %v", err)
+		}
+		delivered <- evt
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer webhook.Close()
+
+	cfgPath := filepath.Join(t.TempDir(), "hooks.json")
+	if err := os.WriteFile(cfgPath, []byte(`{"webhooks":[{"name":"test","url":"`+webhook.URL+`","events":["stream.requested","stream.rejected","stream.finished"]}]}`), 0o644); err != nil {
+		t.Fatalf("write hooks config: %v", err)
+	}
+	dispatcher, err := eventhooks.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("load dispatcher: %v", err)
+	}
+	g := &Gateway{
+		TunerCount: 2,
+		inUse:      2,
+		EventHooks: dispatcher,
+		Channels: []catalog.LiveChannel{{
+			ChannelID:   "100",
+			GuideNumber: "100",
+			GuideName:   "Test",
+			StreamURL:   "http://example.com/live.m3u8",
+		}},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/stream/100", nil)
+	rr := httptest.NewRecorder()
+	g.ServeHTTP(rr, req)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d; want 503", rr.Code)
+	}
+	seenRejected := false
+	timeout := time.After(2 * time.Second)
+	for !seenRejected {
+		select {
+		case evt := <-delivered:
+			if evt.Name == "stream.rejected" {
+				seenRejected = true
+			}
+		case <-timeout:
+			t.Fatal("timed out waiting for stream.rejected webhook")
+		}
 	}
 }

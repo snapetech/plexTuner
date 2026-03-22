@@ -59,6 +59,16 @@ Create or update this file when **any** of these are true:
 - **Progress (2026-03-21):** `PM-008` deck UI is now in. The dedicated `internal/webui` control deck has a real Programming lane with category inventory cards, exact include/exclude controls, manual order nudges from the preview lineup, backup-group inspection, and recipe/order/collapse toggles wired to the existing server APIs. `./scripts/verify` and the binary smoke lane are green. Next depth is `PM-009`: broader regression coverage around refresh survival and end-to-end operator flows.
 - **Progress (2026-03-21):** first visible `PM-009` coverage is now in. Tuner tests prove saved recipe mutations survive `UpdateChannels` refresh churn, and `scripts/ci-smoke.sh` now restarts `serve` against a reshuffled catalog while reusing the same recipe file so curated lineup shape, custom order, and backup collapse are asserted across process restarts too. Remaining depth for `PM-009` is higher-level operator/browser flow automation, not missing refresh persistence coverage.
 
+### Active epic overlay (Feature parity, 2026-03-21)
+
+- **Doc:** [docs/epics/EPIC-feature-parity.md](../docs/epics/EPIC-feature-parity.md)
+- **Goal:** Close the biggest remaining product gaps versus the wider IPTV / DVR / virtual-channel tool field without abandoning Tunerr’s single-binary/operator-first shape.
+- **Non-goals:** Pretending every parity gap is complete in one patch, replacing Plex outright, or shipping a public SaaS control plane.
+- **Story IDs:** `PAR-001` … `PAR-007`
+- **Progress (2026-03-21):** `PAR-001` foundation slice shipped: event/webhook substrate, lifecycle events, and debug/runtime exposure are now in. `IPTV_TUNERR_EVENT_WEBHOOKS_FILE` loads a JSON hook list, Tunerr emits lineup/stream lifecycle events, and `/debug/event-hooks.json` plus `/debug/runtime.json` expose the current state.
+- **Progress (2026-03-21):** first visible `PAR-007` slice shipped too: `/debug/active-streams.json` now exposes in-flight stream sessions, and account pooling now falls back to Xtream path credentials when per-stream auth metadata is missing so multi-account rollover works against real `/live/<user>/<pass>/...` URLs instead of collapsing to the default account.
+- **Progress (2026-03-21):** first visible `PAR-004` slice shipped too: optional read-only downstream Xtream live output now exists via `IPTV_TUNERR_XTREAM_USER` / `IPTV_TUNERR_XTREAM_PASS`, serving `player_api.php?action=get_live_streams|get_live_categories` plus `/live/<user>/<pass>/<channel>.ts` on top of the curated lineup and existing gateway.
+
 ### Account-aware concurrency story list (2026-03-21)
 
 | ID | Acceptance criteria | Files/areas (expected) | Verification | Risk flags |

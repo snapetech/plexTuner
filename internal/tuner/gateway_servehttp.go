@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/snapetech/iptvtunerr/internal/safeurl"
 )
 
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -33,6 +35,16 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("gateway: req=%s recv path=%q channel=%q remote=%t ua=%t", reqID, r.URL.Path, channelID, strings.TrimSpace(r.RemoteAddr) != "", strings.TrimSpace(r.UserAgent()) != "")
+	if g.EventHooks != nil {
+		g.EventHooks.Dispatch("stream.requested", "gateway", map[string]interface{}{
+			"request_id":   reqID,
+			"channel_id":   channelID,
+			"guide_name":   channel.GuideName,
+			"guide_number": channel.GuideNumber,
+			"has_remote":   strings.TrimSpace(r.RemoteAddr) != "",
+			"has_ua":       strings.TrimSpace(r.UserAgent()) != "",
+		})
+	}
 	debugOpts := streamDebugOptionsFromEnv()
 	if debugOpts.HTTPHeaders {
 		for _, line := range debugHeaderNameLines(r.Header) {
@@ -54,21 +66,41 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		defer dw.Close()
 		w = dw
 	}
+	var finalStatus, finalMode, finalEffectiveURL string
+	var finalErr error
+	var leasedAccountKey string
 	urls := streamURLsForChannel(channel)
 	if len(urls) == 0 {
 		log.Printf("gateway: req=%s channel=%q id=%s no-stream-url", reqID, channel.GuideName, channelID)
+		finalStatus = "no_stream_url"
+		finalErr = errors.New("no stream URL")
 		http.Error(w, "no stream URL", http.StatusBadGateway)
 		return
 	}
 	attempt := newStreamAttemptBuilder(reqID, r, channelID, channel.GuideName, len(urls))
-	var finalStatus, finalMode, finalEffectiveURL string
-	var finalErr error
-	var leasedAccountKey string
 	defer func() {
 		if leasedAccountKey != "" {
 			g.releaseProviderAccountLease(leasedAccountKey)
 		}
 		g.appendStreamAttempt(attempt.finish(finalStatus, finalMode, finalErr, finalEffectiveURL))
+		if g.EventHooks != nil && finalStatus != "" {
+			payload := map[string]interface{}{
+				"request_id":   reqID,
+				"channel_id":   channelID,
+				"guide_name":   channel.GuideName,
+				"guide_number": channel.GuideNumber,
+				"status":       finalStatus,
+				"mode":         finalMode,
+				"duration_ms":  time.Since(start).Milliseconds(),
+			}
+			if strings.TrimSpace(finalEffectiveURL) != "" {
+				payload["effective_url"] = safeurl.RedactURL(finalEffectiveURL)
+			}
+			if finalErr != nil {
+				payload["error"] = finalErr.Error()
+			}
+			g.EventHooks.Dispatch("stream.finished", "gateway", payload)
+		}
 		if adaptStickyCandidate && (finalStatus == "all_upstreams_failed" || finalStatus == "upstream_concurrency_limited") {
 			g.noteAdaptStickyFallback(channelID, plexRequestHints(r))
 		}
@@ -80,6 +112,15 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("gateway: req=%s channel=%q id=%s reject provider-accounts-in-use limit=%d", reqID, channel.GuideName, channelID, g.effectiveProviderAccountLimit(channel))
 		w.Header().Set("X-HDHomeRun-Error", "805")
 		http.Error(w, "All provider accounts in use", http.StatusServiceUnavailable)
+		if g.EventHooks != nil {
+			g.EventHooks.Dispatch("stream.rejected", "gateway", map[string]interface{}{
+				"request_id":   reqID,
+				"channel_id":   channelID,
+				"guide_name":   channel.GuideName,
+				"guide_number": channel.GuideNumber,
+				"reason":       finalStatus,
+			})
+		}
 		return
 	}
 	requestMux := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mux")))
@@ -105,11 +146,22 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("gateway: req=%s channel=%q id=%s reject all-tuners-in-use limit=%d ua=%t", reqID, channel.GuideName, channelID, limit, strings.TrimSpace(r.UserAgent()) != "")
 		w.Header().Set("X-HDHomeRun-Error", "805") // All Tuners In Use
 		http.Error(w, "All tuners in use", http.StatusServiceUnavailable)
+		if g.EventHooks != nil {
+			g.EventHooks.Dispatch("stream.rejected", "gateway", map[string]interface{}{
+				"request_id":   reqID,
+				"channel_id":   channelID,
+				"guide_name":   channel.GuideName,
+				"guide_number": channel.GuideNumber,
+				"reason":       finalStatus,
+				"limit":        limit,
+			})
+		}
 		return
 	}
 	g.inUse++
 	inUseNow := g.inUse
 	g.mu.Unlock()
+	g.beginActiveStream(reqID, channelID, channel.GuideName, channel.GuideNumber, start)
 	log.Printf("gateway: req=%s channel=%q id=%s acquire inuse=%d/%d", reqID, channel.GuideName, channelID, inUseNow, limit)
 	defer func() {
 		if g.persistentCookieJar != nil {
@@ -117,6 +169,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log.Printf("gateway: req=%s cookie jar save failed: %v", reqID, err)
 			}
 		}
+		g.endActiveStream(reqID)
 		g.mu.Lock()
 		g.inUse--
 		inUseLeft := g.inUse
@@ -139,6 +192,15 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("gateway: req=%s channel=%q id=%s provider account pool exhausted while walking upstreams", reqID, channel.GuideName, channelID)
 		w.Header().Set("X-HDHomeRun-Error", "805")
 		http.Error(w, "All provider accounts in use", http.StatusServiceUnavailable)
+		if g.EventHooks != nil {
+			g.EventHooks.Dispatch("stream.rejected", "gateway", map[string]interface{}{
+				"request_id":   reqID,
+				"channel_id":   channelID,
+				"guide_name":   channel.GuideName,
+				"guide_number": channel.GuideNumber,
+				"reason":       finalStatus,
+			})
+		}
 		return
 	}
 	if upstreamConcurrencyLimited {
@@ -149,6 +211,15 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			reqID, channel.GuideName, channelID)
 		w.Header().Set("X-HDHomeRun-Error", "805")
 		http.Error(w, "All tuners in use", http.StatusServiceUnavailable)
+		if g.EventHooks != nil {
+			g.EventHooks.Dispatch("stream.rejected", "gateway", map[string]interface{}{
+				"request_id":   reqID,
+				"channel_id":   channelID,
+				"guide_name":   channel.GuideName,
+				"guide_number": channel.GuideNumber,
+				"reason":       finalStatus,
+			})
+		}
 		return
 	}
 	finalStatus = "all_upstreams_failed"

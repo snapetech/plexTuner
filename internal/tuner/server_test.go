@@ -15,6 +15,7 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/catalog"
 	"github.com/snapetech/iptvtunerr/internal/epglink"
 	"github.com/snapetech/iptvtunerr/internal/epgstore"
+	"github.com/snapetech/iptvtunerr/internal/eventhooks"
 	"github.com/snapetech/iptvtunerr/internal/guidehealth"
 	"github.com/snapetech/iptvtunerr/internal/programming"
 )
@@ -2016,5 +2017,135 @@ func TestUpdateChannels_shardThenCap(t *testing.T) {
 	}
 	if s.Channels[0].GuideName != "E" || s.Channels[4].GuideName != "I" {
 		t.Fatalf("unexpected shard+cap result: first=%q last=%q", s.Channels[0].GuideName, s.Channels[4].GuideName)
+	}
+}
+
+func TestServer_UpdateChannelsEmitsLineupEvent(t *testing.T) {
+	delivered := make(chan eventhooks.Event, 1)
+	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		var evt eventhooks.Event
+		if err := json.NewDecoder(r.Body).Decode(&evt); err != nil {
+			t.Fatalf("decode webhook event: %v", err)
+		}
+		delivered <- evt
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer webhook.Close()
+
+	cfgPath := filepath.Join(t.TempDir(), "eventhooks.json")
+	if err := os.WriteFile(cfgPath, []byte(`{"webhooks":[{"name":"test","url":"`+webhook.URL+`","events":["lineup.updated"]}]}`), 0o644); err != nil {
+		t.Fatalf("write hooks config: %v", err)
+	}
+	dispatcher, err := eventhooks.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("load dispatcher: %v", err)
+	}
+
+	srv := &Server{EventHooks: dispatcher}
+	srv.UpdateChannels([]catalog.LiveChannel{{
+		ChannelID:   "100",
+		GuideNumber: "100",
+		GuideName:   "Test",
+		StreamURL:   "http://example.com/stream.ts",
+		TVGID:       "test.us",
+		EPGLinked:   true,
+	}})
+
+	select {
+	case evt := <-delivered:
+		if evt.Name != "lineup.updated" {
+			t.Fatalf("unexpected event name %q", evt.Name)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for lineup.updated webhook")
+	}
+}
+
+func TestServer_EventHooksReport(t *testing.T) {
+	srv := &Server{EventHooksFile: "/tmp/hooks.json"}
+	req := httptest.NewRequest(http.MethodGet, "/debug/event-hooks.json", nil)
+	rr := httptest.NewRecorder()
+	srv.serveEventHooksReport().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), `"enabled": false`) {
+		t.Fatalf("unexpected body: %s", rr.Body.String())
+	}
+}
+
+func TestServer_ActiveStreamsReport(t *testing.T) {
+	srv := &Server{
+		gateway: &Gateway{
+			inUse: 1,
+			activeStreams: map[string]activeStreamEntry{
+				"r000001": {
+					RequestID:   "r000001",
+					ChannelID:   "100",
+					GuideName:   "Test",
+					GuideNumber: "100",
+					StartedAt:   time.Now().Add(-2 * time.Second),
+				},
+			},
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/debug/active-streams.json", nil)
+	rr := httptest.NewRecorder()
+	srv.serveActiveStreamsReport().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), `"channel_id": "100"`) {
+		t.Fatalf("unexpected body: %s", rr.Body.String())
+	}
+}
+
+func TestServer_XtreamPlayerAPI_LiveCategories(t *testing.T) {
+	srv := &Server{
+		BaseURL:          "http://127.0.0.1:5004",
+		XtreamOutputUser: "demo",
+		XtreamOutputPass: "secret",
+		Channels: []catalog.LiveChannel{
+			{ChannelID: "100", GuideNumber: "100", GuideName: "News 1", GroupTitle: "News"},
+			{ChannelID: "200", GuideNumber: "200", GuideName: "Sports 1", GroupTitle: "Sports"},
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/player_api.php?username=demo&password=secret&action=get_live_categories", nil)
+	rr := httptest.NewRecorder()
+	srv.serveXtreamPlayerAPI().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"category_name":"News"`) || !strings.Contains(rr.Body.String(), `"category_name":"Sports"`) {
+		t.Fatalf("unexpected body: %s", rr.Body.String())
+	}
+}
+
+func TestServer_XtreamLiveProxy(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer up.Close()
+
+	srv := &Server{
+		XtreamOutputUser: "demo",
+		XtreamOutputPass: "secret",
+		gateway: &Gateway{
+			Channels: []catalog.LiveChannel{{
+				ChannelID:   "100",
+				GuideNumber: "100",
+				GuideName:   "Test",
+				StreamURL:   up.URL,
+			}},
+			TunerCount: 2,
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/live/demo/secret/100.ts", nil)
+	rr := httptest.NewRecorder()
+	srv.serveXtreamLiveProxy().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rr.Code, rr.Body.String())
 	}
 }

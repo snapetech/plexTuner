@@ -396,3 +396,16 @@ It exists to encourage quality gains without derailing the current task.
   Status: **`internal/indexer/smoketest_cache.go`** + **`FilterLiveBySmoketestWithCache`**; **`IPTV_TUNERR_SMOKETEST_CACHE_FILE`**, **`IPTV_TUNERR_SMOKETEST_CACHE_TTL`** (default **4h**); **`cmd_catalog`**, **`free_sources`**; atomic JSON save; **`smoketest_cache_test.go`**. **`/debug/runtime.json`** echoes cache keys when configured.
   Risk/Scope: n/a (historical)
   User decision needed?: no
+# Opportunities
+
+## 2026-03-21
+
+- **Feature parity follow-ons after webhook substrate**
+  - Context: the broad parity audit surfaced real missing capability families, but the first implementation slice is intentionally `PAR-001` (event/webhook substrate) because it unlocks later work without duplicating transport/state logic.
+  - Next high-value follow-ons:
+    - shared upstream stream fanout / session reuse
+    - server-backed DVR rules/history/conflict model
+    - Xtream-compatible downstream publishing
+    - multi-user / entitlement scope model
+    - virtual channels from owned media
+    - richer active-stream analytics/control surfaces

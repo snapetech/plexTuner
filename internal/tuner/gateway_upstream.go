@@ -179,6 +179,9 @@ func (g *Gateway) authForURL(ctx context.Context, rawURL string) (string, string
 	if rule, ok := streamAuthForURL(gatewayChannelFromContext(ctx), rawURL); ok {
 		return rule.User, rule.Pass
 	}
+	if user, pass, _, ok := xtreamPathCredentials(rawURL); ok {
+		return user, pass
+	}
 	return g.ProviderUser, g.ProviderPass
 }
 

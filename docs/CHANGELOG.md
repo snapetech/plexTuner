@@ -13,6 +13,17 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+### Added
+
+- **Feature parity foundation (`PAR-001`)**: file-backed event webhooks via `IPTV_TUNERR_EVENT_WEBHOOKS_FILE`, async JSON delivery, and lifecycle emission for `lineup.updated`, `stream.requested`, `stream.rejected`, and `stream.finished`.
+- **Event debug surface**: `/debug/event-hooks.json` reports configured hooks and recent deliveries, and `/debug/runtime.json` now surfaces event-hook runtime state.
+- **Active stream debug surface (`PAR-007` slice)**: `/debug/active-streams.json` now reports currently in-flight stream sessions and live tuner occupancy.
+- **Xtream-compatible live output starter (`PAR-004` slice)**: optional read-only downstream `player_api.php` (`get_live_streams`, `get_live_categories`) plus `/live/<user>/<pass>/<channel>.ts`, backed by the curated lineup and existing gateway.
+
+### Fixed
+
+- **Provider-account rollover robustness**: account pooling now falls back to Xtream path credentials (`/live/<user>/<pass>/...`, `/movie/...`, `/series/...`, `/timeshift/...`) when per-stream auth metadata is missing or incomplete, so concurrent sessions can still spread across distinct provider accounts instead of collapsing back to the global default credentials.
+
 ## [v0.1.27] — 2026-03-21
 
 ### Streaming

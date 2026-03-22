@@ -23,6 +23,7 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/channeldna"
 	"github.com/snapetech/iptvtunerr/internal/channelreport"
 	"github.com/snapetech/iptvtunerr/internal/epgstore"
+	"github.com/snapetech/iptvtunerr/internal/eventhooks"
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
 	"github.com/snapetech/iptvtunerr/internal/programming"
 	"github.com/snapetech/iptvtunerr/internal/safeurl"
@@ -76,6 +77,10 @@ type Server struct {
 	RawChannels           []catalog.LiveChannel
 	ProgrammingRecipeFile string
 	ProgrammingRecipe     programming.Recipe
+	EventHooksFile        string
+	EventHooks            *eventhooks.Dispatcher
+	XtreamOutputUser      string
+	XtreamOutputPass      string
 	ProviderUser          string
 	ProviderPass          string
 	ProviderBaseURL       string
@@ -139,6 +144,7 @@ type RuntimeSnapshot struct {
 	Recorder      map[string]interface{} `json:"recorder,omitempty"`
 	HDHR          map[string]interface{} `json:"hdhr,omitempty"`
 	WebUI         map[string]interface{} `json:"webui,omitempty"`
+	Events        map[string]interface{} `json:"events,omitempty"`
 	MediaServers  map[string]interface{} `json:"media_servers,omitempty"`
 	URLs          map[string]string      `json:"urls,omitempty"`
 }
@@ -229,6 +235,21 @@ func (s *Server) setExposedChannels(live []catalog.LiveChannel) {
 		summary.DuplicateGuideNumbers,
 		summary.DuplicateChannelIDs,
 	)
+	if s.EventHooks != nil {
+		s.EventHooks.Dispatch("lineup.updated", "server", map[string]interface{}{
+			"channels":                summary.Total,
+			"epg_linked":              summary.EPGLinked,
+			"with_tvg":                summary.WithTVGID,
+			"with_stream":             summary.WithStream,
+			"missing_core":            summary.MissingCoreFields,
+			"duplicate_guide_numbers": summary.DuplicateGuideNumbers,
+			"duplicate_channel_ids":   summary.DuplicateChannelIDs,
+			"raw_channels":            len(s.RawChannels),
+			"programming_recipe_file": strings.TrimSpace(s.ProgrammingRecipeFile),
+			"guide_number_offset":     s.GuideNumberOffset,
+			"lineup_max_channels":     s.LineupMaxChannels,
+		})
+	}
 }
 
 func (s *Server) reloadProgrammingRecipe() programming.Recipe {
@@ -745,6 +766,10 @@ func regionOrDash(v string) string {
 	return v
 }
 
+func (s *Server) xtreamOutputEnabled() bool {
+	return strings.TrimSpace(s.XtreamOutputUser) != "" && strings.TrimSpace(s.XtreamOutputPass) != ""
+}
+
 func scoreLineupChannelForShape(shape, region string, ch catalog.LiveChannel) int {
 	if shape != "na_en" {
 		return 0
@@ -996,6 +1021,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	gateway := &Gateway{
 		Channels:            s.Channels,
+		EventHooks:          s.EventHooks,
 		ProviderUser:        s.ProviderUser,
 		ProviderPass:        s.ProviderPass,
 		TunerCount:          s.TunerCount,
@@ -1213,6 +1239,10 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/lineup_status.json", hdhr)
 	mux.Handle("/lineup.json", hdhr)
 	mux.Handle("/device.xml", s.serveDeviceXML())
+	if s.xtreamOutputEnabled() {
+		mux.Handle("/player_api.php", s.serveXtreamPlayerAPI())
+		mux.Handle("/live/", s.serveXtreamLiveProxy())
+	}
 	mux.Handle("/guide.xml", xmltv)
 	mux.Handle("/guide/health.json", s.serveGuideHealth())
 	mux.Handle("/guide/policy.json", s.serveGuidePolicy())
@@ -1256,7 +1286,9 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/plex/ghost-report.json", s.serveGhostHunterReport())
 	mux.Handle("/provider/profile.json", s.serveProviderProfile())
 	mux.Handle("/recordings/recorder.json", s.serveCatchupRecorderReport())
+	mux.Handle("/debug/active-streams.json", s.serveActiveStreamsReport())
 	mux.Handle("/debug/stream-attempts.json", s.serveRecentStreamAttempts())
+	mux.Handle("/debug/event-hooks.json", s.serveEventHooksReport())
 	mux.Handle("/debug/runtime.json", s.serveRuntimeSnapshot())
 	mux.Handle("/debug/hls-mux-demo.html", s.serveHlsMuxWebDemo())
 	if metricsEnableFromEnv() {
@@ -1742,6 +1774,10 @@ func (s *Server) serveOperatorActionStatus() http.Handler {
 			"stream_attempts_clear": map[string]interface{}{
 				"available": s.gateway != nil,
 			},
+			"active_streams": map[string]interface{}{
+				"available": s.gateway != nil,
+				"endpoint":  "/debug/active-streams.json",
+			},
 			"provider_profile_reset": map[string]interface{}{
 				"available": s.gateway != nil,
 			},
@@ -2110,9 +2146,60 @@ func (s *Server) serveRuntimeSnapshot() http.Handler {
 				FriendlyName: s.FriendlyName,
 			}
 		}
+		if rep.Events == nil {
+			rep.Events = map[string]interface{}{}
+		}
+		rep.Events["webhooks_file"] = strings.TrimSpace(s.EventHooksFile)
+		rep.Events["enabled"] = s.EventHooks != nil && s.EventHooks.Enabled()
+		if s.EventHooks != nil {
+			report := s.EventHooks.Report()
+			rep.Events["hook_count"] = report.TotalHooks
+			rep.Events["recent_count"] = len(report.Recent)
+		} else {
+			rep.Events["hook_count"] = 0
+			rep.Events["recent_count"] = 0
+		}
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
 			http.Error(w, `{"error":"encode runtime snapshot"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveEventHooksReport() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		report := eventhooks.Report{
+			Enabled:    false,
+			ConfigFile: strings.TrimSpace(s.EventHooksFile),
+			RecentMax:  64,
+		}
+		if s.EventHooks != nil {
+			report = s.EventHooks.Report()
+		}
+		body, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode event hooks"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveActiveStreamsReport() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		rep := ActiveStreamsReport{
+			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		}
+		if s.gateway != nil {
+			rep = s.gateway.ActiveStreamsReport()
+		}
+		body, err := json.MarshalIndent(rep, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode active streams"}`, http.StatusInternalServerError)
 			return
 		}
 		_, _ = w.Write(body)
