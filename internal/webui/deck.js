@@ -22,6 +22,7 @@ const endpoints = {
   programmingChannels: "/api/programming/channels.json",
   programmingOrder: "/api/programming/order.json",
   programmingBackups: "/api/programming/backups.json",
+  programmingHarvest: "/api/programming/harvest.json",
   programmingRecipe: "/api/programming/recipe.json",
   programmingPreview: "/api/programming/preview.json?limit=12",
   operatorActionsStatus: "/api/ops/actions/status.json",
@@ -53,6 +54,7 @@ const endpointCatalog = {
   programmingChannels: { title: "Programming Channels", category: "Programming", summary: "Exact include/exclude channel controls for the saved programming recipe." },
   programmingOrder: { title: "Programming Order", category: "Programming", summary: "Manual lineup order mutations and order-mode state." },
   programmingBackups: { title: "Programming Backups", category: "Programming", summary: "Exact sibling backup groups that can collapse into one visible lineup row." },
+  programmingHarvest: { title: "Programming Harvest", category: "Programming", summary: "Persisted Plex lineup-harvest report and deduped candidate lineup titles." },
   programmingRecipe: { title: "Programming Recipe", category: "Programming", summary: "Durable saved recipe file backing category/channel/order decisions." },
   programmingPreview: { title: "Programming Preview", category: "Programming", summary: "Curated lineup preview with taxonomy buckets and backup groups." },
   operatorActionsStatus: { title: "Operator Action Status", category: "Deck Control", summary: "Availability and current status of safe operator actions." },
@@ -1090,6 +1092,8 @@ function renderDeck() {
   const programmingInventory = normalizeArray(programmingCategoriesPayload.categories || programmingPreviewPayload.inventory);
   const curatedLineup = normalizeArray(programmingPreviewPayload.lineup);
   const backupGroups = normalizeArray(programmingBackupsPayload.groups || programmingPreviewPayload.backup_groups);
+  const harvestPayload = state.payloads.programmingHarvest?.body || {};
+  const harvestLineups = normalizeArray(harvestPayload.lineups || programmingPreviewPayload.harvest_lineups);
   const bucketEntries = Object.entries(programmingPreviewPayload.buckets || {});
   const topCategoryCards = programmingInventory.slice(0, 8).map((category) =>
     createCard(
@@ -1110,6 +1114,10 @@ function renderDeck() {
        <button class="tiny" type="button" data-inspect="programmingRecipe">Inspect Recipe</button>`),
     createCard("Preview impact", `${pretty(programmingPreviewPayload.raw_channels)} raw channels -> ${pretty(programmingPreviewPayload.curated_channels)} curated channels. ${pretty(programmingInventory.length)} categories inventoried and ${pretty(backupGroups.length)} exact backup groups detected.`, "", "", "programmingPreview",
       `<button class="tiny" type="button" data-inspect="programmingPreview">Inspect Preview</button>`),
+    createCard("Harvested lineup candidates", harvestLineups.length
+      ? harvestLineups.slice(0, 6).map((row) => `${row.lineup_title} (${row.best_channelmap_rows || 0})`).join(" | ")
+      : "No persisted Plex lineup harvest report configured yet.", "", "", "programmingHarvest",
+      `<button class="tiny" type="button" data-inspect="programmingHarvest">Inspect Harvest</button>`),
     createCard("Recommended buckets", bucketEntries.length
       ? bucketEntries.sort((a, b) => b[1] - a[1]).map(([bucket, count]) => `${bucket}: ${count}`).slice(0, 8).join(" | ")
       : "No bucket counts yet.", "", "", "programmingPreview"),
@@ -1144,6 +1152,17 @@ function renderDeck() {
       `<button class="tiny" type="button" data-inspect="programmingBackups">Inspect Groups</button>`
     )
   )).join("") || createCard("Exact backups", "No strong same-channel sibling groups detected in the current preview.", "", "", "programmingBackups");
+  if (harvestLineups.length) {
+    programmingBackups.innerHTML += filterCards(harvestLineups.slice(0, 4).map((row) =>
+      createCard(
+        row.lineup_title || "lineup",
+        `${pretty(row.successes)} successful target(s) · best channelmap ${pretty(row.best_channelmap_rows)}`,
+        normalizeArray(row.friendly_names).join(" · "),
+        "",
+        "programmingHarvest"
+      )
+    )).join("");
+  }
 
   settingsList.innerHTML = filterCards([
     createSettingsCard("Deck security posture", "Dedicated web UI auth, session, and persistence posture.", [
@@ -1195,6 +1214,8 @@ function renderDeck() {
     createSettingsCard("Programming Manager", "Saved recipe file, category inventory, ordering mode, and backup collapse posture.", [
       ["Recipe file", programmingPreviewPayload.recipe_file || programmingRecipePayload.recipe_file],
       ["Recipe writable", programmingPreviewPayload.recipe_writable ?? programmingRecipePayload.recipe_writable],
+      ["Harvest file", harvestPayload.harvest_file || programmingPreviewPayload.harvest_file],
+      ["Harvest ready", harvestPayload.report_ready ?? programmingPreviewPayload.harvest_ready],
       ["Order mode", programmingRecipe.order_mode],
       ["Selected categories", normalizeArray(programmingRecipe.selected_categories).length],
       ["Excluded categories", normalizeArray(programmingRecipe.excluded_categories).length],

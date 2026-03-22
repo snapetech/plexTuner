@@ -66,6 +66,7 @@ Create or update this file when **any** of these are true:
 - **Non-goals:** scraping Plex UI, pretending lineup-market guessing is fully automatic, or leaving the feature as ad hoc lab output only.
 - **Story IDs:** `LH-001` … `LH-006`
 - **Progress (2026-03-21):** `LH-001` through `LH-003` starter shipped. `internal/plexharvest` now owns reusable target expansion, bounded channelmap polling, per-target result capture, and deduped lineup summaries; `iptv-tunerr plex-lineup-harvest` is the named CLI surface; and docs/how-to plus CLI reference are in place. Next depth: persist harvested reports and bridge them into Programming Manager or deck workflows.
+- **Progress (2026-03-21):** `LH-004` and the first visible `LH-005` slice are now in. Saved harvest reports can live in `IPTV_TUNERR_PLEX_LINEUP_HARVEST_FILE`, surface through `/programming/harvest.json`, flow into `/programming/preview.json`, and appear in the deck Programming lane as candidate lineup cards. Next depth: make harvested results actually seed/apply Programming recipes instead of only surfacing the report.
 
 ### Active epic overlay (Feature parity, 2026-03-21)
 
@@ -80,6 +81,7 @@ Create or update this file when **any** of these are true:
 - **Progress (2026-03-21):** first visible `PAR-005` slice shipped too: `IPTV_TUNERR_XTREAM_USERS_FILE` now enables file-backed downstream users with scoped live/VOD/series access, `/entitlements.json` exposes or updates that ruleset from the operator plane, and both `player_api.php` and `/live|movie|series/...` now filter or deny output by authenticated user instead of treating Xtream output as one global catalog.
 - **Progress (2026-03-21):** Programming Manager follow-up for tester tooling shipped too: `/programming/channel-detail.json` now gives category-first or curses-style clients a focused channel view with taxonomy/category metadata, exact-match backup alternatives, and a 3-hour upcoming-programme preview; release smoke asserts both the new detail endpoint and the expanded Xtream VOD/series surface.
 - **Progress (2026-03-21):** first visible `PAR-003` slice shipped too: `IPTV_TUNERR_RECORDING_RULES_FILE` now enables durable server-side recording rules, `/recordings/rules.json` CRUD, `/recordings/rules/preview.json` over current catch-up capsules, and `/recordings/history.json` classification of recorder-state activity against the current ruleset. `scripts/ci-smoke.sh` now validates recorder-rule mutation and history output in the release gate.
+- **Progress (2026-03-21):** first visible `PAR-006` slice shipped too: `IPTV_TUNERR_VIRTUAL_CHANNELS_FILE` now enables file-backed virtual-channel rules, `/virtual-channels/rules.json` stores or mutates them, and `/virtual-channels/preview.json` renders schedule previews over catalog movies/episodes so synthetic-channel design is durable before real published playback is layered in.
 
 ### Account-aware concurrency story list (2026-03-21)
 

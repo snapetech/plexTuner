@@ -66,6 +66,12 @@ instead of reimplemented piecemeal.
   - This is the highest-leverage foundation slice because it unlocks webhook
     automation, richer operator observability, and future recording / output /
     multi-user lifecycle integrations without duplicating transport code.
+- **2026-03-21:** `PAR-001` through `PAR-005` and `PAR-007` now have real in-tree slices.
+  - Event webhooks, shared HLS relay reuse, recording rules/history, downstream Xtream output, downstream entitlements, and active-stream control all now exist as server-backed features with release-gate coverage.
+- **2026-03-21:** `PAR-006` restarted with a durable virtual-channel substrate.
+  - `IPTV_TUNERR_VIRTUAL_CHANNELS_FILE` now stores file-backed virtual-channel rules.
+  - `/virtual-channels/rules.json` and `/virtual-channels/preview.json` provide durable rules + preview schedules over catalog movies/episodes.
+  - This is intentionally a starter slice: preview/schedule design is in, but real published/playable synthetic channels are still the next depth.
 
 ## Out of scope
 

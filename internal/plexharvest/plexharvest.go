@@ -1,7 +1,10 @@
 package plexharvest
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -190,6 +193,69 @@ func Probe(req ProbeRequest) Report {
 	}
 	report.Lineups = buildSummary(report.Results)
 	return report
+}
+
+func LoadReportFile(path string) (Report, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return Report{}, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return Report{}, nil
+		}
+		return Report{}, err
+	}
+	var rep Report
+	if err := json.Unmarshal(data, &rep); err != nil {
+		return Report{}, err
+	}
+	if len(rep.Lineups) == 0 && len(rep.Results) > 0 {
+		rep.Lineups = buildSummary(rep.Results)
+	}
+	return rep, nil
+}
+
+func SaveReportFile(path string, rep Report) (Report, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return Report{}, fmt.Errorf("lineup harvest file not configured")
+	}
+	if strings.TrimSpace(rep.GeneratedAt) == "" {
+		rep.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	if len(rep.Lineups) == 0 && len(rep.Results) > 0 {
+		rep.Lineups = buildSummary(rep.Results)
+	}
+	data, err := json.MarshalIndent(rep, "", "  ")
+	if err != nil {
+		return Report{}, err
+	}
+	dir := filepath.Dir(filepath.Clean(path))
+	tmp, err := os.CreateTemp(dir, ".plex-lineup-harvest-*.json.tmp")
+	if err != nil {
+		return Report{}, err
+	}
+	tmpName := tmp.Name()
+	_, writeErr := tmp.Write(data)
+	closeErr := tmp.Close()
+	if writeErr != nil || closeErr != nil {
+		_ = os.Remove(tmpName)
+		if writeErr != nil {
+			return Report{}, writeErr
+		}
+		return Report{}, closeErr
+	}
+	if err := os.Chmod(tmpName, 0o600); err != nil {
+		_ = os.Remove(tmpName)
+		return Report{}, err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		_ = os.Remove(tmpName)
+		return Report{}, err
+	}
+	return rep, nil
 }
 
 func buildSummary(results []Result) []SummaryLineup {

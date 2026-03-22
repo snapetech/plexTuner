@@ -26,8 +26,10 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/epgstore"
 	"github.com/snapetech/iptvtunerr/internal/eventhooks"
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
+	"github.com/snapetech/iptvtunerr/internal/plexharvest"
 	"github.com/snapetech/iptvtunerr/internal/programming"
 	"github.com/snapetech/iptvtunerr/internal/safeurl"
+	"github.com/snapetech/iptvtunerr/internal/virtualchannels"
 )
 
 // PlexDVRMaxChannels is Plex's per-tuner channel limit when using the wizard; exceeding it causes "failed to save channel lineup".
@@ -81,6 +83,10 @@ type Server struct {
 	RawChannels           []catalog.LiveChannel
 	ProgrammingRecipeFile string
 	ProgrammingRecipe     programming.Recipe
+	PlexLineupHarvestFile string
+	PlexLineupHarvest     plexharvest.Report
+	VirtualChannelsFile   string
+	VirtualChannels       virtualchannels.Ruleset
 	RecordingRules        RecordingRuleset
 	EventHooksFile        string
 	EventHooks            *eventhooks.Dispatcher
@@ -277,6 +283,63 @@ func (s *Server) reloadProgrammingRecipe() programming.Recipe {
 func (s *Server) applyProgrammingRecipe(live []catalog.LiveChannel) []catalog.LiveChannel {
 	recipe := s.reloadProgrammingRecipe()
 	return programming.ApplyRecipe(live, recipe)
+}
+
+func (s *Server) reloadPlexLineupHarvest() plexharvest.Report {
+	path := strings.TrimSpace(s.PlexLineupHarvestFile)
+	if path == "" {
+		return s.PlexLineupHarvest
+	}
+	rep, err := plexharvest.LoadReportFile(path)
+	if err != nil {
+		log.Printf("Plex lineup harvest disabled: load %q failed: %v", path, err)
+		return s.PlexLineupHarvest
+	}
+	s.PlexLineupHarvest = rep
+	return rep
+}
+
+func (s *Server) savePlexLineupHarvest(rep plexharvest.Report) (plexharvest.Report, error) {
+	path := strings.TrimSpace(s.PlexLineupHarvestFile)
+	if path == "" {
+		s.PlexLineupHarvest = rep
+		return rep, nil
+	}
+	saved, err := plexharvest.SaveReportFile(path, rep)
+	if err != nil {
+		return plexharvest.Report{}, err
+	}
+	s.PlexLineupHarvest = saved
+	return saved, nil
+}
+
+func (s *Server) reloadVirtualChannels() virtualchannels.Ruleset {
+	path := strings.TrimSpace(s.VirtualChannelsFile)
+	if path == "" {
+		s.VirtualChannels = virtualchannels.NormalizeRuleset(s.VirtualChannels)
+		return s.VirtualChannels
+	}
+	set, err := virtualchannels.LoadFile(path)
+	if err != nil {
+		log.Printf("Virtual channels disabled: load %q failed: %v", path, err)
+		return s.VirtualChannels
+	}
+	s.VirtualChannels = set
+	return set
+}
+
+func (s *Server) saveVirtualChannels(set virtualchannels.Ruleset) (virtualchannels.Ruleset, error) {
+	path := strings.TrimSpace(s.VirtualChannelsFile)
+	if path == "" {
+		s.VirtualChannels = virtualchannels.NormalizeRuleset(set)
+		return s.VirtualChannels, nil
+	}
+	saved, err := virtualchannels.SaveFile(path, set)
+	if err != nil {
+		return virtualchannels.Ruleset{}, err
+	}
+	s.VirtualChannels = saved
+	return saved, nil
 }
 
 func (s *Server) reloadRecordingRules() RecordingRuleset {
@@ -1327,8 +1390,11 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/programming/channel-detail.json", s.serveProgrammingChannelDetail())
 	mux.Handle("/programming/order.json", s.serveProgrammingOrder())
 	mux.Handle("/programming/backups.json", s.serveProgrammingBackups())
+	mux.Handle("/programming/harvest.json", s.serveProgrammingHarvest())
 	mux.Handle("/programming/recipe.json", s.serveProgrammingRecipe())
 	mux.Handle("/programming/preview.json", s.serveProgrammingPreview())
+	mux.Handle("/virtual-channels/rules.json", s.serveVirtualChannelRules())
+	mux.Handle("/virtual-channels/preview.json", s.serveVirtualChannelPreview())
 	mux.Handle("/guide/highlights.json", s.serveGuideHighlights())
 	mux.Handle("/guide/epg-store.json", s.serveEpgStoreReport())
 	mux.Handle("/guide/capsules.json", s.serveCatchupCapsules())
@@ -2378,6 +2444,9 @@ type programmingPreviewReport struct {
 	GeneratedAt     string                        `json:"generated_at"`
 	RecipeFile      string                        `json:"recipe_file,omitempty"`
 	RecipeWritable  bool                          `json:"recipe_writable"`
+	HarvestFile     string                        `json:"harvest_file,omitempty"`
+	HarvestReady    bool                          `json:"harvest_ready"`
+	HarvestLineups  []plexharvest.SummaryLineup   `json:"harvest_lineups,omitempty"`
 	RawChannels     int                           `json:"raw_channels"`
 	CuratedChannels int                           `json:"curated_channels"`
 	Recipe          programming.Recipe            `json:"recipe"`
@@ -2622,6 +2691,62 @@ func (s *Server) serveProgrammingBackups() http.Handler {
 	})
 }
 
+func (s *Server) serveProgrammingHarvest() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodGet:
+			rep := s.reloadPlexLineupHarvest()
+			body, err := json.MarshalIndent(map[string]interface{}{
+				"generated_at":     time.Now().UTC().Format(time.RFC3339),
+				"harvest_file":     strings.TrimSpace(s.PlexLineupHarvestFile),
+				"harvest_writable": strings.TrimSpace(s.PlexLineupHarvestFile) != "",
+				"report":           rep,
+				"lineups":          rep.Lineups,
+				"report_ready":     len(rep.Results) > 0 || len(rep.Lineups) > 0,
+			}, "", "  ")
+			if err != nil {
+				http.Error(w, `{"error":"encode programming harvest"}`, http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write(body)
+		case http.MethodPost:
+			if !operatorUIAllowed(w, r) {
+				return
+			}
+			if strings.TrimSpace(s.PlexLineupHarvestFile) == "" {
+				http.Error(w, `{"error":"plex lineup harvest file not configured"}`, http.StatusServiceUnavailable)
+				return
+			}
+			limited := http.MaxBytesReader(w, r.Body, 1<<20)
+			defer limited.Close()
+			var rep plexharvest.Report
+			if err := json.NewDecoder(limited).Decode(&rep); err != nil {
+				http.Error(w, `{"error":"invalid programming harvest json"}`, http.StatusBadRequest)
+				return
+			}
+			saved, err := s.savePlexLineupHarvest(rep)
+			if err != nil {
+				http.Error(w, `{"error":"save programming harvest failed"}`, http.StatusBadGateway)
+				return
+			}
+			body, err := json.MarshalIndent(map[string]interface{}{
+				"ok":           true,
+				"harvest_file": strings.TrimSpace(s.PlexLineupHarvestFile),
+				"report":       saved,
+				"lineups":      saved.Lineups,
+			}, "", "  ")
+			if err != nil {
+				http.Error(w, `{"error":"encode programming harvest"}`, http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write(body)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+}
+
 func (s *Server) serveXtreamEntitlements() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -2833,11 +2958,15 @@ func (s *Server) serveProgrammingPreview() http.Handler {
 			GeneratedAt:     time.Now().UTC().Format(time.RFC3339),
 			RecipeFile:      strings.TrimSpace(s.ProgrammingRecipeFile),
 			RecipeWritable:  strings.TrimSpace(s.ProgrammingRecipeFile) != "",
+			HarvestFile:     strings.TrimSpace(s.PlexLineupHarvestFile),
 			RawChannels:     len(s.RawChannels),
 			CuratedChannels: len(s.Channels),
 			Recipe:          s.reloadProgrammingRecipe(),
 			Inventory:       programming.BuildCategoryInventory(s.RawChannels),
 		}
+		harvest := s.reloadPlexLineupHarvest()
+		report.HarvestReady = len(harvest.Results) > 0 || len(harvest.Lineups) > 0
+		report.HarvestLineups = append([]plexharvest.SummaryLineup(nil), harvest.Lineups...)
 		previewChannels := programming.ApplyRecipePreview(cloneLiveChannels(s.RawChannels), report.Recipe)
 		if limit > len(s.Channels) {
 			limit = len(s.Channels)
@@ -2851,6 +2980,83 @@ func (s *Server) serveProgrammingPreview() http.Handler {
 		body, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
 			http.Error(w, `{"error":"encode programming preview"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveVirtualChannelRules() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodGet:
+			set := s.reloadVirtualChannels()
+			body, err := json.MarshalIndent(map[string]interface{}{
+				"generated_at":     time.Now().UTC().Format(time.RFC3339),
+				"rules_file":       strings.TrimSpace(s.VirtualChannelsFile),
+				"rules_writable":   strings.TrimSpace(s.VirtualChannelsFile) != "",
+				"rules":            set,
+				"enabled_channels": len(set.Channels),
+			}, "", "  ")
+			if err != nil {
+				http.Error(w, `{"error":"encode virtual channel rules"}`, http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write(body)
+		case http.MethodPost:
+			if !operatorUIAllowed(w, r) {
+				return
+			}
+			if strings.TrimSpace(s.VirtualChannelsFile) == "" {
+				http.Error(w, `{"error":"virtual channels file not configured"}`, http.StatusServiceUnavailable)
+				return
+			}
+			limited := http.MaxBytesReader(w, r.Body, 1<<20)
+			defer limited.Close()
+			var set virtualchannels.Ruleset
+			if err := json.NewDecoder(limited).Decode(&set); err != nil {
+				http.Error(w, `{"error":"invalid virtual channels json"}`, http.StatusBadRequest)
+				return
+			}
+			saved, err := s.saveVirtualChannels(set)
+			if err != nil {
+				http.Error(w, `{"error":"save virtual channels failed"}`, http.StatusBadGateway)
+				return
+			}
+			body, err := json.MarshalIndent(map[string]interface{}{
+				"ok":         true,
+				"rules_file": strings.TrimSpace(s.VirtualChannelsFile),
+				"rules":      saved,
+			}, "", "  ")
+			if err != nil {
+				http.Error(w, `{"error":"encode virtual channel rules"}`, http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write(body)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+}
+
+func (s *Server) serveVirtualChannelPreview() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		perChannel := 4
+		if raw := strings.TrimSpace(r.URL.Query().Get("per_channel")); raw != "" {
+			if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 24 {
+				perChannel = n
+			}
+		}
+		report := virtualchannels.BuildPreview(s.reloadVirtualChannels(), s.Movies, s.Series, time.Now(), perChannel)
+		body, err := json.MarshalIndent(map[string]interface{}{
+			"generated_at": time.Now().UTC().Format(time.RFC3339),
+			"rules_file":   strings.TrimSpace(s.VirtualChannelsFile),
+			"report":       report,
+		}, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode virtual channel preview"}`, http.StatusInternalServerError)
 			return
 		}
 		_, _ = w.Write(body)

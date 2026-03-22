@@ -53,6 +53,10 @@ productize it:
   - `internal/plexharvest` now owns reusable target expansion, polling, per-target result capture, and deduped lineup summaries.
   - `iptv-tunerr plex-lineup-harvest` is now the first named feature surface for this flow, instead of leaving it under the old oracle-only lab command.
   - Reports now capture lineup titles, lineup URLs, channel-map counts, activation counts, and per-target failures in structured JSON.
+- **2026-03-21:** `LH-004` and the first visible `LH-005` slice shipped in-tree.
+  - Harvest reports can now be saved and reloaded from `IPTV_TUNERR_PLEX_LINEUP_HARVEST_FILE`.
+  - `/programming/harvest.json` exposes the saved report to operator tooling, and `/programming/preview.json` now embeds `harvest_ready`, `harvest_file`, and deduped harvested lineup summaries.
+  - The dedicated deck Programming lane now surfaces those harvested candidate lineups instead of leaving the data as one-shot CLI output only.
 
 ## Out of scope
 

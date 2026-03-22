@@ -4244,3 +4244,9 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
   - Added stronger 3-account rollover regression coverage so three simultaneous channels must lease three distinct Xtream-path credential sets.
   - Docs: `docs/epics/EPIC-lineup-harvest.md`, `docs/how-to/plex-lineup-harvest.md`, `docs/reference/cli-and-env-reference.md`, `docs/features.md`, `docs/CHANGELOG.md`, `README.md`.
   - Verification: `go test ./internal/plexharvest ./internal/tuner ./cmd/iptv-tunerr -run 'Test(ExpandTargets_templateAndFriendlyNames|BuildSummary_groupsSuccessfulLineups|Probe_(pollsAndCapturesLineupTitle|recordsErrorsPerTarget)|Gateway_stream_threeChannelsUseThreeXtreamPathAccounts)' -count=1`; `./scripts/verify`.
+- 2026-03-21: Bridged saved lineup harvest reports into Programming Manager and restarted virtual channels as a durable server feature.
+  - `internal/plexharvest` now supports atomic save/load of persisted report files, and Tunerr can reload those reports from `IPTV_TUNERR_PLEX_LINEUP_HARVEST_FILE`.
+  - Added `/programming/harvest.json`, embedded harvest state into `/programming/preview.json`, and surfaced harvested lineup candidates in the dedicated deck’s Programming lane so saved harvest runs become usable operator input instead of dead JSON.
+  - Added `internal/virtualchannels` with file-backed virtual-channel rules plus preview scheduling over catalog movies and episodes, and exposed `/virtual-channels/rules.json` and `/virtual-channels/preview.json`.
+  - Expanded `scripts/ci-smoke.sh` so release gating now verifies both the harvest bridge and virtual-channel preview paths against a real temp binary.
+  - Verification: `go test ./internal/plexharvest ./internal/virtualchannels ./internal/tuner ./cmd/iptv-tunerr -count=1`; `bash ./scripts/ci-smoke.sh`; `./scripts/verify`.

@@ -2,6 +2,7 @@ package plexharvest
 
 import (
 	"fmt"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -115,5 +116,27 @@ func TestProbe_recordsErrorsPerTarget(t *testing.T) {
 	})
 	if len(report.Results) != 1 || report.Results[0].Error == "" {
 		t.Fatalf("report=%#v", report)
+	}
+}
+
+func TestSaveLoadReportFile_roundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "harvest.json")
+	in := Report{
+		PlexURL: "plex.example:32400",
+		Results: []Result{{BaseURL: "http://oracle-100:5004", FriendlyName: "oracle-100", LineupTitle: "Rogers West", ChannelMapRows: 420}},
+	}
+	saved, err := SaveReportFile(path, in)
+	if err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if len(saved.Lineups) != 1 || saved.Lineups[0].LineupTitle != "Rogers West" {
+		t.Fatalf("saved=%#v", saved)
+	}
+	loaded, err := LoadReportFile(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if loaded.PlexURL != in.PlexURL || len(loaded.Lineups) != 1 || loaded.Lineups[0].BestChannelMapRows != 420 {
+		t.Fatalf("loaded=%#v", loaded)
 	}
 }

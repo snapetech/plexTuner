@@ -20,7 +20,9 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/epgstore"
 	"github.com/snapetech/iptvtunerr/internal/eventhooks"
 	"github.com/snapetech/iptvtunerr/internal/guidehealth"
+	"github.com/snapetech/iptvtunerr/internal/plexharvest"
 	"github.com/snapetech/iptvtunerr/internal/programming"
+	"github.com/snapetech/iptvtunerr/internal/virtualchannels"
 )
 
 func TestServer_healthz(t *testing.T) {
@@ -322,6 +324,142 @@ func TestServer_programmingEndpoints(t *testing.T) {
 	}
 	if backups.GroupCount != 1 || len(backups.Groups) != 1 || backups.Groups[0].MemberCount != 2 {
 		t.Fatalf("backups=%+v", backups)
+	}
+}
+
+func TestServer_programmingHarvestEndpoint(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "harvest.json")
+	s := &Server{PlexLineupHarvestFile: path}
+
+	postBody := strings.NewReader(`{
+  "plex_url": "plex.example:32400",
+  "results": [
+    {
+      "base_url": "http://oracle-100:5004",
+      "friendly_name": "harvest-100",
+      "lineup_title": "Rogers West",
+      "channelmap_rows": 420
+    }
+  ]
+}`)
+	req := httptest.NewRequest(http.MethodPost, "/programming/harvest.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.serveProgrammingHarvest().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("harvest post status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/programming/harvest.json", nil)
+	w = httptest.NewRecorder()
+	s.serveProgrammingHarvest().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("harvest get status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body struct {
+		Report      plexharvest.Report          `json:"report"`
+		Lineups     []plexharvest.SummaryLineup `json:"lineups"`
+		ReportReady bool                        `json:"report_ready"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("harvest unmarshal: %v", err)
+	}
+	if !body.ReportReady || len(body.Lineups) != 1 || body.Lineups[0].LineupTitle != "Rogers West" {
+		t.Fatalf("harvest body=%+v", body)
+	}
+}
+
+func TestServer_programmingPreviewIncludesHarvestSummary(t *testing.T) {
+	recipePath := filepath.Join(t.TempDir(), "programming.json")
+	harvestPath := filepath.Join(t.TempDir(), "harvest.json")
+	if _, err := plexharvest.SaveReportFile(harvestPath, plexharvest.Report{
+		PlexURL: "plex.example:32400",
+		Results: []plexharvest.Result{{
+			BaseURL:        "http://oracle-100:5004",
+			FriendlyName:   "harvest-100",
+			LineupTitle:    "Rogers West",
+			ChannelMapRows: 420,
+		}},
+	}); err != nil {
+		t.Fatalf("save harvest: %v", err)
+	}
+	s := &Server{ProgrammingRecipeFile: recipePath, PlexLineupHarvestFile: harvestPath}
+	s.UpdateChannels([]catalog.LiveChannel{
+		{ChannelID: "1", GuideNumber: "101", GuideName: "News One", GroupTitle: "News", SourceTag: "iptv", StreamURL: "http://a/1"},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/programming/preview.json?limit=1", nil)
+	w := httptest.NewRecorder()
+	s.serveProgrammingPreview().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("preview status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body programmingPreviewReport
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("preview unmarshal: %v", err)
+	}
+	if !body.HarvestReady || len(body.HarvestLineups) != 1 || body.HarvestLineups[0].LineupTitle != "Rogers West" {
+		t.Fatalf("preview=%+v", body)
+	}
+}
+
+func TestServer_virtualChannelRulesAndPreview(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "virtual-channels.json")
+	s := &Server{
+		VirtualChannelsFile: path,
+		Movies:              []catalog.Movie{{ID: "m1", Title: "Movie One"}},
+		Series: []catalog.Series{{
+			ID:    "s1",
+			Title: "Series One",
+			Seasons: []catalog.Season{{
+				Number: 1,
+				Episodes: []catalog.Episode{{
+					ID:    "e1",
+					Title: "Pilot",
+				}},
+			}},
+		}},
+	}
+
+	postBody := strings.NewReader(`{
+  "channels": [
+    {
+      "id": "vc-news",
+      "name": "News Loop",
+      "guide_number": "9001",
+      "enabled": true,
+      "loop_daily_utc": true,
+      "entries": [
+        { "type": "movie", "movie_id": "m1", "duration_mins": 60 },
+        { "type": "episode", "series_id": "s1", "episode_id": "e1", "duration_mins": 30 }
+      ]
+    }
+  ]
+}`)
+	req := httptest.NewRequest(http.MethodPost, "/virtual-channels/rules.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.serveVirtualChannelRules().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual rules status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/preview.json?per_channel=2", nil)
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelPreview().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual preview status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body struct {
+		Report virtualchannels.PreviewReport `json:"report"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("virtual preview unmarshal: %v", err)
+	}
+	if body.Report.Channels != 1 || len(body.Report.Slots) != 2 {
+		t.Fatalf("virtual preview=%+v", body.Report)
+	}
+	if body.Report.Slots[0].ResolvedName != "Movie One" || body.Report.Slots[1].ResolvedName != "Series One · Pilot" {
+		t.Fatalf("virtual slots=%+v", body.Report.Slots)
 	}
 }
 

@@ -78,8 +78,34 @@ PIDS=()
 
 cat >"$TMP_DIR/catalog-full.json" <<'JSON'
 {
-  "movies": [],
-  "series": [],
+  "movies": [
+    {
+      "id": "m1",
+      "title": "Movie One",
+      "year": 2024,
+      "stream_url": "http://example.invalid/movie-1.mp4"
+    }
+  ],
+  "series": [
+    {
+      "id": "s1",
+      "title": "Series One",
+      "seasons": [
+        {
+          "number": 1,
+          "episodes": [
+            {
+              "id": "e1",
+              "season_num": 1,
+              "episode_num": 1,
+              "title": "Pilot",
+              "stream_url": "http://example.invalid/series-1.mp4"
+            }
+          ]
+        }
+      ]
+    }
+  ],
   "live_channels": [
     {
       "channel_id": "ch1",
@@ -150,6 +176,39 @@ cat >"$TMP_DIR/xtream-users.json" <<'JSON'
       "allowed_channel_ids": ["ch1"],
       "allowed_movie_ids": ["m1"],
       "allowed_category_ids": ["news"]
+    }
+  ]
+}
+JSON
+
+cat >"$TMP_DIR/lineup-harvest.json" <<'JSON'
+{
+  "plex_url": "plex.example:32400",
+  "results": [
+    {
+      "base_url": "http://oracle-100:5004",
+      "cap": "100",
+      "friendly_name": "harvest-100",
+      "lineup_title": "Rogers West",
+      "channelmap_rows": 420
+    }
+  ]
+}
+JSON
+
+cat >"$TMP_DIR/virtual-channels.json" <<'JSON'
+{
+  "channels": [
+    {
+      "id": "vc-news",
+      "name": "News Loop",
+      "guide_number": "9001",
+      "enabled": true,
+      "loop_daily_utc": true,
+      "entries": [
+        { "type": "movie", "movie_id": "m1", "duration_mins": 60 },
+        { "type": "episode", "series_id": "s1", "episode_id": "e1", "duration_mins": 30 }
+      ]
     }
   ]
 }
@@ -279,6 +338,8 @@ run_serve() {
   IPTV_TUNERR_XTREAM_PASS=secret \
   IPTV_TUNERR_XTREAM_USERS_FILE="$TMP_DIR/xtream-users.json" \
   IPTV_TUNERR_PROGRAMMING_RECIPE_FILE="$TMP_DIR/programming.json" \
+  IPTV_TUNERR_PLEX_LINEUP_HARVEST_FILE="$TMP_DIR/lineup-harvest.json" \
+  IPTV_TUNERR_VIRTUAL_CHANNELS_FILE="$TMP_DIR/virtual-channels.json" \
   IPTV_TUNERR_RECORDING_RULES_FILE="$TMP_DIR/recording-rules.json" \
   IPTV_TUNERR_CATCHUP_RECORDER_STATE_FILE="$TMP_DIR/recorder-state.json" \
   "$BIN" serve -catalog "$catalog" -addr ":$port" -base-url "http://127.0.0.1:$port" \
@@ -318,6 +379,9 @@ grep -q '"curated_channels": 1' <(curl -sS "http://127.0.0.1:$port_full/programm
 grep -q '"id": "news"' <(curl -sS "http://127.0.0.1:$port_full/programming/categories.json") || fail "programming categories missing News"
 grep -q '"id": "sports"' <(curl -sS "http://127.0.0.1:$port_full/programming/categories.json") || fail "programming categories missing Sports"
 grep -q '"group_count": 0' <(curl -sS "http://127.0.0.1:$port_full/programming/backups.json") || fail "programming backups unexpected initial group"
+grep -q '"lineup_title": "Rogers West"' <(curl -sS "http://127.0.0.1:$port_full/programming/harvest.json") || fail "programming harvest missing seeded lineup title"
+grep -q '"harvest_ready": true' <(curl -sS "http://127.0.0.1:$port_full/programming/preview.json") || fail "programming preview missing harvest readiness"
+grep -q '"resolved_name": "Movie One"' <(curl -sS "http://127.0.0.1:$port_full/virtual-channels/preview.json?per_channel=2") || fail "virtual channel preview missing movie slot"
 grep -q '"alternative_sources"' <(curl -sS "http://127.0.0.1:$port_full/programming/channel-detail.json?channel_id=ch1") || fail "programming channel detail missing alternatives section"
 grep -q '"stream_type":"live"' <(curl -sS "http://127.0.0.1:$port_full/player_api.php?username=demo&password=secret&action=get_live_streams") || fail "xtream live streams endpoint missing live row"
 limited_live="$(curl -sS "http://127.0.0.1:$port_full/player_api.php?username=limited&password=pw&action=get_live_streams")"

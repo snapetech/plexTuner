@@ -561,7 +561,7 @@ IPTV_TUNERR_REGISTER_RECIPE=healthy        # use channel-intelligence scoring to
 # or: sports_now | kids_safe | locals_first
 ```
 
-For durable server-side curation beyond the built-in lineup recipes, set `IPTV_TUNERR_PROGRAMMING_RECIPE_FILE=/path/to/programming.json`. Tunerr will then expose `/programming/categories.json`, `/programming/channels.json`, `/programming/order.json`, `/programming/backups.json`, `/programming/recipe.json`, and `/programming/preview.json`, apply category/channel overrides before the final lineup is exposed to Plex, support `order_mode: "recommended"` for a server-side Local/News/Sports/etc. ordering, and optionally collapse exact same-channel siblings into one visible row with merged backup stream URLs via `collapse_exact_backups: true`.
+For durable server-side curation beyond the built-in lineup recipes, set `IPTV_TUNERR_PROGRAMMING_RECIPE_FILE=/path/to/programming.json`. Tunerr will then expose `/programming/categories.json`, `/programming/channels.json`, `/programming/order.json`, `/programming/backups.json`, `/programming/harvest.json`, `/programming/recipe.json`, and `/programming/preview.json`, apply category/channel overrides before the final lineup is exposed to Plex, support `order_mode: "recommended"` for a server-side Local/News/Sports/etc. ordering, optionally collapse exact same-channel siblings into one visible row with merged backup stream URLs via `collapse_exact_backups: true`, and surface any saved Plex lineup-harvest report configured via `IPTV_TUNERR_PLEX_LINEUP_HARVEST_FILE`.
 
 For catch-up preview/publish flows:
 

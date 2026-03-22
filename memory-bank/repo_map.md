@@ -30,6 +30,8 @@ Normal push path from this checkout: `git push origin main`. Never `git push git
 | **`internal/channelreport/`** | Channel intelligence scoring and report building. |
 | **`internal/channeldna/`** | Stable per-channel identity (`dna_id`) and grouping/report surfaces. |
 | **`internal/emby/`** | Emby/Jellyfin tuner registration plus catch-up library registration helpers. |
+| **`internal/plexharvest/`** | Plex lineup-harvest engine for cap/template sweeps, channel-map polling, deduped lineup summaries, and persisted harvest reports that now feed Programming Manager surfaces. |
+| **`internal/virtualchannels/`** | File-backed synthetic-channel rules and preview scheduler over catalog movies/episodes; current starter powers `/virtual-channels/rules.json` and `/virtual-channels/preview.json`. |
 | **`internal/vodfs/`** | FUSE: root, Movies/TV dirs, virtual files (NodeOpener, keep FD). |
 | **`AGENTS.md`** | Agent instructions; **`memory-bank/`** = state + process. |
 | **`docs/index.md`** | Doc map (Diátaxis). |
