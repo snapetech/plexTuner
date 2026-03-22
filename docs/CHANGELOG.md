@@ -13,6 +13,8 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.29] — 2026-03-21
+
 ### Fixed
 
 - **Xtream export identity collisions**: downstream `xmltv.php` / `get.php` now use canonical exported ids based on Tunerr `ChannelID` instead of raw provider `TVGID`, preventing sibling variants from collapsing when an upstream provider reuses `tvg_id` or guide numbers.
