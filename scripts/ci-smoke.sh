@@ -320,6 +320,25 @@ cat >"$TMP_DIR/catalog-vod.json" <<'JSON'
 }
 JSON
 
+cat >"$TMP_DIR/catalog-shared.json" <<'JSON'
+{
+  "movies": [],
+  "series": [],
+  "live_channels": [
+    {
+      "channel_id": "shared1",
+      "guide_number": "111",
+      "guide_name": "Shared Relay",
+      "group_title": "News",
+      "stream_url": "REPLACE_SHARED_HLS_URL",
+      "stream_urls": ["REPLACE_SHARED_HLS_URL"],
+      "epg_linked": true,
+      "tvg_id": "shared.relay"
+    }
+  ]
+}
+JSON
+
 mkdir -p "$TMP_DIR/assets"
 printf 'movie-bytes' >"$TMP_DIR/assets/movie.bin"
 printf 'episode-bytes' >"$TMP_DIR/assets/episode.bin"
@@ -365,6 +384,63 @@ run_asset_server() {
   PIDS+=("$!")
 }
 
+run_slow_hls_server() {
+  local port="$1"
+  HLS_PORT="$port" HLS_ROOT="$TMP_DIR" python3 - <<'PY' >"$TMP_DIR/slow-hls-$port.log" 2>&1 &
+import os
+import socketserver
+import time
+from http.server import BaseHTTPRequestHandler
+
+PORT = int(os.environ["HLS_PORT"])
+ROOT = os.environ["HLS_ROOT"]
+
+PLAYLIST = """#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:1
+#EXTINF:2.0,
+/seg1.ts
+#EXTINF:2.0,
+/seg2.ts
+"""
+
+SEGMENT = bytes([0x47]) + b"\x00" * 187
+SEGMENT = SEGMENT * 2000
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/shared.m3u8":
+            body = PLAYLIST.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-mpegURL")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path in ("/seg1.ts", "/seg2.ts"):
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp2t")
+            self.send_header("Content-Length", str(len(SEGMENT)))
+            self.end_headers()
+            chunk = 188 * 50
+            for i in range(0, len(SEGMENT), chunk):
+                self.wfile.write(SEGMENT[i:i+chunk])
+                self.wfile.flush()
+                time.sleep(0.02)
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def log_message(self, fmt, *args):
+        return
+
+with socketserver.TCPServer(("127.0.0.1", PORT), Handler) as httpd:
+    httpd.serve_forever()
+PY
+  PIDS+=("$!")
+}
+
 port_assets="$(pick_port)"
 run_asset_server "$port_assets"
 wait_http_code "http://127.0.0.1:$port_assets/movie.bin" "200" || fail "asset server not ready"
@@ -374,6 +450,11 @@ for catalog_file in "$TMP_DIR/catalog-full.json" "$TMP_DIR/catalog-full-shuffled
 done
 sed -i "s|http://example.invalid/movie-1.mp4|http://127.0.0.1:$port_assets/movie.bin|g" "$TMP_DIR/catalog-full.json" "$TMP_DIR/catalog-full-shuffled.json"
 sed -i "s|http://example.invalid/series-1.mp4|http://127.0.0.1:$port_assets/episode.bin|g" "$TMP_DIR/catalog-full.json" "$TMP_DIR/catalog-full-shuffled.json"
+
+port_hls="$(pick_port)"
+run_slow_hls_server "$port_hls"
+wait_http_code "http://127.0.0.1:$port_hls/shared.m3u8" "200" || fail "slow hls server not ready"
+sed -i "s|REPLACE_SHARED_HLS_URL|http://127.0.0.1:$port_hls/shared.m3u8|g" "$TMP_DIR/catalog-shared.json"
 
 port_full="$(pick_port)"
 run_serve "$TMP_DIR/catalog-full.json" "$port_full"
@@ -514,5 +595,32 @@ limited_movie_body="$(curl -sS "http://127.0.0.1:$port_xtream/movie/limited/pw/m
 [[ "$limited_movie_body" == "movie-bytes" ]] || fail "limited xtream movie proxy body unexpected"
 limited_series_code="$(curl -sS -o "$body_file" -w '%{http_code}' "http://127.0.0.1:$port_xtream/series/limited/pw/e1.mp4" || true)"
 [[ "$limited_series_code" == "404" ]] || fail "limited xtream series proxy status=$limited_series_code body=$(cat "$body_file" 2>/dev/null)"
+
+port_shared="$(pick_port)"
+IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
+IPTV_TUNERR_XMLTV_URL= \
+IPTV_TUNERR_WEBUI_DISABLED=1 \
+IPTV_TUNERR_FFMPEG_DISABLED=1 \
+IPTV_TUNERR_XTREAM_USER=demo \
+IPTV_TUNERR_XTREAM_PASS=secret \
+IPTV_TUNERR_PROGRAMMING_RECIPE_FILE="$TMP_DIR/programming.json" \
+"$BIN" serve -catalog "$TMP_DIR/catalog-shared.json" -addr ":$port_shared" -base-url "http://127.0.0.1:$port_shared" \
+  >"$TMP_DIR/serve-shared-$port_shared.log" 2>&1 &
+PIDS+=("$!")
+wait_http_code "http://127.0.0.1:$port_shared/discover.json" "200" || fail "shared relay discover.json not ready"
+curl -sS "http://127.0.0.1:$port_shared/stream/shared1" -o "$TMP_DIR/shared-first.out" &
+first_stream_pid=$!
+sleep 0.25
+shared_headers="$TMP_DIR/shared-second.headers"
+curl -sS -D "$shared_headers" "http://127.0.0.1:$port_shared/stream/shared1" -o "$TMP_DIR/shared-second.out" &
+second_stream_pid=$!
+sleep 0.25
+grep -q '"count": 1' <(curl -sS "http://127.0.0.1:$port_shared/debug/shared-relays.json") || fail "shared relay report missing active relay"
+grep -q '"subscriber_count": 1' <(curl -sS "http://127.0.0.1:$port_shared/debug/shared-relays.json") || fail "shared relay report missing joined subscriber"
+wait "$first_stream_pid"
+wait "$second_stream_pid"
+grep -qi '^X-IptvTunerr-Shared-Upstream: hls_go' "$shared_headers" || fail "shared relay second consumer missing shared upstream header"
+[[ -s "$TMP_DIR/shared-first.out" ]] || fail "shared relay first consumer got no bytes"
+[[ -s "$TMP_DIR/shared-second.out" ]] || fail "shared relay second consumer got no bytes"
 
 log "smoke checks passed"

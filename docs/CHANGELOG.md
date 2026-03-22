@@ -85,6 +85,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ### Testing / CI
 - **Provider-pool + WebDAV smoke coverage:** `scripts/ci-smoke.sh` now exercises `vod-webdav-mount-hint` for macOS/Windows output, runs live WebDAV `OPTIONS` / `PROPFIND` smoke against `iptv-tunerr vod-webdav`, and validates the new Programming Manager category/channel mutation flow plus preview endpoints against a real temporary binary. Targeted gateway tests also now cover provider-account local rejection, lease release after successful playback, learned per-account caps, and provider-profile account-pool visibility.
+- **Shared-relay binary proof:** `scripts/ci-smoke.sh` now stands up a throttled local HLS upstream, runs two same-channel `/stream/<id>` consumers against a real temp binary with ffmpeg disabled, and asserts `/debug/shared-relays.json` plus `X-IptvTunerr-Shared-Upstream: hls_go` on the joined client. This moves shared HLS relay reuse from unit-only confidence into the release smoke gate.
 - **Bare-metal platform smoke:** Linux can now cross-build and drive a real macOS smoke run end to end, while Windows gets a ready-to-run packaged PowerShell smoke path for the same startup/web UI/VOD contract once a host or VM is available.
 
 ### Streaming

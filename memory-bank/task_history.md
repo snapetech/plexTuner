@@ -23,6 +23,24 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: Add shared-relay binary smoke proof
+  Summary:
+    - Extended `scripts/ci-smoke.sh` with a throttled local HLS upstream and a two-consumer same-channel run against a real temp binary.
+    - The smoke now asserts both `/debug/shared-relays.json` state and `X-IptvTunerr-Shared-Upstream: hls_go` on the joined client, moving shared HLS relay reuse beyond unit-only confidence.
+    - Updated the release-readiness matrix to mark shared relay reuse as binary-smoke proven.
+  Verification:
+    - `bash -n ./scripts/ci-smoke.sh`
+    - `bash ./scripts/ci-smoke.sh`
+    - `./scripts/verify`
+  Notes:
+    - This is still not the same as broad host/live proof across Plex/client/provider combinations, but it materially improves release confidence for PAR-002.
+  Opportunities filed:
+    - none
+  Links:
+    - `scripts/ci-smoke.sh`
+    - `docs/explanations/release-readiness-matrix.md`
+
+- Date: 2026-03-21
   Title: Add explicit release-readiness matrix and gate
   Summary:
     - Added `scripts/release-readiness.sh` so pre-release validation is a concrete repeatable gate instead of an ad hoc mix of `verify` plus memory.
