@@ -4577,3 +4577,18 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - none
   Links:
     - `README.md`
+- Date: 2026-03-22
+  Title: Fix Docker workflow toolchain drift after Go 1.25 bump
+  Summary:
+    - Fixed the Docker workflow failure caused by `Dockerfile` still using `golang:1.24-alpine` after `go.mod` moved to `go 1.25.0`.
+    - Updated the container build stage to `golang:1.25-alpine`, and aligned the macOS WebDAV harness k8s job image to `golang:1.25-bookworm` so helper jobs do not carry the same stale toolchain assumption.
+  Verification:
+    - `./scripts/verify`
+    - `docker build -t iptvtunerr:ci-fix-test .`
+  Notes:
+    - The failing GitHub runs were Docker-only; `CI` itself was green. Root error was `go.mod requires go >= 1.25.0 (running go 1.24.13; GOTOOLCHAIN=local)`.
+  Opportunities filed:
+    - none
+  Links:
+    - `Dockerfile`
+    - `k8s/vod-webdav-client-macair-job.yaml`

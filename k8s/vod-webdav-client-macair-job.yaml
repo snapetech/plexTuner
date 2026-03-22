@@ -27,7 +27,7 @@ spec:
           effect: NoSchedule
       containers:
         - name: harness
-          image: golang:1.24-bookworm
+          image: golang:1.25-bookworm
           imagePullPolicy: IfNotPresent
           env:
             - name: BASE_URL
