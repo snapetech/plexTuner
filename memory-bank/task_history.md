@@ -23,6 +23,24 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-22
+  Title: Add single-credential provider fallback regression test
+  Summary:
+    - Added `TestFetchCatalog_SingleCredentialDoesNotRetryGetPHPOnPlayerAPIFailure` to lock the single-credential failure/retry shape when `player_api` returns 403 and `get.php` fallback also fails.
+    - Cleared numbered provider env overrides in that test (`_2.._4`) to guarantee a true single-credential path independent of local developer env.
+    - Kept the prior duplicate-`get.php` prevention fix unchanged and preserved existing multi-provider and mixed fallback coverage in `main_test.go`.
+  Verification:
+    - `go test -count=1 ./cmd/iptv-tunerr -run '^TestFetchCatalog_SingleCredentialDoesNotRetryGetPHPOnPlayerAPIFailure$' -v`
+    - `go test -count=1 ./cmd/iptv-tunerr -run 'TestFetchCatalog_FallsBackToGetPHPOnPlayerAPIForbidden|TestFetchCatalog_SingleCredentialDoesNotRetryGetPHPOnPlayerAPIFailure|TestFetchCatalog_DoesNotRetryGetPHPAfterDirectForbiddenFallback'`
+    - `go test ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - The new test confirms both probe-stage and direct `player_api` calls remain bounded while `get.php` is not retried per-credential.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/main_test.go`
+
+- Date: 2026-03-22
   Title: Fix duplicated get.php fallback attempts after player_api 403 failures
   Summary:
     - Added tracking of attempted provider credentials in `fetchCatalog` to avoid calling `get.php` twice for the same `(base,user,pass)` when direct `player_api` probing returns 403 and later fallback loops run.

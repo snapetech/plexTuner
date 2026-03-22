@@ -347,6 +347,60 @@ func TestFetchCatalog_FallsBackToGetPHPOnPlayerAPIForbidden(t *testing.T) {
 	}
 }
 
+func TestFetchCatalog_SingleCredentialDoesNotRetryGetPHPOnPlayerAPIFailure(t *testing.T) {
+	var baseURL string
+	playerAPIHits := map[string]int{}
+	getPHPHits := 0
+	var mu sync.Mutex
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL_2", "")
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER_2", "")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS_2", "")
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL_3", "")
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER_3", "")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS_3", "")
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL_4", "")
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER_4", "")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS_4", "")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodHead && r.URL.Path == "/":
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/player_api.php":
+			mu.Lock()
+			playerAPIHits[r.URL.RawQuery]++
+			mu.Unlock()
+			http.Error(w, "forbidden", http.StatusForbidden)
+		case r.URL.Path == "/get.php":
+			mu.Lock()
+			getPHPHits++
+			mu.Unlock()
+			http.Error(w, "forbidden", http.StatusForbidden)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	baseURL = srv.URL
+
+	cfg := &config.Config{
+		ProviderBaseURL: baseURL,
+		ProviderUser:    "u",
+		ProviderPass:    "p",
+		LiveOnly:        true,
+	}
+
+	_, err := fetchCatalog(cfg, "")
+	if err == nil {
+		t.Fatalf("fetchCatalog expected failure")
+	}
+	if playerAPIHits["username=u&password=p"] != 2 {
+		t.Fatalf("player_api hits=%d for username=u&password=p want 2 (probe + direct)", playerAPIHits["username=u&password=p"])
+	}
+	if getPHPHits != 1 {
+		t.Fatalf("get.php hits=%d want 1", getPHPHits)
+	}
+}
+
 func TestFetchCatalog_DoesNotRetryGetPHPAfterDirectForbiddenFallback(t *testing.T) {
 	var baseURL string
 	playerAPIHits := map[string]int{}
