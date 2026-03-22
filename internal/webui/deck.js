@@ -23,6 +23,7 @@ const endpoints = {
   programmingOrder: "/api/programming/order.json",
   programmingBackups: "/api/programming/backups.json",
   programmingHarvest: "/api/programming/harvest.json",
+  programmingHarvestImport: "/api/programming/harvest-import.json",
   programmingRecipe: "/api/programming/recipe.json",
   programmingPreview: "/api/programming/preview.json?limit=12",
   operatorActionsStatus: "/api/ops/actions/status.json",
@@ -55,6 +56,7 @@ const endpointCatalog = {
   programmingOrder: { title: "Programming Order", category: "Programming", summary: "Manual lineup order mutations and order-mode state." },
   programmingBackups: { title: "Programming Backups", category: "Programming", summary: "Exact sibling backup groups that can collapse into one visible lineup row." },
   programmingHarvest: { title: "Programming Harvest", category: "Programming", summary: "Persisted Plex lineup-harvest report and deduped candidate lineup titles." },
+  programmingHarvestImport: { title: "Programming Harvest Import", category: "Programming", summary: "Preview/apply a harvested lineup as a real Programming Manager recipe." },
   programmingRecipe: { title: "Programming Recipe", category: "Programming", summary: "Durable saved recipe file backing category/channel/order decisions." },
   programmingPreview: { title: "Programming Preview", category: "Programming", summary: "Curated lineup preview with taxonomy buckets and backup groups." },
   operatorActionsStatus: { title: "Operator Action Status", category: "Deck Control", summary: "Availability and current status of safe operator actions." },
@@ -340,6 +342,14 @@ function programmingOrderButtons(channel, lineup, recipe) {
     next ? createTinyButton(`data-programming-post="order" data-programming-action="after" data-programming-id="${esc(id)}" data-programming-anchor="${esc(next)}"`, "Down") : "",
     createTinyButton(`data-programming-post="order" data-programming-action="remove" data-programming-id="${esc(id)}"`, "Drop Order"),
     createTinyButton(`data-programming-post="channel" data-programming-action="include" data-programming-id="${esc(id)}"`, normalizeArray(recipe?.included_channel_ids).includes(id) ? "Pinned In" : "Include")
+  ].join("");
+}
+
+function programmingHarvestButtons(row) {
+  const title = esc(row?.lineup_title || "");
+  return [
+    createTinyButton(`data-open-path="/api/programming/harvest-import.json?lineup_title=${encodeURIComponent(row?.lineup_title || "")}&replace=1" data-open-title="Harvest Import Preview · ${title}"`, "Preview Import"),
+    createTinyButton(`data-programming-harvest-import="${title}" data-programming-harvest-collapse="1"`, "Apply")
   ].join("");
 }
 
@@ -1117,7 +1127,7 @@ function renderDeck() {
     createCard("Harvested lineup candidates", harvestLineups.length
       ? harvestLineups.slice(0, 6).map((row) => `${row.lineup_title} (${row.best_channelmap_rows || 0})`).join(" | ")
       : "No persisted Plex lineup harvest report configured yet.", "", "", "programmingHarvest",
-      `<button class="tiny" type="button" data-inspect="programmingHarvest">Inspect Harvest</button>`),
+      `${harvestLineups[0] ? programmingHarvestButtons(harvestLineups[0]) : ""} <button class="tiny" type="button" data-inspect="programmingHarvest">Inspect Harvest</button>`),
     createCard("Recommended buckets", bucketEntries.length
       ? bucketEntries.sort((a, b) => b[1] - a[1]).map(([bucket, count]) => `${bucket}: ${count}`).slice(0, 8).join(" | ")
       : "No bucket counts yet.", "", "", "programmingPreview"),
@@ -1159,7 +1169,8 @@ function renderDeck() {
         `${pretty(row.successes)} successful target(s) · best channelmap ${pretty(row.best_channelmap_rows)}`,
         normalizeArray(row.friendly_names).join(" · "),
         "",
-        "programmingHarvest"
+        "programmingHarvest",
+        `<div class="card-actions">${programmingHarvestButtons(row)}</div>`
       )
     )).join("");
   }
@@ -1492,6 +1503,15 @@ function bindUI() {
         ...recipe,
         order_mode: programmingMode.getAttribute("data-programming-mode")
       }, "programming_order_mode");
+      return;
+    }
+    const programmingHarvestImport = event.target.closest("[data-programming-harvest-import]");
+    if (programmingHarvestImport) {
+      postProgramming(endpoints.programmingHarvestImport, {
+        lineup_title: programmingHarvestImport.getAttribute("data-programming-harvest-import") || "",
+        replace: true,
+        collapse_exact_backups: programmingHarvestImport.getAttribute("data-programming-harvest-collapse") === "1"
+      }, "programming_harvest_import");
       return;
     }
     const rawButton = event.target.closest("[data-select-raw]");

@@ -4261,3 +4261,7 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
   - Matching uses strong signals first (`tvg_id`, then normalized guide name) and preserves harvested order as a custom Programming Manager order.
   - Added server tests plus smoke coverage for the harvest-import preview contract.
   - Verification: `go test ./internal/plexharvest ./internal/tuner -run 'Test(Probe_pollsAndCapturesLineupTitle|SaveLoadReportFile_roundTrip|Server_(programmingHarvestEndpoint|programmingPreviewIncludesHarvestSummary|programmingHarvestImport))' -count=1`; `bash ./scripts/ci-smoke.sh`; `./scripts/verify`.
+- 2026-03-21: Wired harvest import actions into the dedicated control deck.
+  - The Programming lane now offers direct Preview Import and Apply actions for harvested lineup candidates instead of only an inspect button.
+  - The deck now calls `/programming/harvest-import.json` directly, so the new backend import flow is operable without hand-posting JSON.
+  - Verification: `node --check internal/webui/deck.js`; `./scripts/verify`.
