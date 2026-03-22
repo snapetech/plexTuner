@@ -40,17 +40,22 @@ func TestProviderEntries_multiProvider(t *testing.T) {
 	}
 }
 
-func TestProviderEntries_stopsAtGap(t *testing.T) {
+func TestProviderEntries_continuesPastGap(t *testing.T) {
 	os.Clearenv()
 	os.Setenv("IPTV_TUNERR_PROVIDER_URL", "http://host1")
 	os.Setenv("IPTV_TUNERR_PROVIDER_USER", "u1")
 	os.Setenv("IPTV_TUNERR_PROVIDER_PASS", "p1")
-	// No _2, but has _3 — should NOT pick up _3 because we stop at first gap.
+	// No _2, but has _3 — should still pick up _3.
 	os.Setenv("IPTV_TUNERR_PROVIDER_URL_3", "http://host3")
+	os.Setenv("IPTV_TUNERR_PROVIDER_USER_3", "u3")
+	os.Setenv("IPTV_TUNERR_PROVIDER_PASS_3", "p3")
 	c := Load()
 	entries := c.ProviderEntries()
-	if len(entries) != 1 {
-		t.Fatalf("expected 1 entry (gap at _2 stops scan), got %d", len(entries))
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries with gap tolerated, got %d", len(entries))
+	}
+	if entries[1].BaseURL != "http://host3" || entries[1].User != "u3" || entries[1].Pass != "p3" {
+		t.Fatalf("unexpected gap entry: %+v", entries[1])
 	}
 }
 
@@ -138,6 +143,42 @@ func TestM3UURLsOrBuild_multiple(t *testing.T) {
 	}
 }
 
+func TestM3UURLsOrBuild_UsesPerProviderCredentials(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("IPTV_TUNERR_PROVIDER_URL", "http://a.com")
+	os.Setenv("IPTV_TUNERR_PROVIDER_USER", "u1")
+	os.Setenv("IPTV_TUNERR_PROVIDER_PASS", "p1")
+	os.Setenv("IPTV_TUNERR_PROVIDER_URL_2", "http://b.com")
+	os.Setenv("IPTV_TUNERR_PROVIDER_USER_2", "u2")
+	os.Setenv("IPTV_TUNERR_PROVIDER_PASS_2", "p2")
+	c := Load()
+	urls := c.M3UURLsOrBuild()
+	if len(urls) != 2 {
+		t.Fatalf("M3UURLsOrBuild() len = %d, want 2", len(urls))
+	}
+	if urls[0] != "http://a.com/get.php?username=u1&password=p1&type=m3u_plus&output=ts" {
+		t.Errorf("first URL: %q", urls[0])
+	}
+	if urls[1] != "http://b.com/get.php?username=u2&password=p2&type=m3u_plus&output=ts" {
+		t.Errorf("second URL: %q", urls[1])
+	}
+}
+
+func TestM3UURLsOrBuild_NormalizesWhitespaceAndTrailingSlashes(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("IPTV_TUNERR_PROVIDER_URL", "  http://a.com///  ")
+	os.Setenv("IPTV_TUNERR_PROVIDER_USER", "u")
+	os.Setenv("IPTV_TUNERR_PROVIDER_PASS", "p")
+	c := Load()
+	urls := c.M3UURLsOrBuild()
+	if len(urls) != 1 {
+		t.Fatalf("M3UURLsOrBuild() len = %d, want 1", len(urls))
+	}
+	if want := "http://a.com/get.php?username=u&password=p&type=m3u_plus&output=ts"; urls[0] != want {
+		t.Fatalf("M3UURLsOrBuild()[0] = %q, want %q", urls[0], want)
+	}
+}
+
 func TestM3UURLsOrBuild_preferM3UURL(t *testing.T) {
 	os.Clearenv()
 	os.Setenv("IPTV_TUNERR_M3U_URL", "http://custom/m3u")
@@ -161,6 +202,20 @@ func TestM3UURLsOrBuild_multipleDirectM3UURLs(t *testing.T) {
 	}
 	if urls[0] != "http://custom/m3u" || urls[1] != "http://custom/m3u2" || urls[2] != "http://custom/m3u3" {
 		t.Fatalf("unexpected direct M3U URLs: %v", urls)
+	}
+}
+
+func TestM3UURLsOrBuild_continuesPastGap(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("IPTV_TUNERR_M3U_URL", "http://custom/m3u")
+	os.Setenv("IPTV_TUNERR_M3U_URL_3", "http://custom/m3u3")
+	c := Load()
+	urls := c.M3UURLsOrBuild()
+	if len(urls) != 2 {
+		t.Fatalf("M3UURLsOrBuild() len = %d, want 2", len(urls))
+	}
+	if urls[0] != "http://custom/m3u" || urls[1] != "http://custom/m3u3" {
+		t.Fatalf("unexpected direct M3U URLs across gap: %v", urls)
 	}
 }
 

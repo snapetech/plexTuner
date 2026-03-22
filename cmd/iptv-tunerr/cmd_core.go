@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -135,22 +135,29 @@ func handleIndex(cfg *config.Config, m3uURL, catalogPath string) {
 
 func handleProbe(cfg *config.Config, probeURLs string, timeout time.Duration) {
 	entries := cfg.ProviderEntries()
+	type probeTarget struct {
+		BaseURL string
+		User    string
+		Pass    string
+	}
+	probeTargets := make([]probeTarget, 0, len(entries))
 	baseURLs := make([]string, 0, len(entries))
-	entryByBase := make(map[string]config.ProviderEntry, len(entries))
 	for _, entry := range entries {
-		base := strings.TrimSpace(strings.TrimSuffix(entry.BaseURL, "/"))
+		base := normalizeProbeBaseURL(entry.BaseURL)
 		if base == "" {
 			continue
 		}
+		probeTargets = append(probeTargets, probeTarget{BaseURL: base, User: entry.User, Pass: entry.Pass})
 		baseURLs = append(baseURLs, base)
-		entryByBase[base] = entry
 	}
 	if probeURLs != "" {
 		parts := strings.Split(probeURLs, ",")
+		probeTargets = make([]probeTarget, 0, len(parts))
 		baseURLs = make([]string, 0, len(parts))
 		for _, p := range parts {
-			p = strings.TrimSpace(strings.TrimSuffix(p, "/"))
+			p = normalizeProbeBaseURL(p)
 			if p != "" {
+				probeTargets = append(probeTargets, probeTarget{BaseURL: p, User: cfg.ProviderUser, Pass: cfg.ProviderPass})
 				baseURLs = append(baseURLs, p)
 			}
 		}
@@ -159,98 +166,181 @@ func handleProbe(cfg *config.Config, probeURLs string, timeout time.Duration) {
 		log.Print("No URLs to probe. Set IPTV_TUNERR_PROVIDER_URL(S) and USER, PASS in .env, or pass -urls=http://host1.com,http://host2.com")
 		os.Exit(1)
 	}
-	m3uURLs := make([]string, 0, len(baseURLs))
-	for _, base := range baseURLs {
-		entry, ok := entryByBase[base]
-		if !ok && probeURLs == "" {
+	probeableCount := 0
+	for _, target := range probeTargets {
+		if target.User == "" || target.Pass == "" {
+			log.Printf("Skipping %s: missing provider credentials", target.BaseURL)
 			continue
 		}
-		user, pass := cfg.ProviderUser, cfg.ProviderPass
-		if ok {
-			user, pass = entry.User, entry.Pass
-		}
-		if user == "" || pass == "" {
-			log.Printf("Skipping %s: missing provider credentials", base)
-			continue
-		}
-		m3uURLs = append(m3uURLs, base+"/get.php?username="+url.QueryEscape(user)+"&password="+url.QueryEscape(pass)+"&type=m3u_plus&output=ts")
+		probeableCount++
 	}
-	if len(m3uURLs) == 0 {
+	if probeableCount == 0 {
 		log.Print("No probeable provider URLs with credentials. Set IPTV_TUNERR_PROVIDER_URL[_N], USER[_N], PASS[_N] in .env")
 		os.Exit(1)
 	}
-	log.Printf("Probing %d host(s) — get.php and player_api.php (timeout %v)...", len(baseURLs), timeout)
+	log.Printf("Probing %d provider credential set(s) — get.php (all variants) + player_api.php (timeout %v)...", probeableCount, timeout)
 	sharedClient := httpclient.WithTimeout(timeout)
 	var getOK, apiOK []string
-	getCloudflare := 0
-	getAccessDenied := 0
-	getRateLimited := 0
-	getTimeoutOrError := 0
-	for _, base := range baseURLs {
-		entry, ok := entryByBase[base]
-		user, pass := cfg.ProviderUser, cfg.ProviderPass
-		if ok {
-			user, pass = entry.User, entry.Pass
-		}
-		if user == "" || pass == "" {
-			log.Printf("  %s", base)
-			log.Printf("    skipped     missing credentials")
+	getOKCount := 0
+	apiOKCount := 0
+	seenGetOK := map[string]struct{}{}
+	seenAPIOK := map[string]struct{}{}
+
+	for _, target := range probeTargets {
+		if target.User == "" || target.Pass == "" {
+			log.Printf("  %s  [skipped — missing credentials]", target.BaseURL)
 			continue
 		}
+
+		log.Printf("━━ %s", target.BaseURL)
+
+		// — player_api probe (quick sanity check first)
+		apiR := provider.ProbePlayerAPI(context.Background(), target.BaseURL, target.User, target.Pass, sharedClient)
+		apiExtra := ""
+		if apiR.WorkingUA != "" {
+			apiExtra = fmt.Sprintf("  ua=%s", apiR.WorkingUA)
+		}
+		log.Printf("   player_api  %-12s HTTP %-3d  %dms%s",
+			apiR.Status, apiR.StatusCode, apiR.LatencyMs, apiExtra)
+		if apiR.Status == provider.StatusOK {
+			apiOKCount++
+			if _, exists := seenAPIOK[target.BaseURL]; !exists {
+				seenAPIOK[target.BaseURL] = struct{}{}
+				apiOK = append(apiOK, target.BaseURL)
+			}
+		}
+
+		// — get.php exhaustive probe: all URL variants × all UA/protocol combos
 		client := httpclient.WithTimeout(timeout)
-		getURL := base + "/get.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&type=m3u_plus&output=ts"
-		getClient, _, prepErr := tuner.PrepareCloudflareAwareClient(context.Background(), getURL, client, "")
+		getClient, _, prepErr := tuner.PrepareCloudflareAwareClient(context.Background(),
+			target.BaseURL+"/get.php", client, "")
 		if prepErr != nil {
-			log.Printf("    get.php CF assist setup failed for %s: %v", base, prepErr)
+			log.Printf("   get.php  CF-assist setup error: %v", prepErr)
 			getClient = client
 		}
-		getRes := provider.ProbeOne(context.Background(), getURL, getClient)
-		getR := &getRes
-		if getR != nil && getR.Status == provider.StatusOK {
-			getOK = append(getOK, base)
-		}
-		if getR != nil {
-			switch getR.Status {
-			case provider.StatusCloudflare:
-				getCloudflare++
-			case provider.StatusAccessDenied:
-				getAccessDenied++
-			case provider.StatusRateLimited:
-				getRateLimited++
-			case provider.StatusTimeout, provider.StatusError:
-				getTimeoutOrError++
+		res := provider.ProbeGetPHPAll(
+			context.Background(), target.BaseURL, target.User, target.Pass, getClient)
+
+		if res.OK {
+			getOKCount++
+			if _, exists := seenGetOK[target.BaseURL]; !exists {
+				seenGetOK[target.BaseURL] = struct{}{}
+				getOK = append(getOK, target.BaseURL)
 			}
 		}
-		apiR := provider.ProbePlayerAPI(context.Background(), base, user, pass, client)
-		if apiR.Status == provider.StatusOK {
-			apiOK = append(apiOK, base)
-		}
-		getLatency := int64(0)
-		if getR != nil {
-			getLatency = getR.LatencyMs
-		}
-		log.Printf("  %s", base)
-		if getR != nil {
-			displayGet := safeurl.RedactURL(getR.URL)
-			if len(displayGet) > 70 {
-				displayGet = displayGet[:67] + "..."
+
+		// Print each attempt. Alt-path probes (xmltv, root) are printed differently.
+		seenStatus := make(map[int]bool) // deduplicate body previews for repeated same-status failures
+		for _, a := range res.Attempts {
+			isAlt := strings.HasPrefix(a.Variant, "alt/")
+			status := fmt.Sprintf("HTTP %d", a.StatusCode)
+			if a.NetError != "" {
+				status = "ERR"
 			}
-			log.Printf("    get.php     %s  HTTP %d  %dms  %s", getR.Status, getR.StatusCode, getLatency, displayGet)
-		} else {
-			log.Printf("    get.php     (no result)")
+			cfInfo := ""
+			if a.CFRay != "" {
+				cfInfo = fmt.Sprintf("  CF-Ray=%s", a.CFRay)
+			}
+			if a.CFCache != "" {
+				cfInfo += fmt.Sprintf("  CF-Cache=%s", a.CFCache)
+			}
+			if a.Server != "" && !strings.Contains(strings.ToLower(a.Server), "cloudflare") {
+				cfInfo += fmt.Sprintf("  Server=%s", a.Server)
+			}
+			if a.Location != "" {
+				cfInfo += fmt.Sprintf("  -> %s", safeurl.RedactURL(a.Location))
+			}
+			okMark := "  "
+			if a.OK {
+				okMark = "✓ "
+			}
+			errStr := ""
+			if a.NetError != "" {
+				errStr = "  err=" + a.NetError
+			}
+			ua := a.UA
+			if len(ua) > 28 {
+				ua = ua[:25] + "…"
+			}
+			if isAlt {
+				log.Printf("   %s%-30s %s %-28s   %-7s %dms%s%s",
+					okMark, a.Variant, a.Protocol, ua, status, a.LatencyMs, cfInfo, errStr)
+			} else {
+				log.Printf("   %sget.php[%-20s %s %-28s]  %-7s %dms%s%s",
+					okMark, a.Variant+"]", a.Protocol, ua, status, a.LatencyMs, cfInfo, errStr)
+			}
+
+			// Show body preview only for bypass alt variants and the first unique status
+			// code among main attempts (to avoid 11 identical "403 Forbidden" lines).
+			isBypassAlt := isAlt && (strings.HasPrefix(a.Variant, "alt/pathinfo") || a.Variant == "alt/POST")
+			showBody := !a.OK && (isBypassAlt || (!isAlt && !seenStatus[a.StatusCode]))
+			if !isAlt {
+				seenStatus[a.StatusCode] = true
+			}
+			if showBody && a.BodyPreview != "" {
+				preview := strings.Map(func(r rune) rune {
+					if r < 32 || r > 126 {
+						return ' '
+					}
+					return r
+				}, a.BodyPreview)
+				preview = strings.Join(strings.Fields(preview), " ")
+				if len(preview) > 120 {
+					preview = preview[:117] + "…"
+				}
+				if preview != "" {
+					log.Printf("             body: %s", preview)
+				}
+			}
 		}
-		log.Printf("    player_api  %s  HTTP %d  %dms", apiR.Status, apiR.StatusCode, apiR.LatencyMs)
+
+		switch {
+		case res.OK:
+			log.Printf("   get.php → OK")
+		case res.WAFIPBlock:
+			// Check if alt-path probes found xmltv accessible — confirms path-specific WAF rule.
+			// Also check if any alt/pathinfo or alt/POST attempt succeeded (bypass discovered).
+			xmltvOK := false
+			altBypass := ""
+			mainCount := 0
+			for _, a := range res.Attempts {
+				if strings.HasPrefix(a.Variant, "alt/") {
+					if a.Variant == "alt/xmltv" && a.OK {
+						xmltvOK = true
+					}
+					if a.OK && a.Variant != "alt/xmltv" && a.Variant != "alt/root" {
+						altBypass = a.Variant
+					}
+				} else {
+					mainCount++
+				}
+			}
+			if altBypass != "" {
+				log.Printf("   get.php → WAF BYPASSED via %s — use this URL pattern for ingest", altBypass)
+			} else if xmltvOK {
+				log.Printf("   get.php → WAF path-block (get.php blocked; xmltv.php accessible — WAF rule is path-specific, not IP-wide; %d variants skipped)", res.SkippedCount)
+				log.Printf("             EPG via xmltv.php works; catalog uses player_api path (unaffected)")
+			} else {
+				log.Printf("   get.php → WAF IP-block confirmed (%d combos all denied; %d further variants skipped)",
+					mainCount, res.SkippedCount)
+			}
+		default:
+			log.Printf("   get.php → all %d attempts blocked/failed", len(res.Attempts))
+		}
 	}
-	log.Printf("--- get.php: %d OK  |  player_api: %d OK ---", len(getOK), len(apiOK))
+
+	log.Printf("━━━━ get.php: %d/%d OK  |  player_api: %d/%d OK ━━━━",
+		getOKCount, probeableCount, apiOKCount, probeableCount)
+
+	// Rank providers by player_api for stream failover ordering.
 	ranked := make([]string, 0, len(baseURLs))
 	if probeURLs == "" {
-		probeEntries := make([]provider.Entry, 0, len(baseURLs))
-		for _, base := range baseURLs {
-			entry, ok := entryByBase[base]
-			if !ok {
+		probeEntries := make([]provider.Entry, 0, len(probeTargets))
+		for _, target := range probeTargets {
+			if target.User == "" || target.Pass == "" {
 				continue
 			}
-			probeEntries = append(probeEntries, provider.Entry{BaseURL: base, User: entry.User, Pass: entry.Pass})
+			probeEntries = append(probeEntries, provider.Entry{BaseURL: target.BaseURL, User: target.User, Pass: target.Pass})
 		}
 		for _, er := range provider.RankedEntries(context.Background(), probeEntries, sharedClient, provider.ProbeOptions{
 			BlockCloudflare: cfg.BlockCFProviders,
@@ -268,16 +358,16 @@ func handleProbe(cfg *config.Config, probeURLs string, timeout time.Duration) {
 		}
 	}
 	if len(getOK) > 0 {
-		log.Printf("Use get.php URL from: %s", getOK[0])
+		log.Printf("get.php working on: %s", strings.Join(getOK, ", "))
 	}
-	if len(apiOK) > 0 && len(getOK) == 0 {
-		log.Printf("get.php is unusable on all probed hosts, but player_api works on %d/%d host(s); catalog/index should still work via API fallback", len(apiOK), len(baseURLs))
-		if getCloudflare > 0 || getAccessDenied > 0 || getRateLimited > 0 || getTimeoutOrError > 0 {
-			log.Printf("get.php failure breakdown: cloudflare=%d access_denied=%d rate_limited=%d timeout_or_error=%d", getCloudflare, getAccessDenied, getRateLimited, getTimeoutOrError)
-		}
-		log.Printf("API fallback is expected here; direct get.php/M3U access is what is blocked or degraded, not the player_api ingest path. First working player_api host: %s", apiOK[0])
+	if apiOKCount > 0 && getOKCount == 0 {
+		log.Printf("get.php blocked on all probeable credential sets — player_api works on %d/%d credential set(s); catalog ingest will use API path", apiOKCount, probeableCount)
 	}
-	if len(getOK) == 0 && len(apiOK) == 0 {
+	if getOKCount == 0 && apiOKCount == 0 {
 		log.Print("No viable host. Check credentials and network.")
 	}
+}
+
+func normalizeProbeBaseURL(base string) string {
+	return strings.TrimRight(strings.TrimSpace(base), "/")
 }

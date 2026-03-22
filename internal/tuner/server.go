@@ -135,6 +135,7 @@ type Server struct {
 	HDHRGuideTimeout time.Duration
 	// RuntimeSnapshot is an optional read-only view of effective settings for the operator dashboard.
 	RuntimeSnapshot *RuntimeSnapshot
+	runtimeMu       sync.RWMutex
 
 	// health state updated by UpdateChannels; read by /healthz and /readyz.
 	healthMu       sync.RWMutex
@@ -165,6 +166,106 @@ type RuntimeSnapshot struct {
 	Events        map[string]interface{} `json:"events,omitempty"`
 	MediaServers  map[string]interface{} `json:"media_servers,omitempty"`
 	URLs          map[string]string      `json:"urls,omitempty"`
+}
+
+func cloneInterfaceMap(src map[string]interface{}) map[string]interface{} {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[string]interface{}, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+func cloneStringMap(src map[string]string) map[string]string {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[string]string, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+func cloneRuntimeSnapshot(src *RuntimeSnapshot) *RuntimeSnapshot {
+	if src == nil {
+		return nil
+	}
+	return &RuntimeSnapshot{
+		GeneratedAt:   src.GeneratedAt,
+		Version:       src.Version,
+		ListenAddress: src.ListenAddress,
+		BaseURL:       src.BaseURL,
+		DeviceID:      src.DeviceID,
+		FriendlyName:  src.FriendlyName,
+		Tuner:         cloneInterfaceMap(src.Tuner),
+		Guide:         cloneInterfaceMap(src.Guide),
+		Provider:      cloneInterfaceMap(src.Provider),
+		Recorder:      cloneInterfaceMap(src.Recorder),
+		HDHR:          cloneInterfaceMap(src.HDHR),
+		WebUI:         cloneInterfaceMap(src.WebUI),
+		Events:        cloneInterfaceMap(src.Events),
+		MediaServers:  cloneInterfaceMap(src.MediaServers),
+		URLs:          cloneStringMap(src.URLs),
+	}
+}
+
+func (s *Server) SetRuntimeSnapshot(snapshot *RuntimeSnapshot) {
+	if s == nil {
+		return
+	}
+	s.runtimeMu.Lock()
+	s.RuntimeSnapshot = snapshot
+	s.runtimeMu.Unlock()
+}
+
+func (s *Server) UpdateRuntimeTunerSetting(key string, value interface{}) {
+	if s == nil || strings.TrimSpace(key) == "" {
+		return
+	}
+	s.runtimeMu.Lock()
+	defer s.runtimeMu.Unlock()
+	if s.RuntimeSnapshot == nil {
+		s.RuntimeSnapshot = &RuntimeSnapshot{
+			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+			Tuner:       map[string]interface{}{},
+		}
+	}
+	if s.RuntimeSnapshot.Tuner == nil {
+		s.RuntimeSnapshot.Tuner = map[string]interface{}{}
+	}
+	s.RuntimeSnapshot.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
+	s.RuntimeSnapshot.Tuner[key] = value
+}
+
+func (s *Server) runtimeSnapshotClone() *RuntimeSnapshot {
+	if s == nil {
+		return nil
+	}
+	s.runtimeMu.RLock()
+	defer s.runtimeMu.RUnlock()
+	return cloneRuntimeSnapshot(s.RuntimeSnapshot)
+}
+
+func (s *Server) UpdateProviderContext(baseURL, user, pass string, snapshot *RuntimeSnapshot) {
+	if s == nil {
+		return
+	}
+	s.ProviderBaseURL = baseURL
+	s.ProviderUser = user
+	s.ProviderPass = pass
+	if s.gateway != nil {
+		s.gateway.setProviderCredentials(user, pass)
+	}
+	if s.xmltv != nil {
+		s.xmltv.setProviderIdentity(baseURL, user, pass)
+	}
+	if snapshot != nil {
+		s.SetRuntimeSnapshot(snapshot)
+	}
 }
 
 type OperatorActionResponse struct {
@@ -1424,23 +1525,27 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/guide/capsules.json", s.serveCatchupCapsules())
 	mux.Handle("/live.m3u", m3uServe)
 	mux.Handle("/stream/", gateway)
+	// Plex can tune activated HDHR channels through /auto/v<guide-number>, not only /stream/<channel-id>.
+	mux.Handle("/auto/", gateway)
 	mux.Handle("/healthz", s.serveHealth())
 	mux.Handle("/readyz", s.serveReady())
 	mux.Handle("/ui/guide-preview.json", s.serveOperatorGuidePreviewJSON())
 	mux.HandleFunc("/ui/guide", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		http.Redirect(w, r, "/ui/guide/", http.StatusSeeOther)
+		http.Redirect(w, r, "/ui/guide/", http.StatusTemporaryRedirect)
 	})
 	mux.Handle("/ui/guide/", s.serveOperatorGuidePreviewPage())
 	mux.HandleFunc("/ui", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		http.Redirect(w, r, "/ui/", http.StatusSeeOther)
+		http.Redirect(w, r, "/ui/", http.StatusTemporaryRedirect)
 	})
 	mux.Handle("/ui/", s.serveOperatorUI())
 	mux.Handle("/channels/report.json", s.serveChannelReport())
@@ -1474,6 +1579,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/ops/actions/stream-attempts-clear", s.serveStreamAttemptsClearAction())
 	mux.Handle("/ops/actions/stream-stop", s.serveStreamStopAction())
 	mux.Handle("/ops/actions/provider-profile-reset", s.serveProviderProfileResetAction())
+	mux.Handle("/ops/actions/shared-relay-replay", s.serveSharedRelayReplayUpdateAction())
 	mux.Handle("/ops/actions/autopilot-reset", s.serveAutopilotResetAction())
 	mux.Handle("/ops/actions/ghost-visible-stop", s.serveGhostVisibleStopAction())
 	mux.Handle("/ops/actions/ghost-hidden-recover", s.serveGhostHiddenRecoverAction())
@@ -1558,6 +1664,10 @@ func logRequests(next http.Handler) http.Handler {
 // Returns 200 {"status":"ok",...} once channels have been loaded, 503 {"status":"loading"} before.
 func (s *Server) serveHealth() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			writeMethodNotAllowed(w, http.MethodGet, http.MethodHead)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		body := s.healthStatusPayload()
 		if ready, _ := body["source_ready"].(bool); !ready {
@@ -1571,6 +1681,10 @@ func (s *Server) serveHealth() http.Handler {
 // Returns 200 {"status":"ready",...} once channels have been loaded, 503 {"status":"not_ready"} before.
 func (s *Server) serveReady() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			writeMethodNotAllowed(w, http.MethodGet, http.MethodHead)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		body := s.healthStatusPayload()
 		ready, _ := body["source_ready"].(bool)
@@ -1608,10 +1722,16 @@ func (s *Server) healthStatusPayload() map[string]interface{} {
 func writeJSONStatusBody(w http.ResponseWriter, body map[string]interface{}) {
 	encoded, err := json.Marshal(body)
 	if err != nil {
-		http.Error(w, `{"error":"encode status"}`, http.StatusInternalServerError)
+		writeServerJSONError(w, http.StatusInternalServerError, "encode status")
 		return
 	}
 	_, _ = w.Write(encoded)
+}
+
+func writeServerJSONError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte(fmt.Sprintf("{\"error\":%q}\n", msg)))
 }
 
 // epgStoreReportJSON is returned by GET /guide/epg-store.json when IPTV_TUNERR_EPG_SQLITE_PATH is set.
@@ -1636,6 +1756,10 @@ type epgStoreReportJSON struct {
 
 func (s *Server) serveEpgStoreReport() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		if s.EpgStore == nil {
 			w.WriteHeader(http.StatusServiceUnavailable)
@@ -1644,13 +1768,13 @@ func (s *Server) serveEpgStoreReport() http.Handler {
 		}
 		prog, ch, err := s.EpgStore.RowCounts()
 		if err != nil {
-			http.Error(w, `{"error":"epg store stats"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "epg store stats")
 			return
 		}
 		lastSync, _ := s.EpgStore.MetaLastSyncUTC()
 		gmax, err := s.EpgStore.GlobalMaxStopUnix()
 		if err != nil {
-			http.Error(w, `{"error":"epg store max stop"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "epg store max stop")
 			return
 		}
 		detail := false
@@ -1677,14 +1801,14 @@ func (s *Server) serveEpgStoreReport() http.Handler {
 		if detail {
 			m, err := s.EpgStore.MaxStopUnixPerChannel()
 			if err != nil {
-				http.Error(w, `{"error":"epg store per-channel max"}`, http.StatusInternalServerError)
+				writeServerJSONError(w, http.StatusInternalServerError, "epg store per-channel max")
 				return
 			}
 			rep.ChannelMaxStopUnix = m
 		}
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode epg store report"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode epg store report")
 			return
 		}
 		_, _ = w.Write(body)
@@ -1693,11 +1817,18 @@ func (s *Server) serveEpgStoreReport() http.Handler {
 
 func (s *Server) serveChannelReport() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		rep := channelreport.Build(s.Channels)
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode channel report"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode channel report")
 			return
 		}
 		_, _ = w.Write(body)
@@ -1706,6 +1837,13 @@ func (s *Server) serveChannelReport() http.Handler {
 
 func (s *Server) serveChannelLeaderboard() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		limit := 10
 		if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
@@ -1715,7 +1853,7 @@ func (s *Server) serveChannelLeaderboard() http.Handler {
 		}
 		body, err := json.MarshalIndent(channelreport.BuildLeaderboard(s.Channels, limit), "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode channel leaderboard"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode channel leaderboard")
 			return
 		}
 		_, _ = w.Write(body)
@@ -1724,10 +1862,17 @@ func (s *Server) serveChannelLeaderboard() http.Handler {
 
 func (s *Server) serveChannelDNAReport() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		body, err := json.MarshalIndent(channeldna.BuildReport(s.Channels), "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode dna report"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode dna report")
 			return
 		}
 		_, _ = w.Write(body)
@@ -1736,6 +1881,13 @@ func (s *Server) serveChannelDNAReport() http.Handler {
 
 func (s *Server) serveAutopilotReport() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		limit := 10
 		if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
@@ -1751,7 +1903,7 @@ func (s *Server) serveAutopilotReport() http.Handler {
 		}
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode autopilot report"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode autopilot report")
 			return
 		}
 		_, _ = w.Write(body)
@@ -1760,9 +1912,13 @@ func (s *Server) serveAutopilotReport() http.Handler {
 
 func (s *Server) serveGuideHighlights() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		if s.xmltv == nil {
-			http.Error(w, `{"error":"xmltv unavailable"}`, http.StatusServiceUnavailable)
+			writeServerJSONError(w, http.StatusServiceUnavailable, "xmltv unavailable")
 			return
 		}
 		soonWindow := 30 * time.Minute
@@ -1779,12 +1935,12 @@ func (s *Server) serveGuideHighlights() http.Handler {
 		}
 		rep, err := s.xmltv.GuideHighlights(time.Now(), soonWindow, limit)
 		if err != nil {
-			http.Error(w, `{"error":"guide highlights failed"}`, http.StatusBadGateway)
+			writeServerJSONError(w, http.StatusBadGateway, "guide highlights failed")
 			return
 		}
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode guide highlights"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode guide highlights")
 			return
 		}
 		_, _ = w.Write(body)
@@ -1793,9 +1949,13 @@ func (s *Server) serveGuideHighlights() http.Handler {
 
 func (s *Server) serveCatchupCapsules() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		if s.xmltv == nil {
-			http.Error(w, `{"error":"xmltv unavailable"}`, http.StatusServiceUnavailable)
+			writeServerJSONError(w, http.StatusServiceUnavailable, "xmltv unavailable")
 			return
 		}
 		horizon := 3 * time.Hour
@@ -1820,7 +1980,7 @@ func (s *Server) serveCatchupCapsules() http.Handler {
 		}
 		rep, err := s.xmltv.CatchupCapsulePreview(time.Now(), horizon, limit)
 		if err != nil {
-			http.Error(w, `{"error":"catchup capsule preview failed"}`, http.StatusBadGateway)
+			writeServerJSONError(w, http.StatusBadGateway, "catchup capsule preview failed")
 			return
 		}
 		if policy != "" {
@@ -1831,7 +1991,7 @@ func (s *Server) serveCatchupCapsules() http.Handler {
 		rep = ApplyCatchupReplayTemplate(rep, replayTemplate)
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode catchup capsules"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode catchup capsules")
 			return
 		}
 		_, _ = w.Write(body)
@@ -1840,9 +2000,13 @@ func (s *Server) serveCatchupCapsules() http.Handler {
 
 func (s *Server) serveGuidePolicy() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		if s.xmltv == nil {
-			http.Error(w, `{"error":"xmltv unavailable"}`, http.StatusServiceUnavailable)
+			writeServerJSONError(w, http.StatusServiceUnavailable, "xmltv unavailable")
 			return
 		}
 		policy := normalizeGuidePolicy(strings.TrimSpace(r.URL.Query().Get("policy")))
@@ -1857,7 +2021,7 @@ func (s *Server) serveGuidePolicy() http.Handler {
 		}
 		body, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode guide policy"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode guide policy")
 			return
 		}
 		_, _ = w.Write(body)
@@ -1866,7 +2030,9 @@ func (s *Server) serveGuidePolicy() http.Handler {
 
 func (s *Server) serveGhostHunterReport() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
+		if !operatorUIAllowed(w, r) {
+			return
+		}
 		cfg := NewGhostHunterConfigFromEnv()
 		if raw := strings.TrimSpace(r.URL.Query().Get("observe")); raw != "" {
 			if d, err := time.ParseDuration(raw); err == nil {
@@ -1882,14 +2048,24 @@ func (s *Server) serveGhostHunterReport() http.Handler {
 		if raw := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("stop"))); raw != "" {
 			stop = raw == "1" || raw == "true" || raw == "yes" || raw == "on"
 		}
+		if stop {
+			if r.Method != http.MethodPost {
+				writeMethodNotAllowedJSON(w, http.MethodPost)
+				return
+			}
+		} else if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
 		rep, err := runGhostHunterAction(r.Context(), cfg, stop, nil)
 		if err != nil {
-			http.Error(w, `{"error":"ghost hunter failed"}`, http.StatusBadGateway)
+			writeServerJSONError(w, http.StatusBadGateway, "ghost hunter failed")
 			return
 		}
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode ghost report"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode ghost report")
 			return
 		}
 		_, _ = w.Write(body)
@@ -1898,14 +2074,21 @@ func (s *Server) serveGhostHunterReport() http.Handler {
 
 func (s *Server) serveProviderProfile() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		if s.gateway == nil {
-			http.Error(w, `{"error":"gateway unavailable"}`, http.StatusServiceUnavailable)
+			writeServerJSONError(w, http.StatusServiceUnavailable, "gateway unavailable")
 			return
 		}
 		body, err := json.MarshalIndent(s.gateway.ProviderBehaviorProfile(), "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode provider profile"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode provider profile")
 			return
 		}
 		_, _ = w.Write(body)
@@ -1914,15 +2097,22 @@ func (s *Server) serveProviderProfile() http.Handler {
 
 func (s *Server) serveRecentStreamAttempts() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		if s.gateway == nil {
-			http.Error(w, `{"error":"gateway unavailable"}`, http.StatusServiceUnavailable)
+			writeServerJSONError(w, http.StatusServiceUnavailable, "gateway unavailable")
 			return
 		}
 		rep := s.gateway.RecentStreamAttempts(streamAttemptLimitFromQuery(r.URL.Query().Get("limit"), 10))
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode stream attempts"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode stream attempts")
 			return
 		}
 		_, _ = w.Write(body)
@@ -1931,6 +2121,13 @@ func (s *Server) serveRecentStreamAttempts() http.Handler {
 
 func (s *Server) serveSharedRelayReport() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		var rep SharedRelayReport
 		if s.gateway != nil {
@@ -1940,7 +2137,7 @@ func (s *Server) serveSharedRelayReport() http.Handler {
 		}
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode shared relay report"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode shared relay report")
 			return
 		}
 		_, _ = w.Write(body)
@@ -1950,17 +2147,21 @@ func (s *Server) serveSharedRelayReport() http.Handler {
 func (s *Server) serveOperatorActionStatus() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodGet)
 			return
 		}
 		if !operatorUIAllowed(w, r) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		guideRefreshStatus := XMLTVRefreshStatus{}
+		if s.xmltv != nil {
+			guideRefreshStatus = s.xmltv.RefreshStatus()
+		}
 		detail := map[string]interface{}{
 			"guide_refresh": map[string]interface{}{
 				"available": s.xmltv != nil,
-				"status":    s.xmltv.RefreshStatus(),
+				"status":    guideRefreshStatus,
 			},
 			"stream_attempts_clear": map[string]interface{}{
 				"available": s.gateway != nil,
@@ -1978,6 +2179,17 @@ func (s *Server) serveOperatorActionStatus() http.Handler {
 			},
 			"provider_profile_reset": map[string]interface{}{
 				"available": s.gateway != nil,
+			},
+			"shared_relay_replay_update": map[string]interface{}{
+				"available":        true,
+				"endpoint":         "/ops/actions/shared-relay-replay",
+				"method":           "POST",
+				"body":             `{"shared_relay_replay_bytes":262144}`,
+				"current_bytes":    strings.TrimSpace(fmt.Sprintf("%v", firstNonEmptyInterface(runtimeSnapshotTunerValue(s.runtimeSnapshotClone(), "shared_relay_replay_bytes"), os.Getenv("IPTV_TUNERR_SHARED_RELAY_REPLAY_BYTES")))),
+				"localhost_ui":     true,
+				"applies_to":       "new shared relay sessions",
+				"supports_zero":    true,
+				"supports_disable": true,
 			},
 			"autopilot_reset": map[string]interface{}{
 				"available": s.gateway != nil && s.gateway.Autopilot != nil,
@@ -2023,7 +2235,7 @@ func (s *Server) serveOperatorActionStatus() http.Handler {
 		}
 		body, err := json.MarshalIndent(detail, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode operator actions"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode operator actions")
 			return
 		}
 		_, _ = w.Write(body)
@@ -2033,7 +2245,7 @@ func (s *Server) serveOperatorActionStatus() http.Handler {
 func (s *Server) serveGuideRepairWorkflow() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodGet)
 			return
 		}
 		if !operatorUIAllowed(w, r) {
@@ -2066,7 +2278,7 @@ func (s *Server) serveGuideRepairWorkflow() http.Handler {
 		}
 		body, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode guide workflow"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode guide workflow")
 			return
 		}
 		_, _ = w.Write(body)
@@ -2076,7 +2288,7 @@ func (s *Server) serveGuideRepairWorkflow() http.Handler {
 func (s *Server) serveStreamInvestigateWorkflow() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodGet)
 			return
 		}
 		if !operatorUIAllowed(w, r) {
@@ -2114,7 +2326,7 @@ func (s *Server) serveStreamInvestigateWorkflow() http.Handler {
 		}
 		body, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode stream workflow"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode stream workflow")
 			return
 		}
 		_, _ = w.Write(body)
@@ -2124,7 +2336,7 @@ func (s *Server) serveStreamInvestigateWorkflow() http.Handler {
 func (s *Server) serveDiagnosticsWorkflow() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodGet)
 			return
 		}
 		if !operatorUIAllowed(w, r) {
@@ -2162,7 +2374,7 @@ func (s *Server) serveDiagnosticsWorkflow() http.Handler {
 		}
 		body, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode diagnostics workflow"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode diagnostics workflow")
 			return
 		}
 		_, _ = w.Write(body)
@@ -2172,7 +2384,7 @@ func (s *Server) serveDiagnosticsWorkflow() http.Handler {
 func (s *Server) serveOpsRecoveryWorkflow() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodGet)
 			return
 		}
 		if !operatorUIAllowed(w, r) {
@@ -2245,7 +2457,7 @@ func (s *Server) serveOpsRecoveryWorkflow() http.Handler {
 		}
 		body, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode ops workflow"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode ops workflow")
 			return
 		}
 		_, _ = w.Write(body)
@@ -2259,10 +2471,26 @@ func writeOperatorActionJSON(w http.ResponseWriter, status int, rep OperatorActi
 	_, _ = w.Write(body)
 }
 
+func writeMethodNotAllowed(w http.ResponseWriter, methods ...string) {
+	if len(methods) > 0 {
+		w.Header().Set("Allow", strings.Join(methods, ", "))
+	}
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+}
+
+func writeMethodNotAllowedJSON(w http.ResponseWriter, methods ...string) {
+	if len(methods) > 0 {
+		w.Header().Set("Allow", strings.Join(methods, ", "))
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusMethodNotAllowed)
+	_, _ = w.Write([]byte("{\"error\":\"method not allowed\"}\n"))
+}
+
 func (s *Server) serveGuideRefreshAction() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodPost)
 			return
 		}
 		if !operatorUIAllowed(w, r) {
@@ -2283,7 +2511,7 @@ func (s *Server) serveGuideRefreshAction() http.Handler {
 func (s *Server) serveStreamAttemptsClearAction() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodPost)
 			return
 		}
 		if !operatorUIAllowed(w, r) {
@@ -2301,7 +2529,7 @@ func (s *Server) serveStreamAttemptsClearAction() http.Handler {
 func (s *Server) serveStreamStopAction() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodPost)
 			return
 		}
 		if !operatorUIAllowed(w, r) {
@@ -2344,7 +2572,7 @@ func (s *Server) serveStreamStopAction() http.Handler {
 func (s *Server) serveProviderProfileResetAction() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodPost)
 			return
 		}
 		if !operatorUIAllowed(w, r) {
@@ -2359,10 +2587,77 @@ func (s *Server) serveProviderProfileResetAction() http.Handler {
 	})
 }
 
+func runtimeSnapshotTunerValue(snapshot *RuntimeSnapshot, key string) interface{} {
+	if snapshot == nil || snapshot.Tuner == nil {
+		return nil
+	}
+	return snapshot.Tuner[strings.TrimSpace(key)]
+}
+
+func firstNonEmptyInterface(values ...interface{}) interface{} {
+	for _, value := range values {
+		switch v := value.(type) {
+		case nil:
+			continue
+		case string:
+			if strings.TrimSpace(v) != "" {
+				return strings.TrimSpace(v)
+			}
+		default:
+			return value
+		}
+	}
+	return nil
+}
+
+func (s *Server) serveSharedRelayReplayUpdateAction() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeMethodNotAllowedJSON(w, http.MethodPost)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
+		limited := http.MaxBytesReader(w, r.Body, 65536)
+		defer limited.Close()
+		var req struct {
+			SharedRelayReplayBytes *int `json:"shared_relay_replay_bytes"`
+		}
+		if err := json.NewDecoder(limited).Decode(&req); err != nil && err != io.EOF {
+			writeOperatorActionJSON(w, http.StatusBadRequest, OperatorActionResponse{OK: false, Action: "shared_relay_replay_update", Message: "invalid json"})
+			return
+		}
+		if req.SharedRelayReplayBytes == nil {
+			writeOperatorActionJSON(w, http.StatusBadRequest, OperatorActionResponse{OK: false, Action: "shared_relay_replay_update", Message: "shared_relay_replay_bytes is required"})
+			return
+		}
+		if *req.SharedRelayReplayBytes < 0 {
+			writeOperatorActionJSON(w, http.StatusBadRequest, OperatorActionResponse{OK: false, Action: "shared_relay_replay_update", Message: "shared_relay_replay_bytes must be >= 0"})
+			return
+		}
+		value := strconv.Itoa(*req.SharedRelayReplayBytes)
+		if err := os.Setenv("IPTV_TUNERR_SHARED_RELAY_REPLAY_BYTES", value); err != nil {
+			writeOperatorActionJSON(w, http.StatusInternalServerError, OperatorActionResponse{OK: false, Action: "shared_relay_replay_update", Message: "failed to update replay setting", Detail: err.Error()})
+			return
+		}
+		s.UpdateRuntimeTunerSetting("shared_relay_replay_bytes", value)
+		writeOperatorActionJSON(w, http.StatusOK, OperatorActionResponse{
+			OK:      true,
+			Action:  "shared_relay_replay_update",
+			Message: "shared relay replay bytes updated for new sessions",
+			Detail: map[string]interface{}{
+				"shared_relay_replay_bytes": value,
+				"applies_to":                "new shared relay sessions",
+			},
+		})
+	})
+}
+
 func (s *Server) serveAutopilotResetAction() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodPost)
 			return
 		}
 		if !operatorUIAllowed(w, r) {
@@ -2383,7 +2678,7 @@ func (s *Server) serveAutopilotResetAction() http.Handler {
 func (s *Server) serveGhostVisibleStopAction() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodPost)
 			return
 		}
 		if !operatorUIAllowed(w, r) {
@@ -2410,7 +2705,7 @@ func (s *Server) serveGhostVisibleStopAction() http.Handler {
 func (s *Server) serveGhostHiddenRecoverAction() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodPost)
 			return
 		}
 		if !operatorUIAllowed(w, r) {
@@ -2446,7 +2741,7 @@ func (s *Server) serveGhostHiddenRecoverAction() http.Handler {
 func (s *Server) serveEvidenceIntakeStartAction() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodPost)
 			return
 		}
 		if !operatorUIAllowed(w, r) {
@@ -2458,7 +2753,7 @@ func (s *Server) serveEvidenceIntakeStartAction() http.Handler {
 			CaseID string `json:"case_id"`
 		}
 		if err := json.NewDecoder(limited).Decode(&req); err != nil && err != io.EOF {
-			http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
+			writeServerJSONError(w, http.StatusBadRequest, "invalid json")
 			return
 		}
 		caseID := strings.TrimSpace(req.CaseID)
@@ -2467,7 +2762,7 @@ func (s *Server) serveEvidenceIntakeStartAction() http.Handler {
 		}
 		outDir := filepath.Join(repoDiagRoot(), "evidence", caseID)
 		if err := createEvidenceIntakeBundle(outDir); err != nil {
-			http.Error(w, `{"error":"create evidence bundle failed"}`, http.StatusBadGateway)
+			writeServerJSONError(w, http.StatusBadGateway, "create evidence bundle failed")
 			return
 		}
 		writeOperatorActionJSON(w, http.StatusOK, OperatorActionResponse{
@@ -2488,7 +2783,7 @@ func (s *Server) serveEvidenceIntakeStartAction() http.Handler {
 func (s *Server) serveChannelDiffRunAction() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodPost)
 			return
 		}
 		if !operatorUIAllowed(w, r) {
@@ -2523,7 +2818,7 @@ func (s *Server) serveChannelDiffRunAction() http.Handler {
 func (s *Server) serveStreamCompareRunAction() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodPost)
 			return
 		}
 		if !operatorUIAllowed(w, r) {
@@ -2556,8 +2851,15 @@ func (s *Server) serveStreamCompareRunAction() http.Handler {
 
 func (s *Server) serveRuntimeSnapshot() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		rep := s.RuntimeSnapshot
+		rep := s.runtimeSnapshotClone()
 		if rep == nil {
 			rep = &RuntimeSnapshot{
 				GeneratedAt:  time.Now().UTC().Format(time.RFC3339),
@@ -2582,7 +2884,7 @@ func (s *Server) serveRuntimeSnapshot() http.Handler {
 		}
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode runtime snapshot"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode runtime snapshot")
 			return
 		}
 		_, _ = w.Write(body)
@@ -2591,6 +2893,13 @@ func (s *Server) serveRuntimeSnapshot() http.Handler {
 
 func (s *Server) serveEventHooksReport() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		report := eventhooks.Report{
 			Enabled:    false,
@@ -2602,7 +2911,7 @@ func (s *Server) serveEventHooksReport() http.Handler {
 		}
 		body, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode event hooks"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode event hooks")
 			return
 		}
 		_, _ = w.Write(body)
@@ -2611,6 +2920,13 @@ func (s *Server) serveEventHooksReport() http.Handler {
 
 func (s *Server) serveActiveStreamsReport() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		rep := ActiveStreamsReport{
 			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
@@ -2620,7 +2936,7 @@ func (s *Server) serveActiveStreamsReport() http.Handler {
 		}
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode active streams"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode active streams")
 			return
 		}
 		_, _ = w.Write(body)
@@ -2629,19 +2945,26 @@ func (s *Server) serveActiveStreamsReport() http.Handler {
 
 func (s *Server) serveGuideLineupMatch() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
 		if s.xmltv == nil {
-			http.Error(w, `{"error":"guide unavailable"}`, http.StatusServiceUnavailable)
+			writeServerJSONError(w, http.StatusServiceUnavailable, "guide unavailable")
 			return
 		}
 		rep, err := s.xmltv.GuideLineupMatchReport(streamAttemptLimitFromQuery(r.URL.Query().Get("limit"), 25))
 		if err != nil {
-			http.Error(w, `{"error":"guide lineup match unavailable"}`, http.StatusBadGateway)
+			writeServerJSONError(w, http.StatusBadGateway, "guide lineup match unavailable")
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode guide lineup match"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode guide lineup match")
 			return
 		}
 		_, _ = w.Write(body)
@@ -3028,12 +3351,15 @@ func (s *Server) serveProgrammingCategories() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method {
 		case http.MethodGet:
+			if !operatorUIAllowed(w, r) {
+				return
+			}
 		case http.MethodPost:
 			if !operatorUIAllowed(w, r) {
 				return
 			}
 			if strings.TrimSpace(s.ProgrammingRecipeFile) == "" {
-				http.Error(w, `{"error":"programming recipe file not configured"}`, http.StatusServiceUnavailable)
+				writeServerJSONError(w, http.StatusServiceUnavailable, "programming recipe file not configured")
 				return
 			}
 			limited := http.MaxBytesReader(w, r.Body, 65536)
@@ -3044,7 +3370,7 @@ func (s *Server) serveProgrammingCategories() http.Handler {
 				CategoryIDs []string `json:"category_ids"`
 			}
 			if err := json.NewDecoder(limited).Decode(&req); err != nil {
-				http.Error(w, `{"error":"invalid programming category json"}`, http.StatusBadRequest)
+				writeServerJSONError(w, http.StatusBadRequest, "invalid programming category json")
 				return
 			}
 			ids := append([]string(nil), req.CategoryIDs...)
@@ -3054,13 +3380,13 @@ func (s *Server) serveProgrammingCategories() http.Handler {
 			recipe := programming.UpdateRecipeCategories(s.reloadProgrammingRecipe(), req.Action, ids)
 			saved, err := programming.SaveRecipeFile(s.ProgrammingRecipeFile, recipe)
 			if err != nil {
-				http.Error(w, `{"error":"save programming recipe failed"}`, http.StatusBadGateway)
+				writeServerJSONError(w, http.StatusBadGateway, "save programming recipe failed")
 				return
 			}
 			s.ProgrammingRecipe = saved
 			s.rebuildCuratedChannelsFromRaw()
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodGet, http.MethodPost)
 			return
 		}
 		inventory := programming.BuildCategoryInventory(s.RawChannels)
@@ -3078,7 +3404,7 @@ func (s *Server) serveProgrammingCategories() http.Handler {
 		}
 		body, err := json.MarshalIndent(resp, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode programming categories"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode programming categories")
 			return
 		}
 		_, _ = w.Write(body)
@@ -3087,10 +3413,17 @@ func (s *Server) serveProgrammingCategories() http.Handler {
 
 func (s *Server) serveProgrammingBrowse() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		categoryID := strings.TrimSpace(r.URL.Query().Get("category"))
 		if categoryID == "" {
-			http.Error(w, `{"error":"category required"}`, http.StatusBadRequest)
+			writeServerJSONError(w, http.StatusBadRequest, "category required")
 			return
 		}
 		horizon := time.Hour
@@ -3114,7 +3447,7 @@ func (s *Server) serveProgrammingBrowse() http.Handler {
 				TotalChannels: 0,
 			}, "", "  ")
 			if err != nil {
-				http.Error(w, `{"error":"encode programming browse"}`, http.StatusInternalServerError)
+				writeServerJSONError(w, http.StatusInternalServerError, "encode programming browse")
 				return
 			}
 			_, _ = w.Write(body)
@@ -3239,7 +3572,7 @@ func (s *Server) serveProgrammingBrowse() http.Handler {
 		}
 		body, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode programming browse"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode programming browse")
 			return
 		}
 		_, _ = w.Write(body)
@@ -3251,6 +3584,9 @@ func (s *Server) serveProgrammingChannels() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method {
 		case http.MethodGet:
+			if !operatorUIAllowed(w, r) {
+				return
+			}
 			recipe := s.reloadProgrammingRecipe()
 			resp := map[string]interface{}{
 				"generated_at":      time.Now().UTC().Format(time.RFC3339),
@@ -3263,7 +3599,7 @@ func (s *Server) serveProgrammingChannels() http.Handler {
 			}
 			body, err := json.MarshalIndent(resp, "", "  ")
 			if err != nil {
-				http.Error(w, `{"error":"encode programming channels"}`, http.StatusInternalServerError)
+				writeServerJSONError(w, http.StatusInternalServerError, "encode programming channels")
 				return
 			}
 			_, _ = w.Write(body)
@@ -3272,7 +3608,7 @@ func (s *Server) serveProgrammingChannels() http.Handler {
 				return
 			}
 			if strings.TrimSpace(s.ProgrammingRecipeFile) == "" {
-				http.Error(w, `{"error":"programming recipe file not configured"}`, http.StatusServiceUnavailable)
+				writeServerJSONError(w, http.StatusServiceUnavailable, "programming recipe file not configured")
 				return
 			}
 			limited := http.MaxBytesReader(w, r.Body, 65536)
@@ -3283,7 +3619,7 @@ func (s *Server) serveProgrammingChannels() http.Handler {
 				ChannelIDs []string `json:"channel_ids"`
 			}
 			if err := json.NewDecoder(limited).Decode(&req); err != nil {
-				http.Error(w, `{"error":"invalid programming channel json"}`, http.StatusBadRequest)
+				writeServerJSONError(w, http.StatusBadRequest, "invalid programming channel json")
 				return
 			}
 			ids := append([]string(nil), req.ChannelIDs...)
@@ -3293,7 +3629,7 @@ func (s *Server) serveProgrammingChannels() http.Handler {
 			recipe := programming.UpdateRecipeChannels(s.reloadProgrammingRecipe(), req.Action, ids)
 			saved, err := programming.SaveRecipeFile(s.ProgrammingRecipeFile, recipe)
 			if err != nil {
-				http.Error(w, `{"error":"save programming recipe failed"}`, http.StatusBadGateway)
+				writeServerJSONError(w, http.StatusBadGateway, "save programming recipe failed")
 				return
 			}
 			s.ProgrammingRecipe = saved
@@ -3304,12 +3640,12 @@ func (s *Server) serveProgrammingChannels() http.Handler {
 				"curated_channels": len(s.Channels),
 			}, "", "  ")
 			if err != nil {
-				http.Error(w, `{"error":"encode programming channels"}`, http.StatusInternalServerError)
+				writeServerJSONError(w, http.StatusInternalServerError, "encode programming channels")
 				return
 			}
 			_, _ = w.Write(body)
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodGet, http.MethodPost)
 		}
 	})
 }
@@ -3319,6 +3655,9 @@ func (s *Server) serveProgrammingOrder() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method {
 		case http.MethodGet:
+			if !operatorUIAllowed(w, r) {
+				return
+			}
 			recipe := s.reloadProgrammingRecipe()
 			body, err := json.MarshalIndent(map[string]interface{}{
 				"generated_at":     time.Now().UTC().Format(time.RFC3339),
@@ -3329,7 +3668,7 @@ func (s *Server) serveProgrammingOrder() http.Handler {
 				"collapse_backups": recipe.CollapseExactBackups,
 			}, "", "  ")
 			if err != nil {
-				http.Error(w, `{"error":"encode programming order"}`, http.StatusInternalServerError)
+				writeServerJSONError(w, http.StatusInternalServerError, "encode programming order")
 				return
 			}
 			_, _ = w.Write(body)
@@ -3338,7 +3677,7 @@ func (s *Server) serveProgrammingOrder() http.Handler {
 				return
 			}
 			if strings.TrimSpace(s.ProgrammingRecipeFile) == "" {
-				http.Error(w, `{"error":"programming recipe file not configured"}`, http.StatusServiceUnavailable)
+				writeServerJSONError(w, http.StatusServiceUnavailable, "programming recipe file not configured")
 				return
 			}
 			limited := http.MaxBytesReader(w, r.Body, 65536)
@@ -3351,7 +3690,7 @@ func (s *Server) serveProgrammingOrder() http.Handler {
 				AfterChannelID  string   `json:"after_channel_id"`
 			}
 			if err := json.NewDecoder(limited).Decode(&req); err != nil {
-				http.Error(w, `{"error":"invalid programming order json"}`, http.StatusBadRequest)
+				writeServerJSONError(w, http.StatusBadRequest, "invalid programming order json")
 				return
 			}
 			ids := append([]string(nil), req.ChannelIDs...)
@@ -3361,7 +3700,7 @@ func (s *Server) serveProgrammingOrder() http.Handler {
 			recipe := programming.UpdateRecipeOrder(s.reloadProgrammingRecipe(), req.Action, ids, req.BeforeChannelID, req.AfterChannelID)
 			saved, err := programming.SaveRecipeFile(s.ProgrammingRecipeFile, recipe)
 			if err != nil {
-				http.Error(w, `{"error":"save programming recipe failed"}`, http.StatusBadGateway)
+				writeServerJSONError(w, http.StatusBadGateway, "save programming recipe failed")
 				return
 			}
 			s.ProgrammingRecipe = saved
@@ -3372,12 +3711,12 @@ func (s *Server) serveProgrammingOrder() http.Handler {
 				"curated_channels": len(s.Channels),
 			}, "", "  ")
 			if err != nil {
-				http.Error(w, `{"error":"encode programming order"}`, http.StatusInternalServerError)
+				writeServerJSONError(w, http.StatusInternalServerError, "encode programming order")
 				return
 			}
 			_, _ = w.Write(body)
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodGet, http.MethodPost)
 		}
 	})
 }
@@ -3387,12 +3726,15 @@ func (s *Server) serveProgrammingBackups() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method {
 		case http.MethodGet:
+			if !operatorUIAllowed(w, r) {
+				return
+			}
 		case http.MethodPost:
 			if !operatorUIAllowed(w, r) {
 				return
 			}
 			if strings.TrimSpace(s.ProgrammingRecipeFile) == "" {
-				http.Error(w, `{"error":"programming recipe file not configured"}`, http.StatusServiceUnavailable)
+				writeServerJSONError(w, http.StatusServiceUnavailable, "programming recipe file not configured")
 				return
 			}
 			limited := http.MaxBytesReader(w, r.Body, 65536)
@@ -3403,7 +3745,7 @@ func (s *Server) serveProgrammingBackups() http.Handler {
 				ChannelIDs []string `json:"channel_ids"`
 			}
 			if err := json.NewDecoder(limited).Decode(&req); err != nil {
-				http.Error(w, `{"error":"invalid programming backups json"}`, http.StatusBadRequest)
+				writeServerJSONError(w, http.StatusBadRequest, "invalid programming backups json")
 				return
 			}
 			ids := append([]string(nil), req.ChannelIDs...)
@@ -3413,13 +3755,13 @@ func (s *Server) serveProgrammingBackups() http.Handler {
 			recipe := programming.UpdateRecipeBackupPreferences(s.reloadProgrammingRecipe(), req.Action, ids)
 			saved, err := programming.SaveRecipeFile(s.ProgrammingRecipeFile, recipe)
 			if err != nil {
-				http.Error(w, `{"error":"save programming recipe failed"}`, http.StatusBadGateway)
+				writeServerJSONError(w, http.StatusBadGateway, "save programming recipe failed")
 				return
 			}
 			s.ProgrammingRecipe = saved
 			s.rebuildCuratedChannelsFromRaw()
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodGet, http.MethodPost)
 			return
 		}
 		recipe := s.reloadProgrammingRecipe()
@@ -3436,7 +3778,7 @@ func (s *Server) serveProgrammingBackups() http.Handler {
 			"groups":               groups,
 		}, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode programming backups"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode programming backups")
 			return
 		}
 		_, _ = w.Write(body)
@@ -3448,6 +3790,9 @@ func (s *Server) serveProgrammingHarvest() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method {
 		case http.MethodGet:
+			if !operatorUIAllowed(w, r) {
+				return
+			}
 			rep := s.reloadPlexLineupHarvest()
 			body, err := json.MarshalIndent(map[string]interface{}{
 				"generated_at":     time.Now().UTC().Format(time.RFC3339),
@@ -3458,7 +3803,7 @@ func (s *Server) serveProgrammingHarvest() http.Handler {
 				"report_ready":     len(rep.Results) > 0 || len(rep.Lineups) > 0,
 			}, "", "  ")
 			if err != nil {
-				http.Error(w, `{"error":"encode programming harvest"}`, http.StatusInternalServerError)
+				writeServerJSONError(w, http.StatusInternalServerError, "encode programming harvest")
 				return
 			}
 			_, _ = w.Write(body)
@@ -3467,19 +3812,19 @@ func (s *Server) serveProgrammingHarvest() http.Handler {
 				return
 			}
 			if strings.TrimSpace(s.PlexLineupHarvestFile) == "" {
-				http.Error(w, `{"error":"plex lineup harvest file not configured"}`, http.StatusServiceUnavailable)
+				writeServerJSONError(w, http.StatusServiceUnavailable, "plex lineup harvest file not configured")
 				return
 			}
 			limited := http.MaxBytesReader(w, r.Body, 1<<20)
 			defer limited.Close()
 			var rep plexharvest.Report
 			if err := json.NewDecoder(limited).Decode(&rep); err != nil {
-				http.Error(w, `{"error":"invalid programming harvest json"}`, http.StatusBadRequest)
+				writeServerJSONError(w, http.StatusBadRequest, "invalid programming harvest json")
 				return
 			}
 			saved, err := s.savePlexLineupHarvest(rep)
 			if err != nil {
-				http.Error(w, `{"error":"save programming harvest failed"}`, http.StatusBadGateway)
+				writeServerJSONError(w, http.StatusBadGateway, "save programming harvest failed")
 				return
 			}
 			body, err := json.MarshalIndent(map[string]interface{}{
@@ -3489,12 +3834,12 @@ func (s *Server) serveProgrammingHarvest() http.Handler {
 				"lineups":      saved.Lineups,
 			}, "", "  ")
 			if err != nil {
-				http.Error(w, `{"error":"encode programming harvest"}`, http.StatusInternalServerError)
+				writeServerJSONError(w, http.StatusInternalServerError, "encode programming harvest")
 				return
 			}
 			_, _ = w.Write(body)
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodGet, http.MethodPost)
 		}
 	})
 }
@@ -3505,6 +3850,9 @@ func (s *Server) serveProgrammingHarvestImport() http.Handler {
 		rep := s.reloadPlexLineupHarvest()
 		switch r.Method {
 		case http.MethodGet:
+			if !operatorUIAllowed(w, r) {
+				return
+			}
 			lineupTitle := strings.TrimSpace(r.URL.Query().Get("lineup_title"))
 			friendlyName := strings.TrimSpace(r.URL.Query().Get("friendly_name"))
 			replace := true
@@ -3517,14 +3865,14 @@ func (s *Server) serveProgrammingHarvestImport() http.Handler {
 			}
 			result, ok := chooseHarvestResult(rep, lineupTitle, friendlyName)
 			if !ok {
-				http.Error(w, `{"error":"harvest result not found"}`, http.StatusNotFound)
+				writeServerJSONError(w, http.StatusNotFound, "harvest result not found")
 				return
 			}
 			report := buildProgrammingHarvestImport(s.reloadProgrammingRecipe(), s.RawChannels, result, replace, collapse)
 			report.HarvestFile = strings.TrimSpace(s.PlexLineupHarvestFile)
 			body, err := json.MarshalIndent(report, "", "  ")
 			if err != nil {
-				http.Error(w, `{"error":"encode programming harvest import"}`, http.StatusInternalServerError)
+				writeServerJSONError(w, http.StatusInternalServerError, "encode programming harvest import")
 				return
 			}
 			_, _ = w.Write(body)
@@ -3533,7 +3881,7 @@ func (s *Server) serveProgrammingHarvestImport() http.Handler {
 				return
 			}
 			if strings.TrimSpace(s.ProgrammingRecipeFile) == "" {
-				http.Error(w, `{"error":"programming recipe file not configured"}`, http.StatusServiceUnavailable)
+				writeServerJSONError(w, http.StatusServiceUnavailable, "programming recipe file not configured")
 				return
 			}
 			limited := http.MaxBytesReader(w, r.Body, 65536)
@@ -3545,7 +3893,7 @@ func (s *Server) serveProgrammingHarvestImport() http.Handler {
 				CollapseExactBackups bool   `json:"collapse_exact_backups"`
 			}
 			if err := json.NewDecoder(limited).Decode(&req); err != nil {
-				http.Error(w, `{"error":"invalid programming harvest import json"}`, http.StatusBadRequest)
+				writeServerJSONError(w, http.StatusBadRequest, "invalid programming harvest import json")
 				return
 			}
 			replace := true
@@ -3554,13 +3902,13 @@ func (s *Server) serveProgrammingHarvestImport() http.Handler {
 			}
 			result, ok := chooseHarvestResult(rep, req.LineupTitle, req.FriendlyName)
 			if !ok {
-				http.Error(w, `{"error":"harvest result not found"}`, http.StatusNotFound)
+				writeServerJSONError(w, http.StatusNotFound, "harvest result not found")
 				return
 			}
 			report := buildProgrammingHarvestImport(s.reloadProgrammingRecipe(), s.RawChannels, result, replace, req.CollapseExactBackups)
 			saved, err := programming.SaveRecipeFile(s.ProgrammingRecipeFile, report.Recipe)
 			if err != nil {
-				http.Error(w, `{"error":"save programming recipe failed"}`, http.StatusBadGateway)
+				writeServerJSONError(w, http.StatusBadGateway, "save programming recipe failed")
 				return
 			}
 			s.ProgrammingRecipe = saved
@@ -3573,18 +3921,25 @@ func (s *Server) serveProgrammingHarvestImport() http.Handler {
 				"curated_channels": len(s.Channels),
 			}, "", "  ")
 			if err != nil {
-				http.Error(w, `{"error":"encode programming harvest import"}`, http.StatusInternalServerError)
+				writeServerJSONError(w, http.StatusInternalServerError, "encode programming harvest import")
 				return
 			}
 			_, _ = w.Write(body)
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodGet, http.MethodPost)
 		}
 	})
 }
 
 func (s *Server) serveProgrammingHarvestAssist() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		rep := s.reloadPlexLineupHarvest()
 		report := programmingHarvestAssistReport{
@@ -3614,7 +3969,7 @@ func (s *Server) serveProgrammingHarvestAssist() http.Handler {
 		})
 		body, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode programming harvest assist"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode programming harvest assist")
 			return
 		}
 		_, _ = w.Write(body)
@@ -3626,6 +3981,9 @@ func (s *Server) serveXtreamEntitlements() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method {
 		case http.MethodGet:
+			if !operatorUIAllowed(w, r) {
+				return
+			}
 			set := s.reloadXtreamEntitlements()
 			body, err := json.MarshalIndent(map[string]interface{}{
 				"generated_at": time.Now().UTC().Format(time.RFC3339),
@@ -3634,7 +3992,7 @@ func (s *Server) serveXtreamEntitlements() http.Handler {
 				"rules":        set,
 			}, "", "  ")
 			if err != nil {
-				http.Error(w, `{"error":"encode xtream entitlements"}`, http.StatusInternalServerError)
+				writeServerJSONError(w, http.StatusInternalServerError, "encode xtream entitlements")
 				return
 			}
 			_, _ = w.Write(body)
@@ -3643,39 +4001,46 @@ func (s *Server) serveXtreamEntitlements() http.Handler {
 				return
 			}
 			if strings.TrimSpace(s.XtreamUsersFile) == "" {
-				http.Error(w, `{"error":"xtream users file not configured"}`, http.StatusServiceUnavailable)
+				writeServerJSONError(w, http.StatusServiceUnavailable, "xtream users file not configured")
 				return
 			}
 			limited := http.MaxBytesReader(w, r.Body, 65536)
 			defer limited.Close()
 			var set entitlements.Ruleset
 			if err := json.NewDecoder(limited).Decode(&set); err != nil {
-				http.Error(w, `{"error":"invalid xtream entitlements json"}`, http.StatusBadRequest)
+				writeServerJSONError(w, http.StatusBadRequest, "invalid xtream entitlements json")
 				return
 			}
 			saved, err := s.saveXtreamEntitlements(set)
 			if err != nil {
-				http.Error(w, `{"error":"save xtream entitlements failed"}`, http.StatusBadGateway)
+				writeServerJSONError(w, http.StatusBadGateway, "save xtream entitlements failed")
 				return
 			}
 			body, err := json.MarshalIndent(saved, "", "  ")
 			if err != nil {
-				http.Error(w, `{"error":"encode xtream entitlements"}`, http.StatusInternalServerError)
+				writeServerJSONError(w, http.StatusInternalServerError, "encode xtream entitlements")
 				return
 			}
 			_, _ = w.Write(body)
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodGet, http.MethodPost)
 		}
 	})
 }
 
 func (s *Server) serveProgrammingChannelDetail() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		channelID := strings.TrimSpace(r.URL.Query().Get("channel_id"))
 		if channelID == "" {
-			http.Error(w, `{"error":"channel_id required"}`, http.StatusBadRequest)
+			writeServerJSONError(w, http.StatusBadRequest, "channel_id required")
 			return
 		}
 		sourceChannels := s.RawChannels
@@ -3692,7 +4057,7 @@ func (s *Server) serveProgrammingChannelDetail() http.Handler {
 			}
 		}
 		if !found {
-			http.Error(w, `{"error":"channel not found"}`, http.StatusNotFound)
+			writeServerJSONError(w, http.StatusNotFound, "channel not found")
 			return
 		}
 		categoryID, categoryLabel, categorySource := programming.CategoryIdentity(target)
@@ -3749,7 +4114,7 @@ func (s *Server) serveProgrammingChannelDetail() http.Handler {
 		}
 		body, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode programming channel detail"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode programming channel detail")
 			return
 		}
 		_, _ = w.Write(body)
@@ -3761,6 +4126,9 @@ func (s *Server) serveProgrammingRecipe() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method {
 		case http.MethodGet:
+			if !operatorUIAllowed(w, r) {
+				return
+			}
 			recipe := s.reloadProgrammingRecipe()
 			resp := map[string]interface{}{
 				"recipe":          recipe,
@@ -3769,7 +4137,7 @@ func (s *Server) serveProgrammingRecipe() http.Handler {
 			}
 			body, err := json.MarshalIndent(resp, "", "  ")
 			if err != nil {
-				http.Error(w, `{"error":"encode programming recipe"}`, http.StatusInternalServerError)
+				writeServerJSONError(w, http.StatusInternalServerError, "encode programming recipe")
 				return
 			}
 			_, _ = w.Write(body)
@@ -3778,19 +4146,19 @@ func (s *Server) serveProgrammingRecipe() http.Handler {
 				return
 			}
 			if strings.TrimSpace(s.ProgrammingRecipeFile) == "" {
-				http.Error(w, `{"error":"programming recipe file not configured"}`, http.StatusServiceUnavailable)
+				writeServerJSONError(w, http.StatusServiceUnavailable, "programming recipe file not configured")
 				return
 			}
 			limited := http.MaxBytesReader(w, r.Body, 65536)
 			defer limited.Close()
 			var recipe programming.Recipe
 			if err := json.NewDecoder(limited).Decode(&recipe); err != nil {
-				http.Error(w, `{"error":"invalid programming recipe json"}`, http.StatusBadRequest)
+				writeServerJSONError(w, http.StatusBadRequest, "invalid programming recipe json")
 				return
 			}
 			saved, err := programming.SaveRecipeFile(s.ProgrammingRecipeFile, recipe)
 			if err != nil {
-				http.Error(w, `{"error":"save programming recipe failed"}`, http.StatusBadGateway)
+				writeServerJSONError(w, http.StatusBadGateway, "save programming recipe failed")
 				return
 			}
 			s.ProgrammingRecipe = saved
@@ -3802,12 +4170,12 @@ func (s *Server) serveProgrammingRecipe() http.Handler {
 				"curated_channels": len(s.Channels),
 			}, "", "  ")
 			if err != nil {
-				http.Error(w, `{"error":"encode programming recipe"}`, http.StatusInternalServerError)
+				writeServerJSONError(w, http.StatusInternalServerError, "encode programming recipe")
 				return
 			}
 			_, _ = w.Write(body)
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodGet, http.MethodPost)
 		}
 	})
 }
@@ -3827,35 +4195,44 @@ func containsLiveChannelID(channels []catalog.LiveChannel, channelID string) boo
 
 func (s *Server) serveProgrammingPreview() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		limit := streamAttemptLimitFromQuery(r.URL.Query().Get("limit"), 25)
+		recipe := s.reloadProgrammingRecipe()
+		lineupPreview := programming.ApplyRecipe(cloneLiveChannels(s.RawChannels), recipe)
+		backupPreview := programming.ApplyRecipePreview(cloneLiveChannels(s.RawChannels), recipe)
 		report := programmingPreviewReport{
 			GeneratedAt:     time.Now().UTC().Format(time.RFC3339),
 			RecipeFile:      strings.TrimSpace(s.ProgrammingRecipeFile),
 			RecipeWritable:  strings.TrimSpace(s.ProgrammingRecipeFile) != "",
 			HarvestFile:     strings.TrimSpace(s.PlexLineupHarvestFile),
 			RawChannels:     len(s.RawChannels),
-			CuratedChannels: len(s.Channels),
-			Recipe:          s.reloadProgrammingRecipe(),
+			CuratedChannels: len(lineupPreview),
+			Recipe:          recipe,
 			Inventory:       programming.BuildCategoryInventory(s.RawChannels),
 		}
 		harvest := s.reloadPlexLineupHarvest()
 		report.HarvestReady = len(harvest.Results) > 0 || len(harvest.Lineups) > 0
 		report.HarvestLineups = append([]plexharvest.SummaryLineup(nil), harvest.Lineups...)
-		previewChannels := programming.ApplyRecipePreview(cloneLiveChannels(s.RawChannels), report.Recipe)
-		if limit > len(s.Channels) {
-			limit = len(s.Channels)
+		if limit > len(lineupPreview) {
+			limit = len(lineupPreview)
 		}
-		report.Lineup = append([]catalog.LiveChannel(nil), s.Channels[:limit]...)
+		report.Lineup = append([]catalog.LiveChannel(nil), lineupPreview[:limit]...)
 		report.LineupDescriptors = programming.DescribeChannels(report.Lineup)
 		report.Buckets = make(map[string]int)
-		for _, ch := range s.Channels {
+		for _, ch := range lineupPreview {
 			report.Buckets[string(programming.ClassifyChannel(ch))]++
 		}
-		report.BackupGroups = programming.BuildBackupGroups(previewChannels)
+		report.BackupGroups = programming.BuildBackupGroups(backupPreview)
 		body, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode programming preview"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode programming preview")
 			return
 		}
 		_, _ = w.Write(body)
@@ -3867,6 +4244,9 @@ func (s *Server) serveVirtualChannelRules() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method {
 		case http.MethodGet:
+			if !operatorUIAllowed(w, r) {
+				return
+			}
 			set := s.reloadVirtualChannels()
 			body, err := json.MarshalIndent(map[string]interface{}{
 				"generated_at":     time.Now().UTC().Format(time.RFC3339),
@@ -3876,7 +4256,7 @@ func (s *Server) serveVirtualChannelRules() http.Handler {
 				"enabled_channels": len(set.Channels),
 			}, "", "  ")
 			if err != nil {
-				http.Error(w, `{"error":"encode virtual channel rules"}`, http.StatusInternalServerError)
+				writeServerJSONError(w, http.StatusInternalServerError, "encode virtual channel rules")
 				return
 			}
 			_, _ = w.Write(body)
@@ -3885,19 +4265,19 @@ func (s *Server) serveVirtualChannelRules() http.Handler {
 				return
 			}
 			if strings.TrimSpace(s.VirtualChannelsFile) == "" {
-				http.Error(w, `{"error":"virtual channels file not configured"}`, http.StatusServiceUnavailable)
+				writeServerJSONError(w, http.StatusServiceUnavailable, "virtual channels file not configured")
 				return
 			}
 			limited := http.MaxBytesReader(w, r.Body, 1<<20)
 			defer limited.Close()
 			var set virtualchannels.Ruleset
 			if err := json.NewDecoder(limited).Decode(&set); err != nil {
-				http.Error(w, `{"error":"invalid virtual channels json"}`, http.StatusBadRequest)
+				writeServerJSONError(w, http.StatusBadRequest, "invalid virtual channels json")
 				return
 			}
 			saved, err := s.saveVirtualChannels(set)
 			if err != nil {
-				http.Error(w, `{"error":"save virtual channels failed"}`, http.StatusBadGateway)
+				writeServerJSONError(w, http.StatusBadGateway, "save virtual channels failed")
 				return
 			}
 			body, err := json.MarshalIndent(map[string]interface{}{
@@ -3906,18 +4286,25 @@ func (s *Server) serveVirtualChannelRules() http.Handler {
 				"rules":      saved,
 			}, "", "  ")
 			if err != nil {
-				http.Error(w, `{"error":"encode virtual channel rules"}`, http.StatusInternalServerError)
+				writeServerJSONError(w, http.StatusInternalServerError, "encode virtual channel rules")
 				return
 			}
 			_, _ = w.Write(body)
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodGet, http.MethodPost)
 		}
 	})
 }
 
 func (s *Server) serveVirtualChannelPreview() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		perChannel := 4
 		if raw := strings.TrimSpace(r.URL.Query().Get("per_channel")); raw != "" {
@@ -3932,7 +4319,7 @@ func (s *Server) serveVirtualChannelPreview() http.Handler {
 			"report":       report,
 		}, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode virtual channel preview"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode virtual channel preview")
 			return
 		}
 		_, _ = w.Write(body)
@@ -3941,6 +4328,13 @@ func (s *Server) serveVirtualChannelPreview() http.Handler {
 
 func (s *Server) serveVirtualChannelSchedule() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		horizon := 6 * time.Hour
 		if raw := strings.TrimSpace(r.URL.Query().Get("horizon")); raw != "" {
@@ -3955,7 +4349,7 @@ func (s *Server) serveVirtualChannelSchedule() http.Handler {
 			"report":       report,
 		}, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode virtual channel schedule"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode virtual channel schedule")
 			return
 		}
 		_, _ = w.Write(body)
@@ -3964,10 +4358,17 @@ func (s *Server) serveVirtualChannelSchedule() http.Handler {
 
 func (s *Server) serveVirtualChannelDetail() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		channelID := strings.TrimSpace(r.URL.Query().Get("channel_id"))
 		if channelID == "" {
-			http.Error(w, `{"error":"channel_id required"}`, http.StatusBadRequest)
+			writeServerJSONError(w, http.StatusBadRequest, "channel_id required")
 			return
 		}
 		set := s.reloadVirtualChannels()
@@ -4014,7 +4415,7 @@ func (s *Server) serveVirtualChannelDetail() http.Handler {
 		}
 		body, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode virtual channel detail"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode virtual channel detail")
 			return
 		}
 		_, _ = w.Write(body)
@@ -4023,6 +4424,10 @@ func (s *Server) serveVirtualChannelDetail() http.Handler {
 
 func (s *Server) serveVirtualChannelGuide() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			writeMethodNotAllowed(w, http.MethodGet, http.MethodHead)
+			return
+		}
 		horizon := 6 * time.Hour
 		if raw := strings.TrimSpace(r.URL.Query().Get("horizon")); raw != "" {
 			if d, err := time.ParseDuration(raw); err == nil && d > 0 {
@@ -4093,6 +4498,10 @@ func (s *Server) virtualChannelLiveRows() []catalog.LiveChannel {
 
 func (s *Server) serveVirtualChannelM3U() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			writeMethodNotAllowed(w, http.MethodGet, http.MethodHead)
+			return
+		}
 		w.Header().Set("Content-Type", "application/x-mpegURL")
 		_, _ = io.WriteString(w, "#EXTM3U\n")
 		for _, ch := range s.virtualChannelLiveRows() {
@@ -4126,7 +4535,7 @@ func (s *Server) serveVirtualChannelStream() http.Handler {
 		}
 		sourceURL := strings.TrimSpace(slot.SourceURL)
 		if sourceURL == "" {
-			http.Error(w, `{"error":"virtual channel slot has no source"}`, http.StatusBadGateway)
+			writeServerJSONError(w, http.StatusBadGateway, "virtual channel slot has no source")
 			return
 		}
 		req, err := http.NewRequestWithContext(r.Context(), r.Method, sourceURL, nil)
@@ -4608,23 +5017,30 @@ func (s *Server) buildStreamCompareHarnessEnv(channelID string) (map[string]stri
 
 func (s *Server) serveCatchupRecorderReport() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		stateFile := strings.TrimSpace(s.RecorderStateFile)
 		if stateFile == "" {
 			stateFile = strings.TrimSpace(os.Getenv("IPTV_TUNERR_CATCHUP_RECORDER_STATE_FILE"))
 		}
 		if stateFile == "" {
-			http.Error(w, `{"error":"recorder state unavailable"}`, http.StatusServiceUnavailable)
+			writeServerJSONError(w, http.StatusServiceUnavailable, "recorder state unavailable")
 			return
 		}
 		rep, err := LoadCatchupRecorderReport(stateFile, streamAttemptLimitFromQuery(r.URL.Query().Get("limit"), 10))
 		if err != nil {
-			http.Error(w, `{"error":"load recorder report failed"}`, http.StatusBadGateway)
+			writeServerJSONError(w, http.StatusBadGateway, "load recorder report failed")
 			return
 		}
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode recorder report"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode recorder report")
 			return
 		}
 		_, _ = w.Write(body)
@@ -4636,9 +5052,12 @@ func (s *Server) serveRecordingRules() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method {
 		case http.MethodGet:
+			if !operatorUIAllowed(w, r) {
+				return
+			}
 			body, err := json.MarshalIndent(s.reloadRecordingRules(), "", "  ")
 			if err != nil {
-				http.Error(w, `{"error":"encode recording rules"}`, http.StatusInternalServerError)
+				writeServerJSONError(w, http.StatusInternalServerError, "encode recording rules")
 				return
 			}
 			_, _ = w.Write(body)
@@ -4655,7 +5074,7 @@ func (s *Server) serveRecordingRules() http.Handler {
 				Rules   []RecordingRule `json:"rules"`
 			}
 			if err := json.NewDecoder(limited).Decode(&req); err != nil {
-				http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
+				writeServerJSONError(w, http.StatusBadRequest, "invalid json")
 				return
 			}
 			rules := s.reloadRecordingRules()
@@ -4673,31 +5092,38 @@ func (s *Server) serveRecordingRules() http.Handler {
 				}
 				rules = toggleRecordingRule(rules, req.RuleID, enabled)
 			default:
-				http.Error(w, `{"error":"unsupported action"}`, http.StatusBadRequest)
+				writeServerJSONError(w, http.StatusBadRequest, "unsupported action")
 				return
 			}
 			saved, err := s.saveRecordingRules(rules)
 			if err != nil {
-				http.Error(w, `{"error":"save recording rules failed"}`, http.StatusBadGateway)
+				writeServerJSONError(w, http.StatusBadGateway, "save recording rules failed")
 				return
 			}
 			body, err := json.MarshalIndent(saved, "", "  ")
 			if err != nil {
-				http.Error(w, `{"error":"encode recording rules"}`, http.StatusInternalServerError)
+				writeServerJSONError(w, http.StatusInternalServerError, "encode recording rules")
 				return
 			}
 			_, _ = w.Write(body)
 		default:
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodGet, http.MethodPost)
 		}
 	})
 }
 
 func (s *Server) serveRecordingRulePreview() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		if s.xmltv == nil {
-			http.Error(w, `{"error":"xmltv unavailable"}`, http.StatusServiceUnavailable)
+			writeServerJSONError(w, http.StatusServiceUnavailable, "xmltv unavailable")
 			return
 		}
 		horizon := 3 * time.Hour
@@ -4714,12 +5140,12 @@ func (s *Server) serveRecordingRulePreview() http.Handler {
 		}
 		preview, err := s.xmltv.CatchupCapsulePreview(time.Now(), horizon, limit)
 		if err != nil {
-			http.Error(w, `{"error":"recording rule preview failed"}`, http.StatusBadGateway)
+			writeServerJSONError(w, http.StatusBadGateway, "recording rule preview failed")
 			return
 		}
 		body, err := json.MarshalIndent(buildRecordingRulePreview(s.reloadRecordingRules(), preview), "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode recording rule preview"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode recording rule preview")
 			return
 		}
 		_, _ = w.Write(body)
@@ -4728,23 +5154,30 @@ func (s *Server) serveRecordingRulePreview() http.Handler {
 
 func (s *Server) serveRecordingHistory() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		stateFile := strings.TrimSpace(s.RecorderStateFile)
 		if stateFile == "" {
 			stateFile = strings.TrimSpace(os.Getenv("IPTV_TUNERR_CATCHUP_RECORDER_STATE_FILE"))
 		}
 		if stateFile == "" {
-			http.Error(w, `{"error":"recorder state unavailable"}`, http.StatusServiceUnavailable)
+			writeServerJSONError(w, http.StatusServiceUnavailable, "recorder state unavailable")
 			return
 		}
 		report, err := LoadCatchupRecorderReport(stateFile, streamAttemptLimitFromQuery(r.URL.Query().Get("limit"), 25))
 		if err != nil {
-			http.Error(w, `{"error":"load recorder history failed"}`, http.StatusBadGateway)
+			writeServerJSONError(w, http.StatusBadGateway, "load recorder history failed")
 			return
 		}
 		body, err := json.MarshalIndent(buildRecordingRuleHistory(s.reloadRecordingRules(), report), "", "  ")
 		if err != nil {
-			http.Error(w, `{"error":"encode recording history"}`, http.StatusInternalServerError)
+			writeServerJSONError(w, http.StatusInternalServerError, "encode recording history")
 			return
 		}
 		_, _ = w.Write(body)
@@ -4754,7 +5187,7 @@ func (s *Server) serveRecordingHistory() http.Handler {
 func (s *Server) serveHlsMuxWebDemo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, http.MethodGet, http.MethodHead)
 			return
 		}
 		if !getenvBool("IPTV_TUNERR_HLS_MUX_WEB_DEMO", false) {
@@ -4775,8 +5208,7 @@ func (s *Server) serveHlsMuxWebDemo() http.Handler {
 func (s *Server) serveMuxSegDecodeAction() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			w.Header().Set("Content-Type", "application/json")
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodPost)
 			return
 		}
 		if !operatorUIAllowed(w, r) {
@@ -4787,14 +5219,12 @@ func (s *Server) serveMuxSegDecodeAction() http.Handler {
 			SegB64 string `json:"seg_b64"`
 		}
 		if err := json.NewDecoder(limited).Decode(&req); err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
+			writeServerJSONError(w, http.StatusBadRequest, "invalid json")
 			return
 		}
 		raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(req.SegB64))
 		if err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			http.Error(w, `{"error":"invalid base64"}`, http.StatusBadRequest)
+			writeServerJSONError(w, http.StatusBadRequest, "invalid base64")
 			return
 		}
 		u := strings.TrimSpace(string(raw))
@@ -4809,11 +5239,30 @@ func (s *Server) serveMuxSegDecodeAction() http.Handler {
 
 func (s *Server) serveDeviceXML() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			writeMethodNotAllowed(w, http.MethodGet, http.MethodHead)
+			return
+		}
 		deviceID := s.DeviceID
+		if deviceID == "" {
+			deviceID = strings.TrimSpace(os.Getenv("IPTV_TUNERR_DEVICE_ID"))
+		}
+		if deviceID == "" {
+			deviceID = strings.TrimSpace(os.Getenv("HOSTNAME"))
+		}
 		if deviceID == "" {
 			deviceID = "iptvtunerr01"
 		}
-		friendlyName := "IPTV Tunerr"
+		friendlyName := strings.TrimSpace(s.FriendlyName)
+		if friendlyName == "" {
+			friendlyName = strings.TrimSpace(os.Getenv("IPTV_TUNERR_FRIENDLY_NAME"))
+		}
+		if friendlyName == "" {
+			friendlyName = strings.TrimSpace(os.Getenv("HOSTNAME"))
+		}
+		if friendlyName == "" {
+			friendlyName = "IPTV Tunerr"
+		}
 		deviceXML := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <root xmlns="urn:schemas-upnp-org:device-1-0">
   <device>
@@ -4823,7 +5272,7 @@ func (s *Server) serveDeviceXML() http.Handler {
     <modelName>IPTV Tunerr</modelName>
     <UDN>uuid:%s</UDN>
   </device>
-</root>`, friendlyName, deviceID)
+</root>`, xmlEscapeText(friendlyName), xmlEscapeText(deviceID))
 		w.Header().Set("Content-Type", "application/xml")
 		w.Write([]byte(deviceXML))
 	})

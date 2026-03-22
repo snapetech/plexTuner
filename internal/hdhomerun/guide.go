@@ -23,6 +23,9 @@ type GuideXMLStats struct {
 // GuideURLFromBase returns the conventional guide.xml URL for a device base URL.
 func GuideURLFromBase(base string) string {
 	b := strings.TrimRight(strings.TrimSpace(base), "/")
+	if b == "" {
+		return ""
+	}
 	if strings.HasSuffix(strings.ToLower(b), "/guide.xml") {
 		return b
 	}
@@ -34,6 +37,9 @@ func GuideURLFromBase(base string) string {
 func FetchGuideXML(ctx context.Context, client *http.Client, baseURL string) ([]byte, error) {
 	if client == nil {
 		client = httpclient.WithTimeout(60 * time.Second)
+	}
+	if strings.TrimSpace(baseURL) == "" {
+		return nil, fmt.Errorf("hdhomerun: guide base url required")
 	}
 	u := GuideURLFromBase(baseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)

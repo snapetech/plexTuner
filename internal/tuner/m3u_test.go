@@ -30,6 +30,29 @@ func TestM3UServe_urlTvg(t *testing.T) {
 	}
 }
 
+func TestM3UServe_NormalizesWhitespaceAndTrailingSlashes(t *testing.T) {
+	m := &M3UServe{
+		BaseURL:  "  http://192.168.1.10:5004///  ",
+		Channels: []catalog.LiveChannel{{GuideNumber: "1", GuideName: "Ch1", StreamURL: "http://example.com/1"}},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/live.m3u", nil)
+	w := httptest.NewRecorder()
+	m.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code: %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `#EXTM3U url-tvg="http://192.168.1.10:5004/guide.xml"`) {
+		t.Fatalf("body should contain normalized guide url; got:\n%s", body)
+	}
+	if strings.Contains(body, "//guide.xml") || strings.Contains(body, "//stream/1") {
+		t.Fatalf("body should not contain malformed urls; got:\n%s", body)
+	}
+	if !strings.Contains(body, "http://192.168.1.10:5004/stream/1") {
+		t.Fatalf("body should contain normalized stream url; got:\n%s", body)
+	}
+}
+
 func TestM3UServe_epgPruneUnlinked(t *testing.T) {
 	channels := []catalog.LiveChannel{
 		{GuideNumber: "1", GuideName: "With TVG", TVGID: "bbc1", StreamURL: "http://a/1"},
@@ -82,5 +105,18 @@ func TestM3UServe_404(t *testing.T) {
 	m.ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("code: %d", w.Code)
+	}
+}
+
+func TestM3UServe_requiresGetOrHead(t *testing.T) {
+	m := &M3UServe{BaseURL: "http://localhost:5004", Channels: nil}
+	req := httptest.NewRequest(http.MethodPost, "/live.m3u", nil)
+	w := httptest.NewRecorder()
+	m.ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("code: %d", w.Code)
+	}
+	if got := w.Header().Get("Allow"); got != "GET, HEAD" {
+		t.Fatalf("allow: %q", got)
 	}
 }

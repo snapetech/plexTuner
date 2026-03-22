@@ -20,6 +20,10 @@ func TestProxyBase(t *testing.T) {
 		{addr: ":5004", want: "http://127.0.0.1:5004"},
 		{addr: "0.0.0.0:5004", want: "http://127.0.0.1:5004"},
 		{addr: "127.0.0.1:5004", want: "http://127.0.0.1:5004"},
+		{addr: "localhost", want: "http://localhost:5004"},
+		{addr: "tuner.internal", want: "http://tuner.internal:5004"},
+		{addr: "::1", want: "http://[::1]:5004"},
+		{addr: "[::1]", want: "http://[::1]:5004"},
 	}
 	for _, tt := range tests {
 		if got := proxyBase(tt.addr); got != tt.want {
@@ -47,6 +51,173 @@ func TestProxyForwardsAPIPath(t *testing.T) {
 	}
 	if got := w.Body.String(); got != `{"ok":true}` {
 		t.Fatalf("body=%q", got)
+	}
+}
+
+func TestProxyInvalidBaseStaysJSON(t *testing.T) {
+	s := &Server{tunerBase: "http://%zz"}
+	req := httptest.NewRequest(http.MethodGet, "/api/debug/runtime.json", nil)
+	w := httptest.NewRecorder()
+	s.proxy(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("content-type=%q", got)
+	}
+	if !strings.Contains(w.Body.String(), "invalid tuner base") {
+		t.Fatalf("body=%q", w.Body.String())
+	}
+}
+
+func TestProxyEmptyBaseStaysJSON(t *testing.T) {
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodGet, "/api/debug/runtime.json", nil)
+	w := httptest.NewRecorder()
+	s.proxy(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("content-type=%q", got)
+	}
+	if !strings.Contains(w.Body.String(), "invalid tuner base") {
+		t.Fatalf("body=%q", w.Body.String())
+	}
+}
+
+func TestAPIRootRedirectRequiresGetOrHead(t *testing.T) {
+	s := &Server{}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api", nil)
+	getW := httptest.NewRecorder()
+	s.apiRoot(getW, getReq)
+	if getW.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("get status=%d body=%s", getW.Code, getW.Body.String())
+	}
+	if got := getW.Header().Get("Location"); got != "/api/" {
+		t.Fatalf("location=%q", got)
+	}
+
+	headReq := httptest.NewRequest(http.MethodHead, "/api", nil)
+	headW := httptest.NewRecorder()
+	s.apiRoot(headW, headReq)
+	if headW.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("head status=%d body=%s", headW.Code, headW.Body.String())
+	}
+	if got := headW.Header().Get("Location"); got != "/api/" {
+		t.Fatalf("head location=%q", got)
+	}
+
+	postReq := httptest.NewRequest(http.MethodPost, "/api", nil)
+	postW := httptest.NewRecorder()
+	s.apiRoot(postW, postReq)
+	if postW.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("post status=%d body=%s", postW.Code, postW.Body.String())
+	}
+	if got := postW.Header().Get("Allow"); got != "GET, HEAD" {
+		t.Fatalf("Allow=%q", got)
+	}
+	if got := postW.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("content-type=%q", got)
+	}
+}
+
+func TestIndexAndLoginLazilyInitializeTemplates(t *testing.T) {
+	s := &Server{
+		Version:  "test",
+		settings: DeckSettings{AuthUser: "admin", AuthPass: "admin"},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	s.index(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("index status=%d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "test") {
+		t.Fatalf("index body=%q", w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/login", nil)
+	w = httptest.NewRecorder()
+	s.renderLogin(w, req, http.StatusOK, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("login status=%d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "admin") {
+		t.Fatalf("login body=%q", w.Body.String())
+	}
+}
+
+func TestIndexAndAssetsRequireGetOrHead(t *testing.T) {
+	s := &Server{
+		Version:  "test",
+		settings: DeckSettings{AuthUser: "admin", AuthPass: "admin"},
+	}
+
+	for _, tc := range []struct {
+		name    string
+		req     *http.Request
+		handler func(http.ResponseWriter, *http.Request)
+	}{
+		{name: "index", req: httptest.NewRequest(http.MethodPost, "/", nil), handler: s.index},
+		{name: "css", req: httptest.NewRequest(http.MethodPost, "/assets/deck.css", nil), handler: s.assetCSS},
+		{name: "js", req: httptest.NewRequest(http.MethodPost, "/assets/deck.js", nil), handler: s.assetJS},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			tc.handler(w, tc.req)
+			if w.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+			}
+			if got := w.Header().Get("Allow"); got != "GET, HEAD" {
+				t.Fatalf("Allow=%q", got)
+			}
+		})
+	}
+}
+
+func TestDeckJSIncludesSharedReplaySetting(t *testing.T) {
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodGet, "/assets/deck.js", nil)
+	w := httptest.NewRecorder()
+	s.assetJS(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "javascript") {
+		t.Fatalf("content-type=%q", got)
+	}
+	if !strings.Contains(w.Body.String(), "Shared replay bytes") {
+		t.Fatalf("deck.js missing shared replay runtime label")
+	}
+	if !strings.Contains(w.Body.String(), "shared_relay_replay_bytes") {
+		t.Fatalf("deck.js missing shared replay runtime field")
+	}
+}
+
+func TestLoginAllowsHeadAndRejectsOtherMethods(t *testing.T) {
+	s := &Server{
+		Version:  "test",
+		settings: DeckSettings{AuthUser: "admin", AuthPass: "admin"},
+	}
+
+	headReq := httptest.NewRequest(http.MethodHead, "/login", nil)
+	headW := httptest.NewRecorder()
+	s.login(headW, headReq)
+	if headW.Code != http.StatusOK {
+		t.Fatalf("head status=%d body=%s", headW.Code, headW.Body.String())
+	}
+
+	putReq := httptest.NewRequest(http.MethodPut, "/login", nil)
+	putW := httptest.NewRecorder()
+	s.login(putW, putReq)
+	if putW.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("put status=%d body=%s", putW.Code, putW.Body.String())
+	}
+	if got := putW.Header().Get("Allow"); got != "GET, HEAD, POST" {
+		t.Fatalf("Allow=%q", got)
 	}
 }
 
@@ -82,6 +253,12 @@ func TestTelemetryGETAndDeleteOnly(t *testing.T) {
 	s.telemetry(postW, postReq)
 	if postW.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("post status=%d body=%s", postW.Code, postW.Body.String())
+	}
+	if got := postW.Header().Get("Allow"); got != "GET, DELETE" {
+		t.Fatalf("Allow=%q", got)
+	}
+	if got := postW.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("content-type=%q", got)
 	}
 
 	delReq := httptest.NewRequest(http.MethodDelete, "/deck/telemetry.json", nil)
@@ -141,6 +318,12 @@ func TestActivityGETAndDeleteOnly(t *testing.T) {
 	if postW.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("post status=%d body=%s", postW.Code, postW.Body.String())
 	}
+	if got := postW.Header().Get("Allow"); got != "GET, DELETE" {
+		t.Fatalf("Allow=%q", got)
+	}
+	if got := postW.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("content-type=%q", got)
+	}
 
 	delReq := httptest.NewRequest(http.MethodDelete, "/deck/activity.json", nil)
 	delW := httptest.NewRecorder()
@@ -165,11 +348,21 @@ func TestSessionAuthOnlyRedirectsBrowserRequests(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
 	w := httptest.NewRecorder()
 	protected.ServeHTTP(w, req)
-	if w.Code != http.StatusSeeOther {
-		t.Fatalf("status=%d want 303", w.Code)
+	if w.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("status=%d want 307", w.Code)
 	}
 	if location := w.Header().Get("Location"); location != "/login" {
 		t.Fatalf("location=%q", location)
+	}
+
+	headReq := httptest.NewRequest(http.MethodHead, "/settings", nil)
+	headW := httptest.NewRecorder()
+	protected.ServeHTTP(headW, headReq)
+	if headW.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("head status=%d want 307", headW.Code)
+	}
+	if location := headW.Header().Get("Location"); location != "/login" {
+		t.Fatalf("head location=%q", location)
 	}
 }
 
@@ -187,6 +380,69 @@ func TestSessionAuthOnlyRejectsAPIsWithoutSession(t *testing.T) {
 	protected.ServeHTTP(w, req)
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("status=%d want 401", w.Code)
+	}
+}
+
+func TestSessionAuthOnlyBlockedBrowserRequestsStillRedirectToLogin(t *testing.T) {
+	s := &Server{
+		settings:        DeckSettings{AuthUser: "admin", AuthPass: "admin"},
+		sessions:        map[string]deckSession{},
+		failedLoginByIP: map[string][]time.Time{},
+	}
+	now := time.Now()
+	s.failedLoginByIP["127.0.0.1"] = make([]time.Time, failedLoginLimit)
+	for i := range s.failedLoginByIP["127.0.0.1"] {
+		s.failedLoginByIP["127.0.0.1"][i] = now
+	}
+	protected := s.sessionAuthOnly(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	protected.ServeHTTP(w, req)
+	if w.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("status=%d want 307 body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Location"); got != "/login" {
+		t.Fatalf("location=%q", got)
+	}
+	if got := w.Header().Get("Retry-After"); got == "" {
+		t.Fatal("missing Retry-After")
+	}
+	if got := w.Header().Get("Content-Type"); strings.Contains(got, "application/json") {
+		t.Fatalf("content-type=%q", got)
+	}
+}
+
+func TestSessionAuthOnlyBlockedAPIRequestsStayJSON(t *testing.T) {
+	s := &Server{
+		settings:        DeckSettings{AuthUser: "admin", AuthPass: "admin"},
+		sessions:        map[string]deckSession{},
+		failedLoginByIP: map[string][]time.Time{},
+	}
+	now := time.Now()
+	s.failedLoginByIP["127.0.0.1"] = make([]time.Time, failedLoginLimit)
+	for i := range s.failedLoginByIP["127.0.0.1"] {
+		s.failedLoginByIP["127.0.0.1"][i] = now
+	}
+	protected := s.sessionAuthOnly(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/debug/runtime.json", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	protected.ServeHTTP(w, req)
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("status=%d want 429 body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("content-type=%q", got)
+	}
+	if got := w.Header().Get("Retry-After"); got == "" {
+		t.Fatal("missing Retry-After")
 	}
 }
 
@@ -232,6 +488,42 @@ func TestSessionAuthOnlyAllowsScriptableBasicAuthWithoutSession(t *testing.T) {
 	}
 	if len(s.activityEntries) != 0 {
 		t.Fatalf("unexpected activity entries=%d", len(s.activityEntries))
+	}
+}
+
+func TestLocalhostOnlyJSONEndpointsStayJSON(t *testing.T) {
+	protected := localhostOnly(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	for _, path := range []string{"/api", "/api/debug/runtime.json"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "203.0.113.10:1234"
+		w := httptest.NewRecorder()
+		protected.ServeHTTP(w, req)
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("%s status=%d body=%s", path, w.Code, w.Body.String())
+		}
+		if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+			t.Fatalf("%s content-type=%q", path, got)
+		}
+		if !strings.Contains(w.Body.String(), "localhost-only") {
+			t.Fatalf("%s body=%q", path, w.Body.String())
+		}
+	}
+}
+
+func TestLocalhostOnlyAllowsHostnameLocalhost(t *testing.T) {
+	protected := localhostOnly(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/debug/runtime.json", nil)
+	req.RemoteAddr = "localhost:1234"
+	w := httptest.NewRecorder()
+	protected.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
 }
 
@@ -333,6 +625,40 @@ func TestLoginIgnoresRedirectTargets(t *testing.T) {
 	}
 }
 
+func TestLoginLazilyInitializesStateMaps(t *testing.T) {
+	s := &Server{
+		Version:  "test",
+		settings: DeckSettings{AuthUser: "admin", AuthPass: "admin"},
+	}
+
+	badReq := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("username=admin&password=wrong"))
+	badReq.RemoteAddr = "127.0.0.1:1234"
+	badReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	badW := httptest.NewRecorder()
+	s.login(badW, badReq)
+	if badW.Code != http.StatusUnauthorized {
+		t.Fatalf("bad login status=%d body=%s", badW.Code, badW.Body.String())
+	}
+	if s.failedLoginByIP == nil || len(s.failedLoginByIP["127.0.0.1"]) != 1 {
+		t.Fatalf("failedLoginByIP=%v", s.failedLoginByIP)
+	}
+
+	okReq := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("username=admin&password=admin"))
+	okReq.RemoteAddr = "127.0.0.1:1234"
+	okReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	okW := httptest.NewRecorder()
+	s.login(okW, okReq)
+	if okW.Code != http.StatusSeeOther {
+		t.Fatalf("ok login status=%d body=%s", okW.Code, okW.Body.String())
+	}
+	if s.sessions == nil || len(s.sessions) != 1 {
+		t.Fatalf("sessions=%v", s.sessions)
+	}
+	if len(s.failedLoginByIP["127.0.0.1"]) != 0 {
+		t.Fatalf("failedLoginByIP=%v", s.failedLoginByIP)
+	}
+}
+
 func TestDeckSettingsGETAndPOST(t *testing.T) {
 	s := &Server{
 		settings: DeckSettings{AuthUser: "admin", AuthPass: "secret123", DefaultRefreshSec: 30},
@@ -355,6 +681,34 @@ func TestDeckSettingsGETAndPOST(t *testing.T) {
 	}
 	if s.settings.AuthUser != "admin" || s.settings.AuthPass != "secret123" || s.settings.DefaultRefreshSec != 60 {
 		t.Fatalf("unexpected settings %+v", s.settings)
+	}
+
+	delReq := httptest.NewRequest(http.MethodDelete, "/deck/settings.json", nil)
+	delW := httptest.NewRecorder()
+	s.deckSettings(delW, delReq)
+	if delW.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("delete status=%d body=%s", delW.Code, delW.Body.String())
+	}
+	if got := delW.Header().Get("Allow"); got != "GET, POST" {
+		t.Fatalf("Allow=%q", got)
+	}
+	if got := delW.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("content-type=%q", got)
+	}
+}
+
+func TestDeckSettingsInvalidJSONStaysJSON(t *testing.T) {
+	s := &Server{
+		settings: DeckSettings{AuthUser: "admin", AuthPass: "secret123", DefaultRefreshSec: 30},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/deck/settings.json", bytes.NewBufferString(`{"default_refresh_sec":`))
+	w := httptest.NewRecorder()
+	s.deckSettings(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("content-type=%q", got)
 	}
 }
 
@@ -398,6 +752,9 @@ func TestSessionAuthOnlyRejectsMutationsWithoutCSRF(t *testing.T) {
 	protected.ServeHTTP(w, req)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("status=%d want 403 body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("content-type=%q", got)
 	}
 
 	okReq := httptest.NewRequest(http.MethodPost, "/deck/settings.json", nil)

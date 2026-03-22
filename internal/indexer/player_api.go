@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,6 +32,32 @@ var indexerUserAgentCandidates = []string{
 	"curl/8.4.0",
 }
 
+func playerAPIIndexTimeout() time.Duration {
+	const fallback = 5 * time.Minute
+	return playerAPITimeoutFromEnv("IPTV_TUNERR_PLAYER_API_TIMEOUT", fallback)
+}
+
+func playerAPIVODIndexTimeout() time.Duration {
+	const fallback = 15 * time.Minute
+	return playerAPITimeoutFromEnv("IPTV_TUNERR_PLAYER_API_VOD_TIMEOUT", fallback)
+}
+
+func playerAPITimeoutFromEnv(key string, fallback time.Duration) time.Duration {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		return fallback
+	}
+	return d
+}
+
+func normalizeAPIBase(base string) string {
+	return strings.TrimRight(strings.TrimSpace(base), "/")
+}
+
 // IndexFromPlayerAPI indexes live (and optionally VOD/series) from Xtream player_api.
 // apiBase is the base URL of the working player_api (e.g. http://host:port). ext is the
 // stream extension (e.g. "m3u8"). If liveOnly is true, only live channels are fetched.
@@ -45,9 +72,9 @@ func IndexFromPlayerAPI(apiBase, user, pass, ext string, liveOnly bool, baseURLs
 func IndexFromPlayerAPIWithUserAgents(apiBase, user, pass, ext string, liveOnly bool, baseURLs []string, userAgents []string, client *http.Client) (
 	movies []catalog.Movie, series []catalog.Series, live []catalog.LiveChannel, err error) {
 	if client == nil {
-		client = httpclient.WithTimeout(60 * time.Second)
+		client = httpclient.WithTimeout(playerAPIIndexTimeout())
 	}
-	apiBase = strings.TrimSuffix(apiBase, "/")
+	apiBase = normalizeAPIBase(apiBase)
 	log.Printf("indexer: player_api start base=%s live_only=%v base_url_candidates=%d", apiBase, liveOnly, len(baseURLs))
 
 	resolveStart := time.Now()
@@ -88,6 +115,44 @@ func IndexFromPlayerAPIWithUserAgents(apiBase, user, pass, ext string, liveOnly 
 	log.Printf("indexer: player_api done base=%s total=%s", apiBase, time.Since(resolveStart).Round(time.Millisecond))
 
 	return movies, series, live, nil
+}
+
+// IndexVODSeriesFromPlayerAPIWithUserAgents fetches only VOD movies + series from Xtream player_api.
+// This is useful when live channels come from an alternate source (for example an already-processed M3U)
+// but the operator still wants a single catalog containing provider-backed VOD content.
+func IndexVODSeriesFromPlayerAPIWithUserAgents(apiBase, user, pass string, baseURLs []string, userAgents []string, client *http.Client) (
+	movies []catalog.Movie, series []catalog.Series, err error) {
+	if client == nil {
+		client = httpclient.WithTimeout(playerAPIVODIndexTimeout())
+	}
+	apiBase = normalizeAPIBase(apiBase)
+	log.Printf("indexer: player_api vod-only start base=%s base_url_candidates=%d", apiBase, len(baseURLs))
+
+	resolveStart := time.Now()
+	streamBase, err := resolveStreamBaseURL(context.Background(), apiBase, user, pass, baseURLs, client, userAgents)
+	if err != nil {
+		log.Printf("indexer: player_api vod-only resolveStreamBaseURL failed base=%s after=%s: %v", apiBase, time.Since(resolveStart).Round(time.Millisecond), err)
+		return nil, nil, err
+	}
+	log.Printf("indexer: player_api vod-only resolveStreamBaseURL base=%s stream_base=%s dur=%s", apiBase, streamBase, time.Since(resolveStart).Round(time.Millisecond))
+
+	vodStart := time.Now()
+	movies, err = fetchVODStreams(context.Background(), apiBase, user, pass, streamBase, client, userAgents)
+	if err != nil {
+		log.Printf("indexer: player_api vod-only fetchVODStreams failed base=%s after=%s: %v", apiBase, time.Since(vodStart).Round(time.Millisecond), err)
+		return nil, nil, err
+	}
+	log.Printf("indexer: player_api vod-only fetchVODStreams base=%s movies=%d dur=%s", apiBase, len(movies), time.Since(vodStart).Round(time.Millisecond))
+
+	seriesStart := time.Now()
+	series, err = fetchSeries(context.Background(), apiBase, user, pass, streamBase, client, userAgents)
+	if err != nil {
+		log.Printf("indexer: player_api vod-only fetchSeries failed base=%s after=%s: %v", apiBase, time.Since(seriesStart).Round(time.Millisecond), err)
+		return nil, nil, err
+	}
+	log.Printf("indexer: player_api vod-only fetchSeries base=%s series=%d dur=%s", apiBase, len(series), time.Since(seriesStart).Round(time.Millisecond))
+	log.Printf("indexer: player_api vod-only done base=%s total=%s", apiBase, time.Since(resolveStart).Round(time.Millisecond))
+	return movies, series, nil
 }
 
 func browserHeadersForUA(ua string) map[string]string {
@@ -221,6 +286,7 @@ func normalizeUserAgents(userAgents ...string) []string {
 }
 
 func resolveStreamBaseURL(ctx context.Context, apiBase, user, pass string, baseURLs []string, client *http.Client, userAgents []string) (string, error) {
+	apiBase = normalizeAPIBase(apiBase)
 	u := apiBase + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass)
 	resp, err := doGetWithRetry(ctx, client, u, userAgents...)
 	if err != nil {
@@ -246,7 +312,7 @@ func resolveStreamBaseURL(ctx context.Context, apiBase, user, pass string, baseU
 	if base == "" {
 		base = apiBase
 	}
-	base = strings.TrimSuffix(base, "/")
+	base = normalizeAPIBase(base)
 	// Validate: server_info may return internal hostname or URL that doesn't work from here.
 	if !validateStreamBase(ctx, base, client) {
 		return apiBase, nil
@@ -271,6 +337,8 @@ func validateStreamBase(ctx context.Context, base string, client *http.Client) b
 }
 
 func fetchLiveStreams(ctx context.Context, apiBase, user, pass, streamBase, ext string, client *http.Client, userAgents []string) ([]catalog.LiveChannel, error) {
+	apiBase = normalizeAPIBase(apiBase)
+	streamBase = normalizeAPIBase(streamBase)
 	u := apiBase + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&action=get_live_streams"
 	resp, err := doGetWithRetry(ctx, client, u, userAgents...)
 	if err != nil {
@@ -415,6 +483,8 @@ func parseSeriesEpisodes(v interface{}) []seriesEpisodeRaw {
 }
 
 func fetchVODStreams(ctx context.Context, apiBase, user, pass, streamBase string, client *http.Client, userAgents []string) ([]catalog.Movie, error) {
+	apiBase = normalizeAPIBase(apiBase)
+	streamBase = normalizeAPIBase(streamBase)
 	vodCats, _ := fetchXtreamCategoryMap(ctx, apiBase, user, pass, "get_vod_categories", client, userAgents...)
 	u := apiBase + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&action=get_vod_streams"
 	resp, err := doGetWithRetry(ctx, client, u, userAgents...)
@@ -451,7 +521,7 @@ func fetchVODStreams(ctx context.Context, apiBase, user, pass, streamBase string
 		}
 		artwork := ""
 		if r.StreamIcon != "" && !strings.HasPrefix(r.StreamIcon, "http") {
-			artwork = strings.TrimSuffix(apiBase, "/") + "/" + strings.TrimPrefix(r.StreamIcon, "/")
+			artwork = normalizeAPIBase(apiBase) + "/" + strings.TrimPrefix(r.StreamIcon, "/")
 		} else if r.StreamIcon != "" {
 			artwork = r.StreamIcon
 		}
@@ -471,6 +541,8 @@ func fetchVODStreams(ctx context.Context, apiBase, user, pass, streamBase string
 const maxConcurrentSeriesInfo = 10
 
 func fetchSeries(ctx context.Context, apiBase, user, pass, streamBase string, client *http.Client, userAgents []string) ([]catalog.Series, error) {
+	apiBase = normalizeAPIBase(apiBase)
+	streamBase = normalizeAPIBase(streamBase)
 	seriesCats, _ := fetchXtreamCategoryMap(ctx, apiBase, user, pass, "get_series_categories", client, userAgents...)
 	u := apiBase + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&action=get_series"
 	resp, err := doGetWithRetry(ctx, client, u, userAgents...)
@@ -522,7 +594,7 @@ func fetchSeries(ctx context.Context, apiBase, user, pass, streamBase string, cl
 		}
 		artwork := s.Cover
 		if artwork != "" && !strings.HasPrefix(artwork, "http") {
-			artwork = strings.TrimSuffix(apiBase, "/") + "/" + strings.TrimPrefix(artwork, "/")
+			artwork = normalizeAPIBase(apiBase) + "/" + strings.TrimPrefix(artwork, "/")
 		}
 		out = append(out, catalog.Series{
 			ID:                   strconv.Itoa(s.SeriesID),
@@ -538,6 +610,7 @@ func fetchSeries(ctx context.Context, apiBase, user, pass, streamBase string, cl
 }
 
 func fetchXtreamCategoryMap(ctx context.Context, apiBase, user, pass, action string, client *http.Client, userAgents ...string) (map[string]string, error) {
+	apiBase = normalizeAPIBase(apiBase)
 	u := apiBase + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&action=" + url.QueryEscape(action)
 	resp, err := doGetWithRetry(ctx, client, u, userAgents...)
 	if err != nil {
@@ -567,6 +640,8 @@ func fetchXtreamCategoryMap(ctx context.Context, apiBase, user, pass, action str
 }
 
 func fetchSeriesInfo(ctx context.Context, apiBase, user, pass, streamBase string, seriesID int, client *http.Client, userAgents ...string) ([]catalog.Season, error) {
+	apiBase = normalizeAPIBase(apiBase)
+	streamBase = normalizeAPIBase(streamBase)
 	u := apiBase + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&action=get_series_info&series_id=" + strconv.Itoa(seriesID)
 	resp, err := doGetWithRetry(ctx, client, u, userAgents...)
 	if err != nil {

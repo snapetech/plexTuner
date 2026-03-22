@@ -333,8 +333,9 @@ func (g *Gateway) needTranscode(ctx context.Context, streamURL string) (bool, er
 	defer cancel()
 	probe := func(sel string) (string, error) {
 		args := []string{"-v", "error", "-nostdin", "-rw_timeout", "5000000", "-user_agent", "IptvTunerr/1.0"}
-		if g.ProviderUser != "" || g.ProviderPass != "" {
-			auth := base64.StdEncoding.EncodeToString([]byte(g.ProviderUser + ":" + g.ProviderPass))
+		user, pass := g.providerCredentials()
+		if user != "" || pass != "" {
+			auth := base64.StdEncoding.EncodeToString([]byte(user + ":" + pass))
 			args = append(args, "-headers", "Authorization: Basic "+auth+"\r\n")
 		}
 		args = append(args, "-select_streams", sel, "-show_entries", "stream=codec_name", "-of", "default=noprint_wrappers=1:nokey=1", streamURL)

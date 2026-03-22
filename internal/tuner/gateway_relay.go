@@ -115,6 +115,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	forcedProfile string,
 	hotStart hotStartConfig,
 	outputMux string,
+	sharedSession *sharedRelaySession,
 ) error {
 	reqField := gatewayReqIDField(r.Context())
 	profile := g.profileForChannelMeta(channelID, guideNumber, tvgID)
@@ -210,6 +211,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	log.Printf("gateway:%s channel=%q id=%s %s profile=%s base_profile=%s output_mux=%s", reqField, channelName, channelID, modeLabel, profile, profileSelection.BaseProfile, outputMux)
 	log.Printf("gateway:%s channel=%q id=%s %s hls-input analyzeduration_us=%d probesize=%d rw_timeout_us=%d live_start_index=%d nobuffer=%t reconnect=%t persistent=%t multi=%t realtime=%t loglevel=%s",
 		reqField, channelName, channelID, modeLabel, hlsAnalyzeDurationUs, hlsProbeSize, hlsRWTimeoutUs, hlsLiveStartIndex, hlsUseNoBuffer, hlsReconnect, hlsHTTPPersistent, hlsMultipleRequests, hlsRealtime, hlsLogLevel)
+	remuxRequireGoodStart := !transcode && getenvBool("IPTV_TUNERR_HLS_REMUX_REQUIRE_GOOD_START", false)
 	startupMin := getenvInt("IPTV_TUNERR_WEBSAFE_STARTUP_MIN_BYTES", 65536)
 	startupMax := getenvInt("IPTV_TUNERR_WEBSAFE_STARTUP_MAX_BYTES", 786432)
 	startupTimeoutMs := getenvInt("IPTV_TUNERR_WEBSAFE_STARTUP_TIMEOUT_MS", 60000)
@@ -217,7 +219,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	enableTimeoutBootstrap := getenvBool("IPTV_TUNERR_WEBSAFE_TIMEOUT_BOOTSTRAP", true)
 	continueOnStartupTimeout := transcode && getenvBool("IPTV_TUNERR_WEBSAFE_TIMEOUT_CONTINUE_FFMPEG", false)
 	bootstrapSec := getenvFloat("IPTV_TUNERR_WEBSAFE_BOOTSTRAP_SECONDS", 1.5)
-	requireGoodStart := transcode && getenvBool("IPTV_TUNERR_WEBSAFE_REQUIRE_GOOD_START", true)
+	requireGoodStart := (transcode && getenvBool("IPTV_TUNERR_WEBSAFE_REQUIRE_GOOD_START", true)) || remuxRequireGoodStart
 	maxFallbackNoIDR := transcode && getenvBool("IPTV_TUNERR_WEBSAFE_STARTUP_MAX_FALLBACK_WITHOUT_IDR", false)
 	enableNullTSKeepalive := transcode && getenvBool("IPTV_TUNERR_WEBSAFE_NULL_TS_KEEPALIVE", false)
 	nullTSKeepaliveMs := getenvInt("IPTV_TUNERR_WEBSAFE_NULL_TS_KEEPALIVE_MS", 100)
@@ -258,11 +260,14 @@ func (g *Gateway) relayHLSWithFFmpeg(
 		responseStarted = true
 	}
 	defer func() { flushBody() }()
+	if sharedSession != nil {
+		defer g.closeSharedRelaySession(sharedSession.RelayKey, sharedSession)
+	}
 	stopNullTSKeepalive := func(string) {}
 	stopPATMPTKeepalive := func(string) {}
 	bootstrapAlreadySent := false
 	var prefetch []byte
-	if transcode && startupMin > 0 {
+	if requireGoodStart && startupMin > 0 {
 		startResponse()
 		if fw, ok := w.(http.Flusher); ok {
 			fw.Flush()
@@ -446,7 +451,7 @@ func (g *Gateway) relayHLSWithFFmpeg(
 		}
 	}
 
-	if !transcode {
+	if !transcode && !requireGoodStart {
 		if timeout := ffmpegHLSFirstBytesTimeout(); timeout > 0 {
 			type firstReadRes struct {
 				b   []byte
@@ -535,6 +540,9 @@ func (g *Gateway) relayHLSWithFFmpeg(
 		}
 	}
 	dst = maybeWrapTSInspectorWriter(dst, gatewayReqIDFromContext(r.Context()), channelName, channelID, guideNumber, tvgID, modeLabel, start)
+	if sharedSession != nil {
+		dst = &sharedRelayFanoutWriter{base: dst, session: sharedSession}
+	}
 	if c, ok := dst.(interface{ Close() }); ok {
 		defer c.Close()
 	}
@@ -591,7 +599,7 @@ func (g *Gateway) relayHLSAsTS(
 	sw, flush := streamWriter(w, bufferBytes)
 	defer flush()
 	if sharedSession != nil {
-		defer g.closeSharedRelaySession(channelID, sharedSession)
+		defer g.closeSharedRelaySession(sharedSession.RelayKey, sharedSession)
 	}
 	flusher, _ := w.(http.Flusher)
 	seen := map[string]struct{}{}

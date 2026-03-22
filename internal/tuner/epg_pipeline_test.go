@@ -1,9 +1,11 @@
 package tuner
 
 import (
+	"bytes"
 	"context"
 	"encoding/xml"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/snapetech/iptvtunerr/internal/catalog"
 )
 
 func TestFetchProviderXMLTV_conditionalDiskCache(t *testing.T) {
@@ -104,6 +108,90 @@ func TestFetchProviderXMLTV_conditionalDiskCacheFallsBackOnFetchError(t *testing
 	}
 }
 
+type errAfterReader struct {
+	data []byte
+	err  error
+	read bool
+}
+
+func (r *errAfterReader) Read(p []byte) (int, error) {
+	if !r.read {
+		r.read = true
+		n := copy(p, r.data)
+		if n < len(r.data) {
+			r.data = r.data[n:]
+			return n, nil
+		}
+		return n, r.err
+	}
+	return 0, r.err
+}
+
+func TestParseXMLTVProgrammes_acceptsPartialUnexpectedEOF(t *testing.T) {
+	body := `<?xml version="1.0" encoding="UTF-8"?><tv><programme channel="ch1" start="20300101000000 +0000" stop="20300101010000 +0000"><title>T</title></programme>`
+	got, err := parseXMLTVProgrammes(&errAfterReader{data: []byte(body), err: io.ErrUnexpectedEOF}, map[string]bool{"ch1": true})
+	if err != nil {
+		t.Fatalf("parseXMLTVProgrammes: %v", err)
+	}
+	if got == nil || len(got.programmes) != 1 {
+		t.Fatalf("expected partial programme set, got %#v", got)
+	}
+}
+
+func TestFetchProviderXMLTVConditional_acceptsPartialBodyOnReadError(t *testing.T) {
+	cacheFile := filepath.Join(t.TempDir(), "provider.xml")
+	body := `<?xml version="1.0" encoding="UTF-8"?><tv><programme channel="ch1" start="20300101000000 +0000" stop="20300101010000 +0000"><title>Partial</title></programme>`
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body:       io.NopCloser(&errAfterReader{data: []byte(body), err: io.ErrUnexpectedEOF}),
+			Header:     make(http.Header),
+		}, nil
+	})}
+	x := &XMLTV{
+		ProviderBaseURL:          "http://provider.test",
+		ProviderUser:             "u",
+		ProviderPass:             "p",
+		ProviderEPGEnabled:       true,
+		ProviderEPGTimeout:       10 * time.Second,
+		ProviderEPGDiskCachePath: cacheFile,
+		Client:                   client,
+	}
+	got, err := x.fetchProviderXMLTV(context.Background(), map[string]bool{"ch1": true})
+	if err != nil {
+		t.Fatalf("fetchProviderXMLTV: %v", err)
+	}
+	if got == nil || len(got.programmes) != 1 {
+		t.Fatalf("expected parsed partial provider epg, got %#v", got)
+	}
+	cached, err := os.ReadFile(cacheFile)
+	if err != nil {
+		t.Fatalf("read cache: %v", err)
+	}
+	if !bytes.Equal(cached, []byte(body)) {
+		t.Fatalf("cache mismatch: got %q want %q", string(cached), body)
+	}
+}
+
+func TestProviderEPGRequestUserAgent_HostOverride(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_HOST_UA", "example.com:lavf")
+	t.Setenv("IPTV_TUNERR_UPSTREAM_USER_AGENT", "")
+	got := providerEPGRequestUserAgent("http://example.com/xmltv.php?username=u&password=p")
+	if !strings.HasPrefix(got, "Lavf/") {
+		t.Fatalf("providerEPGRequestUserAgent() = %q, want Lavf/*", got)
+	}
+}
+
+func TestProviderEPGRequestUserAgent_DefaultUpstreamUA(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_HOST_UA", "")
+	t.Setenv("IPTV_TUNERR_UPSTREAM_USER_AGENT", "firefox")
+	got := providerEPGRequestUserAgent("http://other.example/xmltv.php?username=u&password=p")
+	if !strings.Contains(strings.ToLower(got), "firefox") {
+		t.Fatalf("providerEPGRequestUserAgent() = %q, want Firefox UA", got)
+	}
+}
+
 func TestProviderXMLTVEPGURL_suffix(t *testing.T) {
 	got := providerXMLTVEPGURL("http://example.com:8080/", "user", "pass", "foo=1&bar=2")
 	want := "http://example.com:8080/xmltv.php?username=user&password=pass&foo=1&bar=2"
@@ -121,6 +209,47 @@ func TestProviderXMLTVEPGURL_normalizesWhitespaceAndTrailingSlashes(t *testing.T
 	want := "http://example.com/xmltv.php?username=u&password=p"
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+func TestFetchProviderShortEPGFallback(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/player_api.php" {
+			t.Fatalf("path=%s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("action"); got != "get_short_epg" {
+			t.Fatalf("action=%q", got)
+		}
+		_, _ = w.Write([]byte(`{"epg_listings":[{"title":"TGF0ZSBOZXdz","description":"SGVhZGxpbmVz","start_timestamp":"1893456000","stop_timestamp":"1893459600","channel_id":"news.1","stream_id":"100"}]}`))
+	}))
+	defer srv.Close()
+
+	x := &XMLTV{
+		ProviderBaseURL:    srv.URL,
+		ProviderUser:       "u",
+		ProviderPass:       "p",
+		ProviderEPGEnabled: true,
+		ProviderEPGTimeout: 2 * time.Second,
+		Client:             srv.Client(),
+	}
+	channels := []catalog.LiveChannel{{
+		ChannelID:   "100",
+		GuideName:   "News 1",
+		GuideNumber: "100",
+		TVGID:       "news.1",
+		StreamURL:   srv.URL + "/live/u/p/100.ts",
+		EPGLinked:   true,
+	}}
+	got, err := x.fetchProviderShortEPGFallback(context.Background(), channels, map[string]bool{"news.1": true})
+	if err != nil {
+		t.Fatalf("fetchProviderShortEPGFallback: %v", err)
+	}
+	cepg := got.programmes["news.1"]
+	if cepg == nil || len(cepg.nodes) != 1 {
+		t.Fatalf("unexpected programmes: %#v", got.programmes)
+	}
+	if !strings.Contains(cepg.nodes[0].InnerXML, "Late News") || !strings.Contains(cepg.nodes[0].InnerXML, "Headlines") {
+		t.Fatalf("unexpected node: %+v", cepg.nodes[0])
 	}
 }
 

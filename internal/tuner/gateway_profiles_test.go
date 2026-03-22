@@ -11,6 +11,8 @@ func TestNormalizeProfileName_HDHRStyleAliases(t *testing.T) {
 	cases := map[string]string{
 		"native":         profileDefault,
 		"heavy":          profileDefault,
+		"plexsafehq":     profilePlexSafeHQ,
+		"plex-safe-hq":   profilePlexSafeHQ,
 		"internet":       profileDashFast,
 		"internet360":    profileAACCFR,
 		"mobile":         profileLowBitrate,
@@ -23,6 +25,23 @@ func TestNormalizeProfileName_HDHRStyleAliases(t *testing.T) {
 	for in, want := range cases {
 		if got := normalizeProfileName(in); got != want {
 			t.Fatalf("%q: got %q want %q", in, got, want)
+		}
+	}
+}
+
+func TestBuildFFmpegStreamCodecArgs_plexsafeHQ(t *testing.T) {
+	args := buildFFmpegStreamCodecArgs(true, profilePlexSafeHQ, streamMuxMPEGTS)
+	s := strings.Join(args, " ")
+	for _, needle := range []string{
+		"setsar=1",
+		"-crf 18",
+		"-maxrate 16000k",
+		"-bufsize 32000k",
+		"-b:a 192k",
+		"-muxrate 18000000",
+	} {
+		if !strings.Contains(s, needle) {
+			t.Fatalf("expected %q in %s", needle, s)
 		}
 	}
 }

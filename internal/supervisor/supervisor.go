@@ -487,6 +487,7 @@ func loadEnvFile(path string) error {
 		if k == "" {
 			continue
 		}
+		v = unquoteEnvValue(v)
 		if err := os.Setenv(k, v); err != nil {
 			return fmt.Errorf("set %s: %w", k, err)
 		}
@@ -497,4 +498,14 @@ func loadEnvFile(path string) error {
 	}
 	log.Printf("supervisor: loaded %d env vars from %s", loaded, path)
 	return nil
+}
+
+func unquoteEnvValue(s string) string {
+	if len(s) < 2 {
+		return s
+	}
+	if (s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'') {
+		return s[1 : len(s)-1]
+	}
+	return s
 }

@@ -18,6 +18,7 @@ func TestJoinDeviceXMLURL(t *testing.T) {
 		{name: "host only", in: "http://192.168.1.10:5004", want: "http://192.168.1.10:5004/device.xml"},
 		{name: "trim slash", in: "http://host:5004/", want: "http://host:5004/device.xml"},
 		{name: "path base", in: "http://host:5004/tuner", want: "http://host:5004/tuner/device.xml"},
+		{name: "existing device xml", in: "http://host:5004/device.xml", want: "http://host:5004/device.xml"},
 		{name: "strip query", in: "http://host:5004?t=1", want: "http://host:5004/device.xml"},
 	}
 
@@ -52,7 +53,7 @@ func TestSSDP_searchResponse(t *testing.T) {
 }
 
 func TestServer_deviceXML(t *testing.T) {
-	s := &Server{DeviceID: "abc123"}
+	s := &Server{DeviceID: "abc123", FriendlyName: "My Tunerr"}
 	req := httptest.NewRequest(http.MethodGet, "/device.xml", nil)
 	w := httptest.NewRecorder()
 
@@ -65,10 +66,84 @@ func TestServer_deviceXML(t *testing.T) {
 		t.Fatalf("content-type: %q", got)
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "<friendlyName>IPTV Tunerr</friendlyName>") {
+	if !strings.Contains(body, "<friendlyName>My Tunerr</friendlyName>") {
 		t.Fatalf("missing friendly name: %q", body)
 	}
 	if !strings.Contains(body, "<UDN>uuid:abc123</UDN>") {
 		t.Fatalf("missing device id UDN: %q", body)
+	}
+}
+
+func TestServer_deviceXMLDefaultFriendlyName(t *testing.T) {
+	s := &Server{DeviceID: "abc123"}
+	req := httptest.NewRequest(http.MethodGet, "/device.xml", nil)
+	w := httptest.NewRecorder()
+
+	s.serveDeviceXML().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("code: %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "<friendlyName>IPTV Tunerr</friendlyName>") {
+		t.Fatalf("missing default friendly name: %q", w.Body.String())
+	}
+}
+
+func TestServer_deviceXMLUsesEnvFallbacks(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_FRIENDLY_NAME", "Env Tunerr")
+	t.Setenv("IPTV_TUNERR_DEVICE_ID", "env123")
+
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodGet, "/device.xml", nil)
+	w := httptest.NewRecorder()
+
+	s.serveDeviceXML().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("code: %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "<friendlyName>Env Tunerr</friendlyName>") {
+		t.Fatalf("missing env friendly name: %q", body)
+	}
+	if !strings.Contains(body, "<UDN>uuid:env123</UDN>") {
+		t.Fatalf("missing env device id: %q", body)
+	}
+}
+
+func TestServer_deviceXMLEscapesConfiguredIdentity(t *testing.T) {
+	s := &Server{
+		DeviceID:     `box&1<2>`,
+		FriendlyName: `AT&T <HDHR>`,
+	}
+	req := httptest.NewRequest(http.MethodGet, "/device.xml", nil)
+	w := httptest.NewRecorder()
+
+	s.serveDeviceXML().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("code: %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "<friendlyName>AT&amp;T &lt;HDHR&gt;</friendlyName>") {
+		t.Fatalf("missing escaped friendly name: %q", body)
+	}
+	if !strings.Contains(body, "<UDN>uuid:box&amp;1&lt;2&gt;</UDN>") {
+		t.Fatalf("missing escaped device id: %q", body)
+	}
+}
+
+func TestServer_deviceXMLRequiresGetOrHead(t *testing.T) {
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodPost, "/device.xml", nil)
+	w := httptest.NewRecorder()
+
+	s.serveDeviceXML().ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("code: %d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Allow"); got != "GET, HEAD" {
+		t.Fatalf("allow: %q", got)
 	}
 }

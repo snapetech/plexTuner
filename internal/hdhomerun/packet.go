@@ -326,10 +326,10 @@ func marshalGetSet(name, value string) []byte {
 	nameBytes := append([]byte(name), 0) // null terminated
 
 	if value == "" {
-		return []byte{
-			TagGetSetName,
-			uint8(len(nameBytes)),
+		tlvs := []TLV{
+			{Tag: TagGetSetName, Length: uint16(len(nameBytes)), Value: nameBytes},
 		}
+		return MarshalTLVs(tlvs)
 	}
 
 	valueBytes := append([]byte(value), 0)

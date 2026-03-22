@@ -36,7 +36,12 @@ func NewHandler(movies []catalog.Movie, series []catalog.Series, mat materialize
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("MS-Author-Via", "DAV")
 		switch r.Method {
-		case http.MethodOptions, methodPROPFIND, http.MethodHead, http.MethodGet:
+		case http.MethodOptions:
+			w.Header().Set("Allow", readOnlyDAVAllow)
+			w.Header().Set("DAV", "1, 2")
+			w.WriteHeader(http.StatusOK)
+			return
+		case methodPROPFIND, http.MethodHead, http.MethodGet:
 			base.ServeHTTP(w, r)
 			return
 		default:

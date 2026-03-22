@@ -51,6 +51,19 @@ func TestCheckEndpoints_ok(t *testing.T) {
 	}
 }
 
+func TestCheckEndpoints_normalizesWhitespaceAndTrailingSlashes(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/discover.json", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
+	mux.HandleFunc("/lineup.json", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
+	mux.HandleFunc("/guide.xml", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	ctx := context.Background()
+	if err := CheckEndpoints(ctx, "  "+srv.URL+"///  "); err != nil {
+		t.Fatalf("CheckEndpoints: %v", err)
+	}
+}
+
 func TestCheckEndpoints_missing(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)

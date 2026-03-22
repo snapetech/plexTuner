@@ -218,6 +218,206 @@ Common flags:
 
 Also available live over HTTP:
 - `GET /channels/report.json`
+
+## Plex reverse-engineering and ops commands
+
+## `iptv-tunerr plex-db-inspect`
+
+Inspect Plex SQLite state relevant to Live TV injection.
+
+Common flags:
+- `-plex-data-dir`
+- `-out`
+
+Use for:
+- locating `media_provider_resources`
+- confirming lineup and EPG SQLite state
+- proving what IPTV Tunerr changed locally
+
+## `iptv-tunerr plex-log-inspect`
+
+Mine Plex Media Server logs for Live TV and grabber endpoints.
+
+Common flags:
+- `-plex-data-dir`
+- `-out`
+
+Use for:
+- discovering real client/backend Live TV endpoints
+- extracting undocumented request shapes from PMS logs
+
+## `iptv-tunerr plex-api-inspect`
+
+Snapshot the PMS-side Live TV state and probe core endpoints.
+
+Common flags:
+- `-plex-url`
+- `-token`
+- `-tuner-base-url`
+- `-include-probes`
+- `-out`
+
+Use for:
+- current device and DVR inventory
+- provider and tuner reachability
+- quick regression snapshots before and after experiments
+
+## `iptv-tunerr plex-device-audit`
+
+Resolve and probe each registered Plex Live TV device URI.
+
+Common flags:
+- `-plex-url`
+- `-token`
+- `-out`
+
+Use for:
+- identifying dead tuner URIs from PMS's point of view
+- proving DNS or HTTP reachability failures on registered HDHR devices
+- separating share-gating issues from plain bad device registration
+
+## `iptv-tunerr plex-dvr-cutover`
+
+Delete and recreate stale DVR/device rows from a TSV URI cutover map.
+
+Common flags:
+- `-plex-url`
+- `-token`
+- `-map`
+- `-reload-guide`
+- `-activate`
+- `-do`
+- `-out`
+
+Use for:
+- migrating injected DVRs from dead `.plex.svc` URIs to reachable hostnames
+- replaying unsupported PMS registration manually but repeatably
+- proving whether a DVR failure is fixed by re-registering against a new tuner URI
+
+## `iptv-tunerr plex-api-request`
+
+Replay an arbitrary PMS or plex.tv HTTP request.
+
+Common flags:
+- `-base-url`
+- `-token`
+- `-method`
+- `-path`
+- `-query`
+- `-headers`
+- `-body`
+- `-out`
+
+Use for:
+- manual endpoint replay
+- undocumented API experiments
+- controlled request/response capture
+
+## `iptv-tunerr plex-share-force-test`
+
+Delete and recreate a Plex share row, then report the observed share state.
+
+Common flags:
+- `-token`
+- `-machine-id`
+- `-plex-url`
+- `-client-id`
+- `-user-id`
+- `-library-ids`
+- `-requested-allow-tuners`
+- `-allow-sync`
+- `-do`
+- `-out`
+
+Use for:
+- reproducing the current non-Home `allowTuners` clamp
+- confirming whether a share mutation actually changes plex.tv state
+
+## `iptv-tunerr live-tv-bundle-build`
+
+Build a neutral Live TV bundle from existing Plex DVR/device state.
+
+Common flags:
+- `-plex-url`
+- `-token`
+- `-dvr-key`
+- `-tuner-url`
+- `-tuner-count`
+- `-out`
+
+Use for:
+- exporting the tuner URL, XMLTV URL, friendly name, and device identity from an existing Plex DVR
+- creating a portable migration artifact before converting or re-registering elsewhere
+- avoiding one-off manual copy/paste of Plex device and lineup metadata
+
+Notes:
+- Requires `-dvr-key` when Plex exposes multiple DVRs so the export does not silently pick the wrong fleet.
+- Produces a neutral bundle artifact; it does not write Emby/Jellyfin state directly.
+
+## `iptv-tunerr live-tv-bundle-convert`
+
+Convert a saved Live TV bundle into an Emby or Jellyfin registration plan.
+
+Common flags:
+- `-in`
+- `-target` (`emby` or `jellyfin`)
+- `-host`
+- `-out`
+
+Use for:
+- turning a Plex-derived Live TV bundle into the concrete `TunerHosts` and `ListingProviders` payload shape used by Emby/Jellyfin
+- pre-rolling registration plans before applying them to a real Emby or Jellyfin server
+- keeping media-server migration work on a portable JSON artifact instead of ad hoc spreadsheets or hand edits
+
+Notes:
+- This first slice emits a registration plan, not a raw media-server DB dump.
+- Target host/token stay external because Plex DVR state does not contain Emby/Jellyfin credentials.
+
+## `iptv-tunerr live-tv-bundle-apply`
+
+Apply a saved Emby or Jellyfin registration plan directly to a live server.
+
+Common flags:
+- `-in`
+- `-target` (`emby` or `jellyfin`, optional override)
+- `-host`
+- `-token`
+- `-state-file`
+- `-out`
+
+Use for:
+- taking a converted migration plan and registering it without retyping tuner/guide data by hand
+- pre-rolling Emby/Jellyfin Live TV while Plex stays online against the same Tunerr source
+- keeping the migration lane in the binary instead of sidecar scripts
+
+Notes:
+- `-host` / `-token` can also come from `IPTV_TUNERR_EMBY_HOST` + `IPTV_TUNERR_EMBY_TOKEN` or `IPTV_TUNERR_JELLYFIN_HOST` + `IPTV_TUNERR_JELLYFIN_TOKEN`, based on the plan target.
+- `-state-file` uses the same idempotent registration-state mechanism as runtime Emby/Jellyfin registration.
+
+## `iptv-tunerr live-tv-bundle-rollout`
+
+Build or apply a multi-target Emby/Jellyfin rollout from one neutral bundle.
+
+Common flags:
+- `-in`
+- `-targets` (default `emby,jellyfin`)
+- `-emby-host`
+- `-emby-token`
+- `-emby-state-file`
+- `-jellyfin-host`
+- `-jellyfin-token`
+- `-jellyfin-state-file`
+- `-apply`
+- `-out`
+
+Use for:
+- preparing the same Plex-derived Live TV identity for more than one downstream server at once
+- keeping Plex online while Emby and Jellyfin are pre-rolled from the same Tunerr source
+- dry-running a migration overlap plan before actually registering anything
+
+Notes:
+- Without `-apply`, the command emits a rollout plan JSON artifact.
+- With `-apply`, the command registers only the requested non-Plex targets and intentionally leaves Plex untouched.
 - `GET /provider/profile.json` — runtime provider profile including learned tuner caps, HLS instability, Cloudflare hits, penalized upstream hosts, and **`remediation_hints`** (advisory heuristic suggestions with optional related **`IPTV_TUNERR_*`** env names)
 
 Use for:
@@ -839,7 +1039,8 @@ Browser URLs:
 - Programming harvest bridge: when `IPTV_TUNERR_PLEX_LINEUP_HARVEST_FILE` is set, Tunerr reloads the saved harvest report and exposes it at `/programming/harvest.json`; `/programming/preview.json` also includes `harvest_ready` plus deduped `harvest_lineups` so the Programming lane can surface harvested candidate lineups alongside recipe state; `/programming/harvest-import.json` can preview or apply a chosen harvested lineup as a real saved Programming Manager recipe and reports which matching strategy succeeded (`tvg_id_exact`, `guide_name_exact`, `guide_number_exact`, or `local_broadcast_stem`).
 - Virtual channels (starter): when `IPTV_TUNERR_VIRTUAL_CHANNELS_FILE` is set, Tunerr exposes `/virtual-channels/rules.json` for durable file-backed rules, `/virtual-channels/preview.json` for schedule previews over catalog movies/episodes, `/virtual-channels/schedule.json` for a rolling schedule horizon, `/virtual-channels/live.m3u` for a publishable synthetic-channel export, and `/virtual-channels/stream/<id>.mp4` for the current scheduled asset proxy.
 - Active stream intervention: `/debug/active-streams.json` shows live request IDs and `/ops/actions/stream-stop` accepts `{"request_id":"..."}` or `{"channel_id":"..."}` to cancel matching active stream contexts from the localhost operator plane.
-- Shared relay visibility: `/debug/shared-relays.json` shows current same-channel shared HLS Go-relay sessions and subscriber counts when duplicate consumers are attached to one upstream relay.
+- Shared relay visibility: `/debug/shared-relays.json` shows current same-channel shared-output sessions across `hls_go`, live FFmpeg HLS reuse, and packaged-HLS reuse, including `shared_upstream`, `content_type`, producer request ID, start time, and subscriber counts when duplicate consumers are attached to one upstream producer.
+- Shared relay control: `/ops/actions/shared-relay-replay` accepts `POST {"shared_relay_replay_bytes":262144}` from the localhost operator plane and applies that replay window to new shared live sessions; the deck Settings lane drives the same action and reflects the active value from `/debug/runtime.json`.
 - Programming Manager detail view: `/programming/channel-detail.json?channel_id=<id>&horizon=3h&limit=6` returns focused channel metadata, exact-match backup alternatives, and upcoming programme capsules for category-first channel-builder tools.
 - Guide/operator endpoints include `/guide/lineup-match.json`, which reports whether current `lineup.json` rows have exact-name counterparts in emitted `guide.xml`, plus duplicate-name/number signals and a sample of unmatched rows including `channel_id`, `guide_number`, `guide_name`, and observed `tvg_id`.
 - Startup contract: until the first real merged guide is cached, `/guide.xml` returns `503 Service Unavailable` with `Retry-After: 5`, `X-IptvTunerr-Guide-State: loading`, and a visible placeholder XMLTV body. HDHR discovery/lineup endpoints stay `200`, but emit `X-IptvTunerr-Startup-State: loading` while no lineup channels are loaded yet; `/lineup_status.json` reports `ScanInProgress=1` and `LineupReady=false` during that startup window, and an empty `/lineup.json` adds `Retry-After: 5`.
@@ -1117,6 +1318,7 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
 - `IPTV_TUNERR_FFMPEG_HLS_PACKAGER_MAX_AGE_SEC` — hard cap on packaged-HLS session lifetime before janitor cleanup (default **300**).
 - `IPTV_TUNERR_FFMPEG_HLS_PACKAGER_LIST_SIZE` — ffmpeg HLS playlist window size for packaged-HLS mode (default **6**).
 - `IPTV_TUNERR_FFMPEG_HLS_PACKAGER_SEGMENT_SECONDS` — ffmpeg HLS segment target duration for packaged-HLS mode (default **2**).
+- `IPTV_TUNERR_SHARED_RELAY_REPLAY_BYTES` — bounded replay buffer in bytes for shared live-output sessions (`hls_go` and live FFmpeg shared attaches). Default **262144** so late subscribers can receive recent startup bytes; set `0` to disable replay buffering.
 - `IPTV_TUNERR_FFMPEG_HLS_FIRST_BYTES_TIMEOUT_MS` — for non-transcode HLS ffmpeg-remux, wait this long for the first output bytes before aborting remux and falling back instead of letting the client sit on a dead remux attempt (default **4000**; `0` disables).
 - `IPTV_TUNERR_HLS_PLAYLIST_RETRY_LIMIT` / `IPTV_TUNERR_HLS_PLAYLIST_RETRY_BACKOFF_MS` — bounded retry/backoff for playlist refreshes that hit provider concurrency/limit responses; intended for short-lived `509`/similar contention rather than permanent failures.
 - `IPTV_TUNERR_HLS_RELAY_PREFER_GO_ON_PROVIDER_PRESSURE` — skip non-transcode ffmpeg remux and go straight to the Go playlist/segment relay when Tunerr has **learned concurrency pressure** *or* the upstream host already has **autotune penalty** (same process; requires **`IPTV_TUNERR_PROVIDER_AUTOTUNE`** so failures are recorded). Turning this **off** disables both signals unless **`IPTV_TUNERR_HLS_RELAY_PREFER_GO`** is on.
@@ -1147,7 +1349,8 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
 - `IPTV_TUNERR_HOT_START_TIMEOUT_MS` — lower startup-gate timeout for hot channels (default `15000`)
 - `IPTV_TUNERR_HOT_START_BOOTSTRAP_SECONDS` — bootstrap burst duration for hot channels (default `2.0`)
 - `IPTV_TUNERR_HOT_START_PROGRAM_KEEPALIVE` — enable PAT/PMT keepalive automatically for hot channels (default `true`)
-- `IPTV_TUNERR_FORCE_WEBSAFE` — when `true`, always transcode with MP3 audio regardless of client. Use if client detection misclassifies a browser client or after a Plex update changes the session UA.
+- `IPTV_TUNERR_FORCE_WEBSAFE` — when `true`, always force the Plex-safe transcode path regardless of client. Default forced profile is `plexsafe` unless `IPTV_TUNERR_FORCE_WEBSAFE_PROFILE` is set.
+- `IPTV_TUNERR_FORCE_WEBSAFE_PROFILE` — built-in or named profile used when `IPTV_TUNERR_FORCE_WEBSAFE=true`. Useful for compatibility testing with higher quality than the default `plexsafe`; for example `plexsafehq` keeps MP3 audio for compatibility, adds `setsar=1`, and raises the video/mux bitrate ceiling substantially.
 - `IPTV_TUNERR_STRIP_STREAM_HOSTS` — comma-separated hostnames (e.g. `cf.like-cdn.com,like-cdn.com`) whose stream URLs are removed at catalog build time. Channels with only stripped hosts are dropped entirely so the tuner never attempts CF-blocked endpoints.
 - `IPTV_TUNERR_DEDUPE_BY_TVG_ID` — when `true`/`1`/`on` (default), merge catalog rows that share the same **`tvg_id`** **and matching normalized guide-name identity** during **`index`** (including a **post-merge** pass after free sources + HDHR hardware lineup). This keeps intentional `tvg_id` variants like East/West or `Plus` variants separate. Set `false`/`0`/`off` to disable (niche debugging).
 
@@ -1192,6 +1395,10 @@ Fetches EPG directly from your IPTV provider using existing credentials. No sepa
 - `IPTV_TUNERR_PROVIDER_EPG_INCREMENTAL` (`false`) — when `true`, apply token rendering on `IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX` from SQLite horizon (`GlobalMaxStopUnix`)
 - `IPTV_TUNERR_PROVIDER_EPG_LOOKAHEAD_HOURS` (`72`) — window end offset for incremental suffix token rendering
 - `IPTV_TUNERR_PROVIDER_EPG_BACKFILL_HOURS` (`6`) — start offset before known max stop for incremental suffix token rendering
+- `IPTV_TUNERR_PROVIDER_SHORT_EPG_FALLBACK` (`false`) — when `true`, and provider `xmltv.php` is unavailable, try `player_api.php?action=get_short_epg` against the channel stream host (or provider base URL) and synthesize real programme blocks for any channels that return short-EPG rows
+- `IPTV_TUNERR_PROVIDER_SHORT_EPG_LIMIT` (`6`) — max short-EPG rows requested per channel when the fallback is enabled
+- `IPTV_TUNERR_PROVIDER_SHORT_EPG_CONCURRENCY` (`8`) — concurrent short-EPG requests during fallback guide refresh
+- `IPTV_TUNERR_PROVIDER_SHORT_EPG_TIMEOUT` (`5s`) — per-request timeout for short-EPG fallback calls
 - Suffix tokens: `{from_unix}`, `{to_unix}`, `{from_ymd}`, `{to_ymd}` (only meaningful when incremental is enabled and SQLite store has data)
 
 ### External XMLTV (tier 2)

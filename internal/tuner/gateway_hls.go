@@ -485,7 +485,7 @@ func (g *Gateway) fetchAndWriteSegment(
 		return 0, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
 		// Detect CF at segment level — CF sometimes passes the playlist but blocks .ts segments.
 		// Peek at the body to check for CF signals, then note the block for bootstrapping.
 		preview := make([]byte, 256)

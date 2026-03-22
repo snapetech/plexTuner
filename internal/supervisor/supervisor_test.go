@@ -138,6 +138,25 @@ func TestLoadConfigMediaServerReg(t *testing.T) {
 	}
 }
 
+func TestLoadEnvFile_UnquotesShellStyleValues(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "envfile.env")
+	if err := os.WriteFile(path, []byte("export IPTV_TUNERR_PROVIDER_USER=\"demo user\"\nIPTV_TUNERR_PROVIDER_PASS='demo-pass'\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER", "")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS", "")
+	if err := loadEnvFile(path); err != nil {
+		t.Fatal(err)
+	}
+	if got := os.Getenv("IPTV_TUNERR_PROVIDER_USER"); got != "demo user" {
+		t.Fatalf("provider user = %q want %q", got, "demo user")
+	}
+	if got := os.Getenv("IPTV_TUNERR_PROVIDER_PASS"); got != "demo-pass" {
+		t.Fatalf("provider pass = %q want %q", got, "demo-pass")
+	}
+}
+
 func splitEnvKV(s string) (string, string, bool) {
 	for i := 0; i < len(s); i++ {
 		if s[i] == '=' {

@@ -183,9 +183,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/logout", s.logout)
 	mux.HandleFunc("/deck/settings.json", s.deckSettings)
 	mux.HandleFunc("/api/", s.proxy)
-	mux.HandleFunc("/api", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/api/", http.StatusSeeOther)
-	})
+	mux.HandleFunc("/api", s.apiRoot)
 	mux.HandleFunc("/deck/telemetry.json", s.telemetry)
 	mux.HandleFunc("/deck/activity.json", s.activity)
 	mux.HandleFunc("/", s.index)
@@ -241,7 +239,7 @@ func (s *Server) telemetry(w http.ResponseWriter, r *http.Request) {
 		}
 		s.writeTelemetry(w)
 	default:
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		writeMethodNotAllowedJSON(w, http.MethodGet, http.MethodDelete)
 	}
 }
 
@@ -255,7 +253,7 @@ func (s *Server) writeTelemetry(w http.ResponseWriter) {
 	s.telemetryMu.Unlock()
 	body, err := json.MarshalIndent(rep, "", "  ")
 	if err != nil {
-		http.Error(w, `{"error":"encode telemetry"}`, http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "encode telemetry")
 		return
 	}
 	_, _ = w.Write(body)
@@ -273,7 +271,7 @@ func (s *Server) activity(w http.ResponseWriter, r *http.Request) {
 		s.recordActivity("memory", "activity_log_cleared", "Shared operator activity log was cleared.", nil)
 		s.writeActivity(w)
 	default:
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		writeMethodNotAllowedJSON(w, http.MethodGet, http.MethodDelete)
 	}
 }
 
@@ -287,7 +285,7 @@ func (s *Server) writeActivity(w http.ResponseWriter) {
 	s.activityMu.Unlock()
 	body, err := json.MarshalIndent(rep, "", "  ")
 	if err != nil {
-		http.Error(w, `{"error":"encode activity"}`, http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "encode activity")
 		return
 	}
 	_, _ = w.Write(body)
@@ -302,15 +300,15 @@ func (s *Server) deckSettings(w http.ResponseWriter, r *http.Request) {
 		var req DeckSettings
 		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 		if err != nil {
-			http.Error(w, `{"error":"read settings body"}`, http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, "read settings body")
 			return
 		}
 		if err := json.Unmarshal(body, &req); err != nil {
-			http.Error(w, `{"error":"invalid settings json"}`, http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, "invalid settings json")
 			return
 		}
 		if req.DefaultRefreshSec < 0 || req.DefaultRefreshSec > 3600 {
-			http.Error(w, `{"error":"default_refresh_sec must be between 0 and 3600"}`, http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, "default_refresh_sec must be between 0 and 3600")
 			return
 		}
 		s.settingsMu.Lock()
@@ -322,7 +320,7 @@ func (s *Server) deckSettings(w http.ResponseWriter, r *http.Request) {
 		})
 		s.writeDeckSettings(w)
 	default:
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		writeMethodNotAllowedJSON(w, http.MethodGet, http.MethodPost)
 	}
 }
 
@@ -330,7 +328,7 @@ func (s *Server) writeDeckSettings(w http.ResponseWriter) {
 	rep := s.deckSettingsReport()
 	body, err := json.MarshalIndent(rep, "", "  ")
 	if err != nil {
-		http.Error(w, `{"error":"encode deck settings"}`, http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "encode deck settings")
 		return
 	}
 	_, _ = w.Write(body)
@@ -427,8 +425,8 @@ func (s *Server) trimActivityLocked() {
 
 func (s *Server) proxy(w http.ResponseWriter, r *http.Request) {
 	base, err := url.Parse(s.tunerBase)
-	if err != nil {
-		http.Error(w, `{"error":"invalid tuner base"}`, http.StatusInternalServerError)
+	if err != nil || strings.TrimSpace(base.Scheme) == "" || strings.TrimSpace(base.Host) == "" {
+		writeJSONError(w, http.StatusInternalServerError, "invalid tuner base")
 		return
 	}
 	rp := httputil.NewSingleHostReverseProxy(base)
@@ -455,11 +453,42 @@ func (s *Server) proxy(w http.ResponseWriter, r *http.Request) {
 	rp.ServeHTTP(w, r)
 }
 
+func (s *Server) apiRoot(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeMethodNotAllowedJSON(w, http.MethodGet, http.MethodHead)
+		return
+	}
+	http.Redirect(w, r, "/api/", http.StatusTemporaryRedirect)
+}
+
+func (s *Server) ensureTemplates() {
+	if s.tmpl == nil {
+		s.tmpl = template.Must(template.New("webui").Delims("[[", "]]").Parse(indexHTML))
+	}
+	if s.loginTmpl == nil {
+		s.loginTmpl = template.Must(template.New("login").Delims("[[", "]]").Parse(loginHTML))
+	}
+}
+
+func (s *Server) ensureStateMaps() {
+	if s.sessions == nil {
+		s.sessions = make(map[string]deckSession)
+	}
+	if s.failedLoginByIP == nil {
+		s.failedLoginByIP = make(map[string][]time.Time)
+	}
+}
+
 func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeMethodNotAllowedPlain(w, http.MethodGet, http.MethodHead)
+		return
+	}
+	s.ensureTemplates()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	if err := s.tmpl.Execute(w, map[string]interface{}{
@@ -475,12 +504,20 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) assetCSS(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeMethodNotAllowedPlain(w, http.MethodGet, http.MethodHead)
+		return
+	}
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = io.WriteString(w, deckCSS)
 }
 
 func (s *Server) assetJS(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeMethodNotAllowedPlain(w, http.MethodGet, http.MethodHead)
+		return
+	}
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = io.WriteString(w, deckJS)
@@ -488,7 +525,7 @@ func (s *Server) assetJS(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
-	case http.MethodGet:
+	case http.MethodGet, http.MethodHead:
 		s.renderLogin(w, r, http.StatusOK, "")
 	case http.MethodPost:
 		if s.loginBlocked(r) {
@@ -512,13 +549,13 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		s.recordActivity("auth", "login", "Deck session opened.", map[string]interface{}{"username": user})
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowedPlain(w, http.MethodGet, http.MethodHead, http.MethodPost)
 	}
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowedPlain(w, http.MethodPost)
 		return
 	}
 	if cookie, err := r.Cookie(sessionCookieName); err == nil {
@@ -540,6 +577,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, status int, errText string) {
+	s.ensureTemplates()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	if status > 0 {
@@ -596,16 +634,27 @@ func (s *Server) sessionAuthOnly(h http.Handler) http.Handler {
 func (s *Server) handleUnauthorized(w http.ResponseWriter, r *http.Request) {
 	if s.loginBlocked(r) {
 		w.Header().Set("Retry-After", strconv.Itoa(int(failedLoginWindow/time.Second)))
-		http.Error(w, `{"error":"too many login attempts"}`, http.StatusTooManyRequests)
+		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/deck/") {
+			writeJSONError(w, http.StatusTooManyRequests, "too many login attempts")
+			return
+		}
+		code := http.StatusSeeOther
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			code = http.StatusTemporaryRedirect
+		}
+		http.Redirect(w, r, "/login", code)
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/deck/") {
 		w.Header().Set("WWW-Authenticate", `Basic realm="IPTV Tunerr Deck"`)
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
+	code := http.StatusSeeOther
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		code = http.StatusTemporaryRedirect
+	}
+	http.Redirect(w, r, "/login", code)
 }
 
 func (s *Server) validCredentials(user, pass string) bool {
@@ -622,13 +671,35 @@ func mustGenerateDeckPassword(length int) string {
 	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
 	buf := make([]byte, length)
 	if _, err := rand.Read(buf); err != nil {
-		panic(fmt.Errorf("generate deck password: %w", err))
+		seed := []byte(strconv.FormatInt(time.Now().UTC().UnixNano(), 10))
+		if len(seed) == 0 {
+			seed = []byte("iptvtunerr-fallback")
+		}
+		for i := range buf {
+			buf[i] = seed[i%len(seed)] + byte(i)
+		}
 	}
 	out := make([]byte, length)
 	for i, b := range buf {
 		out[i] = alphabet[int(b)%len(alphabet)]
 	}
 	return string(out)
+}
+
+func writeMethodNotAllowedJSON(w http.ResponseWriter, methods ...string) {
+	w.Header().Set("Allow", strings.Join(methods, ", "))
+	writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+}
+
+func writeMethodNotAllowedPlain(w http.ResponseWriter, methods ...string) {
+	w.Header().Set("Allow", strings.Join(methods, ", "))
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+}
+
+func writeJSONError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte(fmt.Sprintf("{\"error\":%q}\n", msg)))
 }
 
 func (s *Server) hasValidSession(r *http.Request) bool {
@@ -670,6 +741,7 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request) {
 		csrfToken = hex.EncodeToString(sum[:])
 	}
 	s.sessionMu.Lock()
+	s.ensureStateMaps()
 	s.pruneSessionsLocked()
 	s.sessions[token] = deckSession{
 		ExpiresAt: time.Now().Add(sessionTTL),
@@ -734,18 +806,18 @@ func (s *Server) requireCSRFForToken(w http.ResponseWriter, r *http.Request, tok
 	}
 	header := strings.TrimSpace(r.Header.Get(csrfHeaderName))
 	if header == "" {
-		http.Error(w, `{"error":"missing csrf token"}`, http.StatusForbidden)
+		writeJSONError(w, http.StatusForbidden, "missing csrf token")
 		return false
 	}
 	s.sessionMu.Lock()
 	defer s.sessionMu.Unlock()
 	session, ok := s.sessions[token]
 	if !ok || strings.TrimSpace(session.CSRFToken) == "" {
-		http.Error(w, `{"error":"invalid session"}`, http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "invalid session")
 		return false
 	}
 	if subtle.ConstantTimeCompare([]byte(header), []byte(session.CSRFToken)) != 1 {
-		http.Error(w, `{"error":"invalid csrf token"}`, http.StatusForbidden)
+		writeJSONError(w, http.StatusForbidden, "invalid csrf token")
 		return false
 	}
 	return true
@@ -800,6 +872,7 @@ func (s *Server) loginBlocked(r *http.Request) bool {
 	}
 	s.failedLoginMu.Lock()
 	defer s.failedLoginMu.Unlock()
+	s.ensureStateMaps()
 	s.trimFailedLoginsLocked(ip)
 	return len(s.failedLoginByIP[ip]) >= failedLoginLimit
 }
@@ -811,6 +884,7 @@ func (s *Server) noteFailedLogin(r *http.Request) {
 	}
 	s.failedLoginMu.Lock()
 	defer s.failedLoginMu.Unlock()
+	s.ensureStateMaps()
 	s.trimFailedLoginsLocked(ip)
 	s.failedLoginByIP[ip] = append(s.failedLoginByIP[ip], time.Now())
 }
@@ -821,6 +895,7 @@ func (s *Server) clearFailedLogins(r *http.Request) {
 		return
 	}
 	s.failedLoginMu.Lock()
+	s.ensureStateMaps()
 	delete(s.failedLoginByIP, ip)
 	s.failedLoginMu.Unlock()
 }
@@ -861,8 +936,15 @@ func fallbackVersion(v string) string {
 }
 
 func proxyBase(addr string) string {
+	addr = strings.TrimSpace(addr)
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil || port == "" {
+		switch {
+		case strings.HasPrefix(addr, "[") && strings.HasSuffix(addr, "]") && !strings.Contains(addr, "]:"):
+			host = strings.TrimSuffix(strings.TrimPrefix(addr, "["), "]")
+		case err != nil:
+			host = addr
+		}
 		port = "5004"
 	}
 	host = strings.TrimSpace(host)
@@ -879,7 +961,13 @@ func localhostOnly(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host, _, err := net.SplitHostPort(r.RemoteAddr)
 		if err != nil || !isLoopback(host) {
-			http.Error(w, "forbidden: webui is localhost-only (set IPTV_TUNERR_WEBUI_ALLOW_LAN=1)", http.StatusForbidden)
+			msg := "forbidden: webui is localhost-only (set IPTV_TUNERR_WEBUI_ALLOW_LAN=1)"
+			path := strings.ToLower(strings.TrimSpace(r.URL.Path))
+			if path == "/api" || strings.HasPrefix(path, "/api/") || strings.HasSuffix(path, ".json") {
+				writeJSONError(w, http.StatusForbidden, msg)
+				return
+			}
+			http.Error(w, msg, http.StatusForbidden)
 			return
 		}
 		h.ServeHTTP(w, r)
@@ -906,6 +994,10 @@ func securityHeaders(h http.Handler) http.Handler {
 }
 
 func isLoopback(host string) bool {
-	ip := net.ParseIP(strings.TrimSpace(host))
+	host = strings.TrimSpace(host)
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
 }

@@ -117,8 +117,13 @@ func TestHandler_OPTIONSAndPROPFIND_ClientShapes(t *testing.T) {
 			t.Fatalf("status=%d body=%q", w.Code, w.Body.String())
 		}
 		allow := w.Header().Get("Allow")
-		if !strings.Contains(allow, "PROPFIND") {
+		if allow != readOnlyDAVAllow {
 			t.Fatalf("Allow=%q", allow)
+		}
+		for _, forbidden := range []string{"PUT", "DELETE", "LOCK", "MOVE", "COPY", "POST"} {
+			if strings.Contains(allow, forbidden) {
+				t.Fatalf("Allow unexpectedly contains %q: %q", forbidden, allow)
+			}
 		}
 		if dav := w.Header().Get("DAV"); dav == "" {
 			t.Fatal("missing DAV header")

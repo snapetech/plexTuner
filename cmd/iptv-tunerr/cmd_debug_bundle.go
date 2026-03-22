@@ -15,7 +15,10 @@ import (
 	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/config"
+	"github.com/snapetech/iptvtunerr/internal/httpclient"
 )
+
+var debugBundleHTTPClient = httpclient.WithTimeout(15 * time.Second)
 
 func debugBundleCommands() []commandSpec {
 	return []commandSpec{
@@ -171,7 +174,7 @@ Flags:
 }
 
 func fetchURLToFile(rawURL, destPath string) error {
-	resp, err := http.Get(rawURL) //nolint:gosec
+	resp, err := debugBundleHTTPClient.Get(rawURL) //nolint:gosec
 	if err != nil {
 		return err
 	}
@@ -283,6 +286,15 @@ func isSecretEnvKey(key string) bool {
 	upper := strings.ToUpper(key)
 	for _, suffix := range secretEnvSuffixes {
 		if strings.HasSuffix(upper, suffix) {
+			return true
+		}
+		if idx := strings.LastIndexByte(upper, '_'); idx > 0 {
+			prefix := upper[:idx]
+			if strings.HasSuffix(prefix, suffix) {
+				return true
+			}
+		}
+		if strings.Contains(upper, suffix+"_") {
 			return true
 		}
 	}

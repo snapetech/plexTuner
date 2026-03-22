@@ -6,6 +6,21 @@ unchanged for all three servers — no new endpoints were added. The `internal/e
 handles both programmatic Live TV registration and catch-up library registration so you do not need
 to click through either setup flow manually.
 
+The repo now also has a migration foundation for fleets moving off Plex: `iptv-tunerr live-tv-bundle-build`
+can export a neutral Live TV bundle from existing Plex DVR/device state, and
+`iptv-tunerr live-tv-bundle-convert -target emby|jellyfin` can turn that bundle into the
+registration payload shape Emby/Jellyfin expect. `iptv-tunerr live-tv-bundle-apply` can then
+register that plan directly against a live Emby/Jellyfin server. This is a builder/converter/apply
+layer, not a raw DB dump tool.
+
+For overlap migrations, `iptv-tunerr live-tv-bundle-rollout` can build or apply both Emby and
+Jellyfin targets from the same neutral bundle in one pass, so the non-Plex side can be pre-rolled
+together while Plex remains online.
+
+That means migration does not need to be a flag day. You can keep Plex live, pre-roll Emby or
+Jellyfin from the same Tunerr-backed tuner/guide identity, and move users over gradually instead of
+forcing everyone off Plex at once.
+
 ---
 
 ## How it works

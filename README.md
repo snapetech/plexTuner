@@ -37,6 +37,8 @@ IPTV Tunerr sits in the middle and fixes those problems. It can:
 
 You can use it for just the tuner, just the guide, or as the full control plane in front of Plex, Emby, and Jellyfin.
 
+It also supports gradual migration between them. The same Tunerr-backed tuner and guide identity can stay online for Plex while you pre-roll Emby or Jellyfin from built-in migration commands instead of hand-copying Live TV settings or forcing a one-shot cutover.
+
 ### It makes unreliable IPTV behave like a normal DVR source
 
 Instead of pointing Plex or Jellyfin directly at a fragile provider playlist, you give them one stable tuner endpoint. IPTV Tunerr handles probing, fallbacks, guide shaping, and client quirks upstream so your media server sees something boring and predictable.
@@ -253,6 +255,15 @@ IPTV_TUNERR_PROVIDER_PASS_2=pass2
 Each numbered provider is independently probed. The best host indexes the catalog; all provider hosts become stream URL fallbacks per channel. Channels with duplicate `tvg-id` values across providers are deduplicated — one entry in the lineup with all matching stream URLs ranked and available for failover.
 
 When a deduplicated channel has several distinct provider-account credential sets behind it, the gateway now spreads active streams across those accounts instead of always retrying the first ranked URL. Use `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT` if one credential set should allow more than one active viewer. If one specific credential set starts returning upstream concurrency-limit responses, Tunerr now learns a tighter cap for that account and exposes it on `/provider/profile.json`.
+
+For duplicate viewers on the exact same channel, Tunerr can also reuse one live session instead of burning another provider fetch. Today that works in three concrete lanes:
+- the native `hls_go` shared relay for same-channel duplicate consumers
+- the live FFmpeg HLS remux/transcode path when the requested output shape matches, including `video/mp2t` and named-profile `fMP4`
+- profile-selected ffmpeg packaged HLS (`output_mux: "hls"`) for identical output profiles, where later viewers get the existing packaged session/playlist instead of starting another upstream pull
+
+New shared viewers also get a bounded startup replay window from the existing session, which matters for late joins on formats like `fMP4` where the useful init/header bytes are at the front of the stream.
+
+That means the practical answer for “several people are watching the same PPV” is now better than simple account spreading: if the requested output shape matches, Tunerr can keep them on one upstream/account session rather than counting each viewer as a separate provider pull.
 
 ### 4. Post-index stream validation
 

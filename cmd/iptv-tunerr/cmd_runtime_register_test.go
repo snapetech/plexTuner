@@ -63,3 +63,21 @@ func TestApplyRegistrationRecipe_SportsNowUsesIntentRecipe(t *testing.T) {
 		t.Fatalf("channel=%q want 1", got[0].ChannelID)
 	}
 }
+
+func TestGuideURLForBaseTrimsTrailingSlash(t *testing.T) {
+	if got := guideURLForBase("http://tuner:5004/"); got != "http://tuner:5004/guide.xml" {
+		t.Fatalf("guide url=%q", got)
+	}
+	if got := guideURLForBase("http://tuner:5004"); got != "http://tuner:5004/guide.xml" {
+		t.Fatalf("guide url=%q", got)
+	}
+}
+
+func TestStreamURLForBaseTrimsTrailingSlash(t *testing.T) {
+	if got := streamURLForBase("http://tuner:5004/", "abc123"); got != "http://tuner:5004/stream/abc123" {
+		t.Fatalf("stream url=%q", got)
+	}
+	if got := streamURLForBase("http://tuner:5004", "abc123"); got != "http://tuner:5004/stream/abc123" {
+		t.Fatalf("stream url=%q", got)
+	}
+}

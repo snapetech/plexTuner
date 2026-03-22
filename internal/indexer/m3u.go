@@ -27,9 +27,18 @@ func ParseM3UWithUserAgents(m3uURL string, client *http.Client, userAgents ...st
 	if client == nil {
 		client = httpclient.WithTimeout(httpclient.DefaultTimeout)
 	}
-	resp, err := doGetWithRetry(context.Background(), client, m3uURL, userAgents...)
-	if err != nil {
-		return nil, nil, nil, err
+	resp, fetchErr := doGetWithRetry(context.Background(), client, m3uURL, userAgents...)
+	if fetchErr != nil {
+		// HTTP/1.1 fallback: all UA passes failed with the HTTP/2 client. Retry without
+		// ALPN h2 negotiation — Go's H2 JA3/SETTINGS fingerprint may be the blocking signal.
+		h1 := httpclient.ForHTTP1Only(httpclient.DefaultTimeout)
+		h1.Jar = client.Jar
+		if r2, e2 := doGetWithRetry(context.Background(), h1, m3uURL, userAgents...); e2 == nil {
+			resp, fetchErr = r2, nil
+		}
+	}
+	if fetchErr != nil {
+		return nil, nil, nil, fetchErr
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {

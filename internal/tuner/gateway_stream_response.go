@@ -229,6 +229,7 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 	if strings.TrimSpace(forcedProfile) != "" {
 		profileName = normalizeConfiguredProfileName(forcedProfile)
 	}
+	profileSelection := g.resolveProfileSelection(profileName)
 	outputMux := g.preferredOutputMuxForProfile(profileName, requestMux, transcode)
 	if requestMux == "hls" {
 		out := rewriteHLSPlaylistToGatewayProxy(body, effectiveURL, channelID)
@@ -242,7 +243,6 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 		return "ok", "hls_native_mux", effectiveURL, true
 	}
 	if outputMux == streamMuxHLS {
-		profileSelection := g.resolveProfileSelection(profileName)
 		if err := g.serveFFmpegPackagedHLSInitial(w, r, channel.GuideName, channelID, effectiveURL, profileSelection); err == nil {
 			g.rememberAutopilotDecision(channel, clientClass, transcode, effectiveProfileName(g, channel, channelID, forcedProfile), adaptReason, streamURL)
 			return "ok", "hls_ffmpeg_packaged", effectiveURL, true
@@ -265,16 +265,29 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 	if !g.DisableFFmpeg && !preferGoRelay {
 		if ffmpegPath, ffmpegErr := resolveFFmpegPath(); ffmpegErr == nil {
 			attempt.setFFmpegHeaders(attemptIdx, ffmpegHeaderSummary(g.ffmpegInputHeaderBlock(r, effectiveURL, "")))
-			if err := g.relayHLSWithFFmpeg(w, r, ffmpegPath, streamURL, channel.GuideName, channelID, channel.GuideNumber, channel.TVGID, start, transcode, bufferSize, forcedProfile, hotStart, outputMux); err == nil {
+			sharedSession := g.createSharedOutputRelaySession(
+				sharedFFmpegRelayKey(channelID, profileSelection, outputMux),
+				channelID,
+				gatewayReqIDFromContext(r.Context()),
+				"hls_ffmpeg",
+				sharedRelayContentType(outputMux),
+			)
+			ffmpegRelayErr := g.relayHLSWithFFmpeg(w, r, ffmpegPath, streamURL, channel.GuideName, channelID, channel.GuideNumber, channel.TVGID, start, transcode, bufferSize, forcedProfile, hotStart, outputMux, sharedSession)
+			if ffmpegRelayErr == nil {
 				g.noteHLSRemuxSuccess(streamURL)
 				g.rememberAutopilotDecision(channel, clientClass, transcode, effectiveProfileName(g, channel, channelID, forcedProfile), adaptReason, streamURL)
 				return "ok", "hls_ffmpeg", effectiveURL, true
 			}
-			attempt.markUpstreamError(attemptIdx, "ffmpeg_hls_failed", err)
+			attempt.markUpstreamError(attemptIdx, "ffmpeg_hls_failed", ffmpegRelayErr)
 			g.noteHLSRemuxFailure(streamURL)
 			g.noteUpstreamFailure(streamURL, 0, "ffmpeg_hls_failed")
 			log.Printf("gateway: channel=%q id=%s ffmpeg-%s failed (falling back to go relay): %v",
-				channel.GuideName, channelID, mode, err)
+				channel.GuideName, channelID, mode, ffmpegRelayErr)
+			if responseAlreadyStarted(w) {
+				log.Printf("gateway: channel=%q id=%s ffmpeg-%s response already started; not attempting go-relay fallback on same response",
+					channel.GuideName, channelID, mode)
+				return "ffmpeg_hls_failed_started", "hls_ffmpeg_failed_started", effectiveURL, true
+			}
 		} else if strings.TrimSpace(os.Getenv("IPTV_TUNERR_FFMPEG_PATH")) != "" {
 			log.Printf("gateway: channel=%q id=%s ffmpeg unavailable path=%q err=%v",
 				channel.GuideName, channelID, os.Getenv("IPTV_TUNERR_FFMPEG_PATH"), ffmpegErr)

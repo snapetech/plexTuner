@@ -19,13 +19,14 @@ IPTV Tunerr’s gateway can **transcode** live HLS/MPEG-TS to a Plex-friendly **
 |------|-------------|-------------|
 | Default | `default` | Balanced x264 + AAC when transcoding |
 | Plex Web–safe | `plexsafe` | MP3 audio, conservative video — good for Plex Web DASH |
+| Plex Web–safe HQ | `plexsafehq` | MP3 audio with higher quality and `setsar=1` for smart-TV/browser compatibility testing |
 | AAC CFR | `aaccfr` | Baseline-ish H.264 + AAC CFR |
 | Video-only (fast) | `videoonlyfast` | Video transcode, no audio |
 | Low bitrate | `lowbitrate` | Smaller video + AAC |
 | DASH fast | `dashfast` | Tuned for faster Plex Web DASH startup |
 | PMS xcode (diagnostic) | `pmsxcode` | MPEG-2 + MP2 — forces transcode off Plex’s copy path for debugging |
 
-Aliases (e.g. `plex-safe`, `aac`, `video`) are accepted; see `normalizeProfileName` in code.
+Aliases (e.g. `plex-safe`, `plex-safe-hq`, `aac`, `video`) are accepted; see `normalizeProfileName` in code.
 
 ## HDHomeRun / SiliconDust–style aliases
 
@@ -76,14 +77,16 @@ Notes:
 - `base_profile` must be one of the built-in profiles or HDHR-style aliases listed above.
 - `output_mux` is only a preferred default. An explicit request like `?mux=mpegts` still wins.
 - `output_mux: "hls"` is a **profile-selected** ffmpeg packager path. It does **not** change explicit **`?mux=hls`**, which still means Tunerr-native playlist rewrite/proxy.
+- For live ffmpeg output shapes other than packaged HLS, later viewers asking for the same channel and the same resolved profile/output contract can now attach to the existing FFmpeg producer instead of starting a second one. That shared live path marks responses with `X-IptvTunerr-Shared-Upstream: hls_ffmpeg`, and shared sessions keep a bounded replay window so late joiners can still receive recent startup bytes such as `fMP4` init/header data.
 - Packaged HLS uses short-lived session URLs under `/stream/<id>?mux=hlspkg&sid=...&file=...`; Tunerr serves the playlist and segment files while ffmpeg keeps packaging in the background.
+- While that packaged session is still alive, later viewers asking for the same channel and the same named-output profile are handed the existing session instead of starting a second ffmpeg/upstream pull. The playlist response marks this with `X-IptvTunerr-Shared-Upstream: ffmpeg_hls_packager`.
 - `IPTV_TUNERR_PROFILE`, `IPTV_TUNERR_PROFILE_OVERRIDES_FILE`, and `?profile=<name>` can all reference these custom names once loaded.
 - Runtime snapshot echoes the file path under `tuner.stream_profiles_file`.
 
 ## Selecting a profile
 
 - **Query string:** `GET /stream/<id>?profile=<name>` — forces adaptation using built-in or loaded named profiles (e.g. `?profile=internet360` → `aaccfr`, or `?profile=ISP-web` from the matrix file).
-- **Environment:** `IPTV_TUNERR_PROFILE`, `IPTV_TUNERR_PLEX_SAFE`, profile overrides file, named profile matrix file.
+- **Environment:** `IPTV_TUNERR_PROFILE`, `IPTV_TUNERR_PLEX_SAFE`, `IPTV_TUNERR_FORCE_WEBSAFE`, `IPTV_TUNERR_FORCE_WEBSAFE_PROFILE`, profile overrides file, named profile matrix file.
 - **Autopilot:** remembered per `dna_id` + client class when enabled.
 
 ## See also

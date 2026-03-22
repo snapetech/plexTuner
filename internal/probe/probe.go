@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"io"
 	"net/http"
@@ -121,6 +122,7 @@ func min(a, b int) int {
 
 // Lineup returns the lineup.json payload for the given live channels. baseURL is the base URL for stream links (e.g. http://tuner-host:port/stream?url=...).
 func Lineup(channels []catalog.LiveChannel, baseURL string) []LineupItem {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	items := make([]LineupItem, 0, len(channels))
 	for _, c := range channels {
 		streamURL := c.StreamURL
@@ -143,6 +145,10 @@ func LineupHandler(getLineup func() []LineupItem) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			writeMethodNotAllowed(w, http.MethodGet, http.MethodHead)
+			return
+		}
 		items := getLineup()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(items)
@@ -156,13 +162,30 @@ func DiscoveryHandler(deviceID, friendlyName string) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			writeMethodNotAllowed(w, http.MethodGet, http.MethodHead)
+			return
+		}
 		w.Header().Set("Content-Type", "application/xml")
 		w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
 <root xmlns="urn:schemas-upnp-org:device-1-0">
   <device>
-    <DeviceID>` + deviceID + `</DeviceID>
-    <FriendlyName>` + friendlyName + `</FriendlyName>
+    <DeviceID>` + xmlEscapeText(deviceID) + `</DeviceID>
+    <FriendlyName>` + xmlEscapeText(friendlyName) + `</FriendlyName>
   </device>
 </root>`))
 	})
+}
+
+func writeMethodNotAllowed(w http.ResponseWriter, methods ...string) {
+	w.Header().Set("Allow", strings.Join(methods, ", "))
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+}
+
+func xmlEscapeText(s string) string {
+	var b bytes.Buffer
+	if err := xml.EscapeText(&b, []byte(s)); err != nil {
+		return s
+	}
+	return b.String()
 }

@@ -37,9 +37,20 @@ func TestEffectiveXMLTVURL(t *testing.T) {
 	if got := cfg.effectiveXMLTVURL(); got != "http://tuner:5004/guide.xml" {
 		t.Errorf("want http://tuner:5004/guide.xml, got %s", got)
 	}
+	cfg.TunerURL = "http://tuner:5004/"
+	if got := cfg.effectiveXMLTVURL(); got != "http://tuner:5004/guide.xml" {
+		t.Errorf("want trimmed guide url, got %s", got)
+	}
 	cfg.XMLTVURL = "http://other:5004/custom.xml"
 	if got := cfg.effectiveXMLTVURL(); got != "http://other:5004/custom.xml" {
 		t.Errorf("want custom URL, got %s", got)
+	}
+}
+
+func TestEffectiveXMLTVURL_TrimsWhitespaceAndTrailingSlash(t *testing.T) {
+	cfg := Config{TunerURL: "  http://tuner:5004///  "}
+	if got := cfg.effectiveXMLTVURL(); got != "http://tuner:5004/guide.xml" {
+		t.Fatalf("want trimmed guide url, got %s", got)
 	}
 }
 
@@ -89,6 +100,25 @@ func TestRegisterTunerHost_success(t *testing.T) {
 	}
 	if id != "host-abc123" {
 		t.Errorf("want host-abc123, got %s", id)
+	}
+}
+
+func TestRegisterTunerHost_trimsTrailingSlashHost(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/LiveTv/TunerHosts" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(TunerHostInfo{Id: "host-trimmed", Type: "hdhomerun"})
+	}))
+	defer srv.Close()
+
+	cfg := newTestConfig(srv.URL+"/", "emby")
+	id, err := RegisterTunerHost(cfg)
+	if err != nil {
+		t.Fatalf("RegisterTunerHost: %v", err)
+	}
+	if id != "host-trimmed" {
+		t.Fatalf("id=%q", id)
 	}
 }
 

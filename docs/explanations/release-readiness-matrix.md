@@ -36,7 +36,7 @@ every release should at least make those gaps explicit.
 | HDHR discovery / lineup exposure | Yes | Yes | Partial | Release-gated |
 | HLS relay / mux fallback / provider-pressure logic | Yes | Yes | Partial live evidence | Release-gated with stronger fallback proof and known live variance |
 | Provider account pooling / rollover | Yes | Yes | Partial live evidence | Release-gated with stronger binary proof |
-| Shared HLS relay reuse | Yes | Yes | Not broadly host-proven | Release-gated with stronger binary proof |
+| Shared upstream reuse (Go relay + live FFmpeg TS/fMP4 + packaged HLS) | Yes | Yes | Not broadly host-proven | Release-gated with stronger binary proof |
 | Xtream live / VOD / series output | Yes | Yes | Partial | Release-gated |
 | Xtream `get.php` / `xmltv.php` / short EPG | Yes | Yes | Yes on macOS | Release-gated with host proof |
 | Programming Manager recipe / order / backups | Yes | Yes | N/A | Release-gated |

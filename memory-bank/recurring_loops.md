@@ -205,6 +205,29 @@
 
 ### Loop: Trying to fix Plex Live TV source-tab labels by patching DVR/provider DB rows
 
+### Loop: Assuming Plex Home Live TV visibility is controlled by the same local PMS DB rows as tuner injection
+
+**Symptom**
+- Agents or operators keep searching `com.plexapp.plugins.library.db` for a missing "unlock Live TV for shared users" row after tuner/DVR/provider injection already works.
+- Repeated SQLite edits change local Live TV objects correctly, but non-Home shared users still do not see Live TV on clients.
+
+**Why it's tricky**
+- IPTV Tunerr really does insert core Live TV state locally, so it is tempting to assume the remaining gate must also be local.
+- Plex splits concerns: PMS owns tuner/DVR/provider objects, while plex.tv owns account/share entitlements such as `home` and `allowTuners`.
+- A successful share-create request can still silently clamp `allowTuners` back to `0`, which makes a naive "API call succeeded, therefore permission changed" conclusion wrong.
+
+**What works**
+- Prove both layers separately:
+  1. inspect local PMS DB state with `iptv-tunerr plex-db-inspect`
+  2. inspect PMS logs for real Live TV endpoints with `iptv-tunerr plex-log-inspect`
+  3. inspect plex.tv share state with `iptv-tunerr plex-api-request` or `plex-share-force-test`
+- Treat `GET /api/users`, `GET /api/servers/<processed-machine-id>/shared_servers`, and share recreation results as the source of truth for tuner entitlement.
+- Do not claim a DB-only workaround for non-Home users unless plex.tv share state is also shown to change.
+
+**Where it's documented**
+- `docs/how-to/reverse-engineer-plex-livetv-access.md`
+- `memory-bank/known_issues.md` (non-Home share clamp entry)
+
 ### Loop: Provider probe becomes stricter than the real indexer path
 
 **Symptom**

@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -259,11 +260,11 @@ func (g *Gateway) requestAdaptation(ctx context.Context, r *http.Request, channe
 		return true, false, resolved.Name, "query-profile", "manual"
 	}
 	if getenvBool("IPTV_TUNERR_FORCE_WEBSAFE", false) {
-		return true, true, profilePlexSafe, "force-websafe", "manual"
+		return true, true, forcedWebsafeProfileName(), "force-websafe", "manual"
 	}
 	if g.shouldAdaptStickyWebsafe(channelID, hints) {
 		cc := g.stickyFallbackClientClass(ctx, hints)
-		return true, true, profilePlexSafe, "sticky-fallback-websafe", cc
+		return true, true, forcedWebsafeProfileName(), "sticky-fallback-websafe", cc
 	}
 	if !g.PlexClientAdapt {
 		return false, false, "", "adapt-disabled", "unknown"
@@ -271,14 +272,14 @@ func (g *Gateway) requestAdaptation(ctx context.Context, r *http.Request, channe
 	info, err := g.resolvePlexClient(ctx, hints)
 	if err != nil {
 		log.Printf("gateway: channel=%q id=%s plex-client-resolve err=%v", channel.GuideName, channelID, err)
-		return true, true, profilePlexSafe, "resolve-error-websafe", "unknown"
+		return true, true, forcedWebsafeProfileName(), "resolve-error-websafe", "unknown"
 	}
 	clientClass := plexClientClass(info)
 	if row, ok := g.lookupAutopilotDecision(channel, clientClass); ok {
 		return true, row.Transcode, normalizeProfileName(row.Profile), "autopilot-memory", clientClass
 	}
 	if info == nil {
-		return true, true, profilePlexSafe, "unknown-client-websafe", clientClass
+		return true, true, forcedWebsafeProfileName(), "unknown-client-websafe", clientClass
 	}
 	log.Printf("gateway: channel=%q id=%s plex-client-resolved class=%s sid=%t cid=%t product=%t platform=%t title=%t",
 		channel.GuideName, channelID, clientClass,
@@ -288,12 +289,20 @@ func (g *Gateway) requestAdaptation(ctx context.Context, r *http.Request, channe
 		info.Platform != "",
 		info.Title != "")
 	if looksLikePlexWeb(info.Product) || looksLikePlexWeb(info.Platform) {
-		return true, true, profilePlexSafe, "resolved-web-client", clientClass
+		return true, true, forcedWebsafeProfileName(), "resolved-web-client", clientClass
 	}
 	if looksLikePlexInternalFetcher(info.Product, info.Platform) {
-		return true, true, profilePlexSafe, "internal-fetcher-websafe", clientClass
+		return true, true, forcedWebsafeProfileName(), "internal-fetcher-websafe", clientClass
 	}
 	return true, false, "", "resolved-nonweb-client", clientClass
+}
+
+func forcedWebsafeProfileName() string {
+	raw := strings.TrimSpace(os.Getenv("IPTV_TUNERR_FORCE_WEBSAFE_PROFILE"))
+	if raw == "" {
+		return profilePlexSafe
+	}
+	return normalizeConfiguredProfileName(raw)
 }
 
 func (g *Gateway) lookupAutopilotDecision(channel *catalog.LiveChannel, clientClass string) (autopilotDecision, bool) {

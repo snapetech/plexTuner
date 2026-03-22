@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
+	"github.com/snapetech/iptvtunerr/internal/hdhomerun"
 )
 
 // HDHR serves HDHomeRun-compatible discover, lineup_status, and lineup endpoints.
@@ -25,10 +26,22 @@ const hdhrStartupStateHeader = "X-IptvTunerr-Startup-State"
 func (h *HDHR) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/discover.json":
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			writeMethodNotAllowed(w, http.MethodGet, http.MethodHead)
+			return
+		}
 		h.serveDiscover(w)
 	case "/lineup_status.json":
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			writeMethodNotAllowed(w, http.MethodGet, http.MethodHead)
+			return
+		}
 		h.serveLineupStatus(w)
 	case "/lineup.json":
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			writeMethodNotAllowed(w, http.MethodGet, http.MethodHead)
+			return
+		}
 		h.serveLineup(w)
 	default:
 		http.NotFound(w, r)
@@ -48,6 +61,7 @@ func (h *HDHR) serveDiscover(w http.ResponseWriter) {
 	if base == "" {
 		base = "http://localhost:5004"
 	}
+	base = strings.TrimRight(base, "/")
 	// FriendlyName: use struct field first, then env var, then default
 	friendly := h.FriendlyName
 	if friendly == "" {
@@ -72,7 +86,7 @@ func (h *HDHR) serveDiscover(w http.ResponseWriter) {
 	out := map[string]interface{}{
 		"FriendlyName": friendly,
 		"BaseURL":      base,
-		"LineupURL":    base + "/lineup.json",
+		"LineupURL":    hdhomerun.LineupURLFromBase(base),
 		"TunerCount":   tunerCount,
 		"DeviceID":     deviceID,
 	}
@@ -133,6 +147,7 @@ func (h *HDHR) serveLineup(w http.ResponseWriter) {
 	if base == "" {
 		base = "http://localhost:5004"
 	}
+	base = strings.TrimRight(base, "/")
 	var urlSuffix string
 	if getenvBool("IPTV_TUNERR_LINEUP_URL_NONCE", false) {
 		urlSuffix = "?ptnonce=" + strconv.FormatInt(time.Now().UTC().UnixNano(), 36)

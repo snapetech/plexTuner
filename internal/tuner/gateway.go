@@ -57,6 +57,7 @@ type Gateway struct {
 	hlsPackagerInUse           int
 	hlsMuxSegInUse             int // concurrent ?mux=hls&seg= proxies (bounded; see effectiveHLSMuxSegLimitLocked)
 	hlsPackagerSessions        map[string]*ffmpegHLSPackagerSession
+	hlsPackagerSessionsByKey   map[string]*ffmpegHLSPackagerSession
 	hlsMuxSegSuccess           atomic.Uint64
 	hlsMuxSegErrScheme         atomic.Uint64
 	hlsMuxSegErrPrivate        atomic.Uint64
@@ -115,6 +116,25 @@ type Gateway struct {
 	adaptStickyMu              sync.Mutex
 	adaptStickyUntil           map[string]time.Time // HR-004: Plex session+channel → websafe sticky expiry
 	hlsPackagerJanitorOnce     sync.Once
+}
+
+func (g *Gateway) providerCredentials() (string, string) {
+	if g == nil {
+		return "", ""
+	}
+	g.providerStateMu.Lock()
+	defer g.providerStateMu.Unlock()
+	return g.ProviderUser, g.ProviderPass
+}
+
+func (g *Gateway) setProviderCredentials(user, pass string) {
+	if g == nil {
+		return
+	}
+	g.providerStateMu.Lock()
+	g.ProviderUser = user
+	g.ProviderPass = pass
+	g.providerStateMu.Unlock()
 }
 
 type gatewayReqIDKey struct{}

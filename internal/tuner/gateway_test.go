@@ -991,6 +991,47 @@ func TestMaybeServeHLSMuxOPTIONS(t *testing.T) {
 	})
 }
 
+func TestGateway_stream_requiresGetOrHead(t *testing.T) {
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{{
+			ChannelID:   "1",
+			GuideNumber: "1",
+			GuideName:   "One",
+			StreamURLs:  []string{"http://example.invalid/live.m3u8"},
+		}},
+	}
+	req := httptest.NewRequest(http.MethodPost, "http://x/stream/1", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("code=%d body=%q", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Allow"); got != "GET, HEAD" {
+		t.Fatalf("allow=%q", got)
+	}
+}
+
+func TestGateway_stream_hlsMuxMethodAllowIncludesOptionsWhenCORSEnabled(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_HLS_MUX_CORS", "1")
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{{
+			ChannelID:   "1",
+			GuideNumber: "1",
+			GuideName:   "One",
+			StreamURLs:  []string{"http://example.invalid/live.m3u8"},
+		}},
+	}
+	req := httptest.NewRequest(http.MethodPost, "http://x/stream/1?mux=hls", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("code=%d body=%q", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Allow"); got != "GET, HEAD, OPTIONS" {
+		t.Fatalf("allow=%q", got)
+	}
+}
+
 func TestGateway_serveHLSMuxTarget_CORSWhenConfigured(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_HLS_MUX_CORS", "true")
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1744,7 +1785,7 @@ func TestGateway_sharedRelaySessionFanout(t *testing.T) {
 	if sess == nil {
 		t.Fatal("expected shared relay session")
 	}
-	reader, ok := g.attachSharedRelaySession("ch1", "r000002")
+	reader, ok := g.attachSharedRelaySession(sharedHLSGoRelayKey("ch1"), "r000002")
 	if !ok {
 		t.Fatal("expected subscriber attach")
 	}
@@ -1763,7 +1804,7 @@ func TestGateway_sharedRelaySessionFanout(t *testing.T) {
 	if _, err := writer.Write([]byte("segment-bytes")); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	g.closeSharedRelaySession("ch1", sess)
+	g.closeSharedRelaySession(sharedHLSGoRelayKey("ch1"), sess)
 	select {
 	case err := <-errs:
 		t.Fatalf("read: %v", err)
@@ -1773,6 +1814,41 @@ func TestGateway_sharedRelaySessionFanout(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout waiting for subscriber bytes")
+	}
+}
+
+func TestGateway_sharedRelaySessionLateSubscriberGetsReplay(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_SHARED_RELAY_REPLAY_BYTES", "64")
+	g := &Gateway{}
+	sess := g.createSharedRelaySession("ch1", "r000001")
+	if sess == nil {
+		t.Fatal("expected shared relay session")
+	}
+	writer := &sharedRelayFanoutWriter{base: io.Discard, session: sess}
+	if _, err := writer.Write([]byte("prefix-")); err != nil {
+		t.Fatalf("write prefix: %v", err)
+	}
+	reader, ok := g.attachSharedRelaySession(sharedHLSGoRelayKey("ch1"), "r000002")
+	if !ok {
+		t.Fatal("expected late subscriber attach")
+	}
+	defer reader.Close()
+	done := make(chan []byte, 1)
+	go func() {
+		buf, _ := io.ReadAll(reader)
+		done <- buf
+	}()
+	if _, err := writer.Write([]byte("suffix")); err != nil {
+		t.Fatalf("write suffix: %v", err)
+	}
+	g.closeSharedRelaySession(sharedHLSGoRelayKey("ch1"), sess)
+	select {
+	case buf := <-done:
+		if got := string(buf); got != "prefix-suffix" {
+			t.Fatalf("got %q want prefix-suffix", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for replay subscriber bytes")
 	}
 }
 
@@ -1787,7 +1863,7 @@ func TestGateway_tryServeSharedRelay(t *testing.T) {
 		defer close(done)
 		time.Sleep(10 * time.Millisecond)
 		sess.fanout([]byte("ts-bytes"))
-		g.closeSharedRelaySession("ch1", sess)
+		g.closeSharedRelaySession(sharedHLSGoRelayKey("ch1"), sess)
 	}()
 	req := httptest.NewRequest(http.MethodGet, "/stream/ch1", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
@@ -1805,6 +1881,160 @@ func TestGateway_tryServeSharedRelay(t *testing.T) {
 	}
 	if got := w.Header().Get("X-IptvTunerr-Shared-Upstream"); got != "hls_go" {
 		t.Fatalf("header=%q", got)
+	}
+}
+
+func TestGateway_stream_sameChannelFFmpegRelayReusesExistingSession(t *testing.T) {
+	dir := t.TempDir()
+	ffmpegPath := filepath.Join(dir, "fake-ffmpeg.sh")
+	script := `#!/bin/sh
+printf 'shared-'
+sleep 1
+printf 'ffmpeg'
+`
+	if err := os.WriteFile(ffmpegPath, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("IPTV_TUNERR_FFMPEG_PATH", ffmpegPath)
+	t.Setenv("IPTV_TUNERR_FFMPEG_HLS_FIRST_BYTES_TIMEOUT_MS", "2000")
+
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		_, _ = w.Write([]byte("#EXTM3U\n#EXTINF:2.0,\nsegment-1.ts\n"))
+	}))
+	defer up.Close()
+
+	g := &Gateway{
+		TunerCount: 1,
+		Channels: []catalog.LiveChannel{{
+			ChannelID:   "ff1",
+			GuideNumber: "401",
+			GuideName:   "Shared FFmpeg",
+			StreamURLs:  []string{up.URL + "/live.m3u8"},
+		}},
+	}
+
+	firstDone := make(chan struct{})
+	firstRec := httptest.NewRecorder()
+	firstReq := httptest.NewRequest(http.MethodGet, "http://local/stream/ff1", nil)
+	go func() {
+		defer close(firstDone)
+		g.ServeHTTP(firstRec, firstReq)
+	}()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		rep := g.SharedRelayReport()
+		if rep.Count == 1 && len(rep.Relays) == 1 && rep.Relays[0].SharedUpstream == "hls_ffmpeg" {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	rep := g.SharedRelayReport()
+	if rep.Count != 1 || len(rep.Relays) != 1 || rep.Relays[0].SharedUpstream != "hls_ffmpeg" {
+		t.Fatalf("expected live shared ffmpeg relay, got %#v", rep)
+	}
+
+	secondRec := httptest.NewRecorder()
+	secondReq := httptest.NewRequest(http.MethodGet, "http://local/stream/ff1", nil)
+	g.ServeHTTP(secondRec, secondReq)
+
+	<-firstDone
+	if firstRec.Code != http.StatusOK {
+		t.Fatalf("first status=%d body=%q", firstRec.Code, firstRec.Body.String())
+	}
+	if secondRec.Code != http.StatusOK {
+		t.Fatalf("second status=%d body=%q", secondRec.Code, secondRec.Body.String())
+	}
+	if got := secondRec.Header().Get("X-IptvTunerr-Shared-Upstream"); got != "hls_ffmpeg" {
+		t.Fatalf("second shared header=%q", got)
+	}
+	if got := secondRec.Header().Get("Content-Type"); got != "video/mp2t" {
+		t.Fatalf("second content-type=%q", got)
+	}
+	if secondRec.Body.Len() == 0 {
+		t.Fatal("expected second shared viewer to receive bytes")
+	}
+}
+
+func TestGateway_stream_sameChannelFFmpegFMP4ReusesExistingSession(t *testing.T) {
+	dir := t.TempDir()
+	ffmpegPath := filepath.Join(dir, "fake-ffmpeg.sh")
+	script := `#!/bin/sh
+printf 'shared-'
+sleep 1
+printf 'fmp4'
+`
+	if err := os.WriteFile(ffmpegPath, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("IPTV_TUNERR_FFMPEG_PATH", ffmpegPath)
+	t.Setenv("IPTV_TUNERR_FFMPEG_HLS_FIRST_BYTES_TIMEOUT_MS", "2000")
+
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		_, _ = w.Write([]byte("#EXTM3U\n#EXTINF:2.0,\nsegment-1.ts\n"))
+	}))
+	defer up.Close()
+
+	enable := true
+	g := &Gateway{
+		TunerCount: 1,
+		Channels: []catalog.LiveChannel{{
+			ChannelID:   "ff2",
+			GuideNumber: "402",
+			GuideName:   "Shared FFmpeg fMP4",
+			StreamURLs:  []string{up.URL + "/live.m3u8"},
+		}},
+		NamedProfiles: map[string]NamedStreamProfile{
+			"mobile-fmp4": {
+				BaseProfile: profileLowBitrate,
+				Transcode:   &enable,
+				OutputMux:   streamMuxFMP4,
+			},
+		},
+	}
+
+	firstDone := make(chan struct{})
+	firstRec := httptest.NewRecorder()
+	firstReq := httptest.NewRequest(http.MethodGet, "http://local/stream/ff2?profile=mobile-fmp4", nil)
+	go func() {
+		defer close(firstDone)
+		g.ServeHTTP(firstRec, firstReq)
+	}()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		rep := g.SharedRelayReport()
+		if rep.Count == 1 && len(rep.Relays) == 1 && rep.Relays[0].SharedUpstream == "hls_ffmpeg" && rep.Relays[0].ContentType == "video/mp4" {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	rep := g.SharedRelayReport()
+	if rep.Count != 1 || len(rep.Relays) != 1 || rep.Relays[0].SharedUpstream != "hls_ffmpeg" || rep.Relays[0].ContentType != "video/mp4" {
+		t.Fatalf("expected live shared ffmpeg fmp4 relay, got %#v", rep)
+	}
+
+	secondRec := httptest.NewRecorder()
+	secondReq := httptest.NewRequest(http.MethodGet, "http://local/stream/ff2?profile=mobile-fmp4", nil)
+	g.ServeHTTP(secondRec, secondReq)
+
+	<-firstDone
+	if firstRec.Code != http.StatusOK {
+		t.Fatalf("first status=%d body=%q", firstRec.Code, firstRec.Body.String())
+	}
+	if secondRec.Code != http.StatusOK {
+		t.Fatalf("second status=%d body=%q", secondRec.Code, secondRec.Body.String())
+	}
+	if got := secondRec.Header().Get("X-IptvTunerr-Shared-Upstream"); got != "hls_ffmpeg" {
+		t.Fatalf("second shared header=%q", got)
+	}
+	if got := secondRec.Header().Get("Content-Type"); got != "video/mp4" {
+		t.Fatalf("second content-type=%q", got)
+	}
+	if secondRec.Body.Len() == 0 {
+		t.Fatal("expected second shared fmp4 viewer to receive bytes")
 	}
 }
 
@@ -2362,6 +2592,28 @@ func TestGateway_requestAdaptation_stickyFallbackWebsafe(t *testing.T) {
 	}
 	if clientClass != "unknown" {
 		t.Fatalf("clientClass=%q want unknown without PMS", clientClass)
+	}
+}
+
+func TestGateway_requestAdaptation_forceWebsafeProfileOverride(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_FORCE_WEBSAFE", "true")
+	t.Setenv("IPTV_TUNERR_FORCE_WEBSAFE_PROFILE", "plexsafehq")
+	g := &Gateway{PlexClientAdapt: true}
+	ch := &catalog.LiveChannel{GuideName: "Test"}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/test", nil)
+
+	hasOverride, transcode, profile, reason, clientClass := g.requestAdaptation(context.Background(), req, ch, "test")
+	if !hasOverride || !transcode {
+		t.Fatalf("override=%v trans=%v", hasOverride, transcode)
+	}
+	if profile != profilePlexSafeHQ {
+		t.Fatalf("profile=%q want %q", profile, profilePlexSafeHQ)
+	}
+	if reason != "force-websafe" {
+		t.Fatalf("reason=%q", reason)
+	}
+	if clientClass != "manual" {
+		t.Fatalf("clientClass=%q want manual", clientClass)
 	}
 }
 
@@ -3221,11 +3473,60 @@ exec sleep 30
 		"",
 		hotStartConfig{},
 		streamMuxMPEGTS,
+		nil,
 	)
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
 	if !strings.Contains(err.Error(), "first-bytes-timeout") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Fatalf("expected fast failover timeout, got elapsed=%s", elapsed)
+	}
+}
+
+func TestGateway_relayHLSWithFFmpeg_nonTranscodeRequireGoodStartTimeout(t *testing.T) {
+	dir := t.TempDir()
+	ffmpegPath := filepath.Join(dir, "fake-ffmpeg.sh")
+	script := `#!/bin/sh
+set -eu
+exec sleep 30
+`
+	if err := os.WriteFile(ffmpegPath, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("IPTV_TUNERR_HLS_REMUX_REQUIRE_GOOD_START", "true")
+	t.Setenv("IPTV_TUNERR_WEBSAFE_STARTUP_TIMEOUT_MS", "100")
+	t.Setenv("IPTV_TUNERR_WEBSAFE_STARTUP_MIN_BYTES", "1024")
+	t.Setenv("IPTV_TUNERR_WEBSAFE_STARTUP_MAX_BYTES", "4096")
+
+	g := &Gateway{}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/1", nil)
+	rec := httptest.NewRecorder()
+	start := time.Now()
+	err := g.relayHLSWithFFmpeg(
+		rec,
+		req,
+		ffmpegPath,
+		"http://provider.example/live/1.m3u8",
+		"Ch1",
+		"1",
+		"101",
+		"tvg.1",
+		start,
+		false,
+		0,
+		"",
+		hotStartConfig{},
+		streamMuxMPEGTS,
+		nil,
+	)
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !strings.Contains(err.Error(), "startup-gate-timeout") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if elapsed := time.Since(start); elapsed > 3*time.Second {

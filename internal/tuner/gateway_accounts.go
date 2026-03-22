@@ -35,8 +35,9 @@ func providerAccountIdentityForURL(g *Gateway, ch *catalog.LiveChannel, rawURL s
 		return providerAccountLease{}, false
 	}
 	host := upstreamURLAuthority(rawURL)
-	user := strings.TrimSpace(g.ProviderUser)
-	pass := strings.TrimSpace(g.ProviderPass)
+	user, pass := g.providerCredentials()
+	user = strings.TrimSpace(user)
+	pass = strings.TrimSpace(pass)
 	prefix := ""
 	if rule, ok := streamAuthForURL(ch, rawURL); ok {
 		user = strings.TrimSpace(rule.User)

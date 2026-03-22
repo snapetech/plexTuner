@@ -195,3 +195,18 @@ func TestRefreshLibraryScan(t *testing.T) {
 		t.Fatal("expected refresh call")
 	}
 }
+
+func TestListLibraries_trimsTrailingSlashHost(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/Library/VirtualFolders/Query" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(VirtualFolderQueryResult{})
+	}))
+	defer srv.Close()
+
+	_, err := ListLibraries(newTestConfig(srv.URL+"/", "emby"))
+	if err != nil {
+		t.Fatalf("ListLibraries: %v", err)
+	}
+}

@@ -177,6 +177,21 @@ func TestLineup_withBaseURL(t *testing.T) {
 	}
 }
 
+func TestLineup_withBaseURL_NormalizesWhitespaceAndTrailingSlashes(t *testing.T) {
+	ch := []catalog.LiveChannel{{
+		GuideNumber: "1",
+		GuideName:   "One",
+		StreamURL:   "http://up/s.m3u8",
+	}}
+	items := Lineup(ch, "  http://tuner:5004///  ")
+	if len(items) != 1 {
+		t.Fatal(len(items))
+	}
+	if got := items[0].URL; got != "http://tuner:5004/stream?url=http%3A%2F%2Fup%2Fs.m3u8" {
+		t.Fatalf("URL: %q", got)
+	}
+}
+
 func TestLineup_noBaseURL(t *testing.T) {
 	ch := []catalog.LiveChannel{{StreamURL: "http://direct/x"}}
 	items := Lineup(ch, "")
@@ -212,6 +227,22 @@ func TestLineupHandler(t *testing.T) {
 	}
 }
 
+func TestLineupHandler_requiresGetOrHead(t *testing.T) {
+	h := LineupHandler(func() []LineupItem {
+		return []LineupItem{{GuideNumber: "2", GuideName: "B", URL: "u"}}
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/lineup.json", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("code %d", w.Code)
+	}
+	if got := w.Header().Get("Allow"); got != "GET, HEAD" {
+		t.Fatalf("allow %q", got)
+	}
+}
+
 func TestDiscoveryHandler(t *testing.T) {
 	h := DiscoveryHandler("dev1", "Friendly")
 
@@ -230,6 +261,38 @@ func TestDiscoveryHandler(t *testing.T) {
 	}
 	body := w.Body.String()
 	if !strings.Contains(body, "dev1") || !strings.Contains(body, "Friendly") {
+		t.Fatalf("body: %s", body)
+	}
+}
+
+func TestDiscoveryHandler_requiresGetOrHead(t *testing.T) {
+	h := DiscoveryHandler("dev1", "Friendly")
+
+	req := httptest.NewRequest(http.MethodPost, "/device.xml", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("code %d", w.Code)
+	}
+	if got := w.Header().Get("Allow"); got != "GET, HEAD" {
+		t.Fatalf("allow %q", got)
+	}
+}
+
+func TestDiscoveryHandlerEscapesXML(t *testing.T) {
+	h := DiscoveryHandler("dev&1<2>", "AT&T <Friendly>")
+
+	req := httptest.NewRequest(http.MethodGet, "/device.xml", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "<DeviceID>dev&amp;1&lt;2&gt;</DeviceID>") {
+		t.Fatalf("body: %s", body)
+	}
+	if !strings.Contains(body, "<FriendlyName>AT&amp;T &lt;Friendly&gt;</FriendlyName>") {
 		t.Fatalf("body: %s", body)
 	}
 }

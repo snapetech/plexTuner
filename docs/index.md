@@ -25,6 +25,7 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[how-to/vod-webdav-client-harness.md](how-to/vod-webdav-client-harness.md)** | Replay macOS/Windows WebDAV client request shapes against `vod-webdav`. |
 | **[how-to/plex-lineup-harvest.md](how-to/plex-lineup-harvest.md)** | Probe Plex lineup variants, capture harvest bundles, and feed Programming Manager import/assist flows. |
 | **[how-to/plex-ops-patterns.md](how-to/plex-ops-patterns.md)** | Advanced Plex-only operating patterns: zero-touch, category DVR fleets, injected DVRs. |
+| **[how-to/reverse-engineer-plex-livetv-access.md](how-to/reverse-engineer-plex-livetv-access.md)** | Prove where Live TV is inserted, mine undocumented PMS endpoints from logs, and test plex.tv tuner-access gating. |
 | **[how-to/package-test-builds.md](how-to/package-test-builds.md)** | Build cross-platform test bundles for testers (Linux/macOS/Windows). |
 | **[how-to/tester-handoff-checklist.md](how-to/tester-handoff-checklist.md)** | Tester handoff checklist (bundle contents, platform expectations, bug report capture). |
 | **[how-to/tester-release-notes-draft.md](how-to/tester-release-notes-draft.md)** | Draft tester-facing release notes for current validation builds. |

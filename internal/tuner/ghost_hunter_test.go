@@ -92,6 +92,7 @@ func TestServer_ghostHunterReport(t *testing.T) {
 
 	s := &Server{}
 	req := httptest.NewRequest(http.MethodGet, "/plex/ghost-report.json?observe=0s", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	s.serveGhostHunterReport().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {

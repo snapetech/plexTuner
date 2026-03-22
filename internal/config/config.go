@@ -30,6 +30,9 @@ type Config struct {
 	ProviderUser    string
 	ProviderPass    string
 	M3UURL          string // optional: full M3U URL if different from base
+	// M3USupplementVOD: when true, direct M3U/live-only inputs may be supplemented
+	// with VOD + series fetched from provider player_api using configured credentials.
+	M3USupplementVOD bool
 
 	// Paths
 	MountPoint      string // e.g. /mnt/vodfs
@@ -180,6 +183,7 @@ func Load() *Config {
 		ProviderUser:                os.Getenv("IPTV_TUNERR_PROVIDER_USER"),
 		ProviderPass:                os.Getenv("IPTV_TUNERR_PROVIDER_PASS"),
 		M3UURL:                      getEnvURL("IPTV_TUNERR_M3U_URL"),
+		M3USupplementVOD:            getEnvBool("IPTV_TUNERR_M3U_SUPPLEMENT_VOD", false),
 		MountPoint:                  getEnv("IPTV_TUNERR_MOUNT", "/mnt/vodfs"),
 		CacheDir:                    getEnv("IPTV_TUNERR_CACHE", "/var/cache/iptvtunerr"),
 		CatalogPath:                 getEnv("IPTV_TUNERR_CATALOG", "./catalog.json"),
@@ -343,6 +347,28 @@ func readSubscriptionFile(path string) (user, pass string, err error) {
 	return user, pass, nil
 }
 
+func numberedEnvIndices(prefix string, minIndex int) []int {
+	seen := map[int]struct{}{}
+	indices := make([]int, 0, 8)
+	for _, env := range os.Environ() {
+		key, _, ok := strings.Cut(env, "=")
+		if !ok || !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		n, err := strconv.Atoi(strings.TrimPrefix(key, prefix))
+		if err != nil || n < minIndex {
+			continue
+		}
+		if _, exists := seen[n]; exists {
+			continue
+		}
+		seen[n] = struct{}{}
+		indices = append(indices, n)
+	}
+	sort.Ints(indices)
+	return indices
+}
+
 // M3UURLOrBuild returns M3UURL if set, otherwise builds from ProviderBaseURL + user + pass.
 func (c *Config) M3UURLOrBuild() string {
 	urls := c.M3UURLsOrBuild()
@@ -355,34 +381,35 @@ func (c *Config) M3UURLOrBuild() string {
 // M3UURLsOrBuild returns a list of M3U URLs to probe.
 // Sources, in order:
 //  1. IPTV_TUNERR_M3U_URL plus numbered IPTV_TUNERR_M3U_URL_2/_3/... entries if present
-//  2. otherwise one get.php URL per IPTV_TUNERR_PROVIDER_URLS (or single ProviderBaseURL) with primary creds
+//  2. otherwise one get.php URL per configured provider entry using that entry's effective creds
 func (c *Config) M3UURLsOrBuild() []string {
 	var direct []string
 	if c.M3UURL != "" {
 		direct = append(direct, c.M3UURL)
 	}
-	for n := 2; ; n++ {
+	for _, n := range numberedEnvIndices("IPTV_TUNERR_M3U_URL_", 2) {
 		suffix := fmt.Sprintf("_%d", n)
 		u := getEnvURL("IPTV_TUNERR_M3U_URL" + suffix)
 		if u == "" {
-			break
+			continue
 		}
 		direct = append(direct, u)
 	}
 	if len(direct) > 0 {
 		return direct
 	}
-	user, pass := c.ProviderUser, c.ProviderPass
-	if user == "" || pass == "" {
+	entries := c.ProviderEntries()
+	if len(entries) == 0 {
 		return nil
 	}
-	urls := c.ProviderURLs()
-	if len(urls) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(urls))
-	for _, base := range urls {
-		base = strings.TrimSuffix(base, "/")
+	out := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		base := strings.TrimRight(strings.TrimSpace(entry.BaseURL), "/")
+		user := strings.TrimSpace(entry.User)
+		pass := strings.TrimSpace(entry.Pass)
+		if base == "" || user == "" || pass == "" {
+			continue
+		}
 		out = append(out, base+"/get.php?username="+url.QueryEscape(user)+"&password="+url.QueryEscape(pass)+"&type=m3u_plus&output=ts")
 	}
 	return out
@@ -414,7 +441,7 @@ func (c *Config) ProviderURLs() []string {
 // ProviderEntries returns all configured providers in priority order.
 // Provider 1 comes from IPTV_TUNERR_PROVIDER_URL(S) / _USER / _PASS (already loaded into Config fields).
 // Providers 2..N come from IPTV_TUNERR_PROVIDER_URL_2/_USER_2/_PASS_2, _URL_3/_USER_3/_PASS_3, etc.
-// Scanning stops at the first missing _URL_N. Entries with no BaseURL are skipped.
+// Numbered entries are discovered by numeric suffix, so later entries still work even if a lower slot is blank.
 func (c *Config) ProviderEntries() []ProviderEntry {
 	var out []ProviderEntry
 	// Entry 1: from the primary fields (IPTV_TUNERR_PROVIDER_URL(S) already handled by ProviderURLs).
@@ -424,11 +451,11 @@ func (c *Config) ProviderEntries() []ProviderEntry {
 		}
 	}
 	// Entries 2..N: IPTV_TUNERR_PROVIDER_URL_N / _USER_N / _PASS_N
-	for n := 2; ; n++ {
+	for _, n := range numberedEnvIndices("IPTV_TUNERR_PROVIDER_URL_", 2) {
 		suffix := fmt.Sprintf("_%d", n)
 		base := getEnvURL("IPTV_TUNERR_PROVIDER_URL" + suffix)
 		if base == "" {
-			break
+			continue
 		}
 		user := os.Getenv("IPTV_TUNERR_PROVIDER_USER" + suffix)
 		pass := os.Getenv("IPTV_TUNERR_PROVIDER_PASS" + suffix)

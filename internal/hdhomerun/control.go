@@ -3,10 +3,12 @@ package hdhomerun
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -42,6 +44,18 @@ type ControlServer struct {
 	listener   net.Listener
 	streamFunc func(ctx context.Context, channelID string) (io.ReadCloser, error)
 	mu         sync.Mutex
+}
+
+func looksLikeHTTPRequestPrefix(prefix []byte) bool {
+	if len(prefix) < 4 {
+		return false
+	}
+	switch string(prefix[:4]) {
+	case "GET ", "HEAD", "POST", "PUT ", "DELE", "OPTI", "PATC", "CONN", "TRAC":
+		return true
+	default:
+		return false
+	}
 }
 
 // NewControlServer creates a new control server
@@ -124,30 +138,20 @@ func (s *ControlServer) handleHTTPRequest(conn net.Conn, initialBuf []byte) {
 
 	log.Printf("hdhomerun: HTTP %s %s", method, path)
 
-	// Handle different endpoints
-	var response string
-	switch path {
-	case "/", "/discover.json":
-		response = s.getDiscoverJSON()
-	case "/lineup.json", "/lineup_status.json":
-		response = s.getLineupStatus()
-	case "/tuner.js":
-		response = "ok"
-	default:
-		response = "404 Not Found"
-	}
+	statusLine, contentType, response, allow := s.httpResponseForRequest(method, path)
 
 	// Send HTTP response
-	httpResponse := "HTTP/1.1 200 OK\r\n"
-	if path == "/discover.json" || path == "/lineup.json" || path == "/lineup_status.json" {
-		httpResponse += "Content-Type: application/json\r\n"
-	} else {
-		httpResponse += "Content-Type: text/plain\r\n"
+	httpResponse := statusLine + "\r\n"
+	httpResponse += "Content-Type: " + contentType + "\r\n"
+	if strings.TrimSpace(allow) != "" {
+		httpResponse += "Allow: " + allow + "\r\n"
 	}
 	httpResponse += "Connection: close\r\n"
 	httpResponse += fmt.Sprintf("Content-Length: %d\r\n", len(response))
 	httpResponse += "\r\n"
-	httpResponse += response
+	if method != http.MethodHead {
+		httpResponse += response
+	}
 
 	conn.Write([]byte(httpResponse))
 	conn.Close()
@@ -157,25 +161,52 @@ func (s *ControlServer) handleHTTPRequest(conn net.Conn, initialBuf []byte) {
 func (s *ControlServer) getDiscoverJSON() string {
 	// Use the actual DeviceID value (displayed as hex string in discover.json)
 	deviceIDStr := fmt.Sprintf("%08x", s.device.DeviceID)
-	return fmt.Sprintf(`{
-	"DeviceID": "%s",
-	"DeviceAuth": "iptvtunerr",
-	"FriendlyName": "%s",
-	"BaseURL": "%s",
-	"LineupURL": "%s/lineup.json",
-	"TunerCount": %d
-}`,
-		deviceIDStr,
-		s.device.FriendlyName,
-		s.device.BaseURL,
-		s.device.BaseURL,
-		s.device.TunerCount)
+	baseURL := strings.TrimRight(strings.TrimSpace(s.device.BaseURL), "/")
+	body, err := json.Marshal(map[string]interface{}{
+		"DeviceID":     deviceIDStr,
+		"DeviceAuth":   "iptvtunerr",
+		"FriendlyName": s.device.FriendlyName,
+		"BaseURL":      baseURL,
+		"LineupURL":    LineupURLFromBase(baseURL),
+		"TunerCount":   s.device.TunerCount,
+	})
+	if err != nil {
+		return `{"DeviceAuth":"iptvtunerr"}`
+	}
+	return string(body)
 }
 
-// getLineupStatus returns the channel lineup
+func (s *ControlServer) httpResponseForRequest(method, path string) (statusLine, contentType, body, allow string) {
+	switch method {
+	case http.MethodGet, http.MethodHead:
+	default:
+		switch path {
+		case "/", "/discover.json", "/lineup.json", "/lineup_status.json", "/tuner.js":
+			return "HTTP/1.1 405 Method Not Allowed", "text/plain", "method not allowed", "GET, HEAD"
+		}
+	}
+	switch path {
+	case "/", "/discover.json":
+		return "HTTP/1.1 200 OK", "application/json", s.getDiscoverJSON(), ""
+	case "/lineup.json":
+		return "HTTP/1.1 200 OK", "application/json", s.getLineupJSON(), ""
+	case "/lineup_status.json":
+		return "HTTP/1.1 200 OK", "application/json", s.getLineupStatus(), ""
+	case "/tuner.js":
+		return "HTTP/1.1 200 OK", "text/plain", "ok", ""
+	default:
+		return "HTTP/1.1 404 Not Found", "text/plain", "404 Not Found", ""
+	}
+}
+
+// getLineupJSON returns the simulated lineup.json payload.
+func (s *ControlServer) getLineupJSON() string {
+	return `[]`
+}
+
+// getLineupStatus returns the lineup_status.json payload.
 func (s *ControlServer) getLineupStatus() string {
-	// Return empty lineup (no channels configured)
-	return `{"ScanInProgress": 0, "ScanPossible": 0, "Source": "Antenna", "SourceList": ["Antenna"], "Channels": []}`
+	return `{"ScanInProgress": 0, "ScanPossible": 0, "Source": "Antenna", "SourceList": ["Antenna"]}`
 }
 
 func (s *ControlServer) handleConnection(conn net.Conn) {
@@ -195,35 +226,37 @@ func (s *ControlServer) handleConnection(conn net.Conn) {
 	}
 
 	// Check if this looks like HTTP
-	if string(buf[0:4]) == "GET " || string(buf[0:4]) == "POST" || string(buf[0:4]) == "HEAD" {
+	if looksLikeHTTPRequestPrefix(buf) {
 		// Handle as HTTP request - re-read the full request
 		s.handleHTTPRequest(conn, buf)
 		return
 	}
 
-	// It's binary HDHomeRun protocol - put the bytes back for the normal handler
-	// (we already read 4 bytes, need to process them)
-	// Continue with the binary protocol handling
+	// It's binary HDHomeRun protocol. Preserve the sniffed header bytes as the
+	// first packet header instead of discarding them.
+	header := append([]byte(nil), buf...)
 	for {
 		conn.SetReadDeadline(time.Now().Add(30 * time.Second)) // 30s timeout
 
-		// Read packet header (4 bytes: type + length)
-		header := make([]byte, 4)
-		n, err := io.ReadFull(conn, header)
-		if err != nil {
-			if err != io.EOF {
-				log.Printf("hdhomerun: read error: %v", err)
+		if len(header) == 0 {
+			header = make([]byte, 4)
+			n, err := io.ReadFull(conn, header)
+			if err != nil {
+				if err != io.EOF {
+					log.Printf("hdhomerun: read error: %v", err)
+				}
+				return
 			}
-			return
-		}
-
-		if n < 4 {
-			continue
+			if n < 4 {
+				header = header[:0]
+				continue
+			}
 		}
 
 		// Parse header
 		packetType := binary.BigEndian.Uint16(header[0:2])
 		payloadLen := binary.BigEndian.Uint16(header[2:4])
+		header = header[:0]
 
 		// Read payload
 		var payload []byte
@@ -287,13 +320,13 @@ func (s *ControlServer) handleGetSet(payload []byte, conn net.Conn) *Packet {
 	if nameTLV == nil {
 		return NewGetSetRpy("", "", "Missing name")
 	}
-	name := string(nameTLV.Value)
+	name := string(trimNull(nameTLV.Value))
 
 	// Check if this is a SET (has value)
 	valueTLV := FindTLV(tlvs, TagGetSetValue)
 	var value string
 	if valueTLV != nil {
-		value = string(valueTLV.Value)
+		value = string(trimNull(valueTLV.Value))
 	}
 
 	// Handle the property

@@ -72,6 +72,10 @@ var probeUACandidates = []string{
 	"curl/8.4.0",
 }
 
+func normalizeProviderBaseURL(base string) string {
+	return strings.TrimRight(strings.TrimSpace(base), "/")
+}
+
 // ProbeOne fetches the M3U URL with a short timeout and classifies the result.
 // When Cloudflare is detected, it cycles through all media-client UA presets before giving up,
 // since many providers configure CF to pass known media clients while blocking others.
@@ -109,6 +113,12 @@ func ProbeOne(ctx context.Context, m3uURL string, client *http.Client) Result {
 				return r2
 			}
 		}
+		// HTTP/1.1 fallback: Go's HTTP/2 implementation has a recognizable JA3/SETTINGS
+		// fingerprint; forcing HTTP/1.1 changes the TLS client-hello (no h2 in ALPN) and
+		// eliminates the H2 SETTINGS signal — some CF Bot Management rules key on these.
+		if r3 := probeOneH1Fallback(ctx, m3uURL, start); r3.Status == StatusOK {
+			return r3
+		}
 		return Result{URL: m3uURL, Status: StatusCloudflare, StatusCode: code, LatencyMs: latency, BodyPreview: previewStr}
 	}
 	if code == http.StatusTooManyRequests {
@@ -122,6 +132,7 @@ func ProbeOne(ctx context.Context, m3uURL string, client *http.Client) Result {
 
 // probeOneWithUA is an internal helper that fetches a URL with a specific User-Agent.
 // startTime is the original request start used for end-to-end latency reporting.
+// Only reads a small preview — does NOT drain the full body so probing large M3U files is fast.
 func probeOneWithUA(ctx context.Context, rawURL, ua string, client *http.Client, startTime time.Time) Result {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -133,12 +144,349 @@ func probeOneWithUA(ctx context.Context, rawURL, ua string, client *http.Client,
 	if err != nil {
 		return Result{URL: rawURL, Status: StatusError, LatencyMs: latency}
 	}
-	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body) //nolint:errcheck
+	preview := make([]byte, 256)
+	n, _ := resp.Body.Read(preview)
+	resp.Body.Close()
 	if resp.StatusCode == http.StatusOK {
 		return Result{URL: rawURL, Status: StatusOK, StatusCode: resp.StatusCode, LatencyMs: latency}
 	}
-	return Result{URL: rawURL, Status: StatusBadStatus, StatusCode: resp.StatusCode, LatencyMs: latency}
+	return Result{URL: rawURL, Status: StatusBadStatus, StatusCode: resp.StatusCode, LatencyMs: latency,
+		BodyPreview: strings.ToLower(string(preview[:n]))}
+}
+
+// probeOneH1Fallback retries rawURL with an HTTP/1.1-only client cycling through
+// all UA candidates. Called after the HTTP/2 UA cycling in ProbeOne is exhausted,
+// to test whether Go's H2 TLS fingerprint (not the UA itself) was the blocking factor.
+// Only reads a small preview — does NOT drain the full body.
+func probeOneH1Fallback(ctx context.Context, rawURL string, startTime time.Time) Result {
+	h1 := httpclient.ForHTTP1Only(15 * time.Second)
+	for _, ua := range probeUACandidates {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+		if err != nil {
+			continue
+		}
+		req.Header.Set("User-Agent", ua)
+		resp, err := h1.Do(req)
+		if err != nil {
+			continue
+		}
+		preview := make([]byte, 256)
+		resp.Body.Read(preview) //nolint:errcheck
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			return Result{URL: rawURL, Status: StatusOK, StatusCode: 200, LatencyMs: time.Since(startTime).Milliseconds(), WorkingUA: "H1:" + ua}
+		}
+	}
+	return Result{URL: rawURL, Status: StatusError}
+}
+
+// GetPHPAttempt records the full diagnostic output of one get.php probe attempt.
+type GetPHPAttempt struct {
+	Variant     string // URL shape tried (e.g. "standard", "minimal", "https/standard")
+	Protocol    string // "H2" or "H1"
+	UA          string // User-Agent sent
+	StatusCode  int
+	LatencyMs   int64
+	Server      string // Server response header
+	CFRay       string // CF-Ray header (present on Cloudflare edges)
+	CFCache     string // CF-Cache-Status header
+	Location    string // Location header on redirects
+	BodyPreview string // first 512 bytes decoded
+	NetError    string // non-empty on transport-level failure
+	OK          bool   // true if 200 and not a CF challenge page
+}
+
+// getphpURLVariants is the ordered list of get.php query-string shapes to probe.
+// "standard" is first since it is what real players use; others are fallbacks to detect
+// WAF rules that pattern-match on specific parameter values.
+var getphpURLVariants = []struct{ label, extra string }{
+	{"standard", "&type=m3u_plus&output=ts"},
+	{"minimal", ""},
+	{"type_m3u", "&type=m3u"},
+	{"type_m3u8", "&type=m3u_plus&output=m3u8"},
+}
+
+// getphpUACombos is the ordered list of (protocol, User-Agent) pairs tried per URL variant.
+// Media-player UAs come first since CF Bot Management commonly whitelists them.
+// Each entry is: protocol label, UA string, extra headers to add.
+type uaCombo struct {
+	proto   string // "H2" or "H1"
+	ua      string
+	headers map[string]string // extra request headers
+}
+
+func buildGetPHPCombos() []uaCombo {
+	lavfHeaders := map[string]string{"Icy-MetaData": "1", "Accept": "*/*"}
+	vlcHeaders := map[string]string{"Icy-MetaData": "1", "Accept": "*/*"}
+	return []uaCombo{
+		{"H2", DefaultLavfUA, lavfHeaders},
+		{"H2", "VLC/3.0.21 LibVLC/3.0.21", vlcHeaders},
+		{"H2", "mpv/0.38.0", nil},
+		{"H2", "Kodi/21.0 (X11; Linux x86_64) App_Bitness/64 Version/21.0-Git:20240205-a9cf89e8fd", nil},
+		{"H2", "Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/115.0", nil},
+		{"H2", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", nil},
+		{"H1", DefaultLavfUA, lavfHeaders},
+		{"H1", "VLC/3.0.21 LibVLC/3.0.21", vlcHeaders},
+		{"H1", "mpv/0.38.0", nil},
+		{"H1", "Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/115.0", nil},
+		{"H1", "curl/8.4.0", nil},
+	}
+}
+
+// GetPHPResult is the return value of ProbeGetPHPAll.
+type GetPHPResult struct {
+	Attempts     []GetPHPAttempt
+	OK           bool // any attempt returned HTTP 200
+	WAFIPBlock   bool // all first-variant attempts returned identical WAF signatures → IP-level block
+	SkippedCount int  // number of attempts skipped due to early WAF bail
+}
+
+// ProbeGetPHPAll probes a provider's get.php endpoint exhaustively — trying multiple URL
+// parameter shapes, both HTTP/2 and HTTP/1.1 clients, and a range of User-Agents.
+// If the base URL uses http://, an https:// variant is also attempted.
+//
+// Early bail: after the first URL variant is exhausted, if every attempt returned the same
+// non-200 status code with CF-Cache=DYNAMIC, it is almost certainly an IP/ASN-level WAF
+// rule that no UA/protocol/URL change can bypass. In that case the function stops, sets
+// WAFIPBlock=true, and records SkippedCount so the caller can log what was skipped.
+// A few additional diagnostic probes (xmltv.php, root) are always appended at the end.
+func ProbeGetPHPAll(ctx context.Context, baseURL, user, pass string, h2Client *http.Client) GetPHPResult {
+	if h2Client == nil {
+		h2Client = httpclient.WithTimeout(20 * time.Second)
+	}
+	h1Client := httpclient.ForHTTP1Only(20 * time.Second)
+	h1Client.Jar = h2Client.Jar
+
+	clientFor := func(proto string) *http.Client {
+		if proto == "H1" {
+			return h1Client
+		}
+		return h2Client
+	}
+
+	// Try original base URL; if it is http, also try https.
+	bases := []string{baseURL}
+	if strings.HasPrefix(strings.ToLower(baseURL), "http://") {
+		bases = append(bases, "https"+baseURL[4:])
+	}
+
+	creds := "username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass)
+	combos := buildGetPHPCombos()
+
+	var attempts []GetPHPAttempt
+	totalVariants := len(bases) * len(getphpURLVariants) * len(combos)
+
+	doRequest := func(rawURL, label, proto, ua string, extraHeaders map[string]string) GetPHPAttempt {
+		att := GetPHPAttempt{Variant: label, Protocol: proto, UA: ua}
+		cl := clientFor(proto)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+		if err != nil {
+			att.NetError = err.Error()
+			return att
+		}
+		req.Header.Set("User-Agent", ua)
+		for k, v := range extraHeaders {
+			req.Header.Set(k, v)
+		}
+		start := time.Now()
+		resp, err := cl.Do(req)
+		att.LatencyMs = time.Since(start).Milliseconds()
+		if err != nil {
+			att.NetError = truncate(err.Error(), 120)
+			return att
+		}
+		att.StatusCode = resp.StatusCode
+		att.Server = resp.Header.Get("Server")
+		att.CFRay = resp.Header.Get("CF-Ray")
+		att.CFCache = resp.Header.Get("CF-Cache-Status")
+		att.Location = resp.Header.Get("Location")
+		preview := make([]byte, 512)
+		n, _ := resp.Body.Read(preview)
+		resp.Body.Close()
+		att.BodyPreview = string(preview[:n])
+		att.OK = resp.StatusCode == http.StatusOK &&
+			!strings.Contains(strings.ToLower(att.BodyPreview), "checking your browser")
+		return att
+	}
+
+	// isWAFPattern returns true for a response that looks like a hard WAF IP-block.
+	// Covers two cases:
+	//   1. CF returns 884+DYNAMIC+CF-Ray (explicit block on HTTP/2 or H1 that completes TLS).
+	//   2. CF resets the H1/HTTPS connection before TLS completes — "HTTP/1.x transport
+	//      connection broken" — which is how CF Bot Management drops H1+TLS probes it won't
+	//      serve at all (no H2 available, no h1 ALPN passed). These show as NetError.
+	isWAFPattern := func(a GetPHPAttempt) bool {
+		if a.OK {
+			return false
+		}
+		if a.NetError == "" {
+			return strings.EqualFold(a.CFCache, "DYNAMIC") && a.CFRay != ""
+		}
+		// NetError path: H1+HTTPS connection-reset from CF counts as WAF block.
+		return strings.Contains(a.NetError, "connection broken") ||
+			strings.Contains(a.NetError, "connection reset") ||
+			strings.Contains(a.NetError, "EOF")
+	}
+
+	wafBlock := false
+
+	for _, base := range bases {
+		if wafBlock {
+			break
+		}
+		isHTTPS := strings.HasPrefix(strings.ToLower(base), "https://")
+
+		firstVariant := true
+		for _, variant := range getphpURLVariants {
+			if wafBlock {
+				break
+			}
+			rawURL := base + "/get.php?" + creds + variant.extra
+			label := variant.label
+			if isHTTPS {
+				label = "https/" + label
+			}
+
+			variantAttempts := make([]GetPHPAttempt, 0, len(combos))
+			for _, combo := range combos {
+				a := doRequest(rawURL, label, combo.proto, combo.ua, combo.headers)
+				variantAttempts = append(variantAttempts, a)
+				attempts = append(attempts, a)
+				if a.OK {
+					// Run alt-path diagnostics then return.
+					attempts = append(attempts, probeAltPaths(ctx, baseURL, creds, user, pass, doRequest)...)
+					return GetPHPResult{Attempts: attempts, OK: true}
+				}
+			}
+
+			// After the first URL variant on the first (http) base: check for WAF IP-block.
+			// If every combo got the same WAF signature, there is no point trying more variants.
+			if firstVariant && !isHTTPS {
+				wafCount := 0
+				wafCode := 0
+				for _, a := range variantAttempts {
+					if isWAFPattern(a) {
+						wafCount++
+						if wafCode == 0 {
+							wafCode = a.StatusCode
+						}
+					}
+				}
+				if wafCount == len(variantAttempts) {
+					// All combos hit the same WAF wall. Bail on remaining URL variants.
+					skipped := totalVariants - len(attempts)
+					if skipped < 0 {
+						skipped = 0
+					}
+					wafBlock = true
+					attempts = append(attempts, probeAltPaths(ctx, baseURL, creds, user, pass, doRequest)...)
+					attempts = append(attempts, probeGetPHPPOST(ctx, baseURL, user, pass, h2Client))
+					// Re-check OK: only bypass attempts count (not diagnostic probes like xmltv/root).
+					for _, a := range attempts {
+						if a.OK && IsGetPHPBypassVariant(a.Variant) {
+							return GetPHPResult{Attempts: attempts, OK: true}
+						}
+					}
+					return GetPHPResult{
+						Attempts:     attempts,
+						OK:           false,
+						WAFIPBlock:   true,
+						SkippedCount: skipped,
+					}
+				}
+			}
+			firstVariant = false
+		}
+	}
+
+	attempts = append(attempts, probeAltPaths(ctx, baseURL, creds, user, pass, doRequest)...)
+	attempts = append(attempts, probeGetPHPPOST(ctx, baseURL, user, pass, h2Client))
+	for _, a := range attempts {
+		if a.OK && IsGetPHPBypassVariant(a.Variant) {
+			return GetPHPResult{Attempts: attempts, OK: true}
+		}
+	}
+	return GetPHPResult{Attempts: attempts, OK: false}
+}
+
+// isGetPHPBypassVariant reports whether a variant label represents an actual get.php
+// bypass attempt (PATH_INFO, POST) as opposed to a diagnostic probe (xmltv, root).
+// Used to prevent xmltv.php returning HTTP 200 from being counted as get.php working.
+func IsGetPHPBypassVariant(variant string) bool {
+	switch variant {
+	case "alt/xmltv", "alt/root", "alt/get.php/", "alt/Get.php":
+		return false
+	}
+	// Main get.php variants (no "alt/" prefix) and bypass alts all count.
+	return true
+}
+
+// probeAltPaths runs diagnostic probes on alternate paths to determine whether the WAF
+// block is get.php-specific or IP-wide. Also tries path-encoding variations and PATH_INFO
+// credential embedding that occasionally bypass WAF rules matching the exact "/get.php" literal.
+func probeAltPaths(ctx context.Context, baseURL, creds, user, pass string, doReq func(rawURL, label, proto, ua string, extra map[string]string) GetPHPAttempt) []GetPHPAttempt {
+	baseURL = normalizeProviderBaseURL(baseURL)
+	lavf := DefaultLavfUA
+	lavfH := map[string]string{"Accept": "*/*"}
+	// PATH_INFO: /get.php/user/pass — credentials in URL path, not query string.
+	// WAF rules matching exactly "/get.php" often pass "/get.php/..." to origin.
+	// Some Xtream Codes forks read $_SERVER['PATH_INFO'] for auth.
+	pathInfo := url.PathEscape(user) + "/" + url.PathEscape(pass)
+	return []GetPHPAttempt{
+		// Standard alternate paths — confirm path-specific vs IP-wide block.
+		doReq(baseURL+"/xmltv.php?"+creds, "alt/xmltv", "H2", lavf, lavfH),
+		doReq(baseURL+"/", "alt/root", "H2", lavf, lavfH),
+		// Path-variation long-shots: some WAF rules match literal "/get.php" but miss these.
+		doReq(baseURL+"/get.php/?"+creds+"&type=m3u_plus&output=ts", "alt/get.php/", "H2", lavf, lavfH),
+		doReq(baseURL+"/Get.php?"+creds+"&type=m3u_plus&output=ts", "alt/Get.php", "H2", lavf, lavfH),
+		// PATH_INFO credential embedding — H2 and H1 variants.
+		doReq(baseURL+"/get.php/"+pathInfo+"?type=m3u_plus&output=ts", "alt/pathinfo-h2", "H2", lavf, lavfH),
+		doReq(baseURL+"/get.php/"+pathInfo+"?type=m3u_plus&output=ts", "alt/pathinfo-h1", "H1", lavf, lavfH),
+		doReq(baseURL+"/get.php/"+pathInfo, "alt/pathinfo-noqs", "H2", lavf, lavfH),
+	}
+}
+
+// probeGetPHPPOST tries a POST request to /get.php with credentials in the request body.
+// CF WAF rules that key on GET+"/get.php" sometimes pass POST through.
+func probeGetPHPPOST(ctx context.Context, baseURL, user, pass string, client *http.Client) GetPHPAttempt {
+	baseURL = normalizeProviderBaseURL(baseURL)
+	rawURL := baseURL + "/get.php"
+	att := GetPHPAttempt{Variant: "alt/POST", Protocol: "H2", UA: DefaultLavfUA}
+	bodyStr := "username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&type=m3u_plus&output=ts"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, strings.NewReader(bodyStr))
+	if err != nil {
+		att.NetError = err.Error()
+		return att
+	}
+	req.Header.Set("User-Agent", DefaultLavfUA)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "*/*")
+	start := time.Now()
+	resp, err := client.Do(req)
+	att.LatencyMs = time.Since(start).Milliseconds()
+	if err != nil {
+		att.NetError = truncate(err.Error(), 120)
+		return att
+	}
+	att.StatusCode = resp.StatusCode
+	att.Server = resp.Header.Get("Server")
+	att.CFRay = resp.Header.Get("CF-Ray")
+	att.CFCache = resp.Header.Get("CF-Cache-Status")
+	att.Location = resp.Header.Get("Location")
+	preview := make([]byte, 512)
+	n, _ := resp.Body.Read(preview)
+	resp.Body.Close()
+	att.BodyPreview = string(preview[:n])
+	att.OK = resp.StatusCode == http.StatusOK &&
+		!strings.Contains(strings.ToLower(att.BodyPreview), "checking your browser")
+	return att
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 // mURL is a trivial helper that just returns its argument; used for readability at call sites.
@@ -184,7 +532,7 @@ func BestM3UURL(ctx context.Context, m3uURLs []string, client *http.Client) stri
 // top-level auth call even though the subsequent get_live_streams call still works.
 // This is what xtream-to-m3u.js uses; get.php often returns 884/Cloudflare while player_api.php works.
 func ProbePlayerAPI(ctx context.Context, baseURL, user, pass string, client *http.Client) Result {
-	baseURL = strings.TrimSuffix(baseURL, "/")
+	baseURL = normalizeProviderBaseURL(baseURL)
 	probeURL := baseURL + "/player_api.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass)
 	if client == nil {
 		client = httpclient.WithTimeout(15 * time.Second)
@@ -331,7 +679,7 @@ func RankedEntries(ctx context.Context, entries []Entry, client *http.Client, op
 
 	var clean []Entry
 	for _, e := range entries {
-		e.BaseURL = strings.TrimSpace(strings.TrimSuffix(e.BaseURL, "/"))
+		e.BaseURL = normalizeProviderBaseURL(e.BaseURL)
 		if e.BaseURL != "" {
 			clean = append(clean, e)
 		}

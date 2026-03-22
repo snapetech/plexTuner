@@ -50,7 +50,7 @@ type LibraryCreateSpec struct {
 	Language string // defaults to en-US
 }
 
-func plexHTTPClient() *http.Client {
+var plexHTTPClient = func() *http.Client {
 	return httpclient.WithTimeout(60 * time.Second)
 }
 

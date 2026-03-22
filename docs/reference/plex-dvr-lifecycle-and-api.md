@@ -233,6 +233,7 @@ Validate all of:
 
 See also
 --------
+- [reverse-engineer-plex-livetv-access](../how-to/reverse-engineer-plex-livetv-access.md)
 - [testing-and-supervisor-config](testing-and-supervisor-config.md)
 - [plex-hidden-live-grab-recovery](../runbooks/plex-hidden-live-grab-recovery.md)
 - [deploy-and-connect-plex-home](../how-to/deploy-and-connect-plex-home.md)

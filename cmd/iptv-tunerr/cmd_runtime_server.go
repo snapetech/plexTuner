@@ -95,7 +95,7 @@ func newRuntimeServer(cfg *config.Config, addr, baseURL, deviceID, friendlyName 
 	} else {
 		srv.EventHooks = dispatcher
 	}
-	srv.RuntimeSnapshot = buildRuntimeSnapshot(cfg, addr, baseURL, deviceID, friendlyName, lineupCap, providerBase, providerUser)
+	srv.SetRuntimeSnapshot(buildRuntimeSnapshot(cfg, addr, baseURL, deviceID, friendlyName, lineupCap, providerBase, providerUser))
 	return srv
 }
 
@@ -125,6 +125,7 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"profile_overrides_file":                   strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROFILE_OVERRIDES_FILE")),
 			"stream_profiles_file":                     strings.TrimSpace(os.Getenv("IPTV_TUNERR_STREAM_PROFILES_FILE")),
 			"stream_public_base_url":                   strings.TrimSpace(os.Getenv("IPTV_TUNERR_STREAM_PUBLIC_BASE_URL")),
+			"shared_relay_replay_bytes":                strings.TrimSpace(os.Getenv("IPTV_TUNERR_SHARED_RELAY_REPLAY_BYTES")),
 			"hls_mux_cors":                             cfg.HlsMuxCORS,
 			"hls_mux_upstream_err_body_max":            strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_UPSTREAM_ERR_BODY_MAX")),
 			"hls_mux_max_seg_param_bytes":              strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_MAX_SEG_PARAM_BYTES")),
@@ -206,7 +207,7 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"smoketest_cache_file":     cfg.SmoketestCacheFile,
 			"smoketest_cache_ttl":      cfg.SmoketestCacheTTL.String(),
 			"free_source_mode":         cfg.FreeSourceMode,
-			"free_source_count":        len(cfg.FreeSources),
+			"free_source_count":        len(freeSourceURLs(cfg)),
 			"free_source_countries":    cfg.FreeSourceIptvOrgCountries,
 			"free_source_categories":   cfg.FreeSourceIptvOrgCategories,
 			"free_source_iptv_org_all": cfg.FreeSourceIptvOrgAll,

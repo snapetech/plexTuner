@@ -34,6 +34,14 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if maybeServeHLSMuxOPTIONS(w, r) {
 		return
 	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		allow := []string{http.MethodGet, http.MethodHead}
+		if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("mux")), "hls") && hlsMuxCORSEnabled() {
+			allow = append(allow, http.MethodOptions)
+		}
+		writeMethodNotAllowed(w, allow...)
+		return
+	}
 	log.Printf("gateway: req=%s recv path=%q channel=%q remote=%t ua=%t", reqID, r.URL.Path, channelID, strings.TrimSpace(r.RemoteAddr) != "", strings.TrimSpace(r.UserAgent()) != "")
 	if g.EventHooks != nil {
 		g.EventHooks.Dispatch("stream.requested", "gateway", map[string]interface{}{
@@ -76,6 +84,36 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		finalErr = errors.New("no stream URL")
 		http.Error(w, "no stream URL", http.StatusBadGateway)
 		return
+	}
+	requestMux := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mux")))
+	transcode := g.effectiveTranscodeForChannelMeta(r.Context(), channelID, channel.GuideNumber, channel.TVGID, "")
+	if hasTranscodeOverride {
+		transcode = forceTranscode
+	}
+	profileName := g.profileForChannelMeta(channelID, channel.GuideNumber, channel.TVGID)
+	if strings.TrimSpace(forcedProfile) != "" {
+		profileName = normalizeConfiguredProfileName(forcedProfile)
+	}
+	profileSelection := g.resolveProfileSelection(profileName)
+	outputMux := g.preferredOutputMuxForProfile(profileName, requestMux, transcode)
+	if requestMux != "hls" && outputMux == streamMuxHLS {
+		if sess := g.lookupReusableHLSPackagerSession(hlsPackagerReuseKey(channelID, profileSelection)); sess != nil {
+			serveErr := g.serveFFmpegPackagedHLSPlaylist(w, channelID, sess, true)
+			if serveErr == nil {
+				finalStatus = "ok"
+				finalMode = "hls_ffmpeg_packaged_shared"
+				return
+			}
+			log.Printf("gateway: req=%s channel=%q id=%s shared-hls-packager failed; starting fresh session: %v", reqID, channel.GuideName, channelID, serveErr)
+			g.unregisterHLSPackagerSession(sess.id, "reuse_failed")
+		}
+	}
+	if requestMux != "hls" && outputMux != streamMuxHLS {
+		if g.tryServeAttachedSharedRelay(w, r, channel, sharedFFmpegRelayKey(channelID, profileSelection, outputMux), reqID, start) {
+			finalStatus = "ok"
+			finalMode = "hls_ffmpeg_shared"
+			return
+		}
 	}
 	attempt := newStreamAttemptBuilder(reqID, r, channelID, channel.GuideName, len(urls))
 	defer func() {
@@ -123,7 +161,6 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	requestMux := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mux")))
 	if g.maybeServeFFmpegPackagedHLSTarget(w, r, channelID) {
 		finalStatus = "ok"
 		finalMode = "hls_ffmpeg_packaged_target"

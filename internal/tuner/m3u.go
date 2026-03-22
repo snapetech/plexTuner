@@ -21,6 +21,10 @@ func (m *M3UServe) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeMethodNotAllowed(w, http.MethodGet, http.MethodHead)
+		return
+	}
 	channels := m.Channels
 	if channels == nil {
 		channels = []catalog.LiveChannel{}
@@ -41,7 +45,7 @@ func (m *M3UServe) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if base == "" {
 		base = "http://localhost:5004"
 	}
-	base = strings.TrimSuffix(base, "/")
+	base = strings.TrimRight(strings.TrimSpace(base), "/")
 	guideURL := base + "/guide.xml"
 	w.Header().Set("Content-Type", "audio/x-mpegurl; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")

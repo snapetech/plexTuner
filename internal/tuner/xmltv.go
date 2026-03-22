@@ -72,6 +72,8 @@ type XMLTV struct {
 	// HDHRGuideTimeout for fetching HDHRGuideURL; 0 = default 90s.
 	HDHRGuideTimeout time.Duration
 
+	providerConfigMu sync.RWMutex
+
 	mu        sync.RWMutex
 	cachedXML []byte
 	cacheExp  time.Time
@@ -93,6 +95,26 @@ type XMLTV struct {
 	lastRefreshTrigger   string
 	lastRefreshError     string
 	lastRefreshDuration  time.Duration
+}
+
+func (x *XMLTV) providerIdentity() (string, string, string) {
+	if x == nil {
+		return "", "", ""
+	}
+	x.providerConfigMu.RLock()
+	defer x.providerConfigMu.RUnlock()
+	return x.ProviderBaseURL, x.ProviderUser, x.ProviderPass
+}
+
+func (x *XMLTV) setProviderIdentity(baseURL, user, pass string) {
+	if x == nil {
+		return
+	}
+	x.providerConfigMu.Lock()
+	x.ProviderBaseURL = baseURL
+	x.ProviderUser = user
+	x.ProviderPass = pass
+	x.providerConfigMu.Unlock()
 }
 
 type XMLTVRefreshStatus struct {
@@ -170,6 +192,10 @@ const guideStateHeader = "X-IptvTunerr-Guide-State"
 func (x *XMLTV) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/guide.xml" {
 		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeMethodNotAllowed(w, http.MethodGet, http.MethodHead)
 		return
 	}
 	// Fast path: serve from cache.

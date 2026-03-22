@@ -1,10 +1,9 @@
 package plexharvest
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/snapetech/iptvtunerr/internal/hdhomerun"
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
 	"github.com/snapetech/iptvtunerr/internal/plex"
 )
@@ -348,22 +348,18 @@ func fetchLineup(baseURL string) ([]HarvestedChannel, error) {
 	if baseURL == "" {
 		return nil, fmt.Errorf("base url required")
 	}
-	req, err := http.NewRequest(http.MethodGet, baseURL+"/lineup.json", nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	doc, err := hdhomerun.FetchLineupJSON(ctx, httpclient.WithTimeout(15*time.Second), baseURL)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := httpclient.WithTimeout(15 * time.Second).Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("lineup fetch status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	var rows []HarvestedChannel
-	if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
-		return nil, err
+	rows := make([]HarvestedChannel, 0, len(doc.Channels))
+	for _, ch := range doc.Channels {
+		rows = append(rows, HarvestedChannel{
+			GuideNumber: strings.TrimSpace(ch.GuideNumber),
+			GuideName:   strings.TrimSpace(ch.GuideName),
+		})
 	}
 	sort.Slice(rows, func(i, j int) bool {
 		if strings.TrimSpace(rows[i].GuideNumber) == strings.TrimSpace(rows[j].GuideNumber) {

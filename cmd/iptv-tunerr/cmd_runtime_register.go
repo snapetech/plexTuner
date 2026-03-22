@@ -17,13 +17,21 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/tuner"
 )
 
+func guideURLForBase(baseURL string) string {
+	return strings.TrimRight(strings.TrimSpace(baseURL), "/") + "/guide.xml"
+}
+
+func streamURLForBase(baseURL, channelID string) string {
+	return strings.TrimRight(strings.TrimSpace(baseURL), "/") + "/stream/" + channelID
+}
+
 func registerRunPlex(ctx context.Context, cfg *config.Config, live []catalog.LiveChannel, baseURL, registerPlex string, registerOnly bool, registerInterval time.Duration, mode string) bool {
 	log.Printf("[PLEX-REG] START: runRegisterPlex=%q runMode=%q", registerPlex, mode)
 	if registerPlex == "" || mode == "easy" {
 		_, _ = os.Stderr.WriteString("\n--- Plex one-time setup ---\n")
 		_, _ = os.Stderr.WriteString("Easy (wizard): -mode=easy -> lineup capped at 479; add tuner in Plex, pick suggested guide (e.g. Rogers West).\n")
 		_, _ = os.Stderr.WriteString("Full (zero-touch): -mode=full -register-plex=/path/to/Plex -> max feeds, no wizard.\n")
-		_, _ = os.Stderr.WriteString("  Device / Base URL: " + baseURL + "   Guide: " + baseURL + "/guide.xml\n")
+		_, _ = os.Stderr.WriteString("  Device / Base URL: " + baseURL + "   Guide: " + guideURLForBase(baseURL) + "\n")
 		_, _ = os.Stderr.WriteString("---\n\n")
 		return false
 	}
@@ -74,7 +82,7 @@ func registerRunPlex(ctx context.Context, cfg *config.Config, live []catalog.Liv
 				lineupChannels[i] = plex.LineupChannel{
 					GuideNumber: ch.GuideNumber,
 					GuideName:   ch.GuideName,
-					URL:         baseURL + "/stream/" + channelID,
+					URL:         streamURLForBase(baseURL, channelID),
 				}
 			}
 			if err := plex.SyncLineupToPlex(registerPlex, lineupChannels); err != nil {
@@ -116,7 +124,7 @@ func registerRunPlex(ctx context.Context, cfg *config.Config, live []catalog.Liv
 			FriendlyName: cfg.FriendlyName,
 			DeviceID:     cfg.DeviceID,
 		}
-		guideURL := baseURL + "/guide.xml"
+		guideURL := guideURLForBase(baseURL)
 		channelInfoCopy := channelInfo
 		log.Printf("[dvr-watchdog] starting: device=%s interval=%v", registeredDeviceUUID, registerInterval)
 		go plex.DVRWatchdog(ctx, watchdogCfg, registeredDeviceUUID, guideURL, registerInterval, channelInfoCopy)

@@ -22,7 +22,13 @@ func operatorUIAllowed(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	if os.Getenv("IPTV_TUNERR_UI_ALLOW_LAN") != "1" && !isLoopbackRemote(r) {
-		http.Error(w, "operator UI is localhost-only (set IPTV_TUNERR_UI_ALLOW_LAN=1 to allow LAN)", http.StatusForbidden)
+		msg := "operator UI is localhost-only (set IPTV_TUNERR_UI_ALLOW_LAN=1 to allow LAN)"
+		path := strings.ToLower(strings.TrimSpace(r.URL.Path))
+		if strings.HasSuffix(path, ".json") || strings.HasPrefix(path, "/ops/") {
+			writeServerJSONError(w, http.StatusForbidden, msg)
+			return false
+		}
+		http.Error(w, msg, http.StatusForbidden)
 		return false
 	}
 	return true
@@ -111,13 +117,20 @@ func buildGuidePreviewTable(gp GuidePreview) string {
 	return b.String()
 }
 
+func writeOperatorGuidePreviewJSONError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte(fmt.Sprintf("{\"error\":%q}\n", msg)))
+}
+
 func (s *Server) serveOperatorGuidePreviewPage() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/ui/guide/" {
 			http.NotFound(w, r)
 			return
 		}
-		if r.Method != http.MethodGet {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
@@ -152,20 +165,20 @@ func (s *Server) serveOperatorGuidePreviewPage() http.Handler {
 func (s *Server) serveOperatorGuidePreviewJSON() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowedJSON(w, http.MethodGet)
 			return
 		}
 		if !operatorUIAllowed(w, r) {
 			return
 		}
 		if s.xmltv == nil {
-			http.Error(w, `{"error":"guide preview unavailable"}`, http.StatusServiceUnavailable)
+			writeOperatorGuidePreviewJSONError(w, http.StatusServiceUnavailable, "guide preview unavailable")
 			return
 		}
 		limit := parseOperatorGuidePreviewLimit(r, 50)
 		gp, err := s.xmltv.GuidePreview(limit)
 		if err != nil {
-			http.Error(w, `{"error":"guide preview failed"}`, http.StatusBadGateway)
+			writeOperatorGuidePreviewJSONError(w, http.StatusBadGateway, "guide preview failed")
 			return
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -183,7 +196,8 @@ func (s *Server) serveOperatorUI() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		if r.Method != http.MethodGet {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
@@ -209,6 +223,10 @@ func isLoopbackRemote(r *http.Request) bool {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
+	}
+	host = strings.TrimSpace(host)
+	if strings.EqualFold(host, "localhost") {
+		return true
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()

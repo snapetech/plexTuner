@@ -128,6 +128,12 @@ func joinDeviceXMLURL(baseURL string) string {
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return ""
 	}
+	if strings.HasSuffix(strings.ToLower(strings.TrimSpace(u.Path)), "/device.xml") {
+		u.RawPath = ""
+		u.RawQuery = ""
+		u.Fragment = ""
+		return u.String()
+	}
 	u.Path = strings.TrimRight(u.Path, "/") + "/device.xml"
 	u.RawPath = ""
 	u.RawQuery = ""

@@ -2,6 +2,8 @@ package plexharvest
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
@@ -149,5 +151,21 @@ func TestSaveLoadReportFile_roundTrip(t *testing.T) {
 	}
 	if len(loaded.Results) != 1 || len(loaded.Results[0].Channels) != 1 || loaded.Results[0].Channels[0].GuideName != "CBC Regina" {
 		t.Fatalf("loaded results=%#v", loaded.Results)
+	}
+}
+
+func TestFetchLineupAcceptsObjectShapedPayload(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ScanInProgress":0,"ScanPossible":1,"Channels":[{"GuideNumber":"101","GuideName":"CBC Regina","URL":"http://example/stream"}]}`))
+	}))
+	defer srv.Close()
+
+	rows, err := fetchLineup(srv.URL)
+	if err != nil {
+		t.Fatalf("fetchLineup: %v", err)
+	}
+	if len(rows) != 1 || rows[0].GuideNumber != "101" || rows[0].GuideName != "CBC Regina" {
+		t.Fatalf("rows=%#v", rows)
 	}
 }

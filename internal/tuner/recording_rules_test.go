@@ -97,6 +97,7 @@ func TestServer_recordingRulePreview(t *testing.T) {
 		},
 	}
 	req := httptest.NewRequest(http.MethodGet, "/recordings/rules/preview.json?horizon=24h&limit=10", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	s.serveRecordingRulePreview().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -148,6 +149,7 @@ func TestServer_recordingHistory(t *testing.T) {
 		},
 	}
 	req := httptest.NewRequest(http.MethodGet, "/recordings/history.json?limit=10", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	s.serveRecordingHistory().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {

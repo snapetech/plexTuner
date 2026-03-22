@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
@@ -35,6 +36,7 @@ func CheckProvider(ctx context.Context, m3uURL string) error {
 
 // CheckEndpoints hits discover, lineup, guide at baseURL and returns the first error or nil.
 func CheckEndpoints(ctx context.Context, baseURL string) error {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	client := httpclient.WithTimeout(5 * time.Second)
 	for _, path := range []string{"/discover.json", "/lineup.json", "/guide.xml"} {
 		url := baseURL + path

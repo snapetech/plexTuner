@@ -24,6 +24,7 @@ const streamMuxHLSPackager = "hlspkg"
 
 type ffmpegHLSPackagerSession struct {
 	id           string
+	reuseKey     string
 	channelID    string
 	channelName  string
 	dir          string
@@ -57,6 +58,16 @@ func (s *ffmpegHLSPackagerSession) snapshot() (createdAt, lastAccess time.Time, 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.createdAt, s.lastAccess, s.exited, s.waitErr
+}
+
+func hlsPackagerReuseKey(channelID string, profile resolvedStreamProfile) string {
+	return strings.Join([]string{
+		strings.TrimSpace(channelID),
+		strings.TrimSpace(profile.Name),
+		strings.TrimSpace(profile.BaseProfile),
+		strconv.FormatBool(profile.ForceTranscode),
+		normalizeStreamOutputMuxName(profile.OutputMux),
+	}, "\x1f")
 }
 
 func hlsPackagerStartupTimeout() time.Duration {
@@ -217,11 +228,7 @@ func (g *Gateway) cleanupExpiredHLSPackagerSessions() {
 		if now.Sub(lastAccess) < idle && now.Sub(createdAt) < maxAge && !(exited && now.Sub(lastAccess) >= 5*time.Second) {
 			continue
 		}
-		delete(g.hlsPackagerSessions, id)
-		if sess.tunerHeld && g.hlsPackagerInUse > 0 {
-			g.hlsPackagerInUse--
-			sess.tunerHeld = false
-		}
+		g.removeHLSPackagerSessionLocked(id, sess)
 		expired = append(expired, sess)
 	}
 	g.mu.Unlock()
@@ -248,6 +255,21 @@ func (g *Gateway) stopHLSPackagerSession(sess *ffmpegHLSPackagerSession, reason 
 	}
 }
 
+func (g *Gateway) removeHLSPackagerSessionLocked(sessionID string, sess *ffmpegHLSPackagerSession) {
+	if g.hlsPackagerSessions != nil && sessionID != "" {
+		delete(g.hlsPackagerSessions, sessionID)
+	}
+	if sess != nil && sess.reuseKey != "" && g.hlsPackagerSessionsByKey != nil {
+		if current := g.hlsPackagerSessionsByKey[sess.reuseKey]; current == sess {
+			delete(g.hlsPackagerSessionsByKey, sess.reuseKey)
+		}
+	}
+	if sess != nil && sess.tunerHeld && g.hlsPackagerInUse > 0 {
+		g.hlsPackagerInUse--
+		sess.tunerHeld = false
+	}
+}
+
 func (g *Gateway) registerHLSPackagerSession(sess *ffmpegHLSPackagerSession) {
 	if g == nil || sess == nil {
 		return
@@ -257,7 +279,13 @@ func (g *Gateway) registerHLSPackagerSession(sess *ffmpegHLSPackagerSession) {
 	if g.hlsPackagerSessions == nil {
 		g.hlsPackagerSessions = make(map[string]*ffmpegHLSPackagerSession)
 	}
+	if g.hlsPackagerSessionsByKey == nil {
+		g.hlsPackagerSessionsByKey = make(map[string]*ffmpegHLSPackagerSession)
+	}
 	g.hlsPackagerSessions[sess.id] = sess
+	if sess.reuseKey != "" {
+		g.hlsPackagerSessionsByKey[sess.reuseKey] = sess
+	}
 	g.hlsPackagerInUse++
 	sess.tunerHeld = true
 	g.mu.Unlock()
@@ -271,11 +299,9 @@ func (g *Gateway) unregisterHLSPackagerSession(sessionID, reason string) {
 	g.mu.Lock()
 	if g.hlsPackagerSessions != nil {
 		sess = g.hlsPackagerSessions[sessionID]
-		delete(g.hlsPackagerSessions, sessionID)
 	}
-	if sess != nil && sess.tunerHeld && g.hlsPackagerInUse > 0 {
-		g.hlsPackagerInUse--
-		sess.tunerHeld = false
+	if sess != nil {
+		g.removeHLSPackagerSessionLocked(sessionID, sess)
 	}
 	g.mu.Unlock()
 	g.stopHLSPackagerSession(sess, reason)
@@ -292,6 +318,32 @@ func (g *Gateway) lookupHLSPackagerSession(sessionID string) *ffmpegHLSPackagerS
 		return nil
 	}
 	return g.hlsPackagerSessions[sessionID]
+}
+
+func (g *Gateway) lookupReusableHLSPackagerSession(reuseKey string) *ffmpegHLSPackagerSession {
+	if g == nil || reuseKey == "" {
+		return nil
+	}
+	g.cleanupExpiredHLSPackagerSessions()
+	var stale *ffmpegHLSPackagerSession
+	g.mu.Lock()
+	if g.hlsPackagerSessionsByKey != nil {
+		if sess := g.hlsPackagerSessionsByKey[reuseKey]; sess != nil {
+			_, _, exited, _ := sess.snapshot()
+			if exited {
+				stale = sess
+				g.removeHLSPackagerSessionLocked(sess.id, sess)
+			} else {
+				g.mu.Unlock()
+				return sess
+			}
+		}
+	}
+	g.mu.Unlock()
+	if stale != nil {
+		g.stopHLSPackagerSession(stale, "exited")
+	}
+	return nil
 }
 
 func newHLSPackagerSessionID(channelID string) string {
@@ -412,6 +464,7 @@ func (g *Gateway) startFFmpegPackagedHLS(
 	}
 	sess := &ffmpegHLSPackagerSession{
 		id:           newHLSPackagerSessionID(channelID),
+		reuseKey:     hlsPackagerReuseKey(channelID, profile),
 		channelID:    channelID,
 		channelName:  channelName,
 		dir:          dir,
@@ -439,6 +492,28 @@ func (g *Gateway) startFFmpegPackagedHLS(
 		log.Printf("gateway: channel=%q id=%s hls-packager input-host-resolved %q=>%q", channelName, channelID, ffmpegInputHost, ffmpegInputIP)
 	}
 	return sess, nil
+}
+
+func (g *Gateway) serveFFmpegPackagedHLSPlaylist(w http.ResponseWriter, channelID string, sess *ffmpegHLSPackagerSession, shared bool) error {
+	if sess == nil {
+		return errors.New("missing packaged hls session")
+	}
+	sess.touch(time.Now())
+	if err := waitForReadableFile(sess.playlistPath, hlsPackagerStartupTimeout()); err != nil {
+		return err
+	}
+	body, err := os.ReadFile(sess.playlistPath)
+	if err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+	w.Header().Set("Cache-Control", "no-store")
+	if shared {
+		w.Header().Set("X-IptvTunerr-Shared-Upstream", "ffmpeg_hls_packager")
+	}
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(rewritePackagedHLSPlaylist(body, channelID, sess.id))
+	return nil
 }
 
 func waitForReadableFile(path string, timeout time.Duration) error {
@@ -498,25 +573,20 @@ func (g *Gateway) serveFFmpegPackagedHLSInitial(
 		return err
 	}
 	g.registerHLSPackagerSession(sess)
-	if err := waitForReadableFile(sess.playlistPath, hlsPackagerStartupTimeout()); err != nil {
+	if err := g.serveFFmpegPackagedHLSPlaylist(w, channelID, sess, false); err != nil {
 		g.unregisterHLSPackagerSession(sess.id, "startup_failed")
 		return err
 	}
-	body, err := os.ReadFile(sess.playlistPath)
-	if err != nil {
-		g.unregisterHLSPackagerSession(sess.id, "playlist_read_failed")
-		return err
-	}
-	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(rewritePackagedHLSPlaylist(body, channelID, sess.id))
 	return nil
 }
 
 func (g *Gateway) maybeServeFFmpegPackagedHLSTarget(w http.ResponseWriter, r *http.Request, channelID string) bool {
 	if strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mux"))) != streamMuxHLSPackager {
 		return false
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeMethodNotAllowed(w, http.MethodGet, http.MethodHead)
+		return true
 	}
 	sessionID := strings.TrimSpace(r.URL.Query().Get("sid"))
 	if sessionID == "" {

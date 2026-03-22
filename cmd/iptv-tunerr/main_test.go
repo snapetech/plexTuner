@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -59,6 +61,30 @@ func TestFetchCatalog_MergesMultipleDirectM3UURLs(t *testing.T) {
 	}
 	if got["foxnews.us"] == "" || got["cnn.us"] == "" {
 		t.Fatalf("missing merged channels: %+v", res.Live)
+	}
+}
+
+func TestFetchCatalog_MergesDirectM3UURLsAcrossGap(t *testing.T) {
+	m3u1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("#EXTM3U\n#EXTINF:-1 tvg-id=\"foxnews.us\",FOX News\nhttp://provider1/live/u1/p1/100.m3u8\n"))
+	}))
+	defer m3u1.Close()
+	m3u3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("#EXTM3U\n#EXTINF:-1 tvg-id=\"cnn.us\",CNN\nhttp://provider3/live/u3/p3/300.m3u8\n"))
+	}))
+	defer m3u3.Close()
+
+	cfg := &config.Config{
+		M3UURL: m3u1.URL,
+	}
+	t.Setenv("IPTV_TUNERR_M3U_URL_3", m3u3.URL)
+
+	res, err := fetchCatalog(cfg, "")
+	if err != nil {
+		t.Fatalf("fetchCatalog error: %v", err)
+	}
+	if len(res.Live) != 2 {
+		t.Fatalf("live len=%d want 2", len(res.Live))
 	}
 }
 
@@ -290,6 +316,7 @@ func TestFetchCatalog_GetPHPFallbackMergesProviders(t *testing.T) {
 
 func TestFetchCatalog_FallsBackToGetPHPOnPlayerAPIForbidden(t *testing.T) {
 	var baseURL string
+	var mu sync.Mutex
 	playerAPIHits := map[string]int{}
 	getPHPHits := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -298,14 +325,18 @@ func TestFetchCatalog_FallsBackToGetPHPOnPlayerAPIForbidden(t *testing.T) {
 			w.WriteHeader(http.StatusServiceUnavailable)
 		case r.URL.Path == "/player_api.php":
 			key := r.URL.RawQuery
+			mu.Lock()
 			playerAPIHits[key]++
+			mu.Unlock()
 			if strings.Contains(key, "username=u1&password=p1") || strings.Contains(key, "username=u2&password=p2") {
 				http.Error(w, "forbidden", http.StatusForbidden)
 				return
 			}
 			http.Error(w, "bad cred", http.StatusUnauthorized)
 		case r.URL.Path == "/get.php":
+			mu.Lock()
 			getPHPHits++
+			mu.Unlock()
 			key := r.URL.RawQuery
 			switch {
 			case strings.Contains(key, "username=u1&password=p1"):
@@ -345,6 +376,8 @@ func TestFetchCatalog_FallsBackToGetPHPOnPlayerAPIForbidden(t *testing.T) {
 	countForCred := func(rawUser, rawPass string) int {
 		needle := "username=" + rawUser + "&password=" + rawPass
 		count := 0
+		mu.Lock()
+		defer mu.Unlock()
 		for key, c := range playerAPIHits {
 			if strings.Contains(key, needle) {
 				count += c
@@ -358,6 +391,8 @@ func TestFetchCatalog_FallsBackToGetPHPOnPlayerAPIForbidden(t *testing.T) {
 	if got := countForCred("u2", "p2"); got == 0 {
 		t.Fatalf("player_api hits u2/p2=%d want >0", got)
 	}
+	mu.Lock()
+	defer mu.Unlock()
 	if getPHPHits != 2 {
 		t.Fatalf("get.php hits=%d want 2", getPHPHits)
 	}
@@ -1068,6 +1103,83 @@ func TestBuildCatchupCapsulePreview_UsesCatalogDNA(t *testing.T) {
 	}
 }
 
+func TestHandleProbe_UsesPerEntryCredentialsForDuplicateBaseURLs(t *testing.T) {
+	var baseURL string
+	var mu sync.Mutex
+	playerAPIHits := map[string]int{}
+	getPHPHits := map[string]int{}
+	credFromQuery := func(r *http.Request) string {
+		q := r.URL.Query()
+		return q.Get("username") + "|" + q.Get("password")
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			if r.Method == http.MethodHead {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			http.NotFound(w, r)
+		case "/player_api.php":
+			mu.Lock()
+			playerAPIHits[credFromQuery(r)]++
+			mu.Unlock()
+			_, _ = w.Write([]byte(`{"user_info":{"auth":1},"server_info":{"url":"` + baseURL + `","server_url":"` + baseURL + `"}}`))
+		case "/get.php":
+			mu.Lock()
+			getPHPHits[credFromQuery(r)]++
+			mu.Unlock()
+			_, _ = w.Write([]byte("#EXTM3U\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	baseURL = srv.URL
+
+	cfg := &config.Config{
+		ProviderBaseURL: baseURL,
+		ProviderUser:    "u1",
+		ProviderPass:    "p1",
+	}
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL_2", baseURL)
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER_2", "u2")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS_2", "p2")
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL_3", baseURL)
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER_3", "")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS_3", "")
+
+	var logs bytes.Buffer
+	oldOutput := log.Writer()
+	oldFlags := log.Flags()
+	oldPrefix := log.Prefix()
+	log.SetOutput(&logs)
+	log.SetFlags(0)
+	log.SetPrefix("")
+	defer func() {
+		log.SetOutput(oldOutput)
+		log.SetFlags(oldFlags)
+		log.SetPrefix(oldPrefix)
+	}()
+
+	handleProbe(cfg, "", 2*time.Second)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if playerAPIHits["u1|p1"] == 0 || playerAPIHits["u2|p2"] == 0 {
+		t.Fatalf("player_api hits=%v want both credential sets to be probed", playerAPIHits)
+	}
+	if getPHPHits["u1|p1"] == 0 || getPHPHits["u2|p2"] == 0 {
+		t.Fatalf("get.php hits=%v want both credential sets to be probed", getPHPHits)
+	}
+	if !strings.Contains(logs.String(), "3/3 OK") {
+		t.Fatalf("probe summary missing credential-set counts: %s", logs.String())
+	}
+	if strings.Count(logs.String(), "get.php working on: "+baseURL) != 1 {
+		t.Fatalf("probe host list should be deduped: %s", logs.String())
+	}
+}
+
 func TestNormalizeTopLevelCommand(t *testing.T) {
 	tests := map[string]string{
 		"help":   "",
@@ -1080,6 +1192,47 @@ func TestNormalizeTopLevelCommand(t *testing.T) {
 		if got := normalizeTopLevelCommand(in); got != want {
 			t.Fatalf("normalizeTopLevelCommand(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestHandleProbe_TrimsWhitespaceAndTrailingSlashBaseURL(t *testing.T) {
+	var mu sync.Mutex
+	playerAPIHits := 0
+	getPHPHits := 0
+	baseURL := ""
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch r.URL.Path {
+		case "/player_api.php":
+			playerAPIHits++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"user_info":{"auth":1},"server_info":{"url":"` + baseURL + `","server_url":"` + baseURL + `"}}`))
+		case "/get.php":
+			getPHPHits++
+			_, _ = w.Write([]byte("#EXTM3U\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	baseURL = srv.URL
+
+	cfg := &config.Config{
+		ProviderBaseURL: "  " + srv.URL + "/  ",
+		ProviderUser:    "demo",
+		ProviderPass:    "secret",
+	}
+
+	handleProbe(cfg, "", 2*time.Second)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if playerAPIHits == 0 {
+		t.Fatal("expected player_api probe to hit normalized path")
+	}
+	if getPHPHits == 0 {
+		t.Fatal("expected get.php probe to hit normalized path")
 	}
 }
 

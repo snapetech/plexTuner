@@ -43,3 +43,17 @@ func TestLoadEnvFile_unquote(t *testing.T) {
 		t.Errorf("X = %q", os.Getenv("X"))
 	}
 }
+
+func TestLoadEnvFile_acceptsExportPrefix(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	if err := os.WriteFile(path, []byte("export FOO=bar\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := LoadEnvFile(path); err != nil {
+		t.Fatal(err)
+	}
+	if os.Getenv("FOO") != "bar" {
+		t.Errorf("FOO = %q", os.Getenv("FOO"))
+	}
+}

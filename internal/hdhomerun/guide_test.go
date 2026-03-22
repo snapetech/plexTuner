@@ -1,6 +1,8 @@
 package hdhomerun
 
 import (
+	"context"
+	"strings"
 	"testing"
 )
 
@@ -26,5 +28,15 @@ func TestGuideURLFromBase(t *testing.T) {
 	}
 	if g := GuideURLFromBase("http://x/guide.xml"); g != "http://x/guide.xml" {
 		t.Fatalf("%q", g)
+	}
+	if g := GuideURLFromBase("   "); g != "" {
+		t.Fatalf("%q", g)
+	}
+}
+
+func TestFetchGuideXMLRejectsEmptyBaseURL(t *testing.T) {
+	_, err := FetchGuideXML(context.Background(), nil, "   ")
+	if err == nil || !strings.Contains(err.Error(), "base url required") {
+		t.Fatalf("err=%v", err)
 	}
 }

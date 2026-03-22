@@ -88,6 +88,11 @@ const actionDefinitions = {
     label: "Reset Provider Penalties",
     confirm: "Reset learned provider behavior penalties and recent host failure state?"
   },
+  shared_relay_replay_update: {
+    path: "/api/ops/actions/shared-relay-replay",
+    label: "Apply Shared Replay Bytes",
+    confirm: "Apply the new shared replay byte window for future shared sessions?"
+  },
   autopilot_reset: {
     path: "/api/ops/actions/autopilot-reset",
     label: "Reset Autopilot Memory",
@@ -480,6 +485,7 @@ function programmingBackupPreferenceButtons(group) {
 
 function renderDeckSettingsPanel(settings) {
   const refreshValue = Number(settings?.default_refresh_sec ?? state.refreshRateSec ?? 30);
+  const runtimeReplayBytes = state.payloads.runtime?.body?.tuner?.shared_relay_replay_bytes ?? "";
   deckSettingsForm.innerHTML = `
     <div class="deck-settings-grid">
       <label>
@@ -492,12 +498,16 @@ function renderDeckSettingsPanel(settings) {
           <option value="120"${refreshValue === 120 ? " selected" : ""}>120s</option>
         </select>
       </label>
+      <label>
+        Shared Replay Bytes
+        <input id="deck-settings-shared-replay-bytes" type="number" min="0" step="1" value="${esc(runtimeReplayBytes)}" placeholder="262144" />
+      </label>
     </div>
     <div class="deck-settings-actions">
       <button id="deck-settings-save" type="button">Save Deck Preferences</button>
     </div>
     <div class="deck-settings-note">
-      Session TTL: ${esc(pretty(settings?.effective_session_ttl_minutes))} minutes. Login rate limit: ${esc(pretty(settings?.login_failure_limit))} failures per ${esc(pretty(settings?.login_failure_window_minutes))} minutes. Authentication is configured from startup env only. ${settings?.state_persisted ? "Deck preferences persist across restarts." : "Without a web UI state file, deck preferences last only until this process restarts."}
+      Session TTL: ${esc(pretty(settings?.effective_session_ttl_minutes))} minutes. Login rate limit: ${esc(pretty(settings?.login_failure_limit))} failures per ${esc(pretty(settings?.login_failure_window_minutes))} minutes. Authentication is configured from startup env only. Shared replay bytes apply to new shared live sessions only. ${settings?.state_persisted ? "Deck preferences persist across restarts." : "Without a web UI state file, deck preferences last only until this process restarts."}
     </div>
   `;
 }
@@ -1536,6 +1546,7 @@ function renderDeck() {
       ["Transcode mode", runtime.tuner?.stream_transcode],
       ["Buffer bytes", runtime.tuner?.stream_buffer_bytes],
       ["Public base URL", runtime.tuner?.stream_public_base_url],
+      ["Shared replay bytes", runtime.tuner?.shared_relay_replay_bytes],
       ["HLS mux CORS", runtime.tuner?.hls_mux_cors],
       ["Metrics enabled", runtime.tuner?.metrics_enable],
       ["Fetch CF reject", runtime.tuner?.fetch_cf_reject]
@@ -1741,10 +1752,17 @@ async function postAction(actionKey, payload = null, confirmOverride = "") {
 
 async function saveDeckSettings() {
   const refreshEl = document.getElementById("deck-settings-refresh");
+  const replayEl = document.getElementById("deck-settings-shared-replay-bytes");
   if (!refreshEl) return;
   const payload = {
     default_refresh_sec: Number(refreshEl.value || 0)
   };
+  const replayPayload = replayEl ? Number(replayEl.value || 0) : null;
+  if (replayEl && (!Number.isFinite(replayPayload) || replayPayload < 0)) {
+    setActionFeedback({ ok: false, action: "shared_relay_replay_update", message: "Shared replay bytes must be a non-negative integer." });
+    renderDeck();
+    return;
+  }
   try {
     const res = await fetch(endpoints.deckSettings, {
       method: "POST",
@@ -1765,11 +1783,32 @@ async function saveDeckSettings() {
       refreshRate.value = String(state.refreshRateSec);
       scheduleRefresh();
     }
+    if (replayEl) {
+      const replayRes = await fetch(actionDefinitions.shared_relay_replay_update.path, {
+        method: "POST",
+        headers: authHeaders({
+          "Accept": "application/json",
+          "Content-Type": "application/json"
+        }),
+        body: JSON.stringify({ shared_relay_replay_bytes: replayPayload })
+      });
+      const replayText = await replayRes.text();
+      const replayBody = replayText ? JSON.parse(replayText) : {};
+      if (!replayRes.ok) {
+        throw new Error(replayBody.message || replayBody.error || `HTTP ${replayRes.status}`);
+      }
+      await syncDeckActivity({
+        kind: "settings",
+        title: "shared_relay_replay_updated",
+        message: "Shared replay window updated.",
+        detail: { shared_relay_replay_bytes: replayPayload }
+      });
+    }
     await syncDeckActivity({
       kind: "settings",
       title: "deck_settings_saved",
       message: "Deck preferences updated.",
-      detail: { default_refresh_sec: body.default_refresh_sec }
+      detail: { default_refresh_sec: body.default_refresh_sec, shared_relay_replay_bytes: replayPayload }
     });
     setActionFeedback({ ok: true, action: "deck_settings", message: "Deck preferences saved." });
     await reloadDeck();

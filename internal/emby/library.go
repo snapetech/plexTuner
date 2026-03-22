@@ -47,7 +47,7 @@ func ListLibraries(cfg Config) ([]LibraryInfo, error) {
 }
 
 func listVirtualFolders(client *http.Client, cfg Config) ([]VirtualFolderInfo, error) {
-	queryURL := cfg.Host + "/Library/VirtualFolders/Query"
+	queryURL := joinHostURL(cfg.Host, "/Library/VirtualFolders/Query")
 	status, data, err := apiRequest(client, http.MethodGet, queryURL, cfg.Token, nil)
 	if err == nil && status == http.StatusOK {
 		var resp VirtualFolderQueryResult
@@ -63,7 +63,7 @@ func listVirtualFolders(client *http.Client, cfg Config) ([]VirtualFolderInfo, e
 		return nil, fmt.Errorf("list libraries returned %d: %s", status, trunc(string(data), 300))
 	}
 
-	legacyURL := cfg.Host + "/Library/VirtualFolders"
+	legacyURL := joinHostURL(cfg.Host, "/Library/VirtualFolders")
 	status, data, err = apiRequest(client, http.MethodGet, legacyURL, cfg.Token, nil)
 	if err != nil {
 		return nil, fmt.Errorf("list libraries fallback: %w", err)
@@ -119,9 +119,9 @@ func createLibraryURL(cfg Config, spec LibraryCreateSpec) string {
 		} else {
 			q.Set("refreshLibrary", "false")
 		}
-		return cfg.Host + "/Library/VirtualFolders?" + q.Encode()
+		return joinHostURL(cfg.Host, "/Library/VirtualFolders") + "?" + q.Encode()
 	}
-	return cfg.Host + "/Library/VirtualFolders"
+	return joinHostURL(cfg.Host, "/Library/VirtualFolders")
 }
 
 func createLibraryBody(cfg Config, body AddVirtualFolder) interface{} {

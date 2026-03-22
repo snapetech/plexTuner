@@ -26,6 +26,7 @@ func LoadEnvFile(path string) error {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
+		line = strings.TrimPrefix(line, "export ")
 		idx := strings.Index(line, "=")
 		if idx <= 0 {
 			continue

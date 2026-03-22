@@ -556,8 +556,11 @@ func (g *Gateway) ProviderBehaviorProfile() ProviderBehaviorProfile {
 			}
 			return 0
 		}(),
-		AccountLearnedLimits:         accountLearnedLimits,
-		BasicAuthConfigured:          strings.TrimSpace(g.ProviderUser) != "" || strings.TrimSpace(g.ProviderPass) != "",
+		AccountLearnedLimits: accountLearnedLimits,
+		BasicAuthConfigured: func() bool {
+			user, pass := g.providerCredentials()
+			return strings.TrimSpace(user) != "" || strings.TrimSpace(pass) != ""
+		}(),
 		ForwardedHeaders:             append([]string(nil), forwardedUpstreamHeaderNames...),
 		FFMPEGHLSReconnect:           getenvBool("IPTV_TUNERR_FFMPEG_HLS_RECONNECT", false),
 		FetchCFReject:                g.FetchCFReject,

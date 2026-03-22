@@ -74,6 +74,19 @@ assert_contains() {
   [[ "$haystack" == *"$needle"* ]] || fail "expected output to contain '$needle' ${context:+($context)}"
 }
 
+assert_file_prefix() {
+  local path="$1" prefix="$2"
+  python3 - "$path" "$prefix" <<'PY'
+import pathlib
+import sys
+
+data = pathlib.Path(sys.argv[1]).read_bytes()
+prefix = sys.argv[2].encode()
+if not data.startswith(prefix):
+    raise SystemExit(f"{sys.argv[1]} missing prefix {sys.argv[2]!r}: got {data[:32]!r}")
+PY
+}
+
 PIDS=()
 
 cat >"$TMP_DIR/catalog-full.json" <<'JSON'
@@ -406,6 +419,23 @@ cat >"$TMP_DIR/catalog-remux.json" <<'JSON'
 }
 JSON
 
+cat >"$TMP_DIR/stream-profiles.json" <<'JSON'
+{
+  "shared-hls": {
+    "base_profile": "dashfast",
+    "transcode": true,
+    "output_mux": "hls",
+    "description": "binary smoke packaged HLS shared-session profile"
+  },
+  "shared-fmp4": {
+    "base_profile": "lowbitrate",
+    "transcode": true,
+    "output_mux": "fmp4",
+    "description": "binary smoke ffmpeg fMP4 shared-session profile"
+  }
+}
+JSON
+
 mkdir -p "$TMP_DIR/assets"
 printf 'movie-bytes' >"$TMP_DIR/assets/movie.bin"
 printf 'episode-bytes' >"$TMP_DIR/assets/episode.bin"
@@ -672,6 +702,17 @@ settings_code="$(curl -sS -o "$body_file" -w '%{http_code}' -X POST \
   --data '{"default_refresh_sec":45}' \
   "http://127.0.0.1:$port_webui/deck/settings.json" || true)"
 [[ "$settings_code" == "200" ]] || fail "webui settings save status=$settings_code body=$(cat "$body_file" 2>/dev/null)"
+replay_code="$(curl -sS -o "$body_file" -w '%{http_code}' -X POST \
+  -H "Cookie: $cookie" \
+  -H "Content-Type: application/json" \
+  -H "X-IPTVTunerr-Deck-CSRF: $csrf_token" \
+  --data '{"shared_relay_replay_bytes":131072}' \
+  "http://127.0.0.1:$port_webui/api/ops/actions/shared-relay-replay" || true)"
+[[ "$replay_code" == "200" ]] || fail "shared replay update status=$replay_code body=$(cat "$body_file" 2>/dev/null)"
+runtime_body="$(curl -sS -H "Cookie: $cookie" "http://127.0.0.1:$port_webui/api/debug/runtime.json")"
+assert_contains "$runtime_body" '"shared_relay_replay_bytes": "131072"' "webui runtime replay update"
+action_status_body="$(curl -sS -H "Cookie: $cookie" "http://127.0.0.1:$port_webui/api/ops/actions/status.json")"
+assert_contains "$action_status_body" '"/ops/actions/shared-relay-replay"' "webui action status replay endpoint"
 diagnostics_body="$(curl -sS -H "Cookie: $cookie" "http://127.0.0.1:$port_webui/api/ops/workflows/diagnostics.json")"
 assert_contains "$diagnostics_body" '"suggested_good_channel_id"' "webui diagnostics workflow"
 
@@ -751,6 +792,149 @@ wait "$second_stream_pid"
 grep -qi '^X-IptvTunerr-Shared-Upstream: hls_go' "$shared_headers" || fail "shared relay second consumer missing shared upstream header"
 [[ -s "$TMP_DIR/shared-first.out" ]] || fail "shared relay first consumer got no bytes"
 [[ -s "$TMP_DIR/shared-second.out" ]] || fail "shared relay second consumer got no bytes"
+
+fake_packager_ffmpeg="$TMP_DIR/fake-packager-ffmpeg.sh"
+cat >"$fake_packager_ffmpeg" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+playlist=""
+segpat=""
+prev=""
+for arg in "$@"; do
+  if [[ "$prev" == "seg" ]]; then
+    segpat="$arg"
+    prev=""
+    continue
+  fi
+  if [[ "$arg" == "-hls_segment_filename" ]]; then
+    prev="seg"
+    continue
+  fi
+  playlist="$arg"
+done
+mkdir -p "$(dirname "$playlist")"
+printf '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXTINF:2.0,\nseg-000001.ts\n' >"$playlist"
+segfile="$(printf "$segpat" 1)"
+printf 'segment-bytes' >"$segfile"
+sleep 5
+SH
+chmod +x "$fake_packager_ffmpeg"
+
+port_packager="$(pick_port)"
+IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
+IPTV_TUNERR_XMLTV_URL= \
+IPTV_TUNERR_WEBUI_DISABLED=1 \
+IPTV_TUNERR_FFMPEG_DISABLED=0 \
+IPTV_TUNERR_FFMPEG_PATH="$fake_packager_ffmpeg" \
+IPTV_TUNERR_STREAM_PROFILES_FILE="$TMP_DIR/stream-profiles.json" \
+IPTV_TUNERR_TUNER_COUNT=1 \
+"$BIN" serve -catalog "$TMP_DIR/catalog-remux.json" -addr ":$port_packager" -base-url "http://127.0.0.1:$port_packager" \
+  >"$TMP_DIR/serve-packager-$port_packager.log" 2>&1 &
+PIDS+=("$!")
+wait_http_code "http://127.0.0.1:$port_packager/discover.json" "200" || fail "packaged hls discover.json not ready"
+packager_first="$TMP_DIR/packager-first.m3u8"
+curl -sS "http://127.0.0.1:$port_packager/stream/remux1?profile=shared-hls" -o "$packager_first"
+packager_second="$TMP_DIR/packager-second.m3u8"
+packager_second_headers="$TMP_DIR/packager-second.headers"
+curl -sS -D "$packager_second_headers" "http://127.0.0.1:$port_packager/stream/remux1?profile=shared-hls" -o "$packager_second"
+grep -qi '^X-IptvTunerr-Shared-Upstream: ffmpeg_hls_packager' "$packager_second_headers" || fail "packaged hls second consumer missing shared upstream header"
+python3 - "$packager_first" "$packager_second" <<'PY'
+import pathlib
+import sys
+from urllib.parse import parse_qs, urlparse
+
+def last_sid(path: str) -> str:
+    text = pathlib.Path(path).read_text()
+    lines = [line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#")]
+    if not lines:
+        raise SystemExit(f"no playlist URL lines in {path}")
+    return parse_qs(urlparse(lines[-1]).query).get("sid", [""])[0]
+
+sid1 = last_sid(sys.argv[1])
+sid2 = last_sid(sys.argv[2])
+if not sid1 or not sid2:
+    raise SystemExit(f"missing sid sid1={sid1!r} sid2={sid2!r}")
+if sid1 != sid2:
+    raise SystemExit(f"expected shared packaged sid, got {sid1!r} vs {sid2!r}")
+PY
+packager_seg_rel="$(python3 - "$packager_second" <<'PY'
+import pathlib
+import sys
+
+text = pathlib.Path(sys.argv[1]).read_text()
+lines = [line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#")]
+if not lines:
+    raise SystemExit("no playlist URL lines")
+print(lines[-1])
+PY
+)"
+packager_seg_body="$(curl -sS "http://127.0.0.1:$port_packager$packager_seg_rel")"
+[[ "$packager_seg_body" == "segment-bytes" ]] || fail "packaged hls segment body unexpected"
+
+fake_shared_ffmpeg="$TMP_DIR/fake-shared-ffmpeg.sh"
+cat >"$fake_shared_ffmpeg" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'shared-'
+sleep 1
+printf 'ffmpeg'
+SH
+chmod +x "$fake_shared_ffmpeg"
+
+port_ffmpeg_shared="$(pick_port)"
+IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
+IPTV_TUNERR_XMLTV_URL= \
+IPTV_TUNERR_WEBUI_DISABLED=1 \
+IPTV_TUNERR_FFMPEG_DISABLED=0 \
+IPTV_TUNERR_FFMPEG_PATH="$fake_shared_ffmpeg" \
+IPTV_TUNERR_TUNER_COUNT=1 \
+"$BIN" serve -catalog "$TMP_DIR/catalog-remux.json" -addr ":$port_ffmpeg_shared" -base-url "http://127.0.0.1:$port_ffmpeg_shared" \
+  >"$TMP_DIR/serve-ffmpeg-shared-$port_ffmpeg_shared.log" 2>&1 &
+PIDS+=("$!")
+wait_http_code "http://127.0.0.1:$port_ffmpeg_shared/discover.json" "200" || fail "ffmpeg shared discover.json not ready"
+curl -sS "http://127.0.0.1:$port_ffmpeg_shared/stream/remux1" -o "$TMP_DIR/ffmpeg-shared-first.out" &
+ffmpeg_shared_first_pid=$!
+sleep 0.25
+ffmpeg_shared_headers="$TMP_DIR/ffmpeg-shared-second.headers"
+curl -sS -D "$ffmpeg_shared_headers" "http://127.0.0.1:$port_ffmpeg_shared/stream/remux1" -o "$TMP_DIR/ffmpeg-shared-second.out" &
+ffmpeg_shared_second_pid=$!
+sleep 0.25
+grep -q '"count": 1' <(curl -sS "http://127.0.0.1:$port_ffmpeg_shared/debug/shared-relays.json") || fail "ffmpeg shared relay report missing active relay"
+grep -q '"shared_upstream": "hls_ffmpeg"' <(curl -sS "http://127.0.0.1:$port_ffmpeg_shared/debug/shared-relays.json") || fail "ffmpeg shared relay report missing upstream label"
+wait "$ffmpeg_shared_first_pid"
+wait "$ffmpeg_shared_second_pid"
+grep -qi '^X-IptvTunerr-Shared-Upstream: hls_ffmpeg' "$ffmpeg_shared_headers" || fail "ffmpeg shared second consumer missing shared upstream header"
+[[ -s "$TMP_DIR/ffmpeg-shared-first.out" ]] || fail "ffmpeg shared first consumer got no bytes"
+[[ -s "$TMP_DIR/ffmpeg-shared-second.out" ]] || fail "ffmpeg shared second consumer got no bytes"
+assert_file_prefix "$TMP_DIR/ffmpeg-shared-second.out" "shared-"
+
+port_ffmpeg_fmp4="$(pick_port)"
+IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
+IPTV_TUNERR_XMLTV_URL= \
+IPTV_TUNERR_WEBUI_DISABLED=1 \
+IPTV_TUNERR_FFMPEG_DISABLED=0 \
+IPTV_TUNERR_FFMPEG_PATH="$fake_shared_ffmpeg" \
+IPTV_TUNERR_STREAM_PROFILES_FILE="$TMP_DIR/stream-profiles.json" \
+IPTV_TUNERR_TUNER_COUNT=1 \
+"$BIN" serve -catalog "$TMP_DIR/catalog-remux.json" -addr ":$port_ffmpeg_fmp4" -base-url "http://127.0.0.1:$port_ffmpeg_fmp4" \
+  >"$TMP_DIR/serve-ffmpeg-fmp4-$port_ffmpeg_fmp4.log" 2>&1 &
+PIDS+=("$!")
+wait_http_code "http://127.0.0.1:$port_ffmpeg_fmp4/discover.json" "200" || fail "ffmpeg fmp4 shared discover.json not ready"
+curl -sS "http://127.0.0.1:$port_ffmpeg_fmp4/stream/remux1?profile=shared-fmp4" -o "$TMP_DIR/ffmpeg-fmp4-first.out" &
+ffmpeg_fmp4_first_pid=$!
+sleep 0.25
+ffmpeg_fmp4_headers="$TMP_DIR/ffmpeg-fmp4-second.headers"
+curl -sS -D "$ffmpeg_fmp4_headers" "http://127.0.0.1:$port_ffmpeg_fmp4/stream/remux1?profile=shared-fmp4" -o "$TMP_DIR/ffmpeg-fmp4-second.out" &
+ffmpeg_fmp4_second_pid=$!
+sleep 0.25
+grep -q '"content_type": "video/mp4"' <(curl -sS "http://127.0.0.1:$port_ffmpeg_fmp4/debug/shared-relays.json") || fail "ffmpeg fmp4 shared relay report missing mp4 content type"
+wait "$ffmpeg_fmp4_first_pid"
+wait "$ffmpeg_fmp4_second_pid"
+grep -qi '^X-IptvTunerr-Shared-Upstream: hls_ffmpeg' "$ffmpeg_fmp4_headers" || fail "ffmpeg fmp4 second consumer missing shared upstream header"
+grep -qi '^Content-Type: video/mp4' "$ffmpeg_fmp4_headers" || fail "ffmpeg fmp4 second consumer missing video/mp4 content type"
+[[ -s "$TMP_DIR/ffmpeg-fmp4-first.out" ]] || fail "ffmpeg fmp4 first consumer got no bytes"
+[[ -s "$TMP_DIR/ffmpeg-fmp4-second.out" ]] || fail "ffmpeg fmp4 second consumer got no bytes"
+assert_file_prefix "$TMP_DIR/ffmpeg-fmp4-second.out" "shared-"
 
 port_accounts="$(pick_port)"
 IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \

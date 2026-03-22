@@ -1,9 +1,11 @@
 package tuner
 
 import (
+	"bytes"
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -12,17 +14,24 @@ import (
 )
 
 type sharedRelaySession struct {
-	ChannelID   string
-	ProducerReq string
-	StartedAt   time.Time
+	RelayKey       string
+	ChannelID      string
+	ProducerReq    string
+	SharedUpstream string
+	ContentType    string
+	StartedAt      time.Time
 
 	mu          sync.Mutex
 	subscribers map[string]*io.PipeWriter
+	replay      [][]byte
+	replayBytes int
 	closed      bool
 }
 
 type SharedRelayState struct {
 	ChannelID       string `json:"channel_id"`
+	SharedUpstream  string `json:"shared_upstream,omitempty"`
+	ContentType     string `json:"content_type,omitempty"`
 	ProducerRequest string `json:"producer_request_id,omitempty"`
 	StartedAt       string `json:"started_at"`
 	DurationMS      int64  `json:"duration_ms"`
@@ -40,8 +49,58 @@ type sharedRelayFanoutWriter struct {
 	session *sharedRelaySession
 }
 
+type sharedRelayAttachReader struct {
+	io.Reader
+	closer io.Closer
+}
+
+func (r *sharedRelayAttachReader) Close() error {
+	if r == nil || r.closer == nil {
+		return nil
+	}
+	return r.closer.Close()
+}
+
 func (g *Gateway) createSharedRelaySession(channelID, reqID string) *sharedRelaySession {
+	return g.createSharedOutputRelaySession(sharedHLSGoRelayKey(channelID), channelID, reqID, "hls_go", "video/mp2t")
+}
+
+func sharedHLSGoRelayKey(channelID string) string {
+	return "hls_go\x1f" + strings.TrimSpace(channelID)
+}
+
+func sharedFFmpegRelayKey(channelID string, profile resolvedStreamProfile, outputMux string) string {
+	return strings.Join([]string{
+		"hls_ffmpeg",
+		strings.TrimSpace(channelID),
+		strings.TrimSpace(profile.Name),
+		strings.TrimSpace(profile.BaseProfile),
+		strconv.FormatBool(profile.ForceTranscode),
+		normalizeStreamOutputMuxName(outputMux),
+	}, "\x1f")
+}
+
+func sharedRelayContentType(outputMux string) string {
+	if normalizeStreamOutputMuxName(outputMux) == streamMuxFMP4 {
+		return "video/mp4"
+	}
+	return "video/mp2t"
+}
+
+func sharedRelayReplayBytes() int {
+	n := getenvInt("IPTV_TUNERR_SHARED_RELAY_REPLAY_BYTES", 262144)
+	if n < 0 {
+		return 0
+	}
+	return n
+}
+
+func (g *Gateway) createSharedOutputRelaySession(relayKey, channelID, reqID, sharedUpstream, contentType string) *sharedRelaySession {
 	if g == nil || strings.TrimSpace(channelID) == "" {
+		return nil
+	}
+	relayKey = strings.TrimSpace(relayKey)
+	if relayKey == "" {
 		return nil
 	}
 	g.activeMu.Lock()
@@ -49,74 +108,101 @@ func (g *Gateway) createSharedRelaySession(channelID, reqID string) *sharedRelay
 	if g.sharedRelays == nil {
 		g.sharedRelays = map[string]*sharedRelaySession{}
 	}
-	if existing := g.sharedRelays[channelID]; existing != nil && !existing.isClosed() {
+	if existing := g.sharedRelays[relayKey]; existing != nil && !existing.isClosed() {
 		return nil
 	}
 	sess := &sharedRelaySession{
-		ChannelID:   channelID,
-		ProducerReq: reqID,
-		StartedAt:   time.Now().UTC(),
-		subscribers: map[string]*io.PipeWriter{},
+		RelayKey:       relayKey,
+		ChannelID:      channelID,
+		ProducerReq:    reqID,
+		SharedUpstream: strings.TrimSpace(sharedUpstream),
+		ContentType:    strings.TrimSpace(contentType),
+		StartedAt:      time.Now().UTC(),
+		subscribers:    map[string]*io.PipeWriter{},
 	}
-	g.sharedRelays[channelID] = sess
+	g.sharedRelays[relayKey] = sess
 	return sess
 }
 
-func (g *Gateway) closeSharedRelaySession(channelID string, sess *sharedRelaySession) {
-	if g == nil || sess == nil || strings.TrimSpace(channelID) == "" {
+func (g *Gateway) closeSharedRelaySession(relayKey string, sess *sharedRelaySession) {
+	if g == nil || sess == nil || strings.TrimSpace(relayKey) == "" {
 		return
 	}
 	g.activeMu.Lock()
-	if current := g.sharedRelays[channelID]; current == sess {
-		delete(g.sharedRelays, channelID)
+	if current := g.sharedRelays[relayKey]; current == sess {
+		delete(g.sharedRelays, relayKey)
 	}
 	g.activeMu.Unlock()
 	sess.close()
 }
 
-func (g *Gateway) attachSharedRelaySession(channelID, reqID string) (*io.PipeReader, bool) {
-	if g == nil || strings.TrimSpace(channelID) == "" {
+func (g *Gateway) attachSharedRelaySession(relayKey, reqID string) (io.ReadCloser, bool) {
+	if g == nil || strings.TrimSpace(relayKey) == "" {
 		return nil, false
 	}
 	g.activeMu.Lock()
-	sess := g.sharedRelays[channelID]
+	sess := g.sharedRelays[relayKey]
 	g.activeMu.Unlock()
 	if sess == nil || sess.isClosed() {
 		return nil, false
 	}
 	reader, writer := io.Pipe()
-	if !sess.addSubscriber(reqID, writer) {
+	replay, ok := sess.addSubscriber(reqID, writer)
+	if !ok {
 		_ = reader.Close()
 		_ = writer.Close()
 		return nil, false
 	}
-	return reader, true
+	if len(replay) == 0 {
+		return reader, true
+	}
+	return &sharedRelayAttachReader{
+		Reader: io.MultiReader(bytes.NewReader(replay), reader),
+		closer: reader,
+	}, true
 }
 
-func (g *Gateway) tryServeSharedRelay(w http.ResponseWriter, r *http.Request, channel *catalog.LiveChannel, channelID, reqID string, start time.Time) bool {
+func (g *Gateway) tryServeAttachedSharedRelay(w http.ResponseWriter, r *http.Request, channel *catalog.LiveChannel, relayKey, reqID string, start time.Time) bool {
 	if g == nil || r == nil || w == nil || channel == nil {
 		return false
 	}
-	if strings.TrimSpace(r.URL.Query().Get("mux")) != "" {
-		return false
-	}
-	reader, ok := g.attachSharedRelaySession(channelID, reqID)
+	reader, ok := g.attachSharedRelaySession(relayKey, reqID)
 	if !ok {
 		return false
 	}
 	defer reader.Close()
-	w.Header().Set("Content-Type", "video/mp2t")
+	g.activeMu.Lock()
+	sess := g.sharedRelays[relayKey]
+	g.activeMu.Unlock()
+	contentType := "video/mp2t"
+	sharedUpstream := ""
+	if sess != nil {
+		if strings.TrimSpace(sess.ContentType) != "" {
+			contentType = sess.ContentType
+		}
+		sharedUpstream = strings.TrimSpace(sess.SharedUpstream)
+	}
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-IptvTunerr-Shared-Upstream", "hls_go")
+	if sharedUpstream != "" {
+		w.Header().Set("X-IptvTunerr-Shared-Upstream", sharedUpstream)
+	}
 	w.WriteHeader(http.StatusOK)
-	g.beginActiveStream(reqID, channelID, channel.GuideName, channel.GuideNumber, r.UserAgent(), start, nil)
+	g.beginActiveStream(reqID, channel.ChannelID, channel.GuideName, channel.GuideNumber, r.UserAgent(), start, nil)
 	defer g.endActiveStream(reqID)
 	n, _ := io.Copy(w, reader)
 	if flusher, ok := w.(http.Flusher); ok {
 		flusher.Flush()
 	}
-	logSharedRelayJoin(reqID, channel.GuideName, channelID, n, time.Since(start))
+	logSharedRelayJoin(reqID, channel.GuideName, channel.ChannelID, n, time.Since(start))
 	return true
+}
+
+func (g *Gateway) tryServeSharedRelay(w http.ResponseWriter, r *http.Request, channel *catalog.LiveChannel, channelID, reqID string, start time.Time) bool {
+	if strings.TrimSpace(r.URL.Query().Get("mux")) != "" {
+		return false
+	}
+	return g.tryServeAttachedSharedRelay(w, r, channel, sharedHLSGoRelayKey(channelID), reqID, start)
 }
 
 func (g *Gateway) SharedRelayReport() SharedRelayReport {
@@ -153,17 +239,17 @@ func (s *sharedRelaySession) isClosed() bool {
 	return s.closed
 }
 
-func (s *sharedRelaySession) addSubscriber(reqID string, writer *io.PipeWriter) bool {
+func (s *sharedRelaySession) addSubscriber(reqID string, writer *io.PipeWriter) ([]byte, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return false
+		return nil, false
 	}
 	if s.subscribers == nil {
 		s.subscribers = map[string]*io.PipeWriter{}
 	}
 	s.subscribers[reqID] = writer
-	return true
+	return s.replaySnapshotLocked(), true
 }
 
 func (s *sharedRelaySession) snapshot() SharedRelayState {
@@ -171,6 +257,8 @@ func (s *sharedRelaySession) snapshot() SharedRelayState {
 	defer s.mu.Unlock()
 	return SharedRelayState{
 		ChannelID:       s.ChannelID,
+		SharedUpstream:  s.SharedUpstream,
+		ContentType:     s.ContentType,
 		ProducerRequest: s.ProducerReq,
 		StartedAt:       s.StartedAt.Format(time.RFC3339),
 		DurationMS:      time.Since(s.StartedAt).Milliseconds(),
@@ -195,6 +283,7 @@ func (s *sharedRelaySession) close() {
 
 func (s *sharedRelaySession) fanout(chunk []byte) {
 	s.mu.Lock()
+	s.storeReplayLocked(chunk)
 	if s.closed || len(s.subscribers) == 0 {
 		s.mu.Unlock()
 		return
@@ -214,6 +303,32 @@ func (s *sharedRelaySession) fanout(chunk []byte) {
 			_ = writer.Close()
 		}
 	}
+}
+
+func (s *sharedRelaySession) storeReplayLocked(chunk []byte) {
+	limit := sharedRelayReplayBytes()
+	if limit <= 0 || len(chunk) == 0 {
+		return
+	}
+	cp := append([]byte(nil), chunk...)
+	s.replay = append(s.replay, cp)
+	s.replayBytes += len(cp)
+	for s.replayBytes > limit && len(s.replay) > 0 {
+		s.replayBytes -= len(s.replay[0])
+		s.replay[0] = nil
+		s.replay = s.replay[1:]
+	}
+}
+
+func (s *sharedRelaySession) replaySnapshotLocked() []byte {
+	if s.replayBytes == 0 || len(s.replay) == 0 {
+		return nil
+	}
+	buf := make([]byte, 0, s.replayBytes)
+	for _, chunk := range s.replay {
+		buf = append(buf, chunk...)
+	}
+	return buf
 }
 
 func (w *sharedRelayFanoutWriter) Write(p []byte) (int, error) {

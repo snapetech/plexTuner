@@ -3,8 +3,10 @@ package tuner
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -12,7 +14,9 @@ import (
 	"net/url"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
@@ -34,6 +38,20 @@ type channelEPG struct {
 // parsedEPG holds all channel programme data keyed by upstream channel ID (TVGID / epg_channel_id).
 type parsedEPG struct {
 	programmes map[string]*channelEPG // key: upstream channel ID
+}
+
+type shortEPGResponse struct {
+	EPGListings []shortEPGListing `json:"epg_listings"`
+}
+
+type shortEPGListing struct {
+	Title          string `json:"title"`
+	Description    string `json:"description"`
+	Start          string `json:"start"`
+	End            string `json:"end"`
+	StartTimestamp string `json:"start_timestamp"`
+	StopTimestamp  string `json:"stop_timestamp"`
+	ChannelID      string `json:"channel_id"`
 }
 
 // xmltvTimeFormats lists the XMLTV timestamp formats in preference order.
@@ -58,6 +76,241 @@ func parseXMLTVTime(s string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
+func formatXMLTVTime(t time.Time) string {
+	return t.UTC().Format("20060102150405 +0000")
+}
+
+func parseUnixTimestampString(raw string) (time.Time, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, false
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err == nil {
+		return time.Unix(n, 0).UTC(), true
+	}
+	return time.Time{}, false
+}
+
+func decodePossiblyBase64(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	decoded, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		return raw
+	}
+	text := strings.TrimSpace(string(decoded))
+	if text == "" {
+		return raw
+	}
+	return text
+}
+
+func providerShortEPGEnabled() bool {
+	return getenvBool("IPTV_TUNERR_PROVIDER_SHORT_EPG_FALLBACK", false)
+}
+
+func providerShortEPGLimit() int {
+	return getenvInt("IPTV_TUNERR_PROVIDER_SHORT_EPG_LIMIT", 6)
+}
+
+func providerShortEPGConcurrency() int {
+	n := getenvInt("IPTV_TUNERR_PROVIDER_SHORT_EPG_CONCURRENCY", 8)
+	if n < 1 {
+		return 1
+	}
+	return n
+}
+
+func providerShortEPGTimeout() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_SHORT_EPG_TIMEOUT"))
+	if raw == "" {
+		return 5 * time.Second
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		return 5 * time.Second
+	}
+	return d
+}
+
+func shortEPGBaseForChannel(ch catalog.LiveChannel) string {
+	urls := ch.StreamURLs
+	if len(urls) == 0 && strings.TrimSpace(ch.StreamURL) != "" {
+		urls = []string{ch.StreamURL}
+	}
+	for _, raw := range urls {
+		u, err := url.Parse(strings.TrimSpace(raw))
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			continue
+		}
+		return u.Scheme + "://" + u.Host
+	}
+	return ""
+}
+
+func shortEPGProgrammeNode(channelID string, listing shortEPGListing) (xmlRawNode, bool) {
+	start, ok := parseUnixTimestampString(listing.StartTimestamp)
+	if !ok {
+		var err error
+		start, err = time.Parse("2006-01-02 15:04:05", strings.TrimSpace(listing.Start))
+		if err != nil {
+			return xmlRawNode{}, false
+		}
+	}
+	stop, ok := parseUnixTimestampString(listing.StopTimestamp)
+	if !ok {
+		var err error
+		stop, err = time.Parse("2006-01-02 15:04:05", strings.TrimSpace(listing.End))
+		if err != nil {
+			return xmlRawNode{}, false
+		}
+	}
+	if !stop.After(start) {
+		return xmlRawNode{}, false
+	}
+
+	prog := xmlProgramme{
+		Start:   formatXMLTVTime(start),
+		Stop:    formatXMLTVTime(stop),
+		Channel: channelID,
+		Title:   xmlValue{Value: decodePossiblyBase64(listing.Title)},
+		Desc:    xmlValue{Value: decodePossiblyBase64(listing.Description)},
+	}
+	raw, err := xml.Marshal(prog)
+	if err != nil {
+		return xmlRawNode{}, false
+	}
+	var node xmlRawNode
+	if err := xml.Unmarshal(raw, &node); err != nil {
+		return xmlRawNode{}, false
+	}
+	return node, true
+}
+
+func fetchShortEPGForChannel(ctx context.Context, client *http.Client, baseURL, user, pass, streamID string, limit int, timeout time.Duration) ([]shortEPGListing, error) {
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	client = httpClientOrDefault(client, timeout)
+	values := url.Values{}
+	values.Set("username", user)
+	values.Set("password", pass)
+	values.Set("action", "get_short_epg")
+	values.Set("stream_id", streamID)
+	values.Set("limit", fmt.Sprintf("%d", limit))
+	rawURL := strings.TrimRight(baseURL, "/") + "/player_api.php?" + values.Encode()
+
+	reqCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "IptvTunerr/1.0")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("short epg http %s", resp.Status)
+	}
+	var payload shortEPGResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+	return payload.EPGListings, nil
+}
+
+func (x *XMLTV) fetchProviderShortEPGFallback(ctx context.Context, channels []catalog.LiveChannel, allowedTVGIDs map[string]bool) (*parsedEPG, error) {
+	baseURL, user, pass := x.providerIdentity()
+	if baseURL == "" || user == "" || pass == "" {
+		return nil, fmt.Errorf("provider identity incomplete")
+	}
+	limit := providerShortEPGLimit()
+	timeout := providerShortEPGTimeout()
+	client := httpClientOrDefault(x.Client, timeout)
+
+	type result struct {
+		tvgID string
+		nodes []xmlRawNode
+		err   error
+	}
+
+	jobs := make(chan catalog.LiveChannel)
+	results := make(chan result, len(channels))
+	var wg sync.WaitGroup
+	workerCount := providerShortEPGConcurrency()
+
+	worker := func() {
+		defer wg.Done()
+		for ch := range jobs {
+			tvgID := strings.TrimSpace(ch.TVGID)
+			if tvgID == "" || (allowedTVGIDs != nil && !allowedTVGIDs[tvgID]) {
+				continue
+			}
+			base := shortEPGBaseForChannel(ch)
+			if base == "" {
+				base = baseURL
+			}
+			listings, err := fetchShortEPGForChannel(ctx, client, base, user, pass, strings.TrimSpace(ch.ChannelID), limit, timeout)
+			if err != nil {
+				results <- result{tvgID: tvgID, err: err}
+				continue
+			}
+			nodes := make([]xmlRawNode, 0, len(listings))
+			for _, listing := range listings {
+				if node, ok := shortEPGProgrammeNode(tvgID, listing); ok {
+					nodes = append(nodes, node)
+				}
+			}
+			results <- result{tvgID: tvgID, nodes: nodes}
+		}
+	}
+
+	wg.Add(workerCount)
+	for i := 0; i < workerCount; i++ {
+		go worker()
+	}
+	for _, ch := range channels {
+		jobs <- ch
+	}
+	close(jobs)
+	wg.Wait()
+	close(results)
+
+	out := &parsedEPG{programmes: map[string]*channelEPG{}}
+	var okCount int
+	for res := range results {
+		if len(res.nodes) == 0 {
+			continue
+		}
+		cepg := &channelEPG{nodes: make([]xmlRawNode, 0, len(res.nodes)), windows: make([]timeWindow, 0, len(res.nodes))}
+		for _, node := range res.nodes {
+			start, startOK := parseXMLTVTime(xmlAttr(node.Attrs, "start"))
+			stop, stopOK := parseXMLTVTime(xmlAttr(node.Attrs, "stop"))
+			if !startOK || !stopOK {
+				continue
+			}
+			cepg.nodes = append(cepg.nodes, node)
+			cepg.windows = append(cepg.windows, timeWindow{start: start, stop: stop})
+		}
+		if len(cepg.nodes) == 0 {
+			continue
+		}
+		out.programmes[res.tvgID] = cepg
+		okCount++
+	}
+	if okCount == 0 {
+		return nil, fmt.Errorf("no short epg listings available")
+	}
+	return out, nil
+}
+
 // httpClientOrDefault returns c when non-nil; otherwise a client with the given timeout
 // using the same transport stack as Default (idle pool / optional brotli).
 func httpClientOrDefault(c *http.Client, timeout time.Duration) *http.Client {
@@ -65,6 +318,39 @@ func httpClientOrDefault(c *http.Client, timeout time.Duration) *http.Client {
 		return c
 	}
 	return httpclient.WithTimeout(timeout)
+}
+
+func providerEPGRequestUserAgent(rawURL string) string {
+	host := ""
+	if u, err := url.Parse(strings.TrimSpace(rawURL)); err == nil && u != nil {
+		host = strings.ToLower(strings.TrimSpace(u.Hostname()))
+	}
+	if hostUARaw := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HOST_UA")); hostUARaw != "" && host != "" {
+		for _, part := range strings.Split(hostUARaw, ",") {
+			name, preset, ok := strings.Cut(part, ":")
+			if !ok {
+				continue
+			}
+			if strings.EqualFold(strings.TrimSpace(name), host) {
+				return resolveUserAgentPreset(strings.TrimSpace(preset), detectFFmpegLavfUA())
+			}
+		}
+	}
+	if raw := strings.TrimSpace(os.Getenv("IPTV_TUNERR_UPSTREAM_USER_AGENT")); raw != "" {
+		return resolveUserAgentPreset(raw, detectFFmpegLavfUA())
+	}
+	return "IptvTunerr/1.0"
+}
+
+func applyProviderEPGRequestHeaders(req *http.Request) {
+	if req == nil {
+		return
+	}
+	ua := providerEPGRequestUserAgent(req.URL.String())
+	req.Header.Set("User-Agent", ua)
+	for name, value := range browserHeadersForUA(ua) {
+		req.Header.Set(name, value)
+	}
 }
 
 // parseXMLTVProgrammes stream-parses XMLTV from r. Only programme nodes whose channel
@@ -80,6 +366,10 @@ func parseXMLTVProgrammes(r io.Reader, allowedTVGIDs map[string]bool) (*parsedEP
 		tok, err := dec.Token()
 		if err != nil {
 			if err == io.EOF {
+				break
+			}
+			if xmltvPartialParseOK(err, len(result.programmes)) {
+				log.Printf("xmltv: parser reached unexpected EOF after %d channel programme set(s); accepting partial guide", len(result.programmes))
 				break
 			}
 			return nil, fmt.Errorf("epg parse: %w", err)
@@ -136,6 +426,20 @@ func parseXMLTVProgrammes(r io.Reader, allowedTVGIDs map[string]bool) (*parsedEP
 	return result, nil
 }
 
+func xmltvPartialParseOK(err error, parsedCount int) bool {
+	if parsedCount == 0 || err == nil {
+		return false
+	}
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var syntaxErr *xml.SyntaxError
+	if errors.As(err, &syntaxErr) && strings.Contains(strings.ToLower(syntaxErr.Error()), "unexpected eof") {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "unexpected eof")
+}
+
 // fetchAndParseXMLTV performs an HTTP GET on rawURL and stream-parses the XMLTV response.
 // Only programme nodes whose channel attribute is in allowedTVGIDs are retained.
 // Pass a nil allowedTVGIDs map to accept all channels.
@@ -152,7 +456,7 @@ func fetchAndParseXMLTV(ctx context.Context, rawURL string, timeout time.Duratio
 	if err != nil {
 		return nil, fmt.Errorf("epg fetch request: %w", err)
 	}
-	req.Header.Set("User-Agent", "IptvTunerr/1.0")
+	applyProviderEPGRequestHeaders(req)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -229,7 +533,7 @@ func (x *XMLTV) fetchProviderXMLTVConditional(ctx context.Context, rawURL string
 	if err != nil {
 		return nil, fmt.Errorf("epg fetch request: %w", err)
 	}
-	req.Header.Set("User-Agent", "IptvTunerr/1.0")
+	applyProviderEPGRequestHeaders(req)
 	if metaErr == nil {
 		if meta.ETag != "" {
 			req.Header.Set("If-None-Match", meta.ETag)
@@ -264,7 +568,20 @@ func (x *XMLTV) fetchProviderXMLTVConditional(ctx context.Context, rawURL string
 				log.Printf("xmltv: provider EPG body read failed (%v); using stale disk cache %s", err, cacheFile)
 				return parsed, nil
 			}
-			return nil, fmt.Errorf("epg fetch read body: %w", err)
+			if len(body) == 0 {
+				return nil, fmt.Errorf("epg fetch read body: %w", err)
+			}
+			parsed, parseErr := parseXMLTVProgrammes(bytes.NewReader(body), allowedTVGIDs)
+			if parseErr != nil {
+				return nil, fmt.Errorf("epg fetch read body: %w", err)
+			}
+			if writeErr := os.WriteFile(cacheFile, body, 0644); writeErr != nil {
+				log.Printf("xmltv: provider partial EPG disk cache write failed (%v)", writeErr)
+			} else {
+				_ = os.Remove(metaPath)
+			}
+			log.Printf("xmltv: provider EPG body read ended early (%v); accepted partial body (%d bytes)", err, len(body))
+			return parsed, nil
 		}
 		etag := strings.TrimSpace(resp.Header.Get("ETag"))
 		lm := strings.TrimSpace(resp.Header.Get("Last-Modified"))
@@ -536,6 +853,17 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 			provEPG = nil
 		} else {
 			log.Printf("xmltv: provider XMLTV fetched: %d channels with programmes", len(provEPG.programmes))
+		}
+	}
+	if provEPG == nil && providerShortEPGEnabled() && baseURL != "" && user != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(providerShortEPGConcurrency()+1)*providerShortEPGTimeout())
+		defer cancel()
+		shortEPG, err := x.fetchProviderShortEPGFallback(ctx, channels, allowedTVGIDs)
+		if err != nil {
+			log.Printf("xmltv: provider short EPG fallback failed (%v); continuing without provider EPG", err)
+		} else {
+			provEPG = shortEPG
+			log.Printf("xmltv: provider short EPG fallback fetched: %d channels with programmes", len(provEPG.programmes))
 		}
 	}
 

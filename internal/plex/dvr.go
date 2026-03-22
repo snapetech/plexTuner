@@ -152,6 +152,8 @@ type Device struct {
 	DeviceID string `xml:"deviceId,attr"`
 	IP       string `xml:"ipAddress,attr"`
 	Port     string `xml:"port,attr"`
+	Status   string `xml:"status,attr"`
+	State    string `xml:"state,attr"`
 }
 
 type Dvr struct {
@@ -192,7 +194,7 @@ type Lineup struct {
 // guide URL (stale registration), it is deleted and recreated. This makes the function
 // idempotent across restarts and safe across BaseURL changes.
 func CreateDVRViaAPI(cfg PlexAPIConfig, deviceInfo *DeviceInfo) (dvrKey int, dvrUUID string, lineupIDs []string, err error) {
-	desiredGuideURL := cfg.BaseURL + "/guide.xml"
+	desiredGuideURL := guideURLForBase(cfg.BaseURL)
 	xmltvEncoded := url.QueryEscape(desiredGuideURL)
 	lineup := fmt.Sprintf("lineup://tv.plex.providers.epg.xmltv/%s#%s", xmltvEncoded, url.QueryEscape(cfg.FriendlyName))
 
@@ -315,6 +317,21 @@ type ChannelMapping struct {
 	LineupIdentifier string `xml:"lineupIdentifier,attr"`
 }
 
+type DVRRepairResult struct {
+	DVRKey             int      `json:"dvr_key"`
+	DVRUUID            string   `json:"dvr_uuid,omitempty"`
+	LineupTitle        string   `json:"lineup_title,omitempty"`
+	DeviceKey          string   `json:"device_key,omitempty"`
+	DeviceUUID         string   `json:"device_uuid,omitempty"`
+	LineupURL          string   `json:"lineup_url,omitempty"`
+	ReloadedGuide      bool     `json:"reloaded_guide"`
+	ChannelMapRows     int      `json:"channelmap_rows"`
+	ActivatedChannels  int      `json:"activated_channels"`
+	EnabledBefore      int      `json:"enabled_before"`
+	EnabledAfter       int      `json:"enabled_after"`
+	MissingDeviceUUIDs []string `json:"missing_device_uuids,omitempty"`
+}
+
 func GetChannelMap(plexHost, token, deviceUUID string, lineupIDs []string) ([]ChannelMapping, error) {
 	if len(lineupIDs) == 0 {
 		return nil, fmt.Errorf("no lineup IDs provided")
@@ -342,6 +359,9 @@ func GetChannelMap(plexHost, token, deviceUUID string, lineupIDs []string) ([]Ch
 
 	channels := make([]ChannelMapping, 0, len(mc.ChannelMapping))
 	for _, ch := range mc.ChannelMapping {
+		if strings.TrimSpace(ch.ChannelKey) == "" || strings.TrimSpace(ch.DeviceIdentifier) == "" || strings.TrimSpace(ch.LineupIdentifier) == "" {
+			continue
+		}
 		channels = append(channels, ChannelMapping{
 			ChannelKey:       ch.ChannelKey,
 			DeviceIdentifier: ch.DeviceIdentifier,
@@ -354,12 +374,12 @@ func GetChannelMap(plexHost, token, deviceUUID string, lineupIDs []string) ([]Ch
 }
 
 // activateChannelsBatch sends a single PUT for one batch of channels using URL query params.
-func activateChannelsBatch(cfg PlexAPIConfig, deviceKey string, batch []ChannelMapping, client *http.Client) error {
-	enabled := make([]string, 0, len(batch))
+// Plex treats channelsEnabled as the authoritative enabled-set for the device, so when we
+// split mappings across multiple requests we must keep the full enabled list on every batch.
+func activateChannelsBatch(cfg PlexAPIConfig, deviceKey string, enabled []string, batch []ChannelMapping, client *http.Client) error {
 	parts := make([]string, 0, len(batch)*2+1)
 
 	for _, ch := range batch {
-		enabled = append(enabled, ch.DeviceIdentifier)
 		parts = append(parts, fmt.Sprintf("channelMappingByKey[%s]=%s", ch.DeviceIdentifier, url.QueryEscape(ch.ChannelKey)))
 		parts = append(parts, fmt.Sprintf("channelMapping[%s]=%s", ch.DeviceIdentifier, url.QueryEscape(ch.LineupIdentifier)))
 	}
@@ -400,6 +420,10 @@ func ActivateChannelsAPI(cfg PlexAPIConfig, deviceKey string, channels []Channel
 
 	const batchSize = 100
 	client := httpclient.WithTimeout(60 * time.Second)
+	enabled := make([]string, 0, len(channels))
+	for _, ch := range channels {
+		enabled = append(enabled, ch.DeviceIdentifier)
+	}
 
 	for i := 0; i < len(channels); i += batchSize {
 		end := i + batchSize
@@ -407,12 +431,106 @@ func ActivateChannelsAPI(cfg PlexAPIConfig, deviceKey string, channels []Channel
 			end = len(channels)
 		}
 		batch := channels[i:end]
-		if err := activateChannelsBatch(cfg, deviceKey, batch, client); err != nil {
+		if err := activateChannelsBatch(cfg, deviceKey, enabled, batch, client); err != nil {
 			return i, fmt.Errorf("batch %d-%d: %w", i, end-1, err)
 		}
 	}
 	fmt.Printf("[PLEX-REG] Activated all %d channels\n", len(channels))
 	return len(channels), nil
+}
+
+func RepairDVRChannelActivation(plexBaseURL, token string, dvrKey int, reloadGuide bool) (DVRRepairResult, error) {
+	host, err := hostPortFromBaseURL(plexBaseURL)
+	if err != nil {
+		return DVRRepairResult{}, fmt.Errorf("parse plex base url: %w", err)
+	}
+	dvrs, err := ListDVRsAPI(host, token)
+	if err != nil {
+		return DVRRepairResult{}, fmt.Errorf("list dvrs: %w", err)
+	}
+	var dvr *DVRInfo
+	for i := range dvrs {
+		if dvrs[i].Key == dvrKey {
+			dvr = &dvrs[i]
+			break
+		}
+	}
+	if dvr == nil {
+		return DVRRepairResult{}, fmt.Errorf("dvr %d not found", dvrKey)
+	}
+	result := DVRRepairResult{
+		DVRKey:      dvr.Key,
+		DVRUUID:     dvr.UUID,
+		LineupTitle: dvr.LineupTitle,
+		DeviceKey:   dvr.DeviceKey,
+		LineupURL:   dvr.LineupURL,
+	}
+	if len(dvr.DeviceUUIDs) == 0 || strings.TrimSpace(dvr.DeviceUUIDs[0]) == "" {
+		result.MissingDeviceUUIDs = append(result.MissingDeviceUUIDs, dvr.DeviceUUIDs...)
+		return result, fmt.Errorf("dvr %d has no device uuid", dvrKey)
+	}
+	result.DeviceUUID = strings.TrimSpace(dvr.DeviceUUIDs[0])
+	result.EnabledBefore, _ = enabledChannelCount(host, token, dvrKey)
+
+	if reloadGuide {
+		if err := ReloadGuideAPI(host, token, dvr.Key); err != nil {
+			return result, fmt.Errorf("reload guide: %w", err)
+		}
+		result.ReloadedGuide = true
+	}
+
+	mappings, err := GetChannelMap(host, token, result.DeviceUUID, []string{dvr.LineupURL})
+	if err != nil {
+		return result, fmt.Errorf("get channelmap: %w", err)
+	}
+	result.ChannelMapRows = len(mappings)
+	if len(mappings) == 0 {
+		return result, fmt.Errorf("channelmap returned 0 valid mappings")
+	}
+	activated, err := ActivateChannelsAPI(PlexAPIConfig{
+		PlexHost:  host,
+		PlexToken: token,
+	}, dvr.DeviceKey, mappings)
+	if err != nil {
+		return result, fmt.Errorf("activate channels: %w", err)
+	}
+	result.ActivatedChannels = activated
+	result.EnabledAfter, _ = enabledChannelCount(host, token, dvrKey)
+	return result, nil
+}
+
+func enabledChannelCount(plexHost, token string, dvrKey int) (int, error) {
+	u := fmt.Sprintf("http://%s/livetv/dvrs/%d", plexHost, dvrKey)
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("X-Plex-Token", token)
+	client := httpclient.WithTimeout(30 * time.Second)
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return 0, fmt.Errorf("livetv/dvrs/%d returned %d: %s", dvrKey, resp.StatusCode, string(body))
+	}
+	var mc MediaContainer
+	if err := xml.NewDecoder(resp.Body).Decode(&mc); err != nil {
+		return 0, err
+	}
+	count := 0
+	for _, d := range mc.Dvr {
+		for _, dev := range d.Devices {
+			for _, ch := range dev.ChannelMappings {
+				if strings.TrimSpace(ch.Enabled) == "1" && strings.TrimSpace(ch.DeviceIdentifier) != "" {
+					count++
+				}
+			}
+		}
+	}
+	return count, nil
 }
 
 func ListDVRsAPI(plexHost, token string) ([]DVRInfo, error) {
@@ -801,7 +919,8 @@ func RegisterTuner(plexDataDir, baseURL string) error {
 	}
 	defer db.Close()
 
-	xmltvURL := baseURL + "/guide.xml"
+	baseURL = strings.TrimRight(baseURL, "/")
+	xmltvURL := guideURLForBase(baseURL)
 	if err := updateURI(db, identifierDVR, baseURL); err != nil {
 		return fmt.Errorf("update DVR URI: %w", err)
 	}
@@ -809,6 +928,10 @@ func RegisterTuner(plexDataDir, baseURL string) error {
 		return fmt.Errorf("update XMLTV URI: %w", err)
 	}
 	return nil
+}
+
+func guideURLForBase(baseURL string) string {
+	return strings.TrimRight(strings.TrimSpace(baseURL), "/") + "/guide.xml"
 }
 
 func updateURI(db *sql.DB, identifier, rawURI string) error {

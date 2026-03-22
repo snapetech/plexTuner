@@ -83,6 +83,19 @@ func TestXMLTV_404(t *testing.T) {
 	}
 }
 
+func TestXMLTV_requiresGetOrHead(t *testing.T) {
+	x := &XMLTV{}
+	req := httptest.NewRequest(http.MethodPost, "/guide.xml", nil)
+	w := httptest.NewRecorder()
+	x.ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("code: %d", w.Code)
+	}
+	if got := w.Header().Get("Allow"); got != "GET, HEAD" {
+		t.Fatalf("allow: %q", got)
+	}
+}
+
 func TestXMLTV_GuidePreview_sortAndLimit(t *testing.T) {
 	x := &XMLTV{
 		cachedXML: []byte(`<?xml version="1.0" encoding="UTF-8"?>

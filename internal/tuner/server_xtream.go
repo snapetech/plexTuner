@@ -88,11 +88,21 @@ type xtreamPrincipal struct {
 	User       *entitlements.User
 }
 
+func writeXtreamPlayerAPIError(w http.ResponseWriter, status int, body string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte(body + "\n"))
+}
+
 func (s *Server) serveXtreamPlayerAPI() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
 		principal, ok := s.xtreamQueryPrincipal(r)
 		if !ok {
-			http.Error(w, `{"user_info":{"auth":0},"server_info":{"status":"disabled"}}`, http.StatusUnauthorized)
+			writeXtreamPlayerAPIError(w, http.StatusUnauthorized, `{"user_info":{"auth":0},"server_info":{"status":"disabled"}}`)
 			return
 		}
 		action := strings.TrimSpace(r.URL.Query().Get("action"))
@@ -113,7 +123,7 @@ func (s *Server) serveXtreamPlayerAPI() http.Handler {
 		case "get_series_info":
 			info, found := s.xtreamSeriesInfo(principal, strings.TrimSpace(r.URL.Query().Get("series_id")))
 			if !found {
-				http.Error(w, `{"error":"series not found"}`, http.StatusNotFound)
+				writeXtreamPlayerAPIError(w, http.StatusNotFound, `{"error":"series not found"}`)
 				return
 			}
 			_ = json.NewEncoder(w).Encode(info)
@@ -127,18 +137,22 @@ func (s *Server) serveXtreamPlayerAPI() http.Handler {
 			}
 			epg, found := s.xtreamShortEPG(principal, streamID, limit)
 			if !found {
-				http.Error(w, `{"error":"stream not found"}`, http.StatusNotFound)
+				writeXtreamPlayerAPIError(w, http.StatusNotFound, `{"error":"stream not found"}`)
 				return
 			}
 			_ = json.NewEncoder(w).Encode(epg)
 		default:
-			http.Error(w, `{"error":"unsupported action"}`, http.StatusBadRequest)
+			writeXtreamPlayerAPIError(w, http.StatusBadRequest, `{"error":"unsupported action"}`)
 		}
 	})
 }
 
 func (s *Server) serveXtreamM3U() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			writeMethodNotAllowed(w, http.MethodGet, http.MethodHead)
+			return
+		}
 		principal, ok := s.xtreamQueryPrincipal(r)
 		if !ok {
 			http.Error(w, "# authentication failed\n", http.StatusUnauthorized)
@@ -152,6 +166,10 @@ func (s *Server) serveXtreamM3U() http.Handler {
 
 func (s *Server) serveXtreamXMLTV() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			writeMethodNotAllowed(w, http.MethodGet, http.MethodHead)
+			return
+		}
 		principal, ok := s.xtreamQueryPrincipal(r)
 		if !ok {
 			http.Error(w, "authentication failed", http.StatusUnauthorized)
@@ -170,6 +188,10 @@ func (s *Server) serveXtreamXMLTV() http.Handler {
 
 func (s *Server) serveXtreamLiveProxy() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			writeMethodNotAllowed(w, http.MethodGet, http.MethodHead)
+			return
+		}
 		principal, channelID, ok := s.xtreamPathPrincipalID(r.URL.Path, "live")
 		if !ok {
 			http.NotFound(w, r)
@@ -323,6 +345,7 @@ func (s *Server) xtreamMovieStreams(principal xtreamPrincipal) []xtreamVODStream
 		catIDs[strings.ToLower(row.CategoryName)] = row.CategoryID
 	}
 	movies := s.xtreamMoviesFor(principal)
+	base := s.xtreamBaseURL()
 	out := make([]xtreamVODStream, 0, len(movies))
 	for _, movie := range movies {
 		category := firstNonEmptyString(movie.ProviderCategoryName, movie.Category, "Movies")
@@ -332,7 +355,7 @@ func (s *Server) xtreamMovieStreams(principal xtreamPrincipal) []xtreamVODStream
 			StreamID:     strings.TrimSpace(movie.ID),
 			StreamIcon:   strings.TrimSpace(movie.ArtworkURL),
 			CategoryID:   catIDs[strings.ToLower(category)],
-			DirectSource: strings.TrimRight(s.BaseURL, "/") + "/movie/" + principal.Username + "/" + s.xtreamPasswordForPrincipal(principal) + "/" + strings.TrimSpace(movie.ID) + ".mp4",
+			DirectSource: base + "/movie/" + principal.Username + "/" + s.xtreamPasswordForPrincipal(principal) + "/" + strings.TrimSpace(movie.ID) + ".mp4",
 			ContainerExt: "mp4",
 		})
 	}
@@ -362,6 +385,7 @@ func (s *Server) xtreamSeriesStreams(principal xtreamPrincipal) []xtreamVODStrea
 
 func (s *Server) xtreamSeriesInfo(principal xtreamPrincipal, id string) (xtreamSeriesInfo, bool) {
 	id = strings.TrimSpace(id)
+	base := s.xtreamBaseURL()
 	for _, series := range s.xtreamSeriesFor(principal) {
 		if strings.TrimSpace(series.ID) != id {
 			continue
@@ -379,7 +403,7 @@ func (s *Server) xtreamSeriesInfo(principal xtreamPrincipal, id string) (xtreamS
 					ID:           strings.TrimSpace(episode.ID),
 					Title:        strings.TrimSpace(episode.Title),
 					ContainerExt: "mp4",
-					DirectSource: strings.TrimRight(s.BaseURL, "/") + "/series/" + principal.Username + "/" + s.xtreamPasswordForPrincipal(principal) + "/" + strings.TrimSpace(episode.ID) + ".mp4",
+					DirectSource: base + "/series/" + principal.Username + "/" + s.xtreamPasswordForPrincipal(principal) + "/" + strings.TrimSpace(episode.ID) + ".mp4",
 					EpisodeNum:   episode.EpisodeNum,
 					Season:       episode.SeasonNum,
 				})
@@ -471,10 +495,7 @@ func parseRFC3339Unix(raw string) int64 {
 }
 
 func (s *Server) xtreamM3U(principal xtreamPrincipal) string {
-	base := strings.TrimRight(s.BaseURL, "/")
-	if base == "" {
-		base = "http://localhost:5004"
-	}
+	base := s.xtreamBaseURL()
 	guideURL := base + "/xmltv.php?username=" + url.QueryEscape(principal.Username) + "&password=" + url.QueryEscape(s.xtreamPasswordForPrincipal(principal))
 	var b strings.Builder
 	b.WriteString("#EXTM3U url-tvg=\"")
@@ -650,8 +671,7 @@ func xmlValues(items []string) []xmlValue {
 func (s *Server) serveXtreamVODProxy(prefix string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			w.Header().Set("Allow", "GET, HEAD")
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, http.MethodGet, http.MethodHead)
 			return
 		}
 		principal, id, ok := s.xtreamPathPrincipalID(r.URL.Path, prefix)
@@ -761,6 +781,14 @@ func (s *Server) findVirtualXtreamChannel(channelID string) (catalog.LiveChannel
 	return catalog.LiveChannel{}, false
 }
 
+func (s *Server) xtreamBaseURL() string {
+	base := strings.TrimRight(strings.TrimSpace(s.BaseURL), "/")
+	if base == "" {
+		base = "http://localhost:5004"
+	}
+	return base
+}
+
 func (s *Server) xtreamLiveDirectSource(principal xtreamPrincipal, channelID string) string {
 	channelID = strings.TrimSpace(channelID)
 	prefix := "live"
@@ -769,7 +797,7 @@ func (s *Server) xtreamLiveDirectSource(principal xtreamPrincipal, channelID str
 		prefix = "live"
 		ext = ".mp4"
 	}
-	return strings.TrimRight(s.BaseURL, "/") + "/" + prefix + "/" + principal.Username + "/" + s.xtreamPasswordForPrincipal(principal) + "/" + channelID + ext
+	return s.xtreamBaseURL() + "/" + prefix + "/" + principal.Username + "/" + s.xtreamPasswordForPrincipal(principal) + "/" + channelID + ext
 }
 
 func (s *Server) xtreamMoviesFor(principal xtreamPrincipal) []catalog.Movie {

@@ -233,7 +233,7 @@ func handleRun(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendl
 	srv.ProviderBaseURL = firstNonEmpty(runProviderBase, cfg.ProviderBaseURL)
 	srv.ProviderUser = firstNonEmpty(runProviderUser, cfg.ProviderUser)
 	srv.ProviderPass = firstNonEmpty(runProviderPass, cfg.ProviderPass)
-	srv.RuntimeSnapshot = buildRuntimeSnapshot(cfg, addr, baseURL, deviceID, friendlyName, lineupCap, srv.ProviderBaseURL, srv.ProviderUser)
+	srv.SetRuntimeSnapshot(buildRuntimeSnapshot(cfg, addr, baseURL, deviceID, friendlyName, lineupCap, srv.ProviderBaseURL, srv.ProviderUser))
 	srv.UpdateChannels(live)
 	registrationLive := applyRegistrationRecipe(live, registerRecipe)
 
@@ -272,6 +272,15 @@ func handleRun(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendl
 					continue
 				}
 				channeldna.Assign(res.Live)
+				effectiveProviderBase := firstNonEmpty(res.ProviderBase, cfg.ProviderBaseURL)
+				effectiveProviderUser := firstNonEmpty(res.ProviderUser, cfg.ProviderUser)
+				effectiveProviderPass := firstNonEmpty(res.ProviderPass, cfg.ProviderPass)
+				srv.UpdateProviderContext(
+					effectiveProviderBase,
+					effectiveProviderUser,
+					effectiveProviderPass,
+					buildRuntimeSnapshot(cfg, addr, baseURL, deviceID, friendlyName, lineupCap, effectiveProviderBase, effectiveProviderUser),
+				)
 				srv.UpdateChannels(res.Live)
 				log.Printf("Catalog refreshed: %d movies, %d series, %d live channels (lineup updated)",
 					len(res.Movies), len(res.Series), len(res.Live))
@@ -296,12 +305,12 @@ func runtimeHealthCheckURL(cfg *config.Config, runAPIBase, runProviderBase, effe
 	if effectiveProviderUser == "" || effectiveProviderPass == "" {
 		return ""
 	}
-	base := strings.TrimSuffix(strings.TrimSpace(runAPIBase), "/")
+	base := strings.TrimRight(strings.TrimSpace(runAPIBase), "/")
 	if base == "" && !cfg.BlockCFProviders {
-		base = strings.TrimSuffix(strings.TrimSpace(firstNonEmpty(runProviderBase, cfg.ProviderBaseURL)), "/")
+		base = strings.TrimRight(strings.TrimSpace(firstNonEmpty(runProviderBase, cfg.ProviderBaseURL)), "/")
 		if base == "" {
 			if baseURLs := cfg.ProviderURLs(); len(baseURLs) > 0 {
-				base = strings.TrimSuffix(baseURLs[0], "/")
+				base = strings.TrimRight(strings.TrimSpace(baseURLs[0]), "/")
 			}
 		}
 	}

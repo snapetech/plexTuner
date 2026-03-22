@@ -15,6 +15,7 @@ import (
 const (
 	profileDefault    = "default"
 	profilePlexSafe   = "plexsafe"
+	profilePlexSafeHQ = "plexsafehq"
 	profileAACCFR     = "aaccfr"
 	profileVideoOnly  = "videoonlyfast"
 	profileLowBitrate = "lowbitrate"
@@ -57,6 +58,8 @@ func builtinProfileName(v string) (string, bool) {
 		return profileDefault, true
 	case "plexsafe", "plex-safe", "safe":
 		return profilePlexSafe, true
+	case "plexsafehq", "plex-safe-hq", "safehq", "safe-hq", "plexhq", "plex-safe-max":
+		return profilePlexSafeHQ, true
 	case "aaccfr", "aac-cfr", "aac":
 		return profileAACCFR, true
 	case "videoonlyfast", "video-only-fast", "videoonly", "video":
@@ -409,7 +412,7 @@ func buildFFmpegStreamCodecArgs(transcode bool, profile string, outputMux string
 		case profilePlexSafe:
 			// More conservative output tends to make Plex Web's DASH startup happier.
 			codecArgs = append(codecArgs,
-				"-vf", "fps=30000/1001,format=yuv420p",
+				"-vf", "fps=30000/1001,setsar=1,format=yuv420p",
 				"-b:v", "2200k",
 				"-maxrate", "2500k",
 				"-bufsize", "5000k",
@@ -419,10 +422,23 @@ func buildFFmpegStreamCodecArgs(transcode bool, profile string, outputMux string
 				"-b:a", "128k",
 				"-af", "aresample=async=1:first_pts=0",
 			)
+		case profilePlexSafeHQ:
+			// Compatibility-first like plexsafe, but without the low bitrate cap used during earlier triage.
+			codecArgs = append(codecArgs,
+				"-vf", "fps=30000/1001,setsar=1,format=yuv420p",
+				"-crf", "18",
+				"-maxrate", "16000k",
+				"-bufsize", "32000k",
+				"-c:a", "libmp3lame",
+				"-ac", "2",
+				"-ar", "48000",
+				"-b:a", "192k",
+				"-af", "aresample=async=1:first_pts=0",
+			)
 		case profileAACCFR:
 			codecArgs = append(codecArgs,
 				// Browser-oriented "boring" output to help Plex Web DASH startup.
-				"-vf", "fps=30000/1001,scale='min(854,iw)':-2,format=yuv420p",
+				"-vf", "fps=30000/1001,scale='min(854,iw)':-2,setsar=1,format=yuv420p",
 				"-profile:v", "baseline",
 				"-level:v", "3.1",
 				"-bf", "0",
@@ -440,7 +456,7 @@ func buildFFmpegStreamCodecArgs(transcode bool, profile string, outputMux string
 			)
 		case profileVideoOnly:
 			codecArgs = append(codecArgs,
-				"-vf", "fps=30000/1001,format=yuv420p",
+				"-vf", "fps=30000/1001,setsar=1,format=yuv420p",
 				"-b:v", "2200k",
 				"-maxrate", "2500k",
 				"-bufsize", "5000k",
@@ -448,7 +464,7 @@ func buildFFmpegStreamCodecArgs(transcode bool, profile string, outputMux string
 			)
 		case profileLowBitrate:
 			codecArgs = append(codecArgs,
-				"-vf", "fps=30000/1001,scale='trunc(iw/2)*2:trunc(ih/2)*2',format=yuv420p",
+				"-vf", "fps=30000/1001,scale='trunc(iw/2)*2:trunc(ih/2)*2',setsar=1,format=yuv420p",
 				"-b:v", "1400k",
 				"-maxrate", "1700k",
 				"-bufsize", "3400k",
@@ -462,7 +478,7 @@ func buildFFmpegStreamCodecArgs(transcode bool, profile string, outputMux string
 		case profileDashFast:
 			// Aggressively optimize for Plex Web DASH startup readiness.
 			codecArgs = append(codecArgs,
-				"-vf", "fps=30000/1001,scale='min(1280,iw)':-2,format=yuv420p",
+				"-vf", "fps=30000/1001,scale='min(1280,iw)':-2,setsar=1,format=yuv420p",
 				"-b:v", "1800k",
 				"-maxrate", "1800k",
 				"-bufsize", "1800k",
@@ -492,7 +508,7 @@ func buildFFmpegStreamCodecArgs(transcode bool, profile string, outputMux string
 		if outputMux == streamMuxMPEGTS {
 			// Help Plex's live parser lock onto a clean TS timeline/header faster.
 			codecArgs = append(codecArgs,
-				"-muxrate", "3000000",
+				"-muxrate", mpegTSMuxRateForProfile(profile),
 				"-pcr_period", "20",
 				"-pat_period", "0.05",
 			)
@@ -509,6 +525,14 @@ func bootstrapAudioArgsForProfile(profile string) []string {
 			"-ac", "2",
 			"-ar", "48000",
 			"-b:a", "128k",
+			"-af", "aresample=async=1:first_pts=0",
+		}
+	case profilePlexSafeHQ:
+		return []string{
+			"-c:a", "libmp3lame",
+			"-ac", "2",
+			"-ar", "48000",
+			"-b:a", "192k",
 			"-af", "aresample=async=1:first_pts=0",
 		}
 	case profilePMSXcode:
@@ -530,6 +554,15 @@ func bootstrapAudioArgsForProfile(profile string) []string {
 			"-b:a", "96k",
 			"-af", "aresample=async=1:first_pts=0",
 		}
+	}
+}
+
+func mpegTSMuxRateForProfile(profile string) string {
+	switch normalizeProfileName(profile) {
+	case profilePlexSafeHQ:
+		return "18000000"
+	default:
+		return "3000000"
 	}
 }
 

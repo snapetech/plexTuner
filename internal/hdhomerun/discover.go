@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -143,6 +144,7 @@ func CreateDefaultDevice(deviceID uint32, tunerCount int, baseURL string) *Devic
 		// Generate a random device ID if not provided
 		deviceID = 0x12345678 // Placeholder - could use random
 	}
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 
 	// Try to get friendly name from environment, fallback to default
 	friendlyName := os.Getenv("IPTV_TUNERR_HDHR_FRIENDLY_NAME")
@@ -150,7 +152,7 @@ func CreateDefaultDevice(deviceID uint32, tunerCount int, baseURL string) *Devic
 		friendlyName = os.Getenv("IPTV_TUNERR_FRIENDLY_NAME")
 	}
 	if friendlyName == "" {
-		friendlyName = "IptvTunerr-HDHR"
+		friendlyName = "IPTV Tunerr"
 	}
 
 	return &Device{
@@ -159,6 +161,6 @@ func CreateDefaultDevice(deviceID uint32, tunerCount int, baseURL string) *Devic
 		DeviceType:   DeviceTypeTuner,
 		FriendlyName: friendlyName,
 		BaseURL:      baseURL,
-		LineupURL:    baseURL + "/lineup.json",
+		LineupURL:    LineupURLFromBase(baseURL),
 	}
 }

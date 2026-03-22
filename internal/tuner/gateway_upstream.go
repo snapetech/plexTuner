@@ -182,7 +182,7 @@ func (g *Gateway) authForURL(ctx context.Context, rawURL string) (string, string
 	if user, pass, _, ok := xtreamPathCredentials(rawURL); ok {
 		return user, pass
 	}
-	return g.ProviderUser, g.ProviderPass
+	return g.providerCredentials()
 }
 
 func (g *Gateway) cookieHeaderForURL(rawURL string) string {
@@ -287,7 +287,8 @@ func (g *Gateway) applyUpstreamRequestHeaders(req *http.Request, incoming *http.
 				}
 			}
 		}
-		if g.ProviderUser == "" && g.ProviderPass == "" {
+		user, pass := g.providerCredentials()
+		if user == "" && pass == "" {
 			for _, value := range incoming.Header.Values("Authorization") {
 				if strings.TrimSpace(value) != "" {
 					req.Header.Add("Authorization", value)
@@ -365,13 +366,14 @@ func (g *Gateway) ffmpegInputHeaderBlock(incoming *http.Request, rawURL, hostOve
 				lines = appendFFmpegHeaderLine(lines, name, value)
 			}
 		}
-		if g.ProviderUser == "" && g.ProviderPass == "" {
+		user, pass := g.providerCredentials()
+		if user == "" && pass == "" {
 			for _, value := range incoming.Header.Values("Authorization") {
 				lines = appendFFmpegHeaderLine(lines, "Authorization", value)
 			}
 		}
 	}
-	authUser, authPass := g.ProviderUser, g.ProviderPass
+	authUser, authPass := g.providerCredentials()
 	if incoming != nil {
 		authUser, authPass = g.authForURL(incoming.Context(), rawURL)
 	}

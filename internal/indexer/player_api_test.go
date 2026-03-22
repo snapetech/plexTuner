@@ -1,7 +1,12 @@
 package indexer
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -83,5 +88,125 @@ func TestIsPlayerAPIErrorStatus(t *testing.T) {
 	}
 	if IsPlayerAPIErrorStatus(errors.New("player api: 403 https://example.org"), 403) {
 		t.Fatalf("did not expect generic error to match player_api status")
+	}
+}
+
+func TestNormalizeAPIBase(t *testing.T) {
+	if got := normalizeAPIBase(" http://example.test/ "); got != "http://example.test" {
+		t.Fatalf("normalizeAPIBase=%q", got)
+	}
+}
+
+func TestFetchLiveStreamsNormalizesStreamBase(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/player_api.php" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("action"); got != "get_live_streams" {
+			t.Fatalf("action=%q", got)
+		}
+		_ = json.NewEncoder(w).Encode([]map[string]any{{
+			"num":            1,
+			"name":           "News",
+			"stream_id":      1001,
+			"epg_channel_id": "news.us",
+		}})
+	}))
+	defer srv.Close()
+
+	live, err := fetchLiveStreams(context.Background(), srv.URL+"/", "u", "p", "http://stream.example/", "m3u8", srv.Client(), nil)
+	if err != nil {
+		t.Fatalf("fetchLiveStreams: %v", err)
+	}
+	if len(live) != 1 {
+		t.Fatalf("live len=%d", len(live))
+	}
+	if live[0].StreamURL != "http://stream.example/live/u/p/1001.m3u8" {
+		t.Fatalf("stream url=%q", live[0].StreamURL)
+	}
+}
+
+func TestFetchVODStreamsNormalizesRelativeArtworkBase(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/player_api.php" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		switch r.URL.Query().Get("action") {
+		case "get_vod_categories":
+			_ = json.NewEncoder(w).Encode([]map[string]any{})
+		case "get_vod_streams":
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"stream_id":           1001,
+				"name":                "Movie",
+				"container_extension": "mp4",
+				"stream_icon":         "/covers/movie.jpg",
+			}})
+		default:
+			t.Fatalf("unexpected action: %s", r.URL.Query().Get("action"))
+		}
+	}))
+	defer srv.Close()
+
+	movies, err := fetchVODStreams(context.Background(), srv.URL+"///", "u", "p", "http://stream.example/", srv.Client(), nil)
+	if err != nil {
+		t.Fatalf("fetchVODStreams: %v", err)
+	}
+	if len(movies) != 1 {
+		t.Fatalf("movies len=%d", len(movies))
+	}
+	if movies[0].ArtworkURL != srv.URL+"/covers/movie.jpg" {
+		t.Fatalf("artwork=%q", movies[0].ArtworkURL)
+	}
+}
+
+func TestFetchSeriesNormalizesRelativeArtworkBase(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/player_api.php" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		switch r.URL.Query().Get("action") {
+		case "get_series_categories":
+			_ = json.NewEncoder(w).Encode([]map[string]any{})
+		case "get_series":
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"series_id":   2001,
+				"name":        "Series",
+				"cover":       "/covers/series.jpg",
+				"releaseDate": "2024-01-01",
+				"category_id": "1",
+			}})
+		case "get_series_info":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"episodes": map[string]any{
+					"1": []map[string]any{{
+						"id":                  "e1",
+						"title":               "Pilot",
+						"season_num":          1,
+						"episode_num":         1,
+						"container_extension": "mp4",
+					}},
+				},
+			})
+		default:
+			t.Fatalf("unexpected action: %s", r.URL.Query().Get("action"))
+		}
+	}))
+	defer srv.Close()
+
+	series, err := fetchSeries(context.Background(), srv.URL+"///", "u", "p", "http://stream.example/", srv.Client(), nil)
+	if err != nil {
+		t.Fatalf("fetchSeries: %v", err)
+	}
+	if len(series) != 1 {
+		t.Fatalf("series len=%d", len(series))
+	}
+	if series[0].ArtworkURL != srv.URL+"/covers/series.jpg" {
+		t.Fatalf("artwork=%q", series[0].ArtworkURL)
+	}
+	if len(series[0].Seasons) != 1 || len(series[0].Seasons[0].Episodes) != 1 {
+		t.Fatalf("series seasons=%+v", series[0].Seasons)
+	}
+	if !strings.HasPrefix(series[0].Seasons[0].Episodes[0].StreamURL, "http://stream.example/series/u/p/") {
+		t.Fatalf("episode stream url=%q", series[0].Seasons[0].Episodes[0].StreamURL)
 	}
 }

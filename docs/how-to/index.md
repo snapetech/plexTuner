@@ -29,6 +29,7 @@ Goal → preconditions → steps → verify.
 | [debug-bundle](debug-bundle.md) | Collect `iptv-tunerr debug-bundle` and analyze with `scripts/analyze-bundle.py`. |
 | [evidence-intake](evidence-intake.md) | Standardize real tester cases into `.diag/evidence/<case-id>/` with debug-bundle, PMS logs, Tunerr logs, pcap, and notes. |
 | [hybrid-hdhr-iptv](hybrid-hdhr-iptv.md) | Physical HDHomeRun + IPTV: lineup merge, guide.xml, optional SQLite caps. |
+| [reverse-engineer-plex-livetv-access](reverse-engineer-plex-livetv-access.md) | Inspect Plex SQLite, PMS logs, PMS APIs, and plex.tv share state for Live TV insertion and access gating. |
 | [plex-lineup-harvest](plex-lineup-harvest.md) | Sweep Plex lineup variants, save harvest bundles, and import them into Programming Manager. |
 | [lineup-parity-lp012-closure](lineup-parity-lp012-closure.md) | **LP-012** operator checklist (parity epic doc sweep). |
 | [stream-compare-harness](stream-compare-harness.md) | Direct upstream vs Tunerr: **`stream-compare-harness.sh`**, manifests, optional pcap (**§9**). |

@@ -47,6 +47,24 @@ type LineupDoc struct {
 	Channels       []probe.LineupItem `json:"Channels"`
 }
 
+func (d *LineupDoc) UnmarshalJSON(data []byte) error {
+	type alias LineupDoc
+	var items []probe.LineupItem
+	if err := json.Unmarshal(data, &items); err == nil {
+		d.Channels = items
+		d.ScanInProgress = 0
+		d.ScanPossible = 0
+		d.Source = ""
+		return nil
+	}
+	var body alias
+	if err := json.Unmarshal(data, &body); err != nil {
+		return err
+	}
+	*d = LineupDoc(body)
+	return nil
+}
+
 // ParseDiscoverReply parses a UDP discovery reply (TypeDiscoverRpy).
 func ParseDiscoverReply(packet *Packet) (*DiscoveredDevice, error) {
 	if packet.Type != TypeDiscoverRpy {
@@ -67,10 +85,10 @@ func ParseDiscoverReply(packet *Packet) (*DiscoveredDevice, error) {
 		d.TunerCount = int(t.Value[0])
 	}
 	if t := FindTLV(tlvs, TagBaseURL); t != nil && len(t.Value) > 0 {
-		d.BaseURL = strings.TrimRight(string(trimNull(t.Value)), "/")
+		d.BaseURL = strings.TrimRight(strings.TrimSpace(string(trimNull(t.Value))), "/")
 	}
 	if t := FindTLV(tlvs, TagLineupURL); t != nil && len(t.Value) > 0 {
-		d.LineupURL = strings.TrimRight(string(trimNull(t.Value)), "/")
+		d.LineupURL = strings.TrimRight(strings.TrimSpace(string(trimNull(t.Value))), "/")
 	} else if d.BaseURL != "" {
 		d.LineupURL = d.BaseURL + "/lineup.json"
 	}
@@ -285,6 +303,9 @@ func DiscoverLAN(ctx context.Context, timeout time.Duration) ([]DiscoveredDevice
 // DiscoverURLFromBase returns the discover.json URL for a device base URL.
 func DiscoverURLFromBase(base string) string {
 	b := strings.TrimRight(strings.TrimSpace(base), "/")
+	if b == "" {
+		return ""
+	}
 	if strings.HasSuffix(strings.ToLower(b), "/discover.json") {
 		return b
 	}
@@ -294,6 +315,9 @@ func DiscoverURLFromBase(base string) string {
 // LineupURLFromBase returns the lineup.json URL for a device base URL.
 func LineupURLFromBase(base string) string {
 	b := strings.TrimRight(strings.TrimSpace(base), "/")
+	if b == "" {
+		return ""
+	}
 	if strings.HasSuffix(strings.ToLower(b), "/lineup.json") {
 		return b
 	}
@@ -305,7 +329,11 @@ func FetchDiscoverJSON(ctx context.Context, client *http.Client, baseURL string)
 	if client == nil {
 		client = httpclient.WithTimeout(15 * time.Second)
 	}
-	u := DiscoverURLFromBase(baseURL)
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		return nil, fmt.Errorf("hdhomerun: discover base url required")
+	}
+	u := DiscoverURLFromBase(base)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
@@ -323,6 +351,14 @@ func FetchDiscoverJSON(ctx context.Context, client *http.Client, baseURL string)
 	if err := json.NewDecoder(resp.Body).Decode(&d); err != nil {
 		return nil, fmt.Errorf("hdhomerun: decode discover.json: %w", err)
 	}
+	d.BaseURL = strings.TrimRight(strings.TrimSpace(d.BaseURL), "/")
+	d.LineupURL = strings.TrimSpace(d.LineupURL)
+	if d.BaseURL == "" {
+		d.BaseURL = base
+	}
+	if d.LineupURL == "" && d.BaseURL != "" {
+		d.LineupURL = d.BaseURL + "/lineup.json"
+	}
 	return &d, nil
 }
 
@@ -330,6 +366,10 @@ func FetchDiscoverJSON(ctx context.Context, client *http.Client, baseURL string)
 func FetchLineupJSON(ctx context.Context, client *http.Client, baseOrLineupURL string) (*LineupDoc, error) {
 	if client == nil {
 		client = httpclient.Default()
+	}
+	baseOrLineupURL = strings.TrimSpace(baseOrLineupURL)
+	if baseOrLineupURL == "" {
+		return nil, fmt.Errorf("hdhomerun: lineup base url required")
 	}
 	u := LineupURLFromBase(baseOrLineupURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
@@ -43,7 +44,7 @@ func (c Config) effectiveXMLTVURL() string {
 	if c.XMLTVURL != "" {
 		return c.XMLTVURL
 	}
-	return c.TunerURL + "/guide.xml"
+	return strings.TrimRight(strings.TrimSpace(c.TunerURL), "/") + "/guide.xml"
 }
 
 // authHeader returns the MediaBrowser authorization header value accepted by
@@ -54,6 +55,10 @@ func authHeader(token string) string {
 
 func newHTTPClient() *http.Client {
 	return httpclient.WithTimeout(30 * time.Second)
+}
+
+func joinHostURL(host, path string) string {
+	return strings.TrimRight(strings.TrimSpace(host), "/") + path
 }
 
 // apiRequest performs a JSON API request with the MediaBrowser auth header.
@@ -102,7 +107,7 @@ func RegisterTunerHost(cfg Config) (string, error) {
 		EnableStreamLooping: false,
 		IgnoreDts:           false,
 	}
-	u := cfg.Host + "/LiveTv/TunerHosts"
+	u := joinHostURL(cfg.Host, "/LiveTv/TunerHosts")
 	client := newHTTPClient()
 	status, data, err := apiRequest(client, http.MethodPost, u, cfg.Token, body)
 	if err != nil {
@@ -126,7 +131,7 @@ func DeleteTunerHost(cfg Config, id string) error {
 	if id == "" {
 		return nil
 	}
-	u := fmt.Sprintf("%s/LiveTv/TunerHosts?id=%s", cfg.Host, id)
+	u := fmt.Sprintf("%s?id=%s", joinHostURL(cfg.Host, "/LiveTv/TunerHosts"), id)
 	client := newHTTPClient()
 	status, data, err := apiRequest(client, http.MethodDelete, u, cfg.Token, nil)
 	if err != nil {
@@ -148,7 +153,7 @@ func RegisterListingProvider(cfg Config) (string, error) {
 	}
 	// validateListings=false avoids a synchronous XMLTV fetch during registration
 	// which would block if the guide is not yet populated.
-	u := cfg.Host + "/LiveTv/ListingProviders?validateListings=false&validateLogin=false"
+	u := joinHostURL(cfg.Host, "/LiveTv/ListingProviders") + "?validateListings=false&validateLogin=false"
 	client := newHTTPClient()
 	status, data, err := apiRequest(client, http.MethodPost, u, cfg.Token, body)
 	if err != nil {
@@ -172,7 +177,7 @@ func DeleteListingProvider(cfg Config, id string) error {
 	if id == "" {
 		return nil
 	}
-	u := fmt.Sprintf("%s/LiveTv/ListingProviders?id=%s", cfg.Host, id)
+	u := fmt.Sprintf("%s?id=%s", joinHostURL(cfg.Host, "/LiveTv/ListingProviders"), id)
 	client := newHTTPClient()
 	status, data, err := apiRequest(client, http.MethodDelete, u, cfg.Token, nil)
 	if err != nil {
@@ -189,7 +194,7 @@ func DeleteListingProvider(cfg Config, id string) error {
 // so a failure here is logged as a warning but does not fail registration.
 func TriggerGuideRefresh(cfg Config) error {
 	client := newHTTPClient()
-	u := cfg.Host + "/ScheduledTasks"
+	u := joinHostURL(cfg.Host, "/ScheduledTasks")
 	status, data, err := apiRequest(client, http.MethodGet, u, cfg.Token, nil)
 	if err != nil {
 		return fmt.Errorf("list scheduled tasks: %w", err)
@@ -211,7 +216,7 @@ func TriggerGuideRefresh(cfg Config) error {
 	if taskID == "" {
 		return fmt.Errorf("RefreshGuide task not found in %d scheduled tasks", len(tasks))
 	}
-	runURL := fmt.Sprintf("%s/ScheduledTasks/Running/%s", cfg.Host, taskID)
+	runURL := joinHostURL(cfg.Host, "/ScheduledTasks/Running/"+taskID)
 	status, _, err = apiRequest(client, http.MethodPost, runURL, cfg.Token, nil)
 	if err != nil {
 		return fmt.Errorf("trigger guide refresh task %s: %w", taskID, err)
@@ -225,7 +230,7 @@ func TriggerGuideRefresh(cfg Config) error {
 // GetChannelCount returns the total number of live TV channels the server has indexed.
 // Returns 0 on any error — the watchdog treats 0 as "not healthy".
 func GetChannelCount(cfg Config) int {
-	u := cfg.Host + "/LiveTv/Channels?StartIndex=0&Limit=1"
+	u := joinHostURL(cfg.Host, "/LiveTv/Channels") + "?StartIndex=0&Limit=1"
 	client := newHTTPClient()
 	status, data, err := apiRequest(client, http.MethodGet, u, cfg.Token, nil)
 	if err != nil || status != http.StatusOK {

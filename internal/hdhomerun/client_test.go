@@ -1,8 +1,13 @@
 package hdhomerun
 
 import (
+	"context"
+	"encoding/json"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -22,6 +27,25 @@ func TestParseDiscoverReply_roundTrip(t *testing.T) {
 	}
 	if d.TunerCount != 4 {
 		t.Fatalf("TunerCount: got %d", d.TunerCount)
+	}
+	if d.BaseURL != "http://192.168.1.50" {
+		t.Fatalf("BaseURL: %q", d.BaseURL)
+	}
+	if d.LineupURL != "http://192.168.1.50/lineup.json" {
+		t.Fatalf("LineupURL: %q", d.LineupURL)
+	}
+}
+
+func TestParseDiscoverReply_TrimsWhitespaceAndTrailingSlashes(t *testing.T) {
+	pkt := NewDiscoverRpy(DeviceTypeTuner, 0xdeadbeef, 4, "  http://192.168.1.50///  ", "  http://192.168.1.50/lineup.json///  ")
+	raw := pkt.Marshal()
+	back, err := Unmarshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := ParseDiscoverReply(back)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if d.BaseURL != "http://192.168.1.50" {
 		t.Fatalf("BaseURL: %q", d.BaseURL)
@@ -75,5 +99,74 @@ func TestParseLiteralUDPAddr_bracketIPv6(t *testing.T) {
 	a, ok := parseLiteralUDPAddr("[::1]:65001")
 	if !ok || a.IP.String() != "::1" || a.Port != 65001 {
 		t.Fatalf("got ok=%v %+v", ok, a)
+	}
+}
+
+func TestLineupDocUnmarshalJSONArray(t *testing.T) {
+	raw := []byte(`[{"GuideNumber":"7.1","GuideName":"CBC","URL":"http://example/stream"}]`)
+	var doc LineupDoc
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("unmarshal lineup array: %v", err)
+	}
+	if len(doc.Channels) != 1 || doc.Channels[0].GuideNumber != "7.1" {
+		t.Fatalf("channels=%+v", doc.Channels)
+	}
+}
+
+func TestFetchLineupJSONAcceptsJSONArray(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"GuideNumber":"7.1","GuideName":"CBC","URL":"http://example/stream"}]`))
+	}))
+	defer srv.Close()
+
+	doc, err := FetchLineupJSON(context.Background(), srv.Client(), srv.URL)
+	if err != nil {
+		t.Fatalf("FetchLineupJSON: %v", err)
+	}
+	if len(doc.Channels) != 1 || doc.Channels[0].GuideName != "CBC" {
+		t.Fatalf("channels=%+v", doc.Channels)
+	}
+}
+
+func TestFetchDiscoverJSONFallsBackToRequestedBaseURL(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"DeviceID":"deadbeef","FriendlyName":"CBC Box","TunerCount":2}`))
+	}))
+	defer srv.Close()
+
+	doc, err := FetchDiscoverJSON(context.Background(), srv.Client(), srv.URL+"/")
+	if err != nil {
+		t.Fatalf("FetchDiscoverJSON: %v", err)
+	}
+	if doc.BaseURL != srv.URL {
+		t.Fatalf("base_url=%q want %q", doc.BaseURL, srv.URL)
+	}
+	if doc.LineupURL != srv.URL+"/lineup.json" {
+		t.Fatalf("lineup_url=%q", doc.LineupURL)
+	}
+}
+
+func TestDiscoverAndLineupURLFromBase_empty(t *testing.T) {
+	if got := DiscoverURLFromBase("   "); got != "" {
+		t.Fatalf("discover url=%q", got)
+	}
+	if got := LineupURLFromBase("   "); got != "" {
+		t.Fatalf("lineup url=%q", got)
+	}
+}
+
+func TestFetchDiscoverJSONRejectsEmptyBaseURL(t *testing.T) {
+	_, err := FetchDiscoverJSON(context.Background(), nil, "   ")
+	if err == nil || !strings.Contains(err.Error(), "base url required") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestFetchLineupJSONRejectsEmptyBaseURL(t *testing.T) {
+	_, err := FetchLineupJSON(context.Background(), nil, "   ")
+	if err == nil || !strings.Contains(err.Error(), "base url required") {
+		t.Fatalf("err=%v", err)
 	}
 }

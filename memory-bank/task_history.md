@@ -23,6 +23,1409 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-22
+  Title: Add multi-target Live TV rollout planning for Emby and Jellyfin
+  Summary:
+    - Added `RolloutPlan` / `RolloutApplyResult` helpers in `internal/livetvbundle` so one neutral Plex-derived bundle can build or apply coordinated Emby+Jellyfin Live TV targets.
+    - Added `iptv-tunerr live-tv-bundle-rollout`, which can either emit a multi-target rollout artifact or apply it directly while intentionally leaving Plex untouched.
+    - Updated the Emby/Jellyfin support docs, CLI reference, and changelog to describe coordinated overlap migration instead of only single-target apply.
+  Verification:
+    - `gofmt -w internal/livetvbundle/bundle.go internal/livetvbundle/bundle_test.go cmd/iptv-tunerr/cmd_live_tv_bundle.go cmd/iptv-tunerr/cmd_live_tv_bundle_test.go`
+    - `go test ./internal/livetvbundle ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - This rollout lane is still intentionally scoped to Live TV registration state, not catch-up/library sync.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/livetvbundle/bundle.go`
+    - `cmd/iptv-tunerr/cmd_live_tv_bundle.go`
+    - `docs/emby-jellyfin-support.md`
+
+- Date: 2026-03-22
+  Title: Add built-in Live TV migration apply flow for Emby and Jellyfin
+  Summary:
+    - Added reusable `internal/livetvbundle` plan-apply helpers so a converted Live TV bundle can be turned into a real Emby/Jellyfin registration using the existing built-in registration APIs instead of external scripts.
+    - Added `iptv-tunerr live-tv-bundle-apply` with target-aware host/token env fallback and optional state-file persistence so migration now has a built-in build → convert → apply path.
+    - Updated README and Emby/Jellyfin/CLI/changelog docs to describe gradual Plex + Emby/Jelly overlap as a supported migration shape rather than a forced one-shot cutover.
+    - Repaired unrelated compile drift in `internal/plex/dvr.go` (`ChannelMappings` field usage) so the full command package builds cleanly again.
+  Verification:
+    - `gofmt -w internal/livetvbundle/bundle.go internal/livetvbundle/bundle_test.go cmd/iptv-tunerr/cmd_live_tv_bundle.go cmd/iptv-tunerr/cmd_live_tv_bundle_test.go`
+    - `go test ./internal/livetvbundle ./cmd/iptv-tunerr`
+    - `go test ./internal/plex -run 'Test(ActivateChannelsAPI_keepsFullEnabledSetAcrossBatches|RepairDVRChannelActivation.*)$'`
+    - `./scripts/verify`
+  Notes:
+    - The migration lane still targets supported registration APIs, not raw media-server DB writes.
+    - The next useful slice is a dual-register/sync workflow that makes simultaneous Plex + Emby/Jelly migration explicit.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/livetvbundle/bundle.go`
+    - `cmd/iptv-tunerr/cmd_live_tv_bundle.go`
+    - `docs/emby-jellyfin-support.md`
+
+- Date: 2026-03-22
+  Title: Repair blank Plex XMLTV provider tabs caused by stale DVR activation
+  Summary:
+    - Traced the fully blank `plexkube` TV source to PMS provider state rather than raw Tunerr guide emptiness: `GET /tv.plex.providers.epg.xmltv:723/lineups/dvr/channels` was returning `size="0"` while Tunerr still exposed 479 lineup rows and a non-empty `guide.xml`.
+    - Compared the active DVR row against the current channelmap and found the real break: DVR `723` still had 475 enabled IDs, but only 3 overlapped the current valid channelmap; the current map contained 380 complete mappings and 99 incomplete rows.
+    - Reapplied activation against the exact current valid map for device `722`, then reloaded the guide. PMS immediately repopulated the provider surface: `/tv.plex.providers.epg.xmltv:723/lineups/dvr/channels` now returns `size="80"` and `/tv.plex.providers.epg.xmltv:723/hubs/discover` returns real items again.
+    - Added `plex-dvr-repair` to the CLI so this repair can be replayed without hand-crafted PUT requests; the command permits localhost use without an explicit token in this environment.
+  Verification:
+    - `curl -s http://127.0.0.1:32400/tv.plex.providers.epg.xmltv:723/lineups/dvr/channels`
+    - `curl -s 'http://127.0.0.1:32400/tv.plex.providers.epg.xmltv:723/hubs/discover?includeCollections=1&includeExternalMedia=1&includePreferences=1&includeActions=1&stationKey=1'`
+    - `curl -s http://127.0.0.1:32400/livetv/dvrs/723`
+    - `go test ./internal/plex ./cmd/iptv-tunerr`
+  Notes:
+    - This fixes the blank provider tab, but PMS is still surfacing only 80 channels from the repaired current-valid subset. The next investigation is why 300+ otherwise-valid current channelmap rows are still not appearing in the provider layer.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/cmd_plex_ops.go`
+    - `internal/plex/dvr.go`
+
+- Date: 2026-03-22
+  Title: Raise forced Plex-safe quality for the host-local DVR path
+  Summary:
+    - Added built-in profile `plexsafehq` in `internal/tuner/gateway_profiles.go` so the forced compatibility path can keep MP3 audio for Plex/client tolerance while using `setsar=1`, `crf=18`, and much higher bitrate and mux ceilings than the old `plexsafe` workaround.
+    - Added `IPTV_TUNERR_FORCE_WEBSAFE_PROFILE` in `internal/tuner/gateway_adapt.go`, which lets forced-websafe use a higher-quality built-in or named profile instead of hardcoding `plexsafe`.
+    - Updated the live host-local tuner on `http://127.0.0.1:5005` to run with `IPTV_TUNERR_FORCE_WEBSAFE=true`, `IPTV_TUNERR_FORCE_WEBSAFE_PROFILE=plexsafehq`, and `IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE=true`; direct probe logs now show `profile=\"plexsafehq\"`.
+    - Updated the operator docs in `docs/reference/transcode-profiles.md` and `docs/reference/cli-and-env-reference.md` to record the new profile and env knob.
+  Verification:
+    - `gofmt -w internal/tuner/gateway_profiles.go internal/tuner/gateway_adapt.go internal/tuner/gateway_profiles_test.go internal/tuner/gateway_test.go`
+    - `go test ./internal/tuner ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+    - `curl -fsS http://127.0.0.1:5005/discover.json`
+    - `curl -fsS http://127.0.0.1:5005/lineup_status.json`
+    - `curl --max-time 8 -o /tmp/plexsafehq-probe.ts -sS http://127.0.0.1:5005/stream/1019880`
+    - `ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height,display_aspect_ratio,sample_aspect_ratio,avg_frame_rate -of json /tmp/plexsafehq-probe.ts`
+    - `ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,channels,sample_rate,bit_rate -of json /tmp/plexsafehq-probe.ts`
+  Notes:
+    - The probe output now reports sane geometry/audio (`1280x720`, `SAR 1:1`, `DAR 16:9`, `MP3 stereo 48 kHz 192k`), which directly targets the earlier TV complaints about bad aspect and low quality. TV-side validation is still required because longer sessions can still hit upstream `509` limits later.
+  Opportunities filed:
+    - none
+  Links:
+    - `docs/reference/transcode-profiles.md`
+    - `docs/reference/cli-and-env-reference.md`
+
+- Date: 2026-03-22
+  Title: Surface and smoke-proof shared relay replay controls
+  Summary:
+    - Documented `IPTV_TUNERR_SHARED_RELAY_REPLAY_BYTES` in the CLI/env reference and clarified that `/debug/shared-relays.json` now reports generic shared-output sessions, not only `hls_go`.
+    - Added `shared_relay_replay_bytes` to the runtime snapshot so the operator plane exposes the configured replay window alongside the other stream-shaping knobs.
+    - Tightened `scripts/ci-smoke.sh` so the real temp-binary smoke asserts replay-prefixed startup bytes on the deterministic FFmpeg shared TS and fMP4 lanes instead of only checking that duplicate viewers received non-empty output.
+  Verification:
+    - `bash -n scripts/ci-smoke.sh`
+    - `go test ./internal/tuner -run 'TestGateway_(sharedRelaySessionLateSubscriberGetsReplay|stream_sameChannelFFmpegRelayReusesExistingSession|stream_sameChannelFFmpegFMP4ReusesExistingSession)$|TestGateway_ffmpegPackagedHLS_(sameProfileReusesExistingSession|lookupReusableHLSPackagerSessionDropsExitedSession)$|TestServer_SharedRelayReport$'`
+    - `bash ./scripts/ci-smoke.sh`
+    - `./scripts/verify`
+  Notes:
+    - The stricter replay-prefix assertion is intentionally limited to the deterministic FFmpeg smoke lanes; `hls_go` still relays valid MPEG-TS packet bytes, but that packetization makes a literal ASCII prefix check the wrong contract there.
+  Opportunities filed:
+    - none
+  Links:
+    - `docs/reference/cli-and-env-reference.md`
+    - `cmd/iptv-tunerr/cmd_runtime_server.go`
+    - `scripts/ci-smoke.sh`
+
+- Date: 2026-03-22
+  Title: Surface shared replay sizing in the deck runtime view
+  Summary:
+    - Updated the dedicated deck runtime/settings card to show `Shared replay bytes` alongside the other tuner and transport posture fields.
+    - Added a regression test that asserts the served `deck.js` asset still contains both the replay label and the `shared_relay_replay_bytes` runtime field.
+  Verification:
+    - `go test ./internal/webui -run 'Test(IndexAndAssetsRequireGetOrHead|DeckJSIncludesSharedReplaySetting)$'`
+    - `bash ./scripts/ci-smoke.sh`
+    - `./scripts/verify`
+  Notes:
+    - This is intentionally a visibility-only pass; replay sizing is still configured by env/runtime, not mutated live from the deck.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/deck.js`
+    - `internal/webui/webui_test.go`
+
+- Date: 2026-03-22
+  Title: Add live operator control for shared replay bytes
+  Summary:
+    - Added localhost-only tuner action `/ops/actions/shared-relay-replay` so operators can update `shared_relay_replay_bytes` for new shared sessions without restarting the process.
+    - Wired the action into `/ops/actions/status.json`, the deck Settings save flow, and the runtime snapshot so the live control is both discoverable and immediately visible after mutation.
+    - Updated feature/reference/changelog docs so this ships as a documented operator feature rather than a hidden endpoint.
+  Verification:
+    - `go test ./internal/tuner -run 'TestServer_(operatorActionStatus|sharedRelayReplayUpdateAction|sharedRelayReplayUpdateActionRejectsNegative)$'`
+    - `go test ./internal/webui -run 'Test(DeckJSIncludesSharedReplaySetting|DeckSettingsGETAndPOST|IndexAndAssetsRequireGetOrHead)$'`
+    - `bash ./scripts/ci-smoke.sh`
+    - `./scripts/verify`
+  Notes:
+    - The updated replay size applies to new shared live sessions only; it does not resize already-running shared sessions in place.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+    - `internal/webui/deck.js`
+    - `docs/reference/cli-and-env-reference.md`
+
+- Date: 2026-03-22
+  Title: Separate smart-TV Live TV failure from backend recorder failure
+  Summary:
+    - Correlated the smart-TV browse attempt on `45955` with PMS logs showing `GET /video/:/transcode/universal/decision` failing immediately with `Invalid argument`, which is a different failure mode from the later backend recorder errors on long-running manual tunes.
+    - Confirmed the local tuner steady-state stream for `43784` is valid enough for `ffprobe` to see `aac stereo 48000`, while Plex live-session XML for both `45955` and `43784` still records `audioChannelLayout="0 channels"` and `samplingRate="0"`, narrowing the defect to early startup/probe behavior.
+    - Restarted the host-local `:5005` tuner with `IPTV_TUNERR_FORCE_WEBSAFE=true` so Plex requests are forced onto the `plexsafe` transcode/bootstrap path; under that runtime, PMS again starts manual rolling subscriptions on `45955` instead of failing immediately.
+    - Fixed a masking bug in `internal/tuner/gateway_stream_response.go` so FFmpeg HLS failures log the real error instead of the stale outer `err`, then proved the real root cause: FFmpeg input-host IP rewriting was breaking Cloudflare-backed HLS startup. Running the local tuner with `IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE=true` let FFmpeg keep the hostname, pass the startup gate, emit bootstrap TS, and stream real transcoded bytes for `1019880`.
+  Verification:
+    - `ffprobe -v error -show_entries stream=index,codec_type,codec_name,profile,width,height,r_frame_rate,sample_rate,channels,channel_layout -of json -i 'http://127.0.0.1:5005/stream/1002837'`
+    - `curl -fsS -X POST 'http://127.0.0.1:32400/livetv/dvrs/723/channels/45955/tune?X-Plex-Token=…' -H 'X-Plex-Session-Identifier: fw45955…'`
+    - inspected `/var/lib/plex-standby-config/Library/Application Support/Plex Media Server/Logs/Plex Media Server.log`
+    - inspected live tuner session `30511`
+    - `go test ./internal/tuner ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+    - `curl -sS --max-time 18 -o /tmp/tunerr-probe2.bin 'http://127.0.0.1:5005/stream/1019880'`
+  Notes:
+    - The forced-websafe plus no-DNS-rewrite runtime is still an operator workaround, not a committed default.
+    - Provider `509` concurrency limits can still end long-running sessions even when startup is fixed.
+  Opportunities filed:
+    - none
+  Links:
+    - `memory-bank/current_task.md`
+    - `memory-bank/known_issues.md`
+    - `internal/tuner/gateway_stream_response.go`
+
+- Date: 2026-03-22
+  Title: Expand and document shared-output reuse across FFmpeg paths
+  Summary:
+    - Extended the gateway so same-channel viewers requesting the same live FFmpeg HLS output shape can attach to the existing producer, and kept the earlier packaged-HLS reuse path keyed by resolved profile/output contract.
+    - Added bounded replay buffering to shared sessions so late subscribers receive recent startup bytes, which makes attached `fMP4` consumers materially safer than a pure live-only attach.
+    - Added focused gateway regressions for same-profile packaged-HLS reuse, stale exited-session cleanup, generic shared-relay reporting, replay delivery, and live FFmpeg HLS TS/fMP4 producer sharing.
+    - Updated `README.md`, `docs/features.md`, `docs/reference/transcode-profiles.md`, `docs/explanations/release-readiness-matrix.md`, `docs/CHANGELOG.md`, and `scripts/ci-smoke.sh` so the broader shared-output feature is documented and binary-smoke proven.
+    - Repaired unrelated compile drift in `internal/tuner/epg_pipeline.go` so the repo would build cleanly again while widening verification.
+  Verification:
+    - `go test ./internal/tuner -run 'TestGateway_(sharedRelaySessionFanout|tryServeSharedRelay|stream_sameChannelFFmpegRelayReusesExistingSession)|TestServer_SharedRelayReport|TestGateway_ffmpegPackagedHLS_(namedProfileServesPlaylistAndSegment|targetRequiresGetOrHead|sameProfileReusesExistingSession|lookupReusableHLSPackagerSessionDropsExitedSession)$'`
+    - `bash ./scripts/ci-smoke.sh`
+    - `./scripts/verify`
+    - full format/vet/test/build/smoke included in `./scripts/verify`
+  Notes:
+    - Shared-output reuse is intentionally keyed to the resolved output contract, not to arbitrary mixed mux/profile requests.
+    - The native `hls_go` relay, live FFmpeg HLS output, and packaged-HLS reuse paths are now all binary-smoke covered; the new replay buffer is still a bounded startup replay, not full DVR-style rewind.
+  Opportunities filed:
+    - none
+  Links:
+    - `README.md`
+    - `docs/reference/transcode-profiles.md`
+    - `scripts/ci-smoke.sh`
+
+- Date: 2026-03-22
+  Title: Add provider short-EPG guide fallback
+  Summary:
+    - Added an opt-in fallback in `internal/tuner/epg_pipeline.go` that queries upstream `player_api.php?action=get_short_epg` when provider `xmltv.php` is unavailable.
+    - Verified the local `:5005` tuner can now build real programme blocks for a subset of channels instead of serving only one-week placeholders.
+    - Confirmed PMS playback still works on a guide-backed video channel after enabling the fallback.
+  Verification:
+    - `go test ./internal/tuner ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+    - `curl -sS http://127.0.0.1:5005/guide/health.json | jq '.summary'`
+    - `curl -sS 'http://127.0.0.1:32400/livetv/dvrs/723/channels/45955/tune' -X POST -H 'X-Plex-Session-Identifier: iptvtunerr-manual-tune-723g' -H 'X-Plex-Client-Identifier: iptvtunerr-manual-client-723g'`
+  Notes:
+    - Short-EPG coverage is partial: 31 of 479 lineup channels gained real schedule rows on this provider.
+    - The fallback is opt-in via `IPTV_TUNERR_PROVIDER_SHORT_EPG_FALLBACK=true`; it is not a complete replacement for a working `xmltv.php`.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/epg_pipeline.go`
+    - `internal/tuner/epg_pipeline_test.go`
+    - `docs/reference/cli-and-env-reference.md`
+
+- Date: 2026-03-22
+  Title: Restore Plex local DVR tune compatibility via `/auto/`
+  Summary:
+    - Mounted `/auto/` on the tuner server so PMS can resolve HDHomeRun-style `/auto/v<guide-number>` tune paths against the rebuilt local `:5005` helper.
+    - Rebuilt and restarted the local tuner, then replayed manual PMS tune requests against DVR `723`.
+    - Verified that enabled video channel `43784` now tunes end-to-end through the local DVR and PMS serves a real Live TV HLS session plus TS segments.
+  Verification:
+    - `go test ./internal/tuner ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+    - `curl -sS -X POST 'http://127.0.0.1:32400/livetv/dvrs/723/channels/43784/tune' -H 'X-Plex-Session-Identifier: iptvtunerr-manual-tune-723e' -H 'X-Plex-Client-Identifier: iptvtunerr-manual-client-723e'`
+    - `curl -sS 'http://127.0.0.1:32400/livetv/sessions/3c7dd407-8251-443a-b6a8-5b771116941c/iptvtunerr-manual-tune-723e/index.m3u8?offset=-1.000000'`
+  Notes:
+    - Radio-only channel `43401` still fails later in PMS recorder startup even though PMS now reaches the tuner.
+    - DVR `723` currently exposes only 75 enabled mappings despite the earlier 475-row activation report.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `memory-bank/current_task.md`
+    - `memory-bank/known_issues.md`
+
+- Date: 2026-03-22
+  Title: Reject empty HDHomeRun guide bases early
+  Summary:
+    - Fixed `internal/hdhomerun/guide.go` so empty base inputs no longer collapse into a relative `/guide.xml` URL.
+    - `FetchGuideXML` now fails locally with a clear base-url-required error instead of surfacing a later transport-layer failure.
+    - Added regression coverage in `internal/hdhomerun/guide_test.go`.
+  Verification:
+    - `go test ./internal/hdhomerun -run 'Test(AnalyzeGuideXMLStats_sample|GuideURLFromBase|FetchGuideXMLRejectsEmptyBaseURL)$'`
+    - `./scripts/verify`
+  Notes:
+    - This matched the earlier HDHomeRun discover/lineup helper bug class: empty bases should fail fast as local validation errors.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/hdhomerun/guide.go`
+    - `internal/hdhomerun/guide_test.go`
+
+- Date: 2026-03-22
+  Title: Preserve existing SSDP device.xml URLs
+  Summary:
+    - Fixed `internal/tuner/ssdp.go` so `joinDeviceXMLURL` no longer appends a second `/device.xml` when the base is already a full device XML URL.
+    - Added regression coverage in `internal/tuner/ssdp_test.go`.
+  Verification:
+    - `go test ./internal/tuner -run 'Test(JoinDeviceXMLURL|SSDP_searchResponse|Server_deviceXML.*)$'`
+    - `./scripts/verify`
+  Notes:
+    - This was another helper-level normalization bug: already-complete discovery URLs should be preserved, not extended again.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/ssdp.go`
+    - `internal/tuner/ssdp_test.go`
+
+- Date: 2026-03-22
+  Title: Reject empty HDHomeRun client bases early
+  Summary:
+    - Fixed `internal/hdhomerun/client.go` so empty base inputs no longer produce path-only `discover.json` or `lineup.json` URLs.
+    - `FetchDiscoverJSON` and `FetchLineupJSON` now fail locally with clear base-url-required errors instead of surfacing lower-level transport errors.
+    - Added regression coverage in `internal/hdhomerun/client_test.go`.
+  Verification:
+    - `go test ./internal/hdhomerun -run 'Test(ParseDiscoverReply_roundTrip|FetchLineupJSONAcceptsJSONArray|FetchDiscoverJSONFallsBackToRequestedBaseURL|DiscoverAndLineupURLFromBase_empty|FetchDiscoverJSONRejectsEmptyBaseURL|FetchLineupJSONRejectsEmptyBaseURL)$'`
+    - `./scripts/verify`
+  Notes:
+    - This was a helper-level validation bug: empty HDHomeRun bases should fail fast as local configuration errors, not collapse into malformed relative URLs.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/hdhomerun/client.go`
+    - `internal/hdhomerun/client_test.go`
+
+- Date: 2026-03-22
+  Title: Preserve hostname-only deck proxy targets
+  Summary:
+    - Fixed `internal/webui/webui.go` so `proxyBase` no longer rewrites hostname-only or bare IPv6 `TunerAddr` values to `127.0.0.1`.
+    - Hostname-only targets now keep their host while still defaulting the port to `5004`.
+    - Added regression coverage in `internal/webui/webui_test.go`.
+  Verification:
+    - `go test ./internal/webui -run 'TestProxy(Base|ForwardsAPIPath|InvalidBaseStaysJSON|EmptyBaseStaysJSON)$'`
+    - `./scripts/verify`
+  Notes:
+    - This was a helper-level target-normalization bug: hostname-only deck targets were silently repointed at localhost instead of the configured host.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/webui/webui_test.go`
+
+- Date: 2026-03-22
+  Title: Fail closed on empty deck proxy targets
+  Summary:
+    - Fixed `internal/webui/webui.go` so the deck reverse proxy now treats empty or hostless `tunerBase` values as invalid local configuration instead of falling through to a generic `502 tuner unreachable`.
+    - Kept the valid proxy path unchanged and extended regression coverage in `internal/webui/webui_test.go`.
+  Verification:
+    - `go test ./internal/webui -run 'TestProxy(ForwardsAPIPath|InvalidBaseStaysJSON|EmptyBaseStaysJSON)$'`
+    - `./scripts/verify`
+  Notes:
+    - This was a zero-value/partial-init edge: syntactically valid-but-empty proxy bases should fail locally as configuration errors, not as downstream reachability errors.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/webui/webui_test.go`
+
+- Date: 2026-03-22
+  Title: Accept hostname localhost in local-only gates
+  Summary:
+    - Fixed `internal/webui/webui.go` so the deck localhost-only wrapper accepts `localhost:port` in addition to numeric loopback IPs.
+    - Fixed `internal/tuner/operator_ui.go` so operator-only localhost gating also treats hostname `localhost` as local.
+    - Added regression coverage in `internal/webui/webui_test.go` and `internal/tuner/server_test.go`.
+  Verification:
+    - `go test ./internal/webui ./internal/tuner -run 'Test(LocalhostOnlyAllowsHostnameLocalhost|Server_operatorGuidePreviewJSONAllowsHostnameLocalhost)$'`
+    - `./scripts/verify`
+  Notes:
+    - The bug was a false-negative local access check: legitimate localhost-origin requests could be denied simply because the remote host string was a hostname instead of a parsed loopback IP.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/tuner/operator_ui.go`
+    - `internal/webui/webui_test.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-22
+  Title: Keep deck rate-limit responses aligned with browser vs API flows
+  Summary:
+    - Fixed `internal/webui/webui.go` so blocked-login handling no longer returns JSON `429` for ordinary browser page requests.
+    - Scriptable `/api` and `/deck/*` paths still return JSON `429`, while browser requests now redirect back to `/login` with `Retry-After`.
+    - Added regression coverage in `internal/webui/webui_test.go`.
+  Verification:
+    - `go test ./internal/webui -run 'TestSessionAuthOnly(BlockedBrowserRequestsStillRedirectToLogin|BlockedAPIRequestsStayJSON|RedirectsBrowserRequests|RejectsAPIsWithoutSession)$'`
+    - `./scripts/verify`
+  Notes:
+    - The bug was a mixed-surface contract leak in the shared auth wrapper: rate-limited API behavior had accidentally become the browser behavior too.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/webui/webui_test.go`
+
+- Date: 2026-03-22
+  Title: Harden core gateway stream method contract
+  Summary:
+    - Fixed `internal/tuner/gateway_servehttp.go` so the core `/stream/*` gateway surface rejects mutation verbs instead of serving them like normal reads.
+    - Preserved the existing HLS mux `OPTIONS` preflight behavior by advertising `Allow: GET, HEAD, OPTIONS` when `mux=hls` CORS support is enabled.
+    - Added regression coverage in `internal/tuner/gateway_test.go`.
+  Verification:
+    - `go test ./internal/tuner -run 'TestGateway_(stream_requiresGetOrHead|stream_hlsMuxMethodAllowIncludesOptionsWhenCORSEnabled|ffmpegPackagedHLS_targetRequiresGetOrHead|MaybeServeHLSMuxOPTIONS)$'`
+    - `./scripts/verify`
+  Notes:
+    - This was deeper than the wrapper cleanup: the main stream plane itself was still method-loose after the standalone handlers had been hardened.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway_servehttp.go`
+    - `internal/tuner/gateway_test.go`
+
+- Date: 2026-03-22
+  Title: Harden FFmpeg-packaged HLS target method contract
+  Summary:
+    - Fixed `internal/tuner/gateway_hls_packager.go` so packaged HLS playlist and segment fetches under `mux=hls_ffmpeg_packager` reject mutation verbs instead of serving them like normal reads.
+    - Added direct regression coverage in `internal/tuner/gateway_hls_packager_test.go`.
+  Verification:
+    - `go test ./internal/tuner -run 'TestGateway_ffmpegPackagedHLS_(namedProfileServesPlaylistAndSegment|targetRequiresGetOrHead)$'`
+    - `./scripts/verify`
+  Notes:
+    - This was another read-only wrapper gap outside the main `server.go` sweep, this time in the gateway’s packaged-HLS compatibility shim.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/gateway_hls_packager.go`
+    - `internal/tuner/gateway_hls_packager_test.go`
+
+- Date: 2026-03-22
+  Title: Harden standalone M3U/XMLTV exports and repair Plex log-inspect drift
+  Summary:
+    - Fixed `internal/tuner/m3u.go` and `internal/tuner/xmltv.go` so the standalone `live.m3u` and `guide.xml` exports reject mutation verbs instead of serving them like normal reads.
+    - Added direct regression coverage in `internal/tuner/m3u_test.go` and `internal/tuner/xmltv_test.go`.
+    - Repaired unrelated compile drift in `internal/plex/logs.go` by moving the log aggregation helper type to package scope so the scanner helper could build again.
+  Verification:
+    - `go test ./internal/tuner ./internal/plex`
+    - `./scripts/verify`
+  Notes:
+    - The real bugfix was another standalone read-only wrapper gap outside `server.go`; the `internal/plex` change was unrelated repo drift required for green verification.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/m3u.go`
+    - `internal/tuner/xmltv.go`
+    - `internal/tuner/m3u_test.go`
+    - `internal/tuner/xmltv_test.go`
+    - `internal/plex/logs.go`
+
+- Date: 2026-03-22
+  Title: Ship Plex Live TV reverse-engineering commands and clamp evidence docs
+  Summary:
+    - Added new Plex reverse-engineering commands for SQLite inspection, PMS API snapshots, arbitrary PMS or plex.tv request replay, PMS log mining, and share recreation testing.
+    - Added operator docs for proving where IPTV Tunerr inserts Live TV state and for reproducing the non-Home `allowTuners` clamp with evidence instead of guesswork.
+    - Recorded the current constraint in the memory bank: tuner and DVR objects are local PMS state, but non-Home Live TV entitlement is presently enforced by plex.tv shared-server metadata.
+  Verification:
+    - `gofmt -w internal/plex/inspect.go internal/plex/inspect_test.go internal/plex/home.go internal/plex/home_test.go internal/plex/logs.go internal/plex/logs_test.go cmd/iptv-tunerr/cmd_plex_ops.go`
+    - N/A
+    - `go test ./internal/plex ./cmd/iptv-tunerr`
+    - `go test ./internal/plex ./cmd/iptv-tunerr`
+  Notes:
+    - The decisive live result was a silent policy clamp: recreating a non-Home share with requested `allowTuners=1` succeeded, but the resulting share still came back with `allowTuners=0`.
+    - Follow-on probing also established that `api/v2/shared_servers/<share-id>` is a writable row-level mutator, but it mutates library membership/share shape rather than bypassing the non-Home tuner clamp.
+    - Added a passive follow-up harness, `scripts/plex-client-browse-capture.sh`, so the next step can use real smart-TV browse traffic instead of more speculative control-plane writes.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/plex/inspect.go`
+    - `internal/plex/home.go`
+    - `internal/plex/logs.go`
+    - `cmd/iptv-tunerr/cmd_plex_ops.go`
+    - `docs/how-to/reverse-engineer-plex-livetv-access.md`
+
+- Date: 2026-03-22
+  Title: Harden standalone HDHR and probe read-only handlers
+  Summary:
+    - Fixed `internal/tuner/hdhr.go` so the standalone HDHomeRun compatibility endpoints reject mutation verbs instead of treating them like normal reads.
+    - Fixed `internal/probe/probe.go` so `lineup.json` and `device.xml` also enforce `GET, HEAD` with a proper `Allow` contract.
+    - Added direct regression coverage in `internal/tuner/hdhr_test.go` and `internal/probe/probe_test.go`.
+  Verification:
+    - `go test ./internal/tuner ./internal/probe`
+    - `./scripts/verify`
+  Notes:
+    - This was a leftover compatibility-wrapper gap outside the main `server.go` sweep: the handlers were read-only but had no method contract at all.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/hdhr.go`
+    - `internal/probe/probe.go`
+    - `internal/tuner/hdhr_test.go`
+    - `internal/probe/probe_test.go`
+
+- Date: 2026-03-22
+  Title: Finish remaining tuner JSON 405 cleanup and repair Plex test drift
+  Summary:
+    - Fixed the remaining JSON report/history endpoints in `internal/tuner/server.go` so runtime snapshot, event hooks, active streams, guide lineup match, and recording history no longer fall back to plain-text `405` responses.
+    - Extended `internal/tuner/server_test.go` so representative operator/report/guide JSON surfaces assert JSON `405` behavior with the correct `Allow` headers.
+    - Repaired unrelated repo-drift in `internal/plex` needed for green verification: restored `shareServerWithHomeUserBase`, made `plexHTTPClient` swappable in tests again, and added the missing `encoding/xml` import in `inspect_test.go`.
+  Verification:
+    - `go test ./internal/tuner -run 'TestServer_(operatorJSONMethodRejectionsStayJSON|guideDiagnosticsFailuresStayJSON|publicReadOnlyEndpointsRequireGet)'`
+    - `go test ./internal/plex ./internal/tuner`
+    - `./scripts/verify`
+  Notes:
+    - The primary bugfix was the last visible JSON `405` leak in tuner report/history endpoints. Full verify also exposed unrelated Plex test-harness drift that had to be repaired before the repo could go green again.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+    - `internal/plex/home.go`
+    - `internal/plex/library.go`
+    - `internal/plex/home_test.go`
+    - `internal/plex/inspect_test.go`
+
+- Date: 2026-03-22
+  Title: Keep guide diagnostics 405 responses JSON
+  Summary:
+    - Fixed `internal/tuner/guide_health.go` so the dedicated guide diagnostics endpoints no longer fall back to plain-text `405` responses on unsupported methods.
+    - Covered `guide/health.json`, `guide/doctor.json`, and `guide/aliases.json`, which now return JSON `405` with `Allow: GET`.
+    - Extended regression coverage in `internal/tuner/server_test.go`.
+  Verification:
+    - `go test ./internal/tuner -run 'TestServer_(guideDiagnosticsRequireXMLTV|guideDiagnosticsFailuresStayJSON|operatorJSONMethodRejectionsStayJSON|publicReadOnlyEndpointsRequireGet)'`
+    - `./scripts/verify`
+  Notes:
+    - This was a small leftover after the wider JSON 405 cleanup: the guide diagnostics already stayed JSON on ordinary errors, but method rejection still degraded to plain text.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/guide_health.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-22
+  Title: Keep remaining operator JSON 405 paths machine-readable
+  Summary:
+    - Fixed `internal/tuner/server.go` so the remaining operator-facing JSON endpoints no longer fall back to plain-text `405` responses.
+    - Covered representative programming, virtual-channel, recording, report/debug, ghost-hunter, and operator-action JSON surfaces by routing unsupported-method handling through the JSON `405` helper.
+    - Added regression coverage in `internal/tuner/server_test.go`.
+  Verification:
+    - `go test ./internal/tuner -run 'TestServer_(operatorJSONMethodRejectionsStayJSON|operatorReadOnlyEndpointsRequireGet|publicReadOnlyEndpointsRequireGet|operatorGuidePreviewJSON(MethodRejectionStaysJSON|ErrorsStayJSON|$))'`
+    - `./scripts/verify`
+  Notes:
+    - This was a leftover from the broader JSON-contract cleanup: the endpoints already enforced methods correctly, but their `405` path still silently degraded to `text/plain`.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-22
+  Title: Preserve HEAD on deck auth redirects
+  Summary:
+    - Fixed `internal/webui/webui.go` so unauthenticated browser redirects to `/login` no longer always use `303 See Other`.
+    - `GET` and `HEAD` requests now redirect with `307 Temporary Redirect`, preserving the method, while non-safe methods still use `303`.
+    - Added regression coverage in `internal/webui/webui_test.go`.
+  Verification:
+    - `go test ./internal/webui -run 'Test(SessionAuthOnly(RedirectsBrowserRequests|RejectsAPIsWithoutSession|Allows(BasicAuthFallback|ScriptableBasicAuthWithoutSession))|APIRootRedirectRequiresGetOrHead|LoginAllowsHeadAndRejectsOtherMethods)'`
+    - `./scripts/verify`
+  Notes:
+    - This was the auth-side version of the earlier slash-canonical redirect bug: once `HEAD` was supported on the target login page, the redirect also needed to preserve that method.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/webui/webui_test.go`
+
+- Date: 2026-03-22
+  Title: Preserve HEAD across slash-canonical redirects
+  Summary:
+    - Fixed `internal/webui/webui.go` and `internal/tuner/server.go` so bare `/api`, `/ui`, and `/ui/guide` no longer use `303 See Other` for read-side slash canonicalization.
+    - Those redirect entrypoints now use `307 Temporary Redirect`, which preserves `HEAD` instead of rewriting it into `GET`.
+    - Added regression coverage in `internal/webui/webui_test.go` and `internal/tuner/server_test.go`.
+  Verification:
+    - `go test ./internal/webui -run 'Test(APIRootRedirectRequiresGetOrHead|LoginAllowsHeadAndRejectsOtherMethods|IndexAndAssetsRequireGetOrHead)'`
+    - `go test ./internal/tuner -run 'TestServer_(operatorRedirectsPreserveReadMethods|operatorHTMLPagesAllowHead|operatorGuidePreviewJSON(MethodRejectionStaysJSON|ErrorsStayJSON|$))'`
+    - `./scripts/verify`
+  Notes:
+    - This was a subtle protocol bug rather than another missing method gate: once `HEAD` was allowed on the target surfaces, the redirect wrappers also had to preserve that method.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/tuner/server.go`
+    - `internal/webui/webui_test.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-22
+  Title: Allow HEAD on the deck login page
+  Summary:
+    - Fixed `internal/webui/webui.go` so the HTML login page now accepts `HEAD` in addition to `GET` and `POST`.
+    - Updated the method-rejection contract to advertise `Allow: GET, HEAD, POST`.
+    - Added regression coverage in `internal/webui/webui_test.go`.
+  Verification:
+    - `go test ./internal/webui -run 'Test(IndexAndAssetsRequireGetOrHead|LoginAllowsHeadAndRejectsOtherMethods|IndexAndLoginLazilyInitializeTemplates|APIRootRedirectRequiresGetOrHead)'`
+    - `./scripts/verify`
+  Notes:
+    - This was a small browser-surface protocol mismatch: the login page is read-only on GET, but unlike the deck root and operator HTML pages it still rejected `HEAD`.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/webui/webui_test.go`
+
+- Date: 2026-03-22
+  Title: Allow HEAD on operator HTML pages
+  Summary:
+    - Fixed `internal/tuner/operator_ui.go` so the read-only operator HTML pages `/ui/` and `/ui/guide/` now accept `HEAD` as well as `GET`.
+    - Updated the method-rejection contract for those pages to advertise `Allow: GET, HEAD`.
+    - Added regression coverage in `internal/tuner/server_test.go`.
+  Verification:
+    - `go test ./internal/tuner -run 'TestServer_(operatorHTMLPagesAllowHead|operatorGuidePreviewJSON(MethodRejectionStaysJSON|ErrorsStayJSON|$))'`
+    - `./scripts/verify`
+  Notes:
+    - This was a small protocol-semantics mismatch rather than a data/serialization bug: adjacent read-only browser/export surfaces already handled `HEAD`, but the operator HTML pages still rejected it.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/operator_ui.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-22
+  Title: Stop rewriting mutation verbs through the deck API root redirect
+  Summary:
+    - Fixed `internal/webui/webui.go` so bare `/api` no longer redirects every method with `303 See Other`.
+    - The API root now redirects only `GET, HEAD` to `/api/` and rejects mutation verbs with JSON `405` plus `Allow: GET, HEAD`.
+    - Added regression coverage in `internal/webui/webui_test.go`.
+  Verification:
+    - `go test ./internal/webui -run 'Test(APIRootRedirectRequiresGetOrHead|LocalhostOnlyJSONEndpointsStayJSON|IndexAndAssetsRequireGetOrHead|Proxy(ForwardsAPIPath|InvalidBaseStaysJSON))'`
+    - `./scripts/verify`
+  Notes:
+    - This was a real semantics bug in the deck API wrapper, not just a content-type mismatch: `POST /api` could be rewritten into a `GET` through the redirector.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/webui/webui_test.go`
+
+- Date: 2026-03-22
+  Title: Keep localhost-only deck API redirect machine-readable
+  Summary:
+    - Fixed `internal/webui/webui.go` so the localhost-only gate now treats bare `/api` as a machine-facing path just like `/api/*`.
+    - Remote-denied requests to `/api` now return JSON `403` instead of plain-text `403`.
+    - Extended regression coverage in `internal/webui/webui_test.go`.
+  Verification:
+    - `go test ./internal/webui -run 'Test(LocalhostOnlyJSONEndpointsStayJSON|IndexAndAssetsRequireGetOrHead|Proxy(ForwardsAPIPath|InvalidBaseStaysJSON))'`
+    - `./scripts/verify`
+  Notes:
+    - This was a wrapper-level mismatch, not a leaf-handler bug: `/api` is the scriptable deck redirect entrypoint, but the localhost-only gate had drifted from the `/api/*` behavior.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/webui/webui_test.go`
+
+- Date: 2026-03-22
+  Title: Enforce GET and HEAD on deck browser assets
+  Summary:
+    - Fixed `internal/webui/webui.go` so the deck root page and static asset handlers no longer answer mutation verbs like ordinary reads.
+    - Covered `index`, `assetCSS`, and `assetJS`, which now enforce `GET, HEAD` with `Allow: GET, HEAD`.
+    - Added regression coverage in `internal/webui/webui_test.go`.
+  Verification:
+    - `go test ./internal/webui -run 'Test(IndexAnd(LoginLazilyInitializeTemplates|AssetsRequireGetOrHead)|TelemetryGETAndDeleteOnly|ActivityGETAndDeleteOnly|Proxy(ForwardsAPIPath|InvalidBaseStaysJSON))'`
+    - `./scripts/verify`
+  Notes:
+    - This was a browser-surface analogue of the earlier read-only API/export bugs: the page and asset handlers had simply never declared a method contract.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/webui/webui_test.go`
+
+- Date: 2026-03-22
+  Title: Enforce GET-only behavior on Xtream player_api
+  Summary:
+    - Fixed `internal/tuner/server_xtream.go` so the read-only Xtream `player_api.php` surface no longer accepts mutation verbs.
+    - The endpoint now rejects non-`GET` requests with a JSON `405` and `Allow: GET`, preserving the machine-facing contract.
+    - Added regression coverage in `internal/tuner/server_test.go`.
+  Verification:
+    - `go test ./internal/tuner -run 'TestServer_XtreamPlayerAPI_(LiveCategories|VODAndSeries|ShortEPG|FailuresStayJSON|MethodRejectionStaysJSON)'`
+    - `./scripts/verify`
+  Notes:
+    - This was another standalone wrapper leftover after the broader Xtream export/proxy cleanup: `player_api.php` was still behaving like an unrestricted generic handler instead of a read-only API surface.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server_xtream.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-22
+  Title: Keep operator guide-preview 405 responses JSON
+  Summary:
+    - Fixed `internal/tuner/operator_ui.go` so `ui/guide-preview.json` no longer falls back to plain-text `405` responses on method rejection.
+    - Routed that path through the shared JSON method-rejection helper to preserve `application/json` and `Allow: GET`.
+    - Added regression coverage in `internal/tuner/server_test.go`.
+  Verification:
+    - `go test ./internal/tuner -run 'TestServer_operatorGuidePreviewJSON(MethodRejectionStaysJSON|ErrorsStayJSON|$)'`
+    - `./scripts/verify`
+  Notes:
+    - This was a genuine one-off wrapper bug after the broader JSON-contract sweep: the endpoint’s success and ordinary failure paths were JSON, but its `405` path still used `http.Error`.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/operator_ui.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-22
+  Title: Enforce read-only methods on operator preview/detail helpers and device XML
+  Summary:
+    - Fixed `internal/tuner/server.go` so several operator-facing read-only helpers no longer serve `POST` like `GET`: programming browse/harvest-assist/channel-detail/preview, virtual preview/schedule/detail, recorder report, recording rule preview, and recording history.
+    - Fixed `internal/tuner/server.go` so `/device.xml` now enforces `GET, HEAD` instead of accepting arbitrary methods.
+    - Added regression coverage in `internal/tuner/server_test.go` and `internal/tuner/ssdp_test.go`.
+  Verification:
+    - `go test ./internal/tuner -run 'TestServer_(operatorReadOnlyEndpointsRequireGet|programmingBrowse|programmingChannelDetail|virtualChannelRulesAndPreview|RecordingRulesRequireOperatorAccess|publicReadOnlyEndpointsRequireGet)|TestServer_deviceXML(RequiresGetOrHead|$)'`
+    - `./scripts/verify`
+  Notes:
+    - This was another leftover from the read-only sweep: these handlers were structurally pure GET surfaces but had never been given an explicit method contract.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+    - `internal/tuner/ssdp_test.go`
+
+- Date: 2026-03-22
+  Title: Enforce read-only methods on public status and guide reports
+  Summary:
+    - Fixed `internal/tuner/server.go` and `internal/tuner/guide_health.go` so public status and guide-report surfaces no longer serve mutation verbs like ordinary reads.
+    - Covered `healthz`, `readyz`, `guide/epg-store.json`, `guide/health.json`, `guide/doctor.json`, `guide/aliases.json`, `guide/highlights.json`, `guide/capsules.json`, and `guide/policy.json`.
+    - Added regression coverage in `internal/tuner/server_test.go` to ensure these surfaces emit `405` with the correct `Allow` headers.
+  Verification:
+    - `go test ./internal/tuner -run 'TestServer_(healthz|readyz|publicReadOnlyEndpointsRequireGet|guideDiagnosticsRequireXMLTV|guideDiagnosticsFailuresStayJSON)'`
+    - `./scripts/verify`
+  Notes:
+    - This was a sparse leftover after the broader read-only cleanup: public status and guide-report handlers were still missing the same method gating already applied to sibling report and export surfaces.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/guide_health.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-22
+  Title: Align channel DNA access with sibling report surfaces
+  Summary:
+    - Fixed `internal/tuner/server.go` so `/channels/dna.json` now requires operator access like the sibling channel report endpoints instead of remaining remotely readable.
+    - Updated the existing happy-path test to use localhost explicitly and added a remote-denied regression in `internal/tuner/server_test.go`.
+    - This closes a single-surface access-control drift rather than another broad class.
+  Verification:
+    - `go test ./internal/tuner -run 'TestServer_(channelDNAReport(RequiresOperatorAccess)?|channelIntelligenceRequiresOperatorAccess|methodNotAllowedSetsAllowHeadersAcrossTunerSurfaces)'`
+    - `./scripts/verify`
+  Notes:
+    - `/channels/dna.json` had drifted away from its sibling intelligence endpoints and was the only one still skipping the shared operator-access gate.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-22
+  Title: Enforce read-only methods on virtual export surfaces
+  Summary:
+    - Fixed `internal/tuner/server.go` so `virtual-channels/guide.xml` and `virtual-channels/live.m3u` no longer accept mutation verbs.
+    - Both export surfaces now enforce `GET, HEAD` with `Allow: GET, HEAD`, matching the rest of the read-only export plane.
+    - Added regression coverage in `internal/tuner/server_test.go`.
+  Verification:
+    - `go test ./internal/tuner -run 'TestServer_(virtualChannelRulesAndPreview|virtualChannelExportsRequireGetOrHead|methodNotAllowedSetsAllowHeadersAcrossTunerSurfaces)'`
+    - `./scripts/verify`
+  Notes:
+    - This was an isolated leftover after the broader read-only cleanup: adjacent stream and JSON surfaces were already gated, but the XML/M3U virtual exports were still wide open on method handling.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-22
+  Title: Enforce GET-only behavior on remaining report surfaces
+  Summary:
+    - Fixed a remaining cluster of read-only tuner report/debug endpoints in `internal/tuner/server.go` so they no longer serve `POST` like `GET`.
+    - Covered `channels/report.json`, `channels/leaderboard.json`, `channels/dna.json`, `autopilot/report.json`, `provider/profile.json`, `debug/stream-attempts.json`, `debug/shared-relays.json`, `debug/runtime.json`, `debug/event-hooks.json`, `debug/active-streams.json`, and `guide/lineup-match.json`.
+    - Added regression coverage in `internal/tuner/server_test.go` to ensure those surfaces emit `405` with `Allow: GET`.
+  Verification:
+    - `go test ./internal/tuner -run 'TestServer_(methodNotAllowedSetsAllowHeadersAcrossTunerSurfaces|reportJSONFailuresStayJSON|operatorJSONEndpointsStayJSONWhenOperatorAccessDenied|SharedRelayReport)'`
+    - `./scripts/verify`
+  Notes:
+    - This was the last broad repeated HTTP-contract bug from the sweep: read-only report endpoints without any method gate.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-22
+  Title: Remove deck auth nil-map panic paths
+  Summary:
+    - Fixed `internal/webui/webui.go` so login/session helpers lazily initialize `sessions` and `failedLoginByIP` instead of assuming `Run()` has already created those maps.
+    - This removes panic paths on both failed and successful login attempts for zero-value or partially constructed `webui.Server` instances.
+    - Added regression coverage in `internal/webui/webui_test.go`.
+  Verification:
+    - `go test ./internal/webui -run 'Test(Login(LazilyInitializesStateMaps|AndLogoutFlow|IgnoresRedirectTargets)|IndexAndLoginLazilyInitializeTemplates)'`
+    - `./scripts/verify`
+  Notes:
+    - This was another optional-subsystem initialization bug in the deck plane: auth state, not templates, still depended on the normal `Run()` path to avoid a panic.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/webui/webui_test.go`
+
+- Date: 2026-03-22
+  Title: Remove deck template nil-panic paths
+  Summary:
+    - Fixed `internal/webui/webui.go` so the main deck page and login renderer lazily initialize embedded templates instead of assuming `Run()` already populated `s.tmpl` and `s.loginTmpl`.
+    - This removes a panic path for zero-value or partially constructed `webui.Server` instances while preserving the existing runtime behavior.
+    - Added regression coverage in `internal/webui/webui_test.go`.
+  Verification:
+    - `go test ./internal/webui -run 'Test(IndexAndLoginLazilyInitializeTemplates|Proxy(ForwardsAPIPath|InvalidBaseStaysJSON)|LoginAndLogoutFlow)'`
+    - `./scripts/verify`
+  Notes:
+    - This was a nil-safety bug, not an HTTP contract bug: the handlers crashed before they could even form a response if template initialization had not happened through the normal `Run()` path.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/webui/webui_test.go`
+
+- Date: 2026-03-22
+  Title: Keep remote-denied operator JSON surfaces machine-readable
+  Summary:
+    - Fixed `internal/tuner/operator_ui.go` so the shared operator-access gate now returns JSON `403` errors for machine-facing `*.json` and `/ops/` requests instead of flattening them to plain text.
+    - Left HTML/page rejections unchanged, so only structured operator surfaces changed behavior.
+    - Added representative regression coverage in `internal/tuner/server_test.go` across programming preview, guide-preview JSON, action-status, and action POST endpoints.
+  Verification:
+    - `go test ./internal/tuner -run 'TestServer_(Programming(ReadEndpointsRequireOperatorAccess|RecipeRequiresOperatorAccess)|operatorJSONEndpointsStayJSONWhenOperatorAccessDenied|operatorGuidePreviewJSON|operatorActionStatus|guideRefreshAction)'`
+    - `./scripts/verify`
+  Notes:
+    - This was the operator-plane version of the earlier deck localhost-only bug: leaf handlers had been fixed, but the top-level access-control gate could still silently degrade JSON/action clients to `text/plain`.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/operator_ui.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-22
+  Title: Keep WebDAV OPTIONS honest on the read-only surface
+  Summary:
+    - Fixed `internal/vodwebdav/webdav.go` so the read-only WebDAV wrapper now handles `OPTIONS` itself instead of delegating to `x/net/webdav`, which was advertising writable methods that the wrapper immediately rejects.
+    - The WebDAV surface now consistently advertises only `OPTIONS, PROPFIND, HEAD, GET` plus `DAV: 1, 2`, matching the actual read-only contract.
+    - Tightened regression coverage in `internal/vodwebdav/webdav_test.go` so `OPTIONS` fails if writable verbs reappear in `Allow`.
+  Verification:
+    - `go test ./internal/vodwebdav -run TestHandler_OPTIONSAndPROPFIND_ClientShapes -v`
+    - `./scripts/verify`
+  Notes:
+    - This was a concrete protocol contradiction, not a cosmetic header tweak: compliant WebDAV clients were being told the server supported writes that the outer wrapper never allows.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/vodwebdav/webdav.go`
+    - `internal/vodwebdav/webdav_test.go`
+
+- Date: 2026-03-22
+  Title: Enforce read-only methods on Xtream proxy surfaces
+  Summary:
+    - Fixed `internal/tuner/server_xtream.go` so the Xtream live proxy no longer forwards arbitrary methods upstream and now enforces the same `GET, HEAD` contract as the movie/series proxies.
+    - Switched the movie/series proxy `405` path to the shared helper so all Xtream proxy surfaces emit the same `Allow: GET, HEAD` behavior.
+    - Added regression coverage in `internal/tuner/server_test.go` for live, movie, and series proxy method rejection.
+  Verification:
+    - `go test ./internal/tuner -run 'TestServer_Xtream(MovieAndSeriesProxy|ProxySurfacesRequireGetOrHead|LiveProxyAndVirtualChannels|Exports_(M3UAndXMLTV|RequireGetOrHead))'`
+    - `./scripts/verify`
+  Notes:
+    - This was the next layer of the same read-only contract bug after the Xtream export fix: proxies were still behaving like generic upstream tunnels instead of read-only playback endpoints.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server_xtream.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-22
+  Title: Enforce read-only methods on Xtream exports
+  Summary:
+    - Fixed `internal/tuner/server_xtream.go` so the Xtream `m3u_plus` and `xmltv.php` export handlers now reject non-`GET`/`HEAD` requests instead of serving read-only exports to arbitrary methods.
+    - Routed those rejections through the shared `405` helper so they emit `Allow: GET, HEAD` consistently.
+    - Added regression coverage in `internal/tuner/server_test.go` for both export surfaces.
+  Verification:
+    - `go test ./internal/tuner -run 'TestServer_XtreamExports_(M3UAndXMLTV|RequireGetOrHead|NormalizeBaseURLWhitespace)|TestServer_XtreamXMLTVUsesUniqueChannelIDsWhenTVGIDCollides'`
+    - `./scripts/verify`
+  Notes:
+    - This was a read-only surface contract bug, not a JSON-contract issue: authenticated `POST` requests were incorrectly treated like ordinary export reads.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server_xtream.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-22
+  Title: Fix HDHomeRun control HTTP 405 protocol hints
+  Summary:
+    - Fixed `internal/hdhomerun/control.go` so the simulated HDHomeRun HTTP shim now includes `Allow: GET, HEAD` on `405 Method Not Allowed` responses for known control endpoints.
+    - Updated the raw control-socket response builder instead of only patching one helper, so direct TCP/HTTP clients and tests now see the correct protocol hint.
+    - Added regression coverage in `internal/hdhomerun/control_test.go` for both helper-level method handling and an end-to-end socket `PUT /discover.json` request.
+  Verification:
+    - `go test ./internal/hdhomerun -run 'TestControlServer_(httpResponseFor(Path|RequestMethodHandling)|handleConnectionRecognizesPutAsHTTP)'`
+    - `./scripts/verify`
+  Notes:
+    - This was the same `405`/`Allow` standards bug as earlier HTTP-surface fixes, just on the lower-level HDHomeRun control shim rather than the main tuner handlers.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/hdhomerun/control.go`
+    - `internal/hdhomerun/control_test.go`
+
+- Date: 2026-03-22
+  Title: Keep localhost-only deck JSON endpoints machine-readable
+  Summary:
+    - Fixed `internal/webui/webui.go` so the top-level localhost-only wrapper returns real JSON `403` errors for blocked `/api/*` and `*.json` deck paths instead of degrading those machine-facing surfaces to plain text.
+    - Left browser-page failures as plain text, so the change only affects the structured/API side of the deck plane.
+    - Added focused regression coverage in `internal/webui/webui_test.go`.
+  Verification:
+    - `go test ./internal/webui -run 'Test(LocalhostOnlyJSONEndpointsStayJSON|Proxy(ForwardsAPIPath|InvalidBaseStaysJSON)|SessionAuthOnlyAllowsScriptableBasicAuthWithoutSession)'`
+    - `./scripts/verify`
+  Notes:
+    - This was a wrapper-level version of the same contract drift bug: even after leaf handlers were fixed, the top-level access-control gate could still flatten JSON endpoints back to `text/plain`.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/webui/webui_test.go`
+
+- Date: 2026-03-22
+  Title: Finish the last literal JSON-through-plain-text failures
+  Summary:
+    - Fixed `internal/webui/webui.go` so the deck reverse-proxy surface returns a real JSON error with `application/json` when `tunerBase` is invalid instead of sending a JSON-looking string through `http.Error`.
+    - Fixed `internal/tuner/server.go` so the virtual-channel stream “slot has no source” failure path now returns a real JSON error instead of the same JSON-through-plain-text bug.
+    - Added focused regression coverage in `internal/webui/webui_test.go` and `internal/tuner/server_test.go`.
+  Verification:
+    - `go test ./internal/webui -run 'TestProxy(ForwardsAPIPath|InvalidBaseStaysJSON)'`
+    - `go test ./internal/tuner -run 'TestServer_(virtualChannelRulesAndPreview|virtualChannelStreamMissingSourceStaysJSON|lowerJSONFailuresStayJSON)'`
+    - `./scripts/verify`
+  Notes:
+    - This closes the remaining repo-wide instances where a handler was literally writing a JSON body through `http.Error`, which silently mislabeled the response as plain text.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/tuner/server.go`
+    - `internal/webui/webui_test.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-22
+  Title: Keep programming, virtual, and recording failures JSON
+  Summary:
+    - Fixed lower-half `internal/tuner/server.go` JSON handlers so programming, virtual-channel, recorder, recording, and mux-decode validation/error paths no longer degrade to plain text on failure.
+    - Routed missing-config, invalid-json, not-found, bad-gateway, and encode-failure cases through the shared server JSON error writer.
+    - Added representative regression coverage in `internal/tuner/server_test.go` for programming, virtual-channel, recorder, recording-preview/history, and mux-decode failure cases.
+  Verification:
+    - `go test ./internal/tuner -run 'Test(Server_(reportJSONFailuresStayJSON|lowerJSONFailuresStayJSON|programmingEndpoints|programmingHarvestEndpoint|virtualChannelRulesAndPreview|RecordingRulesRequireOperatorAccess|methodNotAllowedSetsAllowHeadersAcrossTunerSurfaces))'`
+    - `./scripts/verify`
+  Notes:
+    - This extends the same machine-facing contract fix from report/debug and guide/deck/Xtream surfaces into the lower `server.go` JSON lanes.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-22
+  Title: Keep server report/debug failure paths JSON
+  Summary:
+    - Fixed `internal/tuner/server.go` so multiple report/debug endpoints that already return JSON on success now also return real JSON errors on unavailable, bad-gateway, and encode-failure paths.
+    - Covered `epg-store`, guide highlights/capsules/policy, ghost/provider/stream/shared-relay reports, runtime/event-hooks/active-streams, and guide-lineup-match.
+    - Added regression coverage in `internal/tuner/server_test.go` for representative unavailable/error cases and JSON content-type checks.
+  Verification:
+    - `go test ./internal/tuner -run 'Test(Server_(epgStoreReport_disabled|reportJSONFailuresStayJSON|runtimeSnapshot|guideDiagnosticsRequireXMLTV|guideDiagnosticsFailuresStayJSON|ghostReportStopRequiresOperatorPost))'`
+    - `./scripts/verify`
+  Notes:
+    - This was the same machine-facing contract bug class as the earlier guide/deck/operator/Xtream passes, just across a bigger `server.go` report/debug batch.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-22
+  Title: Keep Xtream player_api failures machine-readable
+  Summary:
+    - Fixed `internal/tuner/server_xtream.go` so Xtream `player_api.php` auth failures, unsupported actions, and missing series/stream replies now return real JSON bodies with `application/json`.
+    - Added regression coverage in `internal/tuner/server_test.go` for unauthorized, unsupported-action, missing-series, and missing-stream player_api paths.
+    - Re-ran full verification after one transient smoke startup failure; the rerun passed cleanly, so the batch is green.
+  Verification:
+    - `go test ./internal/tuner -run 'Test(Server_XtreamPlayerAPI_(VODAndSeries|ShortEPG|FailuresStayJSON)|Server_XtreamLiveCategoriesAndStreams)'`
+    - `./scripts/verify`
+  Notes:
+    - The first `./scripts/verify` attempt hit a transient `scripts/ci-smoke.sh` Xtream startup failure (`discover.json not ready`); a second full run passed unchanged, which points to smoke flake rather than a persistent code regression.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server_xtream.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-22
+  Title: Keep operator and deck JSON error paths structured
+  Summary:
+    - Fixed `internal/tuner/operator_ui.go` so the operator guide preview JSON endpoint now returns real JSON error bodies on unavailable and bad-gateway paths.
+    - Fixed `internal/webui/webui.go` so deck settings, auth, CSRF, and report helper errors stay `application/json` instead of degrading to plain text through `http.Error`.
+    - Added regression coverage in `internal/tuner/server_test.go` and `internal/webui/webui_test.go`.
+  Verification:
+    - `go test ./internal/webui ./internal/tuner -run 'Test(DeckSettings(GETAndPOST|InvalidJSONStaysJSON)|SessionAuthOnlyRejectsMutationsWithoutCSRF|Server_operatorGuidePreviewJSON(ErrorsStayJSON)?)'`
+    - `./scripts/verify`
+  Notes:
+    - This was the same machine-facing contract bug class as the previous guide diagnostics pass, just on adjacent operator/deck surfaces.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/operator_ui.go`
+    - `internal/webui/webui.go`
+
+- Date: 2026-03-22
+  Title: Keep guide and deck error responses machine-readable
+  Summary:
+    - Fixed `internal/tuner/guide_health.go` so `/guide/health.json`, `/guide/doctor.json`, and `/guide/aliases.json` now return real JSON error bodies with `application/json` on unavailable and bad-gateway paths.
+    - Fixed `internal/webui/webui.go` so JSON `405` responses from deck endpoints no longer degrade to `text/plain` through `http.Error`.
+    - Added regression coverage in `internal/tuner/server_test.go` and `internal/webui/webui_test.go`.
+  Verification:
+    - `go test ./internal/tuner ./internal/webui -run 'Test(Server_guideDiagnosticsRequireXMLTV|Server_guideDiagnosticsFailuresStayJSON|TelemetryGETAndDeleteOnly|ActivityGETAndDeleteOnly|DeckSettingsGETAndPOST)'`
+    - `./scripts/verify`
+  Notes:
+    - This came directly from the broader audit for machine-facing contract drift: endpoints that looked JSON on success but stopped being JSON on failure.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/guide_health.go`
+    - `internal/webui/webui.go`
+
+- Date: 2026-03-22
+  Title: Finish tuner HTTP 405 consistency sweep
+  Summary:
+    - Fixed the remaining `internal/tuner/server.go` operator/programming/recording/demo handlers that still hand-rolled `405 method not allowed` responses without `Allow`.
+    - Centralized plain-text and JSON `405` helpers so JSON surfaces keep `application/json` instead of silently degrading to `text/plain` through `http.Error`.
+    - Added regression coverage in `internal/tuner/server_test.go` for representative GET-only, POST-only, GET/POST, and GET/HEAD tuner surfaces.
+  Verification:
+    - `go test ./internal/tuner -run 'Test(Server_methodNotAllowedSetsAllowHeadersAcrossTunerSurfaces|Server_programmingEndpoints|Server_ghostReportStopRequiresOperatorPost|Server_RecordingRulesRequireOperatorAccess)'`
+    - `./scripts/verify`
+  Notes:
+    - Focused tests exposed a second bug inside the fix itself: JSON `405` responses were still advertising the wrong content type until the helper stopped using `http.Error`.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-22
+  Title: Fix 405 protocol hints and remove deck password panic path
+  Summary:
+    - Fixed `internal/webui/webui.go` so deck telemetry/activity/settings/login/logout method rejections now include `Allow`, and deck password generation no longer panics the process if `crypto/rand` fails.
+    - Fixed covered tuner/operator UI 405 paths in `internal/tuner/operator_ui.go` and `internal/tuner/server.go` to emit `Allow` headers consistently.
+    - Added regression coverage in `internal/webui/webui_test.go` and `internal/tuner/server_test.go`.
+  Verification:
+    - `go test ./internal/webui ./internal/tuner -run 'Test(TelemetryGETAndDeleteOnly|ActivityGETAndDeleteOnly|DeckSettingsGETAndPOST|Server_ghostReportStopRequiresOperatorPost)'`
+  Notes:
+    - This was the first non-normalization bug batch from the broader audit: protocol correctness and fail-closed behavior instead of URL joining.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/tuner/operator_ui.go`
+    - `internal/tuner/server.go`
+
+- Date: 2026-03-22
+  Title: Normalize deeper Xtream indexer helper bases
+  Summary:
+    - Fixed `internal/indexer/player_api.go` so the internal VOD/series/category/info helpers normalize `apiBase` and `streamBase` before building `player_api.php`, artwork, and VOD/series stream URLs.
+    - Fixed the remaining catalog helper `streamURLsFromRankedBases` in `cmd/iptv-tunerr/cmd_catalog.go` to reuse the same normalized provider-base join as the rest of the catalog path.
+    - Added focused regression coverage in `internal/indexer/player_api_test.go` and `cmd/iptv-tunerr/cmd_catalog_test.go`.
+  Verification:
+    - `go test ./internal/indexer ./cmd/iptv-tunerr ./internal/emby ./internal/hdhomerun ./internal/tuner -run 'Test(Fetch(VODStreams|Series)NormalizesRelativeArtworkBase|FetchLiveStreamsNormalizesStreamBase|NormalizeAPIBase|StreamURLsFromRankedBases_NormalizesBase|NormalizeCatalogProviderBase|CatalogProviderIdentityKey_NormalizesBase|PrioritizeWinningProvider_NormalizesEquivalentBases|StreamVariantsFromRankedEntries_NormalizesBase|EffectiveXMLTVURL(_TrimsWhitespaceAndTrailingSlash)?|ParseDiscoverReply_(roundTrip|TrimsWhitespaceAndTrailingSlashes)|M3UServe_(urlTvg|NormalizesWhitespaceAndTrailingSlashes|epgPruneUnlinked|epgPruneUnlinked_false|404))'`
+  Notes:
+    - This batch came from the audit list after focused tests exposed that normalization still broke inside lower-level Xtream helper calls, not just at public entrypoints.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/indexer/player_api.go`
+    - `cmd/iptv-tunerr/cmd_catalog.go`
+
+- Date: 2026-03-22
+  Title: Normalize catalog identity and adjacent export/parser bases
+  Summary:
+    - Fixed `cmd/iptv-tunerr/cmd_catalog.go` so ranked stream URL rebuilding and provider identity keying trim whitespace and all trailing slashes, preventing equivalent providers from splitting across winner ordering and lockout tracking.
+    - Fixed `internal/emby/register.go`, `internal/hdhomerun/client.go`, and `internal/tuner/m3u.go` so Emby XMLTV fallback URLs, parsed HDHomeRun discover replies, and live M3U export URLs normalize whitespace-padded or multi-slash bases.
+    - Added focused regression coverage in `cmd/iptv-tunerr/cmd_catalog_test.go`, `internal/emby/register_test.go`, `internal/hdhomerun/client_test.go`, and `internal/tuner/m3u_test.go`.
+  Verification:
+    - `go test ./cmd/iptv-tunerr ./internal/emby ./internal/hdhomerun ./internal/tuner -run 'Test(StreamURLsFromRankedBases_NormalizesBase|NormalizeCatalogProviderBase|CatalogProviderIdentityKey_NormalizesBase|PrioritizeWinningProvider_NormalizesEquivalentBases|StreamVariantsFromRankedEntries_NormalizesBase|EffectiveXMLTVURL(_TrimsWhitespaceAndTrailingSlash)?|ParseDiscoverReply_(roundTrip|TrimsWhitespaceAndTrailingSlashes)|M3UServe_(urlTvg|NormalizesWhitespaceAndTrailingSlashes|epgPruneUnlinked|epgPruneUnlinked_false|404))'`
+  Notes:
+    - This batch came directly out of the broader audit list and closes a mixed cluster of provider identity drift plus adjacent consumer-facing URL rebuilders/parsers.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/cmd_catalog.go`
+    - `internal/emby/register.go`
+    - `internal/hdhomerun/client.go`
+    - `internal/tuner/m3u.go`
+
+- Date: 2026-03-22
+  Title: Normalize config, health, and provider collector base URLs
+  Summary:
+    - Fixed `internal/config/config.go` so `M3UURLsOrBuild` trims whitespace and all trailing slashes before building provider `get.php` URLs.
+    - Fixed `internal/health/health.go` so endpoint health checks normalize the base before probing `/discover.json`, `/lineup.json`, and `/guide.xml`.
+    - Fixed `internal/provider/probe.go` so `RankedEntries` reuses the hardened provider-base normalizer before probing `player_api.php`.
+    - Added focused regression coverage in `internal/config/config_test.go`, `internal/health/health_test.go`, and `internal/provider/probe_test.go`.
+  Verification:
+    - `go test ./internal/config ./internal/health ./internal/provider -run 'Test(M3UURLsOrBuild_(single|multiple|UsesPerProviderCredentials|NormalizesWhitespaceAndTrailingSlashes)|CheckEndpoints_(ok|missing|normalizesWhitespaceAndTrailingSlashes)|RankedEntries_(multipleProvidersRankedBestFirst|NormalizesWhitespaceAndTrailingSlashes|blockCF_separateCreds|allCF_blockReturnsEmpty)|ProbePlayerAPI_TrimsWhitespaceAndTrailingSlash|NormalizeProviderBaseURL)'`
+  Notes:
+    - This closes another collector-layer sibling where already-normalized helpers were still being bypassed by raw base joins.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/config/config.go`
+    - `internal/health/health.go`
+    - `internal/provider/probe.go`
+
+- Date: 2026-03-22
+  Title: Normalize shared guide and lineup helper base URLs
+  Summary:
+    - Fixed `internal/guideinput/guideinput.go` and `internal/tuner/epg_pipeline.go` so provider `xmltv.php` URL builders trim whitespace and all trailing slashes instead of only removing a single slash.
+    - Fixed `internal/probe/probe.go` so the generic HDHomeRun lineup helper normalizes its base before building `/stream?url=` links.
+    - Added focused regression coverage in `internal/guideinput/guideinput_test.go`, `internal/tuner/epg_pipeline_test.go`, and `internal/probe/probe_test.go`.
+  Verification:
+    - `go test ./internal/guideinput ./internal/tuner ./internal/probe -run 'Test(ProviderXMLTVURL(WithSuffix(_NormalizesWhitespaceAndTrailingSlashes)?)?|ProviderXMLTVEPGURL_(suffix|normalizesWhitespaceAndTrailingSlashes)|Lineup_(withBaseURL(_NormalizesWhitespaceAndTrailingSlashes)?|noBaseURL)|LineupHandler|DiscoveryHandler)'`
+  Notes:
+    - This closes helper-level siblings that could still emit malformed guide or lineup URLs even after higher-level callers were normalized.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/guideinput/guideinput.go`
+    - `internal/tuner/epg_pipeline.go`
+    - `internal/probe/probe.go`
+
+- Date: 2026-03-22
+  Title: Normalize CLI probe command base URLs
+  Summary:
+    - Fixed `cmd/iptv-tunerr/cmd_core.go` so `handleProbe` trims whitespace before trimming trailing slashes when collecting provider base URLs from config or `-urls`.
+    - Prevented the CLI probe path from feeding malformed `//get.php` URLs into the Cloudflare-aware prep step while the deeper provider probe helpers were already normalized.
+    - Added focused regression coverage in `cmd/iptv-tunerr/main_test.go` to prove whitespace-padded bases still hit both `player_api.php` and `get.php`.
+  Verification:
+    - `go test ./cmd/iptv-tunerr -run 'TestHandleProbe_(TrimsWhitespaceAndTrailingSlashBaseURL|UsesMultipleCredentialSetsPerHost)|TestNormalizeTopLevelCommand'`
+  Notes:
+    - This was a command-layer sibling of the provider probe normalization work, not a lower-level transport bug.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/cmd_core.go`
+    - `cmd/iptv-tunerr/main_test.go`
+
+- Date: 2026-03-22
+  Title: Normalize tuner-side Xtream export base URLs
+  Summary:
+    - Centralized Xtream base URL normalization in `internal/tuner/server_xtream.go` so whitespace and trailing slashes no longer leak into `get.php`/`xmltv.php` output or live/movie/series direct-source URLs.
+    - Updated Xtream M3U, live direct source, movie streams, and series episode exports to reuse the normalized base helper instead of hand-rolling from raw `Server.BaseURL`.
+    - Added focused regression coverage in `internal/tuner/server_test.go` for guide, live, movie, and series URLs built from a whitespace-padded base.
+  Verification:
+    - `go test ./internal/tuner -run 'TestServer_XtreamExports_(M3UAndXMLTV|NormalizeBaseURLWhitespace)|TestServer_XtreamMovieAndSeriesProxy'`
+  Notes:
+    - This closes another sibling Xtream publishing surface after the wider provider/runtime normalization sweep.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server_xtream.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-22
+  Title: Normalize get.php catalog fallback base URLs
+  Summary:
+    - Fixed `cmd/iptv-tunerr/cmd_catalog.go` so the `get.php` catalog fallback trims whitespace as well as trailing slashes before building the fallback M3U URL.
+    - Prevented malformed `get.php` fallback URLs when provider base values carry surrounding whitespace.
+    - Added focused regression coverage in `cmd/iptv-tunerr/cmd_runtime_test.go`.
+  Verification:
+    - `go test ./cmd/iptv-tunerr -run 'Test(RuntimeHealthCheckURL_(PrefersWinningProviderCredentials|FallsBackToRunProviderBaseWhenAPIBaseEmpty|TrimsWhitespaceAndTrailingSlash)|CatalogFromGetPHP_TrimsWhitespaceAndTrailingSlash|ApplyRegistrationRecipe_HealthyFiltersWeakChannels|ApplyRegistrationRecipe_ResilientSortsBackupFirst|ApplyRegistrationRecipe_AppliesDNAPolicy|ApplyRegistrationRecipe_SportsNowUsesIntentRecipe|GuideURLForBaseTrimsTrailingSlash|StreamURLForBaseTrimsTrailingSlash)'`
+  Notes:
+    - This was the `get.php` sibling of the earlier runtime/provider/player_api base normalization fixes.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/cmd_catalog.go`
+    - `cmd/iptv-tunerr/cmd_runtime_test.go`
+
+- Date: 2026-03-22
+  Title: Normalize provider probe base URLs
+  Summary:
+    - Fixed `internal/provider/probe.go` to normalize provider bases before building alternate `get.php` probes, POST probes, and `player_api.php` probes.
+    - Prevented malformed upstream probe URLs when provider base values carry whitespace or trailing slashes.
+    - Added focused regression coverage in `internal/provider/probe_test.go`.
+  Verification:
+    - `go test ./internal/provider ./internal/indexer ./cmd/iptv-tunerr -run 'Test(ProbePlayerAPI_(ok|serverInfoOnly|cloudflareServer200JSONStillOK|forbiddenThenAcceptedWithFallbackUA|badStatus|forbiddenClassifiedAsAccessDenied|TrimsWhitespaceAndTrailingSlash)|NormalizeProviderBaseURL|RuntimeHealthCheckURL_(PrefersWinningProviderCredentials|FallsBackToRunProviderBaseWhenAPIBaseEmpty|TrimsWhitespaceAndTrailingSlash)|NormalizeAPIBase|FetchLiveStreamsNormalizesStreamBase)'`
+  Notes:
+    - This was the provider-probe sibling of the earlier indexer/runtime `player_api` normalization fix.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/provider/probe.go`
+    - `internal/provider/probe_test.go`
+
+- Date: 2026-03-22
+  Title: Normalize Xtream player_api and live stream base URLs
+  Summary:
+    - Fixed `cmd/iptv-tunerr/cmd_runtime.go` so runtime health-check URLs trim whitespace and trailing slashes from provider/API bases before appending `player_api.php`.
+    - Fixed `internal/indexer/player_api.go` so player_api requests and generated `/live/...` stream URLs normalize their API and stream bases consistently.
+    - Added focused regression coverage in `cmd/iptv-tunerr/cmd_runtime_test.go` and `internal/indexer/player_api_test.go`.
+  Verification:
+    - `go test ./internal/indexer ./cmd/iptv-tunerr -run 'Test(RuntimeHealthCheckURL_(PrefersWinningProviderCredentials|FallsBackToRunProviderBaseWhenAPIBaseEmpty|TrimsWhitespaceAndTrailingSlash)|ParseSeriesEpisodesSupportsSeasonKeyedArrays|ParseSeriesEpisodesSupportsFlatArray|IsPlayerAPIErrorStatus|NormalizeAPIBase|FetchLiveStreamsNormalizesStreamBase)'`
+  Notes:
+    - This was the upstream-provider sibling of the earlier trailing-slash fixes on local discovery, registration, and export surfaces.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/indexer/player_api.go`
+    - `internal/indexer/player_api_test.go`
+    - `cmd/iptv-tunerr/cmd_runtime.go`
+    - `cmd/iptv-tunerr/cmd_runtime_test.go`
+
+- Date: 2026-03-22
+  Title: Normalize Plex runtime-registration stream URLs
+  Summary:
+    - Fixed `cmd/iptv-tunerr/cmd_runtime_register.go` so lineup rows sent to Plex derive stream URLs from a trimmed helper instead of raw `baseURL + "/stream/" + channelID` concatenation.
+    - Prevented malformed `//stream/...` URLs from being pushed into Plex when the configured tuner base ends with `/`.
+    - Added focused regression coverage in `cmd/iptv-tunerr/cmd_runtime_register_test.go`.
+  Verification:
+    - `go test ./cmd/iptv-tunerr -run 'Test(ApplyRegistrationRecipe_HealthyFiltersWeakChannels|ApplyRegistrationRecipe_ResilientSortsBackupFirst|ApplyRegistrationRecipe_AppliesDNAPolicy|ApplyRegistrationRecipe_SportsNowUsesIntentRecipe|GuideURLForBaseTrimsTrailingSlash|StreamURLForBaseTrimsTrailingSlash)'`
+  Notes:
+    - This was the stream-URL sibling of the earlier guide-URL normalization work in the same runtime registration path.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/cmd_runtime_register.go`
+    - `cmd/iptv-tunerr/cmd_runtime_register_test.go`
+
+- Date: 2026-03-22
+  Title: Normalize Emby/Jellyfin server host URL joins
+  Summary:
+    - Fixed registration and library helpers under `internal/emby` to join API paths against a trimmed host instead of raw `cfg.Host + "/..."` concatenation.
+    - Prevented malformed `//LiveTv/...` and `//Library/...` requests when the configured media-server host ends with `/`.
+    - Added focused regression coverage in `internal/emby/register_test.go` and `internal/emby/library_test.go`.
+  Verification:
+    - `go test ./internal/emby -run 'Test(EffectiveXMLTVURL|RegisterTunerHost_success|RegisterTunerHost_trimsTrailingSlashHost|RegisterTunerHost_serverError|RegisterListingProvider_success|DeleteTunerHost_tolerates404|DeleteTunerHost_emptyID|EnsureLibraryReusesExisting|EnsureLibraryCreatesMissing|CreateLibraryJellyfinUsesQueryParams|EnsureLibraryFallsBackToLegacyVirtualFoldersList|RefreshLibraryScan|ListLibraries_trimsTrailingSlashHost)'`
+  Notes:
+    - This was the media-server-host sibling of the earlier guide/base URL normalization fixes.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/emby/register.go`
+    - `internal/emby/library.go`
+    - `internal/emby/register_test.go`
+    - `internal/emby/library_test.go`
+
+- Date: 2026-03-22
+  Title: Normalize base and lineup URLs across HDHomeRun discovery producers
+  Summary:
+    - Fixed the standalone HDHomeRun simulator, the simulated control server `discover.json`, and the main tuner HDHR discovery surface to normalize `BaseURL` and derive `LineupURL` from the shared helper instead of raw concatenation.
+    - Fixed the main tuner `lineup.json` surface to normalize its base before building `/stream/...` URLs.
+    - Prevented discovery payloads and lineup entries from advertising malformed `//lineup.json` and `//stream/...` URLs when configured bases end with `/`.
+    - Added focused regression coverage in `internal/hdhomerun/discover_test.go`, `internal/hdhomerun/control_test.go`, and `internal/tuner/hdhr_test.go`.
+  Verification:
+    - `go test ./internal/hdhomerun ./internal/tuner -run 'Test(CreateDefaultDevice(DefaultFriendlyName|PrefersHDHRFriendlyNameEnv|NormalizesLineupURL)|ControlServer_(getDiscoverJSONEscapesFriendlyName|getDiscoverJSONNormalizesLineupURL|httpResponseForPath|httpResponseForRequestMethodHandling|handleConnectionBinaryRequestUsesSniffedHeader|handleConnectionRecognizesPutAsHTTP)|HDHR_(discover|discover_defaults|discover_normalizesLineupURL|lineup|lineup_status|lineup_status_scan_possible_false|lineup_explicit_channel_id|lineup_multiple_channels|lineup_empty|not_found)|Server_deviceXML(DefaultFriendlyName|UsesEnvFallbacks|EscapesConfiguredIdentity)? )'`
+  Notes:
+    - This was the producer-side sibling of the earlier lineup client fallback/shape hardening.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/hdhomerun/discover.go`
+    - `internal/hdhomerun/control.go`
+    - `internal/tuner/hdhr.go`
+
+- Date: 2026-03-22
+  Title: Normalize Plex core guide URLs
+  Summary:
+    - Fixed `internal/plex/dvr.go` to derive guide URLs from a trimmed helper instead of raw `BaseURL + "/guide.xml"` concatenation in both DVR API registration and DB registration.
+    - Prevented Plex registrations from persisting malformed `//guide.xml` XMLTV references when the configured base ends with `/`.
+    - Added focused regression coverage in `internal/plex/dvr_test.go`.
+  Verification:
+    - `go test ./internal/plex -run 'Test(RegisterTuner_noDB|RegisterTuner_withDB|RegisterTuner_withTrailingSlashBaseURL)'`
+  Notes:
+    - This was the package-level sibling of the command-layer runtime registration normalization fix.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/plex/dvr.go`
+    - `internal/plex/dvr_test.go`
+
+- Date: 2026-03-22
+  Title: Normalize Plex runtime-registration guide URLs
+  Summary:
+    - Fixed `cmd/iptv-tunerr/cmd_runtime_register.go` to derive guide URLs from a trimmed helper instead of raw `baseURL + "/guide.xml"` concatenation.
+    - Prevented the Plex setup banner and DVR watchdog from emitting malformed `//guide.xml` URLs when the configured base ends with `/`.
+    - Added focused regression coverage in `cmd/iptv-tunerr/cmd_runtime_register_test.go`.
+  Verification:
+    - `go test ./cmd/iptv-tunerr -run 'Test(ApplyRegistrationRecipe_HealthyFiltersWeakChannels|ApplyRegistrationRecipe_ResilientSortsBackupFirst|ApplyRegistrationRecipe_AppliesDNAPolicy|ApplyRegistrationRecipe_SportsNowUsesIntentRecipe|GuideURLForBaseTrimsTrailingSlash)'`
+  Notes:
+    - This was the Plex-side sibling of the Emby/Jellyfin guide-URL normalization fix.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/cmd_runtime_register.go`
+    - `cmd/iptv-tunerr/cmd_runtime_register_test.go`
+
+- Date: 2026-03-22
+  Title: Normalize Emby/Jellyfin guide URL fallback
+  Summary:
+    - Fixed `internal/emby.Config.effectiveXMLTVURL()` to trim trailing slashes from `TunerURL` before appending `/guide.xml`.
+    - Prevented registration payloads from emitting malformed `//guide.xml` listing-provider URLs when the configured tuner base already ends with `/`.
+    - Added focused regression coverage in `internal/emby/register_test.go`.
+  Verification:
+    - `go test ./internal/emby -run 'Test(EffectiveXMLTVURL|AuthHeader|RegisterTunerHost_success|RegisterTunerHost_serverError|RegisterListingProvider_success|DeleteTunerHost_tolerates404|DeleteTunerHost_emptyID|GetChannelCount_success|GetChannelCount_serverDown|Trunc|FullRegister_roundtrip)'`
+  Notes:
+    - This was found while widening the shim/client audit beyond HDHomeRun-specific surfaces.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/emby/register.go`
+    - `internal/emby/register_test.go`
+
+- Date: 2026-03-22
+  Title: Align Plex lineup harvest with hardened HDHomeRun lineup decoding
+  Summary:
+    - Fixed `internal/plexharvest.fetchLineup` to stop decoding `/lineup.json` as a raw array and instead reuse the shared HDHomeRun client helper that accepts both array-shaped and object-shaped lineup payloads.
+    - Preserved Plex harvest reporting by mapping the shared lineup document back into `HarvestedChannel` rows after decode.
+    - Added focused regression coverage in `internal/plexharvest/plexharvest_test.go`.
+  Verification:
+    - `go test ./internal/plexharvest ./internal/hdhomerun -run 'Test(FetchLineupAcceptsObjectShapedPayload|ExpandTargets_templateAndFriendlyNames|BuildSummary_groupsSuccessfulLineups|Probe_pollsAndCapturesLineupTitle|Probe_recordsErrorsPerTarget|SaveLoadReportFile_roundTrip|ParseDiscoverReply_roundTrip|LineupDocUnmarshalJSONArray|FetchLineupJSONAcceptsJSONArray|FetchDiscoverJSONFallsBackToRequestedBaseURL)'`
+  Notes:
+    - This was the next sibling consumer drift after hardening the shared HDHomeRun client layer.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/plexharvest/plexharvest.go`
+    - `internal/plexharvest/plexharvest_test.go`
+
+- Date: 2026-03-22
+  Title: Harden HDHomeRun HTTP client fallbacks and lineup decoding
+  Summary:
+    - Fixed `internal/hdhomerun.FetchLineupJSON` to accept both top-level lineup arrays and object-shaped payloads with a `Channels` field.
+    - Fixed `internal/hdhomerun.FetchDiscoverJSON` to fall back to the requested base URL and derived `/lineup.json` URL when devices omit `BaseURL` or `LineupURL` from `discover.json`.
+    - Restored compatibility between the HDHomeRun client/import code and both real HDHomeRun-style payloads and the now-corrected local simulator surface.
+    - Added focused regression coverage in `internal/hdhomerun/client_test.go`.
+  Verification:
+    - `go test ./internal/hdhomerun -run 'Test(ParseDiscoverReply_roundTrip|ParseDiscoverReply_wrongType|ParseExtraDiscoverAddrs_env|ParseLiteralUDPAddr_ipv6Zone|ParseLiteralUDPAddr_bracketIPv6|LineupDocUnmarshalJSONArray|FetchLineupJSONAcceptsJSONArray|FetchDiscoverJSONFallsBackToRequestedBaseURL|ControlServer_(getDiscoverJSONEscapesFriendlyName|httpResponseForPath|httpResponseForRequestMethodHandling|handleConnectionBinaryRequestUsesSniffedHeader|handleConnectionRecognizesPutAsHTTP)|CreateDefaultDevice(DefaultFriendlyName|PrefersHDHRFriendlyNameEnv)|NewGetReqIncludesPropertyName)'`
+  Notes:
+    - This came directly from widening the HDHomeRun audit from simulator protocol fixes into the sibling client/import layer.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/hdhomerun/client.go`
+    - `internal/hdhomerun/client_test.go`
+
+- Date: 2026-03-22
+  Title: Fix HDHomeRun simulator control-plane packet parsing and method sniffing
+  Summary:
+    - Fixed the simulated HDHomeRun TCP control server so binary control packets no longer lose their first 4 header bytes after HTTP sniffing.
+    - Fixed `NewGetReq` serialization to include the requested property name, and trimmed decoded GET/SET TLV strings so control-property dispatch no longer misses handlers because of trailing NUL bytes.
+    - Broadened the HTTP socket sniffer beyond `GET`/`POST`/`HEAD`, so unsupported verbs like `PUT` now reach the existing `405 Method Not Allowed` path instead of being misclassified as binary traffic.
+    - Added focused regression coverage in `internal/hdhomerun/control_test.go`.
+  Verification:
+    - `go test ./internal/hdhomerun -run 'Test(ControlServer_(getDiscoverJSONEscapesFriendlyName|httpResponseForPath|httpResponseForRequestMethodHandling|handleConnectionBinaryRequestUsesSniffedHeader|handleConnectionRecognizesPutAsHTTP)|CreateDefaultDevice(DefaultFriendlyName|PrefersHDHRFriendlyNameEnv)|NewGetReqIncludesPropertyName)'`
+  Notes:
+    - This came from widening the HDHomeRun audit from discovery/status HTTP surfaces into the sibling TCP control protocol.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/hdhomerun/control.go`
+    - `internal/hdhomerun/packet.go`
+    - `internal/hdhomerun/control_test.go`
+
+- Date: 2026-03-22
+  Title: Lock down programming and virtual-channel read surfaces
+  Summary:
+    - Gated additional programming GET endpoints behind the existing operator UI policy: categories, browse, channel detail, channels, order, backups, and preview.
+    - Gated additional virtual-channel GET endpoints behind the same policy: preview, schedule, and channel detail.
+    - Updated and expanded `internal/tuner/server_test.go` so the localhost/operator contract is explicit and the audit fails closed if those reads become remotely accessible again.
+  Verification:
+    - `go test -count=1 ./internal/tuner`
+    - `go test -race -count=1 ./internal/tuner`
+    - `./scripts/verify`
+  Notes:
+    - This was the same read/write policy drift pattern that had already shown up on entitlements, rulesets, and recorder/debug surfaces; the programming and virtual-channel lanes still had several read-only leaks left.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-22
+  Title: Lock down operator-only report surfaces that leaked raw upstream and state paths
+  Summary:
+    - Gated `/autopilot/report.json` because it exposed the Autopilot state-file and host-policy-file paths.
+    - Gated `/plex/ghost-report.json` because it exposed PMS session/player metadata and recovery guidance.
+    - Gated `/channels/report.json` and `/channels/leaderboard.json` because their `ChannelHealth` rows included `primary_stream_url`, which can reveal raw upstream provider URLs or tokens.
+    - Added regression coverage for the new operator-only contract in `internal/tuner/server_test.go` and `internal/tuner/ghost_hunter_test.go`.
+  Verification:
+    - `go test -count=1 ./internal/tuner ./internal/webui`
+    - `go test -race -count=1 ./internal/tuner`
+    - `./scripts/verify`
+  Notes:
+    - This was the same underlying leak class as the earlier debug/programming fixes, but on “reporting” endpoints rather than config-edit endpoints.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+    - `internal/tuner/ghost_hunter_test.go`
+
+- Date: 2026-03-22
+  Title: Lock down operator config reads and fix programming preview stale-file drift
+  Summary:
+    - Fixed `/entitlements.json` so read access is operator-only; it previously exposed the full Xtream entitlements ruleset, including downstream usernames/passwords and the configured users-file path, to any remote caller.
+    - Extended the same operator-only read gate to the direct ruleset endpoints for programming recipes, virtual-channel rules, and recording rules, which had protected writes but still leaked config state and local file paths on GET.
+    - Fixed `/programming/preview.json` so lineup/count/bucket data are recomputed from the just-reloaded recipe file instead of the stale in-memory curated lineup after out-of-band recipe edits.
+    - Preserved the preview endpoint's intended split contract by continuing to build backup-group analysis from the uncollapsed preview view even when the visible lineup/count follows the fully applied recipe.
+  Verification:
+    - `go test -count=1 ./internal/tuner`
+    - `./scripts/verify`
+  Notes:
+    - The preview regression surfaced only after the stale-file fix because binary smoke relies on the endpoint continuing to show collapsed lineup counts while backup-group analysis stays uncollapsed.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-22
+  Title: Fix debug bundle leaks, provider XMLTV suffix drift, supervisor env quoting, and HTTP pool init-order
+  Summary:
+    - Fixed `debug-bundle` env redaction so numbered secrets like `IPTV_TUNERR_PROVIDER_PASS_2` / `_USER_3` are actually redacted, and added regression coverage proving numbered credentials no longer leak into `env.json`.
+    - Fixed `debug-bundle` live fetches to use a timeout-capped shared HTTP client instead of bare `http.Get`, preventing the command from hanging indefinitely when the local tuner is stalled or unreachable.
+    - Fixed guide-input/provider-EPG URL synthesis to carry `IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX` consistently, so allowlisting, EPG repair, and guide-health match the actual provider `xmltv.php` fetch URL instead of self-blocking suffixed feeds.
+    - Fixed supervisor `envFiles` parsing to unquote shell-style values, keeping it aligned with the top-level `.env` loader for Bao/Vault-style `export KEY="value"` files.
+    - Fixed `internal/httpclient` shared-client initialization to read HTTP pool env knobs lazily at first use rather than during package init, so `.env`-loaded `IPTV_TUNERR_HTTP_MAX_IDLE_CONNS*` settings now actually take effect.
+  Verification:
+    - `go test ./internal/httpclient ./internal/supervisor ./internal/guideinput ./cmd/iptv-tunerr`
+    - `go test -race -count=1 ./...`
+    - `./scripts/verify`
+  Notes:
+    - This batch was a pure audit/fix pass; no runtime behavior changed outside the affected debug/config paths.
+    - The existing live conclusion still holds: `player_api` is healthy on the current providers while `get.php` remains upstream-blocked from this machine.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/cmd_debug_bundle.go`
+    - `internal/guideinput/guideinput.go`
+    - `internal/supervisor/supervisor.go`
+    - `internal/httpclient/httpclient.go`
+
+- Date: 2026-03-22
   Title: Fix winning-provider stream ordering and runtime health-check credentials
   Summary:
     - Fixed `fetchCatalog` so when a later ranked provider wins `player_api` indexing, that winning provider stays first in `StreamURL` / `StreamURLs` instead of reintroducing an earlier failed provider as the primary playback target.
@@ -4675,6 +6078,44 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
   Links:
     - `README.md`
 - Date: 2026-03-22
+  Title: Fix runtime provider-context drift after scheduled refresh
+  Summary:
+    - Fixed `run` scheduled refresh so a newly winning provider/account now updates the live server’s provider context instead of leaving `Gateway` and `XMLTV` on stale credentials/base from startup.
+    - Added synchronized provider-credential access for `Gateway`, synchronized provider identity access for `XMLTV`, and a `Server.UpdateProviderContext` path used during runtime refresh.
+    - Fixed `/debug/runtime.json` to clone the stored runtime snapshot before enriching/serializing it, so requests no longer mutate shared snapshot maps in place.
+    - Added tuner regressions proving runtime snapshot serving is non-mutating and provider-context updates propagate into runtime children.
+  Verification:
+    - `go test -count=1 ./internal/tuner ./cmd/iptv-tunerr`
+    - `go test -race -count=1 ./internal/tuner ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - This came from the broader post-provider audit, not a user-visible feature request.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/cmd_runtime.go`
+    - `internal/tuner/server.go`
+    - `internal/tuner/gateway_upstream.go`
+    - `internal/tuner/xmltv.go`
+    - `internal/tuner/server_test.go`
+- Date: 2026-03-22
+  Title: Audit fix for unstable provider tests and duplicate-base probe credentials
+  Summary:
+    - Fixed an unstable `cmd/iptv-tunerr` regression test that could crash with `fatal error: concurrent map writes` because the test server updated shared hit counters without synchronization while `fetchCatalog` exercised concurrent provider requests.
+    - Fixed `handleProbe` so duplicate provider base URLs no longer overwrite each other via `map[base]entry`; probe now preserves each configured credential set independently, which restores correct probing/ranking for same-host multi-account configs.
+    - Added regression coverage proving `probe` uses both credential sets when two providers share one base URL.
+  Verification:
+    - `go test -count=1 ./cmd/iptv-tunerr`
+    - `go test -race -count=1 ./cmd/iptv-tunerr ./internal/provider ./internal/indexer ./internal/tuner`
+    - `./scripts/verify`
+  Notes:
+    - This came from a repo-wide audit pass, not a provider feature request.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/cmd_core.go`
+    - `cmd/iptv-tunerr/main_test.go`
+- Date: 2026-03-22
   Title: Fix Docker workflow toolchain drift after Go 1.25 bump
   Summary:
     - Fixed the Docker workflow failure caused by `Dockerfile` still using `golang:1.24-alpine` after `go.mod` moved to `go 1.25.0`.
@@ -4689,6 +6130,80 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
   Links:
     - `Dockerfile`
     - `k8s/vod-webdav-client-macair-job.yaml`
+- Date: 2026-03-22
+  Title: Fix HDHomeRun simulator HTTP status and lineup payload shape
+  Summary:
+    - Fixed the simulated HDHomeRun TCP control server so `/lineup.json` returns a lineup array and `/lineup_status.json` returns lineup-status metadata instead of both endpoints sharing the same status-shaped payload.
+    - Fixed unknown HTTP paths on that surface to return `HTTP/1.1 404 Not Found` instead of a `200 OK` status with a `"404 Not Found"` body.
+    - Added focused regression coverage in `internal/hdhomerun/control_test.go`.
+  Verification:
+    - `go test ./internal/hdhomerun -run 'Test(ControlServer_(getDiscoverJSONEscapesFriendlyName|httpResponseForPath)|CreateDefaultDevice(DefaultFriendlyName|PrefersHDHRFriendlyNameEnv)|ParseDiscoverReply_roundTrip)'`
+  Notes:
+    - This came from the same ongoing audit of discovery/status siblings, but it is a real protocol-behavior fix rather than a pure serialization cleanup.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/hdhomerun/control.go`
+    - `internal/hdhomerun/control_test.go`
+- Date: 2026-03-22
+  Title: Align standalone HDHomeRun default identity
+  Summary:
+    - Fixed `internal/hdhomerun.CreateDefaultDevice` to default its friendly name to `IPTV Tunerr` instead of `IptvTunerr-HDHR`, bringing the standalone HDHomeRun simulator back in line with the tuner-side discovery surfaces.
+    - Added focused regression coverage proving the default and HDHR-specific env precedence in `internal/hdhomerun/discover_test.go`.
+  Verification:
+    - `go test ./internal/hdhomerun -run 'Test(CreateDefaultDevice(DefaultFriendlyName|PrefersHDHRFriendlyNameEnv)|ControlServer_getDiscoverJSONEscapesFriendlyName|ParseDiscoverReply_roundTrip)'`
+  Notes:
+    - This was another cross-surface identity-drift fix from the ongoing discovery/status audit.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/hdhomerun/discover.go`
+    - `internal/hdhomerun/discover_test.go`
+- Date: 2026-03-22
+  Title: Harden HDHomeRun discovery serialization
+  Summary:
+    - Fixed the simulated HDHomeRun control server to build `discover.json` with `json.Marshal` instead of `fmt.Sprintf`, so configured friendly names with quotes/backslashes no longer generate invalid JSON.
+    - Added focused regression coverage in `internal/hdhomerun/control_test.go`.
+  Verification:
+    - `go test ./internal/hdhomerun -run 'Test(ControlServer_getDiscoverJSONEscapesFriendlyName|ParseDiscoverReply_roundTrip|FetchDiscoverJSON)'`
+  Notes:
+    - This was found while continuing the cross-surface discovery identity/serialization audit after the `/device.xml` fixes.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/hdhomerun/control.go`
+    - `internal/hdhomerun/control_test.go`
+- Date: 2026-03-22
+  Title: Align device.xml identity with discover.json
+  Summary:
+    - Fixed `/device.xml` to honor the configured friendly name and the same env fallback chain as `/discover.json` instead of always advertising `IPTV Tunerr`.
+    - Fixed `/device.xml` to honor `IPTV_TUNERR_DEVICE_ID` / `HOSTNAME` fallbacks so its `UDN` stays aligned with the discovery JSON document.
+    - Fixed both the main tuner `/device.xml` handler and the generic `internal/probe` discovery helper to XML-escape friendly names and device IDs so special characters no longer generate invalid XML.
+    - Added focused regression coverage in `internal/tuner/ssdp_test.go` and `internal/probe/probe_test.go`.
+  Verification:
+    - `go test ./internal/tuner ./internal/probe -run 'Test(Server_deviceXML(DefaultFriendlyName|UsesEnvFallbacks|EscapesConfiguredIdentity)?|SSDP_searchResponse|JoinDeviceXMLURL|DiscoveryHandler(EscapesXML)?)'`
+  Notes:
+    - This came from the same broader bug-hunt pass looking for cross-surface identity drift and silent wrong behavior.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/ssdp_test.go`
+- Date: 2026-03-22
+  Title: Harden guide diagnostics when XMLTV is unavailable
+  Summary:
+    - Fixed `/guide/health.json`, `/guide/doctor.json`, and `/guide/aliases.json` to return `503` instead of dereferencing a nil `s.xmltv`.
+    - Added `TestServer_guideDiagnosticsRequireXMLTV` so the whole guide-diagnostics family stays covered together.
+  Verification:
+    - `go test ./internal/tuner -run 'TestServer_(guideDiagnosticsRequireXMLTV|epgStoreReport_incrementalFlags|runtimeSnapshot)'`
+    - `./scripts/verify`
+  Notes:
+    - This was found during the broader repo-wide bug hunt on public guide/debug surfaces.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/guide_health.go`
+    - `internal/tuner/server_test.go`
 - Date: 2026-03-22
   Title: Move the public-feed sample URL out of README/reference literals
   Summary:
@@ -4727,3 +6242,48 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - `internal/tuner/server.go`
     - `internal/programming/programming.go`
     - `scripts/ci-smoke.sh`
+- Date: 2026-03-22
+  Title: Add Plex Live TV reverse-engineering capture, device audit, and DVR cutover tooling
+  Summary:
+    - Added PMS/plex.tv reverse-engineering commands for DB snapshots, API replay, PMS log mining, per-device reachability auditing, and a real-client browse capture harness.
+    - Confirmed from live PMS logs that the current smart-TV `Unavailable` state is caused by dead injected HDHR device URIs, not just Plex Home gating: PMS cannot refresh many `http://plextuner-*.plex.svc:5004` devices and marks them dead.
+    - Added `plex-dvr-cutover`, which reads the existing TSV cutover-map shape and dry-runs or applies unsupported PMS-side DVR/device deletion plus re-registration against new URIs.
+    - Dry-run validation matched 21 current registered devices/DVRs from a generated cutover TSV, proving the command can target the existing injected fleet without manual SQLite editing.
+  Verification:
+    - `go test ./internal/plex ./cmd/iptv-tunerr`
+    - `go run ./cmd/iptv-tunerr plex-device-audit -plex-url http://127.0.0.1:32400 -token <owner-token>`
+    - `go run ./cmd/iptv-tunerr plex-dvr-cutover -plex-url http://127.0.0.1:32400 -token <owner-token> -map /tmp/iptvtunerr-cutover-dryrun.tsv`
+  Notes:
+    - Candidate `.plex.home` replacement hostnames in this environment still return `404` on `/discover.json`, so the new cutover command is ready but should not be applied until a reachable HDHR surface exists.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/cmd_plex_ops.go`
+    - `internal/plex/inspect.go`
+    - `internal/plex/cutover.go`
+    - `internal/plex/logs.go`
+    - `scripts/plex-client-browse-capture.sh`
+    - `docs/how-to/reverse-engineer-plex-livetv-access.md`
+- Date: 2026-03-22
+  Title: Stand up a host-local Plex tuner target and harden channel activation against malformed Plex mappings
+  Summary:
+    - Brought up a self-consistent local `iptv-tunerr run` target on `http://127.0.0.1:5005` using the repo catalog and provider credentials, so PMS can reach a real HDHR surface from the host without relying on broken `.plex.svc` DNS.
+    - Used `plex-dvr-cutover` to replace the main broken DVR/device with a new local DVR (`723`) and device (`722`) pointing at `http://127.0.0.1:5005`.
+    - Found that Plex's `GET /livetv/epg/channelmap` can emit malformed rows with missing `channelKey`/`lineupIdentifier`, which was causing activation to fail with duplicate-mapping errors; fixed `GetChannelMap` to drop incomplete rows and added a regression test.
+    - After the fix, Plex successfully activated 475 channels on the new local DVR.
+    - Manual tune replay now reaches Plex's rolling-subscription scheduler when a real `X-Plex-Session-Identifier` is supplied, but still fails before any `/stream/...` request with `The device does not tune the required channel`, so the remaining issue is deeper than URI reachability.
+  Verification:
+    - `go test ./internal/plex ./cmd/iptv-tunerr`
+    - `curl http://127.0.0.1:5005/discover.json`
+    - `curl http://127.0.0.1:5005/lineup.json`
+    - `go run ./cmd/iptv-tunerr plex-dvr-cutover -plex-url http://127.0.0.1:32400 -token <owner-token> -map /tmp/iptvtunerr-hdhrlocal-cutover.tsv -reload-guide -activate -do`
+  Notes:
+    - PMS tune replay requires `X-Plex-Session-Identifier`; without it, Plex returns `400` before scheduling.
+    - With the session id supplied, PMS logs show `Grabber: Operation ... completed with status error (The device does not tune the required channel)` and never requests `/stream/...` from Tunerr.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/plex/dvr.go`
+    - `internal/plex/dvr_test.go`
+    - `internal/plex/cutover.go`
+    - `cmd/iptv-tunerr/cmd_plex_ops.go`

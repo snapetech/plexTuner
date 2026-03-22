@@ -47,6 +47,23 @@ func TestHDHR_discover(t *testing.T) {
 	}
 }
 
+func TestHDHR_readOnlyEndpointsRequireGetOrHead(t *testing.T) {
+	h := &HDHR{}
+	for _, path := range []string{"/discover.json", "/lineup_status.json", "/lineup.json"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, path, nil)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+			if w.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("code=%d", w.Code)
+			}
+			if got := w.Header().Get("Allow"); got != "GET, HEAD" {
+				t.Fatalf("allow=%q", got)
+			}
+		})
+	}
+}
+
 func TestHDHR_lineup(t *testing.T) {
 	h := &HDHR{
 		BaseURL: "http://test:5004",
@@ -148,6 +165,48 @@ func TestHDHR_discover_defaults(t *testing.T) {
 	}
 	if out["Manufacturer"] != nil || out["ModelNumber"] != nil || out["DeviceAuth"] != nil {
 		t.Errorf("expected generic discover without HDHR metadata envs, got: %v", out)
+	}
+}
+
+func TestHDHR_discover_normalizesLineupURL(t *testing.T) {
+	h := &HDHR{BaseURL: "http://test:5004/"}
+	req := httptest.NewRequest(http.MethodGet, "/discover.json", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code: %d", w.Code)
+	}
+	var out map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if out["BaseURL"] != "http://test:5004" {
+		t.Fatalf("base url=%v", out["BaseURL"])
+	}
+	if out["LineupURL"] != "http://test:5004/lineup.json" {
+		t.Fatalf("lineup url=%v", out["LineupURL"])
+	}
+}
+
+func TestHDHR_lineup_normalizesBaseURL(t *testing.T) {
+	h := &HDHR{
+		BaseURL: "http://test:5004/",
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "1", GuideName: "One", StreamURL: "http://up/1"},
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/lineup.json", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code: %d", w.Code)
+	}
+	var out []map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if out[0]["URL"] != "http://test:5004/stream/0" {
+		t.Fatalf("stream url=%q", out[0]["URL"])
 	}
 }
 
