@@ -23,6 +23,41 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: Expand Xtream output with short EPG actions
+  Summary:
+    - Extended the downstream Xtream `player_api.php` surface so it now answers `get_short_epg` and `get_simple_data_table` in addition to the existing live/VOD/series actions.
+    - Backed those compact EPG responses with Tunerr's existing guide and virtual-channel schedule pipeline, so both real live channels and virtual channels can return now/next style listings without a separate guide export path.
+    - Added focused Xtream regressions covering both a real live channel and a virtual channel short-EPG response.
+  Verification:
+    - `go test ./internal/tuner -run 'TestServer_Xtream(PlayerAPI_LiveCategories|PlayerAPI_VODAndSeries|PlayerAPI_ShortEPG|LiveProxy|LiveProxy_VirtualChannel|MovieAndSeriesProxy|XtreamEntitlementsLimitOutput)$' -count=1`
+    - `./scripts/verify`
+  Notes:
+    - This is another `PAR-004` expansion inside the broader parity pass, not the end of downstream output work.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server_xtream.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-21
+  Title: Add Xtream M3U and XMLTV export parity
+  Summary:
+    - Added downstream `get.php` and `xmltv.php` handlers so the same entitled Xtream live lineup can now be exported as user-scoped M3U and XMLTV, not only through `player_api.php` actions and `/live/...` proxies.
+    - Backed `xmltv.php` with Tunerr's existing guide and virtual-channel schedule pipeline, so real live channels and virtual channels share one scoped export path.
+    - Extended binary smoke and focused Xtream tests to cover the new export surfaces plus entitlement filtering.
+  Verification:
+    - `go test ./internal/tuner -run 'TestServer_Xtream(PlayerAPI_LiveCategories|PlayerAPI_VODAndSeries|PlayerAPI_ShortEPG|Exports_M3UAndXMLTV|LiveProxy|LiveProxy_VirtualChannel|MovieAndSeriesProxy|XtreamEntitlementsLimitOutput)$' -count=1`
+    - `bash ./scripts/ci-smoke.sh`
+    - `./scripts/verify`
+  Notes:
+    - This keeps `PAR-004` moving toward a real publishing surface instead of a narrow action proxy.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server_xtream.go`
+    - `scripts/ci-smoke.sh`
+
+- Date: 2026-03-21
   Title: Add batch Programming browse with cached next-hour EPG summaries
   Summary:
     - Added `/programming/browse.json`, which returns one category’s channel rows with derived feed descriptors, recipe inclusion flags, exact-backup counts, cached guide-health status, and next-hour programme titles/counts in one request.

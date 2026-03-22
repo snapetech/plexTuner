@@ -1,13 +1,17 @@
 package tuner
 
 import (
+	"bytes"
 	"encoding/json"
+	"encoding/xml"
 	"io"
 	"net/http"
+	"net/url"
 	pathpkg "path"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
 	"github.com/snapetech/iptvtunerr/internal/entitlements"
@@ -64,6 +68,20 @@ type xtEpisode struct {
 	Season       int    `json:"season,omitempty"`
 }
 
+type xtreamShortEPGListing struct {
+	ID             string `json:"id"`
+	Title          string `json:"title"`
+	Description    string `json:"description,omitempty"`
+	Start          string `json:"start,omitempty"`
+	End            string `json:"end,omitempty"`
+	StartTimestamp int64  `json:"start_timestamp,omitempty"`
+	StopTimestamp  int64  `json:"stop_timestamp,omitempty"`
+}
+
+type xtreamShortEPGResponse struct {
+	EPGListings []xtreamShortEPGListing `json:"epg_listings"`
+}
+
 type xtreamPrincipal struct {
 	Username   string
 	FullAccess bool
@@ -99,9 +117,54 @@ func (s *Server) serveXtreamPlayerAPI() http.Handler {
 				return
 			}
 			_ = json.NewEncoder(w).Encode(info)
+		case "get_short_epg", "get_simple_data_table":
+			streamID := strings.TrimSpace(firstNonEmptyString(r.URL.Query().Get("stream_id"), r.URL.Query().Get("channel_id")))
+			limit := 6
+			if raw := strings.TrimSpace(firstNonEmptyString(r.URL.Query().Get("limit"), r.URL.Query().Get("epg_limit"))); raw != "" {
+				if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 50 {
+					limit = n
+				}
+			}
+			epg, found := s.xtreamShortEPG(principal, streamID, limit)
+			if !found {
+				http.Error(w, `{"error":"stream not found"}`, http.StatusNotFound)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(epg)
 		default:
 			http.Error(w, `{"error":"unsupported action"}`, http.StatusBadRequest)
 		}
+	})
+}
+
+func (s *Server) serveXtreamM3U() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := s.xtreamQueryPrincipal(r)
+		if !ok {
+			http.Error(w, "# authentication failed\n", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "audio/x-mpegurl; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write([]byte(s.xtreamM3U(principal)))
+	})
+}
+
+func (s *Server) serveXtreamXMLTV() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := s.xtreamQueryPrincipal(r)
+		if !ok {
+			http.Error(w, "authentication failed", http.StatusUnauthorized)
+			return
+		}
+		data, err := s.xtreamXMLTV(principal, 12*time.Hour)
+		if err != nil {
+			http.Error(w, "xmltv export failed", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(data)
 	})
 }
 
@@ -324,6 +387,252 @@ func (s *Server) xtreamSeriesInfo(principal xtreamPrincipal, id string) (xtreamS
 		return out, true
 	}
 	return xtreamSeriesInfo{}, false
+}
+
+func (s *Server) xtreamShortEPG(principal xtreamPrincipal, streamID string, limit int) (xtreamShortEPGResponse, bool) {
+	streamID = strings.TrimSpace(streamID)
+	if streamID == "" {
+		return xtreamShortEPGResponse{}, false
+	}
+	if virtual, ok := s.findVirtualXtreamChannel(streamID); ok && s.xtreamLiveAllowed(principal, virtual) {
+		return s.xtreamShortEPGVirtual(streamID, limit), true
+	}
+	channel, found := s.findLiveChannel(streamID)
+	if !found || !s.xtreamLiveAllowed(principal, channel) {
+		return xtreamShortEPGResponse{}, false
+	}
+	if s.xmltv == nil {
+		return xtreamShortEPGResponse{EPGListings: nil}, true
+	}
+	preview, err := s.xmltv.CatchupCapsulePreview(timeNow(), 12*time.Hour, 512)
+	if err != nil {
+		return xtreamShortEPGResponse{EPGListings: nil}, true
+	}
+	guideNumber := strings.TrimSpace(channel.GuideNumber)
+	out := xtreamShortEPGResponse{EPGListings: make([]xtreamShortEPGListing, 0, limit)}
+	for _, capsule := range preview.Capsules {
+		if strings.TrimSpace(capsule.GuideNumber) != guideNumber {
+			continue
+		}
+		out.EPGListings = append(out.EPGListings, xtreamShortEPGListing{
+			ID:             strings.TrimSpace(capsule.CapsuleID),
+			Title:          strings.TrimSpace(capsule.Title),
+			Description:    strings.TrimSpace(capsule.Desc),
+			Start:          strings.TrimSpace(capsule.Start),
+			End:            strings.TrimSpace(capsule.Stop),
+			StartTimestamp: parseRFC3339Unix(capsule.Start),
+			StopTimestamp:  parseRFC3339Unix(capsule.Stop),
+		})
+		if len(out.EPGListings) >= limit {
+			break
+		}
+	}
+	return out, true
+}
+
+func (s *Server) xtreamShortEPGVirtual(streamID string, limit int) xtreamShortEPGResponse {
+	if limit <= 0 {
+		limit = 6
+	}
+	set := virtualchannels.NormalizeRuleset(s.reloadVirtualChannels())
+	report := virtualchannels.BuildSchedule(set, s.Movies, s.Series, timeNow().UTC(), 12*time.Hour)
+	targetID := strings.TrimPrefix(strings.TrimSpace(streamID), "virtual.")
+	out := xtreamShortEPGResponse{EPGListings: make([]xtreamShortEPGListing, 0, limit)}
+	for _, slot := range report.Slots {
+		if strings.TrimSpace(slot.ChannelID) != targetID {
+			continue
+		}
+		out.EPGListings = append(out.EPGListings, xtreamShortEPGListing{
+			ID:             strings.TrimSpace(slot.EntryID),
+			Title:          strings.TrimSpace(slot.ResolvedName),
+			Start:          strings.TrimSpace(slot.StartsAtUTC),
+			End:            strings.TrimSpace(slot.EndsAtUTC),
+			StartTimestamp: parseRFC3339Unix(slot.StartsAtUTC),
+			StopTimestamp:  parseRFC3339Unix(slot.EndsAtUTC),
+		})
+		if len(out.EPGListings) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+func parseRFC3339Unix(raw string) int64 {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0
+	}
+	t, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return 0
+	}
+	return t.Unix()
+}
+
+func (s *Server) xtreamM3U(principal xtreamPrincipal) string {
+	base := strings.TrimRight(s.BaseURL, "/")
+	if base == "" {
+		base = "http://localhost:5004"
+	}
+	guideURL := base + "/xmltv.php?username=" + url.QueryEscape(principal.Username) + "&password=" + url.QueryEscape(s.xtreamPasswordForPrincipal(principal))
+	var b strings.Builder
+	b.WriteString("#EXTM3U url-tvg=\"")
+	b.WriteString(guideURL)
+	b.WriteString("\"\n")
+	for _, ch := range s.xtreamLiveChannelsFor(principal) {
+		channelID := strings.TrimSpace(ch.ChannelID)
+		if channelID == "" {
+			channelID = strings.TrimSpace(ch.GuideNumber)
+		}
+		if channelID == "" {
+			continue
+		}
+		tvgID := xtreamXMLTVChannelID(ch)
+		name := strings.TrimSpace(ch.GuideName)
+		if name == "" {
+			name = "Channel " + firstNonEmptyString(ch.GuideNumber, channelID)
+		}
+		displayName := strings.ReplaceAll(name, ",", " ")
+		b.WriteString("#EXTINF:-1 tvg-id=\"")
+		b.WriteString(tvgID)
+		b.WriteString("\" tvg-name=\"")
+		b.WriteString(escapeM3UAttr(displayName))
+		b.WriteString("\",")
+		b.WriteString(displayName)
+		b.WriteByte('\n')
+		b.WriteString(s.xtreamLiveDirectSource(principal, channelID))
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func (s *Server) xtreamXMLTV(principal xtreamPrincipal, horizon time.Duration) ([]byte, error) {
+	if horizon <= 0 {
+		horizon = 12 * time.Hour
+	}
+	channels := s.xtreamLiveChannelsFor(principal)
+	tv := xmlTVRoot{
+		Source: "IPTV Tunerr Xtream Export",
+	}
+	channelIDs := make(map[string]string, len(channels))
+	virtualIDs := make(map[string]string)
+	for _, ch := range channels {
+		id := xtreamXMLTVChannelID(ch)
+		name := strings.TrimSpace(ch.GuideName)
+		if name == "" {
+			name = "Channel " + firstNonEmptyString(ch.GuideNumber, ch.ChannelID)
+		}
+		tv.Channels = append(tv.Channels, xmlChannel{ID: id, Display: name})
+		if guideNumber := strings.TrimSpace(ch.GuideNumber); guideNumber != "" {
+			channelIDs[guideNumber] = id
+		}
+		if strings.HasPrefix(strings.TrimSpace(ch.ChannelID), "virtual.") {
+			virtualIDs[strings.TrimPrefix(strings.TrimSpace(ch.ChannelID), "virtual.")] = id
+		}
+	}
+	now := timeNow().UTC()
+	if s.xmltv != nil {
+		if preview, err := s.xmltv.CatchupCapsulePreview(now, horizon, 8192); err == nil {
+			for _, capsule := range preview.Capsules {
+				channelID := channelIDs[strings.TrimSpace(capsule.GuideNumber)]
+				if channelID == "" {
+					continue
+				}
+				start, stop := xtreamXMLTVProgrammeTimes(capsule.Start, capsule.Stop)
+				if start == "" || stop == "" {
+					continue
+				}
+				tv.Programmes = append(tv.Programmes, xmlProgramme{
+					Start:      start,
+					Stop:       stop,
+					Channel:    channelID,
+					Title:      xmlValue{Value: strings.TrimSpace(capsule.Title)},
+					SubTitle:   xmlValue{Value: strings.TrimSpace(capsule.SubTitle)},
+					Desc:       xmlValue{Value: strings.TrimSpace(capsule.Desc)},
+					Categories: xmlValues(capsule.Categories),
+				})
+			}
+		}
+	}
+	set := virtualchannels.NormalizeRuleset(s.reloadVirtualChannels())
+	if len(set.Channels) > 0 {
+		report := virtualchannels.BuildSchedule(set, s.Movies, s.Series, now, horizon)
+		for _, slot := range report.Slots {
+			channelID := virtualIDs[strings.TrimSpace(slot.ChannelID)]
+			if channelID == "" {
+				continue
+			}
+			start, stop := xtreamXMLTVProgrammeTimes(slot.StartsAtUTC, slot.EndsAtUTC)
+			if start == "" || stop == "" {
+				continue
+			}
+			title := strings.TrimSpace(slot.ResolvedName)
+			if title == "" {
+				title = channelID
+			}
+			tv.Programmes = append(tv.Programmes, xmlProgramme{
+				Start:   start,
+				Stop:    stop,
+				Channel: channelID,
+				Title:   xmlValue{Value: title},
+				Desc:    xmlValue{Value: strings.TrimSpace(slot.EntryType)},
+			})
+		}
+	}
+	var out bytes.Buffer
+	out.WriteString(xml.Header)
+	enc := xml.NewEncoder(&out)
+	enc.Indent("", "  ")
+	if err := enc.Encode(tv); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
+}
+
+func xtreamXMLTVChannelID(ch catalog.LiveChannel) string {
+	if tvgID := strings.TrimSpace(ch.TVGID); tvgID != "" {
+		return tvgID
+	}
+	if guideNumber := strings.TrimSpace(ch.GuideNumber); guideNumber != "" {
+		return guideNumber
+	}
+	return strings.TrimSpace(ch.ChannelID)
+}
+
+func xtreamXMLTVProgrammeTimes(startRaw, stopRaw string) (string, string) {
+	start, ok := parseRFC3339ToXMLTV(startRaw)
+	if !ok {
+		return "", ""
+	}
+	stop, ok := parseRFC3339ToXMLTV(stopRaw)
+	if !ok {
+		return "", ""
+	}
+	return start, stop
+}
+
+func parseRFC3339ToXMLTV(raw string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", false
+	}
+	t, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return "", false
+	}
+	return t.UTC().Format("20060102150405 -0700"), true
+}
+
+func xmlValues(items []string) []xmlValue {
+	out := make([]xmlValue, 0, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		out = append(out, xmlValue{Value: item})
+	}
+	return out
 }
 
 func (s *Server) serveXtreamVODProxy(prefix string) http.Handler {

@@ -1385,6 +1385,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/device.xml", s.serveDeviceXML())
 	if s.xtreamOutputEnabled() {
 		mux.Handle("/player_api.php", s.serveXtreamPlayerAPI())
+		mux.Handle("/get.php", s.serveXtreamM3U())
+		mux.Handle("/xmltv.php", s.serveXtreamXMLTV())
 		mux.Handle("/live/", s.serveXtreamLiveProxy())
 		mux.Handle("/movie/", s.serveXtreamMovieProxy())
 		mux.Handle("/series/", s.serveXtreamSeriesProxy())

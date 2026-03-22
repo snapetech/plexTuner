@@ -2919,6 +2919,180 @@ func TestServer_XtreamPlayerAPI_VODAndSeries(t *testing.T) {
 	}
 }
 
+func TestServer_XtreamPlayerAPI_ShortEPG(t *testing.T) {
+	start := time.Now().UTC().Add(10 * time.Minute).Format("20060102150405 -0700")
+	stop := time.Now().UTC().Add(70 * time.Minute).Format("20060102150405 -0700")
+	srv := &Server{
+		BaseURL:          "http://127.0.0.1:5004",
+		XtreamOutputUser: "demo",
+		XtreamOutputPass: "secret",
+		Channels: []catalog.LiveChannel{
+			{ChannelID: "100", GuideNumber: "100", GuideName: "News 1", GroupTitle: "News", TVGID: "news.1"},
+		},
+		xmltv: &XMLTV{
+			Channels: []catalog.LiveChannel{
+				{ChannelID: "100", GuideNumber: "100", GuideName: "News 1", GroupTitle: "News", TVGID: "news.1"},
+			},
+			cachedXML: []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="100"><display-name>News 1</display-name></channel>
+  <programme start="` + start + `" stop="` + stop + `" channel="100">
+    <title>Late News</title>
+    <desc>Headlines</desc>
+  </programme>
+</tv>`),
+		},
+		Movies: []catalog.Movie{{
+			ID:        "m1",
+			Title:     "Movie One",
+			StreamURL: "http://provider.example/movie.mp4",
+		}},
+		VirtualChannels: virtualchannels.Ruleset{
+			Channels: []virtualchannels.Channel{{
+				ID:          "vc-news",
+				Name:        "Virtual News",
+				GuideNumber: "9001",
+				GroupTitle:  "Virtual",
+				Enabled:     true,
+				Entries: []virtualchannels.Entry{{
+					Type:         "movie",
+					MovieID:      "m1",
+					DurationMins: 60,
+				}},
+			}},
+		},
+	}
+	for _, tc := range []struct {
+		path string
+		want string
+	}{
+		{"/player_api.php?username=demo&password=secret&action=get_short_epg&stream_id=100&limit=1", `"title":"Late News"`},
+		{"/player_api.php?username=demo&password=secret&action=get_simple_data_table&stream_id=virtual.vc-news&limit=1", `"title":"Movie One"`},
+	} {
+		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		rr := httptest.NewRecorder()
+		srv.serveXtreamPlayerAPI().ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("%s status=%d body=%s", tc.path, rr.Code, rr.Body.String())
+		}
+		if !strings.Contains(rr.Body.String(), tc.want) || !strings.Contains(rr.Body.String(), `"epg_listings":[`) {
+			t.Fatalf("%s body=%s want %q", tc.path, rr.Body.String(), tc.want)
+		}
+	}
+}
+
+func TestServer_XtreamExports_M3UAndXMLTV(t *testing.T) {
+	start := time.Now().UTC().Add(10 * time.Minute).Format("20060102150405 -0700")
+	stop := time.Now().UTC().Add(70 * time.Minute).Format("20060102150405 -0700")
+	usersPath := filepath.Join(t.TempDir(), "xtream-users.json")
+	if _, err := entitlements.SaveFile(usersPath, entitlements.Ruleset{
+		Users: []entitlements.User{{
+			Username:          "limited",
+			Password:          "pw",
+			AllowLive:         true,
+			AllowedChannelIDs: []string{"100"},
+		}},
+	}); err != nil {
+		t.Fatalf("save entitlements: %v", err)
+	}
+	srv := &Server{
+		BaseURL:          "http://127.0.0.1:5004",
+		XtreamOutputUser: "demo",
+		XtreamOutputPass: "secret",
+		XtreamUsersFile:  usersPath,
+		Channels: []catalog.LiveChannel{
+			{ChannelID: "100", GuideNumber: "100", GuideName: "News 1", GroupTitle: "News", TVGID: "news.1"},
+			{ChannelID: "200", GuideNumber: "200", GuideName: "Sports 1", GroupTitle: "Sports", TVGID: "sports.1"},
+		},
+		xmltv: &XMLTV{
+			Channels: []catalog.LiveChannel{
+				{ChannelID: "100", GuideNumber: "100", GuideName: "News 1", GroupTitle: "News", TVGID: "news.1"},
+				{ChannelID: "200", GuideNumber: "200", GuideName: "Sports 1", GroupTitle: "Sports", TVGID: "sports.1"},
+			},
+			cachedXML: []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="100"><display-name>News 1</display-name></channel>
+  <channel id="200"><display-name>Sports 1</display-name></channel>
+  <programme start="` + start + `" stop="` + stop + `" channel="100">
+    <title>Late News</title>
+    <category>News</category>
+  </programme>
+  <programme start="` + start + `" stop="` + stop + `" channel="200">
+    <title>SportsCenter</title>
+    <category>Sports</category>
+  </programme>
+</tv>`),
+		},
+		Movies: []catalog.Movie{{
+			ID:        "m1",
+			Title:     "Movie One",
+			StreamURL: "http://provider.example/movie.mp4",
+		}},
+		VirtualChannels: virtualchannels.Ruleset{
+			Channels: []virtualchannels.Channel{{
+				ID:          "vc-news",
+				Name:        "Virtual News",
+				GuideNumber: "9001",
+				GroupTitle:  "Virtual",
+				Enabled:     true,
+				Entries: []virtualchannels.Entry{{
+					Type:         "movie",
+					MovieID:      "m1",
+					DurationMins: 60,
+				}},
+			}},
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/get.php?username=demo&password=secret&type=m3u_plus&output=ts", nil)
+	rr := httptest.NewRecorder()
+	srv.serveXtreamM3U().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("xtream m3u status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `#EXTM3U url-tvg="http://127.0.0.1:5004/xmltv.php?username=demo&password=secret"`) ||
+		!strings.Contains(body, "/live/demo/secret/100.ts") ||
+		!strings.Contains(body, "/live/demo/secret/virtual.vc-news.mp4") {
+		t.Fatalf("xtream m3u body=%s", body)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/xmltv.php?username=demo&password=secret", nil)
+	rr = httptest.NewRecorder()
+	srv.serveXtreamXMLTV().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("xtream xmltv status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	body = rr.Body.String()
+	if !strings.Contains(body, `<channel id="news.1">`) ||
+		!strings.Contains(body, `<title>Late News</title>`) ||
+		!strings.Contains(body, `<channel id="virtual.vc-news">`) {
+		t.Fatalf("xtream xmltv body=%s", body)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/get.php?username=limited&password=pw&type=m3u_plus&output=ts", nil)
+	rr = httptest.NewRecorder()
+	srv.serveXtreamM3U().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("limited xtream m3u status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	body = rr.Body.String()
+	if !strings.Contains(body, "/live/limited/pw/100.ts") || strings.Contains(body, "/live/limited/pw/200.ts") {
+		t.Fatalf("limited xtream m3u body=%s", body)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/xmltv.php?username=limited&password=pw", nil)
+	rr = httptest.NewRecorder()
+	srv.serveXtreamXMLTV().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("limited xtream xmltv status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	body = rr.Body.String()
+	if !strings.Contains(body, `<channel id="news.1">`) || strings.Contains(body, `<channel id="sports.1">`) {
+		t.Fatalf("limited xtream xmltv body=%s", body)
+	}
+}
+
 func TestServer_XtreamMovieAndSeriesProxy(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "movie") {

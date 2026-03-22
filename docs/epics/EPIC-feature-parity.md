@@ -68,6 +68,12 @@ instead of reimplemented piecemeal.
     multi-user lifecycle integrations without duplicating transport code.
 - **2026-03-21:** `PAR-001` through `PAR-005` and `PAR-007` now have real in-tree slices.
   - Event webhooks, shared HLS relay reuse, recording rules/history, downstream Xtream output, downstream entitlements, and active-stream control all now exist as server-backed features with release-gate coverage.
+- **2026-03-21:** `PAR-004` expanded again.
+  - `player_api.php` now answers `get_short_epg` and `get_simple_data_table` for both real live channels and virtual channels.
+  - Those compact listings come from Tunerr's existing guide and virtual-channel schedule pipeline instead of a separate export path.
+- **2026-03-21:** `PAR-004` expanded again.
+  - `get.php` now publishes a user-scoped M3U export and `xmltv.php` now publishes a user-scoped XMLTV guide for the same entitled live lineup.
+  - This makes the Xtream starter a more complete publishing surface instead of only a `player_api.php` + proxy path.
 - **2026-03-21:** `PAR-006` restarted with a durable virtual-channel substrate.
   - `IPTV_TUNERR_VIRTUAL_CHANNELS_FILE` now stores file-backed virtual-channel rules.
   - `/virtual-channels/rules.json` and `/virtual-channels/preview.json` provide durable rules + preview schedules over catalog movies/episodes.
