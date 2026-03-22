@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -206,6 +207,9 @@ func TestServer_programmingEndpoints(t *testing.T) {
 	if len(categories.Categories) != 4 || len(categories.Members) != 1 {
 		t.Fatalf("categories body=%s", w.Body.String())
 	}
+	if descriptor, _ := categories.Members[0]["descriptor"].(map[string]interface{}); strings.TrimSpace(fmt.Sprint(descriptor["label"])) == "" {
+		t.Fatalf("category member descriptor missing: %#v", categories.Members[0])
+	}
 
 	postBody := strings.NewReader(`{
   "selected_categories": ["iptv--news"],
@@ -266,6 +270,9 @@ func TestServer_programmingEndpoints(t *testing.T) {
 	}
 	if preview.RawChannels != 4 || preview.CuratedChannels != 2 || len(preview.Lineup) != 1 || preview.Lineup[0].ChannelID != "2" {
 		t.Fatalf("preview=%+v", preview)
+	}
+	if preview.LineupDescriptors["2"].Label == "" {
+		t.Fatalf("preview descriptor missing: %+v", preview.LineupDescriptors)
 	}
 	if preview.RawChannels != 4 || preview.Buckets["sports"] != 1 || preview.Buckets["local_broadcast"] != 1 {
 		t.Fatalf("preview buckets=%+v", preview.Buckets)
@@ -662,10 +669,13 @@ func TestServer_programmingChannelDetail(t *testing.T) {
 	if body.Channel.ChannelID != "1" || !body.Curated {
 		t.Fatalf("detail channel=%+v curated=%v", body.Channel, body.Curated)
 	}
+	if body.Descriptor.Label == "" || body.Descriptor.Variant != "EAST" {
+		t.Fatalf("detail descriptor=%+v", body.Descriptor)
+	}
 	if body.CategoryID == "" || body.Bucket == "" {
 		t.Fatalf("detail category/bucket missing: %+v", body)
 	}
-	if body.ExactBackupGroup == nil || len(body.AlternativeSources) != 1 || body.AlternativeSources[0].ChannelID != "2" {
+	if body.ExactBackupGroup != nil || len(body.AlternativeSources) != 0 {
 		t.Fatalf("detail alternatives=%+v group=%+v", body.AlternativeSources, body.ExactBackupGroup)
 	}
 	if !body.SourceReady || len(body.UpcomingProgrammes) != 1 || body.UpcomingProgrammes[0].Title != "Movie Block" {
@@ -751,6 +761,68 @@ func TestServer_diagnosticsWorkflowAndEvidenceAction(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(tmp, ".diag", "evidence", "smoke-case", "notes.md")); err != nil {
 		t.Fatalf("expected notes.md: %v", err)
+	}
+}
+
+func TestServer_diagnosticsHarnessActions(t *testing.T) {
+	origChannelDiff := runChannelDiffHarnessAction
+	origStreamCompare := runStreamCompareHarnessAction
+	defer func() {
+		runChannelDiffHarnessAction = origChannelDiff
+		runStreamCompareHarnessAction = origStreamCompare
+	}()
+
+	var gotChannelDiffEnv map[string]string
+	var gotStreamCompareEnv map[string]string
+	runChannelDiffHarnessAction = func(ctx context.Context, env map[string]string) (map[string]interface{}, error) {
+		gotChannelDiffEnv = env
+		return map[string]interface{}{"report_path": ".diag/channel-diff/test/report.json"}, nil
+	}
+	runStreamCompareHarnessAction = func(ctx context.Context, env map[string]string) (map[string]interface{}, error) {
+		gotStreamCompareEnv = env
+		return map[string]interface{}{"report_path": ".diag/stream-compare/test/report.json"}, nil
+	}
+
+	s := &Server{
+		BaseURL: "http://127.0.0.1:5004",
+		Channels: []catalog.LiveChannel{
+			{ChannelID: "good-1", GuideName: "Good One", StreamURL: "http://provider.example/good.m3u8"},
+			{ChannelID: "bad-1", GuideName: "Bad One", StreamURL: "http://provider.example/bad.m3u8"},
+		},
+		gateway: &Gateway{
+			recentAttempts: []StreamAttemptRecord{{
+				ChannelID:   "good-1",
+				FinalStatus: "ok",
+			}, {
+				ChannelID:   "bad-1",
+				FinalStatus: "upstream_http_403",
+			}},
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/ops/actions/channel-diff-run", strings.NewReader(`{}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.serveChannelDiffRunAction().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("channel diff action status=%d body=%s", w.Code, w.Body.String())
+	}
+	if gotChannelDiffEnv["GOOD_CHANNEL_ID"] != "good-1" || gotChannelDiffEnv["BAD_CHANNEL_ID"] != "bad-1" {
+		t.Fatalf("channel diff env=%+v", gotChannelDiffEnv)
+	}
+	if gotChannelDiffEnv["GOOD_DIRECT_URL"] != "http://provider.example/good.m3u8" || gotChannelDiffEnv["BAD_DIRECT_URL"] != "http://provider.example/bad.m3u8" {
+		t.Fatalf("channel diff direct urls=%+v", gotChannelDiffEnv)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/ops/actions/stream-compare-run", strings.NewReader(`{}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveStreamCompareRunAction().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("stream compare action status=%d body=%s", w.Code, w.Body.String())
+	}
+	if gotStreamCompareEnv["CHANNEL_ID"] != "bad-1" || gotStreamCompareEnv["DIRECT_URL"] != "http://provider.example/bad.m3u8" {
+		t.Fatalf("stream compare env=%+v", gotStreamCompareEnv)
 	}
 }
 

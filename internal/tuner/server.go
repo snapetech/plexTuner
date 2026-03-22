@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -182,6 +183,12 @@ type OperatorWorkflowReport struct {
 
 var runGhostHunterAction = RunGhostHunter
 var runGhostHunterRecoveryAction = RunGhostHunterRecoveryHelper
+var runChannelDiffHarnessAction = func(ctx context.Context, env map[string]string) (map[string]interface{}, error) {
+	return runDiagnosticsHarnessAction(ctx, "channel-diff-harness.sh", ".diag/channel-diff", env)
+}
+var runStreamCompareHarnessAction = func(ctx context.Context, env map[string]string) (map[string]interface{}, error) {
+	return runDiagnosticsHarnessAction(ctx, "stream-compare-harness.sh", ".diag/stream-compare", env)
+}
 
 // UpdateChannels updates the channel list for all handlers so -refresh can serve new lineup without restart.
 // Caps at LineupMaxChannels (default PlexDVRMaxChannels) so Plex DVR can save the lineup when using the wizard (Plex fails above ~480).
@@ -1464,6 +1471,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/ops/actions/ghost-visible-stop", s.serveGhostVisibleStopAction())
 	mux.Handle("/ops/actions/ghost-hidden-recover", s.serveGhostHiddenRecoverAction())
 	mux.Handle("/ops/actions/evidence-intake-start", s.serveEvidenceIntakeStartAction())
+	mux.Handle("/ops/actions/channel-diff-run", s.serveChannelDiffRunAction())
+	mux.Handle("/ops/actions/stream-compare-run", s.serveStreamCompareRunAction())
 
 	srv := &http.Server{Addr: addr, Handler: logRequests(mux)}
 
@@ -1990,6 +1999,20 @@ func (s *Server) serveOperatorActionStatus() http.Handler {
 				"body":         `{"case_id":"plex-server-vs-laptop"}`,
 				"localhost_ui": true,
 			},
+			"channel_diff_run": map[string]interface{}{
+				"available":    true,
+				"endpoint":     "/ops/actions/channel-diff-run",
+				"method":       "POST",
+				"body":         `{"good_channel_id":"325860","bad_channel_id":"325778"}`,
+				"localhost_ui": true,
+			},
+			"stream_compare_run": map[string]interface{}{
+				"available":    true,
+				"endpoint":     "/ops/actions/stream-compare-run",
+				"method":       "POST",
+				"body":         `{"channel_id":"325778"}`,
+				"localhost_ui": true,
+			},
 		}
 		body, err := json.MarshalIndent(detail, "", "  ")
 		if err != nil {
@@ -2125,6 +2148,8 @@ func (s *Server) serveDiagnosticsWorkflow() http.Handler {
 				"/programming/channel-detail.json",
 				"/programming/harvest-assist.json",
 				"/debug/stream-attempts.json",
+				"/ops/actions/channel-diff-run",
+				"/ops/actions/stream-compare-run",
 				"/ops/actions/evidence-intake-start",
 			},
 		}
@@ -2453,6 +2478,75 @@ func (s *Server) serveEvidenceIntakeStartAction() http.Handler {
 	})
 }
 
+func (s *Server) serveChannelDiffRunAction() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
+		limited := http.MaxBytesReader(w, r.Body, 65536)
+		defer limited.Close()
+		var req struct {
+			GoodChannelID string `json:"good_channel_id"`
+			BadChannelID  string `json:"bad_channel_id"`
+		}
+		if err := json.NewDecoder(limited).Decode(&req); err != nil && err != io.EOF {
+			writeOperatorActionJSON(w, http.StatusBadRequest, OperatorActionResponse{OK: false, Action: "channel_diff_run", Message: "invalid json"})
+			return
+		}
+		env, detail, err := s.buildChannelDiffHarnessEnv(req.GoodChannelID, req.BadChannelID)
+		if err != nil {
+			writeOperatorActionJSON(w, http.StatusBadRequest, OperatorActionResponse{OK: false, Action: "channel_diff_run", Message: err.Error()})
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+		defer cancel()
+		runDetail, err := runChannelDiffHarnessAction(ctx, env)
+		if err != nil {
+			writeOperatorActionJSON(w, http.StatusBadGateway, OperatorActionResponse{OK: false, Action: "channel_diff_run", Message: "channel diff harness failed", Detail: map[string]interface{}{"request": detail, "error": err.Error()}})
+			return
+		}
+		writeOperatorActionJSON(w, http.StatusOK, OperatorActionResponse{OK: true, Action: "channel_diff_run", Message: "channel diff capture completed", Detail: mergeOperatorActionDetail(detail, runDetail)})
+	})
+}
+
+func (s *Server) serveStreamCompareRunAction() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
+		limited := http.MaxBytesReader(w, r.Body, 65536)
+		defer limited.Close()
+		var req struct {
+			ChannelID string `json:"channel_id"`
+		}
+		if err := json.NewDecoder(limited).Decode(&req); err != nil && err != io.EOF {
+			writeOperatorActionJSON(w, http.StatusBadRequest, OperatorActionResponse{OK: false, Action: "stream_compare_run", Message: "invalid json"})
+			return
+		}
+		env, detail, err := s.buildStreamCompareHarnessEnv(req.ChannelID)
+		if err != nil {
+			writeOperatorActionJSON(w, http.StatusBadRequest, OperatorActionResponse{OK: false, Action: "stream_compare_run", Message: err.Error()})
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		runDetail, err := runStreamCompareHarnessAction(ctx, env)
+		if err != nil {
+			writeOperatorActionJSON(w, http.StatusBadGateway, OperatorActionResponse{OK: false, Action: "stream_compare_run", Message: "stream compare harness failed", Detail: map[string]interface{}{"request": detail, "error": err.Error()}})
+			return
+		}
+		writeOperatorActionJSON(w, http.StatusOK, OperatorActionResponse{OK: true, Action: "stream_compare_run", Message: "stream compare capture completed", Detail: mergeOperatorActionDetail(detail, runDetail)})
+	})
+}
+
 func (s *Server) serveRuntimeSnapshot() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -2548,24 +2642,26 @@ func (s *Server) serveGuideLineupMatch() http.Handler {
 }
 
 type programmingPreviewReport struct {
-	GeneratedAt     string                        `json:"generated_at"`
-	RecipeFile      string                        `json:"recipe_file,omitempty"`
-	RecipeWritable  bool                          `json:"recipe_writable"`
-	HarvestFile     string                        `json:"harvest_file,omitempty"`
-	HarvestReady    bool                          `json:"harvest_ready"`
-	HarvestLineups  []plexharvest.SummaryLineup   `json:"harvest_lineups,omitempty"`
-	RawChannels     int                           `json:"raw_channels"`
-	CuratedChannels int                           `json:"curated_channels"`
-	Recipe          programming.Recipe            `json:"recipe"`
-	Inventory       []programming.CategorySummary `json:"inventory,omitempty"`
-	Lineup          []catalog.LiveChannel         `json:"lineup,omitempty"`
-	Buckets         map[string]int                `json:"buckets,omitempty"`
-	BackupGroups    []programming.BackupGroup     `json:"backup_groups,omitempty"`
+	GeneratedAt       string                                `json:"generated_at"`
+	RecipeFile        string                                `json:"recipe_file,omitempty"`
+	RecipeWritable    bool                                  `json:"recipe_writable"`
+	HarvestFile       string                                `json:"harvest_file,omitempty"`
+	HarvestReady      bool                                  `json:"harvest_ready"`
+	HarvestLineups    []plexharvest.SummaryLineup           `json:"harvest_lineups,omitempty"`
+	RawChannels       int                                   `json:"raw_channels"`
+	CuratedChannels   int                                   `json:"curated_channels"`
+	Recipe            programming.Recipe                    `json:"recipe"`
+	Inventory         []programming.CategorySummary         `json:"inventory,omitempty"`
+	Lineup            []catalog.LiveChannel                 `json:"lineup,omitempty"`
+	LineupDescriptors map[string]programming.FeedDescriptor `json:"lineup_descriptors,omitempty"`
+	Buckets           map[string]int                        `json:"buckets,omitempty"`
+	BackupGroups      []programming.BackupGroup             `json:"backup_groups,omitempty"`
 }
 
 type programmingChannelDetailReport struct {
 	GeneratedAt        string                          `json:"generated_at"`
 	Channel            catalog.LiveChannel             `json:"channel"`
+	Descriptor         programming.FeedDescriptor      `json:"descriptor,omitempty"`
 	Curated            bool                            `json:"curated"`
 	CategoryID         string                          `json:"category_id"`
 	CategoryLabel      string                          `json:"category_label"`
@@ -3361,6 +3457,7 @@ func (s *Server) serveProgrammingChannelDetail() http.Handler {
 		report := programmingChannelDetailReport{
 			GeneratedAt:    time.Now().UTC().Format(time.RFC3339),
 			Channel:        target,
+			Descriptor:     programming.DescribeChannel(target),
 			Curated:        containsLiveChannelID(s.Channels, channelID),
 			CategoryID:     categoryID,
 			CategoryLabel:  categoryLabel,
@@ -3508,6 +3605,7 @@ func (s *Server) serveProgrammingPreview() http.Handler {
 			limit = len(s.Channels)
 		}
 		report.Lineup = append([]catalog.LiveChannel(nil), s.Channels[:limit]...)
+		report.LineupDescriptors = programming.DescribeChannels(report.Lineup)
 		report.Buckets = make(map[string]int)
 		for _, ch := range s.Channels {
 			report.Buckets[string(programming.ClassifyChannel(ch))]++
@@ -4084,6 +4182,186 @@ Recommended next steps:
 		return err
 	}
 	return nil
+}
+
+func mergeOperatorActionDetail(left, right map[string]interface{}) map[string]interface{} {
+	out := map[string]interface{}{}
+	for k, v := range left {
+		out[k] = v
+	}
+	for k, v := range right {
+		out[k] = v
+	}
+	return out
+}
+
+func repoScriptPath(name string) string {
+	return filepath.Join(".", "scripts", strings.TrimSpace(name))
+}
+
+func runDiagnosticsHarnessAction(ctx context.Context, scriptName, outRoot string, env map[string]string) (map[string]interface{}, error) {
+	scriptName = strings.TrimSpace(scriptName)
+	if scriptName == "" {
+		return nil, fmt.Errorf("script name required")
+	}
+	scriptPath := repoScriptPath(scriptName)
+	cmd := exec.CommandContext(ctx, "bash", scriptPath)
+	cmd.Dir = "."
+	runEnv := append([]string{}, os.Environ()...)
+	for key, value := range env {
+		if strings.TrimSpace(key) == "" {
+			continue
+		}
+		runEnv = append(runEnv, key+"="+value)
+	}
+	cmd.Env = runEnv
+	out, err := cmd.CombinedOutput()
+	runID := strings.TrimSpace(env["RUN_ID"])
+	outDir := ""
+	if strings.TrimSpace(outRoot) != "" && runID != "" {
+		outDir = filepath.Join(outRoot, runID)
+	}
+	detail := map[string]interface{}{
+		"script":     scriptName,
+		"run_id":     runID,
+		"output_dir": outDir,
+	}
+	if reportPath := filepath.Join(outDir, "report.json"); outDir != "" {
+		if _, statErr := os.Stat(reportPath); statErr == nil {
+			detail["report_path"] = reportPath
+		}
+		if _, statErr := os.Stat(filepath.Join(outDir, "report.txt")); statErr == nil {
+			detail["report_text_path"] = filepath.Join(outDir, "report.txt")
+		}
+	}
+	if len(out) > 0 {
+		text := strings.TrimSpace(string(out))
+		if len(text) > 1200 {
+			text = text[:1200] + "..."
+		}
+		detail["stdout"] = text
+	}
+	return detail, err
+}
+
+func (s *Server) operatorTunerBaseURL() string {
+	if base := strings.TrimSpace(s.BaseURL); base != "" {
+		return strings.TrimRight(base, "/")
+	}
+	addr := strings.TrimSpace(s.Addr)
+	if addr == "" {
+		addr = ":5004"
+	}
+	host := "127.0.0.1"
+	if strings.HasPrefix(addr, ":") {
+		return "http://" + host + addr
+	}
+	if strings.HasPrefix(addr, "http://") || strings.HasPrefix(addr, "https://") {
+		return strings.TrimRight(addr, "/")
+	}
+	return "http://" + strings.TrimRight(addr, "/")
+}
+
+func (s *Server) channelStreamURL(channelID string) (string, bool) {
+	ch, ok := s.findLiveChannel(channelID)
+	if !ok {
+		return "", false
+	}
+	if raw := strings.TrimSpace(ch.StreamURL); raw != "" {
+		return raw, true
+	}
+	if len(ch.StreamURLs) > 0 {
+		if raw := strings.TrimSpace(ch.StreamURLs[0]); raw != "" {
+			return raw, true
+		}
+	}
+	return "", false
+}
+
+func (s *Server) diagnosticSuggestedChannels() (string, string) {
+	if s.gateway == nil {
+		return "", ""
+	}
+	return suggestDiagnosticChannels(s.gateway.RecentStreamAttempts(12))
+}
+
+func (s *Server) buildChannelDiffHarnessEnv(goodID, badID string) (map[string]string, map[string]interface{}, error) {
+	goodID = strings.TrimSpace(goodID)
+	badID = strings.TrimSpace(badID)
+	suggestedGood, suggestedBad := s.diagnosticSuggestedChannels()
+	if goodID == "" {
+		goodID = suggestedGood
+	}
+	if badID == "" {
+		badID = suggestedBad
+	}
+	if goodID == "" || badID == "" {
+		return nil, nil, fmt.Errorf("good_channel_id and bad_channel_id are required or must be inferable from recent attempts")
+	}
+	goodURL, ok := s.channelStreamURL(goodID)
+	if !ok {
+		return nil, nil, fmt.Errorf("no direct source found for good channel %q", goodID)
+	}
+	badURL, ok := s.channelStreamURL(badID)
+	if !ok {
+		return nil, nil, fmt.Errorf("no direct source found for bad channel %q", badID)
+	}
+	runID := "operator-" + time.Now().UTC().Format("20060102-150405")
+	env := map[string]string{
+		"TUNERR_BASE_URL": s.operatorTunerBaseURL(),
+		"GOOD_CHANNEL_ID": goodID,
+		"BAD_CHANNEL_ID":  badID,
+		"GOOD_DIRECT_URL": goodURL,
+		"BAD_DIRECT_URL":  badURL,
+		"RUN_ID":          runID,
+		"OUT_ROOT":        filepath.Join(repoDiagRoot(), "channel-diff"),
+		"RUN_SECONDS":     "8",
+		"SEED_SECONDS":    "4",
+		"ATTEMPT_LIMIT":   "40",
+		"USE_FFPLAY":      "false",
+		"USE_TCPDUMP":     "false",
+	}
+	detail := map[string]interface{}{
+		"good_channel_id": goodID,
+		"bad_channel_id":  badID,
+		"good_direct_url": safeurl.RedactURL(goodURL),
+		"bad_direct_url":  safeurl.RedactURL(badURL),
+		"run_id":          runID,
+	}
+	return env, detail, nil
+}
+
+func (s *Server) buildStreamCompareHarnessEnv(channelID string) (map[string]string, map[string]interface{}, error) {
+	channelID = strings.TrimSpace(channelID)
+	_, suggestedBad := s.diagnosticSuggestedChannels()
+	if channelID == "" {
+		channelID = suggestedBad
+	}
+	if channelID == "" {
+		return nil, nil, fmt.Errorf("channel_id is required or must be inferable from recent attempts")
+	}
+	directURL, ok := s.channelStreamURL(channelID)
+	if !ok {
+		return nil, nil, fmt.Errorf("no direct source found for channel %q", channelID)
+	}
+	runID := "operator-" + time.Now().UTC().Format("20060102-150405")
+	env := map[string]string{
+		"TUNERR_BASE_URL":   s.operatorTunerBaseURL(),
+		"CHANNEL_ID":        channelID,
+		"DIRECT_URL":        directURL,
+		"RUN_ID":            runID,
+		"OUT_ROOT":          filepath.Join(repoDiagRoot(), "stream-compare"),
+		"RUN_SECONDS":       "8",
+		"USE_FFPLAY":        "false",
+		"USE_TCPDUMP":       "false",
+		"ANALYZE_MANIFESTS": "true",
+	}
+	detail := map[string]interface{}{
+		"channel_id": channelID,
+		"direct_url": safeurl.RedactURL(directURL),
+		"run_id":     runID,
+	}
+	return env, detail, nil
 }
 
 func (s *Server) serveCatchupRecorderReport() http.Handler {

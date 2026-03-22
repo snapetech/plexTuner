@@ -181,6 +181,7 @@ func TestDirectFile_downloadsAndCaches(t *testing.T) {
 func TestDirectFile_concurrentSameAsset(t *testing.T) {
 	var started sync.WaitGroup
 	started.Add(1)
+	var startedOnce sync.Once
 	var allowDownload sync.WaitGroup
 	allowDownload.Add(1)
 
@@ -191,7 +192,9 @@ func TestDirectFile_concurrentSameAsset(t *testing.T) {
 			w.Header().Set("Content-Length", fmt.Sprint(len(body)))
 			w.WriteHeader(http.StatusOK)
 		case http.MethodGet:
-			started.Done()
+			startedOnce.Do(func() {
+				started.Done()
+			})
 			allowDownload.Wait()
 			w.WriteHeader(http.StatusOK)
 			w.Write(body)

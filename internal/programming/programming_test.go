@@ -149,6 +149,41 @@ func TestBuildBackupGroupsAndCollapse(t *testing.T) {
 	}
 }
 
+func TestBuildBackupGroupsDoesNotCollapseVariantNames(t *testing.T) {
+	channels := []catalog.LiveChannel{
+		{ChannelID: "amc", DNAID: "dna-amc", TVGID: "amc.us", GuideNumber: "401", GuideName: "AMC HD", SourceTag: "iptv", StreamURL: "http://a/1"},
+		{ChannelID: "amc-plus", DNAID: "dna-amc", TVGID: "amc.us", GuideNumber: "402", GuideName: "AMC Plus", SourceTag: "iptv", StreamURL: "http://b/1"},
+		{ChannelID: "animal-east", DNAID: "dna-animal", TVGID: "animalplanet.us", GuideNumber: "501", GuideName: "Animal Planet HD", SourceTag: "iptv", StreamURL: "http://c/1"},
+		{ChannelID: "animal-west", DNAID: "dna-animal", TVGID: "animalplanet.us", GuideNumber: "502", GuideName: "Animal Planet West HD", SourceTag: "iptv", StreamURL: "http://d/1"},
+	}
+	if groups := BuildBackupGroups(channels); len(groups) != 0 {
+		t.Fatalf("groups=%#v want 0", groups)
+	}
+	if collapsed := CollapseExactBackupGroups(channels); len(collapsed) != 4 {
+		t.Fatalf("collapsed=%#v want 4 rows", collapsed)
+	}
+}
+
+func TestDescribeChannel(t *testing.T) {
+	ch := catalog.LiveChannel{
+		ChannelID:  "aspire",
+		GuideName:  "US: ASPIRE HD RAW 60fps",
+		GroupTitle: "Entertainment",
+		SourceTag:  "strong8k",
+		TVGID:      "AspireTV.us",
+	}
+	got := DescribeChannel(ch)
+	if got.Region != "US" || got.Category != "ENTERTAINMENT" {
+		t.Fatalf("descriptor=%+v", got)
+	}
+	if len(got.QualityTags) != 3 || got.QualityTags[0] != "HD" || got.QualityTags[1] != "RAW" || got.QualityTags[2] != "60 FPS" {
+		t.Fatalf("quality=%+v", got)
+	}
+	if got.Label != "US | ENTERTAINMENT | HD / RAW / 60 FPS" {
+		t.Fatalf("label=%q", got.Label)
+	}
+}
+
 func TestApplyRecipePreviewDoesNotCollapseBackups(t *testing.T) {
 	channels := []catalog.LiveChannel{
 		{ChannelID: "a", DNAID: "dna", TVGID: "tvg", GuideNumber: "1", GuideName: "One", GroupTitle: "News", SourceTag: "iptv", StreamURL: "http://a/1"},

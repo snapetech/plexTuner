@@ -111,6 +111,16 @@ const actionDefinitions = {
     path: "/api/ops/actions/evidence-intake-start",
     label: "Create Evidence Bundle",
     confirm: "Create a new evidence-intake bundle scaffold under .diag/evidence?"
+  },
+  channel_diff_run: {
+    path: "/api/ops/actions/channel-diff-run",
+    label: "Run Channel Diff",
+    confirm: "Run a bounded good-vs-bad channel diff capture using the current diagnostics suggestions?"
+  },
+  stream_compare_run: {
+    path: "/api/ops/actions/stream-compare-run",
+    label: "Run Stream Compare",
+    confirm: "Run a bounded stream-compare capture for the currently suggested failing channel?"
   }
 };
 
@@ -334,6 +344,25 @@ function channelName(channel) {
   return channel?.guide_name || channel?.GuideName || channel?.channel_id || channel?.ChannelID || "channel";
 }
 
+function channelDescriptor(channel, descriptorMap = null) {
+  if (channel?.descriptor?.label || channel?.Descriptor?.Label) {
+    return channel?.descriptor || channel?.Descriptor;
+  }
+  const id = programmingChannelID(channel);
+  if (descriptorMap && id && descriptorMap[id]) {
+    return descriptorMap[id];
+  }
+  return {};
+}
+
+function channelDescriptorLabel(channel, descriptorMap = null) {
+  const descriptor = channelDescriptor(channel, descriptorMap);
+  if (descriptor?.label || descriptor?.Label) {
+    return descriptor.label || descriptor.Label;
+  }
+  return "";
+}
+
 function programmingCategoryButtons(category, recipe) {
   const selected = new Set(normalizeArray(recipe?.selected_categories));
   const excluded = new Set(normalizeArray(recipe?.excluded_categories));
@@ -398,8 +427,9 @@ function backupGroupSummary(group) {
   const members = normalizeArray(group?.members);
   return members.slice(0, 4).map((member) => {
     const name = member.guide_name || member.channel_id || "channel";
+    const descriptor = channelDescriptorLabel(member);
     const source = member.source_tag ? ` · ${member.source_tag}` : "";
-    return `${name}${source}`;
+    return `${name}${descriptor ? ` · ${descriptor}` : ""}${source}`;
   }).join(" | ");
 }
 
@@ -1219,7 +1249,7 @@ function renderDeck() {
     createCard("Fallback evidence", attempts.slice(0, 4).map((item) => `${item.channel_name || item.channel_id || "channel"} -> ${item.reason || item.result || item.status || "unknown"}`).join(" | ") || "No fallback evidence", "", "", "attempts", `<button class="tiny" type="button" data-inspect="streamWorkflow">Workflow Payload</button>`),
     createCard("Diagnostics capture", diagnosticsWorkflow.summary?.suggested_bad_channel_id || diagnosticsWorkflow.summary?.suggested_good_channel_id
       ? `good=${pretty(diagnosticsWorkflow.summary?.suggested_good_channel_id)} · bad=${pretty(diagnosticsWorkflow.summary?.suggested_bad_channel_id)}`
-      : "No good/bad channel suggestion yet from recent attempts.", "", "", "diagnosticsWorkflow", `${createWorkflowButton("diagnosticsWorkflow", "Open Diagnostics")}${createActionButton("evidence_intake_start")}`),
+      : "No good/bad channel suggestion yet from recent attempts.", "", "", "diagnosticsWorkflow", `${createWorkflowButton("diagnosticsWorkflow", "Open Diagnostics")}${createActionButton("channel_diff_run")}${createActionButton("stream_compare_run")}${createActionButton("evidence_intake_start")}`),
     createCard("Latest diagnostics", diagnosticRuns.length
       ? diagnosticRuns.map((run) => diagnosticsRunSummary(run)).filter(Boolean).join(" || ")
       : "No recent channel-diff, stream-compare, multi-stream, or evidence bundle runs detected under .diag.", "", "", "diagnosticsWorkflow", `<button class="tiny" type="button" data-inspect="diagnosticsWorkflow">Workflow Payload</button>`),
@@ -1256,6 +1286,7 @@ function renderDeck() {
   const programmingRecipe = programmingRecipePayload.recipe || programmingPreviewPayload.recipe || {};
   const programmingInventory = normalizeArray(programmingCategoriesPayload.categories || programmingPreviewPayload.inventory);
   const curatedLineup = normalizeArray(programmingPreviewPayload.lineup);
+  const programmingLineupDescriptors = programmingPreviewPayload.lineup_descriptors || {};
   const backupGroups = normalizeArray(programmingBackupsPayload.groups || programmingPreviewPayload.backup_groups);
   const harvestPayload = state.payloads.programmingHarvest?.body || {};
   const harvestLineups = normalizeArray(harvestPayload.lineups || programmingPreviewPayload.harvest_lineups);
@@ -1312,8 +1343,8 @@ function renderDeck() {
   programmingPreview.innerHTML = filterCards(curatedLineup.slice(0, 12).map((channel) =>
     createCard(
       channelName(channel),
-      `${pretty(channel.GuideNumber || channel.guide_number)} · ${pretty(channel.TVGID || channel.tvg_id)} · source ${pretty(channel.SourceTag || channel.source_tag || "n/a")} · streams ${pretty((channel.StreamURLs || channel.stream_urls || []).length || (channel.StreamURL || channel.stream_url ? 1 : 0))}`,
-      `${pretty(channel.GroupTitle || channel.group_title || "Uncategorized")} · bucket ${(programmingPreviewPayload.buckets && channel.GuideName) ? pretty("") : ""}`,
+      `${channelDescriptorLabel(channel, programmingLineupDescriptors) || "Descriptor unavailable"} · streams ${pretty((channel.StreamURLs || channel.stream_urls || []).length || (channel.StreamURL || channel.stream_url ? 1 : 0))}`,
+      `${pretty(channel.GuideNumber || channel.guide_number)} · ${pretty(channel.TVGID || channel.tvg_id || "no tvg")} · ${pretty(channel.SourceTag || channel.source_tag || "no source")} · ${pretty(channel.GroupTitle || channel.group_title || "Uncategorized")}`,
       programmingChannelID(channel) === state.programmingSelectedChannelId ? "tone-good" : "",
       "programmingPreview",
       `<div class="card-actions">${programmingSelectButtons(channel, curatedLineup, programmingRecipe)}</div>`
@@ -1346,7 +1377,7 @@ function renderDeck() {
   const previewCardBody = selectedProgrammingID
     ? `
       <div class="preview-shell">
-        <div class="preview-meta">${esc(selectedProgrammingName)} · ${esc(pretty(selectedProgrammingChannel?.GuideNumber || selectedProgrammingChannel?.guide_number))} · ${esc(pretty(selectedProgrammingChannel?.GroupTitle || selectedProgrammingChannel?.group_title || "Uncategorized"))}</div>
+        <div class="preview-meta">${esc(selectedProgrammingName)} · ${esc(channelDescriptorLabel(programmingDetailPayload.Channel || selectedProgrammingChannel, programmingLineupDescriptors) || "Descriptor unavailable")} · ${esc(pretty(selectedProgrammingChannel?.GuideNumber || selectedProgrammingChannel?.guide_number))}</div>
         <video id="programming-live-video" class="preview-video" controls autoplay muted playsinline data-stream-url="${esc(programmingPreviewURL(selectedProgrammingID))}"></video>
         <div id="programming-live-fallback" class="detail-chip" hidden>Loading preview…</div>
         <div class="card-actions">
@@ -1363,9 +1394,9 @@ function renderDeck() {
   const upcomingProgrammes = normalizeArray(programmingDetailPayload.UpcomingProgrammes).slice(0, 4);
   const alternativeSources = normalizeArray(programmingDetailPayload.AlternativeSources).slice(0, 5);
   programmingDetail.innerHTML = [
-    `<div class="detail-chip"><strong>${esc(selectedProgrammingID ? selectedProgrammingName : "No selected channel")}</strong><span>${esc(selectedProgrammingID ? `${pretty(programmingDetailPayload.CategoryLabel || selectedProgrammingChannel?.GroupTitle || selectedProgrammingChannel?.group_title || "Uncategorized")} · bucket ${pretty(programmingDetailPayload.Bucket || "unknown")} · curated=${pretty(programmingDetailPayload.Curated)}` : "Choose a curated channel to inspect its detail and preview path.")}</span></div>`,
+    `<div class="detail-chip"><strong>${esc(selectedProgrammingID ? selectedProgrammingName : "No selected channel")}</strong><span>${esc(selectedProgrammingID ? `${channelDescriptorLabel(programmingDetailPayload.Channel || selectedProgrammingChannel, programmingLineupDescriptors) || "Descriptor unavailable"} · ${pretty(programmingDetailPayload.CategoryLabel || selectedProgrammingChannel?.GroupTitle || selectedProgrammingChannel?.group_title || "Uncategorized")} · bucket ${pretty(programmingDetailPayload.Bucket || "unknown")} · curated=${pretty(programmingDetailPayload.Curated)}` : "Choose a curated channel to inspect its detail and preview path.")}</span></div>`,
     `<div class="detail-chip"><strong>Upcoming programmes</strong><span>${esc(upcomingProgrammes.length ? upcomingProgrammes.map((item) => `${item.title || item.Title || "programme"} @ ${formatWhen(item.start || item.Start)}`).join(" | ") : (selectedProgrammingID ? "No upcoming guide rows available for this channel yet." : "No channel selected."))}</span></div>`,
-    `<div class="detail-chip"><strong>Alternative sources</strong><span>${esc(alternativeSources.length ? alternativeSources.map((item) => `${channelName(item)} · ${pretty(item.SourceTag || item.source_tag || "source?")}`).join(" | ") : "No exact alternative sources detected for the current selection.")}</span></div>`,
+    `<div class="detail-chip"><strong>Alternative sources</strong><span>${esc(alternativeSources.length ? alternativeSources.map((item) => `${channelName(item)} · ${channelDescriptorLabel(item) || pretty(item.SourceTag || item.source_tag || "source?")}${(item.descriptor?.variant || item.Descriptor?.Variant) ? ` · ${item.descriptor?.variant || item.Descriptor?.Variant}` : ""}`).join(" | ") : "No exact alternative sources detected for the current selection.")}</span></div>`,
     `<div class="detail-chip"><strong>Virtual schedule context</strong><span>${esc(virtualScheduleSlots.length ? virtualScheduleSlots.slice(0, 4).map((slot) => `${slot.display_name || slot.rule_name || slot.channel_id} · ${slot.asset_title || slot.asset_id || "asset"} @ ${formatWhen(slot.starts_at || slot.startsAt)}`).join(" | ") : "No virtual-channel schedule configured yet.")}</span></div>`
   ].join("");
 

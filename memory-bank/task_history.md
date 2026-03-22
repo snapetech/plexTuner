@@ -23,6 +23,27 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: Productize diagnostics launchers and Programming feed descriptors
+  Summary:
+    - Added localhost operator actions for bounded `channel-diff` and `stream-compare` runs so the deck can launch evidence capture directly instead of only listing workflow guidance.
+    - Hardened exact-backup grouping to require `tvg_id`/`dna_id` plus normalized guide-name agreement, which stops over-normalized variants like `AMC` vs `AMC Plus` and East/West feeds from collapsing into one visible row.
+    - Added derived Programming feed descriptors (`region | category | feedtype/fps-style tags`) across category members, curated preview cards, channel detail, and backup alternatives so the deck can show tester-style feed context without mutating canonical channel names.
+    - Fixed a real flaky test in `internal/materializer`: concurrent same-asset GETs could drive the test server `WaitGroup` negative; guarded with `sync.Once` so full verify is stable again.
+  Verification:
+    - `go test ./internal/programming -run 'Test(BuildBackupGroupsAndCollapse|BuildBackupGroupsDoesNotCollapseVariantNames|DescribeChannel)' -count=1`
+    - `go test ./internal/tuner -run 'TestServer_(programmingEndpoints|programmingChannelDetail|diagnosticsHarnessActions|diagnosticsWorkflowAndEvidenceAction|XtreamPlayerAPI_LiveCategories|XtreamLiveProxy|XtreamLiveProxy_VirtualChannel)' -count=1`
+    - `node --check internal/webui/deck.js`
+    - `./scripts/verify`
+  Notes:
+    - Feed descriptors are intentionally derived from provider-presented naming/group metadata, not claimed as probed media truth.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/programming/programming.go`
+    - `internal/tuner/server.go`
+    - `internal/webui/deck.js`
+
+- Date: 2026-03-21
   Title: Promote diagnostics capture into the operator plane
   Summary:
     - Added `/ops/workflows/diagnostics.json`, which turns recent stream attempts into a concrete good-vs-bad capture playbook with suggested channel IDs and latest `.diag/` run families.

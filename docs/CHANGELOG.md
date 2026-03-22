@@ -33,11 +33,15 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Virtual channels starter (`PAR-006` slice)**: `IPTV_TUNERR_VIRTUAL_CHANNELS_FILE` now enables file-backed virtual-channel rules plus `/virtual-channels/rules.json` and `/virtual-channels/preview.json`, and the starter is now publishable too: `/virtual-channels/live.m3u` exports the enabled synthetic rows while `/virtual-channels/stream/<id>.mp4` proxies the currently scheduled asset.
 - **Virtual channels bridged into Xtream live output**: enabled virtual channels now appear in downstream Xtream `get_live_categories` / `get_live_streams` output and play through `/live/<user>/<pass>/virtual.<id>.mp4`, so PAR-006 no longer stops at sidecar-only M3U/XMLTV/pseudo-live surfaces.
 - **Diagnostics workflow promoted from scripts**: `/ops/workflows/diagnostics.json` now turns recent stream attempts into a concrete capture playbook with suggested good/bad channel IDs, the latest `.diag/` run families, and summarized verdict/findings from the newest `channel-diff`, `stream-compare`, `multi-stream`, or evidence-bundle artifacts. `/ops/actions/evidence-intake-start` scaffolds `.diag/evidence/<case-id>/` directly from the operator plane, the deck surfaces that workflow in Routing/Settings, and `scripts/ci-smoke.sh` now asserts the workflow plus evidence-bundle creation in the release gate.
+- **Bounded diagnostics launchers**: localhost operators can now trigger direct bounded `channel-diff` and `stream-compare` harness runs from `/ops/actions/channel-diff-run` and `/ops/actions/stream-compare-run`, with the deck exposing those actions next to the diagnostics workflow instead of stopping at capture instructions.
+- **Programming feed descriptors**: Programming Manager now derives operator-facing feed descriptors from provider-presented metadata (`region | category | feedtype/fps-style tags`) and surfaces them across category members, curated preview rows, channel detail, and exact-backup alternatives.
 
 ### Fixed
 
 - **Provider-account rollover robustness**: account pooling now falls back to Xtream path credentials (`/live/<user>/<pass>/...`, `/movie/...`, `/series/...`, `/timeshift/...`) when per-stream auth metadata is missing or incomplete, so concurrent sessions can still spread across distinct provider accounts instead of collapsing back to the global default credentials.
 - **Three-account rollover regression coverage**: gateway tests now explicitly pin three simultaneous channel requests to three distinct Xtream-path credential sets so "second device did not roll over" keeps failing in CI if account leasing regresses.
+- **Exact-backup over-collapse**: exact backup grouping now requires both the identity key (`tvg_id` or `dna_id`) and normalized guide-name agreement, preventing distinct variants like `AMC` vs `AMC Plus` or East/West feeds from collapsing together when providers over-normalize `tvg_id`.
+- **Materializer concurrent same-asset test flake**: `internal/materializer.TestDirectFile_concurrentSameAsset` no longer drives its helper server into a negative `WaitGroup` counter when duplicate GETs race.
 
 ## [v0.1.27] — 2026-03-21
 

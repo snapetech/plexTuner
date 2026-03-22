@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -13,6 +14,8 @@ import (
 )
 
 const RecipeVersion = 1
+
+var backupNameNoise = regexp.MustCompile(`[^a-z0-9]+`)
 
 type Recipe struct {
 	Version              int      `json:"version"`
@@ -36,14 +39,24 @@ type CategorySummary struct {
 }
 
 type CategoryMember struct {
-	CategoryID  string `json:"category_id"`
-	Bucket      string `json:"bucket,omitempty"`
-	ChannelID   string `json:"channel_id"`
-	GuideNumber string `json:"guide_number"`
-	GuideName   string `json:"guide_name"`
-	TVGID       string `json:"tvg_id,omitempty"`
-	SourceTag   string `json:"source_tag,omitempty"`
-	GroupTitle  string `json:"group_title,omitempty"`
+	CategoryID  string         `json:"category_id"`
+	Bucket      string         `json:"bucket,omitempty"`
+	ChannelID   string         `json:"channel_id"`
+	GuideNumber string         `json:"guide_number"`
+	GuideName   string         `json:"guide_name"`
+	TVGID       string         `json:"tvg_id,omitempty"`
+	SourceTag   string         `json:"source_tag,omitempty"`
+	GroupTitle  string         `json:"group_title,omitempty"`
+	Descriptor  FeedDescriptor `json:"descriptor,omitempty"`
+}
+
+type FeedDescriptor struct {
+	Label       string   `json:"label,omitempty"`
+	Region      string   `json:"region,omitempty"`
+	Category    string   `json:"category,omitempty"`
+	Source      string   `json:"source,omitempty"`
+	QualityTags []string `json:"quality_tags,omitempty"`
+	Variant     string   `json:"variant,omitempty"`
 }
 
 type TaxonomyBucket string
@@ -56,15 +69,16 @@ const (
 )
 
 type BackupGroupMember struct {
-	ChannelID   string `json:"channel_id"`
-	DNAID       string `json:"dna_id,omitempty"`
-	GuideNumber string `json:"guide_number"`
-	GuideName   string `json:"guide_name"`
-	TVGID       string `json:"tvg_id,omitempty"`
-	SourceTag   string `json:"source_tag,omitempty"`
-	GroupTitle  string `json:"group_title,omitempty"`
-	StreamCount int    `json:"stream_count"`
-	PrimaryURL  string `json:"primary_url,omitempty"`
+	ChannelID   string         `json:"channel_id"`
+	DNAID       string         `json:"dna_id,omitempty"`
+	GuideNumber string         `json:"guide_number"`
+	GuideName   string         `json:"guide_name"`
+	TVGID       string         `json:"tvg_id,omitempty"`
+	SourceTag   string         `json:"source_tag,omitempty"`
+	GroupTitle  string         `json:"group_title,omitempty"`
+	StreamCount int            `json:"stream_count"`
+	PrimaryURL  string         `json:"primary_url,omitempty"`
+	Descriptor  FeedDescriptor `json:"descriptor,omitempty"`
 }
 
 type BackupGroup struct {
@@ -251,6 +265,7 @@ func CategoryMembers(channels []catalog.LiveChannel, categoryID string) []Catego
 			TVGID:       strings.TrimSpace(ch.TVGID),
 			SourceTag:   strings.TrimSpace(ch.SourceTag),
 			GroupTitle:  strings.TrimSpace(ch.GroupTitle),
+			Descriptor:  DescribeChannel(ch),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -633,6 +648,7 @@ func BuildBackupGroups(channels []catalog.LiveChannel) []BackupGroup {
 				GroupTitle:  strings.TrimSpace(ch.GroupTitle),
 				StreamCount: visibleStreamCount(ch),
 				PrimaryURL:  strings.TrimSpace(ch.StreamURL),
+				Descriptor:  DescribeChannel(ch),
 			})
 		}
 		primary := cur.members[0]
@@ -719,13 +735,197 @@ func cloneChannel(ch catalog.LiveChannel) catalog.LiveChannel {
 }
 
 func backupIdentity(ch catalog.LiveChannel) (string, BackupMatchStrategy, bool) {
+	nameKey := normalizedBackupName(ch)
 	if tvg := strings.ToLower(strings.TrimSpace(ch.TVGID)); tvg != "" {
+		if nameKey != "" {
+			return "tvg:" + tvg + "|name:" + nameKey, BackupMatchTVGID, true
+		}
 		return "tvg:" + tvg, BackupMatchTVGID, true
 	}
 	if dna := strings.ToLower(strings.TrimSpace(ch.DNAID)); dna != "" {
+		if nameKey != "" {
+			return "dna:" + dna + "|name:" + nameKey, BackupMatchDNAID, true
+		}
 		return "dna:" + dna, BackupMatchDNAID, true
 	}
 	return "", "", false
+}
+
+func normalizedBackupName(ch catalog.LiveChannel) string {
+	raw := strings.ToLower(strings.TrimSpace(ch.GuideName))
+	if raw == "" {
+		raw = strings.ToLower(strings.TrimSpace(ch.TVGID))
+	}
+	if raw == "" {
+		return ""
+	}
+	fields := strings.Fields(backupNameNoise.ReplaceAllString(raw, " "))
+	if len(fields) == 0 {
+		return ""
+	}
+	out := make([]string, 0, len(fields))
+	for _, field := range fields {
+		switch field {
+		case "", "us", "ca", "hd", "uhd", "sd", "fhd", "4k", "raw", "fps", "60fps", "30fps":
+			continue
+		}
+		out = append(out, field)
+	}
+	return strings.Join(out, " ")
+}
+
+func DescribeChannel(ch catalog.LiveChannel) FeedDescriptor {
+	descriptor := FeedDescriptor{
+		Region:      inferChannelRegion(ch),
+		Category:    bucketDisplayLabel(ClassifyChannel(ch)),
+		Source:      strings.ToUpper(strings.TrimSpace(ch.SourceTag)),
+		QualityTags: inferQualityTags(ch),
+		Variant:     inferVariantTag(ch),
+	}
+	parts := make([]string, 0, 3)
+	if descriptor.Region != "" {
+		parts = append(parts, descriptor.Region)
+	}
+	if descriptor.Category != "" {
+		parts = append(parts, descriptor.Category)
+	}
+	if len(descriptor.QualityTags) > 0 {
+		parts = append(parts, strings.Join(descriptor.QualityTags, " / "))
+	}
+	if len(parts) == 0 && descriptor.Source != "" {
+		parts = append(parts, descriptor.Source)
+	}
+	descriptor.Label = strings.Join(parts, " | ")
+	return descriptor
+}
+
+func DescribeChannels(channels []catalog.LiveChannel) map[string]FeedDescriptor {
+	if len(channels) == 0 {
+		return nil
+	}
+	out := make(map[string]FeedDescriptor, len(channels))
+	for _, ch := range channels {
+		channelID := strings.TrimSpace(ch.ChannelID)
+		if channelID == "" {
+			continue
+		}
+		out[channelID] = DescribeChannel(ch)
+	}
+	return out
+}
+
+func bucketDisplayLabel(bucket TaxonomyBucket) string {
+	switch bucket {
+	case BucketLocalBroadcast:
+		return "LOCAL BROADCAST"
+	case BucketGeneralEntertainment:
+		return "ENTERTAINMENT"
+	case BucketNewsInfo:
+		return "NEWS & INFO"
+	case BucketSports:
+		return "SPORTS"
+	case BucketLifestyleHome:
+		return "LIFESTYLE & HOME"
+	case BucketDocumentaryHistory:
+		return "DOCUMENTARY & HISTORY"
+	case BucketChildrenFamily:
+		return "CHILDREN & FAMILY"
+	case BucketRealitySpecialized:
+		return "REALITY & SPECIALIZED"
+	case BucketPremiumNetworks:
+		return "PREMIUM NETWORKS"
+	case BucketRegionalSports:
+		return "REGIONAL SPORTS"
+	case BucketReligious:
+		return "RELIGIOUS"
+	case BucketInternational:
+		return "INTERNATIONAL"
+	default:
+		return strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(string(bucket)), "_", " "))
+	}
+}
+
+func inferChannelRegion(ch catalog.LiveChannel) string {
+	tvg := strings.ToLower(strings.TrimSpace(ch.TVGID))
+	switch {
+	case strings.HasSuffix(tvg, ".us"):
+		return "US"
+	case strings.HasSuffix(tvg, ".ca"):
+		return "CA"
+	case strings.HasSuffix(tvg, ".uk"), strings.HasSuffix(tvg, ".gb"):
+		return "UK"
+	}
+	hay := " " + normalizedBackupName(catalog.LiveChannel{
+		GuideName:  strings.Join([]string{ch.GuideName, ch.GroupTitle, ch.SourceTag}, " "),
+		TVGID:      ch.TVGID,
+		SourceTag:  ch.SourceTag,
+		GroupTitle: ch.GroupTitle,
+	}) + " "
+	switch {
+	case strings.Contains(hay, " usa "), strings.Contains(hay, " united states "), strings.Contains(hay, " us "):
+		return "US"
+	case strings.Contains(hay, " canada "), strings.Contains(hay, " ca "):
+		return "CA"
+	case strings.Contains(hay, " uk "), strings.Contains(hay, " britain "), strings.Contains(hay, " england "):
+		return "UK"
+	}
+	return ""
+}
+
+func inferQualityTags(ch catalog.LiveChannel) []string {
+	raw := strings.ToLower(strings.Join([]string{
+		strings.TrimSpace(ch.GuideName),
+		strings.TrimSpace(ch.GroupTitle),
+		strings.TrimSpace(ch.SourceTag),
+		strings.TrimSpace(ch.TVGID),
+	}, " "))
+	raw = backupNameNoise.ReplaceAllString(raw, " ")
+	fields := strings.Fields(raw)
+	if len(fields) == 0 {
+		return nil
+	}
+	joined := " " + strings.Join(fields, " ") + " "
+	tags := make([]string, 0, 4)
+	switch {
+	case strings.Contains(joined, " 4k "), strings.Contains(joined, " uhd "), strings.Contains(joined, " 2160 "):
+		tags = append(tags, "4K")
+	case strings.Contains(joined, " fhd "), strings.Contains(joined, " 1080 "):
+		tags = append(tags, "FHD")
+	case strings.Contains(joined, " hd "), strings.Contains(joined, " 720 "):
+		tags = append(tags, "HD")
+	case strings.Contains(joined, " sd "):
+		tags = append(tags, "SD")
+	}
+	if strings.Contains(joined, " raw ") {
+		tags = append(tags, "RAW")
+	}
+	switch {
+	case strings.Contains(joined, " 60fps "), strings.Contains(joined, " 60 fps "):
+		tags = append(tags, "60 FPS")
+	case strings.Contains(joined, " 50fps "), strings.Contains(joined, " 50 fps "):
+		tags = append(tags, "50 FPS")
+	case strings.Contains(joined, " 30fps "), strings.Contains(joined, " 30 fps "):
+		tags = append(tags, "30 FPS")
+	}
+	return tags
+}
+
+func inferVariantTag(ch catalog.LiveChannel) string {
+	joined := " " + normalizedBackupName(catalog.LiveChannel{GuideName: strings.Join([]string{ch.GuideName, ch.GroupTitle}, " ")}) + " "
+	switch {
+	case strings.Contains(joined, " east "):
+		return "EAST"
+	case strings.Contains(joined, " west "):
+		return "WEST"
+	case strings.Contains(joined, " plus "):
+		return "PLUS"
+	case strings.Contains(joined, " pacific "):
+		return "PACIFIC"
+	case strings.Contains(joined, " mountain "):
+		return "MOUNTAIN"
+	default:
+		return ""
+	}
 }
 
 func visibleStreamCount(ch catalog.LiveChannel) int {
