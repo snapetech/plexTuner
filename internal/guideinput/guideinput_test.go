@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
 )
@@ -14,6 +15,22 @@ import (
 func TestProviderXMLTVURL(t *testing.T) {
 	got := ProviderXMLTVURL("https://example.test/base/", "user name", "p@ss")
 	want := "https://example.test/base/xmltv.php?username=user+name&password=p%40ss"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+func TestProviderXMLTVURLWithSuffix(t *testing.T) {
+	got := ProviderXMLTVURLWithSuffix("https://example.test/base/", "user name", "p@ss", "&foo=1&bar=2")
+	want := "https://example.test/base/xmltv.php?username=user+name&password=p%40ss&foo=1&bar=2"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+func TestProviderXMLTVURLWithSuffix_NormalizesWhitespaceAndTrailingSlashes(t *testing.T) {
+	got := ProviderXMLTVURLWithSuffix("  https://example.test/base///  ", "user", "pass", "")
+	want := "https://example.test/base/xmltv.php?username=user&password=pass"
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
@@ -118,5 +135,73 @@ func TestLookupAllowedRemoteGuideRefReturnsAllowlistedTarget(t *testing.T) {
 	}
 	if remote.URL() != allowed.URL {
 		t.Fatalf("remote URL=%q want %q", remote.URL(), allowed.URL)
+	}
+}
+
+func TestLoadGuideData_ProviderEPGSuffixAllowlisted(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
+	const body = "<tv></tv>"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.RawQuery; got != "username=user&password=pass&foo=1&bar=2" {
+			t.Fatalf("raw query = %q", got)
+		}
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL", srv.URL)
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER", "user")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS", "pass")
+	t.Setenv("IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX", "&foo=1&bar=2")
+
+	ref := ProviderXMLTVURLWithSuffix(srv.URL, "user", "pass", "&foo=1&bar=2")
+	got, err := LoadGuideData(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != body {
+		t.Fatalf("http got %q", got)
+	}
+}
+
+func TestLoadGuideData_NumberedProviderDoesNotUseSlotAsSuffix(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
+	const body = "<tv></tv>"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.RawQuery; got != "username=user2&password=pass2&foo=1" {
+			t.Fatalf("raw query = %q", got)
+		}
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL_2", srv.URL)
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER_2", "user2")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS_2", "pass2")
+	t.Setenv("IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX", "&foo=1")
+
+	ref := ProviderXMLTVURLWithSuffix(srv.URL, "user2", "pass2", "&foo=1")
+	got, err := LoadGuideData(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != body {
+		t.Fatalf("http got %q", got)
+	}
+}
+
+func TestGuideInputTimeoutForURL_UsesProviderTimeoutForProviderRefs(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL", "https://provider.example")
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER", "user")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS", "pass")
+	t.Setenv("IPTV_TUNERR_PROVIDER_EPG_TIMEOUT", "180s")
+	t.Setenv("IPTV_TUNERR_XMLTV_TIMEOUT", "45s")
+
+	providerRef := ProviderXMLTVURL("https://provider.example", "user", "pass")
+	if got := guideInputTimeoutForURL(providerRef); got != 180*time.Second {
+		t.Fatalf("provider timeout=%v want %v", got, 180*time.Second)
+	}
+	if got := guideInputTimeoutForURL("https://other.example/guide.xml"); got != 45*time.Second {
+		t.Fatalf("general timeout=%v want %v", got, 45*time.Second)
 	}
 }

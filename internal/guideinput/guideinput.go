@@ -20,14 +20,56 @@ import (
 const defaultTimeout = 45 * time.Second
 const guideInputUserAgent = "IptvTunerr/1.0"
 
+func configuredGuideInputTimeout() time.Duration {
+	timeout := defaultTimeout
+	if raw := strings.TrimSpace(os.Getenv("IPTV_TUNERR_XMLTV_TIMEOUT")); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+			timeout = d
+		}
+	}
+	return timeout
+}
+
+func configuredProviderGuideInputTimeout() time.Duration {
+	timeout := configuredGuideInputTimeout()
+	if raw := strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_EPG_TIMEOUT")); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+			timeout = d
+		}
+	}
+	return timeout
+}
+
+func guideInputTimeoutForURL(rawURL string) time.Duration {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return configuredGuideInputTimeout()
+	}
+	for _, ref := range providerXMLTVRefsFromEnv() {
+		if rawURL == strings.TrimSpace(ref) {
+			return configuredProviderGuideInputTimeout()
+		}
+	}
+	return configuredGuideInputTimeout()
+}
+
 func ProviderXMLTVURL(baseURL, user, pass string) string {
-	baseURL = strings.TrimSuffix(strings.TrimSpace(baseURL), "/")
+	return ProviderXMLTVURLWithSuffix(baseURL, user, pass, "")
+}
+
+func ProviderXMLTVURLWithSuffix(baseURL, user, pass, suffix string) string {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	user = strings.TrimSpace(user)
 	pass = strings.TrimSpace(pass)
 	if baseURL == "" || user == "" || pass == "" {
 		return ""
 	}
-	return baseURL + "/xmltv.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass)
+	rawURL := baseURL + "/xmltv.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass)
+	suffix = strings.TrimSpace(suffix)
+	if suffix == "" {
+		return rawURL
+	}
+	return rawURL + "&" + strings.TrimPrefix(suffix, "&")
 }
 
 func LoadGuideData(ref string) ([]byte, error) {
@@ -119,14 +161,15 @@ func openRemoteGuideRef(ctx context.Context, ref refio.RemoteHTTPRef) (io.ReadCl
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	timeout := guideInputTimeoutForURL(ref.URL())
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ref.URL(), nil)
 	if err != nil {
 		cancel()
 		return nil, err
 	}
 	req.Header.Set("User-Agent", guideInputUserAgent)
-	resp, err := httpclient.WithTimeout(defaultTimeout).Do(req)
+	resp, err := httpclient.WithTimeout(timeout).Do(req)
 	if err != nil {
 		cancel()
 		return nil, err
@@ -189,12 +232,13 @@ func configuredGuideInputRemoteRefsFromEnv(extraAllowedRemoteRefs []string) []st
 func providerXMLTVRefsFromEnv() []string {
 	defaultUser := strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_USER"))
 	defaultPass := strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_PASS"))
+	suffix := strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX"))
 	refs := []string{}
-	if ref := ProviderXMLTVURL(os.Getenv("IPTV_TUNERR_PROVIDER_URL"), defaultUser, defaultPass); ref != "" {
+	if ref := ProviderXMLTVURLWithSuffix(os.Getenv("IPTV_TUNERR_PROVIDER_URL"), defaultUser, defaultPass, suffix); ref != "" {
 		refs = append(refs, ref)
 	}
 	for _, base := range strings.Split(os.Getenv("IPTV_TUNERR_PROVIDER_URLS"), ",") {
-		if ref := ProviderXMLTVURL(base, defaultUser, defaultPass); ref != "" {
+		if ref := ProviderXMLTVURLWithSuffix(base, defaultUser, defaultPass, suffix); ref != "" {
 			refs = append(refs, ref)
 		}
 	}
@@ -204,16 +248,16 @@ func providerXMLTVRefsFromEnv() []string {
 			continue
 		}
 		if strings.HasPrefix(key, "IPTV_TUNERR_PROVIDER_URL_") {
-			suffix := strings.TrimPrefix(key, "IPTV_TUNERR_PROVIDER_URL_")
-			user := strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_USER_" + suffix))
-			pass := strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_PASS_" + suffix))
+			index := strings.TrimPrefix(key, "IPTV_TUNERR_PROVIDER_URL_")
+			user := strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_USER_" + index))
+			pass := strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_PASS_" + index))
 			if user == "" {
 				user = defaultUser
 			}
 			if pass == "" {
 				pass = defaultPass
 			}
-			if ref := ProviderXMLTVURL(value, user, pass); ref != "" {
+			if ref := ProviderXMLTVURLWithSuffix(value, user, pass, suffix); ref != "" {
 				refs = append(refs, ref)
 			}
 		}

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"log"
@@ -8,6 +10,8 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -260,7 +264,7 @@ func streamURLsFromRankedBases(streamURL string, rankedBases []string) []string 
 	}
 	out := make([]string, 0, len(rankedBases))
 	for _, base := range rankedBases {
-		base = strings.TrimSuffix(base, "/")
+		base = normalizeCatalogProviderBase(base)
 		out = append(out, base+path)
 	}
 	return out
@@ -312,7 +316,7 @@ func streamVariantsFromRankedEntries(streamURL string, ranked []provider.EntryRe
 	}
 	out := make([]streamVariant, 0, len(ranked))
 	for _, er := range ranked {
-		base := strings.TrimSuffix(er.Entry.BaseURL, "/")
+		base := normalizeCatalogProviderBase(er.Entry.BaseURL)
 		if base == "" {
 			continue
 		}
@@ -329,8 +333,16 @@ func streamVariantsFromRankedEntries(streamURL string, ranked []provider.EntryRe
 	return out
 }
 
+func normalizeCatalogProviderBase(base string) string {
+	return strings.TrimRight(strings.TrimSpace(base), "/")
+}
+
+func catalogProviderIdentityKey(base, user, pass string) string {
+	return normalizeCatalogProviderBase(base) + "|" + user + "|" + pass
+}
+
 func catalogFromGetPHP(baseURL, user, pass string) (movies []catalog.Movie, series []catalog.Series, live []catalog.LiveChannel, err error) {
-	base := strings.TrimSuffix(baseURL, "/")
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	m3uURL := base + "/get.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&type=m3u_plus&output=ts"
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -494,17 +506,17 @@ func prioritizeWinningProvider(ranked []provider.EntryResult, winner provider.En
 	if len(ranked) == 0 {
 		return nil
 	}
-	winnerKey := strings.TrimSuffix(winner.Entry.BaseURL, "/") + "|" + winner.Entry.User + "|" + winner.Entry.Pass
+	winnerKey := catalogProviderIdentityKey(winner.Entry.BaseURL, winner.Entry.User, winner.Entry.Pass)
 	out := make([]provider.EntryResult, 0, len(ranked))
 	for _, entry := range ranked {
-		key := strings.TrimSuffix(entry.Entry.BaseURL, "/") + "|" + entry.Entry.User + "|" + entry.Entry.Pass
+		key := catalogProviderIdentityKey(entry.Entry.BaseURL, entry.Entry.User, entry.Entry.Pass)
 		if key == winnerKey {
 			out = append(out, entry)
 			break
 		}
 	}
 	for _, entry := range ranked {
-		key := strings.TrimSuffix(entry.Entry.BaseURL, "/") + "|" + entry.Entry.User + "|" + entry.Entry.Pass
+		key := catalogProviderIdentityKey(entry.Entry.BaseURL, entry.Entry.User, entry.Entry.Pass)
 		if key == winnerKey {
 			continue
 		}
@@ -519,6 +531,69 @@ func prioritizeWinningProvider(ranked []provider.EntryResult, winner provider.En
 func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error) {
 	var res catalogResult
 
+	supplementVODFromProvider := func() error {
+		if !cfg.M3USupplementVOD {
+			return nil
+		}
+		if len(res.Movies) > 0 || len(res.Series) > 0 {
+			return nil
+		}
+		entries := cfg.ProviderEntries()
+		if len(entries) == 0 {
+			return nil
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		probeOpts := provider.ProbeOptions{
+			BlockCloudflare: cfg.BlockCFProviders,
+			Logger:          log.Printf,
+		}
+		provEntries := make([]provider.Entry, len(entries))
+		for i, e := range entries {
+			provEntries[i] = provider.Entry{BaseURL: e.BaseURL, User: e.User, Pass: e.Pass}
+		}
+		var ranked []provider.EntryResult
+		if err := logCatalogPhase("provider probe + rank (vod supplement)", func() error {
+			ranked = provider.RankedEntries(ctx, provEntries, nil, probeOpts)
+			return nil
+		}); err != nil {
+			return err
+		}
+		if len(ranked) == 0 {
+			return nil
+		}
+		allBases := make([]string, 0, len(ranked))
+		for _, er := range ranked {
+			allBases = append(allBases, er.Entry.BaseURL)
+		}
+		for _, candidate := range ranked {
+			var movies []catalog.Movie
+			var series []catalog.Series
+			err := logCatalogPhase("index provider vod-only "+candidate.Entry.BaseURL, func() error {
+				var err error
+				movies, series, err = indexer.IndexVODSeriesFromPlayerAPIWithUserAgents(
+					candidate.Entry.BaseURL, candidate.Entry.User, candidate.Entry.Pass, allBases,
+					providerUserAgents(candidate), nil,
+				)
+				return err
+			})
+			if err != nil {
+				log.Printf("VOD supplement failed on %s: %v", candidate.Entry.BaseURL, err)
+				continue
+			}
+			res.Movies = movies
+			res.Series = series
+			if res.ProviderBase == "" {
+				res.ProviderBase = candidate.Entry.BaseURL
+				res.ProviderUser = candidate.Entry.User
+				res.ProviderPass = candidate.Entry.Pass
+			}
+			log.Printf("VOD supplement succeeded via %s: %d movies, %d series", candidate.Entry.BaseURL, len(movies), len(series))
+			return nil
+		}
+		return nil
+	}
+
 	if m3uOverride != "" {
 		movies, series, live, err := indexer.ParseM3U(m3uOverride, nil)
 		if err != nil {
@@ -527,6 +602,9 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 		res.Movies, res.Series, res.Live = movies, series, live
 		res.Live = maybeDedupeByTVGID(res.Live, cfg.StripStreamHosts)
 		enrichM3UWithProviderBases(cfg, res.Live)
+		if err := supplementVODFromProvider(); err != nil {
+			return res, err
+		}
 	} else if m3uURLs := configuredDirectM3UURLs(cfg); len(m3uURLs) > 0 {
 		var (
 			lastErr      error
@@ -556,6 +634,9 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 		}
 		res.Live = maybeDedupeByTVGID(res.Live, cfg.StripStreamHosts)
 		enrichM3UWithProviderBases(cfg, res.Live)
+		if err := supplementVODFromProvider(); err != nil {
+			return res, err
+		}
 	} else if entries := cfg.ProviderEntries(); len(entries) > 0 {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
@@ -603,12 +684,12 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 					applyStreamVariants(res.Live, prioritizeWinningProvider(ranked, candidate))
 					break
 				}
-				lockoutTracker.notePlayerAPI(strings.TrimSuffix(candidate.Entry.BaseURL, "/")+"|"+candidate.Entry.User+"|"+candidate.Entry.Pass, fetchErr)
+				lockoutTracker.notePlayerAPI(catalogProviderIdentityKey(candidate.Entry.BaseURL, candidate.Entry.User, candidate.Entry.Pass), fetchErr)
 				log.Printf("Ranked provider index failed on %s: %v", candidate.Entry.BaseURL, fetchErr)
 			}
 		}
 		providerKey := func(e config.ProviderEntry) string {
-			return strings.TrimSuffix(e.BaseURL, "/") + "|" + e.User + "|" + e.Pass
+			return catalogProviderIdentityKey(e.BaseURL, e.User, e.Pass)
 		}
 		var (
 			getPHPMovies []catalog.Movie
@@ -620,7 +701,7 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 		if len(ranked) == 0 && !cfg.BlockCFProviders {
 			var successfulEntries []provider.EntryResult
 			for _, e := range entries {
-				base := strings.TrimSuffix(e.BaseURL, "/")
+				base := normalizeCatalogProviderBase(e.BaseURL)
 				log.Printf("No player_api host passed probe; attempting direct index on %s", base)
 				var movies []catalog.Movie
 				var series []catalog.Series
@@ -642,7 +723,7 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 						Entry: provider.Entry{BaseURL: e.BaseURL, User: e.User, Pass: e.Pass},
 					})
 					for _, other := range entries {
-						if strings.TrimSuffix(other.BaseURL, "/") == base && other.User == e.User && other.Pass == e.Pass {
+						if normalizeCatalogProviderBase(other.BaseURL) == base && other.User == e.User && other.Pass == e.Pass {
 							continue
 						}
 						successfulEntries = append(successfulEntries, provider.EntryResult{
@@ -669,7 +750,7 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 				firstProvider = getPHPFirst
 			)
 			for _, e := range entries {
-				base := strings.TrimSuffix(e.BaseURL, "/")
+				base := normalizeCatalogProviderBase(e.BaseURL)
 				var movies []catalog.Movie
 				var series []catalog.Series
 				var live []catalog.LiveChannel
@@ -808,13 +889,31 @@ func configuredDirectM3UURLs(cfg *config.Config) []string {
 	if cfg != nil && strings.TrimSpace(cfg.M3UURL) != "" {
 		direct = append(direct, strings.TrimSpace(cfg.M3UURL))
 	}
-	for n := 2; ; n++ {
-		suffix := fmt.Sprintf("_%d", n)
-		u := strings.TrimSpace(os.Getenv("IPTV_TUNERR_M3U_URL" + suffix))
-		if u == "" {
-			break
+	type indexedURL struct {
+		index int
+		url   string
+	}
+	var indexed []indexedURL
+	for _, env := range os.Environ() {
+		key, value, ok := strings.Cut(env, "=")
+		if !ok || !strings.HasPrefix(key, "IPTV_TUNERR_M3U_URL_") {
+			continue
 		}
-		direct = append(direct, u)
+		n, err := strconv.Atoi(strings.TrimPrefix(key, "IPTV_TUNERR_M3U_URL_"))
+		if err != nil || n < 2 {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		indexed = append(indexed, indexedURL{index: n, url: value})
+	}
+	slices.SortFunc(indexed, func(a, b indexedURL) int {
+		return cmp.Compare(a.index, b.index)
+	})
+	for _, item := range indexed {
+		direct = append(direct, item.url)
 	}
 	return direct
 }
@@ -891,6 +990,30 @@ func unresolvedLiveChannels(live []catalog.LiveChannel, protected map[string]boo
 	return out
 }
 
+func loadProviderXMLTVChannelsForRepair(cfg *config.Config, ref string, allowedRefs []string) ([]epglink.XMLTVChannel, error) {
+	chans, err := loadXMLTVChannelsWithAllowed(ref, allowedRefs...)
+	if err == nil {
+		return chans, nil
+	}
+	cachePath := ""
+	if cfg != nil {
+		cachePath = strings.TrimSpace(cfg.ProviderEPGDiskCachePath)
+	}
+	if cachePath == "" {
+		return nil, err
+	}
+	data, cacheErr := os.ReadFile(cachePath)
+	if cacheErr != nil {
+		return nil, err
+	}
+	cached, parseErr := epglink.ParseXMLTVChannels(bytes.NewReader(data))
+	if parseErr != nil {
+		return nil, err
+	}
+	log.Printf("EPG repair provider source unavailable: %v; using stale disk cache %s", err, cachePath)
+	return cached, nil
+}
+
 func applyRuntimeEPGRepairs(cfg *config.Config, live []catalog.LiveChannel, providerBase, providerUser, providerPass string) {
 	if cfg == nil || !cfg.XMLTVMatchEnable || len(live) == 0 {
 		return
@@ -904,7 +1027,7 @@ func applyRuntimeEPGRepairs(cfg *config.Config, live []catalog.LiveChannel, prov
 	}
 	providerRef := ""
 	if cfg.ProviderEPGEnabled {
-		providerRef = guideinput.ProviderXMLTVURL(providerBase, providerUser, providerPass)
+		providerRef = guideinput.ProviderXMLTVURLWithSuffix(providerBase, providerUser, providerPass, cfg.ProviderEPGURLSuffix)
 		if providerRef != "" {
 			allowedRefs = append(allowedRefs, providerRef)
 		}
@@ -922,7 +1045,7 @@ func applyRuntimeEPGRepairs(cfg *config.Config, live []catalog.LiveChannel, prov
 	var sources []xmltvSource
 	if cfg.ProviderEPGEnabled {
 		if ref := providerRef; ref != "" {
-			if chans, err := loadXMLTVChannelsWithAllowed(ref, allowedRefs...); err != nil {
+			if chans, err := loadProviderXMLTVChannelsForRepair(cfg, ref, allowedRefs); err != nil {
 				log.Printf("EPG repair provider source unavailable: %v", err)
 			} else if len(chans) > 0 {
 				sources = append(sources, xmltvSource{name: "provider", ref: ref, channels: chans})

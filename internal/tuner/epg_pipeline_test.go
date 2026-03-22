@@ -3,8 +3,10 @@ package tuner
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -68,6 +70,40 @@ func TestFetchProviderXMLTV_conditionalDiskCache(t *testing.T) {
 	}
 }
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestFetchProviderXMLTV_conditionalDiskCacheFallsBackOnFetchError(t *testing.T) {
+	cacheFile := filepath.Join(t.TempDir(), "provider.xml")
+	cacheBody := `<?xml version="1.0" encoding="UTF-8"?><tv><programme channel="ch1" start="20300101000000 +0000" stop="20300101010000 +0000"><title>Cached</title></programme></tv>`
+	if err := os.WriteFile(cacheFile, []byte(cacheBody), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	x := &XMLTV{
+		ProviderBaseURL:          "http://provider.test",
+		ProviderUser:             "u",
+		ProviderPass:             "p",
+		ProviderEPGEnabled:       true,
+		ProviderEPGTimeout:       10 * time.Second,
+		ProviderEPGDiskCachePath: cacheFile,
+		Client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return nil, errors.New("boom")
+		})},
+	}
+
+	got, err := x.fetchProviderXMLTV(context.Background(), map[string]bool{"ch1": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || len(got.programmes) != 1 {
+		t.Fatalf("expected cached programme fallback, got %#v", got)
+	}
+}
+
 func TestProviderXMLTVEPGURL_suffix(t *testing.T) {
 	got := providerXMLTVEPGURL("http://example.com:8080/", "user", "pass", "foo=1&bar=2")
 	want := "http://example.com:8080/xmltv.php?username=user&password=pass&foo=1&bar=2"
@@ -77,6 +113,14 @@ func TestProviderXMLTVEPGURL_suffix(t *testing.T) {
 	got2 := providerXMLTVEPGURL("http://example.com", "u", "p", "&x=y")
 	if want2 := "http://example.com/xmltv.php?username=u&password=p&x=y"; got2 != want2 {
 		t.Fatalf("got %q want %q", got2, want2)
+	}
+}
+
+func TestProviderXMLTVEPGURL_normalizesWhitespaceAndTrailingSlashes(t *testing.T) {
+	got := providerXMLTVEPGURL("  http://example.com///  ", "u", "p", "")
+	want := "http://example.com/xmltv.php?username=u&password=p"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
 	}
 }
 
