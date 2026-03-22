@@ -683,6 +683,54 @@ func TestServer_programmingChannelDetail(t *testing.T) {
 	}
 }
 
+func TestServer_programmingBrowse(t *testing.T) {
+	start := time.Now().UTC().Add(10 * time.Minute).Format("20060102150405 -0700")
+	stop := time.Now().UTC().Add(40 * time.Minute).Format("20060102150405 -0700")
+	s := &Server{
+		RawChannels: []catalog.LiveChannel{
+			{ChannelID: "1", GuideNumber: "101", GuideName: "US: ASPIRE HD RAW 60fps", GroupTitle: "Entertainment", SourceTag: "strong8k", StreamURL: "http://a/1", TVGID: "AspireTV.us"},
+			{ChannelID: "2", GuideNumber: "102", GuideName: "US: AMC PLUS", GroupTitle: "Entertainment", SourceTag: "strong8k", StreamURL: "http://a/2", TVGID: "AMC.us"},
+		},
+		Channels: []catalog.LiveChannel{
+			{ChannelID: "1", GuideNumber: "101", GuideName: "US: ASPIRE HD RAW 60fps", GroupTitle: "Entertainment", SourceTag: "strong8k", StreamURL: "http://a/1", TVGID: "AspireTV.us"},
+		},
+		xmltv: &XMLTV{
+			Channels: []catalog.LiveChannel{
+				{ChannelID: "1", GuideNumber: "101", GuideName: "US: ASPIRE HD RAW 60fps", TVGID: "AspireTV.us", EPGLinked: true},
+				{ChannelID: "2", GuideNumber: "102", GuideName: "US: AMC PLUS", TVGID: "AMC.us", EPGLinked: true},
+			},
+			cachedXML: []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="101"><display-name>US: ASPIRE HD RAW 60fps</display-name></channel>
+  <channel id="102"><display-name>US: AMC PLUS</display-name></channel>
+  <programme start="` + start + `" stop="` + stop + `" channel="101">
+    <title>Late Show</title>
+  </programme>
+</tv>`),
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/programming/browse.json?category=strong8k--entertainment&limit=10&horizon=1h", nil)
+	w := httptest.NewRecorder()
+	s.serveProgrammingBrowse().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("browse status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body programmingBrowseReport
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("browse unmarshal: %v", err)
+	}
+	if body.TotalChannels != 2 || len(body.Items) != 2 || !body.SourceReady {
+		t.Fatalf("browse body=%+v", body)
+	}
+	if body.Items[0].Descriptor.Label == "" || body.Items[0].NextHourProgrammeCount != 1 || body.Items[0].GuideStatus == "" {
+		t.Fatalf("browse first item=%+v", body.Items[0])
+	}
+	if body.Items[1].NextHourProgrammeCount != 0 {
+		t.Fatalf("browse second item=%+v", body.Items[1])
+	}
+}
+
 func TestServer_diagnosticsWorkflowAndEvidenceAction(t *testing.T) {
 	origWd, err := os.Getwd()
 	if err != nil {
@@ -814,6 +862,17 @@ func TestServer_diagnosticsHarnessActions(t *testing.T) {
 		t.Fatalf("channel diff direct urls=%+v", gotChannelDiffEnv)
 	}
 
+	req = httptest.NewRequest(http.MethodPost, "/ops/actions/channel-diff-run", strings.NewReader(`{"good_channel_id":"bad-1","bad_channel_id":"good-1"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveChannelDiffRunAction().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("explicit channel diff action status=%d body=%s", w.Code, w.Body.String())
+	}
+	if gotChannelDiffEnv["GOOD_CHANNEL_ID"] != "bad-1" || gotChannelDiffEnv["BAD_CHANNEL_ID"] != "good-1" {
+		t.Fatalf("explicit channel diff env=%+v", gotChannelDiffEnv)
+	}
+
 	req = httptest.NewRequest(http.MethodPost, "/ops/actions/stream-compare-run", strings.NewReader(`{}`))
 	req.RemoteAddr = "127.0.0.1:12345"
 	w = httptest.NewRecorder()
@@ -823,6 +882,17 @@ func TestServer_diagnosticsHarnessActions(t *testing.T) {
 	}
 	if gotStreamCompareEnv["CHANNEL_ID"] != "bad-1" || gotStreamCompareEnv["DIRECT_URL"] != "http://provider.example/bad.m3u8" {
 		t.Fatalf("stream compare env=%+v", gotStreamCompareEnv)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/ops/actions/stream-compare-run", strings.NewReader(`{"channel_id":"good-1"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveStreamCompareRunAction().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("explicit stream compare action status=%d body=%s", w.Code, w.Body.String())
+	}
+	if gotStreamCompareEnv["CHANNEL_ID"] != "good-1" || gotStreamCompareEnv["DIRECT_URL"] != "http://provider.example/good.m3u8" {
+		t.Fatalf("explicit stream compare env=%+v", gotStreamCompareEnv)
 	}
 }
 

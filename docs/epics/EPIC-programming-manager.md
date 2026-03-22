@@ -135,6 +135,10 @@ This needs a stable, testable classifier rather than a hand-wavy UI-only label.
   - Added tuner regression coverage proving saved programming recipe mutations survive `UpdateChannels` refresh churn instead of only passing in a static one-shot API flow.
   - Expanded the binary smoke lane so it restarts `iptv-tunerr serve` against a reshuffled catalog while reusing the same programming recipe file, then reasserts curated lineup shape, persisted custom order, and `collapse_exact_backups` behavior after the restart.
   - Remaining `PM-009` depth is richer operator/browser automation, not missing persistence coverage.
+- **2026-03-21:** Programming browse and channel-aware diagnostics shipped on top of the existing lane.
+  - `/programming/browse.json` now gives one-category batch browse with cached guide-health status, next-hour programme titles/counts, exact-backup counts, recipe inclusion flags, and feed descriptors, so category exploration no longer needs one-channel-at-a-time detail polling.
+  - The deck can switch categories into that browse view directly and launch bounded `stream-compare` or `channel-diff` captures for the current selection or one of its exact backups.
+  - This turns the tester’s curses-side “press `e` and wait on 313 channels” workflow into one server-side cached request plus in-app diagnostics hooks instead of N ad hoc probes.
 
 ## Technical approach
 

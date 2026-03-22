@@ -27,6 +27,7 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/entitlements"
 	"github.com/snapetech/iptvtunerr/internal/epgstore"
 	"github.com/snapetech/iptvtunerr/internal/eventhooks"
+	"github.com/snapetech/iptvtunerr/internal/guidehealth"
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
 	"github.com/snapetech/iptvtunerr/internal/plexharvest"
 	"github.com/snapetech/iptvtunerr/internal/programming"
@@ -1396,6 +1397,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/guide/aliases.json", s.serveSuggestedAliasOverrides())
 	mux.Handle("/guide/lineup-match.json", s.serveGuideLineupMatch())
 	mux.Handle("/programming/categories.json", s.serveProgrammingCategories())
+	mux.Handle("/programming/browse.json", s.serveProgrammingBrowse())
 	mux.Handle("/programming/channels.json", s.serveProgrammingChannels())
 	mux.Handle("/programming/channel-detail.json", s.serveProgrammingChannelDetail())
 	mux.Handle("/programming/order.json", s.serveProgrammingOrder())
@@ -2673,6 +2675,39 @@ type programmingChannelDetailReport struct {
 	SourceReady        bool                            `json:"source_ready"`
 }
 
+type programmingBrowseItem struct {
+	CategoryID             string                     `json:"category_id"`
+	Bucket                 string                     `json:"bucket,omitempty"`
+	ChannelID              string                     `json:"channel_id"`
+	GuideNumber            string                     `json:"guide_number"`
+	GuideName              string                     `json:"guide_name"`
+	TVGID                  string                     `json:"tvg_id,omitempty"`
+	SourceTag              string                     `json:"source_tag,omitempty"`
+	GroupTitle             string                     `json:"group_title,omitempty"`
+	Descriptor             programming.FeedDescriptor `json:"descriptor,omitempty"`
+	Curated                bool                       `json:"curated"`
+	Included               bool                       `json:"included"`
+	Excluded               bool                       `json:"excluded"`
+	ExactBackupCount       int                        `json:"exact_backup_count"`
+	GuideStatus            string                     `json:"guide_status,omitempty"`
+	HasGuideProgrammes     bool                       `json:"has_guide_programmes"`
+	HasRealGuideProgrammes bool                       `json:"has_real_guide_programmes"`
+	NextHourProgrammeCount int                        `json:"next_hour_programme_count"`
+	NextHourTitles         []string                   `json:"next_hour_titles,omitempty"`
+}
+
+type programmingBrowseReport struct {
+	GeneratedAt    string                  `json:"generated_at"`
+	CategoryID     string                  `json:"category_id"`
+	CategoryLabel  string                  `json:"category_label,omitempty"`
+	CategorySource string                  `json:"category_source,omitempty"`
+	SourceReady    bool                    `json:"source_ready"`
+	Horizon        string                  `json:"horizon"`
+	Recipe         programming.Recipe      `json:"recipe"`
+	TotalChannels  int                     `json:"total_channels"`
+	Items          []programmingBrowseItem `json:"items,omitempty"`
+}
+
 type programmingHarvestImportReport struct {
 	GeneratedAt          string                `json:"generated_at"`
 	HarvestFile          string                `json:"harvest_file,omitempty"`
@@ -3036,6 +3071,144 @@ func (s *Server) serveProgrammingCategories() http.Handler {
 		body, err := json.MarshalIndent(resp, "", "  ")
 		if err != nil {
 			http.Error(w, `{"error":"encode programming categories"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveProgrammingBrowse() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		categoryID := strings.TrimSpace(r.URL.Query().Get("category"))
+		if categoryID == "" {
+			http.Error(w, `{"error":"category required"}`, http.StatusBadRequest)
+			return
+		}
+		horizon := time.Hour
+		if raw := strings.TrimSpace(r.URL.Query().Get("horizon")); raw != "" {
+			if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+				horizon = d
+			}
+		}
+		memberLimit := streamAttemptLimitFromQuery(r.URL.Query().Get("limit"), 400)
+		members := programming.CategoryMembers(s.RawChannels, categoryID)
+		if len(members) == 0 {
+			body, err := json.MarshalIndent(programmingBrowseReport{
+				GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
+				CategoryID:    categoryID,
+				Horizon:       horizon.String(),
+				Recipe:        s.reloadProgrammingRecipe(),
+				TotalChannels: 0,
+			}, "", "  ")
+			if err != nil {
+				http.Error(w, `{"error":"encode programming browse"}`, http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write(body)
+			return
+		}
+		if memberLimit > len(members) {
+			memberLimit = len(members)
+		}
+		selected := map[string]struct{}{}
+		excluded := map[string]struct{}{}
+		recipe := s.reloadProgrammingRecipe()
+		for _, id := range recipe.IncludedChannelIDs {
+			selected[strings.TrimSpace(id)] = struct{}{}
+		}
+		for _, id := range recipe.ExcludedChannelIDs {
+			excluded[strings.TrimSpace(id)] = struct{}{}
+		}
+		healthByID := map[string]guidehealth.ChannelHealth{}
+		sourceReady := false
+		if s.xmltv != nil {
+			if rep, err := s.xmltv.GuideHealth(time.Now(), strings.TrimSpace(os.Getenv("IPTV_TUNERR_XMLTV_ALIASES"))); err == nil {
+				sourceReady = rep.SourceReady
+				for _, row := range rep.Channels {
+					healthByID[strings.TrimSpace(row.ChannelID)] = row
+				}
+			}
+		}
+		titlesByGuideNumber := map[string][]string{}
+		if s.xmltv != nil {
+			if preview, err := s.xmltv.CatchupCapsulePreview(time.Now(), horizon, 4096); err == nil {
+				sourceReady = sourceReady || preview.SourceReady
+				for _, capsule := range preview.Capsules {
+					guideNumber := strings.TrimSpace(capsule.GuideNumber)
+					if guideNumber == "" {
+						continue
+					}
+					title := strings.TrimSpace(capsule.Title)
+					if title == "" {
+						continue
+					}
+					dup := false
+					for _, existing := range titlesByGuideNumber[guideNumber] {
+						if strings.TrimSpace(existing) == title {
+							dup = true
+							break
+						}
+					}
+					if !dup {
+						titlesByGuideNumber[guideNumber] = append(titlesByGuideNumber[guideNumber], title)
+					}
+				}
+			}
+		}
+		backupCounts := map[string]int{}
+		for _, group := range programming.BuildBackupGroups(s.RawChannels) {
+			count := len(group.Members) - 1
+			for _, member := range group.Members {
+				backupCounts[strings.TrimSpace(member.ChannelID)] = count
+			}
+		}
+		report := programmingBrowseReport{
+			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+			CategoryID:  categoryID,
+			SourceReady: sourceReady,
+			Horizon:     horizon.String(),
+			Recipe:      recipe,
+		}
+		report.Items = make([]programmingBrowseItem, 0, memberLimit)
+		for _, member := range members[:memberLimit] {
+			channelID := strings.TrimSpace(member.ChannelID)
+			item := programmingBrowseItem{
+				CategoryID:       member.CategoryID,
+				Bucket:           member.Bucket,
+				ChannelID:        member.ChannelID,
+				GuideNumber:      member.GuideNumber,
+				GuideName:        member.GuideName,
+				TVGID:            member.TVGID,
+				SourceTag:        member.SourceTag,
+				GroupTitle:       member.GroupTitle,
+				Descriptor:       member.Descriptor,
+				Curated:          containsLiveChannelID(s.Channels, channelID),
+				ExactBackupCount: backupCounts[channelID],
+			}
+			if _, ok := selected[channelID]; ok {
+				item.Included = true
+			}
+			if _, ok := excluded[channelID]; ok {
+				item.Excluded = true
+			}
+			if health, ok := healthByID[channelID]; ok {
+				item.GuideStatus = health.Status
+				item.HasGuideProgrammes = health.HasProgrammes
+				item.HasRealGuideProgrammes = health.HasRealProgrammes
+			}
+			item.NextHourTitles = append([]string(nil), titlesByGuideNumber[strings.TrimSpace(member.GuideNumber)]...)
+			item.NextHourProgrammeCount = len(item.NextHourTitles)
+			report.Items = append(report.Items, item)
+		}
+		report.TotalChannels = len(members)
+		if len(report.Items) > 0 {
+			report.CategoryLabel = report.Items[0].GroupTitle
+			report.CategorySource = report.Items[0].SourceTag
+		}
+		body, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode programming browse"}`, http.StatusInternalServerError)
 			return
 		}
 		_, _ = w.Write(body)

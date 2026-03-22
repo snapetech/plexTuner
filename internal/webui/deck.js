@@ -55,6 +55,7 @@ const endpointCatalog = {
   recorder: { title: "Recorder", category: "Operations", summary: "Catch-up recorder state, failures, and throughput." },
   attempts: { title: "Stream Attempts", category: "Routing", summary: "Recent fallback and failure evidence for live streams." },
   programmingCategories: { title: "Programming Categories", category: "Programming", summary: "Category inventory and bulk include/exclude controls for lineup curation." },
+  programmingBrowse: { title: "Programming Browse", category: "Programming", summary: "Batch browse view for one category with cached guide and alternative-source status." },
   programmingChannels: { title: "Programming Channels", category: "Programming", summary: "Exact include/exclude channel controls for the saved programming recipe." },
   programmingOrder: { title: "Programming Order", category: "Programming", summary: "Manual lineup order mutations and order-mode state." },
   programmingBackups: { title: "Programming Backups", category: "Programming", summary: "Exact sibling backup groups that can collapse into one visible lineup row." },
@@ -145,6 +146,7 @@ const state = {
   actionFeedback: null,
   deckSettings: null,
   programmingSelectedChannelId: "",
+  programmingSelectedCategoryId: "",
   programmingPlayer: {
     hls: null,
     url: "",
@@ -368,6 +370,7 @@ function programmingCategoryButtons(category, recipe) {
   const excluded = new Set(normalizeArray(recipe?.excluded_categories));
   const id = category?.id || "";
   return [
+    createTinyButton(`data-programming-category-select="${esc(id)}"`, state.programmingSelectedCategoryId === id ? "Browsing" : "Browse"),
     createTinyButton(`data-programming-post="category" data-programming-action="include" data-programming-id="${esc(id)}"`, selected.has(id) ? "Included" : "Include"),
     createTinyButton(`data-programming-post="category" data-programming-action="exclude" data-programming-id="${esc(id)}"`, excluded.has(id) ? "Excluded" : "Exclude"),
     createTinyButton(`data-programming-post="category" data-programming-action="remove" data-programming-id="${esc(id)}"`, "Clear"),
@@ -386,6 +389,19 @@ function programmingChannelButtons(channel, recipe) {
     createTinyButton(`data-programming-post="channel" data-programming-action="remove" data-programming-id="${esc(id)}"`, "Clear"),
     createTinyButton(`data-open-path="/api/programming/channels.json?category=${encodeURIComponent(channel?.GroupTitle || channel?.group_title || "")}" data-open-title="Programming Channel · ${esc(label)}"`, "Context")
   ].join("");
+}
+
+function programmingStreamCompareButton(channel, label = "Stream Compare") {
+  const id = programmingChannelID(channel);
+  if (!id) return "";
+  return createTinyButton(`data-action="stream_compare_run" data-action-payload="${esc(JSON.stringify({ channel_id: id }))}"`, label);
+}
+
+function programmingChannelDiffButton(goodChannel, badChannel, label = "Channel Diff") {
+  const goodID = programmingChannelID(goodChannel);
+  const badID = programmingChannelID(badChannel);
+  if (!goodID || !badID) return "";
+  return createTinyButton(`data-action="channel_diff_run" data-action-payload="${esc(JSON.stringify({ good_channel_id: goodID, bad_channel_id: badID }))}"`, label);
 }
 
 function programmingOrderButtons(channel, lineup, recipe) {
@@ -518,6 +534,7 @@ function loadPersistedState() {
       if (Number.isFinite(Number(prefs.refreshRateSec))) state.refreshRateSec = Number(prefs.refreshRateSec);
       if (prefs.selectedRaw && endpoints[prefs.selectedRaw]) state.selectedRaw = prefs.selectedRaw;
       if (prefs.programmingSelectedChannelId) state.programmingSelectedChannelId = String(prefs.programmingSelectedChannelId);
+      if (prefs.programmingSelectedCategoryId) state.programmingSelectedCategoryId = String(prefs.programmingSelectedCategoryId);
     }
   } catch {
   }
@@ -531,7 +548,8 @@ function persistPrefs() {
       mode: state.mode,
       refreshRateSec: state.refreshRateSec,
       selectedRaw: state.selectedRaw,
-      programmingSelectedChannelId: state.programmingSelectedChannelId
+      programmingSelectedChannelId: state.programmingSelectedChannelId,
+      programmingSelectedCategoryId: state.programmingSelectedCategoryId
     }));
   } catch {}
 }
@@ -550,6 +568,14 @@ function pickProgrammingSelection(curatedLineup, detailPayload = {}) {
     return detailID;
   }
   return programmingChannelID(curatedLineup[0]);
+}
+
+function pickProgrammingCategorySelection(inventory, current = "") {
+  const wanted = String(current || "").trim();
+  if (wanted && inventory.some((item) => String(item?.id || "").trim() === wanted)) {
+    return wanted;
+  }
+  return String(inventory[0]?.id || "").trim();
 }
 
 function findProgrammingChannel(lineup, id) {
@@ -1285,6 +1311,8 @@ function renderDeck() {
   const virtualChannelSchedulePayload = state.payloads.virtualChannelSchedule?.body || {};
   const programmingRecipe = programmingRecipePayload.recipe || programmingPreviewPayload.recipe || {};
   const programmingInventory = normalizeArray(programmingCategoriesPayload.categories || programmingPreviewPayload.inventory);
+  const programmingBrowsePayload = state.payloads.programmingBrowse?.body || {};
+  const programmingBrowseItems = normalizeArray(programmingBrowsePayload.items);
   const curatedLineup = normalizeArray(programmingPreviewPayload.lineup);
   const programmingLineupDescriptors = programmingPreviewPayload.lineup_descriptors || {};
   const backupGroups = normalizeArray(programmingBackupsPayload.groups || programmingPreviewPayload.backup_groups);
@@ -1304,6 +1332,16 @@ function renderDeck() {
       "",
       "programmingCategories",
       `<div class="card-actions">${programmingCategoryButtons(category, programmingRecipe)}</div>`
+    )
+  );
+  const browseCards = programmingBrowseItems.slice(0, 10).map((item) =>
+    createCard(
+      channelName(item),
+      `${channelDescriptorLabel(item) || "Descriptor unavailable"} · guide ${pretty(item.guide_status || "unknown")} · next hour ${pretty(item.next_hour_programme_count)}`,
+      `${pretty(item.guide_number)} · ${pretty(item.tvg_id || "no tvg")} · backups ${pretty(item.exact_backup_count)} · curated=${pretty(item.curated)} · included=${pretty(item.included)} · excluded=${pretty(item.excluded)}${normalizeArray(item.next_hour_titles).length ? ` · ${normalizeArray(item.next_hour_titles).slice(0, 2).join(" | ")}` : ""}`,
+      item.has_real_guide_programmes ? "tone-good" : (item.has_guide_programmes ? "tone-warn" : ""),
+      "programmingBrowse",
+      `<div class="card-actions">${programmingChannelButtons(item, programmingRecipe)}${createTinyButton(`data-programming-select="${esc(programmingChannelID(item))}"`, "Detail")}${programmingStreamCompareButton(item)}</div>`
     )
   );
 
@@ -1339,6 +1377,21 @@ function renderDeck() {
   ]).join("");
 
   programmingCategories.innerHTML = filterCards(topCategoryCards).join("") || createCard("Categories", "No category inventory is available yet.", "", "", "programmingCategories");
+  if (state.programmingSelectedCategoryId) {
+    programmingCategories.innerHTML += filterCards([
+      createCard(
+        `Browse · ${programmingBrowsePayload.category_label || state.programmingSelectedCategoryId}`,
+        programmingBrowseItems.length
+          ? `${pretty(programmingBrowsePayload.total_channels)} channels in category · source_ready=${pretty(programmingBrowsePayload.source_ready)} · horizon ${pretty(programmingBrowsePayload.horizon)}`
+          : pretty(programmingBrowsePayload.error || "No browse rows returned for the selected category."),
+        "",
+        "",
+        "programmingCategories",
+        `<button class="tiny" type="button" data-open-path="/api/programming/browse.json?category=${encodeURIComponent(state.programmingSelectedCategoryId)}&limit=24&horizon=1h" data-open-title="Programming Browse · ${esc(programmingBrowsePayload.category_label || state.programmingSelectedCategoryId)}">Inspect Browse</button>`
+      ),
+      ...browseCards
+    ]).join("");
+  }
 
   programmingPreview.innerHTML = filterCards(curatedLineup.slice(0, 12).map((channel) =>
     createCard(
@@ -1393,11 +1446,15 @@ function renderDeck() {
 
   const upcomingProgrammes = normalizeArray(programmingDetailPayload.UpcomingProgrammes).slice(0, 4);
   const alternativeSources = normalizeArray(programmingDetailPayload.AlternativeSources).slice(0, 5);
+  const alternativeSourceButtons = alternativeSources.slice(0, 3).map((item) =>
+    programmingChannelDiffButton(item, programmingDetailPayload.Channel || selectedProgrammingChannel, `Diff vs ${channelName(item)}`)
+  ).filter(Boolean).join(" ");
   programmingDetail.innerHTML = [
     `<div class="detail-chip"><strong>${esc(selectedProgrammingID ? selectedProgrammingName : "No selected channel")}</strong><span>${esc(selectedProgrammingID ? `${channelDescriptorLabel(programmingDetailPayload.Channel || selectedProgrammingChannel, programmingLineupDescriptors) || "Descriptor unavailable"} · ${pretty(programmingDetailPayload.CategoryLabel || selectedProgrammingChannel?.GroupTitle || selectedProgrammingChannel?.group_title || "Uncategorized")} · bucket ${pretty(programmingDetailPayload.Bucket || "unknown")} · curated=${pretty(programmingDetailPayload.Curated)}` : "Choose a curated channel to inspect its detail and preview path.")}</span></div>`,
     `<div class="detail-chip"><strong>Upcoming programmes</strong><span>${esc(upcomingProgrammes.length ? upcomingProgrammes.map((item) => `${item.title || item.Title || "programme"} @ ${formatWhen(item.start || item.Start)}`).join(" | ") : (selectedProgrammingID ? "No upcoming guide rows available for this channel yet." : "No channel selected."))}</span></div>`,
     `<div class="detail-chip"><strong>Alternative sources</strong><span>${esc(alternativeSources.length ? alternativeSources.map((item) => `${channelName(item)} · ${channelDescriptorLabel(item) || pretty(item.SourceTag || item.source_tag || "source?")}${(item.descriptor?.variant || item.Descriptor?.Variant) ? ` · ${item.descriptor?.variant || item.Descriptor?.Variant}` : ""}`).join(" | ") : "No exact alternative sources detected for the current selection.")}</span></div>`,
-    `<div class="detail-chip"><strong>Virtual schedule context</strong><span>${esc(virtualScheduleSlots.length ? virtualScheduleSlots.slice(0, 4).map((slot) => `${slot.display_name || slot.rule_name || slot.channel_id} · ${slot.asset_title || slot.asset_id || "asset"} @ ${formatWhen(slot.starts_at || slot.startsAt)}`).join(" | ") : "No virtual-channel schedule configured yet.")}</span></div>`
+    `<div class="detail-chip"><strong>Virtual schedule context</strong><span>${esc(virtualScheduleSlots.length ? virtualScheduleSlots.slice(0, 4).map((slot) => `${slot.display_name || slot.rule_name || slot.channel_id} · ${slot.asset_title || slot.asset_id || "asset"} @ ${formatWhen(slot.starts_at || slot.startsAt)}`).join(" | ") : "No virtual-channel schedule configured yet.")}</span></div>`,
+    selectedProgrammingID ? `<div class="detail-chip"><strong>Diagnostics</strong><span>Run bounded capture straight from the current Programming selection.</span><div class="card-actions">${programmingStreamCompareButton(programmingDetailPayload.Channel || selectedProgrammingChannel)}${alternativeSourceButtons}</div></div>` : ""
   ].join("");
 
   settingsList.innerHTML = filterCards([
@@ -1554,9 +1611,19 @@ async function reloadDeck() {
     fetchJSON(key, path).catch((error) => ({ label: key, path, ok: false, status: 0, body: { error: String(error) } }))
   ));
   state.payloads = Object.fromEntries(entries.map((item) => [item.label, item]));
+  const programmingInventory = normalizeArray(state.payloads.programmingCategories?.body?.categories || state.payloads.programmingPreview?.body?.inventory);
+  state.programmingSelectedCategoryId = pickProgrammingCategorySelection(programmingInventory, state.programmingSelectedCategoryId);
   const curatedLineup = normalizeArray(state.payloads.programmingPreview?.body?.lineup);
   state.programmingSelectedChannelId = pickProgrammingSelection(curatedLineup, state.payloads.programmingChannelDetail?.body || {});
   persistPrefs();
+  if (state.programmingSelectedCategoryId) {
+    state.payloads.programmingBrowse = await fetchJSON(
+      "programmingBrowse",
+      `/api/programming/browse.json?category=${encodeURIComponent(state.programmingSelectedCategoryId)}&limit=24&horizon=1h`
+    ).catch((error) => ({ label: "programmingBrowse", path: "", ok: false, status: 0, body: { error: String(error) } }));
+  } else {
+    delete state.payloads.programmingBrowse;
+  }
   if (state.programmingSelectedChannelId) {
     state.payloads.programmingChannelDetail = await fetchJSON(
       "programmingChannelDetail",
@@ -1572,14 +1639,21 @@ async function reloadDeck() {
   await renderRaw();
 }
 
-async function postAction(actionKey) {
+async function postAction(actionKey, payload = null, confirmOverride = "") {
   const def = actionDefinitions[actionKey];
   if (!def) return;
-  if (def.confirm && !window.confirm(def.confirm)) return;
+  const confirmText = confirmOverride || def.confirm || "";
+  if (confirmText && !window.confirm(confirmText)) return;
   setActionFeedback({ ok: undefined, action: actionKey, message: "Submitting operator action..." });
   renderDeck();
   try {
-    const res = await fetch(def.path, { method: "POST", headers: authHeaders({ "Accept": "application/json" }) });
+    const headers = authHeaders({ "Accept": "application/json" });
+    const init = { method: "POST", headers };
+    if (payload !== null && payload !== undefined) {
+      headers["Content-Type"] = "application/json";
+      init.body = JSON.stringify(payload);
+    }
+    const res = await fetch(def.path, init);
     const text = await res.text();
     let body;
     try {
@@ -1683,7 +1757,19 @@ function bindUI() {
     }
     const action = event.target.closest("[data-action]");
     if (action) {
-      postAction(action.getAttribute("data-action"));
+      let payload = null;
+      const rawPayload = action.getAttribute("data-action-payload");
+      if (rawPayload) {
+        try {
+          payload = JSON.parse(rawPayload);
+        } catch (error) {
+          setActionFeedback({ ok: false, action: action.getAttribute("data-action"), message: `invalid action payload: ${error}` });
+          renderDeck();
+          return;
+        }
+      }
+      const confirmText = action.getAttribute("data-action-confirm") || "";
+      postAction(action.getAttribute("data-action"), payload, confirmText);
       return;
     }
     const workflow = event.target.closest("[data-workflow]");
@@ -1755,6 +1841,13 @@ function bindUI() {
     const programmingSelect = event.target.closest("[data-programming-select]");
     if (programmingSelect) {
       state.programmingSelectedChannelId = programmingSelect.getAttribute("data-programming-select") || "";
+      persistPrefs();
+      reloadDeck();
+      return;
+    }
+    const programmingCategorySelect = event.target.closest("[data-programming-category-select]");
+    if (programmingCategorySelect) {
+      state.programmingSelectedCategoryId = programmingCategorySelect.getAttribute("data-programming-category-select") || "";
       persistPrefs();
       reloadDeck();
       return;
