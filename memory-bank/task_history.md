@@ -23,6 +23,24 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: Add dedicated web UI binary smoke proof
+  Summary:
+    - Extended `scripts/ci-smoke.sh` to start a real `run --skip-index --skip-health` instance with the dedicated web UI enabled.
+    - The smoke now logs in through `/login`, reuses the session cookie to hit `/api/debug/runtime.json`, saves `/deck/settings.json` with the extracted CSRF token, and fetches `/api/ops/workflows/diagnostics.json`.
+    - Updated `scripts/release-readiness.sh` and the release-readiness matrix so the deck auth/proxy/operator plane is no longer treated as indirect-only proof.
+  Verification:
+    - `bash ./scripts/ci-smoke.sh`
+    - `./scripts/release-readiness.sh`
+  Notes:
+    - This materially strengthens the operator plane contract, but it still is not the same as exhaustive browser automation across every deck lane.
+  Opportunities filed:
+    - none
+  Links:
+    - `scripts/ci-smoke.sh`
+    - `scripts/release-readiness.sh`
+    - `docs/explanations/release-readiness-matrix.md`
+
+- Date: 2026-03-21
   Title: Add dead-remux fallback binary smoke proof
   Summary:
     - Extended `scripts/ci-smoke.sh` with a fake-ffmpeg same-host HLS fallback run against a real temp binary.

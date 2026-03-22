@@ -437,6 +437,27 @@ run_serve() {
   PIDS+=("$!")
 }
 
+run_with_webui() {
+  local catalog="$1" port="$2" webui_port="$3"
+  IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
+  IPTV_TUNERR_XMLTV_URL= \
+  IPTV_TUNERR_WEBUI_DISABLED=0 \
+  IPTV_TUNERR_WEBUI_PORT="$webui_port" \
+  IPTV_TUNERR_WEBUI_USER=deck \
+  IPTV_TUNERR_WEBUI_PASS=secret \
+  IPTV_TUNERR_XTREAM_USER=demo \
+  IPTV_TUNERR_XTREAM_PASS=secret \
+  IPTV_TUNERR_XTREAM_USERS_FILE="$TMP_DIR/xtream-users.json" \
+  IPTV_TUNERR_PROGRAMMING_RECIPE_FILE="$TMP_DIR/programming.json" \
+  IPTV_TUNERR_PLEX_LINEUP_HARVEST_FILE="$TMP_DIR/lineup-harvest.json" \
+  IPTV_TUNERR_VIRTUAL_CHANNELS_FILE="$TMP_DIR/virtual-channels.json" \
+  IPTV_TUNERR_RECORDING_RULES_FILE="$TMP_DIR/recording-rules.json" \
+  IPTV_TUNERR_CATCHUP_RECORDER_STATE_FILE="$TMP_DIR/recorder-state.json" \
+  "$BIN" run -catalog "$catalog" -addr ":$port" -base-url "http://127.0.0.1:$port" -skip-index -skip-health \
+    >"$TMP_DIR/run-webui-$port.log" 2>&1 &
+  PIDS+=("$!")
+}
+
 run_vod_webdav() {
   local catalog="$1" port="$2"
   "$BIN" vod-webdav -catalog "$catalog" -addr "127.0.0.1:$port" -cache "$TMP_DIR/vod-cache" \
@@ -624,6 +645,35 @@ assert_header "http://127.0.0.1:$port_empty/guide.xml" "Retry-After" "5"
 assert_status "http://127.0.0.1:$port_empty/lineup.json" "200"
 assert_header "http://127.0.0.1:$port_empty/discover.json" "X-IptvTunerr-Startup-State" "loading"
 assert_header "http://127.0.0.1:$port_empty/lineup.json" "X-IptvTunerr-Startup-State" "loading"
+
+port_webui_tuner="$(pick_port)"
+port_webui="$(pick_port)"
+run_with_webui "$TMP_DIR/catalog-full.json" "$port_webui_tuner" "$port_webui"
+wait_http_code "http://127.0.0.1:$port_webui_tuner/discover.json" "200" || fail "webui run discover.json not ready"
+wait_http_code "http://127.0.0.1:$port_webui/login" "200" || fail "webui login not ready"
+login_headers="$TMP_DIR/webui-login.headers"
+login_code="$(curl -sS -D "$login_headers" -o /dev/null -w '%{http_code}' -X POST \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data 'username=deck&password=secret' \
+  "http://127.0.0.1:$port_webui/login" || true)"
+[[ "$login_code" == "303" ]] || fail "webui login status=$login_code"
+cookie="$(awk '/^Set-Cookie:/ { sub(/\r$/, "", $0); split($2, parts, ";"); print parts[1]; exit }' "$login_headers")"
+[[ -n "$cookie" ]] || fail "webui login missing session cookie"
+home_html="$(curl -sS -H "Cookie: $cookie" "http://127.0.0.1:$port_webui/")"
+assert_contains "$home_html" "deck-bootstrap" "webui home bootstrap"
+csrf_token="$(HTML="$home_html" python3 -c 'import json, os, re; html=os.environ["HTML"]; m=re.search(r"<script id=\"deck-bootstrap\" type=\"application/json\">(.*?)</script>", html, re.S); assert m; print(json.loads(m.group(1)).get("csrfToken",""))')"
+[[ -n "$csrf_token" ]] || fail "webui home missing csrf token"
+runtime_body="$(curl -sS -H "Cookie: $cookie" "http://127.0.0.1:$port_webui/api/debug/runtime.json")"
+assert_contains "$runtime_body" '"webui"' "webui runtime proxy"
+settings_code="$(curl -sS -o "$body_file" -w '%{http_code}' -X POST \
+  -H "Cookie: $cookie" \
+  -H "Content-Type: application/json" \
+  -H "X-IPTVTunerr-Deck-CSRF: $csrf_token" \
+  --data '{"default_refresh_sec":45}' \
+  "http://127.0.0.1:$port_webui/deck/settings.json" || true)"
+[[ "$settings_code" == "200" ]] || fail "webui settings save status=$settings_code body=$(cat "$body_file" 2>/dev/null)"
+diagnostics_body="$(curl -sS -H "Cookie: $cookie" "http://127.0.0.1:$port_webui/api/ops/workflows/diagnostics.json")"
+assert_contains "$diagnostics_body" '"suggested_good_channel_id"' "webui diagnostics workflow"
 
 port_vod="$(pick_port)"
 run_vod_webdav "$TMP_DIR/catalog-vod.json" "$port_vod"

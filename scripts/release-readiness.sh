@@ -42,6 +42,8 @@ run "programming + backup preference suites" go test ./internal/programming ./in
 
 run "provider-account + shared-relay suites" go test ./internal/tuner -run 'Test(Gateway_(stream_rollsAcrossThreeXtreamPathAccounts|stream_twoChannelsPreferDifferentXtreamPathAccounts|stream_threeChannelsUseThreeXtreamPathAccounts|sharedRelaySessionFanout|tryServeSharedRelay|relayHLSAsTS_survivesPlaylistConcurrencyRetry|shouldPreferGoRelayForHLSRemux|relaySuccessfulHLSUpstream_crossHostPlaylistPrefersGoBeforeFFmpegFailure|relayHLSWithFFmpeg_nonTranscodeFirstBytesTimeout|stream_hlsDeadRemuxFallsBackQuickly)|Server_SharedRelayReport)' -count=1
 
+run "webui auth + proxy suites" go test ./internal/webui -count=1
+
 run "vod-webdav suites" go test ./internal/vodwebdav ./cmd/iptv-tunerr -count=1
 
 if [[ "$INCLUDE_MAC" == "1" ]]; then

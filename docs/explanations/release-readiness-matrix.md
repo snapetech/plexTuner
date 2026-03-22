@@ -47,7 +47,7 @@ every release should at least make those gaps explicit.
 | WebDAV VOD protocol contract | Yes | Yes | Yes on macOS | Strong |
 | macOS VOD/WebDAV client behavior | Harness + diff | N/A | Yes | Host-proven |
 | Windows VOD/WebDAV client behavior | Harness shape only | Package prep only | No | Not host-proven |
-| Web UI programming / diagnostics lane behavior | Partial | Indirect | Partial manual | Good but not exhaustive |
+| Web UI programming / diagnostics lane behavior | Yes | Yes | Partial macOS host proof | Release-gated, still not browser-exhaustive |
 
 ## What “good enough to release” means here
 
