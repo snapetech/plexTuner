@@ -729,6 +729,20 @@ func TestServer_programmingBrowse(t *testing.T) {
 	if body.Items[1].NextHourProgrammeCount != 0 {
 		t.Fatalf("browse second item=%+v", body.Items[1])
 	}
+
+	req = httptest.NewRequest(http.MethodGet, "/programming/browse.json?category=strong8k--entertainment&limit=10&horizon=1h&guide=real&curated=missing", nil)
+	w = httptest.NewRecorder()
+	s.serveProgrammingBrowse().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("filtered browse status=%d body=%s", w.Code, w.Body.String())
+	}
+	body = programmingBrowseReport{}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("filtered browse unmarshal: %v", err)
+	}
+	if body.TotalChannels != 2 || body.FilteredCount != 0 || len(body.Items) != 0 || body.GuideFilter != "real" || body.CuratedFilter != "missing" {
+		t.Fatalf("filtered browse body=%+v", body)
+	}
 }
 
 func TestServer_diagnosticsWorkflowAndEvidenceAction(t *testing.T) {

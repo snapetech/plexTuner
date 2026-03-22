@@ -37,6 +37,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Programming feed descriptors**: Programming Manager now derives operator-facing feed descriptors from provider-presented metadata (`region | category | feedtype/fps-style tags`) and surfaces them across category members, curated preview rows, channel detail, and exact-backup alternatives.
 - **Programming browse lane**: `/programming/browse.json` now returns one category’s channel rows with cached guide-health status, next-hour programme titles/counts, exact-backup counts, recipe inclusion flags, and feed descriptors in one batch, and the deck can switch categories into that browse view directly instead of polling channel detail one row at a time.
 - **Programming channel-aware diagnostics**: the deck can now launch bounded `stream-compare` captures for the current Programming selection and exact-backup `channel-diff` captures against alternative sources, instead of relying only on the global diagnostics suggestions.
+- **Programming quick-add browse filters**: the deck can now toggle “Real Guide Only” and “Only Not In Lineup” against `/programming/browse.json`, making PPV/event-style channel hunts faster without one-off client-side polling or manual JSON filtering.
 
 ### Fixed
 

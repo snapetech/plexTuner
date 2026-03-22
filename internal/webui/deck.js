@@ -147,6 +147,8 @@ const state = {
   deckSettings: null,
   programmingSelectedChannelId: "",
   programmingSelectedCategoryId: "",
+  programmingBrowseGuideOnly: false,
+  programmingBrowseUncuratedOnly: false,
   programmingPlayer: {
     hls: null,
     url: "",
@@ -535,6 +537,8 @@ function loadPersistedState() {
       if (prefs.selectedRaw && endpoints[prefs.selectedRaw]) state.selectedRaw = prefs.selectedRaw;
       if (prefs.programmingSelectedChannelId) state.programmingSelectedChannelId = String(prefs.programmingSelectedChannelId);
       if (prefs.programmingSelectedCategoryId) state.programmingSelectedCategoryId = String(prefs.programmingSelectedCategoryId);
+      state.programmingBrowseGuideOnly = !!prefs.programmingBrowseGuideOnly;
+      state.programmingBrowseUncuratedOnly = !!prefs.programmingBrowseUncuratedOnly;
     }
   } catch {
   }
@@ -549,9 +553,22 @@ function persistPrefs() {
       refreshRateSec: state.refreshRateSec,
       selectedRaw: state.selectedRaw,
       programmingSelectedChannelId: state.programmingSelectedChannelId,
-      programmingSelectedCategoryId: state.programmingSelectedCategoryId
+      programmingSelectedCategoryId: state.programmingSelectedCategoryId,
+      programmingBrowseGuideOnly: state.programmingBrowseGuideOnly,
+      programmingBrowseUncuratedOnly: state.programmingBrowseUncuratedOnly
     }));
   } catch {}
+}
+
+function programmingBrowsePath(categoryId, limit = 24, horizon = "1h") {
+  const params = new URLSearchParams({
+    category: categoryId || "",
+    limit: String(limit),
+    horizon: String(horizon)
+  });
+  if (state.programmingBrowseGuideOnly) params.set("guide", "real");
+  if (state.programmingBrowseUncuratedOnly) params.set("curated", "missing");
+  return `/api/programming/browse.json?${params.toString()}`;
 }
 
 function programmingChannelID(channel) {
@@ -1382,12 +1399,14 @@ function renderDeck() {
       createCard(
         `Browse · ${programmingBrowsePayload.category_label || state.programmingSelectedCategoryId}`,
         programmingBrowseItems.length
-          ? `${pretty(programmingBrowsePayload.total_channels)} channels in category · source_ready=${pretty(programmingBrowsePayload.source_ready)} · horizon ${pretty(programmingBrowsePayload.horizon)}`
+          ? `${pretty(programmingBrowsePayload.filtered_count || programmingBrowseItems.length)} shown of ${pretty(programmingBrowsePayload.total_channels)} · source_ready=${pretty(programmingBrowsePayload.source_ready)} · horizon ${pretty(programmingBrowsePayload.horizon)}`
           : pretty(programmingBrowsePayload.error || "No browse rows returned for the selected category."),
         "",
         "",
         "programmingCategories",
-        `<button class="tiny" type="button" data-open-path="/api/programming/browse.json?category=${encodeURIComponent(state.programmingSelectedCategoryId)}&limit=24&horizon=1h" data-open-title="Programming Browse · ${esc(programmingBrowsePayload.category_label || state.programmingSelectedCategoryId)}">Inspect Browse</button>`
+        `<button class="tiny" type="button" data-programming-browse-toggle="guide">${state.programmingBrowseGuideOnly ? "Show All Guide States" : "Real Guide Only"}</button>
+         <button class="tiny" type="button" data-programming-browse-toggle="curated">${state.programmingBrowseUncuratedOnly ? "Show Curated Too" : "Only Not In Lineup"}</button>
+         <button class="tiny" type="button" data-open-path="${esc(programmingBrowsePath(state.programmingSelectedCategoryId))}" data-open-title="Programming Browse · ${esc(programmingBrowsePayload.category_label || state.programmingSelectedCategoryId)}">Inspect Browse</button>`
       ),
       ...browseCards
     ]).join("");
@@ -1619,7 +1638,7 @@ async function reloadDeck() {
   if (state.programmingSelectedCategoryId) {
     state.payloads.programmingBrowse = await fetchJSON(
       "programmingBrowse",
-      `/api/programming/browse.json?category=${encodeURIComponent(state.programmingSelectedCategoryId)}&limit=24&horizon=1h`
+      programmingBrowsePath(state.programmingSelectedCategoryId)
     ).catch((error) => ({ label: "programmingBrowse", path: "", ok: false, status: 0, body: { error: String(error) } }));
   } else {
     delete state.payloads.programmingBrowse;
@@ -1848,6 +1867,15 @@ function bindUI() {
     const programmingCategorySelect = event.target.closest("[data-programming-category-select]");
     if (programmingCategorySelect) {
       state.programmingSelectedCategoryId = programmingCategorySelect.getAttribute("data-programming-category-select") || "";
+      persistPrefs();
+      reloadDeck();
+      return;
+    }
+    const programmingBrowseToggle = event.target.closest("[data-programming-browse-toggle]");
+    if (programmingBrowseToggle) {
+      const mode = programmingBrowseToggle.getAttribute("data-programming-browse-toggle") || "";
+      if (mode === "guide") state.programmingBrowseGuideOnly = !state.programmingBrowseGuideOnly;
+      if (mode === "curated") state.programmingBrowseUncuratedOnly = !state.programmingBrowseUncuratedOnly;
       persistPrefs();
       reloadDeck();
       return;

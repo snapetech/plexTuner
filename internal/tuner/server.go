@@ -2703,8 +2703,11 @@ type programmingBrowseReport struct {
 	CategorySource string                  `json:"category_source,omitempty"`
 	SourceReady    bool                    `json:"source_ready"`
 	Horizon        string                  `json:"horizon"`
+	GuideFilter    string                  `json:"guide_filter,omitempty"`
+	CuratedFilter  string                  `json:"curated_filter,omitempty"`
 	Recipe         programming.Recipe      `json:"recipe"`
 	TotalChannels  int                     `json:"total_channels"`
+	FilteredCount  int                     `json:"filtered_count"`
 	Items          []programmingBrowseItem `json:"items,omitempty"`
 }
 
@@ -3092,12 +3095,16 @@ func (s *Server) serveProgrammingBrowse() http.Handler {
 			}
 		}
 		memberLimit := streamAttemptLimitFromQuery(r.URL.Query().Get("limit"), 400)
+		guideFilter := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("guide")))
+		curatedFilter := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("curated")))
 		members := programming.CategoryMembers(s.RawChannels, categoryID)
 		if len(members) == 0 {
 			body, err := json.MarshalIndent(programmingBrowseReport{
 				GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
 				CategoryID:    categoryID,
 				Horizon:       horizon.String(),
+				GuideFilter:   guideFilter,
+				CuratedFilter: curatedFilter,
 				Recipe:        s.reloadProgrammingRecipe(),
 				TotalChannels: 0,
 			}, "", "  ")
@@ -3164,14 +3171,17 @@ func (s *Server) serveProgrammingBrowse() http.Handler {
 			}
 		}
 		report := programmingBrowseReport{
-			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-			CategoryID:  categoryID,
-			SourceReady: sourceReady,
-			Horizon:     horizon.String(),
-			Recipe:      recipe,
+			GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
+			CategoryID:    categoryID,
+			SourceReady:   sourceReady,
+			Horizon:       horizon.String(),
+			GuideFilter:   guideFilter,
+			CuratedFilter: curatedFilter,
+			Recipe:        recipe,
+			TotalChannels: len(members),
 		}
-		report.Items = make([]programmingBrowseItem, 0, memberLimit)
-		for _, member := range members[:memberLimit] {
+		filtered := make([]programmingBrowseItem, 0, len(members))
+		for _, member := range members {
 			channelID := strings.TrimSpace(member.ChannelID)
 			item := programmingBrowseItem{
 				CategoryID:       member.CategoryID,
@@ -3199,12 +3209,28 @@ func (s *Server) serveProgrammingBrowse() http.Handler {
 			}
 			item.NextHourTitles = append([]string(nil), titlesByGuideNumber[strings.TrimSpace(member.GuideNumber)]...)
 			item.NextHourProgrammeCount = len(item.NextHourTitles)
-			report.Items = append(report.Items, item)
+			if guideFilter == "real" && !item.HasRealGuideProgrammes {
+				continue
+			}
+			if curatedFilter == "missing" && item.Curated {
+				continue
+			}
+			if curatedFilter == "curated" && !item.Curated {
+				continue
+			}
+			filtered = append(filtered, item)
 		}
-		report.TotalChannels = len(members)
+		report.FilteredCount = len(filtered)
+		if memberLimit > len(filtered) {
+			memberLimit = len(filtered)
+		}
+		report.Items = append(report.Items, filtered[:memberLimit]...)
 		if len(report.Items) > 0 {
 			report.CategoryLabel = report.Items[0].GroupTitle
 			report.CategorySource = report.Items[0].SourceTag
+		} else if len(members) > 0 {
+			report.CategoryLabel = strings.TrimSpace(members[0].GroupTitle)
+			report.CategorySource = strings.TrimSpace(members[0].SourceTag)
 		}
 		body, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {

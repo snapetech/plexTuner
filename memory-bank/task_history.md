@@ -26,7 +26,7 @@ Append-only. One entry per completed task.
   Title: Add batch Programming browse with cached next-hour EPG summaries
   Summary:
     - Added `/programming/browse.json`, which returns one category’s channel rows with derived feed descriptors, recipe inclusion flags, exact-backup counts, cached guide-health status, and next-hour programme titles/counts in one request.
-    - Updated the dedicated deck so category cards can switch into a browse view instead of forcing one-channel-at-a-time detail polling, and so the selected Programming channel can launch bounded `stream-compare` or exact-backup `channel-diff` captures directly from the same lane.
+    - Updated the dedicated deck so category cards can switch into a browse view instead of forcing one-channel-at-a-time detail polling, so the selected Programming channel can launch bounded `stream-compare` or exact-backup `channel-diff` captures directly from the same lane, and so operators can toggle “Real Guide Only” / “Only Not In Lineup” while hunting quick-add PPV/event channels.
     - This directly productizes the tester’s “flip through channels and see which ones really have guide data” workflow using cached server state instead of repeated client-side probes.
   Verification:
     - `go test ./internal/tuner -run 'TestServer_(programmingEndpoints|programmingBrowse|programmingChannelDetail|diagnosticsHarnessActions)' -count=1`
