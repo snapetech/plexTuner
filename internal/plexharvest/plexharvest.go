@@ -3,6 +3,8 @@ package plexharvest
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/snapetech/iptvtunerr/internal/httpclient"
 	"github.com/snapetech/iptvtunerr/internal/plex"
 )
 
@@ -22,19 +25,28 @@ type Target struct {
 }
 
 type Result struct {
-	BaseURL        string   `json:"base_url"`
-	Cap            string   `json:"cap,omitempty"`
-	FriendlyName   string   `json:"friendly_name"`
-	DeviceKey      string   `json:"device_key,omitempty"`
-	DeviceUUID     string   `json:"device_uuid,omitempty"`
-	DVRKey         int      `json:"dvr_key,omitempty"`
-	DVRUUID        string   `json:"dvr_uuid,omitempty"`
-	LineupTitle    string   `json:"lineup_title,omitempty"`
-	LineupURL      string   `json:"lineup_url,omitempty"`
-	LineupIDs      []string `json:"lineup_ids,omitempty"`
-	ChannelMapRows int      `json:"channelmap_rows,omitempty"`
-	Activated      int      `json:"activated,omitempty"`
-	Error          string   `json:"error,omitempty"`
+	BaseURL        string             `json:"base_url"`
+	Cap            string             `json:"cap,omitempty"`
+	FriendlyName   string             `json:"friendly_name"`
+	DeviceKey      string             `json:"device_key,omitempty"`
+	DeviceUUID     string             `json:"device_uuid,omitempty"`
+	DVRKey         int                `json:"dvr_key,omitempty"`
+	DVRUUID        string             `json:"dvr_uuid,omitempty"`
+	LineupTitle    string             `json:"lineup_title,omitempty"`
+	LineupURL      string             `json:"lineup_url,omitempty"`
+	LineupIDs      []string           `json:"lineup_ids,omitempty"`
+	Channels       []HarvestedChannel `json:"channels,omitempty"`
+	ChannelMapRows int                `json:"channelmap_rows,omitempty"`
+	Activated      int                `json:"activated,omitempty"`
+	Error          string             `json:"error,omitempty"`
+}
+
+type HarvestedChannel struct {
+	ChannelID   string `json:"channel_id,omitempty"`
+	GuideNumber string `json:"guide_number,omitempty"`
+	GuideName   string `json:"guide_name"`
+	TVGID       string `json:"tvg_id,omitempty"`
+	GroupTitle  string `json:"group_title,omitempty"`
 }
 
 type SummaryLineup struct {
@@ -70,6 +82,7 @@ var (
 	getChannelMap       = plex.GetChannelMap
 	activateChannelsAPI = plex.ActivateChannelsAPI
 	listDVRsAPI         = plex.ListDVRsAPI
+	fetchLineupRows     = fetchLineup
 )
 
 func ExpandTargets(baseURLsCSV, baseTemplate, capsCSV, namePrefix string) []Target {
@@ -188,6 +201,9 @@ func Probe(req ProbeRequest) Report {
 					break
 				}
 			}
+		}
+		if channels, err := fetchLineupRows(res.BaseURL); err == nil {
+			res.Channels = channels
 		}
 		report.Results = append(report.Results, res)
 	}
@@ -325,6 +341,37 @@ func targetFriendlyName(prefix, cap string) string {
 		return strings.TrimSuffix(prefix, "-")
 	}
 	return strings.TrimSuffix(prefix, "-") + "-" + strings.TrimSpace(cap)
+}
+
+func fetchLineup(baseURL string) ([]HarvestedChannel, error) {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		return nil, fmt.Errorf("base url required")
+	}
+	req, err := http.NewRequest(http.MethodGet, baseURL+"/lineup.json", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := httpclient.WithTimeout(15 * time.Second).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("lineup fetch status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var rows []HarvestedChannel
+	if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
+		return nil, err
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if strings.TrimSpace(rows[i].GuideNumber) == strings.TrimSpace(rows[j].GuideNumber) {
+			return strings.TrimSpace(rows[i].GuideName) < strings.TrimSpace(rows[j].GuideName)
+		}
+		return strings.TrimSpace(rows[i].GuideNumber) < strings.TrimSpace(rows[j].GuideNumber)
+	})
+	return rows, nil
 }
 
 func targetDeviceID(prefix, cap string, seq int) string {

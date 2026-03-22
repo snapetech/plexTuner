@@ -402,6 +402,68 @@ func TestServer_programmingPreviewIncludesHarvestSummary(t *testing.T) {
 	}
 }
 
+func TestServer_programmingHarvestImport(t *testing.T) {
+	recipePath := filepath.Join(t.TempDir(), "programming.json")
+	harvestPath := filepath.Join(t.TempDir(), "harvest.json")
+	if _, err := plexharvest.SaveReportFile(harvestPath, plexharvest.Report{
+		PlexURL: "plex.example:32400",
+		Results: []plexharvest.Result{{
+			BaseURL:      "http://oracle-100:5004",
+			FriendlyName: "oracle-100",
+			LineupTitle:  "Rogers West",
+			Channels: []plexharvest.HarvestedChannel{
+				{GuideNumber: "101", GuideName: "CBC Regina", TVGID: "cbc.regina"},
+				{GuideNumber: "102", GuideName: "CTV Regina", TVGID: "ctv.regina"},
+			},
+		}},
+	}); err != nil {
+		t.Fatalf("save harvest: %v", err)
+	}
+	s := &Server{
+		ProgrammingRecipeFile: recipePath,
+		PlexLineupHarvestFile: harvestPath,
+		RawChannels: []catalog.LiveChannel{
+			{ChannelID: "cbc-1", GuideNumber: "4", GuideName: "CBC Regina", TVGID: "cbc.regina", StreamURL: "http://a/1"},
+			{ChannelID: "ctv-1", GuideNumber: "5", GuideName: "CTV Regina", TVGID: "ctv.regina", StreamURL: "http://a/2"},
+			{ChannelID: "sports-1", GuideNumber: "300", GuideName: "Sports Net", TVGID: "sports.net", StreamURL: "http://a/3"},
+		},
+	}
+	s.rebuildCuratedChannelsFromRaw()
+
+	req := httptest.NewRequest(http.MethodGet, "/programming/harvest-import.json?lineup_title=Rogers%20West&replace=1&collapse_exact_backups=1", nil)
+	w := httptest.NewRecorder()
+	s.serveProgrammingHarvestImport().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("harvest import preview status=%d body=%s", w.Code, w.Body.String())
+	}
+	var preview programmingHarvestImportReport
+	if err := json.Unmarshal(w.Body.Bytes(), &preview); err != nil {
+		t.Fatalf("preview unmarshal: %v", err)
+	}
+	if preview.MatchedChannels != 2 || len(preview.OrderedChannelIDs) != 2 || preview.Recipe.OrderMode != "custom" {
+		t.Fatalf("preview=%+v", preview)
+	}
+
+	postBody := strings.NewReader(`{"lineup_title":"Rogers West","replace":true,"collapse_exact_backups":true}`)
+	req = httptest.NewRequest(http.MethodPost, "/programming/harvest-import.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveProgrammingHarvestImport().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("harvest import apply status=%d body=%s", w.Code, w.Body.String())
+	}
+	loaded, err := programming.LoadRecipeFile(recipePath)
+	if err != nil {
+		t.Fatalf("load recipe: %v", err)
+	}
+	if len(loaded.IncludedChannelIDs) != 2 || len(loaded.ExcludedChannelIDs) != 1 || !loaded.CollapseExactBackups {
+		t.Fatalf("loaded recipe=%+v", loaded)
+	}
+	if len(s.Channels) != 2 {
+		t.Fatalf("curated channels=%d", len(s.Channels))
+	}
+}
+
 func TestServer_virtualChannelRulesAndPreview(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

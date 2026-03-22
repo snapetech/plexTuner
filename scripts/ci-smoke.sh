@@ -190,7 +190,11 @@ cat >"$TMP_DIR/lineup-harvest.json" <<'JSON'
       "cap": "100",
       "friendly_name": "harvest-100",
       "lineup_title": "Rogers West",
-      "channelmap_rows": 420
+      "channelmap_rows": 420,
+      "channels": [
+        { "guide_number": "101", "guide_name": "Smoke One", "tvg_id": "smoke.one" },
+        { "guide_number": "102", "guide_name": "Smoke Two", "tvg_id": "smoke.two" }
+      ]
     }
   ]
 }
@@ -392,6 +396,7 @@ grep -q '"id": "sports"' <(curl -sS "http://127.0.0.1:$port_full/programming/cat
 grep -q '"group_count": 0' <(curl -sS "http://127.0.0.1:$port_full/programming/backups.json") || fail "programming backups unexpected initial group"
 grep -q '"lineup_title": "Rogers West"' <(curl -sS "http://127.0.0.1:$port_full/programming/harvest.json") || fail "programming harvest missing seeded lineup title"
 grep -q '"harvest_ready": true' <(curl -sS "http://127.0.0.1:$port_full/programming/preview.json") || fail "programming preview missing harvest readiness"
+grep -q '"matched_channels":' <(curl -sS "http://127.0.0.1:$port_full/programming/harvest-import.json?lineup_title=Rogers%20West&replace=1") || fail "programming harvest import preview missing matched rows"
 grep -q '"resolved_name": "Movie One"' <(curl -sS "http://127.0.0.1:$port_full/virtual-channels/preview.json?per_channel=2") || fail "virtual channel preview missing movie slot"
 grep -q '/virtual-channels/stream/vc-news.mp4' <(curl -sS "http://127.0.0.1:$port_full/virtual-channels/live.m3u") || fail "virtual channel m3u missing stream url"
 virtual_stream_body="$(curl -sS "http://127.0.0.1:$port_full/virtual-channels/stream/vc-news.mp4")"

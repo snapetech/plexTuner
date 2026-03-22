@@ -1393,6 +1393,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/programming/order.json", s.serveProgrammingOrder())
 	mux.Handle("/programming/backups.json", s.serveProgrammingBackups())
 	mux.Handle("/programming/harvest.json", s.serveProgrammingHarvest())
+	mux.Handle("/programming/harvest-import.json", s.serveProgrammingHarvestImport())
 	mux.Handle("/programming/recipe.json", s.serveProgrammingRecipe())
 	mux.Handle("/programming/preview.json", s.serveProgrammingPreview())
 	mux.Handle("/virtual-channels/rules.json", s.serveVirtualChannelRules())
@@ -2474,6 +2475,168 @@ type programmingChannelDetailReport struct {
 	SourceReady        bool                            `json:"source_ready"`
 }
 
+type programmingHarvestImportReport struct {
+	GeneratedAt          string                `json:"generated_at"`
+	HarvestFile          string                `json:"harvest_file,omitempty"`
+	LineupTitle          string                `json:"lineup_title,omitempty"`
+	FriendlyName         string                `json:"friendly_name,omitempty"`
+	Replace              bool                  `json:"replace"`
+	CollapseExactBackups bool                  `json:"collapse_exact_backups"`
+	HarvestedChannels    int                   `json:"harvested_channels"`
+	MatchedChannels      int                   `json:"matched_channels"`
+	OrderedChannelIDs    []string              `json:"ordered_channel_ids,omitempty"`
+	MissingGuideNames    []string              `json:"missing_guide_names,omitempty"`
+	Recipe               programming.Recipe    `json:"recipe"`
+	MatchedLineup        []catalog.LiveChannel `json:"matched_lineup,omitempty"`
+}
+
+func normalizeHarvestGuideName(raw string) string {
+	raw = strings.ToLower(strings.TrimSpace(raw))
+	raw = strings.Join(strings.Fields(raw), " ")
+	return raw
+}
+
+func chooseHarvestResult(rep plexharvest.Report, lineupTitle, friendlyName string) (plexharvest.Result, bool) {
+	lineupTitle = strings.TrimSpace(lineupTitle)
+	friendlyName = strings.TrimSpace(friendlyName)
+	best := plexharvest.Result{}
+	found := false
+	for _, row := range rep.Results {
+		if lineupTitle != "" && !strings.EqualFold(strings.TrimSpace(row.LineupTitle), lineupTitle) {
+			continue
+		}
+		if friendlyName != "" && !strings.EqualFold(strings.TrimSpace(row.FriendlyName), friendlyName) {
+			continue
+		}
+		if len(row.Channels) == 0 {
+			continue
+		}
+		if !found || len(row.Channels) > len(best.Channels) || row.ChannelMapRows > best.ChannelMapRows {
+			best = row
+			found = true
+		}
+	}
+	if found {
+		return best, true
+	}
+	for _, row := range rep.Results {
+		if len(row.Channels) == 0 {
+			continue
+		}
+		if !found || len(row.Channels) > len(best.Channels) || row.ChannelMapRows > best.ChannelMapRows {
+			best = row
+			found = true
+		}
+	}
+	return best, found
+}
+
+func buildProgrammingHarvestImport(existing programming.Recipe, raw []catalog.LiveChannel, result plexharvest.Result, replace bool, collapse bool) programmingHarvestImportReport {
+	report := programmingHarvestImportReport{
+		GeneratedAt:          time.Now().UTC().Format(time.RFC3339),
+		LineupTitle:          strings.TrimSpace(result.LineupTitle),
+		FriendlyName:         strings.TrimSpace(result.FriendlyName),
+		Replace:              replace,
+		CollapseExactBackups: collapse,
+		HarvestedChannels:    len(result.Channels),
+	}
+	byTVGID := map[string][]catalog.LiveChannel{}
+	byName := map[string][]catalog.LiveChannel{}
+	for _, ch := range raw {
+		if tvg := strings.TrimSpace(ch.TVGID); tvg != "" {
+			byTVGID[tvg] = append(byTVGID[tvg], ch)
+		}
+		nameKey := normalizeHarvestGuideName(ch.GuideName)
+		if nameKey != "" {
+			byName[nameKey] = append(byName[nameKey], ch)
+		}
+	}
+	seen := map[string]struct{}{}
+	ordered := make([]string, 0)
+	matched := make([]catalog.LiveChannel, 0)
+	missing := make([]string, 0)
+	for _, harvested := range result.Channels {
+		candidates := []catalog.LiveChannel(nil)
+		if tvg := strings.TrimSpace(harvested.TVGID); tvg != "" {
+			candidates = append(candidates, byTVGID[tvg]...)
+		}
+		if len(candidates) == 0 {
+			candidates = append(candidates, byName[normalizeHarvestGuideName(harvested.GuideName)]...)
+		}
+		if len(candidates) == 0 {
+			if name := strings.TrimSpace(harvested.GuideName); name != "" {
+				missing = append(missing, name)
+			}
+			continue
+		}
+		sort.SliceStable(candidates, func(i, j int) bool {
+			hi := strings.TrimSpace(harvested.GuideNumber)
+			ai := strings.TrimSpace(candidates[i].GuideNumber)
+			aj := strings.TrimSpace(candidates[j].GuideNumber)
+			if ai == hi && aj != hi {
+				return true
+			}
+			if aj == hi && ai != hi {
+				return false
+			}
+			if ai == aj {
+				return strings.TrimSpace(candidates[i].GuideName) < strings.TrimSpace(candidates[j].GuideName)
+			}
+			return ai < aj
+		})
+		for _, candidate := range candidates {
+			channelID := strings.TrimSpace(candidate.ChannelID)
+			if _, ok := seen[channelID]; ok {
+				continue
+			}
+			seen[channelID] = struct{}{}
+			ordered = append(ordered, channelID)
+			matched = append(matched, candidate)
+		}
+	}
+	report.OrderedChannelIDs = append([]string(nil), ordered...)
+	report.MatchedChannels = len(ordered)
+	report.MatchedLineup = append([]catalog.LiveChannel(nil), matched...)
+	report.MissingGuideNames = append([]string(nil), missing...)
+
+	var recipe programming.Recipe
+	if replace {
+		excluded := make([]string, 0, len(raw))
+		for _, ch := range raw {
+			channelID := strings.TrimSpace(ch.ChannelID)
+			if _, ok := seen[channelID]; ok {
+				continue
+			}
+			excluded = append(excluded, channelID)
+		}
+		recipe = programming.Recipe{
+			IncludedChannelIDs:   append([]string(nil), ordered...),
+			ExcludedChannelIDs:   excluded,
+			OrderMode:            "custom",
+			CustomOrder:          append([]string(nil), ordered...),
+			CollapseExactBackups: collapse,
+		}
+	} else {
+		recipe = existing
+		recipe.CollapseExactBackups = recipe.CollapseExactBackups || collapse
+		recipe.OrderMode = "custom"
+		recipe.IncludedChannelIDs = append(append([]string(nil), recipe.IncludedChannelIDs...), ordered...)
+		recipe.CustomOrder = append(append([]string(nil), ordered...), recipe.CustomOrder...)
+		if len(recipe.ExcludedChannelIDs) > 0 {
+			excluded := make([]string, 0, len(recipe.ExcludedChannelIDs))
+			for _, id := range recipe.ExcludedChannelIDs {
+				if _, ok := seen[strings.TrimSpace(id)]; ok {
+					continue
+				}
+				excluded = append(excluded, id)
+			}
+			recipe.ExcludedChannelIDs = excluded
+		}
+	}
+	report.Recipe = programming.NormalizeRecipe(recipe)
+	return report
+}
+
 func (s *Server) serveProgrammingCategories() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -2742,6 +2905,90 @@ func (s *Server) serveProgrammingHarvest() http.Handler {
 			}, "", "  ")
 			if err != nil {
 				http.Error(w, `{"error":"encode programming harvest"}`, http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write(body)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+}
+
+func (s *Server) serveProgrammingHarvestImport() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		rep := s.reloadPlexLineupHarvest()
+		switch r.Method {
+		case http.MethodGet:
+			lineupTitle := strings.TrimSpace(r.URL.Query().Get("lineup_title"))
+			friendlyName := strings.TrimSpace(r.URL.Query().Get("friendly_name"))
+			replace := true
+			if raw := strings.TrimSpace(r.URL.Query().Get("replace")); raw != "" {
+				replace = raw != "0" && !strings.EqualFold(raw, "false")
+			}
+			collapse := false
+			if raw := strings.TrimSpace(r.URL.Query().Get("collapse_exact_backups")); raw != "" {
+				collapse = raw == "1" || strings.EqualFold(raw, "true")
+			}
+			result, ok := chooseHarvestResult(rep, lineupTitle, friendlyName)
+			if !ok {
+				http.Error(w, `{"error":"harvest result not found"}`, http.StatusNotFound)
+				return
+			}
+			report := buildProgrammingHarvestImport(s.reloadProgrammingRecipe(), s.RawChannels, result, replace, collapse)
+			report.HarvestFile = strings.TrimSpace(s.PlexLineupHarvestFile)
+			body, err := json.MarshalIndent(report, "", "  ")
+			if err != nil {
+				http.Error(w, `{"error":"encode programming harvest import"}`, http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write(body)
+		case http.MethodPost:
+			if !operatorUIAllowed(w, r) {
+				return
+			}
+			if strings.TrimSpace(s.ProgrammingRecipeFile) == "" {
+				http.Error(w, `{"error":"programming recipe file not configured"}`, http.StatusServiceUnavailable)
+				return
+			}
+			limited := http.MaxBytesReader(w, r.Body, 65536)
+			defer limited.Close()
+			var req struct {
+				LineupTitle          string `json:"lineup_title"`
+				FriendlyName         string `json:"friendly_name"`
+				Replace              *bool  `json:"replace,omitempty"`
+				CollapseExactBackups bool   `json:"collapse_exact_backups"`
+			}
+			if err := json.NewDecoder(limited).Decode(&req); err != nil {
+				http.Error(w, `{"error":"invalid programming harvest import json"}`, http.StatusBadRequest)
+				return
+			}
+			replace := true
+			if req.Replace != nil {
+				replace = *req.Replace
+			}
+			result, ok := chooseHarvestResult(rep, req.LineupTitle, req.FriendlyName)
+			if !ok {
+				http.Error(w, `{"error":"harvest result not found"}`, http.StatusNotFound)
+				return
+			}
+			report := buildProgrammingHarvestImport(s.reloadProgrammingRecipe(), s.RawChannels, result, replace, req.CollapseExactBackups)
+			saved, err := programming.SaveRecipeFile(s.ProgrammingRecipeFile, report.Recipe)
+			if err != nil {
+				http.Error(w, `{"error":"save programming recipe failed"}`, http.StatusBadGateway)
+				return
+			}
+			s.ProgrammingRecipe = saved
+			s.rebuildCuratedChannelsFromRaw()
+			report.Recipe = saved
+			report.HarvestFile = strings.TrimSpace(s.PlexLineupHarvestFile)
+			body, err := json.MarshalIndent(map[string]interface{}{
+				"ok":               true,
+				"report":           report,
+				"curated_channels": len(s.Channels),
+			}, "", "  ")
+			if err != nil {
+				http.Error(w, `{"error":"encode programming harvest import"}`, http.StatusInternalServerError)
 				return
 			}
 			_, _ = w.Write(body)

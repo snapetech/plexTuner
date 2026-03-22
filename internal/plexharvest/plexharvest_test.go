@@ -44,6 +44,7 @@ func TestProbe_pollsAndCapturesLineupTitle(t *testing.T) {
 	oldGetMap := getChannelMap
 	oldActivate := activateChannelsAPI
 	oldList := listDVRsAPI
+	oldFetchLineup := fetchLineupRows
 	defer func() {
 		registerTunerViaAPI = oldRegister
 		createDVRViaAPI = oldCreate
@@ -51,6 +52,7 @@ func TestProbe_pollsAndCapturesLineupTitle(t *testing.T) {
 		getChannelMap = oldGetMap
 		activateChannelsAPI = oldActivate
 		listDVRsAPI = oldList
+		fetchLineupRows = oldFetchLineup
 	}()
 
 	registerTunerViaAPI = func(cfg plex.PlexAPIConfig) (*plex.DeviceInfo, error) {
@@ -76,6 +78,9 @@ func TestProbe_pollsAndCapturesLineupTitle(t *testing.T) {
 	listDVRsAPI = func(plexHost, token string) ([]plex.DVRInfo, error) {
 		return []plex.DVRInfo{{Key: 91, LineupTitle: "Rogers West", LineupURL: "lineup://guide.xml#Rogers%20West"}}, nil
 	}
+	fetchLineupRows = func(baseURL string) ([]HarvestedChannel, error) {
+		return []HarvestedChannel{{GuideNumber: "101", GuideName: "CBC Regina", TVGID: "cbc.regina"}}, nil
+	}
 
 	report := Probe(ProbeRequest{
 		PlexHost:     "plex.example:32400",
@@ -92,6 +97,9 @@ func TestProbe_pollsAndCapturesLineupTitle(t *testing.T) {
 	got := report.Results[0]
 	if got.ChannelMapRows != 2 || got.LineupTitle != "Rogers West" || got.Activated != 2 {
 		t.Fatalf("result=%#v", got)
+	}
+	if len(got.Channels) != 1 || got.Channels[0].GuideName != "CBC Regina" {
+		t.Fatalf("channels=%#v", got.Channels)
 	}
 	if calls < 2 || activateCalls != 1 {
 		t.Fatalf("calls=%d activate=%d", calls, activateCalls)
@@ -123,7 +131,7 @@ func TestSaveLoadReportFile_roundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "harvest.json")
 	in := Report{
 		PlexURL: "plex.example:32400",
-		Results: []Result{{BaseURL: "http://oracle-100:5004", FriendlyName: "oracle-100", LineupTitle: "Rogers West", ChannelMapRows: 420}},
+		Results: []Result{{BaseURL: "http://oracle-100:5004", FriendlyName: "oracle-100", LineupTitle: "Rogers West", ChannelMapRows: 420, Channels: []HarvestedChannel{{GuideNumber: "101", GuideName: "CBC Regina"}}}},
 	}
 	saved, err := SaveReportFile(path, in)
 	if err != nil {
@@ -138,5 +146,8 @@ func TestSaveLoadReportFile_roundTrip(t *testing.T) {
 	}
 	if loaded.PlexURL != in.PlexURL || len(loaded.Lineups) != 1 || loaded.Lineups[0].BestChannelMapRows != 420 {
 		t.Fatalf("loaded=%#v", loaded)
+	}
+	if len(loaded.Results) != 1 || len(loaded.Results[0].Channels) != 1 || loaded.Results[0].Channels[0].GuideName != "CBC Regina" {
+		t.Fatalf("loaded results=%#v", loaded.Results)
 	}
 }

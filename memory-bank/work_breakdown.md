@@ -66,7 +66,7 @@ Create or update this file when **any** of these are true:
 - **Non-goals:** scraping Plex UI, pretending lineup-market guessing is fully automatic, or leaving the feature as ad hoc lab output only.
 - **Story IDs:** `LH-001` … `LH-006`
 - **Progress (2026-03-21):** `LH-001` through `LH-003` starter shipped. `internal/plexharvest` now owns reusable target expansion, bounded channelmap polling, per-target result capture, and deduped lineup summaries; `iptv-tunerr plex-lineup-harvest` is the named CLI surface; and docs/how-to plus CLI reference are in place. Next depth: persist harvested reports and bridge them into Programming Manager or deck workflows.
-- **Progress (2026-03-21):** `LH-004` and the first visible `LH-005` slice are now in. Saved harvest reports can live in `IPTV_TUNERR_PLEX_LINEUP_HARVEST_FILE`, surface through `/programming/harvest.json`, flow into `/programming/preview.json`, and appear in the deck Programming lane as candidate lineup cards. Next depth: make harvested results actually seed/apply Programming recipes instead of only surfacing the report.
+- **Progress (2026-03-21):** `LH-004`, the first visible `LH-005` slice, and an `LH-006` starter are now in. Saved harvest reports can live in `IPTV_TUNERR_PLEX_LINEUP_HARVEST_FILE`, surface through `/programming/harvest.json`, flow into `/programming/preview.json`, appear in the deck Programming lane as candidate lineup cards, and now drive `/programming/harvest-import.json`, which previews/applies a chosen harvested lineup as a real Programming Manager recipe by matching harvested lineup rows back onto the current raw channel set. Next depth: deck-driven import/apply UX and stronger local-market heuristics.
 
 ### Active epic overlay (Feature parity, 2026-03-21)
 

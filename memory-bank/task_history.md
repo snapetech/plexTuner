@@ -4255,3 +4255,9 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
   - Added `/virtual-channels/live.m3u` to export enabled synthetic channel rows and `/virtual-channels/stream/<id>.mp4` to proxy the currently scheduled asset.
   - Expanded tuner tests and `scripts/ci-smoke.sh` so the virtual-channel M3U and stream path are exercised against real asset bytes, not just JSON previews.
   - Verification: `go test ./internal/virtualchannels ./internal/tuner -run 'Test(ResolveCurrentSlot_resolvesCurrentEntryAndSource|Server_virtualChannelRulesAndPreview)' -count=1`; `bash ./scripts/ci-smoke.sh`; `./scripts/verify`.
+- 2026-03-21: Made saved lineup harvest results actionable for Programming Manager.
+  - Harvest probe results now capture harvested `lineup.json` rows alongside lineup titles/URLs, not just high-level summary counts.
+  - Added `/programming/harvest-import.json` so operators can preview or apply a chosen harvested lineup as a real saved recipe.
+  - Matching uses strong signals first (`tvg_id`, then normalized guide name) and preserves harvested order as a custom Programming Manager order.
+  - Added server tests plus smoke coverage for the harvest-import preview contract.
+  - Verification: `go test ./internal/plexharvest ./internal/tuner -run 'Test(Probe_pollsAndCapturesLineupTitle|SaveLoadReportFile_roundTrip|Server_(programmingHarvestEndpoint|programmingPreviewIncludesHarvestSummary|programmingHarvestImport))' -count=1`; `bash ./scripts/ci-smoke.sh`; `./scripts/verify`.

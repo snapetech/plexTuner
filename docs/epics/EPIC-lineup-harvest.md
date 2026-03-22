@@ -57,6 +57,10 @@ productize it:
   - Harvest reports can now be saved and reloaded from `IPTV_TUNERR_PLEX_LINEUP_HARVEST_FILE`.
   - `/programming/harvest.json` exposes the saved report to operator tooling, and `/programming/preview.json` now embeds `harvest_ready`, `harvest_file`, and deduped harvested lineup summaries.
   - The dedicated deck Programming lane now surfaces those harvested candidate lineups instead of leaving the data as one-shot CLI output only.
+- **2026-03-21:** `LH-006` starter shipped in-tree.
+  - Harvest probe results now capture the harvested `lineup.json` rows alongside lineup titles/URLs.
+  - `/programming/harvest-import.json` can preview or apply a chosen harvested lineup as a real Programming Manager recipe by matching harvested lineup rows back onto the current raw channel set.
+  - This is the first real bridge from “Plex found a useful market lineup” to “Tunerr can turn that lineup into a saved curation rule.”
 
 ## Out of scope
 
