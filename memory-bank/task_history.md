@@ -55,6 +55,22 @@ Append-only. One entry per completed task.
     - active stream stop control
 
 - Date: 2026-03-21
+  Title: Add shared HLS relay reuse foundation
+  Summary:
+    - Added a bounded `PAR-002` foundation where duplicate same-channel consumers can attach to one live `hls_go` relay instead of always starting another upstream walk.
+    - Added `/debug/shared-relays.json` so operators can see current shared sessions and subscriber counts instead of treating the reuse layer as invisible behavior.
+    - Added targeted relay/session tests covering fanout delivery, shared-session attachment, and the existing playlist-concurrency retry path.
+  Verification:
+    - `go test ./internal/tuner -run 'Test(Server_SharedRelayReport|Gateway_(sharedRelaySessionFanout|tryServeSharedRelay|relayHLSAsTS_survivesPlaylistConcurrencyRetry))' -count=1`
+    - `./scripts/verify`
+  Notes:
+    - This first cut is intentionally limited to the native HLS Go-relay path; it is the substrate for deeper fanout/reuse later, not a claim that every stream mode is now shared.
+  Opportunities filed:
+    - none
+  Links:
+    - shared HLS relay reuse foundation
+
+- Date: 2026-03-21
   Title: Prepare Windows bare-metal smoke package
   Summary:
     - Added `scripts/windows-baremetal-package.sh` to cross-build a `windows/amd64` `iptv-tunerr.exe` and bundle it with a Windows-local smoke runner.

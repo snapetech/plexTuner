@@ -1327,6 +1327,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/recordings/rules/preview.json", s.serveRecordingRulePreview())
 	mux.Handle("/recordings/history.json", s.serveRecordingHistory())
 	mux.Handle("/debug/active-streams.json", s.serveActiveStreamsReport())
+	mux.Handle("/debug/shared-relays.json", s.serveSharedRelayReport())
 	mux.Handle("/debug/stream-attempts.json", s.serveRecentStreamAttempts())
 	mux.Handle("/debug/event-hooks.json", s.serveEventHooksReport())
 	mux.Handle("/debug/runtime.json", s.serveRuntimeSnapshot())
@@ -1791,6 +1792,24 @@ func (s *Server) serveRecentStreamAttempts() http.Handler {
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
 			http.Error(w, `{"error":"encode stream attempts"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveSharedRelayReport() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		var rep SharedRelayReport
+		if s.gateway != nil {
+			rep = s.gateway.SharedRelayReport()
+		} else {
+			rep = SharedRelayReport{GeneratedAt: time.Now().UTC().Format(time.RFC3339)}
+		}
+		body, err := json.MarshalIndent(rep, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode shared relay report"}`, http.StatusInternalServerError)
 			return
 		}
 		_, _ = w.Write(body)

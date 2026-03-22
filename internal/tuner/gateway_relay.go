@@ -575,6 +575,7 @@ func (g *Gateway) relayHLSAsTS(
 	transcode bool,
 	forcedProfile string,
 	bufferBytes int,
+	sharedSession *sharedRelaySession,
 	responseStarted bool,
 ) (retErr error) {
 	reqField := gatewayReqIDField(r.Context())
@@ -589,6 +590,9 @@ func (g *Gateway) relayHLSAsTS(
 	profile = profileSelection.Name
 	sw, flush := streamWriter(w, bufferBytes)
 	defer flush()
+	if sharedSession != nil {
+		defer g.closeSharedRelaySession(channelID, sharedSession)
+	}
 	flusher, _ := w.(http.Flusher)
 	seen := map[string]struct{}{}
 	lastProgress := time.Now()
@@ -705,12 +709,19 @@ func (g *Gateway) relayHLSAsTS(
 				}
 				seen[segURL] = struct{}{}
 				var segOut io.Writer = sw
+				if sharedSession != nil {
+					segOut = &sharedRelayFanoutWriter{base: sw, session: sharedSession}
+				}
 				var spliceWriter *tsDiscontinuitySpliceWriter
 				if normalizer != nil {
 					segOut = normalizer
 				} else if responseStarted && sentSegments == 0 {
 					spliceWriter = newTSDiscontinuitySpliceWriter(r.Context(), sw, channelName, channelID)
-					segOut = spliceWriter
+					if sharedSession != nil {
+						segOut = &sharedRelayFanoutWriter{base: spliceWriter, session: sharedSession}
+					} else {
+						segOut = spliceWriter
+					}
 				}
 				n, err := g.fetchAndWriteSegment(w, segOut, r, client, segURL, currentPlaylistURL, headerSent || normalizer != nil)
 				if err == nil && spliceWriter != nil {

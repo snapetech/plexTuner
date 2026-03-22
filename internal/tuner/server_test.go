@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -2112,6 +2113,32 @@ func TestServer_ActiveStreamsReport(t *testing.T) {
 	case <-cancelCalled:
 	default:
 		t.Fatal("expected cancel func to run")
+	}
+}
+
+func TestServer_SharedRelayReport(t *testing.T) {
+	srv := &Server{
+		gateway: &Gateway{
+			sharedRelays: map[string]*sharedRelaySession{
+				"ch1": {
+					ChannelID:   "ch1",
+					ProducerReq: "r000001",
+					StartedAt:   time.Now().Add(-2 * time.Second),
+					subscribers: map[string]*io.PipeWriter{
+						"r000002": nil,
+					},
+				},
+			},
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/debug/shared-relays.json", nil)
+	rr := httptest.NewRecorder()
+	srv.serveSharedRelayReport().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), `"channel_id": "ch1"`) || !strings.Contains(rr.Body.String(), `"subscriber_count": 1`) {
+		t.Fatalf("unexpected body: %s", rr.Body.String())
 	}
 }
 

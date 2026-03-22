@@ -293,6 +293,7 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 		transcode,
 		forcedProfile,
 		bufferSize,
+		g.createSharedRelaySession(channelID, gatewayReqIDFromContext(r.Context())),
 		responseAlreadyStarted(w),
 	); err != nil {
 		attempt.markUpstreamError(attemptIdx, "hls_go_failed", err)

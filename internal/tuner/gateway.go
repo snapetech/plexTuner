@@ -82,6 +82,7 @@ type Gateway struct {
 	reqSeq                     uint64
 	activeMu                   sync.Mutex
 	activeStreams              map[string]activeStreamEntry
+	sharedRelays               map[string]*sharedRelaySession
 	accountLeaseMu             sync.Mutex
 	accountLeases              map[string]int
 	accountLimitStore          *accountLimitStore

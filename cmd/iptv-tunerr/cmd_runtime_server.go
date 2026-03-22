@@ -269,6 +269,7 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"recording_rule_preview": "/recordings/rules/preview.json",
 			"recording_history":      "/recordings/history.json",
 			"active_streams":         "/debug/active-streams.json",
+			"shared_relays":          "/debug/shared-relays.json",
 			"stream_stop":            "/ops/actions/stream-stop",
 			"stream_attempts":        "/debug/stream-attempts.json",
 			"event_hooks":            "/debug/event-hooks.json",

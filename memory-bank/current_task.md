@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-21):** **`PAR-002` foundation shipped:** same-channel duplicate consumers can now attach to one live HLS Go-relay session instead of always starting another upstream walk. The first cut is intentionally bounded to the native `hls_go` path, exposes `/debug/shared-relays.json`, and gives us a real reusable upstream substrate to deepen later instead of more theory. Next depth: broaden downstream Xtream output or start the server-side entitlement model.
+
 **Latest (2026-03-21):** **`PAR-003` starter shipped:** Tunerr now has a durable server-side recording-rules model behind `IPTV_TUNERR_RECORDING_RULES_FILE`. `/recordings/rules.json` stores and mutates rule definitions, `/recordings/rules/preview.json` evaluates those rules against live catch-up capsules, `/recordings/history.json` classifies recorder state against the active ruleset, and `scripts/ci-smoke.sh` now exercises the rules/history path so it is covered in release gating. Next depth: `PAR-002` shared upstream stream fanout or broader `PAR-004` Xtream output.
 
 **Latest (2026-03-21):** **`PAR-007` intervention follow-up shipped:** `/debug/active-streams.json` now marks cancelable live sessions and includes client UA, and `/ops/actions/stream-stop` can cancel matching active stream contexts by `request_id` or `channel_id` from the localhost operator plane. Next depth: real shared upstream reuse (`PAR-002`) or more downstream publishing depth (`PAR-004`), not more read-only debug surfaces.

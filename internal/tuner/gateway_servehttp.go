@@ -136,6 +136,11 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		finalEffectiveURL = muxResult.effectiveURL
 		return
 	}
+	if g.tryServeSharedRelay(w, r, channel, channelID, reqID, start) {
+		finalStatus = "ok"
+		finalMode = "hls_go_shared"
+		return
+	}
 
 	g.mu.Lock()
 	limit := g.effectiveTunerLimitLocked()

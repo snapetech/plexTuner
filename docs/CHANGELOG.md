@@ -21,6 +21,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Active stream stop control (`PAR-007` slice)**: `/ops/actions/stream-stop` can now cancel matching active stream contexts by request ID or channel ID, turning the active-stream surface into a real operator intervention path instead of a read-only report.
 - **Xtream-compatible live output starter (`PAR-004` slice)**: optional read-only downstream `player_api.php` (`get_live_streams`, `get_live_categories`) plus `/live/<user>/<pass>/<channel>.ts`, backed by the curated lineup and existing gateway.
 - **Recording rules/history starter (`PAR-003` slice)**: `IPTV_TUNERR_RECORDING_RULES_FILE` now enables durable server-side recording rules, `/recordings/rules.json` CRUD, `/recordings/rules/preview.json` against live catch-up capsules, and `/recordings/history.json` classification of recorder state against the current ruleset.
+- **Shared HLS relay reuse foundation (`PAR-002` slice)**: same-channel duplicate consumers can now attach to one live HLS Go-relay session instead of always starting another upstream walk, and `/debug/shared-relays.json` exposes current shared sessions plus subscriber counts.
 
 ### Fixed
 

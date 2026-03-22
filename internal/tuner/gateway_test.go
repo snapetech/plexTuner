@@ -1588,6 +1588,76 @@ func TestGateway_stream_rollsAcrossThreeXtreamPathAccounts(t *testing.T) {
 	}
 }
 
+func TestGateway_sharedRelaySessionFanout(t *testing.T) {
+	g := &Gateway{}
+	sess := g.createSharedRelaySession("ch1", "r000001")
+	if sess == nil {
+		t.Fatal("expected shared relay session")
+	}
+	reader, ok := g.attachSharedRelaySession("ch1", "r000002")
+	if !ok {
+		t.Fatal("expected subscriber attach")
+	}
+	defer reader.Close()
+	done := make(chan []byte, 1)
+	errs := make(chan error, 1)
+	go func() {
+		buf, err := io.ReadAll(reader)
+		if err != nil {
+			errs <- err
+			return
+		}
+		done <- buf
+	}()
+	writer := &sharedRelayFanoutWriter{base: io.Discard, session: sess}
+	if _, err := writer.Write([]byte("segment-bytes")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	g.closeSharedRelaySession("ch1", sess)
+	select {
+	case err := <-errs:
+		t.Fatalf("read: %v", err)
+	case buf := <-done:
+		if string(buf) != "segment-bytes" {
+			t.Fatalf("got %q", buf)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for subscriber bytes")
+	}
+}
+
+func TestGateway_tryServeSharedRelay(t *testing.T) {
+	g := &Gateway{}
+	sess := g.createSharedRelaySession("ch1", "r000001")
+	if sess == nil {
+		t.Fatal("expected shared relay session")
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		time.Sleep(10 * time.Millisecond)
+		sess.fanout([]byte("ts-bytes"))
+		g.closeSharedRelaySession("ch1", sess)
+	}()
+	req := httptest.NewRequest(http.MethodGet, "/stream/ch1", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	ok := g.tryServeSharedRelay(w, req, &catalog.LiveChannel{ChannelID: "ch1", GuideName: "One", GuideNumber: "101"}, "ch1", "r000002", time.Now())
+	if !ok {
+		t.Fatal("expected shared relay attach")
+	}
+	<-done
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if body := w.Body.String(); body != "ts-bytes" {
+		t.Fatalf("body=%q want ts-bytes", body)
+	}
+	if got := w.Header().Get("X-IptvTunerr-Shared-Upstream"); got != "hls_go" {
+		t.Fatalf("header=%q", got)
+	}
+}
+
 func TestGateway_stream_providerAccountLimitRejectsLocally(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT", "1")
 	ch := catalog.LiveChannel{
@@ -3176,7 +3246,7 @@ func TestGateway_relayHLSAsTS_survivesPlaylistConcurrencyRetry(t *testing.T) {
 	rec := httptest.NewRecorder()
 	done := make(chan error, 1)
 	go func() {
-		done <- g.relayHLSAsTS(rec, req, srv.Client(), effectiveURL, initial, "Ch1", "1", "101", "tvg.1", time.Now(), false, "", 0, false)
+		done <- g.relayHLSAsTS(rec, req, srv.Client(), effectiveURL, initial, "Ch1", "1", "101", "tvg.1", time.Now(), false, "", 0, nil, false)
 	}()
 
 	select {
