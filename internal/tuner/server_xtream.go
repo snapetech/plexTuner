@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	pathpkg "path"
 	"sort"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/entitlements"
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
 	"github.com/snapetech/iptvtunerr/internal/programming"
+	"github.com/snapetech/iptvtunerr/internal/virtualchannels"
 )
 
 type xtreamLiveCategory struct {
@@ -111,18 +113,30 @@ func (s *Server) serveXtreamLiveProxy() http.Handler {
 			return
 		}
 		channel, found := s.findLiveChannel(channelID)
-		if !found || !s.xtreamLiveAllowed(principal, channel) {
+		if found {
+			if !s.xtreamLiveAllowed(principal, channel) {
+				http.NotFound(w, r)
+				return
+			}
+			if s.gateway == nil {
+				http.Error(w, "gateway unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			cloned := r.Clone(r.Context())
+			cloned.URL.Path = "/stream/" + channelID
+			cloned.RequestURI = cloned.URL.Path
+			s.gateway.ServeHTTP(w, cloned)
+			return
+		}
+		virtualCh, ok := s.findVirtualXtreamChannel(channelID)
+		if !ok || !s.xtreamLiveAllowed(principal, virtualCh) {
 			http.NotFound(w, r)
 			return
 		}
-		if s.gateway == nil {
-			http.Error(w, "gateway unavailable", http.StatusServiceUnavailable)
-			return
-		}
 		cloned := r.Clone(r.Context())
-		cloned.URL.Path = "/stream/" + channelID
+		cloned.URL.Path = "/virtual-channels/stream/" + strings.TrimPrefix(channelID, "virtual.") + ".mp4"
 		cloned.RequestURI = cloned.URL.Path
-		s.gateway.ServeHTTP(w, cloned)
+		s.serveVirtualChannelStream().ServeHTTP(w, cloned)
 	})
 }
 
@@ -138,8 +152,8 @@ func (s *Server) xtreamQueryPrincipal(r *http.Request) (xtreamPrincipal, bool) {
 	return s.xtreamPrincipal(strings.TrimSpace(r.URL.Query().Get("username")), strings.TrimSpace(r.URL.Query().Get("password")))
 }
 
-func (s *Server) xtreamPathPrincipalID(path, prefix string) (xtreamPrincipal, string, bool) {
-	parts := strings.Split(strings.Trim(path, "/"), "/")
+func (s *Server) xtreamPathPrincipalID(rawPath, prefix string) (xtreamPrincipal, string, bool) {
+	parts := strings.Split(strings.Trim(rawPath, "/"), "/")
 	if len(parts) < 4 || parts[0] != prefix {
 		return xtreamPrincipal{}, "", false
 	}
@@ -148,8 +162,8 @@ func (s *Server) xtreamPathPrincipalID(path, prefix string) (xtreamPrincipal, st
 		return xtreamPrincipal{}, "", false
 	}
 	id := parts[3]
-	if idx := strings.Index(id, "."); idx > 0 {
-		id = id[:idx]
+	if ext := pathpkg.Ext(id); len(ext) > 1 {
+		id = strings.TrimSuffix(id, ext)
 	}
 	id = strings.TrimSpace(id)
 	return principal, id, id != ""
@@ -219,7 +233,7 @@ func (s *Server) xtreamLiveStreams(principal xtreamPrincipal) []xtreamLiveStream
 			StreamID:     strings.TrimSpace(ch.ChannelID),
 			EPGChannelID: strings.TrimSpace(ch.TVGID),
 			CategoryID:   catIDs[strings.ToLower(group)],
-			DirectSource: strings.TrimRight(s.BaseURL, "/") + "/live/" + principal.Username + "/" + s.xtreamPasswordForPrincipal(principal) + "/" + strings.TrimSpace(ch.ChannelID) + ".ts",
+			DirectSource: s.xtreamLiveDirectSource(principal, ch.ChannelID),
 			TVArchive:    0,
 		})
 	}
@@ -367,16 +381,61 @@ func (s *Server) xtreamVODSourceURL(principal xtreamPrincipal, prefix, id string
 }
 
 func (s *Server) xtreamLiveChannelsFor(principal xtreamPrincipal) []catalog.LiveChannel {
+	combined := append(cloneLiveChannels(s.Channels), s.virtualChannelsAsLiveChannels()...)
 	if principal.FullAccess || principal.User == nil {
-		return cloneLiveChannels(s.Channels)
+		return combined
 	}
-	out := make([]catalog.LiveChannel, 0, len(s.Channels))
-	for _, ch := range s.Channels {
+	out := make([]catalog.LiveChannel, 0, len(combined))
+	for _, ch := range combined {
 		if s.xtreamLiveAllowed(principal, ch) {
 			out = append(out, ch)
 		}
 	}
 	return out
+}
+
+func (s *Server) virtualChannelsAsLiveChannels() []catalog.LiveChannel {
+	set := virtualchannels.NormalizeRuleset(s.reloadVirtualChannels())
+	out := make([]catalog.LiveChannel, 0, len(set.Channels))
+	for _, ch := range set.Channels {
+		if !ch.Enabled {
+			continue
+		}
+		group := strings.TrimSpace(ch.GroupTitle)
+		if group == "" {
+			group = "Virtual Channels"
+		}
+		out = append(out, catalog.LiveChannel{
+			ChannelID:   "virtual." + strings.TrimSpace(ch.ID),
+			GuideNumber: strings.TrimSpace(ch.GuideNumber),
+			GuideName:   strings.TrimSpace(ch.Name),
+			GroupTitle:  group,
+			SourceTag:   "virtual",
+			TVGID:       "virtual." + strings.TrimSpace(ch.ID),
+		})
+	}
+	return out
+}
+
+func (s *Server) findVirtualXtreamChannel(channelID string) (catalog.LiveChannel, bool) {
+	channelID = strings.TrimSpace(channelID)
+	for _, ch := range s.virtualChannelsAsLiveChannels() {
+		if strings.TrimSpace(ch.ChannelID) == channelID {
+			return ch, true
+		}
+	}
+	return catalog.LiveChannel{}, false
+}
+
+func (s *Server) xtreamLiveDirectSource(principal xtreamPrincipal, channelID string) string {
+	channelID = strings.TrimSpace(channelID)
+	prefix := "live"
+	ext := ".ts"
+	if strings.HasPrefix(channelID, "virtual.") {
+		prefix = "live"
+		ext = ".mp4"
+	}
+	return strings.TrimRight(s.BaseURL, "/") + "/" + prefix + "/" + principal.Username + "/" + s.xtreamPasswordForPrincipal(principal) + "/" + channelID + ext
 }
 
 func (s *Server) xtreamMoviesFor(principal xtreamPrincipal) []catalog.Movie {

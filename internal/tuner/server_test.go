@@ -2616,6 +2616,15 @@ func TestServer_XtreamPlayerAPI_LiveCategories(t *testing.T) {
 			{ChannelID: "100", GuideNumber: "100", GuideName: "News 1", GroupTitle: "News"},
 			{ChannelID: "200", GuideNumber: "200", GuideName: "Sports 1", GroupTitle: "Sports"},
 		},
+		VirtualChannels: virtualchannels.Ruleset{
+			Channels: []virtualchannels.Channel{{
+				ID:          "vc-news",
+				Name:        "Virtual News",
+				GuideNumber: "9001",
+				GroupTitle:  "Virtual",
+				Enabled:     true,
+			}},
+		},
 	}
 	req := httptest.NewRequest(http.MethodGet, "/player_api.php?username=demo&password=secret&action=get_live_categories", nil)
 	rr := httptest.NewRecorder()
@@ -2623,8 +2632,18 @@ func TestServer_XtreamPlayerAPI_LiveCategories(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rr.Code, rr.Body.String())
 	}
-	if !strings.Contains(rr.Body.String(), `"category_name":"News"`) || !strings.Contains(rr.Body.String(), `"category_name":"Sports"`) {
+	if !strings.Contains(rr.Body.String(), `"category_name":"News"`) || !strings.Contains(rr.Body.String(), `"category_name":"Sports"`) || !strings.Contains(rr.Body.String(), `"category_name":"Virtual"`) {
 		t.Fatalf("unexpected body: %s", rr.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/player_api.php?username=demo&password=secret&action=get_live_streams", nil)
+	rr = httptest.NewRecorder()
+	srv.serveXtreamPlayerAPI().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("live streams status = %d body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"stream_id":"virtual.vc-news"`) || !strings.Contains(rr.Body.String(), `/live/demo/secret/virtual.vc-news.mp4`) {
+		t.Fatalf("unexpected live streams body: %s", rr.Body.String())
 	}
 }
 
@@ -2653,6 +2672,46 @@ func TestServer_XtreamLiveProxy(t *testing.T) {
 	srv.serveXtreamLiveProxy().ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestServer_XtreamLiveProxy_VirtualChannel(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("movie-bytes"))
+	}))
+	defer upstream.Close()
+
+	srv := &Server{
+		XtreamOutputUser: "demo",
+		XtreamOutputPass: "secret",
+		Movies: []catalog.Movie{{
+			ID:        "m1",
+			Title:     "Movie One",
+			StreamURL: upstream.URL + "/movie.mp4",
+		}},
+		VirtualChannels: virtualchannels.Ruleset{
+			Channels: []virtualchannels.Channel{{
+				ID:          "vc-news",
+				Name:        "Virtual News",
+				GuideNumber: "9001",
+				GroupTitle:  "Virtual",
+				Enabled:     true,
+				Entries: []virtualchannels.Entry{{
+					Type:         "movie",
+					MovieID:      "m1",
+					DurationMins: 60,
+				}},
+			}},
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/live/demo/secret/virtual.vc-news.mp4", nil)
+	rr := httptest.NewRecorder()
+	srv.serveXtreamLiveProxy().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rr.Code, rr.Body.String())
+	}
+	if rr.Body.String() != "movie-bytes" {
+		t.Fatalf("body=%q", rr.Body.String())
 	}
 }
 

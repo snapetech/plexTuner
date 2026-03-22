@@ -56,6 +56,22 @@ Append-only. One entry per completed task.
     - `memory-bank/opportunities.md` — remaining step is bounded in-app harness execution plus richer report summaries.
   Links:
     - diagnostics verdict summaries
+
+- Date: 2026-03-21
+  Title: Bridge virtual channels into Xtream live output
+  Summary:
+    - Extended the downstream Xtream live surface so enabled virtual channels now appear in `get_live_categories` and `get_live_streams` alongside curated real channels.
+    - Added virtual-channel playback through `/live/<user>/<pass>/virtual.<id>.mp4`, reusing the existing Xtream output flow instead of forcing virtual channels to stay in sidecar-only APIs.
+    - Added focused Xtream regressions covering virtual-channel category/list output and live proxy playback.
+  Verification:
+    - `go test ./internal/tuner -run 'TestServer_Xtream(PlayerAPI_LiveCategories|LiveProxy|LiveProxy_VirtualChannel|EntitlementsLimitOutput)' -count=1`
+    - `./scripts/verify`
+  Notes:
+    - This keeps the virtual-channel parity work moving into real client-facing outputs without pretending the full virtual-channel product is finished.
+  Opportunities filed:
+    - none
+  Links:
+    - virtual channels in Xtream live output
 - Date: 2026-03-21
   Title: Add parity recording-rules and recorder-history starter
   Summary:
