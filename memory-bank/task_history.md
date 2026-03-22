@@ -23,6 +23,23 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: Promote diagnostics capture into the operator plane
+  Summary:
+    - Added `/ops/workflows/diagnostics.json`, which turns recent stream attempts into a concrete good-vs-bad capture playbook with suggested channel IDs and latest `.diag/` run families.
+    - Added `/ops/actions/evidence-intake-start`, which scaffolds `.diag/evidence/<case-id>/` directly from the app with notes and bundle layout instead of leaving evidence intake purely script-driven.
+    - Wired the diagnostics workflow into the dedicated deck and expanded `scripts/ci-smoke.sh` so both the workflow and evidence-bundle creation are release-gated.
+  Verification:
+    - `go test ./internal/tuner -run 'TestServer_(diagnosticsWorkflowAndEvidenceAction|programmingHarvestImport|virtualChannelRulesAndPreview)' -count=1`
+    - `node --check internal/webui/deck.js`
+    - `bash ./scripts/ci-smoke.sh`
+    - `./scripts/verify`
+  Notes:
+    - This is the first productized diagnostics layer; stream-compare/channel-diff execution and in-card report summaries are still the next depth, not already shipped.
+  Opportunities filed:
+    - `memory-bank/opportunities.md` — remaining step is launching harnesses and summarizing their reports from the deck.
+  Links:
+    - diagnostics workflow / evidence-intake action
+- Date: 2026-03-21
   Title: Add parity recording-rules and recorder-history starter
   Summary:
     - Added a durable server-side recording-rules model behind `IPTV_TUNERR_RECORDING_RULES_FILE` with `/recordings/rules.json` CRUD.

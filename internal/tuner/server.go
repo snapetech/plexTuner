@@ -1454,6 +1454,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/ops/actions/status.json", s.serveOperatorActionStatus())
 	mux.Handle("/ops/workflows/guide-repair.json", s.serveGuideRepairWorkflow())
 	mux.Handle("/ops/workflows/stream-investigate.json", s.serveStreamInvestigateWorkflow())
+	mux.Handle("/ops/workflows/diagnostics.json", s.serveDiagnosticsWorkflow())
 	mux.Handle("/ops/workflows/ops-recovery.json", s.serveOpsRecoveryWorkflow())
 	mux.Handle("/ops/actions/guide-refresh", s.serveGuideRefreshAction())
 	mux.Handle("/ops/actions/stream-attempts-clear", s.serveStreamAttemptsClearAction())
@@ -1462,6 +1463,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/ops/actions/autopilot-reset", s.serveAutopilotResetAction())
 	mux.Handle("/ops/actions/ghost-visible-stop", s.serveGhostVisibleStopAction())
 	mux.Handle("/ops/actions/ghost-hidden-recover", s.serveGhostHiddenRecoverAction())
+	mux.Handle("/ops/actions/evidence-intake-start", s.serveEvidenceIntakeStartAction())
 
 	srv := &http.Server{Addr: addr, Handler: logRequests(mux)}
 
@@ -1981,6 +1983,13 @@ func (s *Server) serveOperatorActionStatus() http.Handler {
 				"body":         `{"seg_b64":"<base64 of raw seg URL>"}`,
 				"localhost_ui": true,
 			},
+			"evidence_intake_start": map[string]interface{}{
+				"available":    true,
+				"endpoint":     "/ops/actions/evidence-intake-start",
+				"method":       "POST",
+				"body":         `{"case_id":"plex-server-vs-laptop"}`,
+				"localhost_ui": true,
+			},
 		}
 		body, err := json.MarshalIndent(detail, "", "  ")
 		if err != nil {
@@ -2076,6 +2085,52 @@ func (s *Server) serveStreamInvestigateWorkflow() http.Handler {
 		body, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
 			http.Error(w, `{"error":"encode stream workflow"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveDiagnosticsWorkflow() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		attempts := StreamAttemptReport{}
+		if s.gateway != nil {
+			attempts = s.gateway.RecentStreamAttempts(12)
+		}
+		good, bad := suggestDiagnosticChannels(attempts)
+		report := OperatorWorkflowReport{
+			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+			Name:        "diagnostics_capture",
+			Summary: map[string]interface{}{
+				"recent_attempt_count":      attempts.Count,
+				"suggested_good_channel_id": good,
+				"suggested_bad_channel_id":  bad,
+				"diag_runs":                 latestDiagRuns("channel-diff", "stream-compare", "multi-stream", "evidence"),
+			},
+			Steps: []string{
+				"Choose one known-good and one known-bad channel from recent attempts or the Programming lane preview.",
+				"Run a paired channel diff / stream compare capture so the failure becomes a channel-class comparison instead of one anecdote.",
+				"Create an evidence bundle and attach PMS logs, Tunerr logs, and pcap for the same time window.",
+				"Analyze the bundle with analyze-bundle.py or compare harness outputs before changing provider or playback policy.",
+			},
+			Actions: []string{
+				"/programming/channel-detail.json",
+				"/programming/harvest-assist.json",
+				"/debug/stream-attempts.json",
+				"/ops/actions/evidence-intake-start",
+			},
+		}
+		body, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode diagnostics workflow"}`, http.StatusInternalServerError)
 			return
 		}
 		_, _ = w.Write(body)
@@ -2356,6 +2411,48 @@ func (s *Server) serveGhostHiddenRecoverAction() http.Handler {
 	})
 }
 
+func (s *Server) serveEvidenceIntakeStartAction() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
+		limited := http.MaxBytesReader(w, r.Body, 65536)
+		defer limited.Close()
+		var req struct {
+			CaseID string `json:"case_id"`
+		}
+		if err := json.NewDecoder(limited).Decode(&req); err != nil && err != io.EOF {
+			http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
+			return
+		}
+		caseID := strings.TrimSpace(req.CaseID)
+		if caseID == "" {
+			caseID = "evidence-" + time.Now().UTC().Format("20060102-150405")
+		}
+		outDir := filepath.Join(repoDiagRoot(), "evidence", caseID)
+		if err := createEvidenceIntakeBundle(outDir); err != nil {
+			http.Error(w, `{"error":"create evidence bundle failed"}`, http.StatusBadGateway)
+			return
+		}
+		writeOperatorActionJSON(w, http.StatusOK, OperatorActionResponse{
+			OK:      true,
+			Action:  "evidence_intake_start",
+			Message: "evidence intake bundle created",
+			Detail: map[string]interface{}{
+				"case_id":    caseID,
+				"output_dir": outDir,
+				"next": []string{
+					fmt.Sprintf(`python3 scripts/analyze-bundle.py "%s" --output "%s/report.txt"`, outDir, outDir),
+				},
+			},
+		})
+	})
+}
+
 func (s *Server) serveRuntimeSnapshot() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -2522,6 +2619,13 @@ type virtualChannelDetailReport struct {
 	ResolvedNow *virtualchannels.ResolvedSlot `json:"resolved_now,omitempty"`
 	Upcoming    []virtualchannels.PreviewSlot `json:"upcoming,omitempty"`
 	Schedule    []virtualchannels.PreviewSlot `json:"schedule,omitempty"`
+}
+
+type diagRunRef struct {
+	Family  string `json:"family"`
+	RunID   string `json:"run_id"`
+	Path    string `json:"path"`
+	Updated string `json:"updated"`
 }
 
 func normalizeHarvestGuideName(raw string) string {
@@ -3717,6 +3821,136 @@ func timeMustParseRFC3339(raw string) time.Time {
 		return time.Unix(0, 0).UTC()
 	}
 	return parsed.UTC()
+}
+
+func repoDiagRoot() string {
+	return filepath.Clean(".diag")
+}
+
+func latestDiagRuns(families ...string) []diagRunRef {
+	root := repoDiagRoot()
+	refs := make([]diagRunRef, 0, len(families))
+	for _, family := range families {
+		dir := filepath.Join(root, family)
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		var best diagRunRef
+		var bestTime time.Time
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			mod := info.ModTime().UTC()
+			if best.RunID == "" || mod.After(bestTime) {
+				bestTime = mod
+				best = diagRunRef{
+					Family:  family,
+					RunID:   entry.Name(),
+					Path:    filepath.Join(dir, entry.Name()),
+					Updated: mod.Format(time.RFC3339),
+				}
+			}
+		}
+		if best.RunID != "" {
+			refs = append(refs, best)
+		}
+	}
+	sort.SliceStable(refs, func(i, j int) bool {
+		return refs[i].Family < refs[j].Family
+	})
+	return refs
+}
+
+func suggestDiagnosticChannels(attempts StreamAttemptReport) (good string, bad string) {
+	for _, row := range attempts.Attempts {
+		status := strings.ToLower(strings.TrimSpace(row.FinalStatus))
+		if good == "" && status != "" &&
+			!strings.Contains(status, "fail") &&
+			!strings.Contains(status, "reject") &&
+			!strings.Contains(status, "error") &&
+			!strings.Contains(status, "timeout") &&
+			!strings.Contains(status, "http_4") &&
+			!strings.Contains(status, "http_5") {
+			good = strings.TrimSpace(row.ChannelID)
+		}
+		if bad == "" && (strings.Contains(status, "fail") ||
+			strings.Contains(status, "reject") ||
+			strings.Contains(status, "timeout") ||
+			strings.Contains(status, "error") ||
+			strings.Contains(status, "http_4") ||
+			strings.Contains(status, "http_5") ||
+			strings.Contains(status, "limited")) {
+			bad = strings.TrimSpace(row.ChannelID)
+		}
+	}
+	return strings.TrimSpace(good), strings.TrimSpace(bad)
+}
+
+func createEvidenceIntakeBundle(outDir string) error {
+	outDir = strings.TrimSpace(outDir)
+	if outDir == "" {
+		return fmt.Errorf("evidence output directory required")
+	}
+	for _, sub := range []string{"bundle", "logs/plex", "logs/tunerr", "pcap", "notes"} {
+		if err := os.MkdirAll(filepath.Join(outDir, sub), 0o755); err != nil {
+			return err
+		}
+	}
+	notes := fmt.Sprintf(`# Evidence Notes
+
+- Case id: %s
+- Created at: %s
+- Environment:
+  - Working machine:
+  - Failing machine:
+  - Plex version:
+  - Tunerr version/tag:
+- Symptom:
+  - 
+- What changed immediately before the failure:
+  - 
+- Known differences between working and failing machines:
+  - 
+- Relevant Plex Preferences.xml differences:
+  - 
+- Channels tested:
+  - working:
+  - failing:
+- Commands run:
+  - 
+- Next analysis command:
+  - python3 scripts/analyze-bundle.py "%s" --output "%s/report.txt"
+`, filepath.Base(outDir), time.Now().UTC().Format(time.RFC3339), outDir, outDir)
+	readme := fmt.Sprintf(`Evidence intake bundle for %s
+
+Directory layout:
+- bundle/       iptv-tunerr debug-bundle output
+- logs/plex/    Plex Media Server logs
+- logs/tunerr/  Tunerr stdout/journal logs
+- pcap/         packet captures (.pcap / .pcapng)
+- notes.md      analyst notes and environment deltas
+
+Recommended next steps:
+1. Put the failing-run debug bundle in bundle/
+2. Add PMS and Tunerr logs for the same time window
+3. Add pcap if available
+4. Fill out notes.md with the exact working-vs-failing deltas
+5. Run:
+   python3 scripts/analyze-bundle.py "%s" --output "%s/report.txt"
+`, filepath.Base(outDir), outDir, outDir)
+	if err := os.WriteFile(filepath.Join(outDir, "notes.md"), []byte(notes), 0o600); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(outDir, "README.txt"), []byte(readme), 0o600); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *Server) serveCatchupRecorderReport() http.Handler {

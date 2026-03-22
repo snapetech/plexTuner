@@ -31,6 +31,7 @@ const endpoints = {
   operatorActionsStatus: "/api/ops/actions/status.json",
   guideWorkflow: "/api/ops/workflows/guide-repair.json",
   streamWorkflow: "/api/ops/workflows/stream-investigate.json",
+  diagnosticsWorkflow: "/api/ops/workflows/diagnostics.json",
   opsWorkflow: "/api/ops/workflows/ops-recovery.json"
 };
 const csrfHeaderName = "X-IPTVTunerr-Deck-CSRF";
@@ -66,6 +67,7 @@ const endpointCatalog = {
   operatorActionsStatus: { title: "Operator Action Status", category: "Deck Control", summary: "Availability and current status of safe operator actions." },
   guideWorkflow: { title: "Guide Workflow", category: "Workflows", summary: "Guided checklist for guide repair and freshness issues." },
   streamWorkflow: { title: "Stream Workflow", category: "Workflows", summary: "Guided lane for routing and upstream stream failures." },
+  diagnosticsWorkflow: { title: "Diagnostics Workflow", category: "Workflows", summary: "Good-vs-bad capture plan, recent harness artifacts, and evidence-bundle intake for intermittent channel failures." },
   opsWorkflow: { title: "Ops Workflow", category: "Workflows", summary: "Guided lane for recorder, ghost, and Autopilot recovery." }
 };
 
@@ -104,6 +106,11 @@ const actionDefinitions = {
     path: "/api/ops/actions/ghost-hidden-recover?mode=restart",
     label: "Restart Hidden-Grabs",
     confirm: "Run the guarded hidden-grab recovery helper with restart mode?"
+  },
+  evidence_intake_start: {
+    path: "/api/ops/actions/evidence-intake-start",
+    label: "Create Evidence Bundle",
+    confirm: "Create a new evidence-intake bundle scaffold under .diag/evidence?"
   }
 };
 
@@ -1010,6 +1017,7 @@ function renderDeck() {
   const operatorStatus = state.payloads.operatorActionsStatus?.body || {};
   const guideWorkflow = state.payloads.guideWorkflow?.body || {};
   const streamWorkflow = state.payloads.streamWorkflow?.body || {};
+  const diagnosticsWorkflow = state.payloads.diagnosticsWorkflow?.body || {};
   const opsWorkflow = state.payloads.opsWorkflow?.body || {};
   const deckSettings = state.payloads.deckSettings?.body || state.deckSettings || {};
   const activity = normalizeArray(state.payloads.deckActivity?.body?.entries).length
@@ -1196,8 +1204,11 @@ function renderDeck() {
       if (provider.client_behavior) parts.push(`client_behavior=${esc(JSON.stringify(provider.client_behavior))}`);
       return parts.join(" · ");
     })(), "", "provider", `${createActionButton("provider_profile_reset")}`),
-    createCard("Attempt volume", `${attempts.length} recent attempts in buffer. Top host pressure: ${attempts.slice(0, 3).map((item) => item.upstream_url_host || item.upstream_host || "unknown").join(", ") || "none"}`, "", failedAttempts.length > 0 ? "tone-warn" : "", "attempts", `${createWorkflowButton("streamWorkflow", "Failure Workflow")}${createActionButton("stream_attempts_clear")}`),
+    createCard("Attempt volume", `${attempts.length} recent attempts in buffer. Top host pressure: ${attempts.slice(0, 3).map((item) => item.upstream_url_host || item.upstream_host || "unknown").join(", ") || "none"}`, "", failedAttempts.length > 0 ? "tone-warn" : "", "attempts", `${createWorkflowButton("streamWorkflow", "Failure Workflow")}${createWorkflowButton("diagnosticsWorkflow", "Capture Workflow")}${createActionButton("stream_attempts_clear")}`),
     createCard("Fallback evidence", attempts.slice(0, 4).map((item) => `${item.channel_name || item.channel_id || "channel"} -> ${item.reason || item.result || item.status || "unknown"}`).join(" | ") || "No fallback evidence", "", "", "attempts", `<button class="tiny" type="button" data-inspect="streamWorkflow">Workflow Payload</button>`),
+    createCard("Diagnostics capture", diagnosticsWorkflow.summary?.suggested_bad_channel_id || diagnosticsWorkflow.summary?.suggested_good_channel_id
+      ? `good=${pretty(diagnosticsWorkflow.summary?.suggested_good_channel_id)} · bad=${pretty(diagnosticsWorkflow.summary?.suggested_bad_channel_id)}`
+      : "No good/bad channel suggestion yet from recent attempts.", "", "", "diagnosticsWorkflow", `${createWorkflowButton("diagnosticsWorkflow", "Open Diagnostics")}${createActionButton("evidence_intake_start")}`),
     createCard("HDHR contract", "discover.json, lineup.json, lineup_status.json, device.xml, and guide.xml still live on the tuner and are proxied here under /api.", "", "", "runtime"),
     createCard("Mux choices", "Native TS/fMP4/HLS surfaces exist; the deck is a supervisor over those capabilities, not a stream path itself.", "", "", "provider")
   ]).join("");
@@ -1421,10 +1432,11 @@ function renderDeck() {
       ["Available actions", Object.values(operatorStatus).filter((item) => item?.available).length],
       ["Guide workflow", endpoints.guideWorkflow],
       ["Stream workflow", endpoints.streamWorkflow],
+      ["Diagnostics workflow", endpoints.diagnosticsWorkflow],
       ["Ops workflow", endpoints.opsWorkflow],
       ["Legacy UI", runtime.webui?.legacy_ui],
       ["Legacy LAN policy", runtime.webui?.legacy_lan]
-    ], "operatorActionsStatus", `${createWorkflowButton("guideWorkflow", "Guide Playbook")}${createWorkflowButton("streamWorkflow", "Stream Playbook")}${createWorkflowButton("opsWorkflow", "Ops Playbook")}`)
+    ], "operatorActionsStatus", `${createWorkflowButton("guideWorkflow", "Guide Playbook")}${createWorkflowButton("streamWorkflow", "Stream Playbook")}${createWorkflowButton("diagnosticsWorkflow", "Diagnostics")}${createWorkflowButton("opsWorkflow", "Ops Playbook")}`)
   ]).join("");
 
   state.deckSettings = deckSettings;

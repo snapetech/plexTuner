@@ -673,6 +673,68 @@ func TestServer_programmingChannelDetail(t *testing.T) {
 	}
 }
 
+func TestServer_diagnosticsWorkflowAndEvidenceAction(t *testing.T) {
+	s := &Server{
+		gateway: &Gateway{
+			recentAttempts: []StreamAttemptRecord{{
+				ChannelID:   "good-1",
+				ChannelName: "Good One",
+				FinalStatus: "ok",
+			}, {
+				ChannelID:   "bad-1",
+				ChannelName: "Bad One",
+				FinalStatus: "upstream_http_403",
+			}},
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/ops/workflows/diagnostics.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.serveDiagnosticsWorkflow().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("diagnostics workflow status=%d body=%s", w.Code, w.Body.String())
+	}
+	var workflow OperatorWorkflowReport
+	if err := json.Unmarshal(w.Body.Bytes(), &workflow); err != nil {
+		t.Fatalf("workflow unmarshal: %v", err)
+	}
+	if workflow.Name != "diagnostics_capture" {
+		t.Fatalf("workflow=%+v", workflow)
+	}
+	summary := workflow.Summary
+	if summary["suggested_good_channel_id"] != "good-1" || summary["suggested_bad_channel_id"] != "bad-1" {
+		t.Fatalf("workflow summary=%+v", summary)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/ops/actions/evidence-intake-start", strings.NewReader(`{"case_id":"smoke-case"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	tmp := t.TempDir()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origWd) }()
+	s.serveEvidenceIntakeStartAction().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("evidence action status=%d body=%s", w.Code, w.Body.String())
+	}
+	var action OperatorActionResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &action); err != nil {
+		t.Fatalf("action unmarshal: %v", err)
+	}
+	if !action.OK || action.Action != "evidence_intake_start" {
+		t.Fatalf("action=%+v", action)
+	}
+	if _, err := os.Stat(filepath.Join(tmp, ".diag", "evidence", "smoke-case", "notes.md")); err != nil {
+		t.Fatalf("expected notes.md: %v", err)
+	}
+}
+
 func TestServer_UpdateChannelsPreservesProgrammingCustomOrderAndCollapse(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "programming.json")
 	if err := os.WriteFile(path, []byte(`{

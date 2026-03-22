@@ -31,6 +31,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Harvest import heuristics**: Programming harvest imports now report how rows matched back onto the current catalog and can fall back to a local-broadcast callsign stem match when exact market strings differ across otherwise equivalent local channels.
 - **Virtual channel schedule surface**: the virtual-channel starter now exposes `/virtual-channels/schedule.json` for a rolling synthetic schedule horizon in addition to preview, M3U export, and current-slot playback.
 - **Virtual channels starter (`PAR-006` slice)**: `IPTV_TUNERR_VIRTUAL_CHANNELS_FILE` now enables file-backed virtual-channel rules plus `/virtual-channels/rules.json` and `/virtual-channels/preview.json`, and the starter is now publishable too: `/virtual-channels/live.m3u` exports the enabled synthetic rows while `/virtual-channels/stream/<id>.mp4` proxies the currently scheduled asset.
+- **Diagnostics workflow promoted from scripts**: `/ops/workflows/diagnostics.json` now turns recent stream attempts into a concrete capture playbook with suggested good/bad channel IDs and the latest `.diag/` run families, `/ops/actions/evidence-intake-start` scaffolds `.diag/evidence/<case-id>/` directly from the operator plane, the deck surfaces that workflow in Routing/Settings, and `scripts/ci-smoke.sh` now asserts the workflow plus evidence-bundle creation in the release gate.
 
 ### Fixed
 
@@ -62,7 +63,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ### Operator experiments promoted
 - **HLS mux demo promoted into the deck:** the old `/debug/hls-mux-demo.html` experiment now supports `base`, `path`, `embed`, and `autoplay` query params so the Programming lane can reuse it as a real embedded preview surface instead of leaving HLS preview as a standalone lab page.
-- **Next productization candidates documented:** the remaining high-signal experiment tooling is now explicitly tracked as product backlog: stream-compare/channel-diff diagnostics and evidence-intake bundles are good candidates for future operator-lane promotion instead of staying script-only.
+- **Next productization candidates documented:** with diagnostics capture now promoted into the deck/operator plane, the remaining high-signal experiment backlog is the next layer of in-product stream-compare/channel-diff execution and summarized bundle analysis instead of script-only invocation.
 
 ### Virtual channels
 - **Deeper virtual publishing surfaces:** virtual channels now have `/virtual-channels/channel-detail.json` for focused rule/current-slot/schedule inspection and `/virtual-channels/guide.xml` for a synthetic XMLTV export over the rolling schedule horizon. This pushes the feature beyond “current-slot proxy” toward a real publishable TV-like surface without merging it blindly into the main HDHR lineup yet.
