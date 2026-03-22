@@ -463,6 +463,10 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 			}
 		}
 		usedGetPHPFallback := false
+		getPHPUsed := map[string]struct{}{}
+		providerKey := func(e config.ProviderEntry) string {
+			return strings.TrimSuffix(e.BaseURL, "/") + "|" + e.User + "|" + e.Pass
+		}
 		var (
 			getPHPMovies []catalog.Movie
 			getPHPSeries []catalog.Series
@@ -522,6 +526,7 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 						getPHPMovies = append(getPHPMovies, gMovies...)
 						getPHPSeries = append(getPHPSeries, gSeries...)
 						getPHPLive = append(getPHPLive, gLive...)
+						getPHPUsed[providerKey(e)] = struct{}{}
 						getPHPCount++
 						usedGetPHPFallback = true
 						log.Printf("Using get.php from %s", base)
@@ -543,17 +548,23 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 				}
 			}
 		}
-		if (fetchErr != nil || res.APIBase == "") && !usedGetPHPFallback {
+		runFallbackGetPHP := (fetchErr != nil || res.APIBase == "") || (usedGetPHPFallback && len(getPHPUsed) < len(entries))
+		if runFallbackGetPHP {
 			res.APIBase = ""
 			var (
 				fallbackErr   error
-				mergedMovies  []catalog.Movie
-				mergedSeries  []catalog.Series
-				mergedLive    []catalog.LiveChannel
-				okCount       int
-				firstProvider provider.Entry
+				mergedMovies  = append([]catalog.Movie{}, getPHPMovies...)
+				mergedSeries  = append([]catalog.Series{}, getPHPSeries...)
+				mergedLive    = append([]catalog.LiveChannel{}, getPHPLive...)
+				okCount       = getPHPCount
+				firstProvider = getPHPFirst
 			)
 			for _, e := range entries {
+				if usedGetPHPFallback {
+					if _, ok := getPHPUsed[providerKey(e)]; ok {
+						continue
+					}
+				}
 				base := strings.TrimSuffix(e.BaseURL, "/")
 				var movies []catalog.Movie
 				var series []catalog.Series
