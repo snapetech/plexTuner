@@ -13,6 +13,8 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.28] — 2026-03-21
+
 ### Added
 
 - **Feature parity foundation (`PAR-001`)**: file-backed event webhooks via `IPTV_TUNERR_EVENT_WEBHOOKS_FILE`, async JSON delivery, and lifecycle emission for `lineup.updated`, `stream.requested`, `stream.rejected`, and `stream.finished`.
