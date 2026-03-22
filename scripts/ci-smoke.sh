@@ -138,6 +138,23 @@ cat >"$TMP_DIR/recording-rules.json" <<'JSON'
 }
 JSON
 
+cat >"$TMP_DIR/xtream-users.json" <<'JSON'
+{
+  "users": [
+    {
+      "username": "limited",
+      "password": "pw",
+      "allow_live": true,
+      "allow_movies": true,
+      "allow_series": false,
+      "allowed_channel_ids": ["ch1"],
+      "allowed_movie_ids": ["m1"],
+      "allowed_category_ids": ["news"]
+    }
+  ]
+}
+JSON
+
 cat >"$TMP_DIR/recorder-state.json" <<'JSON'
 {
   "completed": [
@@ -260,6 +277,7 @@ run_serve() {
   IPTV_TUNERR_WEBUI_DISABLED=1 \
   IPTV_TUNERR_XTREAM_USER=demo \
   IPTV_TUNERR_XTREAM_PASS=secret \
+  IPTV_TUNERR_XTREAM_USERS_FILE="$TMP_DIR/xtream-users.json" \
   IPTV_TUNERR_PROGRAMMING_RECIPE_FILE="$TMP_DIR/programming.json" \
   IPTV_TUNERR_RECORDING_RULES_FILE="$TMP_DIR/recording-rules.json" \
   IPTV_TUNERR_CATCHUP_RECORDER_STATE_FILE="$TMP_DIR/recorder-state.json" \
@@ -302,6 +320,11 @@ grep -q '"id": "sports"' <(curl -sS "http://127.0.0.1:$port_full/programming/cat
 grep -q '"group_count": 0' <(curl -sS "http://127.0.0.1:$port_full/programming/backups.json") || fail "programming backups unexpected initial group"
 grep -q '"alternative_sources"' <(curl -sS "http://127.0.0.1:$port_full/programming/channel-detail.json?channel_id=ch1") || fail "programming channel detail missing alternatives section"
 grep -q '"stream_type":"live"' <(curl -sS "http://127.0.0.1:$port_full/player_api.php?username=demo&password=secret&action=get_live_streams") || fail "xtream live streams endpoint missing live row"
+limited_live="$(curl -sS "http://127.0.0.1:$port_full/player_api.php?username=limited&password=pw&action=get_live_streams")"
+grep -q '"stream_id":"ch1"' <<<"$limited_live" || fail "limited xtream live view missing allowed channel"
+! grep -q '"stream_id":"ch2"' <<<"$limited_live" || fail "limited xtream live view leaked disallowed channel"
+limited_denied_code="$(curl -sS -o "$body_file" -w '%{http_code}' "http://127.0.0.1:$port_full/live/limited/pw/ch2.ts" || true)"
+[[ "$limited_denied_code" == "404" ]] || fail "limited xtream live proxy status=$limited_denied_code body=$(cat "$body_file" 2>/dev/null)"
 category_mutate_code="$(curl -sS -X POST -H 'Content-Type: application/json' --data '{"action":"include","category_id":"sports"}' -o "$body_file" -w '%{http_code}' "http://127.0.0.1:$port_full/programming/categories.json" || true)"
 [[ "$category_mutate_code" == "200" ]] || fail "programming category mutation status=$category_mutate_code body=$(cat "$body_file" 2>/dev/null)"
 channel_mutate_code="$(curl -sS -X POST -H 'Content-Type: application/json' --data '{"action":"exclude","channel_id":"ch1"}' -o "$body_file" -w '%{http_code}' "http://127.0.0.1:$port_full/programming/channels.json" || true)"
@@ -390,5 +413,9 @@ movie_proxy_body="$(curl -sS "http://127.0.0.1:$port_xtream/movie/demo/secret/m1
 [[ "$movie_proxy_body" == "movie-bytes" ]] || fail "xtream movie proxy body unexpected"
 episode_proxy_body="$(curl -sS "http://127.0.0.1:$port_xtream/series/demo/secret/e1.mp4")"
 [[ "$episode_proxy_body" == "episode-bytes" ]] || fail "xtream series proxy body unexpected"
+limited_movie_body="$(curl -sS "http://127.0.0.1:$port_xtream/movie/limited/pw/m1.mp4")"
+[[ "$limited_movie_body" == "movie-bytes" ]] || fail "limited xtream movie proxy body unexpected"
+limited_series_code="$(curl -sS -o "$body_file" -w '%{http_code}' "http://127.0.0.1:$port_xtream/series/limited/pw/e1.mp4" || true)"
+[[ "$limited_series_code" == "404" ]] || fail "limited xtream series proxy status=$limited_series_code body=$(cat "$body_file" 2>/dev/null)"
 
 log "smoke checks passed"

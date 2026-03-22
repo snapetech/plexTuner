@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-21):** **`PAR-005` starter shipped in-tree:** the downstream Xtream surface now has a real file-backed entitlement model via `IPTV_TUNERR_XTREAM_USERS_FILE` and `/entitlements.json`, so different downstream users can see different live/VOD/series slices instead of one global catalog. Release smoke now verifies both the scoped view and denied playback paths. Next depth: virtual channels from owned media (`PAR-006`) or deeper shared-upstream fanout beyond the bounded HLS relay slice (`PAR-002`).
+
 **Latest (2026-03-21):** **`PAR-004` + Programming Manager follow-up shipped in-tree:** the downstream Xtream starter now exposes VOD and series actions/proxies, release smoke now exercises those paths, and `/programming/channel-detail.json` gives category-first tools a focused channel view with 3-hour EPG preview plus exact-match alternative sources. Next depth: real entitlement model (`PAR-005`) or virtual channels from owned media (`PAR-006`).
 
 **Latest (2026-03-21):** **`PAR-004` expanded:** the downstream Xtream starter now exposes VOD and series too, not just live categories/streams. `player_api.php` serves VOD/series category and library actions plus `get_series_info`, and Tunerr-owned `/movie/...` and `/series/...` proxy paths now serve catalog VOD/episode assets through the same output surface. Next depth: entitlement model (`PAR-005`) or virtual channels from owned media (`PAR-006`).

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
+	"github.com/snapetech/iptvtunerr/internal/entitlements"
 	"github.com/snapetech/iptvtunerr/internal/epglink"
 	"github.com/snapetech/iptvtunerr/internal/epgstore"
 	"github.com/snapetech/iptvtunerr/internal/eventhooks"
@@ -2369,5 +2370,98 @@ func TestServer_XtreamMovieAndSeriesProxy(t *testing.T) {
 		if rr.Body.String() != tc.want {
 			t.Fatalf("%s body=%q want %q", tc.path, rr.Body.String(), tc.want)
 		}
+	}
+}
+
+func TestServer_XtreamEntitlementsLimitOutput(t *testing.T) {
+	usersPath := filepath.Join(t.TempDir(), "xtream-users.json")
+	if _, err := entitlements.SaveFile(usersPath, entitlements.Ruleset{
+		Users: []entitlements.User{{
+			Username:           "limited",
+			Password:           "pw",
+			AllowLive:          true,
+			AllowMovies:        true,
+			AllowSeries:        false,
+			AllowedChannelIDs:  []string{"100"},
+			AllowedMovieIDs:    []string{"m1"},
+			AllowedCategoryIDs: []string{"news"},
+		}},
+	}); err != nil {
+		t.Fatalf("save entitlements: %v", err)
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "movie"):
+			_, _ = w.Write([]byte("movie-bytes"))
+		case strings.Contains(r.URL.Path, "episode"):
+			_, _ = w.Write([]byte("episode-bytes"))
+		default:
+			_, _ = w.Write([]byte("ok"))
+		}
+	}))
+	defer upstream.Close()
+
+	srv := &Server{
+		BaseURL:          "http://127.0.0.1:5004",
+		XtreamOutputUser: "admin",
+		XtreamOutputPass: "secret",
+		XtreamUsersFile:  usersPath,
+		Channels: []catalog.LiveChannel{
+			{ChannelID: "100", GuideNumber: "100", GuideName: "News 1", GroupTitle: "News", StreamURL: upstream.URL + "/live-100.ts"},
+			{ChannelID: "200", GuideNumber: "200", GuideName: "Sports 1", GroupTitle: "Sports", StreamURL: upstream.URL + "/live-200.ts"},
+		},
+		Movies: []catalog.Movie{
+			{ID: "m1", Title: "Movie One", StreamURL: upstream.URL + "/movie.mp4"},
+		},
+		Series: []catalog.Series{
+			{
+				ID: "s1",
+				Seasons: []catalog.Season{{
+					Number: 1,
+					Episodes: []catalog.Episode{{
+						ID:        "e1",
+						StreamURL: upstream.URL + "/episode.mp4",
+					}},
+				}},
+			},
+		},
+		gateway: &Gateway{
+			Channels: []catalog.LiveChannel{
+				{ChannelID: "100", GuideNumber: "100", GuideName: "News 1", GroupTitle: "News", StreamURL: upstream.URL + "/live-100.ts"},
+				{ChannelID: "200", GuideNumber: "200", GuideName: "Sports 1", GroupTitle: "Sports", StreamURL: upstream.URL + "/live-200.ts"},
+			},
+			TunerCount: 2,
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/player_api.php?username=limited&password=pw&action=get_live_streams", nil)
+	rr := httptest.NewRecorder()
+	srv.serveXtreamPlayerAPI().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("live streams status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"stream_id":"100"`) || strings.Contains(rr.Body.String(), `"stream_id":"200"`) {
+		t.Fatalf("live streams body=%s", rr.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/movie/limited/pw/m1.mp4", nil)
+	rr = httptest.NewRecorder()
+	srv.serveXtreamMovieProxy().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK || rr.Body.String() != "movie-bytes" {
+		t.Fatalf("movie proxy status=%d body=%q", rr.Code, rr.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/series/limited/pw/e1.mp4", nil)
+	rr = httptest.NewRecorder()
+	srv.serveXtreamSeriesProxy().ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("series proxy status=%d body=%q", rr.Code, rr.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/live/limited/pw/200.ts", nil)
+	rr = httptest.NewRecorder()
+	srv.serveXtreamLiveProxy().ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("live proxy status=%d body=%q", rr.Code, rr.Body.String())
 	}
 }

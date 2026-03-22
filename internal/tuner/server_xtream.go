@@ -9,7 +9,9 @@ import (
 	"strings"
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
+	"github.com/snapetech/iptvtunerr/internal/entitlements"
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
+	"github.com/snapetech/iptvtunerr/internal/programming"
 )
 
 type xtreamLiveCategory struct {
@@ -60,9 +62,16 @@ type xtEpisode struct {
 	Season       int    `json:"season,omitempty"`
 }
 
+type xtreamPrincipal struct {
+	Username   string
+	FullAccess bool
+	User       *entitlements.User
+}
+
 func (s *Server) serveXtreamPlayerAPI() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.xtreamQueryAuthOK(r) {
+		principal, ok := s.xtreamQueryPrincipal(r)
+		if !ok {
 			http.Error(w, `{"user_info":{"auth":0},"server_info":{"status":"disabled"}}`, http.StatusUnauthorized)
 			return
 		}
@@ -70,20 +79,20 @@ func (s *Server) serveXtreamPlayerAPI() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		switch action {
 		case "", "get_live_streams":
-			_ = json.NewEncoder(w).Encode(s.xtreamLiveStreams())
+			_ = json.NewEncoder(w).Encode(s.xtreamLiveStreams(principal))
 		case "get_live_categories":
-			_ = json.NewEncoder(w).Encode(s.xtreamLiveCategories())
+			_ = json.NewEncoder(w).Encode(s.xtreamLiveCategories(principal))
 		case "get_vod_categories":
-			_ = json.NewEncoder(w).Encode(s.xtreamVODCategories())
+			_ = json.NewEncoder(w).Encode(s.xtreamVODCategories(principal))
 		case "get_vod_streams":
-			_ = json.NewEncoder(w).Encode(s.xtreamMovieStreams())
+			_ = json.NewEncoder(w).Encode(s.xtreamMovieStreams(principal))
 		case "get_series_categories":
-			_ = json.NewEncoder(w).Encode(s.xtreamSeriesCategories())
+			_ = json.NewEncoder(w).Encode(s.xtreamSeriesCategories(principal))
 		case "get_series":
-			_ = json.NewEncoder(w).Encode(s.xtreamSeriesStreams())
+			_ = json.NewEncoder(w).Encode(s.xtreamSeriesStreams(principal))
 		case "get_series_info":
-			info, ok := s.xtreamSeriesInfo(strings.TrimSpace(r.URL.Query().Get("series_id")))
-			if !ok {
+			info, found := s.xtreamSeriesInfo(principal, strings.TrimSpace(r.URL.Query().Get("series_id")))
+			if !found {
 				http.Error(w, `{"error":"series not found"}`, http.StatusNotFound)
 				return
 			}
@@ -96,8 +105,13 @@ func (s *Server) serveXtreamPlayerAPI() http.Handler {
 
 func (s *Server) serveXtreamLiveProxy() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		channelID, ok := s.xtreamPathID(r.URL.Path, "live")
+		principal, channelID, ok := s.xtreamPathPrincipalID(r.URL.Path, "live")
 		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		channel, found := s.findLiveChannel(channelID)
+		if !found || !s.xtreamLiveAllowed(principal, channel) {
 			http.NotFound(w, r)
 			return
 		}
@@ -120,29 +134,45 @@ func (s *Server) serveXtreamSeriesProxy() http.Handler {
 	return s.serveXtreamVODProxy("series")
 }
 
-func (s *Server) xtreamQueryAuthOK(r *http.Request) bool {
-	return strings.TrimSpace(r.URL.Query().Get("username")) == strings.TrimSpace(s.XtreamOutputUser) &&
-		strings.TrimSpace(r.URL.Query().Get("password")) == strings.TrimSpace(s.XtreamOutputPass)
+func (s *Server) xtreamQueryPrincipal(r *http.Request) (xtreamPrincipal, bool) {
+	return s.xtreamPrincipal(strings.TrimSpace(r.URL.Query().Get("username")), strings.TrimSpace(r.URL.Query().Get("password")))
 }
 
-func (s *Server) xtreamPathID(path, prefix string) (string, bool) {
+func (s *Server) xtreamPathPrincipalID(path, prefix string) (xtreamPrincipal, string, bool) {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) < 4 || parts[0] != prefix {
-		return "", false
+		return xtreamPrincipal{}, "", false
 	}
-	if parts[1] != strings.TrimSpace(s.XtreamOutputUser) || parts[2] != strings.TrimSpace(s.XtreamOutputPass) {
-		return "", false
+	principal, ok := s.xtreamPrincipal(parts[1], parts[2])
+	if !ok {
+		return xtreamPrincipal{}, "", false
 	}
 	id := parts[3]
 	if idx := strings.Index(id, "."); idx > 0 {
 		id = id[:idx]
 	}
 	id = strings.TrimSpace(id)
-	return id, id != ""
+	return principal, id, id != ""
 }
 
-func (s *Server) xtreamLiveCategories() []xtreamLiveCategory {
-	channels := cloneLiveChannels(s.Channels)
+func (s *Server) xtreamPrincipal(username, password string) (xtreamPrincipal, bool) {
+	username = strings.TrimSpace(username)
+	password = strings.TrimSpace(password)
+	if username != "" && username == strings.TrimSpace(s.XtreamOutputUser) && password == strings.TrimSpace(s.XtreamOutputPass) {
+		return xtreamPrincipal{Username: username, FullAccess: true}, true
+	}
+	if strings.TrimSpace(s.XtreamUsersFile) == "" {
+		return xtreamPrincipal{}, false
+	}
+	user, ok := entitlements.Authenticate(s.reloadXtreamEntitlements(), username, password)
+	if !ok {
+		return xtreamPrincipal{}, false
+	}
+	return xtreamPrincipal{Username: user.Username, User: &user}, true
+}
+
+func (s *Server) xtreamLiveCategories(principal xtreamPrincipal) []xtreamLiveCategory {
+	channels := s.xtreamLiveChannelsFor(principal)
 	seen := map[string]string{}
 	for _, ch := range channels {
 		name := strings.TrimSpace(ch.GroupTitle)
@@ -155,27 +185,27 @@ func (s *Server) xtreamLiveCategories() []xtreamLiveCategory {
 		}
 	}
 	keys := make([]string, 0, len(seen))
-	for k := range seen {
-		keys = append(keys, k)
+	for key := range seen {
+		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	out := make([]xtreamLiveCategory, 0, len(keys))
-	for i, k := range keys {
+	for i, key := range keys {
 		out = append(out, xtreamLiveCategory{
 			CategoryID:   strconv.Itoa(i + 1),
-			CategoryName: seen[k],
+			CategoryName: seen[key],
 		})
 	}
 	return out
 }
 
-func (s *Server) xtreamLiveStreams() []xtreamLiveStream {
-	categories := s.xtreamLiveCategories()
+func (s *Server) xtreamLiveStreams(principal xtreamPrincipal) []xtreamLiveStream {
+	categories := s.xtreamLiveCategories(principal)
 	catIDs := make(map[string]string, len(categories))
 	for _, row := range categories {
 		catIDs[strings.ToLower(row.CategoryName)] = row.CategoryID
 	}
-	channels := cloneLiveChannels(s.Channels)
+	channels := s.xtreamLiveChannelsFor(principal)
 	out := make([]xtreamLiveStream, 0, len(channels))
 	for _, ch := range channels {
 		group := strings.TrimSpace(ch.GroupTitle)
@@ -189,31 +219,34 @@ func (s *Server) xtreamLiveStreams() []xtreamLiveStream {
 			StreamID:     strings.TrimSpace(ch.ChannelID),
 			EPGChannelID: strings.TrimSpace(ch.TVGID),
 			CategoryID:   catIDs[strings.ToLower(group)],
-			DirectSource: strings.TrimRight(s.BaseURL, "/") + "/stream/" + strings.TrimSpace(ch.ChannelID),
+			DirectSource: strings.TrimRight(s.BaseURL, "/") + "/live/" + principal.Username + "/" + s.xtreamPasswordForPrincipal(principal) + "/" + strings.TrimSpace(ch.ChannelID) + ".ts",
 			TVArchive:    0,
 		})
 	}
 	return out
 }
 
-func (s *Server) xtreamVODCategories() []xtreamVODCategory {
-	return xtreamVODCategoryRows(s.Movies, func(m catalog.Movie) string { return firstNonEmptyString(m.ProviderCategoryName, m.Category, "Movies") })
+func (s *Server) xtreamVODCategories(principal xtreamPrincipal) []xtreamVODCategory {
+	return xtreamVODCategoryRows(s.xtreamMoviesFor(principal), func(m catalog.Movie) string {
+		return firstNonEmptyString(m.ProviderCategoryName, m.Category, "Movies")
+	})
 }
 
-func (s *Server) xtreamSeriesCategories() []xtreamVODCategory {
-	return xtreamVODCategoryRows(s.Series, func(series catalog.Series) string {
+func (s *Server) xtreamSeriesCategories(principal xtreamPrincipal) []xtreamVODCategory {
+	return xtreamVODCategoryRows(s.xtreamSeriesFor(principal), func(series catalog.Series) string {
 		return firstNonEmptyString(series.ProviderCategoryName, series.Category, "Series")
 	})
 }
 
-func (s *Server) xtreamMovieStreams() []xtreamVODStream {
-	categories := s.xtreamVODCategories()
+func (s *Server) xtreamMovieStreams(principal xtreamPrincipal) []xtreamVODStream {
+	categories := s.xtreamVODCategories(principal)
 	catIDs := make(map[string]string, len(categories))
 	for _, row := range categories {
 		catIDs[strings.ToLower(row.CategoryName)] = row.CategoryID
 	}
-	out := make([]xtreamVODStream, 0, len(s.Movies))
-	for _, movie := range s.Movies {
+	movies := s.xtreamMoviesFor(principal)
+	out := make([]xtreamVODStream, 0, len(movies))
+	for _, movie := range movies {
 		category := firstNonEmptyString(movie.ProviderCategoryName, movie.Category, "Movies")
 		out = append(out, xtreamVODStream{
 			Name:         strings.TrimSpace(movie.Title),
@@ -221,21 +254,22 @@ func (s *Server) xtreamMovieStreams() []xtreamVODStream {
 			StreamID:     strings.TrimSpace(movie.ID),
 			StreamIcon:   strings.TrimSpace(movie.ArtworkURL),
 			CategoryID:   catIDs[strings.ToLower(category)],
-			DirectSource: strings.TrimRight(s.BaseURL, "/") + "/movie/" + strings.TrimSpace(s.XtreamOutputUser) + "/" + strings.TrimSpace(s.XtreamOutputPass) + "/" + strings.TrimSpace(movie.ID) + ".mp4",
+			DirectSource: strings.TrimRight(s.BaseURL, "/") + "/movie/" + principal.Username + "/" + s.xtreamPasswordForPrincipal(principal) + "/" + strings.TrimSpace(movie.ID) + ".mp4",
 			ContainerExt: "mp4",
 		})
 	}
 	return out
 }
 
-func (s *Server) xtreamSeriesStreams() []xtreamVODStream {
-	categories := s.xtreamSeriesCategories()
+func (s *Server) xtreamSeriesStreams(principal xtreamPrincipal) []xtreamVODStream {
+	categories := s.xtreamSeriesCategories(principal)
 	catIDs := make(map[string]string, len(categories))
 	for _, row := range categories {
 		catIDs[strings.ToLower(row.CategoryName)] = row.CategoryID
 	}
-	out := make([]xtreamVODStream, 0, len(s.Series))
-	for _, series := range s.Series {
+	seriesRows := s.xtreamSeriesFor(principal)
+	out := make([]xtreamVODStream, 0, len(seriesRows))
+	for _, series := range seriesRows {
 		category := firstNonEmptyString(series.ProviderCategoryName, series.Category, "Series")
 		out = append(out, xtreamVODStream{
 			Name:       strings.TrimSpace(series.Title),
@@ -248,9 +282,9 @@ func (s *Server) xtreamSeriesStreams() []xtreamVODStream {
 	return out
 }
 
-func (s *Server) xtreamSeriesInfo(id string) (xtreamSeriesInfo, bool) {
+func (s *Server) xtreamSeriesInfo(principal xtreamPrincipal, id string) (xtreamSeriesInfo, bool) {
 	id = strings.TrimSpace(id)
-	for _, series := range s.Series {
+	for _, series := range s.xtreamSeriesFor(principal) {
 		if strings.TrimSpace(series.ID) != id {
 			continue
 		}
@@ -267,7 +301,7 @@ func (s *Server) xtreamSeriesInfo(id string) (xtreamSeriesInfo, bool) {
 					ID:           strings.TrimSpace(episode.ID),
 					Title:        strings.TrimSpace(episode.Title),
 					ContainerExt: "mp4",
-					DirectSource: strings.TrimRight(s.BaseURL, "/") + "/series/" + strings.TrimSpace(s.XtreamOutputUser) + "/" + strings.TrimSpace(s.XtreamOutputPass) + "/" + strings.TrimSpace(episode.ID) + ".mp4",
+					DirectSource: strings.TrimRight(s.BaseURL, "/") + "/series/" + principal.Username + "/" + s.xtreamPasswordForPrincipal(principal) + "/" + strings.TrimSpace(episode.ID) + ".mp4",
 					EpisodeNum:   episode.EpisodeNum,
 					Season:       episode.SeasonNum,
 				})
@@ -280,12 +314,12 @@ func (s *Server) xtreamSeriesInfo(id string) (xtreamSeriesInfo, bool) {
 
 func (s *Server) serveXtreamVODProxy(prefix string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id, ok := s.xtreamPathID(r.URL.Path, prefix)
+		principal, id, ok := s.xtreamPathPrincipalID(r.URL.Path, prefix)
 		if !ok {
 			http.NotFound(w, r)
 			return
 		}
-		sourceURL, found := s.xtreamVODSourceURL(prefix, id)
+		sourceURL, found := s.xtreamVODSourceURL(principal, prefix, id)
 		if !found {
 			http.NotFound(w, r)
 			return
@@ -309,17 +343,17 @@ func (s *Server) serveXtreamVODProxy(prefix string) http.Handler {
 	})
 }
 
-func (s *Server) xtreamVODSourceURL(prefix, id string) (string, bool) {
+func (s *Server) xtreamVODSourceURL(principal xtreamPrincipal, prefix, id string) (string, bool) {
 	id = strings.TrimSpace(id)
 	switch prefix {
 	case "movie":
-		for _, movie := range s.Movies {
+		for _, movie := range s.xtreamMoviesFor(principal) {
 			if strings.TrimSpace(movie.ID) == id {
 				return strings.TrimSpace(movie.StreamURL), true
 			}
 		}
 	case "series":
-		for _, series := range s.Series {
+		for _, series := range s.xtreamSeriesFor(principal) {
 			for _, season := range series.Seasons {
 				for _, episode := range season.Episodes {
 					if strings.TrimSpace(episode.ID) == id {
@@ -330,6 +364,133 @@ func (s *Server) xtreamVODSourceURL(prefix, id string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func (s *Server) xtreamLiveChannelsFor(principal xtreamPrincipal) []catalog.LiveChannel {
+	if principal.FullAccess || principal.User == nil {
+		return cloneLiveChannels(s.Channels)
+	}
+	out := make([]catalog.LiveChannel, 0, len(s.Channels))
+	for _, ch := range s.Channels {
+		if s.xtreamLiveAllowed(principal, ch) {
+			out = append(out, ch)
+		}
+	}
+	return out
+}
+
+func (s *Server) xtreamMoviesFor(principal xtreamPrincipal) []catalog.Movie {
+	if principal.FullAccess || principal.User == nil {
+		return append([]catalog.Movie(nil), s.Movies...)
+	}
+	out := make([]catalog.Movie, 0, len(s.Movies))
+	for _, movie := range s.Movies {
+		if s.xtreamMovieAllowed(principal, movie) {
+			out = append(out, movie)
+		}
+	}
+	return out
+}
+
+func (s *Server) xtreamSeriesFor(principal xtreamPrincipal) []catalog.Series {
+	if principal.FullAccess || principal.User == nil {
+		return append([]catalog.Series(nil), s.Series...)
+	}
+	out := make([]catalog.Series, 0, len(s.Series))
+	for _, series := range s.Series {
+		if s.xtreamSeriesAllowed(principal, series) {
+			out = append(out, series)
+		}
+	}
+	return out
+}
+
+func (s *Server) xtreamLiveAllowed(principal xtreamPrincipal, ch catalog.LiveChannel) bool {
+	if principal.FullAccess || principal.User == nil {
+		return true
+	}
+	user := principal.User
+	if !user.AllowLive {
+		return false
+	}
+	if !user.LiveRestricted() {
+		return true
+	}
+	categoryID, categoryLabel, _ := programming.CategoryIdentity(ch)
+	return containsFold(user.AllowedChannelIDs, ch.ChannelID) ||
+		containsFold(user.AllowedTVGIDs, ch.TVGID) ||
+		containsFold(user.AllowedCategoryIDs, categoryID) ||
+		containsFold(user.AllowedCategoryNames, categoryLabel) ||
+		containsFold(user.AllowedSourceTags, ch.SourceTag)
+}
+
+func (s *Server) xtreamMovieAllowed(principal xtreamPrincipal, movie catalog.Movie) bool {
+	if principal.FullAccess || principal.User == nil {
+		return true
+	}
+	user := principal.User
+	if !user.AllowMovies {
+		return false
+	}
+	if !user.MovieRestricted() {
+		return true
+	}
+	category := firstNonEmptyString(movie.ProviderCategoryName, movie.Category, "Movies")
+	return containsFold(user.AllowedMovieIDs, movie.ID) || containsFold(user.AllowedCategoryNames, category)
+}
+
+func (s *Server) xtreamSeriesAllowed(principal xtreamPrincipal, series catalog.Series) bool {
+	if principal.FullAccess || principal.User == nil {
+		return true
+	}
+	user := principal.User
+	if !user.AllowSeries {
+		return false
+	}
+	if !user.SeriesRestricted() {
+		return true
+	}
+	category := firstNonEmptyString(series.ProviderCategoryName, series.Category, "Series")
+	return containsFold(user.AllowedSeriesIDs, series.ID) || containsFold(user.AllowedCategoryNames, category)
+}
+
+func (s *Server) findLiveChannel(channelID string) (catalog.LiveChannel, bool) {
+	channelID = strings.TrimSpace(channelID)
+	for _, group := range [][]catalog.LiveChannel{s.Channels, s.RawChannels} {
+		for _, ch := range group {
+			if strings.TrimSpace(ch.ChannelID) == channelID {
+				return ch, true
+			}
+		}
+	}
+	if s.gateway != nil {
+		for _, ch := range s.gateway.Channels {
+			if strings.TrimSpace(ch.ChannelID) == channelID {
+				return ch, true
+			}
+		}
+	}
+	return catalog.LiveChannel{}, false
+}
+
+func (s *Server) xtreamPasswordForPrincipal(principal xtreamPrincipal) string {
+	if principal.FullAccess || principal.User == nil {
+		return strings.TrimSpace(s.XtreamOutputPass)
+	}
+	return strings.TrimSpace(principal.User.Password)
+}
+
+func containsFold(items []string, want string) bool {
+	want = strings.ToLower(strings.TrimSpace(want))
+	if want == "" {
+		return false
+	}
+	for _, item := range items {
+		if strings.ToLower(strings.TrimSpace(item)) == want {
+			return true
+		}
+	}
+	return false
 }
 
 func xtreamVODCategoryRows[T any](items []T, nameFn func(T) string) []xtreamVODCategory {

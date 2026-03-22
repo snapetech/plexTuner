@@ -22,6 +22,7 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/catalog"
 	"github.com/snapetech/iptvtunerr/internal/channeldna"
 	"github.com/snapetech/iptvtunerr/internal/channelreport"
+	"github.com/snapetech/iptvtunerr/internal/entitlements"
 	"github.com/snapetech/iptvtunerr/internal/epgstore"
 	"github.com/snapetech/iptvtunerr/internal/eventhooks"
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
@@ -85,6 +86,8 @@ type Server struct {
 	EventHooks            *eventhooks.Dispatcher
 	XtreamOutputUser      string
 	XtreamOutputPass      string
+	XtreamUsersFile       string
+	XtreamEntitlements    entitlements.Ruleset
 	ProviderUser          string
 	ProviderPass          string
 	ProviderBaseURL       string
@@ -806,7 +809,35 @@ func regionOrDash(v string) string {
 }
 
 func (s *Server) xtreamOutputEnabled() bool {
-	return strings.TrimSpace(s.XtreamOutputUser) != "" && strings.TrimSpace(s.XtreamOutputPass) != ""
+	return (strings.TrimSpace(s.XtreamOutputUser) != "" && strings.TrimSpace(s.XtreamOutputPass) != "") ||
+		strings.TrimSpace(s.XtreamUsersFile) != ""
+}
+
+func (s *Server) reloadXtreamEntitlements() entitlements.Ruleset {
+	path := strings.TrimSpace(s.XtreamUsersFile)
+	if path == "" {
+		s.XtreamEntitlements = entitlements.NormalizeRuleset(s.XtreamEntitlements)
+		return s.XtreamEntitlements
+	}
+	set, err := entitlements.LoadFile(path)
+	if err != nil {
+		log.Printf("Xtream entitlements disabled: load %q failed: %v", path, err)
+		return s.XtreamEntitlements
+	}
+	s.XtreamEntitlements = set
+	return set
+}
+
+func (s *Server) saveXtreamEntitlements(set entitlements.Ruleset) (entitlements.Ruleset, error) {
+	path := strings.TrimSpace(s.XtreamUsersFile)
+	if path == "" {
+		return entitlements.Ruleset{}, fmt.Errorf("xtream users file not configured")
+	}
+	saved, err := entitlements.SaveFile(path, set)
+	if err == nil {
+		s.XtreamEntitlements = saved
+	}
+	return saved, err
 }
 
 func scoreLineupChannelForShape(shape, region string, ch catalog.LiveChannel) int {
@@ -1284,6 +1315,7 @@ func (s *Server) Run(ctx context.Context) error {
 		mux.Handle("/movie/", s.serveXtreamMovieProxy())
 		mux.Handle("/series/", s.serveXtreamSeriesProxy())
 	}
+	mux.Handle("/entitlements.json", s.serveXtreamEntitlements())
 	mux.Handle("/guide.xml", xmltv)
 	mux.Handle("/guide/health.json", s.serveGuideHealth())
 	mux.Handle("/guide/policy.json", s.serveGuidePolicy())
@@ -2587,6 +2619,55 @@ func (s *Server) serveProgrammingBackups() http.Handler {
 			return
 		}
 		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveXtreamEntitlements() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodGet:
+			set := s.reloadXtreamEntitlements()
+			body, err := json.MarshalIndent(map[string]interface{}{
+				"generated_at": time.Now().UTC().Format(time.RFC3339),
+				"users_file":   strings.TrimSpace(s.XtreamUsersFile),
+				"enabled":      strings.TrimSpace(s.XtreamUsersFile) != "",
+				"rules":        set,
+			}, "", "  ")
+			if err != nil {
+				http.Error(w, `{"error":"encode xtream entitlements"}`, http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write(body)
+		case http.MethodPost:
+			if !operatorUIAllowed(w, r) {
+				return
+			}
+			if strings.TrimSpace(s.XtreamUsersFile) == "" {
+				http.Error(w, `{"error":"xtream users file not configured"}`, http.StatusServiceUnavailable)
+				return
+			}
+			limited := http.MaxBytesReader(w, r.Body, 65536)
+			defer limited.Close()
+			var set entitlements.Ruleset
+			if err := json.NewDecoder(limited).Decode(&set); err != nil {
+				http.Error(w, `{"error":"invalid xtream entitlements json"}`, http.StatusBadRequest)
+				return
+			}
+			saved, err := s.saveXtreamEntitlements(set)
+			if err != nil {
+				http.Error(w, `{"error":"save xtream entitlements failed"}`, http.StatusBadGateway)
+				return
+			}
+			body, err := json.MarshalIndent(saved, "", "  ")
+			if err != nil {
+				http.Error(w, `{"error":"encode xtream entitlements"}`, http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write(body)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
 	})
 }
 

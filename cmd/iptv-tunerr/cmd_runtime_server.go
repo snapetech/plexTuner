@@ -65,6 +65,7 @@ func newRuntimeServer(cfg *config.Config, addr, baseURL, deviceID, friendlyName 
 		ProviderPass:               providerPass,
 		XtreamOutputUser:           strings.TrimSpace(os.Getenv("IPTV_TUNERR_XTREAM_USER")),
 		XtreamOutputPass:           strings.TrimSpace(os.Getenv("IPTV_TUNERR_XTREAM_PASS")),
+		XtreamUsersFile:            strings.TrimSpace(os.Getenv("IPTV_TUNERR_XTREAM_USERS_FILE")),
 		ProviderBaseURL:            providerBase,
 		XMLTVSourceURL:             cfg.XMLTVURL,
 		XMLTVTimeout:               cfg.XMLTVTimeout,
@@ -163,6 +164,7 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"provider_account_limit_ttl_hours":         strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_ACCOUNT_LIMIT_TTL_HOURS")),
 			"programming_recipe_file":                  strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROGRAMMING_RECIPE_FILE")),
 			"recording_rules_file":                     strings.TrimSpace(cfg.RecordingRulesFile),
+			"xtream_users_file":                        strings.TrimSpace(os.Getenv("IPTV_TUNERR_XTREAM_USERS_FILE")),
 		},
 		Guide: map[string]interface{}{
 			"xmltv_url":                     cfg.XMLTVURL,
@@ -268,6 +270,7 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"xtream_live_proxy":      "/live/",
 			"xtream_movie_proxy":     "/movie/",
 			"xtream_series_proxy":    "/series/",
+			"xtream_entitlements":    "/entitlements.json",
 			"guide_highlights":       "/guide/highlights.json",
 			"guide_epg_store":        "/guide/epg-store.json",
 			"guide_capsules":         "/guide/capsules.json",

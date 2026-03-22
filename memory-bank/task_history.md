@@ -4232,3 +4232,9 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
   - Strengthened release gating: `scripts/ci-smoke.sh` now exercises the expanded Xtream VOD/series surface and the new programming channel-detail endpoint against a real temp binary.
   - Added a multi-channel 3-account rollover regression (`TestGateway_stream_twoChannelsPreferDifferentXtreamPathAccounts`) so “second device didn’t rotate credentials” becomes a deterministic test failure.
   - Verification: `go test ./internal/tuner ./cmd/iptv-tunerr -run 'Test(Server_(XtreamPlayerAPI_(LiveCategories|VODAndSeries)|XtreamLiveProxy|XtreamMovieAndSeriesProxy|programmingChannelDetail|programmingEndpoints)|Gateway_(stream_rollsAcrossThreeXtreamPathAccounts|stream_twoChannelsPreferDifferentXtreamPathAccounts))' -count=1`; `./scripts/verify`.
+- 2026-03-21: Added the first real multi-user / entitlement slice for downstream Xtream output (`PAR-005`).
+  - Added `internal/entitlements` plus `IPTV_TUNERR_XTREAM_USERS_FILE` so Tunerr can load file-backed downstream users with scoped live/VOD/series access.
+  - Added `/entitlements.json` for operator visibility and file-backed updates to the current ruleset.
+  - `player_api.php` and `/live|movie|series/...` now authenticate either the legacy admin user or a file-backed downstream user, and filter or deny output per user instead of treating the Xtream surface as one global catalog.
+  - Strengthened release gating again: `scripts/ci-smoke.sh` now verifies a limited user sees only its allowed live/movie rows and gets `404` on denied live/series playback.
+  - Verification: `go test ./internal/entitlements ./internal/tuner ./cmd/iptv-tunerr -run 'Test(LoadSaveAndAuthenticate|Server_(XtreamEntitlementsLimitOutput|XtreamPlayerAPI_(LiveCategories|VODAndSeries)|XtreamMovieAndSeriesProxy|XtreamLiveProxy))' -count=1`; `./scripts/verify`.
