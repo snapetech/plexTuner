@@ -24,6 +24,7 @@ const endpoints = {
   programmingBackups: "/api/programming/backups.json",
   programmingHarvest: "/api/programming/harvest.json",
   programmingHarvestImport: "/api/programming/harvest-import.json",
+  programmingHarvestAssist: "/api/programming/harvest-assist.json",
   programmingRecipe: "/api/programming/recipe.json",
   programmingPreview: "/api/programming/preview.json?limit=12",
   virtualChannelSchedule: "/api/virtual-channels/schedule.json?horizon=3h",
@@ -58,6 +59,7 @@ const endpointCatalog = {
   programmingBackups: { title: "Programming Backups", category: "Programming", summary: "Exact sibling backup groups that can collapse into one visible lineup row." },
   programmingHarvest: { title: "Programming Harvest", category: "Programming", summary: "Persisted Plex lineup-harvest report and deduped candidate lineup titles." },
   programmingHarvestImport: { title: "Programming Harvest Import", category: "Programming", summary: "Preview/apply a harvested lineup as a real Programming Manager recipe." },
+  programmingHarvestAssist: { title: "Programming Harvest Assist", category: "Programming", summary: "Ranked local-market and exact-match recipe assists derived from harvested lineups." },
   programmingRecipe: { title: "Programming Recipe", category: "Programming", summary: "Durable saved recipe file backing category/channel/order decisions." },
   programmingPreview: { title: "Programming Preview", category: "Programming", summary: "Curated lineup preview with taxonomy buckets and backup groups." },
   virtualChannelSchedule: { title: "Virtual Channel Schedule", category: "Programming", summary: "Synthetic schedule horizon for published virtual channels." },
@@ -1002,6 +1004,7 @@ function renderDeck() {
   const programmingChannelsPayload = state.payloads.programmingChannels?.body || {};
   const programmingOrderPayload = state.payloads.programmingOrder?.body || {};
   const programmingBackupsPayload = state.payloads.programmingBackups?.body || {};
+  const programmingHarvestAssistPayload = state.payloads.programmingHarvestAssist?.body || {};
   const programmingRecipePayload = state.payloads.programmingRecipe?.body || {};
   const programmingPreviewPayload = state.payloads.programmingPreview?.body || {};
   const operatorStatus = state.payloads.operatorActionsStatus?.body || {};
@@ -1231,6 +1234,7 @@ function renderDeck() {
   const backupGroups = normalizeArray(programmingBackupsPayload.groups || programmingPreviewPayload.backup_groups);
   const harvestPayload = state.payloads.programmingHarvest?.body || {};
   const harvestLineups = normalizeArray(harvestPayload.lineups || programmingPreviewPayload.harvest_lineups);
+  const harvestAssists = normalizeArray(programmingHarvestAssistPayload.assists);
   const bucketEntries = Object.entries(programmingPreviewPayload.buckets || {});
   const selectedProgrammingChannel = findProgrammingChannel(curatedLineup, state.programmingSelectedChannelId) || programmingDetailPayload.Channel || null;
   const selectedProgrammingID = programmingChannelID(selectedProgrammingChannel);
@@ -1259,6 +1263,10 @@ function renderDeck() {
       ? harvestLineups.slice(0, 6).map((row) => `${row.lineup_title} (${row.best_channelmap_rows || 0})`).join(" | ")
       : "No persisted Plex lineup harvest report configured yet.", "", "", "programmingHarvest",
       `${harvestLineups[0] ? programmingHarvestButtons(harvestLineups[0]) : ""} <button class="tiny" type="button" data-inspect="programmingHarvest">Inspect Harvest</button>`),
+    createCard("Harvest assists", harvestAssists.length
+      ? harvestAssists.slice(0, 4).map((row) => `${row.lineup_title}: ${row.recommendation_reason || `${row.matched_channels} matched`}`).join(" | ")
+      : "No ranked harvest assists available yet.", "", "", "programmingHarvestAssist",
+      `<button class="tiny" type="button" data-inspect="programmingHarvestAssist">Inspect Assists</button>`),
     createCard("Virtual schedule horizon", virtualScheduleSlots.length
       ? virtualScheduleSlots.slice(0, 4).map((slot) => `${slot.display_name || slot.rule_name || slot.channel_id}: ${slot.asset_title || slot.asset_id || "asset"} @ ${formatWhen(slot.starts_at || slot.startsAt)}`).join(" | ")
       : "No virtual-channel schedule is configured yet.", "", "", "virtualChannelSchedule",

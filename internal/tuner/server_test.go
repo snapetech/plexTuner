@@ -449,6 +449,20 @@ func TestServer_programmingHarvestImport(t *testing.T) {
 		t.Fatalf("preview strategies=%+v", preview.MatchStrategies)
 	}
 
+	req = httptest.NewRequest(http.MethodGet, "/programming/harvest-assist.json", nil)
+	w = httptest.NewRecorder()
+	s.serveProgrammingHarvestAssist().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("harvest assist status=%d body=%s", w.Code, w.Body.String())
+	}
+	var assist programmingHarvestAssistReport
+	if err := json.Unmarshal(w.Body.Bytes(), &assist); err != nil {
+		t.Fatalf("assist unmarshal: %v", err)
+	}
+	if len(assist.Assists) != 1 || !assist.Assists[0].Recommended || assist.Assists[0].LocalBroadcastHits != 1 {
+		t.Fatalf("assist=%+v", assist)
+	}
+
 	postBody := strings.NewReader(`{"lineup_title":"Rogers West","replace":true,"collapse_exact_backups":true}`)
 	req = httptest.NewRequest(http.MethodPost, "/programming/harvest-import.json", postBody)
 	req.RemoteAddr = "127.0.0.1:12345"
@@ -583,6 +597,30 @@ func TestServer_virtualChannelRulesAndPreview(t *testing.T) {
 	}
 	if len(scheduleBody.Report.Slots) < 4 {
 		t.Fatalf("virtual schedule=%+v", scheduleBody.Report)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/channel-detail.json?channel_id=vc-news&limit=2&horizon=3h", nil)
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelDetail().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual detail status=%d body=%s", w.Code, w.Body.String())
+	}
+	var detailBody virtualChannelDetailReport
+	if err := json.Unmarshal(w.Body.Bytes(), &detailBody); err != nil {
+		t.Fatalf("virtual detail unmarshal: %v", err)
+	}
+	if detailBody.Channel.ID != "vc-news" || detailBody.ResolvedNow == nil || len(detailBody.Schedule) < 4 {
+		t.Fatalf("virtual detail=%+v", detailBody)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/guide.xml?horizon=3h", nil)
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelGuide().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual guide status=%d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `<channel id="virtual.vc-news">`) || !strings.Contains(w.Body.String(), "<title>Movie One</title>") {
+		t.Fatalf("virtual guide body=%s", w.Body.String())
 	}
 }
 

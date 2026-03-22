@@ -4276,3 +4276,8 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
   - Upgraded the old HLS mux demo page with embeddable query params (`base`, `path`, `embed`, `autoplay`) so it can serve as a reusable product surface instead of a standalone experiment.
   - Filed the next productization opportunity for stream-compare / channel-diff / evidence-intake workflows.
   - Verification: `node --check internal/webui/deck.js`; `go test ./internal/webui ./internal/tuner ./cmd/iptv-tunerr -count=1`; `./scripts/verify`.
+- 2026-03-21: Turned harvest diagnostics into a local-market assist and deepened virtual-channel publishing.
+  - Added `/programming/harvest-assist.json`, which ranks saved harvested lineups as recipe assists using exact `tvg_id`, exact guide name, guide number, and local-broadcast stem hits instead of leaving operators with raw import previews only.
+  - Added `/virtual-channels/channel-detail.json` and `/virtual-channels/guide.xml`, pushing virtual channels toward a real publishable TV-like surface rather than only preview/schedule JSON plus current-slot playback.
+  - Expanded `scripts/ci-smoke.sh` and tuner tests so the new harvest-assist and virtual detail/guide endpoints are release-gated.
+  - Verification: `go test ./internal/tuner -run 'TestServer_(programmingHarvestImport|virtualChannelRulesAndPreview)' -count=1`; `./scripts/verify`.

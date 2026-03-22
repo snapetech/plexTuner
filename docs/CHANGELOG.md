@@ -58,10 +58,17 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **PM-008 slice:** the dedicated control deck now has a real Programming lane. Operators can bulk include/exclude categories, pin or block exact channels, nudge manual order from the curated preview, toggle exact-backup collapse, inspect backup groups, and drill into the raw Programming payloads without hand-posting JSON.
 - **PM-009 slice:** Programming Manager now has refresh/restart survival coverage. Tuner tests prove saved recipe mutations survive `UpdateChannels` churn, and `scripts/ci-smoke.sh` now restarts `serve` against a reshuffled catalog while reusing the same recipe file so curated lineup shape, persisted custom order, and exact-backup collapse are asserted across process restarts too.
 - **Programming lane live preview:** the deck now exposes an in-place live HLS preview for the currently selected curated channel, backed by the same Tunerr `/stream/<id>?mux=hls` path the lineup will use. The Programming lane also now surfaces focused channel detail, upcoming guide rows, alternative sources, and the virtual-channel schedule horizon so operators can curate from concrete playback evidence instead of list metadata alone.
+- **Harvest assist ranking:** added `/programming/harvest-assist.json`, which turns saved harvested lineups into ranked local-market recipe assists instead of forcing operators to mentally compare raw import previews. The report surfaces local-broadcast stem hits, exact guide/tvg matches, recommendation reasons, and ordered matched channel IDs for each harvested lineup title.
 
 ### Operator experiments promoted
 - **HLS mux demo promoted into the deck:** the old `/debug/hls-mux-demo.html` experiment now supports `base`, `path`, `embed`, and `autoplay` query params so the Programming lane can reuse it as a real embedded preview surface instead of leaving HLS preview as a standalone lab page.
 - **Next productization candidates documented:** the remaining high-signal experiment tooling is now explicitly tracked as product backlog: stream-compare/channel-diff diagnostics and evidence-intake bundles are good candidates for future operator-lane promotion instead of staying script-only.
+
+### Virtual channels
+- **Deeper virtual publishing surfaces:** virtual channels now have `/virtual-channels/channel-detail.json` for focused rule/current-slot/schedule inspection and `/virtual-channels/guide.xml` for a synthetic XMLTV export over the rolling schedule horizon. This pushes the feature beyond “current-slot proxy” toward a real publishable TV-like surface without merging it blindly into the main HDHR lineup yet.
+
+### Testing / CI
+- **Release smoke widened again:** `scripts/ci-smoke.sh` now asserts harvest-assist recommendations plus the new virtual-channel detail and guide endpoints, so the richer `LH-006` and `PAR-006` surfaces are covered in the release gate instead of only by targeted tests.
 
 ### Testing / CI
 - **Provider-pool + WebDAV smoke coverage:** `scripts/ci-smoke.sh` now exercises `vod-webdav-mount-hint` for macOS/Windows output, runs live WebDAV `OPTIONS` / `PROPFIND` smoke against `iptv-tunerr vod-webdav`, and validates the new Programming Manager category/channel mutation flow plus preview endpoints against a real temporary binary. Targeted gateway tests also now cover provider-account local rejection, lease release after successful playback, learned per-account caps, and provider-profile account-pool visibility.

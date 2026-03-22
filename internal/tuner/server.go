@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"log"
@@ -1394,11 +1395,14 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/programming/backups.json", s.serveProgrammingBackups())
 	mux.Handle("/programming/harvest.json", s.serveProgrammingHarvest())
 	mux.Handle("/programming/harvest-import.json", s.serveProgrammingHarvestImport())
+	mux.Handle("/programming/harvest-assist.json", s.serveProgrammingHarvestAssist())
 	mux.Handle("/programming/recipe.json", s.serveProgrammingRecipe())
 	mux.Handle("/programming/preview.json", s.serveProgrammingPreview())
 	mux.Handle("/virtual-channels/rules.json", s.serveVirtualChannelRules())
 	mux.Handle("/virtual-channels/preview.json", s.serveVirtualChannelPreview())
 	mux.Handle("/virtual-channels/schedule.json", s.serveVirtualChannelSchedule())
+	mux.Handle("/virtual-channels/channel-detail.json", s.serveVirtualChannelDetail())
+	mux.Handle("/virtual-channels/guide.xml", s.serveVirtualChannelGuide())
 	mux.Handle("/virtual-channels/live.m3u", s.serveVirtualChannelM3U())
 	mux.Handle("/virtual-channels/stream/", s.serveVirtualChannelStream())
 	mux.Handle("/guide/highlights.json", s.serveGuideHighlights())
@@ -2492,6 +2496,34 @@ type programmingHarvestImportReport struct {
 	MatchedLineup        []catalog.LiveChannel `json:"matched_lineup,omitempty"`
 }
 
+type programmingHarvestAssist struct {
+	LineupTitle          string         `json:"lineup_title"`
+	FriendlyNames        []string       `json:"friendly_names,omitempty"`
+	MatchedChannels      int            `json:"matched_channels"`
+	OrderedChannelIDs    []string       `json:"ordered_channel_ids,omitempty"`
+	MatchStrategies      map[string]int `json:"match_strategies,omitempty"`
+	LocalBroadcastHits   int            `json:"local_broadcast_hits"`
+	ExactGuideNameHits   int            `json:"exact_guide_name_hits"`
+	ExactTVGIDHits       int            `json:"exact_tvg_id_hits"`
+	GuideNumberHits      int            `json:"guide_number_hits"`
+	Recommended          bool           `json:"recommended"`
+	RecommendationReason string         `json:"recommendation_reason,omitempty"`
+}
+
+type programmingHarvestAssistReport struct {
+	GeneratedAt string                     `json:"generated_at"`
+	HarvestFile string                     `json:"harvest_file,omitempty"`
+	Assists     []programmingHarvestAssist `json:"assists,omitempty"`
+}
+
+type virtualChannelDetailReport struct {
+	GeneratedAt string                        `json:"generated_at"`
+	Channel     virtualchannels.Channel       `json:"channel"`
+	ResolvedNow *virtualchannels.ResolvedSlot `json:"resolved_now,omitempty"`
+	Upcoming    []virtualchannels.PreviewSlot `json:"upcoming,omitempty"`
+	Schedule    []virtualchannels.PreviewSlot `json:"schedule,omitempty"`
+}
+
 func normalizeHarvestGuideName(raw string) string {
 	raw = strings.ToLower(strings.TrimSpace(raw))
 	raw = strings.Join(strings.Fields(raw), " ")
@@ -2715,6 +2747,34 @@ func buildProgrammingHarvestImport(existing programming.Recipe, raw []catalog.Li
 	}
 	report.Recipe = programming.NormalizeRecipe(recipe)
 	return report
+}
+
+func buildProgrammingHarvestAssist(raw []catalog.LiveChannel, row plexharvest.SummaryLineup, result plexharvest.Result) programmingHarvestAssist {
+	preview := buildProgrammingHarvestImport(programming.Recipe{}, raw, result, true, true)
+	assist := programmingHarvestAssist{
+		LineupTitle:        strings.TrimSpace(row.LineupTitle),
+		FriendlyNames:      append([]string(nil), row.FriendlyNames...),
+		MatchedChannels:    preview.MatchedChannels,
+		OrderedChannelIDs:  append([]string(nil), preview.OrderedChannelIDs...),
+		MatchStrategies:    map[string]int{},
+		LocalBroadcastHits: preview.MatchStrategies["local_broadcast_stem"],
+		ExactGuideNameHits: preview.MatchStrategies["guide_name_exact"],
+		ExactTVGIDHits:     preview.MatchStrategies["tvg_id_exact"],
+		GuideNumberHits:    preview.MatchStrategies["guide_number_exact"],
+	}
+	for key, value := range preview.MatchStrategies {
+		assist.MatchStrategies[key] = value
+	}
+	if assist.LocalBroadcastHits > 0 {
+		assist.Recommended = true
+		assist.RecommendationReason = fmt.Sprintf("%d local-broadcast lineup row(s) mapped back onto current raw channels.", assist.LocalBroadcastHits)
+	} else if assist.ExactTVGIDHits > 0 || assist.ExactGuideNameHits > 0 {
+		assist.Recommended = true
+		assist.RecommendationReason = "Strong exact guide matches were found for this harvested lineup."
+	} else if assist.MatchedChannels > 0 {
+		assist.RecommendationReason = "Some rows matched, but this looks weaker as a local-market seed."
+	}
+	return assist
 }
 
 func (s *Server) serveProgrammingCategories() http.Handler {
@@ -3078,6 +3138,44 @@ func (s *Server) serveProgrammingHarvestImport() http.Handler {
 	})
 }
 
+func (s *Server) serveProgrammingHarvestAssist() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		rep := s.reloadPlexLineupHarvest()
+		report := programmingHarvestAssistReport{
+			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+			HarvestFile: strings.TrimSpace(s.PlexLineupHarvestFile),
+		}
+		for _, row := range rep.Lineups {
+			result, ok := chooseHarvestResult(rep, row.LineupTitle, "")
+			if !ok {
+				continue
+			}
+			report.Assists = append(report.Assists, buildProgrammingHarvestAssist(s.RawChannels, row, result))
+		}
+		sort.SliceStable(report.Assists, func(i, j int) bool {
+			ai := report.Assists[i]
+			aj := report.Assists[j]
+			if ai.Recommended != aj.Recommended {
+				return ai.Recommended
+			}
+			if ai.LocalBroadcastHits != aj.LocalBroadcastHits {
+				return ai.LocalBroadcastHits > aj.LocalBroadcastHits
+			}
+			if ai.MatchedChannels != aj.MatchedChannels {
+				return ai.MatchedChannels > aj.MatchedChannels
+			}
+			return ai.LineupTitle < aj.LineupTitle
+		})
+		body, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode programming harvest assist"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
 func (s *Server) serveXtreamEntitlements() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -3417,6 +3515,106 @@ func (s *Server) serveVirtualChannelSchedule() http.Handler {
 	})
 }
 
+func (s *Server) serveVirtualChannelDetail() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		channelID := strings.TrimSpace(r.URL.Query().Get("channel_id"))
+		if channelID == "" {
+			http.Error(w, `{"error":"channel_id required"}`, http.StatusBadRequest)
+			return
+		}
+		set := s.reloadVirtualChannels()
+		var target *virtualchannels.Channel
+		for i := range set.Channels {
+			if strings.TrimSpace(set.Channels[i].ID) == channelID {
+				ch := set.Channels[i]
+				target = &ch
+				break
+			}
+		}
+		if target == nil {
+			http.NotFound(w, r)
+			return
+		}
+		report := virtualChannelDetailReport{
+			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+			Channel:     *target,
+		}
+		if slot, ok := virtualchannels.ResolveCurrentSlot(set, channelID, s.Movies, s.Series, timeNow()); ok {
+			report.ResolvedNow = &slot
+		}
+		perChannel := 4
+		if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+			if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 24 {
+				perChannel = n
+			}
+		}
+		for _, slot := range virtualchannels.BuildPreview(set, s.Movies, s.Series, timeNow(), perChannel).Slots {
+			if strings.TrimSpace(slot.ChannelID) == channelID {
+				report.Upcoming = append(report.Upcoming, slot)
+			}
+		}
+		horizon := 6 * time.Hour
+		if raw := strings.TrimSpace(r.URL.Query().Get("horizon")); raw != "" {
+			if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+				horizon = d
+			}
+		}
+		for _, slot := range virtualchannels.BuildSchedule(set, s.Movies, s.Series, timeNow(), horizon).Slots {
+			if strings.TrimSpace(slot.ChannelID) == channelID {
+				report.Schedule = append(report.Schedule, slot)
+			}
+		}
+		body, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode virtual channel detail"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveVirtualChannelGuide() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		horizon := 6 * time.Hour
+		if raw := strings.TrimSpace(r.URL.Query().Get("horizon")); raw != "" {
+			if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+				horizon = d
+			}
+		}
+		report := virtualchannels.BuildSchedule(s.reloadVirtualChannels(), s.Movies, s.Series, timeNow(), horizon)
+		tv := &xmlTVRoot{
+			XMLName: xml.Name{Local: "tv"},
+			Source:  "IPTV Tunerr (virtual channels)",
+		}
+		seen := map[string]struct{}{}
+		for _, slot := range report.Slots {
+			channelID := strings.TrimSpace(slot.ChannelID)
+			if _, ok := seen[channelID]; !ok {
+				seen[channelID] = struct{}{}
+				tv.Channels = append(tv.Channels, xmlChannel{
+					ID:      "virtual." + channelID,
+					Display: slot.ChannelName,
+				})
+			}
+			tv.Programmes = append(tv.Programmes, xmlProgramme{
+				Start:      timeMustParseRFC3339(slot.StartsAtUTC).Format("20060102150405 -0700"),
+				Stop:       timeMustParseRFC3339(slot.EndsAtUTC).Format("20060102150405 -0700"),
+				Channel:    "virtual." + channelID,
+				Title:      xmlValue{Value: slot.ResolvedName},
+				SubTitle:   xmlValue{Value: slot.EntryType},
+				Desc:       xmlValue{Value: fmt.Sprintf("Synthetic virtual channel slot sourced from %s.", firstNonEmptyString(slot.EntryID, slot.EntryType))},
+				Categories: []xmlValue{{Value: "Virtual Channels"}},
+			})
+		}
+		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+		_, _ = w.Write([]byte(xml.Header))
+		enc := xml.NewEncoder(w)
+		enc.Indent("", "  ")
+		_ = enc.Encode(tv)
+	})
+}
+
 func (s *Server) virtualChannelLiveRows() []catalog.LiveChannel {
 	rules := s.reloadVirtualChannels()
 	if len(rules.Channels) == 0 {
@@ -3511,6 +3709,14 @@ func (s *Server) serveVirtualChannelStream() http.Handler {
 		}
 		_, _ = io.Copy(w, resp.Body)
 	})
+}
+
+func timeMustParseRFC3339(raw string) time.Time {
+	parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(raw))
+	if err != nil {
+		return time.Unix(0, 0).UTC()
+	}
+	return parsed.UTC()
 }
 
 func (s *Server) serveCatchupRecorderReport() http.Handler {
