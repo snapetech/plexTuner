@@ -852,6 +852,34 @@ Use for:
 - provider host failover validation
 - diagnosing Cloudflare/proxy failures
 
+## `iptv-tunerr plex-lineup-harvest`
+
+Probe Plex's HDHR guide/channelmap flow across several tuner lineup variants and
+emit a structured report of the discovered lineup titles.
+
+This is the productized successor to the older oracle-only flow when you want
+to sweep lineup caps or tuner shapes and see which market/provider lineup Plex
+matches back.
+
+Common flags:
+- `-plex-url`
+- `-token`
+- `-base-urls`
+- `-base-url-template`
+- `-caps`
+- `-friendly-name-prefix`
+- `-wait`
+- `-poll`
+- `-reload-guide`
+- `-activate`
+- `-out`
+
+Notes:
+- Creates/registers real Plex DVR/device rows during the probe flow.
+- Polls channel-map results for a bounded time instead of fetching only once.
+- Emits both per-target results and a deduped `lineups[]` summary in JSON.
+- See [plex-lineup-harvest](../how-to/plex-lineup-harvest.md).
+
 ## `iptv-tunerr plex-epg-oracle`
 
 Probe Plex's wizard-equivalent HDHR registration/guide/channelmap flow across one

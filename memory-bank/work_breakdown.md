@@ -59,6 +59,14 @@ Create or update this file when **any** of these are true:
 - **Progress (2026-03-21):** `PM-008` deck UI is now in. The dedicated `internal/webui` control deck has a real Programming lane with category inventory cards, exact include/exclude controls, manual order nudges from the preview lineup, backup-group inspection, and recipe/order/collapse toggles wired to the existing server APIs. `./scripts/verify` and the binary smoke lane are green. Next depth is `PM-009`: broader regression coverage around refresh survival and end-to-end operator flows.
 - **Progress (2026-03-21):** first visible `PM-009` coverage is now in. Tuner tests prove saved recipe mutations survive `UpdateChannels` refresh churn, and `scripts/ci-smoke.sh` now restarts `serve` against a reshuffled catalog while reusing the same recipe file so curated lineup shape, custom order, and backup collapse are asserted across process restarts too. Remaining depth for `PM-009` is higher-level operator/browser flow automation, not missing refresh persistence coverage.
 
+### Active epic overlay (Plex lineup harvest, 2026-03-21)
+
+- **Doc:** [docs/epics/EPIC-lineup-harvest.md](../docs/epics/EPIC-lineup-harvest.md)
+- **Goal:** Turn the old Plex wizard-oracle experiments into a real operator feature for sweeping tuner lineup caps/shapes, discovering which lineup titles Plex maps back, and eventually feeding those results into Programming Manager decisions.
+- **Non-goals:** scraping Plex UI, pretending lineup-market guessing is fully automatic, or leaving the feature as ad hoc lab output only.
+- **Story IDs:** `LH-001` … `LH-006`
+- **Progress (2026-03-21):** `LH-001` through `LH-003` starter shipped. `internal/plexharvest` now owns reusable target expansion, bounded channelmap polling, per-target result capture, and deduped lineup summaries; `iptv-tunerr plex-lineup-harvest` is the named CLI surface; and docs/how-to plus CLI reference are in place. Next depth: persist harvested reports and bridge them into Programming Manager or deck workflows.
+
 ### Active epic overlay (Feature parity, 2026-03-21)
 
 - **Doc:** [docs/epics/EPIC-feature-parity.md](../docs/epics/EPIC-feature-parity.md)

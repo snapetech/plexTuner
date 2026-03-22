@@ -4238,3 +4238,9 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
   - `player_api.php` and `/live|movie|series/...` now authenticate either the legacy admin user or a file-backed downstream user, and filter or deny output per user instead of treating the Xtream surface as one global catalog.
   - Strengthened release gating again: `scripts/ci-smoke.sh` now verifies a limited user sees only its allowed live/movie rows and gets `404` on denied live/series playback.
   - Verification: `go test ./internal/entitlements ./internal/tuner ./cmd/iptv-tunerr -run 'Test(LoadSaveAndAuthenticate|Server_(XtreamEntitlementsLimitOutput|XtreamPlayerAPI_(LiveCategories|VODAndSeries)|XtreamMovieAndSeriesProxy|XtreamLiveProxy))' -count=1`; `./scripts/verify`.
+- 2026-03-21: Productized the old Plex wizard-oracle flow into a real lineup-harvest feature.
+  - Added `internal/plexharvest` with reusable target expansion, bounded channelmap polling, per-target result capture, and deduped lineup summaries.
+  - Added `iptv-tunerr plex-lineup-harvest` as the named CLI surface for cap/template sweeps against Plex lineup matching.
+  - Added stronger 3-account rollover regression coverage so three simultaneous channels must lease three distinct Xtream-path credential sets.
+  - Docs: `docs/epics/EPIC-lineup-harvest.md`, `docs/how-to/plex-lineup-harvest.md`, `docs/reference/cli-and-env-reference.md`, `docs/features.md`, `docs/CHANGELOG.md`, `README.md`.
+  - Verification: `go test ./internal/plexharvest ./internal/tuner ./cmd/iptv-tunerr -run 'Test(ExpandTargets_templateAndFriendlyNames|BuildSummary_groupsSuccessfulLineups|Probe_(pollsAndCapturesLineupTitle|recordsErrorsPerTarget)|Gateway_stream_threeChannelsUseThreeXtreamPathAccounts)' -count=1`; `./scripts/verify`.

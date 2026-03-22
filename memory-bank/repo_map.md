@@ -42,6 +42,7 @@ Normal push path from this checkout: `git push origin main`. Never `git push git
 
 - `run`, `serve`, `index` — single tuner or catalog refresh
 - `supervise` — read a JSON config and spawn N child processes (each child is the same binary, e.g. `iptv-tunerr run -addr=:5004 ...`)
+- `plex-lineup-harvest` — feature-grade Plex lineup/guide harvest probe with cap/template sweeps and deduped lineup summaries
 - `plex-epg-oracle` — CLI to probe Plex HDHR wizard/channelmap and write reports (one-shot or cron)
 - `probe`, `mount`, `vod-split`, `plex-vod-register`, `epg-link-report` — core ops subcommands
 - `channel-report`, `channel-dna-report`, `ghost-hunter` — intelligence/diagnostic subcommands

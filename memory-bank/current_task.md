@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-21):** **Plex lineup harvest feature started:** the old wizard-oracle experiment path is now being productized as a real operator feature instead of a buried lab command. `internal/plexharvest` owns reusable target expansion + polling + deduped lineup summaries, `iptv-tunerr plex-lineup-harvest` is the first named CLI surface, and the gateway now has an even tighter 3-account rollover regression so "second device didn't rotate credentials" stays covered. Next depth: persist harvest reports / bridge them into Programming Manager instead of leaving the results as one-shot JSON only.
+
 **Latest (2026-03-21):** **`PAR-005` starter shipped in-tree:** the downstream Xtream surface now has a real file-backed entitlement model via `IPTV_TUNERR_XTREAM_USERS_FILE` and `/entitlements.json`, so different downstream users can see different live/VOD/series slices instead of one global catalog. Release smoke now verifies both the scoped view and denied playback paths. Next depth: virtual channels from owned media (`PAR-006`) or deeper shared-upstream fanout beyond the bounded HLS relay slice (`PAR-002`).
 
 **Latest (2026-03-21):** **`PAR-004` + Programming Manager follow-up shipped in-tree:** the downstream Xtream starter now exposes VOD and series actions/proxies, release smoke now exercises those paths, and `/programming/channel-detail.json` gives category-first tools a focused channel view with 3-hour EPG preview plus exact-match alternative sources. Next depth: real entitlement model (`PAR-005`) or virtual channels from owned media (`PAR-006`).

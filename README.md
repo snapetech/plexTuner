@@ -931,6 +931,7 @@ Full K8s guide: [`k8s/README.md`](k8s/README.md)
 | `channel-dna-report` | Group channels by stable cross-provider `dna_id` identity |
 | `ghost-hunter` | Observe Plex Live TV sessions and classify stale/hidden-grab cases |
 | `hdhr-scan` | Discover physical HDHomeRun tuners on LAN (UDP) or fetch discover/lineup via HTTP |
+| `plex-lineup-harvest` | Probe Plex lineup matching across tuner cap/shape variants and summarize discovered lineup titles |
 | `catchup-capsules` | Export near-live capsule candidates from guide XMLTV |
 | `catchup-publish` | Publish catch-up capsules as `.strm + .nfo` libraries and optionally register them |
 | `catchup-record` | One-shot: record current in-progress capsules to local TS + record manifest |

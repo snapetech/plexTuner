@@ -1663,6 +1663,81 @@ func TestGateway_stream_twoChannelsPreferDifferentXtreamPathAccounts(t *testing.
 	}
 }
 
+func TestGateway_stream_threeChannelsUseThreeXtreamPathAccounts(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT", "1")
+	release := make(chan struct{})
+	seen := make(chan string, 6)
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen <- r.URL.Path
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			_, _ = w.Write([]byte("ok"))
+			f.Flush()
+		}
+		<-release
+	}))
+	defer up.Close()
+
+	makeChannel := func(id, suffix string) catalog.LiveChannel {
+		return catalog.LiveChannel{
+			ChannelID:   id,
+			GuideNumber: id,
+			GuideName:   "Channel " + id,
+			StreamURLs: []string{
+				up.URL + "/live/u1/p1/" + suffix + ".ts",
+				up.URL + "/live/u2/p2/" + suffix + ".ts",
+				up.URL + "/live/u3/p3/" + suffix + ".ts",
+			},
+		}
+	}
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			makeChannel("100", "1001"),
+			makeChannel("200", "2001"),
+			makeChannel("300", "3001"),
+		},
+		TunerCount:   4,
+		ProviderUser: "fallback",
+		ProviderPass: "fallback",
+	}
+
+	type result struct {
+		code int
+		body string
+	}
+	run := func(channelID string) <-chan result {
+		done := make(chan result, 1)
+		go func() {
+			req := httptest.NewRequest(http.MethodGet, "http://local/stream/"+channelID, nil)
+			w := httptest.NewRecorder()
+			g.ServeHTTP(w, req)
+			done <- result{code: w.Code, body: w.Body.String()}
+		}()
+		return done
+	}
+
+	done1 := run("100")
+	if got := <-seen; got != "/live/u1/p1/1001.ts" {
+		t.Fatalf("first upstream path = %q; want u1 channel100", got)
+	}
+	done2 := run("200")
+	if got := <-seen; got != "/live/u2/p2/2001.ts" {
+		t.Fatalf("second upstream path = %q; want u2 channel200", got)
+	}
+	done3 := run("300")
+	if got := <-seen; got != "/live/u3/p3/3001.ts" {
+		t.Fatalf("third upstream path = %q; want u3 channel300", got)
+	}
+
+	close(release)
+	for i, done := range []<-chan result{done1, done2, done3} {
+		res := <-done
+		if res.code != http.StatusOK {
+			t.Fatalf("request %d code=%d body=%q", i+1, res.code, res.body)
+		}
+	}
+}
+
 func TestGateway_sharedRelaySessionFanout(t *testing.T) {
 	g := &Gateway{}
 	sess := g.createSharedRelaySession("ch1", "r000001")

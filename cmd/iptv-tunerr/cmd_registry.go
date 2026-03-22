@@ -22,6 +22,7 @@ func allCommands() []commandSpec {
 	commands = append(commands, vodCommands()...)
 	commands = append(commands, opsCommands()...)
 	commands = append(commands, catchupOpsCommands()...)
+	commands = append(commands, lineupHarvestCommands()...)
 	commands = append(commands, oracleOpsCommands()...)
 	commands = append(commands, cookieImportCommands()...)
 	commands = append(commands, cfStatusCommands()...)

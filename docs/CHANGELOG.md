@@ -25,10 +25,12 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Xtream entitlements starter (`PAR-005` slice)**: `IPTV_TUNERR_XTREAM_USERS_FILE` now enables file-backed downstream users with scoped live/VOD/series access, `/entitlements.json` exposes or updates that file from the operator plane, and both `player_api.php` and `/live|movie|series/...` now filter/deny output based on the authenticated user instead of treating the downstream Xtream surface as one global catalog.
 - **Recording rules/history starter (`PAR-003` slice)**: `IPTV_TUNERR_RECORDING_RULES_FILE` now enables durable server-side recording rules, `/recordings/rules.json` CRUD, `/recordings/rules/preview.json` against live catch-up capsules, and `/recordings/history.json` classification of recorder state against the current ruleset.
 - **Shared HLS relay reuse foundation (`PAR-002` slice)**: same-channel duplicate consumers can now attach to one live HLS Go-relay session instead of always starting another upstream walk, and `/debug/shared-relays.json` exposes current shared sessions plus subscriber counts.
+- **Plex lineup harvest starter (`LH-001` / `LH-002` / `LH-003`)**: extracted the old Plex oracle probe flow into `internal/plexharvest` plus a named `iptv-tunerr plex-lineup-harvest` command. It now expands cap templates, polls Plex channel-map results for each target, captures lineup titles/URLs in structured JSON, and emits a deduped lineup summary so market/provider harvest experiments stop living only in ad hoc lab output.
 
 ### Fixed
 
 - **Provider-account rollover robustness**: account pooling now falls back to Xtream path credentials (`/live/<user>/<pass>/...`, `/movie/...`, `/series/...`, `/timeshift/...`) when per-stream auth metadata is missing or incomplete, so concurrent sessions can still spread across distinct provider accounts instead of collapsing back to the global default credentials.
+- **Three-account rollover regression coverage**: gateway tests now explicitly pin three simultaneous channel requests to three distinct Xtream-path credential sets so "second device did not roll over" keeps failing in CI if account leasing regresses.
 
 ## [v0.1.27] — 2026-03-21
 
