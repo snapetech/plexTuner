@@ -23,6 +23,23 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: Add explicit release-readiness matrix and gate
+  Summary:
+    - Added `scripts/release-readiness.sh` so pre-release validation is a concrete repeatable gate instead of an ad hoc mix of `verify` plus memory.
+    - Added `docs/explanations/release-readiness-matrix.md`, which maps major feature families to unit/focused, binary-smoke, and host-proof coverage tiers and states what is still not host-proven.
+    - Added the new gate to `memory-bank/commands.yml` so future release prep can use one authoritative command.
+  Verification:
+    - `bash -n ./scripts/release-readiness.sh`
+    - `./scripts/release-readiness.sh`
+  Notes:
+    - Optional host checks remain opt-in because macOS and Windows hosts are not always available from every environment.
+  Opportunities filed:
+    - none
+  Links:
+    - `scripts/release-readiness.sh`
+    - `docs/explanations/release-readiness-matrix.md`
+
+- Date: 2026-03-21
   Title: Expand Xtream output with short EPG actions
   Summary:
     - Extended the downstream Xtream `player_api.php` surface so it now answers `get_short_epg` and `get_simple_data_table` in addition to the existing live/VOD/series actions.
