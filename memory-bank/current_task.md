@@ -1327,3 +1327,25 @@ Questions (ONLY if blocked or high-risk ambiguity):
 
 - Merged the later discussion about Plex DVR differences and headless provider-limited concurrency into `docs/explanations/always-on-recorder-daemon.md`.
 - This keeps the future-feature explainer self-contained instead of splitting the concept across chat-only context.
+**Session 2026-03-21 (audit follow-through: export identity and browse correctness):**
+
+- Audited the new parity/programming/Xtream surfaces for hidden contract bugs and implemented the concrete fixes instead of leaving them as review notes.
+- Fixed Xtream export identity drift:
+  - Xtream `xmltv.php` / `get.php` now use a canonical exported channel id based on Tunerr `ChannelID`, not raw provider `TVGID`, so sibling variants stop collapsing when a provider reuses `tvg_id`.
+  - Xtream XMLTV programme rows now attach to exported channel ids via actual channel ids from catchup capsules instead of a lossy guide-number overwrite map.
+- Fixed catchup/Programming browse channel identity:
+  - `BuildCatchupCapsulePreview` now duplicates programme capsules per matching lineup channel sharing a guide number and emits the real `ChannelID` in capsules.
+  - `serveProgrammingBrowse` now keys next-hour titles by `ChannelID`, which stops smearing titles across unrelated sibling variants.
+  - Added capsule-preview caching inside `XMLTV` so repeated browse/detail calls reuse the same preview snapshot per horizon instead of rebuilding it every request.
+- Fixed downstream parity gap in Xtream VOD proxy:
+  - `movie/` and `series/` proxies now support `HEAD`, forward `Range`, and preserve `Content-Length`, `Accept-Ranges`, `Content-Range`, `Last-Modified`, and `ETag`.
+- Fixed Programming Manager numeric sort correctness:
+  - category members and recommended ordering now sort numeric guide numbers numerically instead of lexically.
+- Updated release smoke to assert the new canonical Xtream XMLTV ids (`ChannelID`-based) so CI matches real behavior.
+
+**Verification:**
+- `go test ./internal/tuner -run 'Test(BuildCatchupCapsulePreview_clampsLargeLimit|BuildCatchupCapsulePreview_duplicatesProgrammePerMatchingChannel|Server_programmingBrowse|Server_XtreamMovieAndSeriesProxy|Server_XtreamXMLTVUsesUniqueChannelIDsWhenTVGIDCollides|Server_Xtream(PlayerAPI_LiveCategories|Exports_M3UAndXMLTV))' -count=1`
+- `go test ./internal/programming -run 'Test(CategoryMembers_sortGuideNumbersNumerically|BuildBackupGroupsAndCollapse|BuildBackupGroupsDoesNotCollapseVariantNames|DescribeChannel)' -count=1`
+- `./scripts/verify`
+
+**Next focus:** Keep auditing for remaining parity/runtime contract mismatches, but the specific Xtream/Programming identity bugs from the audit are now fixed and release-gated.

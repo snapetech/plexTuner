@@ -241,6 +241,9 @@ func (s *Server) setExposedChannels(live []catalog.LiveChannel) {
 		s.xmltv.cachedMatchAliases = ""
 		s.xmltv.cachedMatchExp = time.Time{}
 		s.xmltv.cachedGuideHealth = nil
+		s.xmltv.cachedCapsulePreview = nil
+		s.xmltv.cachedCapsuleHorizon = 0
+		s.xmltv.cachedCapsuleExp = time.Time{}
 		s.xmltv.mu.Unlock()
 		if len(live) > 0 {
 			s.xmltv.TriggerRefresh("lineup_update")
@@ -3139,13 +3142,13 @@ func (s *Server) serveProgrammingBrowse() http.Handler {
 				}
 			}
 		}
-		titlesByGuideNumber := map[string][]string{}
+		titlesByChannelID := map[string][]string{}
 		if s.xmltv != nil {
 			if preview, err := s.xmltv.CatchupCapsulePreview(time.Now(), horizon, 4096); err == nil {
 				sourceReady = sourceReady || preview.SourceReady
 				for _, capsule := range preview.Capsules {
-					guideNumber := strings.TrimSpace(capsule.GuideNumber)
-					if guideNumber == "" {
+					channelID := strings.TrimSpace(capsule.ChannelID)
+					if channelID == "" {
 						continue
 					}
 					title := strings.TrimSpace(capsule.Title)
@@ -3153,14 +3156,14 @@ func (s *Server) serveProgrammingBrowse() http.Handler {
 						continue
 					}
 					dup := false
-					for _, existing := range titlesByGuideNumber[guideNumber] {
+					for _, existing := range titlesByChannelID[channelID] {
 						if strings.TrimSpace(existing) == title {
 							dup = true
 							break
 						}
 					}
 					if !dup {
-						titlesByGuideNumber[guideNumber] = append(titlesByGuideNumber[guideNumber], title)
+						titlesByChannelID[channelID] = append(titlesByChannelID[channelID], title)
 					}
 				}
 			}
@@ -3209,7 +3212,7 @@ func (s *Server) serveProgrammingBrowse() http.Handler {
 				item.HasGuideProgrammes = health.HasProgrammes
 				item.HasRealGuideProgrammes = health.HasRealProgrammes
 			}
-			item.NextHourTitles = append([]string(nil), titlesByGuideNumber[strings.TrimSpace(member.GuideNumber)]...)
+			item.NextHourTitles = append([]string(nil), titlesByChannelID[channelID]...)
 			item.NextHourProgrammeCount = len(item.NextHourTitles)
 			if guideFilter == "real" && !item.HasRealGuideProgrammes {
 				continue

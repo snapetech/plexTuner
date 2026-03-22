@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -274,7 +275,7 @@ func CategoryMembers(channels []catalog.LiveChannel, categoryID string) []Catego
 		if out[i].GuideNumber == out[j].GuideNumber {
 			return out[i].GuideName < out[j].GuideName
 		}
-		return out[i].GuideNumber < out[j].GuideNumber
+		return guideNumberLess(out[i].GuideNumber, out[j].GuideNumber)
 	})
 	return out
 }
@@ -503,7 +504,7 @@ func applyRecommendedOrder(channels []catalog.LiveChannel, order []string) []cat
 			return iok
 		}
 		if strings.TrimSpace(out[i].GuideNumber) != strings.TrimSpace(out[j].GuideNumber) {
-			return strings.TrimSpace(out[i].GuideNumber) < strings.TrimSpace(out[j].GuideNumber)
+			return guideNumberLess(strings.TrimSpace(out[i].GuideNumber), strings.TrimSpace(out[j].GuideNumber))
 		}
 		return strings.TrimSpace(out[i].GuideName) < strings.TrimSpace(out[j].GuideName)
 	})
@@ -1132,4 +1133,24 @@ func slug(s string) string {
 		}
 	}
 	return strings.Trim(b.String(), "-")
+}
+
+func guideNumberLess(left, right string) bool {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	ln, lerr := strconv.Atoi(left)
+	rn, rerr := strconv.Atoi(right)
+	switch {
+	case lerr == nil && rerr == nil:
+		if ln != rn {
+			return ln < rn
+		}
+		return left < right
+	case lerr == nil:
+		return true
+	case rerr == nil:
+		return false
+	default:
+		return left < right
+	}
 }

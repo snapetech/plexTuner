@@ -289,12 +289,13 @@ func (s *Server) xtreamLiveStreams(principal xtreamPrincipal) []xtreamLiveStream
 		if group == "" {
 			group = "Uncategorized"
 		}
+		exportID := xtreamExportChannelID(ch)
 		out = append(out, xtreamLiveStream{
 			Num:          strings.TrimSpace(ch.GuideNumber),
 			Name:         strings.TrimSpace(ch.GuideName),
 			StreamType:   "live",
 			StreamID:     strings.TrimSpace(ch.ChannelID),
-			EPGChannelID: strings.TrimSpace(ch.TVGID),
+			EPGChannelID: exportID,
 			CategoryID:   catIDs[strings.ToLower(group)],
 			DirectSource: s.xtreamLiveDirectSource(principal, ch.ChannelID),
 			TVArchive:    0,
@@ -487,7 +488,7 @@ func (s *Server) xtreamM3U(principal xtreamPrincipal) string {
 		if channelID == "" {
 			continue
 		}
-		tvgID := xtreamXMLTVChannelID(ch)
+		tvgID := xtreamExportChannelID(ch)
 		name := strings.TrimSpace(ch.GuideName)
 		if name == "" {
 			name = "Channel " + firstNonEmptyString(ch.GuideNumber, channelID)
@@ -514,17 +515,20 @@ func (s *Server) xtreamXMLTV(principal xtreamPrincipal, horizon time.Duration) (
 	tv := xmlTVRoot{
 		Source: "IPTV Tunerr Xtream Export",
 	}
-	channelIDs := make(map[string]string, len(channels))
+	channelIDs := make(map[string][]string, len(channels))
 	virtualIDs := make(map[string]string)
 	for _, ch := range channels {
-		id := xtreamXMLTVChannelID(ch)
+		id := xtreamExportChannelID(ch)
 		name := strings.TrimSpace(ch.GuideName)
 		if name == "" {
 			name = "Channel " + firstNonEmptyString(ch.GuideNumber, ch.ChannelID)
 		}
 		tv.Channels = append(tv.Channels, xmlChannel{ID: id, Display: name})
+		if channelID := strings.TrimSpace(ch.ChannelID); channelID != "" {
+			channelIDs[channelID] = append(channelIDs[channelID], id)
+		}
 		if guideNumber := strings.TrimSpace(ch.GuideNumber); guideNumber != "" {
-			channelIDs[guideNumber] = id
+			channelIDs[guideNumber] = append(channelIDs[guideNumber], id)
 		}
 		if strings.HasPrefix(strings.TrimSpace(ch.ChannelID), "virtual.") {
 			virtualIDs[strings.TrimPrefix(strings.TrimSpace(ch.ChannelID), "virtual.")] = id
@@ -534,23 +538,28 @@ func (s *Server) xtreamXMLTV(principal xtreamPrincipal, horizon time.Duration) (
 	if s.xmltv != nil {
 		if preview, err := s.xmltv.CatchupCapsulePreview(now, horizon, 8192); err == nil {
 			for _, capsule := range preview.Capsules {
-				channelID := channelIDs[strings.TrimSpace(capsule.GuideNumber)]
-				if channelID == "" {
+				exportIDs := channelIDs[strings.TrimSpace(capsule.ChannelID)]
+				if len(exportIDs) == 0 {
+					exportIDs = channelIDs[strings.TrimSpace(capsule.GuideNumber)]
+				}
+				if len(exportIDs) == 0 {
 					continue
 				}
 				start, stop := xtreamXMLTVProgrammeTimes(capsule.Start, capsule.Stop)
 				if start == "" || stop == "" {
 					continue
 				}
-				tv.Programmes = append(tv.Programmes, xmlProgramme{
-					Start:      start,
-					Stop:       stop,
-					Channel:    channelID,
-					Title:      xmlValue{Value: strings.TrimSpace(capsule.Title)},
-					SubTitle:   xmlValue{Value: strings.TrimSpace(capsule.SubTitle)},
-					Desc:       xmlValue{Value: strings.TrimSpace(capsule.Desc)},
-					Categories: xmlValues(capsule.Categories),
-				})
+				for _, channelID := range exportIDs {
+					tv.Programmes = append(tv.Programmes, xmlProgramme{
+						Start:      start,
+						Stop:       stop,
+						Channel:    channelID,
+						Title:      xmlValue{Value: strings.TrimSpace(capsule.Title)},
+						SubTitle:   xmlValue{Value: strings.TrimSpace(capsule.SubTitle)},
+						Desc:       xmlValue{Value: strings.TrimSpace(capsule.Desc)},
+						Categories: xmlValues(capsule.Categories),
+					})
+				}
 			}
 		}
 	}
@@ -589,14 +598,17 @@ func (s *Server) xtreamXMLTV(principal xtreamPrincipal, horizon time.Duration) (
 	return out.Bytes(), nil
 }
 
-func xtreamXMLTVChannelID(ch catalog.LiveChannel) string {
+func xtreamExportChannelID(ch catalog.LiveChannel) string {
+	if channelID := strings.TrimSpace(ch.ChannelID); channelID != "" {
+		return channelID
+	}
 	if tvgID := strings.TrimSpace(ch.TVGID); tvgID != "" {
 		return tvgID
 	}
 	if guideNumber := strings.TrimSpace(ch.GuideNumber); guideNumber != "" {
 		return guideNumber
 	}
-	return strings.TrimSpace(ch.ChannelID)
+	return strings.TrimSpace(ch.GuideName)
 }
 
 func xtreamXMLTVProgrammeTimes(startRaw, stopRaw string) (string, string) {
@@ -637,6 +649,11 @@ func xmlValues(items []string) []xmlValue {
 
 func (s *Server) serveXtreamVODProxy(prefix string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 		principal, id, ok := s.xtreamPathPrincipalID(r.URL.Path, prefix)
 		if !ok {
 			http.NotFound(w, r)
@@ -647,10 +664,13 @@ func (s *Server) serveXtreamVODProxy(prefix string) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, sourceURL, nil)
+		req, err := http.NewRequestWithContext(r.Context(), r.Method, sourceURL, nil)
 		if err != nil {
 			http.Error(w, "proxy request failed", http.StatusBadGateway)
 			return
+		}
+		if raw := strings.TrimSpace(r.Header.Get("Range")); raw != "" {
+			req.Header.Set("Range", raw)
 		}
 		resp, err := httpclient.ForStreaming().Do(req)
 		if err != nil {
@@ -658,10 +678,15 @@ func (s *Server) serveXtreamVODProxy(prefix string) http.Handler {
 			return
 		}
 		defer resp.Body.Close()
-		if ct := strings.TrimSpace(resp.Header.Get("Content-Type")); ct != "" {
-			w.Header().Set("Content-Type", ct)
+		for _, name := range []string{"Content-Type", "Content-Length", "Accept-Ranges", "Content-Range", "Last-Modified", "ETag"} {
+			if value := strings.TrimSpace(resp.Header.Get(name)); value != "" {
+				w.Header().Set(name, value)
+			}
 		}
 		w.WriteHeader(resp.StatusCode)
+		if r.Method == http.MethodHead {
+			return
+		}
 		_, _ = io.Copy(w, resp.Body)
 	})
 }

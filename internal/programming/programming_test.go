@@ -217,3 +217,17 @@ func TestApplyRecipePreviewDoesNotCollapseBackups(t *testing.T) {
 		t.Fatalf("preview len=%d want 2", len(got))
 	}
 }
+
+func TestCategoryMembers_sortGuideNumbersNumerically(t *testing.T) {
+	got := CategoryMembers([]catalog.LiveChannel{
+		{ChannelID: "b", GuideNumber: "100", GuideName: "One Hundred", GroupTitle: "News", SourceTag: "iptv"},
+		{ChannelID: "a", GuideNumber: "20", GuideName: "Twenty", GroupTitle: "News", SourceTag: "iptv"},
+		{ChannelID: "c", GuideNumber: "3", GuideName: "Three", GroupTitle: "News", SourceTag: "iptv"},
+	}, "iptv--news")
+	if len(got) != 3 {
+		t.Fatalf("members=%#v", got)
+	}
+	if got[0].GuideNumber != "3" || got[1].GuideNumber != "20" || got[2].GuideNumber != "100" {
+		t.Fatalf("guide order=%#v", got)
+	}
+}

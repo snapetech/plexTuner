@@ -76,10 +76,13 @@ type XMLTV struct {
 	cachedXML []byte
 	cacheExp  time.Time
 
-	cachedMatchReport  *epglink.Report
-	cachedMatchAliases string
-	cachedMatchExp     time.Time
-	cachedGuideHealth  *guidehealth.Report
+	cachedMatchReport    *epglink.Report
+	cachedMatchAliases   string
+	cachedMatchExp       time.Time
+	cachedGuideHealth    *guidehealth.Report
+	cachedCapsulePreview *CatchupCapsulePreview
+	cachedCapsuleHorizon time.Duration
+	cachedCapsuleExp     time.Time
 
 	refreshStateMu       sync.Mutex
 	refreshInFlight      bool
@@ -822,10 +825,30 @@ func truncateGuideHighlights(in []GuideHighlight, n int) []GuideHighlight {
 }
 
 func (x *XMLTV) CatchupCapsulePreview(now time.Time, horizon time.Duration, limit int) (CatchupCapsulePreview, error) {
+	if horizon <= 0 {
+		horizon = 3 * time.Hour
+	}
+	limit = clampGuidePreviewLimit(limit, defaultCatchupCapsuleLimit)
 	x.mu.RLock()
 	data := append([]byte(nil), x.cachedXML...)
+	cacheExp := x.cacheExp
+	channels := cloneLiveChannels(x.Channels)
+	if x.cachedCapsulePreview != nil && x.cachedCapsuleExp.Equal(cacheExp) && x.cachedCapsuleHorizon == horizon {
+		rep := truncateCatchupCapsulePreview(*x.cachedCapsulePreview, limit)
+		x.mu.RUnlock()
+		return rep, nil
+	}
 	x.mu.RUnlock()
-	return BuildCatchupCapsulePreview(x.Channels, data, now, horizon, limit)
+	rep, err := BuildCatchupCapsulePreview(channels, data, now, horizon, maxGuidePreviewLimit)
+	if err != nil {
+		return CatchupCapsulePreview{}, err
+	}
+	x.mu.Lock()
+	x.cachedCapsulePreview = cloneCatchupCapsulePreview(rep)
+	x.cachedCapsuleHorizon = horizon
+	x.cachedCapsuleExp = x.cacheExp
+	x.mu.Unlock()
+	return truncateCatchupCapsulePreview(rep, limit), nil
 }
 
 func BuildCatchupCapsulePreview(channels []catalog.LiveChannel, data []byte, now time.Time, horizon time.Duration, limit int) (CatchupCapsulePreview, error) {
@@ -844,9 +867,13 @@ func BuildCatchupCapsulePreview(channels []catalog.LiveChannel, data []byte, now
 	if err := xml.Unmarshal(data, &tv); err != nil {
 		return out, err
 	}
-	byChannel := make(map[string]catalog.LiveChannel, len(channels))
+	byChannel := make(map[string][]catalog.LiveChannel, len(channels))
 	for _, ch := range channels {
-		byChannel[strings.TrimSpace(ch.GuideNumber)] = ch
+		guideNumber := strings.TrimSpace(ch.GuideNumber)
+		if guideNumber == "" {
+			continue
+		}
+		byChannel[guideNumber] = append(byChannel[guideNumber], ch)
 	}
 	channelNames := map[string]string{}
 	for _, ch := range tv.Channels {
@@ -863,8 +890,11 @@ func BuildCatchupCapsulePreview(channels []catalog.LiveChannel, data []byte, now
 		if stop.Before(now) || start.After(windowEnd) {
 			continue
 		}
-		channelID := strings.TrimSpace(p.Channel)
-		ch := byChannel[channelID]
+		guideNumber := strings.TrimSpace(p.Channel)
+		channelRows := byChannel[guideNumber]
+		if len(channelRows) == 0 {
+			channelRows = []catalog.LiveChannel{{GuideNumber: guideNumber, GuideName: channelNames[guideNumber]}}
+		}
 		state := "starting_soon"
 		publishAt := stop
 		if !start.After(now) && stop.After(now) {
@@ -877,28 +907,34 @@ func BuildCatchupCapsulePreview(channels []catalog.LiveChannel, data []byte, now
 		}
 		title := strings.TrimSpace(p.Title.Value)
 		if title == "" {
-			title = channelNames[channelID]
+			title = channelNames[guideNumber]
 		}
-		capsule := CatchupCapsule{
-			CapsuleID:    catchupCapsuleID(ch, channelID, title, start),
-			DNAID:        strings.TrimSpace(ch.DNAID),
-			ChannelID:    channelID,
-			GuideNumber:  strings.TrimSpace(ch.GuideNumber),
-			ChannelName:  firstNonEmptyString(channelNames[channelID], strings.TrimSpace(ch.GuideName)),
-			Title:        title,
-			SubTitle:     strings.TrimSpace(p.SubTitle.Value),
-			Desc:         strings.TrimSpace(p.Desc.Value),
-			Categories:   xmlValueStrings(p.Categories),
-			Lane:         catchupCapsuleLane(title, p.Categories),
-			State:        state,
-			Start:        start.UTC().Format(time.RFC3339),
-			Stop:         stop.UTC().Format(time.RFC3339),
-			PublishAt:    publishAt.UTC().Format(time.RFC3339),
-			ExpiresAt:    stop.Add(catchupRetentionForProgramme(title, p.Categories)).UTC().Format(time.RFC3339),
-			DurationMins: int(stop.Sub(start).Minutes()),
-			ReplayMode:   "launcher",
+		for _, ch := range channelRows {
+			channelID := strings.TrimSpace(ch.ChannelID)
+			if channelID == "" {
+				channelID = guideNumber
+			}
+			capsule := CatchupCapsule{
+				CapsuleID:    catchupCapsuleID(ch, channelID, title, start),
+				DNAID:        strings.TrimSpace(ch.DNAID),
+				ChannelID:    channelID,
+				GuideNumber:  strings.TrimSpace(ch.GuideNumber),
+				ChannelName:  firstNonEmptyString(strings.TrimSpace(ch.GuideName), channelNames[guideNumber]),
+				Title:        title,
+				SubTitle:     strings.TrimSpace(p.SubTitle.Value),
+				Desc:         strings.TrimSpace(p.Desc.Value),
+				Categories:   xmlValueStrings(p.Categories),
+				Lane:         catchupCapsuleLane(title, p.Categories),
+				State:        state,
+				Start:        start.UTC().Format(time.RFC3339),
+				Stop:         stop.UTC().Format(time.RFC3339),
+				PublishAt:    publishAt.UTC().Format(time.RFC3339),
+				ExpiresAt:    stop.Add(catchupRetentionForProgramme(title, p.Categories)).UTC().Format(time.RFC3339),
+				DurationMins: int(stop.Sub(start).Minutes()),
+				ReplayMode:   "launcher",
+			}
+			capsules = append(capsules, capsule)
 		}
-		capsules = append(capsules, capsule)
 	}
 	capsules = curateCatchupCapsules(capsules)
 	if len(capsules) > limit {
@@ -906,6 +942,28 @@ func BuildCatchupCapsulePreview(channels []catalog.LiveChannel, data []byte, now
 	}
 	out.Capsules = capsules
 	return out, nil
+}
+
+func truncateCatchupCapsulePreview(in CatchupCapsulePreview, limit int) CatchupCapsulePreview {
+	limit = clampGuidePreviewLimit(limit, defaultCatchupCapsuleLimit)
+	out := in
+	if len(in.Capsules) == 0 {
+		out.Capsules = nil
+		return out
+	}
+	out.Capsules = append([]CatchupCapsule(nil), in.Capsules...)
+	if len(out.Capsules) > limit {
+		out.Capsules = out.Capsules[:limit]
+	}
+	return out
+}
+
+func cloneCatchupCapsulePreview(in CatchupCapsulePreview) *CatchupCapsulePreview {
+	out := in
+	if len(in.Capsules) > 0 {
+		out.Capsules = append([]CatchupCapsule(nil), in.Capsules...)
+	}
+	return &out
 }
 
 func clampGuidePreviewLimit(n, def int) int {

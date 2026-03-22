@@ -2240,8 +2240,8 @@ func TestServer_catchupCapsulesGuidePolicy(t *testing.T) {
 	if len(body.Capsules) != 1 {
 		t.Fatalf("capsules len=%d want 1", len(body.Capsules))
 	}
-	if body.Capsules[0].ChannelID != "101" {
-		t.Fatalf("kept capsule channel=%q want 101", body.Capsules[0].ChannelID)
+	if body.Capsules[0].ChannelID != "1" {
+		t.Fatalf("kept capsule channel=%q want 1", body.Capsules[0].ChannelID)
 	}
 	if body.GuidePolicy == nil {
 		t.Fatalf("expected guide policy summary")
@@ -3094,7 +3094,7 @@ func TestServer_XtreamExports_M3UAndXMLTV(t *testing.T) {
 		t.Fatalf("xtream xmltv status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	body = rr.Body.String()
-	if !strings.Contains(body, `<channel id="news.1">`) ||
+	if !strings.Contains(body, `<channel id="100">`) ||
 		!strings.Contains(body, `<title>Late News</title>`) ||
 		!strings.Contains(body, `<channel id="virtual.vc-news">`) {
 		t.Fatalf("xtream xmltv body=%s", body)
@@ -3118,13 +3118,26 @@ func TestServer_XtreamExports_M3UAndXMLTV(t *testing.T) {
 		t.Fatalf("limited xtream xmltv status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	body = rr.Body.String()
-	if !strings.Contains(body, `<channel id="news.1">`) || strings.Contains(body, `<channel id="sports.1">`) {
+	if !strings.Contains(body, `<channel id="100">`) || strings.Contains(body, `<channel id="200">`) {
 		t.Fatalf("limited xtream xmltv body=%s", body)
 	}
 }
 
 func TestServer_XtreamMovieAndSeriesProxy(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if raw := strings.TrimSpace(r.Header.Get("Range")); raw != "" {
+			w.Header().Set("Accept-Ranges", "bytes")
+			w.Header().Set("Content-Range", "bytes 0-4/11")
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write([]byte("movie"))
+			return
+		}
+		if r.Method == http.MethodHead {
+			w.Header().Set("Content-Type", "video/mp4")
+			w.Header().Set("Content-Length", "11")
+			w.Header().Set("Accept-Ranges", "bytes")
+			return
+		}
 		if strings.Contains(r.URL.Path, "movie") {
 			_, _ = w.Write([]byte("movie-bytes"))
 			return
@@ -3169,6 +3182,67 @@ func TestServer_XtreamMovieAndSeriesProxy(t *testing.T) {
 		if rr.Body.String() != tc.want {
 			t.Fatalf("%s body=%q want %q", tc.path, rr.Body.String(), tc.want)
 		}
+	}
+
+	req := httptest.NewRequest(http.MethodHead, "/movie/demo/secret/m1.mp4", nil)
+	rr := httptest.NewRecorder()
+	srv.serveXtreamMovieProxy().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK || rr.Body.Len() != 0 {
+		t.Fatalf("movie head status=%d body=%q", rr.Code, rr.Body.String())
+	}
+	if rr.Header().Get("Accept-Ranges") != "bytes" || rr.Header().Get("Content-Length") != "11" {
+		t.Fatalf("movie head headers=%v", rr.Header())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/movie/demo/secret/m1.mp4", nil)
+	req.Header.Set("Range", "bytes=0-4")
+	rr = httptest.NewRecorder()
+	srv.serveXtreamMovieProxy().ServeHTTP(rr, req)
+	if rr.Code != http.StatusPartialContent || rr.Body.String() != "movie" {
+		t.Fatalf("movie range status=%d body=%q", rr.Code, rr.Body.String())
+	}
+	if rr.Header().Get("Content-Range") == "" || rr.Header().Get("Accept-Ranges") != "bytes" {
+		t.Fatalf("movie range headers=%v", rr.Header())
+	}
+}
+
+func TestServer_XtreamXMLTVUsesUniqueChannelIDsWhenTVGIDCollides(t *testing.T) {
+	start := time.Now().UTC().Add(10 * time.Minute).Format("20060102150405 -0700")
+	stop := time.Now().UTC().Add(70 * time.Minute).Format("20060102150405 -0700")
+	srv := &Server{
+		BaseURL:          "http://127.0.0.1:5004",
+		XtreamOutputUser: "demo",
+		XtreamOutputPass: "secret",
+		Channels: []catalog.LiveChannel{
+			{ChannelID: "east", GuideNumber: "101", GuideName: "Animal Planet East", TVGID: "animalplanet.us", GroupTitle: "Entertainment"},
+			{ChannelID: "west", GuideNumber: "101", GuideName: "Animal Planet West", TVGID: "animalplanet.us", GroupTitle: "Entertainment"},
+		},
+		xmltv: &XMLTV{
+			Channels: []catalog.LiveChannel{
+				{ChannelID: "east", GuideNumber: "101", GuideName: "Animal Planet East", TVGID: "animalplanet.us", EPGLinked: true},
+				{ChannelID: "west", GuideNumber: "101", GuideName: "Animal Planet West", TVGID: "animalplanet.us", EPGLinked: true},
+			},
+			cachedXML: []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="101"><display-name>Animal Planet</display-name></channel>
+  <programme start="` + start + `" stop="` + stop + `" channel="101">
+    <title>Wild Hour</title>
+  </programme>
+</tv>`),
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/xmltv.php?username=demo&password=secret", nil)
+	rr := httptest.NewRecorder()
+	srv.serveXtreamXMLTV().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("xtream xmltv status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `<channel id="east">`) || !strings.Contains(body, `<channel id="west">`) {
+		t.Fatalf("xtream xmltv body=%s", body)
+	}
+	if strings.Count(body, `<title>Wild Hour</title>`) != 2 {
+		t.Fatalf("xtream xmltv programmes=%s", body)
 	}
 }
 

@@ -156,6 +156,29 @@ func TestBuildCatchupCapsulePreview_clampsLargeLimit(t *testing.T) {
 	}
 }
 
+func TestBuildCatchupCapsulePreview_duplicatesProgrammePerMatchingChannel(t *testing.T) {
+	now := time.Date(2026, 3, 20, 12, 0, 0, 0, time.UTC)
+	rep, err := BuildCatchupCapsulePreview([]catalog.LiveChannel{
+		{ChannelID: "east", GuideNumber: "A", GuideName: "Alpha East"},
+		{ChannelID: "west", GuideNumber: "A", GuideName: "Alpha West"},
+	}, []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="A"><display-name>Alpha</display-name></channel>
+  <programme start="20260320113000 +0000" stop="20260320123000 +0000" channel="A">
+    <title>Capsule</title>
+  </programme>
+</tv>`), now, time.Hour, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Capsules) != 2 {
+		t.Fatalf("capsules=%d want 2", len(rep.Capsules))
+	}
+	if rep.Capsules[0].ChannelID != "east" || rep.Capsules[1].ChannelID != "west" {
+		t.Fatalf("capsules=%+v", rep.Capsules)
+	}
+}
+
 func TestXMLTV_epgPruneUnlinked(t *testing.T) {
 	x := &XMLTV{
 		Channels: []catalog.LiveChannel{

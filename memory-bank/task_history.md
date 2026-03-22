@@ -4607,3 +4607,26 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - `.env.example`
     - `README.md`
     - `docs/reference/cli-and-env-reference.md`
+- Date: 2026-03-22
+  Title: Fix Xtream export identity collisions and Programming browse smearing
+  Summary:
+    - Reworked Xtream `xmltv.php` / `get.php` exports to use canonical exported ids based on Tunerr `ChannelID` so sibling variants stop collapsing when a provider reuses `TVGID` or guide numbers.
+    - Updated catchup capsule preview generation to emit real lineup `ChannelID` values and duplicate programme capsules per matching lineup row, which fixes Programming browse next-hour titles and Xtream short-EPG/export mapping.
+    - Added cached catchup capsule previews per guide snapshot/horizon to avoid redoing the same expensive browse-time XMLTV work on every request.
+    - Hardened Xtream VOD proxy parity by adding `HEAD`, `Range`, and downstream range/cache header propagation.
+    - Fixed Programming guide-number ordering to sort numerically instead of lexically.
+    - Updated binary smoke and focused tests to lock all of the above down.
+  Verification:
+    - `go test ./internal/tuner -run 'Test(BuildCatchupCapsulePreview_clampsLargeLimit|BuildCatchupCapsulePreview_duplicatesProgrammePerMatchingChannel|Server_programmingBrowse|Server_XtreamMovieAndSeriesProxy|Server_XtreamXMLTVUsesUniqueChannelIDsWhenTVGIDCollides|Server_Xtream(PlayerAPI_LiveCategories|Exports_M3UAndXMLTV))' -count=1`
+    - `go test ./internal/programming -run 'Test(CategoryMembers_sortGuideNumbersNumerically|BuildBackupGroupsAndCollapse|BuildBackupGroupsDoesNotCollapseVariantNames|DescribeChannel)' -count=1`
+    - `./scripts/verify`
+  Notes:
+    - This was the direct implementation pass after the audit, not a speculative refactor.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/xmltv.go`
+    - `internal/tuner/server_xtream.go`
+    - `internal/tuner/server.go`
+    - `internal/programming/programming.go`
+    - `scripts/ci-smoke.sh`

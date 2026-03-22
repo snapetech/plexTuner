@@ -574,3 +574,27 @@
 **Where it's documented**
 - `README.md` (VOD Libraries in Plex / VODFS section)
 - `memory-bank/known_issues.md` (VODFS mount visibility issue)
+
+### Loop: Provider-reused `TVGID` or guide numbers make sibling channels collapse again on downstream exports
+
+**Symptom**
+- Programming backup collapse gets fixed, but Xtream/XMLTV/M3U or guide-preview surfaces still merge East/West/Plus variants.
+- Operators see the right channels in the curated lineup, then see the wrong guide/export behavior downstream.
+
+**Why it's tricky**
+- Different surfaces historically chose different identities:
+  - lineup/runtime often used `ChannelID`
+  - guide/preview logic often keyed by `GuideNumber`
+  - downstream exports often preferred raw `TVGID`
+- A provider can legally or sloppily reuse `TVGID` / guide numbers across sibling feeds, so any surface that falls back to those as unique ids will regress independently.
+
+**What works**
+- Treat Tunerr `ChannelID` as the canonical exported/live channel identity whenever uniqueness matters.
+- Keep provider `TVGID` as metadata, not the sole exported XMLTV id.
+- When guide data only exists at the guide-number layer, duplicate the programme/capsule row across every matching lineup channel instead of overwriting one channel with another.
+- Release-gate this with explicit tests around duplicate `TVGID` / shared guide-number cases.
+
+**Where it's documented**
+- `internal/tuner/server_xtream.go`
+- `internal/tuner/xmltv.go`
+- `internal/tuner/server.go`

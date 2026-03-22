@@ -13,6 +13,18 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+### Fixed
+
+- **Xtream export identity collisions**: downstream `xmltv.php` / `get.php` now use canonical exported ids based on Tunerr `ChannelID` instead of raw provider `TVGID`, preventing sibling variants from collapsing when an upstream provider reuses `tvg_id` or guide numbers.
+- **Catch-up / browse channel mapping drift**: catch-up capsule previews now emit real lineup `ChannelID` values and duplicate programme rows for every matching lineup channel on a shared guide number, which fixes Programming Manager next-hour titles and Xtream XMLTV programme attachment for sibling variants.
+- **Xtream VOD proxy parity**: movie/series proxies now support `HEAD`, forward `Range`, and preserve `Content-Length`, `Accept-Ranges`, `Content-Range`, `Last-Modified`, and `ETag` so downstream clients can probe and seek like they already can on the virtual-channel proxy path.
+- **Programming numeric ordering**: Programming Manager category members and recommended ordering now sort numeric guide numbers numerically instead of lexically.
+
+### Changed
+
+- **Programming browse guide preview caching**: repeated browse/detail requests now reuse a cached catch-up capsule snapshot per guide cache + horizon instead of rebuilding the same XMLTV preview on every request.
+- **Release smoke alignment**: `scripts/ci-smoke.sh` now asserts the canonical Xtream XMLTV ids used after the export-identity fix, keeping CI and the downstream contract in sync.
+
 ## [v0.1.28] — 2026-03-21
 
 ### Added
