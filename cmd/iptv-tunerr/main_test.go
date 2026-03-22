@@ -770,6 +770,178 @@ func TestFetchCatalog_DirectPlayerAPIFallbackWhenProbeFindsNoOKHost(t *testing.T
 	}
 }
 
+func TestFetchCatalog_DoesNotUseGetPHPWhenLaterRankedPlayerAPISucceeds(t *testing.T) {
+	var baseURL1, baseURL2 string
+	getPHPHits := map[string]int{}
+	playerAPIHits := map[string]int{}
+	var mu sync.Mutex
+	credFromQuery := func(r *http.Request) string {
+		q := r.URL.Query()
+		return q.Get("username") + "|" + q.Get("password")
+	}
+	srv1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodHead && r.URL.Path == "/":
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/player_api.php" && r.URL.RawQuery == "username=u1&password=p1":
+			mu.Lock()
+			playerAPIHits[credFromQuery(r)]++
+			mu.Unlock()
+			_, _ = w.Write([]byte(`{"user_info":{"auth":1},"server_info":{"url":"` + baseURL1 + `","server_url":"` + baseURL1 + `"}}`))
+		case r.URL.Path == "/player_api.php" && strings.Contains(r.URL.RawQuery, "username=u1&password=p1&action=get_live_streams"):
+			mu.Lock()
+			playerAPIHits[credFromQuery(r)]++
+			mu.Unlock()
+			http.Error(w, "forbidden", http.StatusForbidden)
+		case r.URL.Path == "/get.php":
+			mu.Lock()
+			getPHPHits[credFromQuery(r)]++
+			mu.Unlock()
+			http.Error(w, "884 busy", 884)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv1.Close()
+	baseURL1 = srv1.URL
+
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodHead && r.URL.Path == "/":
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/player_api.php" && r.URL.RawQuery == "username=u2&password=p2":
+			mu.Lock()
+			playerAPIHits[credFromQuery(r)]++
+			mu.Unlock()
+			_, _ = w.Write([]byte(`{"user_info":{"auth":1},"server_info":{"url":"` + baseURL2 + `","server_url":"` + baseURL2 + `"}}`))
+		case r.URL.Path == "/player_api.php" && strings.Contains(r.URL.RawQuery, "username=u2&password=p2&action=get_live_streams"):
+			mu.Lock()
+			playerAPIHits[credFromQuery(r)]++
+			mu.Unlock()
+			_, _ = w.Write([]byte(`[{"num":102,"name":"CNN","stream_id":1002,"epg_channel_id":"cnn.us"}]`))
+		case r.URL.Path == "/get.php":
+			mu.Lock()
+			getPHPHits[credFromQuery(r)]++
+			mu.Unlock()
+			http.Error(w, "884 busy", 884)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv2.Close()
+	baseURL2 = srv2.URL
+
+	cfg := &config.Config{
+		ProviderBaseURL: baseURL1,
+		ProviderUser:    "u1",
+		ProviderPass:    "p1",
+		LiveOnly:        true,
+	}
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL_2", baseURL2)
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER_2", "u2")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS_2", "p2")
+
+	res, err := fetchCatalog(cfg, "")
+	if err != nil {
+		t.Fatalf("fetchCatalog error: %v", err)
+	}
+	if res.APIBase != baseURL2 {
+		t.Fatalf("APIBase=%q want %q", res.APIBase, baseURL2)
+	}
+	if len(res.Live) != 1 {
+		t.Fatalf("live len=%d want 1", len(res.Live))
+	}
+	if getPHPHits["u1|p1"] != 0 || getPHPHits["u2|p2"] != 0 {
+		t.Fatalf("expected no get.php attempts while ranked player_api candidates remained, got %#v", getPHPHits)
+	}
+}
+
+func TestFetchCatalog_DoesNotUseGetPHPWhenDirectPlayerAPISucceedsLater(t *testing.T) {
+	var baseURL1, baseURL2 string
+	getPHPHits := map[string]int{}
+	playerAPIHits := map[string]int{}
+	var mu sync.Mutex
+	credFromQuery := func(r *http.Request) string {
+		q := r.URL.Query()
+		return q.Get("username") + "|" + q.Get("password")
+	}
+	srv1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodHead && r.URL.Path == "/":
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/player_api.php" && r.URL.RawQuery == "username=u1&password=p1":
+			mu.Lock()
+			playerAPIHits[credFromQuery(r)]++
+			mu.Unlock()
+			_, _ = w.Write([]byte(`{"server_status":"ok"}`))
+		case r.URL.Path == "/player_api.php" && strings.Contains(r.URL.RawQuery, "username=u1&password=p1&action=get_live_streams"):
+			mu.Lock()
+			playerAPIHits[credFromQuery(r)]++
+			mu.Unlock()
+			http.Error(w, "forbidden", http.StatusForbidden)
+		case r.URL.Path == "/get.php":
+			mu.Lock()
+			getPHPHits[credFromQuery(r)]++
+			mu.Unlock()
+			http.Error(w, "884 busy", 884)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv1.Close()
+	baseURL1 = srv1.URL
+
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodHead && r.URL.Path == "/":
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/player_api.php" && r.URL.RawQuery == "username=u2&password=p2":
+			mu.Lock()
+			playerAPIHits[credFromQuery(r)]++
+			mu.Unlock()
+			_, _ = w.Write([]byte(`{"server_status":"ok"}`))
+		case r.URL.Path == "/player_api.php" && strings.Contains(r.URL.RawQuery, "username=u2&password=p2&action=get_live_streams"):
+			mu.Lock()
+			playerAPIHits[credFromQuery(r)]++
+			mu.Unlock()
+			_, _ = w.Write([]byte(`[{"num":103,"name":"BBC","stream_id":1003,"epg_channel_id":"bbcnews.uk"}]`))
+		case r.URL.Path == "/get.php":
+			mu.Lock()
+			getPHPHits[credFromQuery(r)]++
+			mu.Unlock()
+			http.Error(w, "884 busy", 884)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv2.Close()
+	baseURL2 = srv2.URL
+
+	cfg := &config.Config{
+		ProviderBaseURL: baseURL1,
+		ProviderUser:    "u1",
+		ProviderPass:    "p1",
+		LiveOnly:        true,
+	}
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL_2", baseURL2)
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER_2", "u2")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS_2", "p2")
+
+	res, err := fetchCatalog(cfg, "")
+	if err != nil {
+		t.Fatalf("fetchCatalog error: %v", err)
+	}
+	if res.APIBase != baseURL2 {
+		t.Fatalf("APIBase=%q want %q", res.APIBase, baseURL2)
+	}
+	if len(res.Live) != 1 {
+		t.Fatalf("live len=%d want 1", len(res.Live))
+	}
+	if getPHPHits["u1|p1"] != 0 || getPHPHits["u2|p2"] != 0 {
+		t.Fatalf("expected no get.php attempts while direct player_api candidates remained, got %#v", getPHPHits)
+	}
+}
+
 func TestApplyRuntimeEPGRepairs_ExternalRepairsIncorrectTVGID(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
 	xmltv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

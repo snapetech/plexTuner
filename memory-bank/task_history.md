@@ -23,6 +23,25 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-22
+  Title: Make catalog ingest player_api-first and reserve get.php for final backup
+  Summary:
+    - Changed `fetchCatalog` so ranked and direct provider attempts exhaust `player_api` candidates before trying any `get.php` fallback.
+    - Removed the eager per-provider `get.php` fallback during direct/ranked API loops, making `get.php` a true last-ditch backup only when no provider indexed successfully through `player_api`.
+    - Added regressions proving `get.php` is not touched when a later ranked or direct `player_api` candidate succeeds.
+    - Revalidated live single-account and multi-account indexing after the change.
+  Verification:
+    - `go test ./cmd/iptv-tunerr -run 'TestFetchCatalog_(DoesNotUseGetPHPWhenLaterRankedPlayerAPISucceeds|DoesNotUseGetPHPWhenDirectPlayerAPISucceedsLater|FallsBackToPlayerAPIWhenBuiltGetPHPFails|DirectPlayerAPIFallbackWhenProbeFindsNoOKHost|DoesNotRetryGetPHPAfterDirectForbiddenFallback|SingleCredentialDoesNotRetryGetPHPOnPlayerAPIFailure)'`
+    - `set -a && source ./.env && set +a && IPTV_TUNERR_PROVIDER_URL=\"$IPTV_TUNERR_PROVIDER_URL_3\" IPTV_TUNERR_PROVIDER_USER=\"$IPTV_TUNERR_PROVIDER_USER_3\" IPTV_TUNERR_PROVIDER_PASS=\"$IPTV_TUNERR_PROVIDER_PASS_3\" IPTV_TUNERR_PROVIDER_URLS=\"\" IPTV_TUNERR_PROVIDER_URL_2=\"\" IPTV_TUNERR_PROVIDER_USER_2=\"\" IPTV_TUNERR_PROVIDER_PASS_2=\"\" IPTV_TUNERR_PROVIDER_URL_3=\"\" IPTV_TUNERR_PROVIDER_USER_3=\"\" IPTV_TUNERR_PROVIDER_PASS_3=\"\" IPTV_TUNERR_LIVE_ONLY=true IPTV_TUNERR_CF_AUTO_BOOT=false go run ./cmd/iptv-tunerr index -catalog /tmp/playerapi-single-provider3-hardening.json`
+    - `set -a && source ./.env && set +a && IPTV_TUNERR_LIVE_ONLY=true IPTV_TUNERR_CF_AUTO_BOOT=false go run ./cmd/iptv-tunerr index -catalog /tmp/playerapi-multi-hardening.json`
+  Notes:
+    - Reverse-engineering on this machine still points to a hard upstream/Cloudflare deny on `get.php` (`884` / timeout) even with browser-TLS impersonation.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/cmd_catalog.go`
+    - `cmd/iptv-tunerr/main_test.go`
+
+- Date: 2026-03-22
   Title: Restore CF auto-boot on shared clients and disable desktop-browser fallback by default
   Summary:
     - Fixed `PrepareCloudflareAwareClient` so env-configured shared HTTP clients are upgraded to the persistent cookie-jar type required by the CF bootstrapper, while preserving existing host cookies for the target provider.

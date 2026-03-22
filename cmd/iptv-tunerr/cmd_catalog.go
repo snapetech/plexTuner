@@ -581,9 +581,6 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 				log.Printf("Ranked provider index failed on %s: %v", candidate.Entry.BaseURL, fetchErr)
 			}
 		}
-		usedGetPHPFallback := false
-		getPHPUsed := map[string]struct{}{}
-		getPHPAttempted := map[string]struct{}{}
 		providerKey := func(e config.ProviderEntry) string {
 			return strings.TrimSuffix(e.BaseURL, "/") + "|" + e.User + "|" + e.Pass
 		}
@@ -631,47 +628,10 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 					break
 				}
 				lockoutTracker.notePlayerAPI(providerKey(e), err)
-				if indexer.IsPlayerAPIErrorStatus(err, http.StatusForbidden) {
-					var gMovies []catalog.Movie
-					var gSeries []catalog.Series
-					var gLive []catalog.LiveChannel
-					fallbackErr := logCatalogPhase("fallback get.php parse "+base, func() error {
-						var err error
-						gMovies, gSeries, gLive, err = catalogFromGetPHP(e.BaseURL, e.User, e.Pass)
-						return err
-					})
-					getPHPAttempted[providerKey(e)] = struct{}{}
-					lockoutTracker.noteGetPHP(providerKey(e), fallbackErr)
-					if fallbackErr == nil {
-						if getPHPCount == 0 {
-							getPHPFirst = provider.Entry{BaseURL: e.BaseURL, User: e.User, Pass: e.Pass}
-						}
-						getPHPMovies = append(getPHPMovies, gMovies...)
-						getPHPSeries = append(getPHPSeries, gSeries...)
-						getPHPLive = append(getPHPLive, gLive...)
-						getPHPUsed[providerKey(e)] = struct{}{}
-						getPHPCount++
-						usedGetPHPFallback = true
-						log.Printf("Using get.php from %s", base)
-						continue
-					}
-					log.Printf("Player API fallback get.php failed for %s: %v", base, fallbackErr)
-				}
 				fetchErr = err
 			}
-			if usedGetPHPFallback && res.APIBase == "" {
-				res.Movies, res.Series, res.Live = getPHPMovies, getPHPSeries, getPHPLive
-				res.ProviderBase = getPHPFirst.BaseURL
-				res.ProviderUser = getPHPFirst.User
-				res.ProviderPass = getPHPFirst.Pass
-				res.APIBase = getPHPFirst.BaseURL
-				fetchErr = nil
-				if getPHPCount > 1 {
-					log.Printf("Merged %d get.php provider feeds into one catalog", getPHPCount)
-				}
-			}
 		}
-		runFallbackGetPHP := (fetchErr != nil || res.APIBase == "") || (usedGetPHPFallback && len(getPHPUsed) < len(entries))
+		runFallbackGetPHP := res.APIBase == ""
 		if runFallbackGetPHP {
 			res.APIBase = ""
 			var (
@@ -683,14 +643,6 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 				firstProvider = getPHPFirst
 			)
 			for _, e := range entries {
-				if _, ok := getPHPAttempted[providerKey(e)]; ok {
-					continue
-				}
-				if usedGetPHPFallback {
-					if _, ok := getPHPUsed[providerKey(e)]; ok {
-						continue
-					}
-				}
 				base := strings.TrimSuffix(e.BaseURL, "/")
 				var movies []catalog.Movie
 				var series []catalog.Series
