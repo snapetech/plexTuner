@@ -20,6 +20,7 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[adr/](adr/index.md)** | Decision log: architecture decision records. |
 | **[runbooks/](runbooks/index.md)** | Operational procedures ([troubleshooting](runbooks/iptvtunerr-troubleshooting.md) §8: **`/healthz`**, **`/readyz`**). |
 | **[how-to/deployment.md](how-to/deployment.md)** | Deploy IPTV Tunerr (binary, Docker, systemd, local test script). |
+| **[how-to/vod-webdav-client-harness.md](how-to/vod-webdav-client-harness.md)** | Replay macOS/Windows WebDAV client request shapes against `vod-webdav`. |
 | **[how-to/plex-ops-patterns.md](how-to/plex-ops-patterns.md)** | Advanced Plex-only operating patterns: zero-touch, category DVR fleets, injected DVRs. |
 | **[how-to/package-test-builds.md](how-to/package-test-builds.md)** | Build cross-platform test bundles for testers (Linux/macOS/Windows). |
 | **[how-to/tester-handoff-checklist.md](how-to/tester-handoff-checklist.md)** | Tester handoff checklist (bundle contents, platform expectations, bug report capture). |

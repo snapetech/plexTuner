@@ -16,6 +16,7 @@ Goal → preconditions → steps → verify.
 | [first-push](first-push.md) | Add remote and push (GitHub / GitLab / self-hosted). |
 | [deployment](deployment.md) | Deploy IPTV Tunerr: binary, Docker, systemd; **`run`** vs **`index`/`serve`**; local QA/smoke script. |
 | [mount-vodfs-and-register-plex-libraries](mount-vodfs-and-register-plex-libraries.md) | Linux VODFS mount, `-cache`, Plex library registration. |
+| [vod-webdav-client-harness](vod-webdav-client-harness.md) | Replay macOS Finder/WebDAVFS and Windows MiniRedir request shapes against `vod-webdav`. |
 | [fix-guide-data-with-epg-doctor](fix-guide-data-with-epg-doctor.md) | Diagnose and fix bad guide data, placeholder-only channels, and weak XMLTV matches. |
 | [deploy-and-connect-plex-home](deploy-and-connect-plex-home.md) | Deploy IPTV Tunerr in-cluster and connect Plex at plex.home (one-command deploy, zero-touch or manual add). |
 | [package-test-builds](package-test-builds.md) | Build cross-platform test bundles (Linux/macOS/Windows) for binary + supervisor testing. |
