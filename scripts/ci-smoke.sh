@@ -387,6 +387,25 @@ cat >"$TMP_DIR/catalog-accounts.json" <<'JSON'
 }
 JSON
 
+cat >"$TMP_DIR/catalog-remux.json" <<'JSON'
+{
+  "movies": [],
+  "series": [],
+  "live_channels": [
+    {
+      "channel_id": "remux1",
+      "guide_number": "311",
+      "guide_name": "Remux Fallback",
+      "group_title": "News",
+      "stream_url": "REPLACE_REMUX_HLS_URL",
+      "stream_urls": ["REPLACE_REMUX_HLS_URL"],
+      "epg_linked": true,
+      "tvg_id": "remux.fallback"
+    }
+  ]
+}
+JSON
+
 mkdir -p "$TMP_DIR/assets"
 printf 'movie-bytes' >"$TMP_DIR/assets/movie.bin"
 printf 'episode-bytes' >"$TMP_DIR/assets/episode.bin"
@@ -514,6 +533,7 @@ sed -i "s|REPLACE_ACCOUNT_U3_CH2|http://127.0.0.1:$port_hls/live/charly3/pass3/c
 sed -i "s|REPLACE_ACCOUNT_U1_CH3|http://127.0.0.1:$port_hls/live/alpha01/pass1/ch3.m3u8|g" "$TMP_DIR/catalog-accounts.json"
 sed -i "s|REPLACE_ACCOUNT_U2_CH3|http://127.0.0.1:$port_hls/live/bravo02/pass2/ch3.m3u8|g" "$TMP_DIR/catalog-accounts.json"
 sed -i "s|REPLACE_ACCOUNT_U3_CH3|http://127.0.0.1:$port_hls/live/charly3/pass3/ch3.m3u8|g" "$TMP_DIR/catalog-accounts.json"
+sed -i "s|REPLACE_REMUX_HLS_URL|http://127.0.0.1:$port_hls/remux/channel1.m3u8|g" "$TMP_DIR/catalog-remux.json"
 
 port_full="$(pick_port)"
 run_serve "$TMP_DIR/catalog-full.json" "$port_full"
@@ -725,5 +745,46 @@ wait "$account_stream_3"
 [[ -s "$TMP_DIR/account-first.out" ]] || fail "account pool first consumer got no bytes"
 [[ -s "$TMP_DIR/account-second.out" ]] || fail "account pool second consumer got no bytes"
 [[ -s "$TMP_DIR/account-third.out" ]] || fail "account pool third consumer got no bytes"
+
+fake_ffmpeg="$TMP_DIR/fake-ffmpeg.sh"
+cat >"$fake_ffmpeg" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+exec sleep 5
+SH
+chmod +x "$fake_ffmpeg"
+
+port_remux="$(pick_port)"
+IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
+IPTV_TUNERR_XMLTV_URL= \
+IPTV_TUNERR_WEBUI_DISABLED=1 \
+IPTV_TUNERR_FFMPEG_DISABLED=0 \
+IPTV_TUNERR_FFMPEG_PATH="$fake_ffmpeg" \
+IPTV_TUNERR_FFMPEG_HLS_FIRST_BYTES_TIMEOUT_MS=100 \
+"$BIN" serve -catalog "$TMP_DIR/catalog-remux.json" -addr ":$port_remux" -base-url "http://127.0.0.1:$port_remux" \
+  >"$TMP_DIR/serve-remux-$port_remux.log" 2>&1 &
+PIDS+=("$!")
+wait_http_code "http://127.0.0.1:$port_remux/discover.json" "200" || fail "remux fallback discover.json not ready"
+curl -sS "http://127.0.0.1:$port_remux/stream/remux1" -o "$TMP_DIR/remux-fallback.out"
+[[ -s "$TMP_DIR/remux-fallback.out" ]] || fail "remux fallback produced no bytes"
+python3 - "$port_remux" <<'PY'
+import json
+import sys
+from urllib.request import urlopen
+
+port = sys.argv[1]
+with urlopen(f"http://127.0.0.1:{port}/debug/stream-attempts.json?limit=1", timeout=5) as resp:
+    report = json.load(resp)
+attempts = report.get("attempts", [])
+if not attempts:
+    raise SystemExit("expected at least one stream attempt")
+attempt = attempts[0]
+if attempt.get("channel_id") != "remux1":
+    raise SystemExit(f"unexpected attempt payload {attempt!r}")
+if attempt.get("final_mode") != "hls_go":
+    raise SystemExit(f"expected final_mode=hls_go, got {attempt!r}")
+if attempt.get("final_status") != "ok":
+    raise SystemExit(f"expected final_status=ok, got {attempt!r}")
+PY
 
 log "smoke checks passed"

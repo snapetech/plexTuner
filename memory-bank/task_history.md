@@ -23,6 +23,24 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: Add dead-remux fallback binary smoke proof
+  Summary:
+    - Extended `scripts/ci-smoke.sh` with a fake-ffmpeg same-host HLS fallback run against a real temp binary.
+    - The smoke now asserts the request still returns bytes and `/debug/stream-attempts.json` records `final_mode: hls_go`.
+    - Updated `scripts/release-readiness.sh` and the release-readiness matrix so the HLS fallback path is no longer treated as binary-smoke partial.
+  Verification:
+    - `bash ./scripts/ci-smoke.sh`
+    - `./scripts/verify`
+  Notes:
+    - This strengthens the HLS fallback proof but does not eliminate real live-provider/client variance on all channels.
+  Opportunities filed:
+    - none
+  Links:
+    - `scripts/ci-smoke.sh`
+    - `scripts/release-readiness.sh`
+    - `docs/explanations/release-readiness-matrix.md`
+
+- Date: 2026-03-21
   Title: Add provider-account rollover binary smoke proof
   Summary:
     - Extended `scripts/ci-smoke.sh` with a three-channel synthetic Xtream-path account-pool run against a real temp binary.

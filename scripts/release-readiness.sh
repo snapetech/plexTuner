@@ -40,7 +40,7 @@ run "focused parity suites" go test ./internal/tuner -run 'TestServer_Xtream(Pla
 
 run "programming + backup preference suites" go test ./internal/programming ./internal/tuner -run 'Test(UpdateRecipeMutations|BuildBackupGroupsAndCollapse|BuildBackupGroupsAndCollapse_WithPreferences|Server_programmingEndpoints)$' -count=1
 
-run "provider-account + shared-relay suites" go test ./internal/tuner -run 'Test(Gateway_(stream_rollsAcrossThreeXtreamPathAccounts|stream_twoChannelsPreferDifferentXtreamPathAccounts|stream_threeChannelsUseThreeXtreamPathAccounts|sharedRelaySessionFanout|tryServeSharedRelay|relayHLSAsTS_survivesPlaylistConcurrencyRetry|shouldPreferGoRelayForHLSRemux|relaySuccessfulHLSUpstream_crossHostPlaylistPrefersGoBeforeFFmpegFailure)|Server_SharedRelayReport)' -count=1
+run "provider-account + shared-relay suites" go test ./internal/tuner -run 'Test(Gateway_(stream_rollsAcrossThreeXtreamPathAccounts|stream_twoChannelsPreferDifferentXtreamPathAccounts|stream_threeChannelsUseThreeXtreamPathAccounts|sharedRelaySessionFanout|tryServeSharedRelay|relayHLSAsTS_survivesPlaylistConcurrencyRetry|shouldPreferGoRelayForHLSRemux|relaySuccessfulHLSUpstream_crossHostPlaylistPrefersGoBeforeFFmpegFailure|relayHLSWithFFmpeg_nonTranscodeFirstBytesTimeout|stream_hlsDeadRemuxFallsBackQuickly)|Server_SharedRelayReport)' -count=1
 
 run "vod-webdav suites" go test ./internal/vodwebdav ./cmd/iptv-tunerr -count=1
 
