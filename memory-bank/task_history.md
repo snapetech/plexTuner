@@ -39,6 +39,23 @@ Append-only. One entry per completed task.
     - `memory-bank/opportunities.md` — remaining step is launching harnesses and summarizing their reports from the deck.
   Links:
     - diagnostics workflow / evidence-intake action
+
+- Date: 2026-03-21
+  Title: Surface latest diagnostics verdicts in the deck
+  Summary:
+    - Extended the diagnostics workflow so it now reads the latest `.diag` report artifacts for `channel-diff`, `stream-compare`, `multi-stream`, and evidence bundles instead of only listing run folders.
+    - Added verdict/findings extraction so the deck can show “Tunerr split”, “upstream split”, “stable parallel reads”, or evidence-bundle guidance directly in the Routing lane.
+    - Added tuner coverage for the new summary extraction and kept the full release gate green.
+  Verification:
+    - `go test ./internal/tuner -run 'TestServer_diagnosticsWorkflowAndEvidenceAction' -count=1`
+    - `node --check internal/webui/deck.js`
+    - `./scripts/verify`
+  Notes:
+    - This still stops short of launching the harnesses from the deck; it productizes their latest conclusions first.
+  Opportunities filed:
+    - `memory-bank/opportunities.md` — remaining step is bounded in-app harness execution plus richer report summaries.
+  Links:
+    - diagnostics verdict summaries
 - Date: 2026-03-21
   Title: Add parity recording-rules and recorder-history starter
   Summary:

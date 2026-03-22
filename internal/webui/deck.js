@@ -218,6 +218,16 @@ function normalizeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function diagnosticsRunSummary(run) {
+  if (!run || typeof run !== "object") return "";
+  const parts = [];
+  if (run.family) parts.push(String(run.family));
+  if (run.verdict) parts.push(`verdict=${run.verdict}`);
+  const summary = normalizeArray(run.summary).filter(Boolean).slice(0, 2).join(" | ");
+  if (summary) parts.push(summary);
+  return parts.join(" · ");
+}
+
 /** Compact operator view: /provider/profile.json is a flat JSON object (no legacy summary wrapper). */
 function summarizeProviderProfile(body) {
   if (!body || typeof body !== "object") return null;
@@ -1018,6 +1028,7 @@ function renderDeck() {
   const guideWorkflow = state.payloads.guideWorkflow?.body || {};
   const streamWorkflow = state.payloads.streamWorkflow?.body || {};
   const diagnosticsWorkflow = state.payloads.diagnosticsWorkflow?.body || {};
+  const diagnosticRuns = normalizeArray(diagnosticsWorkflow.summary?.diag_runs);
   const opsWorkflow = state.payloads.opsWorkflow?.body || {};
   const deckSettings = state.payloads.deckSettings?.body || state.deckSettings || {};
   const activity = normalizeArray(state.payloads.deckActivity?.body?.entries).length
@@ -1209,6 +1220,9 @@ function renderDeck() {
     createCard("Diagnostics capture", diagnosticsWorkflow.summary?.suggested_bad_channel_id || diagnosticsWorkflow.summary?.suggested_good_channel_id
       ? `good=${pretty(diagnosticsWorkflow.summary?.suggested_good_channel_id)} · bad=${pretty(diagnosticsWorkflow.summary?.suggested_bad_channel_id)}`
       : "No good/bad channel suggestion yet from recent attempts.", "", "", "diagnosticsWorkflow", `${createWorkflowButton("diagnosticsWorkflow", "Open Diagnostics")}${createActionButton("evidence_intake_start")}`),
+    createCard("Latest diagnostics", diagnosticRuns.length
+      ? diagnosticRuns.map((run) => diagnosticsRunSummary(run)).filter(Boolean).join(" || ")
+      : "No recent channel-diff, stream-compare, multi-stream, or evidence bundle runs detected under .diag.", "", "", "diagnosticsWorkflow", `<button class="tiny" type="button" data-inspect="diagnosticsWorkflow">Workflow Payload</button>`),
     createCard("HDHR contract", "discover.json, lineup.json, lineup_status.json, device.xml, and guide.xml still live on the tuner and are proxied here under /api.", "", "", "runtime"),
     createCard("Mux choices", "Native TS/fMP4/HLS surfaces exist; the deck is a supervisor over those capabilities, not a stream path itself.", "", "", "provider")
   ]).join("");

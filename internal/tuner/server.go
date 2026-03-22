@@ -2622,10 +2622,13 @@ type virtualChannelDetailReport struct {
 }
 
 type diagRunRef struct {
-	Family  string `json:"family"`
-	RunID   string `json:"run_id"`
-	Path    string `json:"path"`
-	Updated string `json:"updated"`
+	Family     string   `json:"family"`
+	RunID      string   `json:"run_id"`
+	Path       string   `json:"path"`
+	Updated    string   `json:"updated"`
+	ReportPath string   `json:"report_path,omitempty"`
+	Verdict    string   `json:"verdict,omitempty"`
+	Summary    []string `json:"summary,omitempty"`
 }
 
 func normalizeHarvestGuideName(raw string) string {
@@ -3855,6 +3858,7 @@ func latestDiagRuns(families ...string) []diagRunRef {
 					Path:    filepath.Join(dir, entry.Name()),
 					Updated: mod.Format(time.RFC3339),
 				}
+				populateDiagRunSummary(&best)
 			}
 		}
 		if best.RunID != "" {
@@ -3865,6 +3869,135 @@ func latestDiagRuns(families ...string) []diagRunRef {
 		return refs[i].Family < refs[j].Family
 	})
 	return refs
+}
+
+func populateDiagRunSummary(ref *diagRunRef) {
+	if ref == nil || strings.TrimSpace(ref.Path) == "" {
+		return
+	}
+	reportPath := filepath.Join(ref.Path, "report.json")
+	body, err := os.ReadFile(reportPath)
+	if err == nil {
+		ref.ReportPath = reportPath
+		var payload map[string]interface{}
+		if json.Unmarshal(body, &payload) == nil {
+			ref.Verdict, ref.Summary = summarizeDiagPayload(ref.Family, payload)
+			if len(ref.Summary) > 4 {
+				ref.Summary = ref.Summary[:4]
+			}
+			if ref.Verdict != "" || len(ref.Summary) > 0 {
+				return
+			}
+		}
+	}
+	textPath := filepath.Join(ref.Path, "report.txt")
+	body, err = os.ReadFile(textPath)
+	if err != nil {
+		return
+	}
+	lines := strings.Split(strings.ReplaceAll(string(body), "\r\n", "\n"), "\n")
+	ref.ReportPath = textPath
+	for _, line := range lines {
+		line = strings.TrimSpace(strings.TrimPrefix(line, "- "))
+		if line == "" {
+			continue
+		}
+		ref.Summary = append(ref.Summary, line)
+		if len(ref.Summary) >= 3 {
+			break
+		}
+	}
+}
+
+func summarizeDiagPayload(family string, payload map[string]interface{}) (string, []string) {
+	switch strings.TrimSpace(family) {
+	case "channel-diff":
+		findings := stringSliceFromAny(payload["findings"], 3)
+		if len(findings) == 0 {
+			return "needs_review", nil
+		}
+		verdict := "channel_class_split"
+		for _, item := range findings {
+			lower := strings.ToLower(item)
+			switch {
+			case strings.Contains(lower, "tunerr-path issue"), strings.Contains(lower, "through tunerr"), strings.Contains(lower, "tunerr-only"):
+				verdict = "tunerr_split"
+			case strings.Contains(lower, "fails direct"), strings.Contains(lower, "upstream/provider/cdn"), strings.Contains(lower, "provider-specific"), strings.Contains(lower, "upstream-only"):
+				verdict = "upstream_split"
+				return verdict, findings
+			}
+		}
+		return verdict, findings
+	case "stream-compare":
+		compare, _ := payload["compare"].(map[string]interface{})
+		findings := stringSliceFromAny(compare["findings"], 3)
+		if len(findings) == 0 {
+			return "no_mismatch", nil
+		}
+		verdict := "mismatch_found"
+		for _, item := range findings {
+			if strings.Contains(strings.ToLower(item), "no top-level status mismatch") {
+				verdict = "needs_lower_level_inspection"
+				break
+			}
+		}
+		return verdict, findings
+	case "multi-stream":
+		synopsis, _ := payload["synopsis"].(map[string]interface{})
+		hypotheses := stringSliceFromAny(payload["hypotheses"], 3)
+		sustained := intFromAny(synopsis["sustained_reads"])
+		premature := intFromAny(synopsis["premature_exits"])
+		zero := intFromAny(synopsis["zero_byte_streams"])
+		verdict := "needs_review"
+		switch {
+		case sustained >= 2 && premature == 0 && zero == 0:
+			verdict = "stable_parallel_reads"
+		case zero > 0:
+			verdict = "open_path_failure"
+		case premature > 0:
+			verdict = "premature_exit"
+		}
+		return verdict, hypotheses
+	case "evidence":
+		return "bundle_ready", []string{"Evidence bundle scaffolded; add PMS logs, Tunerr logs, and pcap for the failing window."}
+	default:
+		return "", nil
+	}
+}
+
+func stringSliceFromAny(v interface{}, limit int) []string {
+	rows, _ := v.([]interface{})
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]string, 0, min(limit, len(rows)))
+	for _, row := range rows {
+		text := strings.TrimSpace(fmt.Sprint(row))
+		if text == "" {
+			continue
+		}
+		out = append(out, text)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+func intFromAny(v interface{}) int {
+	switch n := v.(type) {
+	case float64:
+		return int(n)
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case json.Number:
+		i, _ := n.Int64()
+		return int(i)
+	default:
+		return 0
+	}
 }
 
 func suggestDiagnosticChannels(attempts StreamAttemptReport) (good string, bad string) {

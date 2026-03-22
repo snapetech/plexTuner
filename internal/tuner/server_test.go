@@ -674,6 +674,26 @@ func TestServer_programmingChannelDetail(t *testing.T) {
 }
 
 func TestServer_diagnosticsWorkflowAndEvidenceAction(t *testing.T) {
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	tmp := t.TempDir()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origWd) }()
+	if err := os.MkdirAll(filepath.Join(".diag", "channel-diff", "run-a"), 0o755); err != nil {
+		t.Fatalf("mkdir channel-diff: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(".diag", "channel-diff", "run-a", "report.json"), []byte(`{
+  "findings": [
+    "Bad channel succeeds direct but fails or degrades through Tunerr; this still points at a Tunerr-path issue, not a dead upstream."
+  ]
+}`), 0o600); err != nil {
+		t.Fatalf("write channel-diff report: %v", err)
+	}
+
 	s := &Server{
 		gateway: &Gateway{
 			recentAttempts: []StreamAttemptRecord{{
@@ -706,19 +726,18 @@ func TestServer_diagnosticsWorkflowAndEvidenceAction(t *testing.T) {
 	if summary["suggested_good_channel_id"] != "good-1" || summary["suggested_bad_channel_id"] != "bad-1" {
 		t.Fatalf("workflow summary=%+v", summary)
 	}
+	diagRuns, ok := summary["diag_runs"].([]interface{})
+	if !ok || len(diagRuns) != 1 {
+		t.Fatalf("diag_runs=%#v", summary["diag_runs"])
+	}
+	first, _ := diagRuns[0].(map[string]interface{})
+	if first["family"] != "channel-diff" || first["verdict"] != "tunerr_split" {
+		t.Fatalf("diag run=%+v", first)
+	}
 
 	req = httptest.NewRequest(http.MethodPost, "/ops/actions/evidence-intake-start", strings.NewReader(`{"case_id":"smoke-case"}`))
 	req.RemoteAddr = "127.0.0.1:12345"
 	w = httptest.NewRecorder()
-	origWd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	tmp := t.TempDir()
-	if err := os.Chdir(tmp); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	defer func() { _ = os.Chdir(origWd) }()
 	s.serveEvidenceIntakeStartAction().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("evidence action status=%d body=%s", w.Code, w.Body.String())
