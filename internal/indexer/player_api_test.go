@@ -1,6 +1,9 @@
 package indexer
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestParseSeriesEpisodesSupportsSeasonKeyedArrays(t *testing.T) {
 	in := map[string]interface{}{
@@ -68,5 +71,17 @@ func TestParseSeriesEpisodesSupportsFlatArray(t *testing.T) {
 	}
 	if got[0].SeasonNum != 3 || got[0].EpisodeNum != 7 || got[0].Container != "mkv" {
 		t.Fatalf("unexpected parsed episode: %+v", got[0])
+	}
+}
+
+func TestIsPlayerAPIErrorStatus(t *testing.T) {
+	if !IsPlayerAPIErrorStatus(&apiError{url: "https://example.org", status: 403}, 403) {
+		t.Fatalf("expected 403 status to match")
+	}
+	if IsPlayerAPIErrorStatus(&apiError{url: "https://example.org", status: 500}, 403) {
+		t.Fatalf("expected non-403 status not to match")
+	}
+	if IsPlayerAPIErrorStatus(errors.New("player api: 403 https://example.org"), 403) {
+		t.Fatalf("did not expect generic error to match player_api status")
 	}
 }

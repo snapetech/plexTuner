@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -275,6 +276,12 @@ func streamVariantsFromRankedEntries(streamURL string, ranked []provider.EntryRe
 	return out
 }
 
+func catalogFromGetPHP(baseURL, user, pass string) (movies []catalog.Movie, series []catalog.Series, live []catalog.LiveChannel, err error) {
+	base := strings.TrimSuffix(baseURL, "/")
+	m3uURL := base + "/get.php?username=" + url.QueryEscape(user) + "&password=" + url.QueryEscape(pass) + "&type=m3u_plus&output=ts"
+	return indexer.ParseM3U(m3uURL, nil)
+}
+
 func streamAuthPrefix(rawURL string) string {
 	u, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil || u == nil || u.Scheme == "" || u.Host == "" {
@@ -455,6 +462,14 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 				log.Printf("Ranked provider index failed on %s: %v", candidate.Entry.BaseURL, fetchErr)
 			}
 		}
+		usedGetPHPFallback := false
+		var (
+			getPHPMovies []catalog.Movie
+			getPHPSeries []catalog.Series
+			getPHPLive   []catalog.LiveChannel
+			getPHPCount  int
+			getPHPFirst  provider.Entry
+		)
 		if len(ranked) == 0 && !cfg.BlockCFProviders {
 			var successfulEntries []provider.EntryResult
 			for _, e := range entries {
@@ -491,10 +506,44 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 					fetchErr = nil
 					break
 				}
+				if indexer.IsPlayerAPIErrorStatus(err, http.StatusForbidden) {
+					var gMovies []catalog.Movie
+					var gSeries []catalog.Series
+					var gLive []catalog.LiveChannel
+					fallbackErr := logCatalogPhase("fallback get.php parse "+base, func() error {
+						var err error
+						gMovies, gSeries, gLive, err = catalogFromGetPHP(e.BaseURL, e.User, e.Pass)
+						return err
+					})
+					if fallbackErr == nil {
+						if getPHPCount == 0 {
+							getPHPFirst = provider.Entry{BaseURL: e.BaseURL, User: e.User, Pass: e.Pass}
+						}
+						getPHPMovies = append(getPHPMovies, gMovies...)
+						getPHPSeries = append(getPHPSeries, gSeries...)
+						getPHPLive = append(getPHPLive, gLive...)
+						getPHPCount++
+						usedGetPHPFallback = true
+						log.Printf("Using get.php from %s", base)
+						continue
+					}
+					log.Printf("Player API fallback get.php failed for %s: %v", base, fallbackErr)
+				}
 				fetchErr = err
 			}
+			if usedGetPHPFallback && res.APIBase == "" {
+				res.Movies, res.Series, res.Live = getPHPMovies, getPHPSeries, getPHPLive
+				res.ProviderBase = getPHPFirst.BaseURL
+				res.ProviderUser = getPHPFirst.User
+				res.ProviderPass = getPHPFirst.Pass
+				res.APIBase = getPHPFirst.BaseURL
+				fetchErr = nil
+				if getPHPCount > 1 {
+					log.Printf("Merged %d get.php provider feeds into one catalog", getPHPCount)
+				}
+			}
 		}
-		if fetchErr != nil || res.APIBase == "" {
+		if (fetchErr != nil || res.APIBase == "") && !usedGetPHPFallback {
 			res.APIBase = ""
 			var (
 				fallbackErr   error
@@ -506,13 +555,12 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 			)
 			for _, e := range entries {
 				base := strings.TrimSuffix(e.BaseURL, "/")
-				m3uURL := base + "/get.php?username=" + url.QueryEscape(e.User) + "&password=" + url.QueryEscape(e.Pass) + "&type=m3u_plus&output=ts"
 				var movies []catalog.Movie
 				var series []catalog.Series
 				var live []catalog.LiveChannel
 				err := logCatalogPhase("fallback get.php parse "+base, func() error {
 					var err error
-					movies, series, live, err = indexer.ParseM3U(m3uURL, nil)
+					movies, series, live, err = catalogFromGetPHP(e.BaseURL, e.User, e.Pass)
 					return err
 				})
 				fallbackErr = err

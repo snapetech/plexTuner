@@ -3,6 +3,7 @@ package indexer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"net/url"
@@ -478,4 +479,16 @@ type apiError struct {
 
 func (e *apiError) Error() string {
 	return "player_api: " + strconv.Itoa(e.status) + " " + e.url
+}
+
+// IsPlayerAPIErrorStatus reports whether err is a player_api HTTP error and matches status.
+func IsPlayerAPIErrorStatus(err error, status int) bool {
+	var apiErr *apiError
+	if err == nil {
+		return false
+	}
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	return apiErr.status == status
 }

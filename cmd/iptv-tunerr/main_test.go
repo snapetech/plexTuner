@@ -271,6 +271,81 @@ func TestFetchCatalog_GetPHPFallbackMergesProviders(t *testing.T) {
 	}
 }
 
+func TestFetchCatalog_FallsBackToGetPHPOnPlayerAPIForbidden(t *testing.T) {
+	var baseURL string
+	playerAPIHits := map[string]int{}
+	getPHPHits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodHead && r.URL.Path == "/":
+			w.WriteHeader(http.StatusServiceUnavailable)
+		case r.URL.Path == "/player_api.php":
+			key := r.URL.RawQuery
+			playerAPIHits[key]++
+			if strings.Contains(key, "username=u1&password=p1") || strings.Contains(key, "username=u2&password=p2") {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
+			http.Error(w, "bad cred", http.StatusUnauthorized)
+		case r.URL.Path == "/get.php":
+			getPHPHits++
+			key := r.URL.RawQuery
+			switch {
+			case strings.Contains(key, "username=u1&password=p1"):
+				_, _ = w.Write([]byte("#EXTM3U\n#EXTINF:-1 tvg-id=\"foxnews.us\",FOX News\n" + baseURL + "/live/u1/p1/1001.m3u8\n"))
+			case strings.Contains(key, "username=u2&password=p2"):
+				_, _ = w.Write([]byte("#EXTM3U\n#EXTINF:-1 tvg-id=\"foxnews.us\",FOX News Backup\n" + baseURL + "/live/u2/p2/1002.m3u8\n"))
+			default:
+				http.NotFound(w, r)
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	baseURL = srv.URL
+
+	cfg := &config.Config{
+		ProviderBaseURL: baseURL,
+		ProviderUser:    "u1",
+		ProviderPass:    "p1",
+		LiveOnly:        true,
+	}
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL_2", baseURL)
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER_2", "u2")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS_2", "p2")
+
+	res, err := fetchCatalog(cfg, "")
+	if err != nil {
+		t.Fatalf("fetchCatalog error: %v", err)
+	}
+	if len(res.Live) != 1 {
+		t.Fatalf("live len=%d want 1", len(res.Live))
+	}
+	if len(res.Live[0].StreamURLs) != 2 {
+		t.Fatalf("stream urls len=%d want 2", len(res.Live[0].StreamURLs))
+	}
+	countForCred := func(rawUser, rawPass string) int {
+		needle := "username=" + rawUser + "&password=" + rawPass
+		count := 0
+		for key, c := range playerAPIHits {
+			if strings.Contains(key, needle) {
+				count += c
+			}
+		}
+		return count
+	}
+	if got := countForCred("u1", "p1"); got == 0 {
+		t.Fatalf("player_api hits u1/p1=%d want >0", got)
+	}
+	if got := countForCred("u2", "p2"); got == 0 {
+		t.Fatalf("player_api hits u2/p2=%d want >0", got)
+	}
+	if getPHPHits != 2 {
+		t.Fatalf("get.php hits=%d want 2", getPHPHits)
+	}
+}
+
 func TestFetchCatalog_FallsBackToPlayerAPIWhenBuiltGetPHPFails(t *testing.T) {
 	var baseURL string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
