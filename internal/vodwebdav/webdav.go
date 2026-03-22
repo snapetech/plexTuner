@@ -18,16 +18,34 @@ import (
 	"golang.org/x/net/webdav"
 )
 
+const (
+	methodPROPFIND   = "PROPFIND"
+	readOnlyDAVAllow = "OPTIONS, PROPFIND, HEAD, GET"
+)
+
 func NewHandler(movies []catalog.Movie, series []catalog.Series, mat materializer.Interface) http.Handler {
 	if mat == nil {
 		mat = &materializer.Stub{}
 	}
-	return &webdav.Handler{
+	base := &webdav.Handler{
 		Prefix:     "/",
 		FileSystem: &davFS{tree: vodfs.NewTree(movies, series), mat: mat},
 		LockSystem: webdav.NewMemLS(),
 		Logger:     func(*http.Request, error) {},
 	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("MS-Author-Via", "DAV")
+		switch r.Method {
+		case http.MethodOptions, methodPROPFIND, http.MethodHead, http.MethodGet:
+			base.ServeHTTP(w, r)
+			return
+		default:
+			w.Header().Set("Allow", readOnlyDAVAllow)
+			w.Header().Set("DAV", "1, 2")
+			http.Error(w, "read-only WebDAV surface", http.StatusMethodNotAllowed)
+			return
+		}
+	})
 }
 
 type davFS struct {

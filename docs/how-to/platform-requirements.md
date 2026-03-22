@@ -133,6 +133,7 @@ Notes:
 - Linux can use it too, but `mount` / VODFS remains the primary native path there.
 - Actual file reads still need `-cache` / `IPTV_TUNERR_CACHE` so the materializer has somewhere to place bytes.
 - The command logs a platform-specific mount hint when it starts.
+- The surface is intentionally read-only: `OPTIONS`, `PROPFIND`, `HEAD`, and `GET` are supported; mutation attempts are rejected cleanly with `405`.
 
 ---
 

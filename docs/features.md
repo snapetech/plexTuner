@@ -168,7 +168,7 @@ Reference:
 |---------|-------------|
 | **VOD cataloging** | Movies/series stored in catalog from provider feeds/APIs. |
 | **VODFS mount** | FUSE-based filesystem exposing `Movies/` and `TV/`. |
-| **WebDAV VOD surface** | Read-only WebDAV export of the same synthetic `Movies/` / `TV/` tree for native macOS/Windows mounting, with binary smoke coverage for `OPTIONS`, `PROPFIND`, file `HEAD`, and byte-range reads through the real cached materializer path. |
+| **WebDAV VOD surface** | Read-only WebDAV export of the same synthetic `Movies/` / `TV/` tree for native macOS/Windows mounting, with explicit `405` rejection for mutation methods and binary smoke coverage for `OPTIONS`, directory/file `PROPFIND`, file `HEAD`, and byte-range reads through the real cached materializer path. |
 | **On-demand cache** | Optional cache materialization for direct-file (and HLS→MP4 via ffmpeg) VOD paths (`internal/materializer`, `internal/probe` for stream-type sniff). |
 | **Plex library registration helper** | `plex-vod-register` creates/reuses Plex TV/Movie libraries for a VODFS mount, with optional VOD-safe library prefs. |
 | **One-sided VOD registration** | `plex-vod-register --shows-only` / `--movies-only` for lane-specific library creation without unwanted companion sections. |

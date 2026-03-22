@@ -14,11 +14,19 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/vodfs"
 )
 
-const methodPROPFIND = "PROPFIND"
+type testMat struct {
+	path    string
+	byAsset map[string]string
+}
 
-type testMat struct{ path string }
-
-func (t testMat) Materialize(context.Context, string, string) (string, error) { return t.path, nil }
+func (t testMat) Materialize(_ context.Context, assetID string, _ string) (string, error) {
+	if t.byAsset != nil {
+		if path := strings.TrimSpace(t.byAsset[assetID]); path != "" {
+			return path, nil
+		}
+	}
+	return t.path, nil
+}
 
 func TestDAVFSStatAndReadMovie(t *testing.T) {
 	tmp := t.TempDir()
@@ -72,14 +80,32 @@ func TestMountCommand(t *testing.T) {
 
 func TestHandler_OPTIONSAndPROPFIND_ClientShapes(t *testing.T) {
 	tmp := t.TempDir()
-	local := filepath.Join(tmp, "movie.mp4")
-	if err := os.WriteFile(local, []byte("movie-bytes"), 0o600); err != nil {
+	localMovie := filepath.Join(tmp, "movie.mp4")
+	if err := os.WriteFile(localMovie, []byte("movie-bytes"), 0o600); err != nil {
 		t.Fatalf("write local movie: %v", err)
+	}
+	localEpisode := filepath.Join(tmp, "episode.mp4")
+	if err := os.WriteFile(localEpisode, []byte("episode-bytes"), 0o600); err != nil {
+		t.Fatalf("write local episode: %v", err)
 	}
 	h := NewHandler(
 		[]catalog.Movie{{ID: "m1", Title: "Movie", Year: 2024, StreamURL: "http://example.com/movie.mp4"}},
-		[]catalog.Series{{ID: "s1", Title: "Show", Year: 2020}},
-		testMat{path: local},
+		[]catalog.Series{{
+			ID:    "s1",
+			Title: "Show",
+			Year:  2020,
+			Seasons: []catalog.Season{{
+				Number: 1,
+				Episodes: []catalog.Episode{{
+					ID:         "e1",
+					SeasonNum:  1,
+					EpisodeNum: 1,
+					Title:      "",
+					StreamURL:  "http://example.com/episode.mp4",
+				}},
+			}},
+		}},
+		testMat{byAsset: map[string]string{"m1": localMovie, "e1": localEpisode}},
 	)
 
 	t.Run("options", func(t *testing.T) {
@@ -96,6 +122,9 @@ func TestHandler_OPTIONSAndPROPFIND_ClientShapes(t *testing.T) {
 		}
 		if dav := w.Header().Get("DAV"); dav == "" {
 			t.Fatal("missing DAV header")
+		}
+		if via := w.Header().Get("MS-Author-Via"); via != "DAV" {
+			t.Fatalf("MS-Author-Via=%q", via)
 		}
 	})
 
@@ -159,11 +188,80 @@ func TestHandler_OPTIONSAndPROPFIND_ClientShapes(t *testing.T) {
 			t.Fatalf("body=%q", body)
 		}
 	})
+
+	t.Run("propfind-episode-file-depth-zero", func(t *testing.T) {
+		req := httptest.NewRequest(methodPROPFIND, "http://local/TV/Live:%20Show%20%282020%29/Season%2001/Live:%20Show%20%282020%29%20-%20s01e01.mp4", strings.NewReader(`<a:propfind xmlns:a="DAV:"><a:allprop/></a:propfind>`))
+		req.Header.Set("Depth", "0")
+		req.Header.Set("Content-Type", "text/xml")
+		req.Header.Set("User-Agent", "WebDAVFS/3.0 (03008000) Darwin/24.0.0")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusMultiStatus {
+			t.Fatalf("status=%d body=%q", w.Code, w.Body.String())
+		}
+		if !strings.Contains(w.Body.String(), "s01e01.mp4") {
+			t.Fatalf("body=%q", w.Body.String())
+		}
+	})
+
+	t.Run("head-episode-file", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodHead, "http://local/TV/Live:%20Show%20%282020%29/Season%2001/Live:%20Show%20%282020%29%20-%20s01e01.mp4", nil)
+		req.Header.Set("User-Agent", "Microsoft-WebDAV-MiniRedir/10.0.19045")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%q", w.Code, w.Body.String())
+		}
+		if got := w.Header().Get("Accept-Ranges"); got != "bytes" {
+			t.Fatalf("Accept-Ranges=%q", got)
+		}
+	})
+
+	t.Run("range-episode-file", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "http://local/TV/Live:%20Show%20%282020%29/Season%2001/Live:%20Show%20%282020%29%20-%20s01e01.mp4", nil)
+		req.Header.Set("Range", "bytes=0-6")
+		req.Header.Set("User-Agent", "Microsoft-WebDAV-MiniRedir/10.0.19045")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusPartialContent {
+			t.Fatalf("status=%d body=%q", w.Code, w.Body.String())
+		}
+		if body := w.Body.String(); body != "episode" {
+			t.Fatalf("body=%q", body)
+		}
+	})
+
+	t.Run("put-rejected-cleanly", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPut, "http://local/Movies/Live:%20Movie%20%282024%29/Live:%20Movie%20%282024%29.mp4", strings.NewReader("bad"))
+		req.Header.Set("User-Agent", "Microsoft-WebDAV-MiniRedir/10.0.19045")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("status=%d body=%q", w.Code, w.Body.String())
+		}
+		if got := w.Header().Get("Allow"); got != readOnlyDAVAllow {
+			t.Fatalf("Allow=%q", got)
+		}
+	})
 }
 
 func NewTestTree() *vodfs.Tree {
 	return vodfs.NewTree(
 		[]catalog.Movie{{ID: "m1", Title: "Movie", Year: 2024, StreamURL: "http://example.com/movie.mp4"}},
-		[]catalog.Series{{ID: "s1", Title: "Show", Year: 2020}},
+		[]catalog.Series{{
+			ID:    "s1",
+			Title: "Show",
+			Year:  2020,
+			Seasons: []catalog.Season{{
+				Number: 1,
+				Episodes: []catalog.Episode{{
+					ID:         "e1",
+					SeasonNum:  1,
+					EpisodeNum: 1,
+					Title:      "",
+					StreamURL:  "http://example.com/episode.mp4",
+				}},
+			}},
+		}},
 	)
 }
