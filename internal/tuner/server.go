@@ -1054,6 +1054,18 @@ func (s *Server) Run(ctx context.Context) error {
 			}
 		}
 	}
+	accountLimitPath := strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_ACCOUNT_LIMIT_STATE_FILE"))
+	if accountLimitPath == "" {
+		if jar := strings.TrimSpace(os.Getenv("IPTV_TUNERR_COOKIE_JAR_FILE")); jar != "" {
+			dir := strings.TrimSuffix(jar, "/"+filepath.Base(jar))
+			if dir == jar {
+				dir = filepath.Dir(jar)
+			}
+			accountLimitPath = filepath.Join(dir, "provider-account-limits.json")
+		}
+	}
+	gateway.accountLimitStore = loadAccountLimitStore(accountLimitPath, providerAccountLimitTTL())
+	gateway.restoreProviderAccountLearnedLimits(gateway.accountLimitStore.snapshot())
 	// Per-host UA override: IPTV_TUNERR_HOST_UA=host1:vlc,host2:lavf
 	// Lets operators pin a known-good UA per provider without waiting for cycling.
 	if hostUARaw := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HOST_UA")); hostUARaw != "" {

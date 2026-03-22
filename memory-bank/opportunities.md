@@ -28,11 +28,11 @@ It exists to encourage quality gains without derailing the current task.
   Category: reliability
   Title: Adaptive per-account contract learning for provider pools
   Context: The gateway now has explicit provider-account leasing and can enforce `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT`, but that cap is still operator-tuned. Different panels can allow different concurrent counts per credential set, and those limits may need to be learned independently per account rather than assumed globally.
-  Status: **Partially shipped 2026-03-21** — Tunerr now learns tighter per-account caps from upstream concurrency-limit signals and exposes them as `account_learned_limits` on `/provider/profile.json`.
-  Why it matters: Multi-account concurrency is now more truthful at runtime, but the learned limits are still process-local and do not yet decay or persist across restarts.
-  Evidence: `internal/tuner/gateway_accounts.go`, `internal/tuner/gateway_stream_response.go`, `internal/tuner/gateway_hls.go`, `/provider/profile.json`.
-  Suggested fix: Persist learned account limits (or at least account contention counters) alongside other provider/autopilot state, with a TTL/decay rule so temporary provider contention does not become permanent stickiness.
-  Risk/Scope: medium | fits current scope? yes
+  Status: **Shipped 2026-03-21** — Tunerr now learns tighter per-account caps from upstream concurrency-limit signals, persists them with `IPTV_TUNERR_PROVIDER_ACCOUNT_LIMIT_STATE_FILE`, expires stale learning with `IPTV_TUNERR_PROVIDER_ACCOUNT_LIMIT_TTL_HOURS`, restores them on startup, and exposes the full state on `/provider/profile.json` plus `/debug/runtime.json`.
+  Why it matters: Multi-account concurrency is now both more truthful at runtime and durable across process restarts without becoming permanent stickiness.
+  Evidence: `internal/tuner/gateway_accounts.go`, `internal/tuner/account_limit_store.go`, `internal/tuner/server.go`, `/provider/profile.json`.
+  Suggested fix: Reopen only if a provider needs smarter decay than the current TTL model or if operators need per-account manual override controls.
+  Risk/Scope: n/a
   User decision needed?: no
 
 - Date: 2026-03-21

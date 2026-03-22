@@ -157,6 +157,11 @@ func (g *Gateway) learnProviderAccountLimit(ch *catalog.LiveChannel, rawURL, pre
 		return 0
 	}
 	g.learnedAccountLimits[identity.Key] = learned
+	store := g.accountLimitStore
+	signals := g.accountConcurrencySignals[identity.Key]
+	if store != nil {
+		go store.set(identity.Key, learned, signals)
+	}
 	return learned
 }
 
@@ -352,4 +357,27 @@ func (g *Gateway) providerAccountLearnedLimits() []providerAccountLimitState {
 		return out[i].LearnedLimit < out[j].LearnedLimit
 	})
 	return out
+}
+
+func (g *Gateway) restoreProviderAccountLearnedLimits(snapshot map[string]providerAccountLimitPersisted) {
+	if g == nil || len(snapshot) == 0 {
+		return
+	}
+	g.providerStateMu.Lock()
+	defer g.providerStateMu.Unlock()
+	if g.learnedAccountLimits == nil {
+		g.learnedAccountLimits = map[string]int{}
+	}
+	if g.accountConcurrencySignals == nil {
+		g.accountConcurrencySignals = map[string]int{}
+	}
+	for key, entry := range snapshot {
+		if strings.TrimSpace(key) == "" || entry.LearnedLimit <= 0 {
+			continue
+		}
+		g.learnedAccountLimits[key] = entry.LearnedLimit
+		if entry.SignalCount > 0 {
+			g.accountConcurrencySignals[key] = entry.SignalCount
+		}
+	}
 }

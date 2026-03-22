@@ -1,8 +1,10 @@
 package tuner
 
 import (
+	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestRemediationHintsForProfile_empty(t *testing.T) {
@@ -118,9 +120,11 @@ func TestProviderBehaviorProfile_includesAccountPoolState(t *testing.T) {
 }
 
 func TestProviderBehaviorProfile_includesLearnedAccountLimits(t *testing.T) {
+	store := loadAccountLimitStore(filepath.Join(t.TempDir(), "provider-account-limits.json"), 12*time.Hour)
 	g := &Gateway{
-		ProviderUser: "demo",
-		ProviderPass: "pass",
+		ProviderUser:      "demo",
+		ProviderPass:      "pass",
+		accountLimitStore: store,
 		learnedAccountLimits: map[string]int{
 			"provider.example|demo|pass|http://provider.example/live/demo/pass/": 1,
 		},
@@ -140,5 +144,8 @@ func TestProviderBehaviorProfile_includesLearnedAccountLimits(t *testing.T) {
 	}
 	if prof.AccountLearnedLimits[0].InUse != 1 {
 		t.Fatalf("learned account in_use = %#v", prof.AccountLearnedLimits[0])
+	}
+	if prof.AccountLimitStateFile == "" || prof.AccountLimitTTLHours != 12 {
+		t.Fatalf("account limit persistence fields = %#v", prof)
 	}
 }

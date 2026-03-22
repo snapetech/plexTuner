@@ -71,10 +71,15 @@ func TestMountCommand(t *testing.T) {
 }
 
 func TestHandler_OPTIONSAndPROPFIND_ClientShapes(t *testing.T) {
+	tmp := t.TempDir()
+	local := filepath.Join(tmp, "movie.mp4")
+	if err := os.WriteFile(local, []byte("movie-bytes"), 0o600); err != nil {
+		t.Fatalf("write local movie: %v", err)
+	}
 	h := NewHandler(
 		[]catalog.Movie{{ID: "m1", Title: "Movie", Year: 2024, StreamURL: "http://example.com/movie.mp4"}},
 		[]catalog.Series{{ID: "s1", Title: "Show", Year: 2020}},
-		testMat{},
+		testMat{path: local},
 	)
 
 	t.Run("options", func(t *testing.T) {
@@ -122,6 +127,36 @@ func TestHandler_OPTIONSAndPROPFIND_ClientShapes(t *testing.T) {
 		}
 		if !strings.Contains(w.Body.String(), "Live: Movie (2024)") {
 			t.Fatalf("body=%q", w.Body.String())
+		}
+	})
+
+	t.Run("head-movie-file", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodHead, "http://local/Movies/Live:%20Movie%20%282024%29/Live:%20Movie%20%282024%29.mp4", nil)
+		req.Header.Set("User-Agent", "WebDAVFS/3.0 (03008000) Darwin/24.0.0")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%q", w.Code, w.Body.String())
+		}
+		if got := w.Header().Get("Accept-Ranges"); got != "bytes" {
+			t.Fatalf("Accept-Ranges=%q", got)
+		}
+		if got := w.Header().Get("Content-Length"); got == "" {
+			t.Fatal("missing Content-Length")
+		}
+	})
+
+	t.Run("get-movie-file-range", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "http://local/Movies/Live:%20Movie%20%282024%29/Live:%20Movie%20%282024%29.mp4", nil)
+		req.Header.Set("Range", "bytes=0-4")
+		req.Header.Set("User-Agent", "Microsoft-WebDAV-MiniRedir/10.0.19045")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusPartialContent {
+			t.Fatalf("status=%d body=%q", w.Code, w.Body.String())
+		}
+		if body := w.Body.String(); body != "movie" {
+			t.Fatalf("body=%q", body)
 		}
 	})
 }

@@ -182,7 +182,7 @@ cat >"$TMP_DIR/catalog-vod.json" <<'JSON'
       "id": "m1",
       "title": "Smoke Movie",
       "year": 2024,
-      "stream_url": "http://example.invalid/movie.mp4"
+      "stream_url": "REPLACE_MOVIE_URL"
     }
   ],
   "series": [
@@ -199,7 +199,7 @@ cat >"$TMP_DIR/catalog-vod.json" <<'JSON'
               "season_num": 1,
               "episode_num": 1,
               "title": "Pilot",
-              "stream_url": "http://example.invalid/show-s01e01.mp4"
+              "stream_url": "REPLACE_EPISODE_URL"
             }
           ]
         }
@@ -209,6 +209,10 @@ cat >"$TMP_DIR/catalog-vod.json" <<'JSON'
   "live_channels": []
 }
 JSON
+
+mkdir -p "$TMP_DIR/assets"
+printf 'movie-bytes' >"$TMP_DIR/assets/movie.bin"
+printf 'episode-bytes' >"$TMP_DIR/assets/episode.bin"
 
 log "building binary"
 go build -o "$BIN" ./cmd/iptv-tunerr
@@ -232,8 +236,15 @@ run_serve() {
 
 run_vod_webdav() {
   local catalog="$1" port="$2"
-  "$BIN" vod-webdav -catalog "$catalog" -addr "127.0.0.1:$port" \
+  "$BIN" vod-webdav -catalog "$catalog" -addr "127.0.0.1:$port" -cache "$TMP_DIR/vod-cache" \
     >"$TMP_DIR/vod-webdav-$port.log" 2>&1 &
+  PIDS+=("$!")
+}
+
+run_asset_server() {
+  local port="$1"
+  python3 -m http.server "$port" --bind 127.0.0.1 --directory "$TMP_DIR/assets" \
+    >"$TMP_DIR/assets-$port.log" 2>&1 &
   PIDS+=("$!")
 }
 
@@ -288,6 +299,12 @@ assert_status "http://127.0.0.1:$port_empty/lineup.json" "200"
 assert_header "http://127.0.0.1:$port_empty/discover.json" "X-IptvTunerr-Startup-State" "loading"
 assert_header "http://127.0.0.1:$port_empty/lineup.json" "X-IptvTunerr-Startup-State" "loading"
 
+port_assets="$(pick_port)"
+run_asset_server "$port_assets"
+wait_http_code "http://127.0.0.1:$port_assets/movie.bin" "200" || fail "asset server not ready"
+sed -i "s|REPLACE_MOVIE_URL|http://127.0.0.1:$port_assets/movie.bin|g" "$TMP_DIR/catalog-vod.json"
+sed -i "s|REPLACE_EPISODE_URL|http://127.0.0.1:$port_assets/episode.bin|g" "$TMP_DIR/catalog-vod.json"
+
 port_vod="$(pick_port)"
 run_vod_webdav "$TMP_DIR/catalog-vod.json" "$port_vod"
 wait_http_code "http://127.0.0.1:$port_vod/" "405" || fail "vod-webdav root not ready"
@@ -304,5 +321,13 @@ movies_body="$TMP_DIR/propfind-movies.xml"
 movies_code="$(curl -sS -X PROPFIND -H 'Depth: 1' -H 'Content-Type: text/xml' --data '<a:propfind xmlns:a="DAV:"><a:allprop/></a:propfind>' -o "$movies_body" -w '%{http_code}' "http://127.0.0.1:$port_vod/Movies" || true)"
 [[ "$movies_code" == "207" ]] || fail "vod-webdav Movies PROPFIND status=$movies_code body=$(cat "$movies_body" 2>/dev/null)"
 grep -q "Smoke Movie" "$movies_body" || fail "vod-webdav Movies PROPFIND missing movie directory"
+head_headers="$TMP_DIR/movie.head"
+head_code="$(curl -sS -I -D "$head_headers" -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port_vod/Movies/Live:%20Smoke%20Movie%20%282024%29/Live:%20Smoke%20Movie%20%282024%29.mp4" || true)"
+[[ "$head_code" == "200" ]] || fail "vod-webdav movie HEAD status=$head_code"
+grep -qi '^Accept-Ranges: bytes' "$head_headers" || fail "vod-webdav movie HEAD missing Accept-Ranges"
+range_body="$TMP_DIR/movie.range"
+range_code="$(curl -sS -H 'Range: bytes=0-4' -o "$range_body" -w '%{http_code}' "http://127.0.0.1:$port_vod/Movies/Live:%20Smoke%20Movie%20%282024%29/Live:%20Smoke%20Movie%20%282024%29.mp4" || true)"
+[[ "$range_code" == "206" ]] || fail "vod-webdav movie range status=$range_code body=$(cat "$range_body" 2>/dev/null)"
+grep -q '^movie$' "$range_body" || fail "vod-webdav movie range body unexpected"
 
 log "smoke checks passed"

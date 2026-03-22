@@ -43,6 +43,8 @@ type ProviderBehaviorProfile struct {
 	EffectiveTunerLimit    int                         `json:"effective_tuner_limit"`
 	AccountPoolLimit       int                         `json:"account_pool_limit"`
 	AccountPoolConfigured  bool                        `json:"account_pool_configured"`
+	AccountLimitStateFile  string                      `json:"account_limit_state_file,omitempty"`
+	AccountLimitTTLHours   int                         `json:"account_limit_ttl_hours,omitempty"`
 	AccountLearnedLimits   []providerAccountLimitState `json:"account_learned_limits,omitempty"`
 	BasicAuthConfigured    bool                        `json:"basic_auth_configured"`
 	ForwardedHeaders       []string                    `json:"forwarded_headers"`
@@ -537,11 +539,23 @@ func (g *Gateway) ProviderBehaviorProfile() ProviderBehaviorProfile {
 	accountPoolLimit := configuredProviderAccountLimit()
 
 	prof := ProviderBehaviorProfile{
-		ConfiguredTunerLimit:         configured,
-		LearnedTunerLimit:            learned,
-		EffectiveTunerLimit:          effective,
-		AccountPoolLimit:             accountPoolLimit,
-		AccountPoolConfigured:        accountPoolLimit > 0,
+		ConfiguredTunerLimit:  configured,
+		LearnedTunerLimit:     learned,
+		EffectiveTunerLimit:   effective,
+		AccountPoolLimit:      accountPoolLimit,
+		AccountPoolConfigured: accountPoolLimit > 0,
+		AccountLimitStateFile: strings.TrimSpace(func() string {
+			if g.accountLimitStore != nil {
+				return g.accountLimitStore.path
+			}
+			return ""
+		}()),
+		AccountLimitTTLHours: func() int {
+			if g.accountLimitStore != nil {
+				return int(g.accountLimitStore.ttl / time.Hour)
+			}
+			return 0
+		}(),
 		AccountLearnedLimits:         accountLearnedLimits,
 		BasicAuthConfigured:          strings.TrimSpace(g.ProviderUser) != "" || strings.TrimSpace(g.ProviderPass) != "",
 		ForwardedHeaders:             append([]string(nil), forwardedUpstreamHeaderNames...),
@@ -658,4 +672,7 @@ func (g *Gateway) ResetProviderBehaviorProfile() {
 	g.learnedAccountLimits = nil
 	g.accountConcurrencySignals = nil
 	g.providerStateMu.Unlock()
+	if g.accountLimitStore != nil {
+		g.accountLimitStore.clear()
+	}
 }
