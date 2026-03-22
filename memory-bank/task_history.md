@@ -4370,3 +4370,18 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
   - Added `/virtual-channels/channel-detail.json` and `/virtual-channels/guide.xml`, pushing virtual channels toward a real publishable TV-like surface rather than only preview/schedule JSON plus current-slot playback.
   - Expanded `scripts/ci-smoke.sh` and tuner tests so the new harvest-assist and virtual detail/guide endpoints are release-gated.
   - Verification: `go test ./internal/tuner -run 'TestServer_(programmingHarvestImport|virtualChannelRulesAndPreview)' -count=1`; `./scripts/verify`.
+- Date: 2026-03-21
+  Title: Make lineup harvest assists actionable in the Programming lane
+  Summary:
+    - Turned ranked `/programming/harvest-assist.json` rows into real deck controls instead of text-only summaries.
+    - Operators can now preview or apply the top recommended local-market lineup assists directly from the Programming lane using the same harvest-import path as raw saved lineup reports.
+  Verification:
+    - `node --check internal/webui/deck.js`
+    - `go test ./internal/webui ./internal/tuner -run 'TestServer_(programmingEndpoints|programmingBrowse|programmingChannelDetail|diagnosticsHarnessActions)' -count=1`
+  Notes:
+    - This closes the most obvious deck UX gap for `LH-005`/`LH-006`; harvest results are now visible and operable from the same lane.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/deck.js`
+    - `docs/epics/EPIC-lineup-harvest.md`

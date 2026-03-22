@@ -441,6 +441,24 @@ function programmingHarvestButtons(row) {
   ].join("");
 }
 
+function programmingHarvestAssistButtons(row) {
+  const title = esc(row?.lineup_title || "");
+  return [
+    createTinyButton(`data-open-path="/api/programming/harvest-import.json?lineup_title=${encodeURIComponent(row?.lineup_title || "")}&replace=1&collapse_exact_backups=1" data-open-title="Harvest Assist Preview · ${title}"`, "Preview Assist"),
+    createTinyButton(`data-programming-harvest-import="${title}" data-programming-harvest-collapse="1"`, row?.recommended ? "Apply Recommended" : "Apply")
+  ].join("");
+}
+
+function harvestAssistSummary(row) {
+  const bits = [];
+  if (row?.recommended) bits.push("recommended");
+  if (Number(row?.local_broadcast_hits || 0) > 0) bits.push(`${row.local_broadcast_hits} local`);
+  if (Number(row?.exact_tvg_id_hits || 0) > 0) bits.push(`${row.exact_tvg_id_hits} tvg`);
+  if (Number(row?.exact_guide_name_hits || 0) > 0) bits.push(`${row.exact_guide_name_hits} exact-name`);
+  if (Number(row?.guide_number_hits || 0) > 0) bits.push(`${row.guide_number_hits} guide#`);
+  return bits.join(" · ");
+}
+
 function backupGroupSummary(group) {
   const members = normalizeArray(group?.members);
   return members.slice(0, 4).map((member) => {
@@ -1377,7 +1395,7 @@ function renderDeck() {
     createCard("Harvest assists", harvestAssists.length
       ? harvestAssists.slice(0, 4).map((row) => `${row.lineup_title}: ${row.recommendation_reason || `${row.matched_channels} matched`}`).join(" | ")
       : "No ranked harvest assists available yet.", "", "", "programmingHarvestAssist",
-      `<button class="tiny" type="button" data-inspect="programmingHarvestAssist">Inspect Assists</button>`),
+      `${harvestAssists[0] ? programmingHarvestAssistButtons(harvestAssists[0]) : ""} <button class="tiny" type="button" data-inspect="programmingHarvestAssist">Inspect Assists</button>`),
     createCard("Virtual schedule horizon", virtualScheduleSlots.length
       ? virtualScheduleSlots.slice(0, 4).map((slot) => `${slot.display_name || slot.rule_name || slot.channel_id}: ${slot.asset_title || slot.asset_id || "asset"} @ ${formatWhen(slot.starts_at || slot.startsAt)}`).join(" | ")
       : "No virtual-channel schedule is configured yet.", "", "", "virtualChannelSchedule",
@@ -1442,6 +1460,18 @@ function renderDeck() {
         "",
         "programmingHarvest",
         `<div class="card-actions">${programmingHarvestButtons(row)}</div>`
+      )
+    )).join("");
+  }
+  if (harvestAssists.length) {
+    programmingBackups.innerHTML += filterCards(harvestAssists.slice(0, 4).map((row) =>
+      createCard(
+        row.lineup_title || "assist",
+        `${pretty(row.matched_channels)} matched · ${harvestAssistSummary(row) || "assist summary unavailable"}`,
+        row.recommendation_reason || normalizeArray(row.ordered_channel_ids).slice(0, 6).join(" · "),
+        row.recommended ? "tone-good" : "",
+        "programmingHarvestAssist",
+        `<div class="card-actions">${programmingHarvestAssistButtons(row)}</div>`
       )
     )).join("");
   }

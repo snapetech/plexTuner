@@ -61,6 +61,10 @@ productize it:
   - Harvest probe results now capture the harvested `lineup.json` rows alongside lineup titles/URLs.
   - `/programming/harvest-import.json` can preview or apply a chosen harvested lineup as a real Programming Manager recipe by matching harvested lineup rows back onto the current raw channel set.
   - This is the first real bridge from “Plex found a useful market lineup” to “Tunerr can turn that lineup into a saved curation rule.”
+- **2026-03-21:** deck-driven harvest assist/apply UX shipped.
+  - Ranked `/programming/harvest-assist.json` rows are now actionable in the Programming lane instead of read-only text.
+  - Operators can preview or apply the top-ranked assist directly from the deck, including the “recommended” local-market candidates, without dropping to raw JSON first.
+  - This closes the most obvious `LH-005` UX gap: the saved harvests and assists are now not just visible, but operable.
 
 ## Out of scope
 
