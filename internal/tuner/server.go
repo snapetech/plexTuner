@@ -38,6 +38,8 @@ const PlexDVRMaxChannels = 480
 // PlexDVRWizardSafeMax is used in "easy" mode: strip from end so lineup fits when Plex suggests a guide (e.g. Rogers West Canada ~680 ch); keep first N.
 const PlexDVRWizardSafeMax = 479
 
+var timeNow = time.Now
+
 func parseCustomHeaders(raw string) map[string]string {
 	headers := make(map[string]string)
 	raw = strings.TrimSpace(raw)
@@ -1395,6 +1397,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/programming/preview.json", s.serveProgrammingPreview())
 	mux.Handle("/virtual-channels/rules.json", s.serveVirtualChannelRules())
 	mux.Handle("/virtual-channels/preview.json", s.serveVirtualChannelPreview())
+	mux.Handle("/virtual-channels/live.m3u", s.serveVirtualChannelM3U())
+	mux.Handle("/virtual-channels/stream/", s.serveVirtualChannelStream())
 	mux.Handle("/guide/highlights.json", s.serveGuideHighlights())
 	mux.Handle("/guide/epg-store.json", s.serveEpgStoreReport())
 	mux.Handle("/guide/capsules.json", s.serveCatchupCapsules())
@@ -3060,6 +3064,102 @@ func (s *Server) serveVirtualChannelPreview() http.Handler {
 			return
 		}
 		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) virtualChannelLiveRows() []catalog.LiveChannel {
+	rules := s.reloadVirtualChannels()
+	if len(rules.Channels) == 0 {
+		return nil
+	}
+	base := strings.TrimRight(strings.TrimSpace(s.BaseURL), "/")
+	rows := make([]catalog.LiveChannel, 0, len(rules.Channels))
+	for _, ch := range rules.Channels {
+		if !ch.Enabled {
+			continue
+		}
+		channelID := "virtual-" + strings.TrimSpace(ch.ID)
+		streamURL := base + "/virtual-channels/stream/" + strings.TrimSpace(ch.ID) + ".mp4"
+		rows = append(rows, catalog.LiveChannel{
+			ChannelID:   channelID,
+			DNAID:       channelID,
+			GuideNumber: strings.TrimSpace(ch.GuideNumber),
+			GuideName:   strings.TrimSpace(ch.Name),
+			StreamURL:   streamURL,
+			StreamURLs:  []string{streamURL},
+			EPGLinked:   false,
+			TVGID:       "virtual." + strings.TrimSpace(ch.ID),
+			GroupTitle:  firstNonEmptyString(strings.TrimSpace(ch.GroupTitle), "Virtual Channels"),
+			SourceTag:   "virtual",
+		})
+	}
+	return rows
+}
+
+func (s *Server) serveVirtualChannelM3U() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-mpegURL")
+		_, _ = io.WriteString(w, "#EXTM3U\n")
+		for _, ch := range s.virtualChannelLiveRows() {
+			_, _ = io.WriteString(w, fmt.Sprintf("#EXTINF:-1 tvg-id=\"%s\" tvg-name=\"%s\" group-title=\"%s\",%s\n%s\n",
+				strings.TrimSpace(ch.TVGID),
+				strings.TrimSpace(ch.GuideName),
+				strings.TrimSpace(ch.GroupTitle),
+				strings.TrimSpace(ch.GuideName),
+				strings.TrimSpace(ch.StreamURL),
+			))
+		}
+	})
+}
+
+func (s *Server) serveVirtualChannelStream() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		id := strings.TrimPrefix(strings.TrimSpace(r.URL.Path), "/virtual-channels/stream/")
+		if idx := strings.Index(id, "."); idx > 0 {
+			id = id[:idx]
+		}
+		id = strings.TrimSpace(id)
+		slot, ok := virtualchannels.ResolveCurrentSlot(s.reloadVirtualChannels(), id, s.Movies, s.Series, timeNow())
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		sourceURL := strings.TrimSpace(slot.SourceURL)
+		if sourceURL == "" {
+			http.Error(w, `{"error":"virtual channel slot has no source"}`, http.StatusBadGateway)
+			return
+		}
+		req, err := http.NewRequestWithContext(r.Context(), r.Method, sourceURL, nil)
+		if err != nil {
+			http.Error(w, "proxy request failed", http.StatusBadGateway)
+			return
+		}
+		if raw := strings.TrimSpace(r.Header.Get("Range")); raw != "" {
+			req.Header.Set("Range", raw)
+		}
+		resp, err := httpclient.ForStreaming().Do(req)
+		if err != nil {
+			http.Error(w, "proxy request failed", http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+		for _, name := range []string{"Content-Type", "Content-Length", "Accept-Ranges", "Content-Range", "Last-Modified", "ETag"} {
+			if value := strings.TrimSpace(resp.Header.Get(name)); value != "" {
+				w.Header().Set(name, value)
+			}
+		}
+		w.Header().Set("X-IptvTunerr-Virtual-Channel", id)
+		w.Header().Set("X-IptvTunerr-Virtual-Entry", strings.TrimSpace(slot.EntryID))
+		w.WriteHeader(resp.StatusCode)
+		if r.Method == http.MethodHead {
+			return
+		}
+		_, _ = io.Copy(w, resp.Body)
 	})
 }
 

@@ -403,18 +403,34 @@ func TestServer_programmingPreviewIncludesHarvestSummary(t *testing.T) {
 }
 
 func TestServer_virtualChannelRulesAndPreview(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/movie.mp4":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte("movie-bytes"))
+		case "/episode.mp4":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte("episode-bytes"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
 	path := filepath.Join(t.TempDir(), "virtual-channels.json")
 	s := &Server{
+		BaseURL:             "http://127.0.0.1:5004",
 		VirtualChannelsFile: path,
-		Movies:              []catalog.Movie{{ID: "m1", Title: "Movie One"}},
+		Movies:              []catalog.Movie{{ID: "m1", Title: "Movie One", StreamURL: upstream.URL + "/movie.mp4"}},
 		Series: []catalog.Series{{
 			ID:    "s1",
 			Title: "Series One",
 			Seasons: []catalog.Season{{
 				Number: 1,
 				Episodes: []catalog.Episode{{
-					ID:    "e1",
-					Title: "Pilot",
+					ID:        "e1",
+					Title:     "Pilot",
+					StreamURL: upstream.URL + "/episode.mp4",
 				}},
 			}},
 		}},
@@ -460,6 +476,30 @@ func TestServer_virtualChannelRulesAndPreview(t *testing.T) {
 	}
 	if body.Report.Slots[0].ResolvedName != "Movie One" || body.Report.Slots[1].ResolvedName != "Series One · Pilot" {
 		t.Fatalf("virtual slots=%+v", body.Report.Slots)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/live.m3u", nil)
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelM3U().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual m3u status=%d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "/virtual-channels/stream/vc-news.mp4") {
+		t.Fatalf("virtual m3u=%q", w.Body.String())
+	}
+
+	withNow := time.Date(2026, 3, 21, 0, 15, 0, 0, time.UTC)
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/stream/vc-news.mp4", nil)
+	origNow := timeNow
+	timeNow = func() time.Time { return withNow }
+	defer func() { timeNow = origNow }()
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelStream().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual stream status=%d body=%s", w.Code, w.Body.String())
+	}
+	if w.Body.String() != "movie-bytes" {
+		t.Fatalf("virtual stream body=%q", w.Body.String())
 	}
 }
 

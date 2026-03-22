@@ -57,6 +57,11 @@ type PreviewReport struct {
 	Slots       []PreviewSlot `json:"slots,omitempty"`
 }
 
+type ResolvedSlot struct {
+	PreviewSlot
+	SourceURL string `json:"source_url,omitempty"`
+}
+
 func LoadFile(path string) (Ruleset, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -174,25 +179,93 @@ func BuildPreview(set Ruleset, movies []catalog.Movie, series []catalog.Series, 
 		if !ch.Enabled || len(ch.Entries) == 0 {
 			continue
 		}
-		cursor := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.UTC)
-		for i := 0; i < perChannel; i++ {
-			entry := ch.Entries[i%len(ch.Entries)]
-			duration := time.Duration(entry.DurationMins) * time.Minute
-			report.Slots = append(report.Slots, PreviewSlot{
-				ChannelID:    ch.ID,
-				ChannelName:  ch.Name,
-				GuideNumber:  ch.GuideNumber,
-				StartsAtUTC:  cursor.Format(time.RFC3339),
-				EndsAtUTC:    cursor.Add(duration).Format(time.RFC3339),
-				EntryType:    entry.Type,
-				EntryID:      entryID(entry),
-				ResolvedName: resolveEntryName(entry, movies, series),
-				DurationMins: entry.DurationMins,
-			})
-			cursor = cursor.Add(duration)
-		}
+		slots := previewSlotsForChannel(ch, movies, series, start, perChannel)
+		report.Slots = append(report.Slots, slots...)
 	}
 	return report
+}
+
+func ResolveCurrentSlot(set Ruleset, channelID string, movies []catalog.Movie, series []catalog.Series, now time.Time) (ResolvedSlot, bool) {
+	set = NormalizeRuleset(set)
+	channelID = strings.TrimSpace(channelID)
+	if channelID == "" {
+		return ResolvedSlot{}, false
+	}
+	for _, ch := range set.Channels {
+		if !ch.Enabled || strings.TrimSpace(ch.ID) != channelID || len(ch.Entries) == 0 {
+			continue
+		}
+		dayStart := time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC)
+		totalMinutes := 0
+		for _, entry := range ch.Entries {
+			duration := entry.DurationMins
+			if duration <= 0 {
+				duration = 30
+			}
+			totalMinutes += duration
+		}
+		if totalMinutes <= 0 {
+			return ResolvedSlot{}, false
+		}
+		offsetMinutes := int(now.UTC().Sub(dayStart) / time.Minute)
+		if offsetMinutes < 0 {
+			offsetMinutes = 0
+		}
+		offsetMinutes = offsetMinutes % totalMinutes
+		cursor := dayStart
+		for _, entry := range ch.Entries {
+			duration := entry.DurationMins
+			if duration <= 0 {
+				duration = 30
+			}
+			entryEnd := cursor.Add(time.Duration(duration) * time.Minute)
+			if offsetMinutes < duration {
+				return ResolvedSlot{
+					PreviewSlot: PreviewSlot{
+						ChannelID:    ch.ID,
+						ChannelName:  ch.Name,
+						GuideNumber:  ch.GuideNumber,
+						StartsAtUTC:  cursor.Format(time.RFC3339),
+						EndsAtUTC:    entryEnd.Format(time.RFC3339),
+						EntryType:    entry.Type,
+						EntryID:      entryID(entry),
+						ResolvedName: resolveEntryName(entry, movies, series),
+						DurationMins: duration,
+					},
+					SourceURL: resolveEntryURL(entry, movies, series),
+				}, true
+			}
+			offsetMinutes -= duration
+			cursor = entryEnd
+		}
+		break
+	}
+	return ResolvedSlot{}, false
+}
+
+func previewSlotsForChannel(ch Channel, movies []catalog.Movie, series []catalog.Series, start time.Time, perChannel int) []PreviewSlot {
+	cursor := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.UTC)
+	out := make([]PreviewSlot, 0, perChannel)
+	for i := 0; i < perChannel; i++ {
+		entry := ch.Entries[i%len(ch.Entries)]
+		duration := entry.DurationMins
+		if duration <= 0 {
+			duration = 30
+		}
+		out = append(out, PreviewSlot{
+			ChannelID:    ch.ID,
+			ChannelName:  ch.Name,
+			GuideNumber:  ch.GuideNumber,
+			StartsAtUTC:  cursor.Format(time.RFC3339),
+			EndsAtUTC:    cursor.Add(time.Duration(duration) * time.Minute).Format(time.RFC3339),
+			EntryType:    entry.Type,
+			EntryID:      entryID(entry),
+			ResolvedName: resolveEntryName(entry, movies, series),
+			DurationMins: duration,
+		})
+		cursor = cursor.Add(time.Duration(duration) * time.Minute)
+	}
+	return out
 }
 
 func entryID(entry Entry) string {
@@ -238,4 +311,28 @@ func resolveEntryName(entry Entry, movies []catalog.Movie, series []catalog.Seri
 		return entry.EpisodeID
 	}
 	return entry.SeriesID
+}
+
+func resolveEntryURL(entry Entry, movies []catalog.Movie, series []catalog.Series) string {
+	if entry.Type == "movie" {
+		for _, movie := range movies {
+			if strings.TrimSpace(movie.ID) == entry.MovieID {
+				return strings.TrimSpace(movie.StreamURL)
+			}
+		}
+		return ""
+	}
+	for _, show := range series {
+		if strings.TrimSpace(show.ID) != entry.SeriesID {
+			continue
+		}
+		for _, season := range show.Seasons {
+			for _, episode := range season.Episodes {
+				if strings.TrimSpace(episode.ID) == entry.EpisodeID {
+					return strings.TrimSpace(episode.StreamURL)
+				}
+			}
+		}
+	}
+	return ""
 }

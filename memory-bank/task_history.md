@@ -4250,3 +4250,8 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
   - Added `internal/virtualchannels` with file-backed virtual-channel rules plus preview scheduling over catalog movies and episodes, and exposed `/virtual-channels/rules.json` and `/virtual-channels/preview.json`.
   - Expanded `scripts/ci-smoke.sh` so release gating now verifies both the harvest bridge and virtual-channel preview paths against a real temp binary.
   - Verification: `go test ./internal/plexharvest ./internal/virtualchannels ./internal/tuner ./cmd/iptv-tunerr -count=1`; `bash ./scripts/ci-smoke.sh`; `./scripts/verify`.
+- 2026-03-21: Pushed virtual channels past preview-only into a publishable/playable starter.
+  - Added current-slot resolution in `internal/virtualchannels`, including resolved source URLs for catalog movies and episodes.
+  - Added `/virtual-channels/live.m3u` to export enabled synthetic channel rows and `/virtual-channels/stream/<id>.mp4` to proxy the currently scheduled asset.
+  - Expanded tuner tests and `scripts/ci-smoke.sh` so the virtual-channel M3U and stream path are exercised against real asset bytes, not just JSON previews.
+  - Verification: `go test ./internal/virtualchannels ./internal/tuner -run 'Test(ResolveCurrentSlot_resolvesCurrentEntryAndSource|Server_virtualChannelRulesAndPreview)' -count=1`; `bash ./scripts/ci-smoke.sh`; `./scripts/verify`.

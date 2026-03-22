@@ -361,8 +361,19 @@ run_asset_server() {
   PIDS+=("$!")
 }
 
+port_assets="$(pick_port)"
+run_asset_server "$port_assets"
+wait_http_code "http://127.0.0.1:$port_assets/movie.bin" "200" || fail "asset server not ready"
+for catalog_file in "$TMP_DIR/catalog-full.json" "$TMP_DIR/catalog-full-shuffled.json" "$TMP_DIR/catalog-vod.json"; do
+  sed -i "s|REPLACE_MOVIE_URL|http://127.0.0.1:$port_assets/movie.bin|g" "$catalog_file" 2>/dev/null || true
+  sed -i "s|REPLACE_EPISODE_URL|http://127.0.0.1:$port_assets/episode.bin|g" "$catalog_file" 2>/dev/null || true
+done
+sed -i "s|http://example.invalid/movie-1.mp4|http://127.0.0.1:$port_assets/movie.bin|g" "$TMP_DIR/catalog-full.json" "$TMP_DIR/catalog-full-shuffled.json"
+sed -i "s|http://example.invalid/series-1.mp4|http://127.0.0.1:$port_assets/episode.bin|g" "$TMP_DIR/catalog-full.json" "$TMP_DIR/catalog-full-shuffled.json"
+
 port_full="$(pick_port)"
 run_serve "$TMP_DIR/catalog-full.json" "$port_full"
+full_pid="${PIDS[${#PIDS[@]}-1]}"
 wait_http_code "http://127.0.0.1:$port_full/discover.json" "200" || fail "full catalog discover.json not ready"
 assert_status "http://127.0.0.1:$port_full/readyz" "200"
 assert_status "http://127.0.0.1:$port_full/guide.xml" "200"
@@ -382,6 +393,9 @@ grep -q '"group_count": 0' <(curl -sS "http://127.0.0.1:$port_full/programming/b
 grep -q '"lineup_title": "Rogers West"' <(curl -sS "http://127.0.0.1:$port_full/programming/harvest.json") || fail "programming harvest missing seeded lineup title"
 grep -q '"harvest_ready": true' <(curl -sS "http://127.0.0.1:$port_full/programming/preview.json") || fail "programming preview missing harvest readiness"
 grep -q '"resolved_name": "Movie One"' <(curl -sS "http://127.0.0.1:$port_full/virtual-channels/preview.json?per_channel=2") || fail "virtual channel preview missing movie slot"
+grep -q '/virtual-channels/stream/vc-news.mp4' <(curl -sS "http://127.0.0.1:$port_full/virtual-channels/live.m3u") || fail "virtual channel m3u missing stream url"
+virtual_stream_body="$(curl -sS "http://127.0.0.1:$port_full/virtual-channels/stream/vc-news.mp4")"
+[[ "$virtual_stream_body" == "movie-bytes" || "$virtual_stream_body" == "episode-bytes" ]] || fail "virtual channel stream missing playable bytes"
 grep -q '"alternative_sources"' <(curl -sS "http://127.0.0.1:$port_full/programming/channel-detail.json?channel_id=ch1") || fail "programming channel detail missing alternatives section"
 grep -q '"stream_type":"live"' <(curl -sS "http://127.0.0.1:$port_full/player_api.php?username=demo&password=secret&action=get_live_streams") || fail "xtream live streams endpoint missing live row"
 limited_live="$(curl -sS "http://127.0.0.1:$port_full/player_api.php?username=limited&password=pw&action=get_live_streams")"
@@ -403,9 +417,8 @@ grep -q '"curated_channels": 2' <(curl -sS "http://127.0.0.1:$port_full/programm
 grep -q '"stream_urls": \[' <(curl -sS "http://127.0.0.1:$port_full/programming/preview.json") || fail "programming preview missing lineup stream urls"
 grep -q '"group_count": 1' <(curl -sS "http://127.0.0.1:$port_full/programming/backups.json") || fail "programming backups missing grouped exact match"
 
-kill "${PIDS[0]}" 2>/dev/null || true
-wait "${PIDS[0]}" 2>/dev/null || true
-unset 'PIDS[0]'
+kill "$full_pid" 2>/dev/null || true
+wait "$full_pid" 2>/dev/null || true
 port_restart="$(pick_port)"
 run_serve "$TMP_DIR/catalog-full-shuffled.json" "$port_restart"
 wait_http_code "http://127.0.0.1:$port_restart/discover.json" "200" || fail "restart catalog discover.json not ready"
@@ -425,12 +438,6 @@ assert_header "http://127.0.0.1:$port_empty/guide.xml" "Retry-After" "5"
 assert_status "http://127.0.0.1:$port_empty/lineup.json" "200"
 assert_header "http://127.0.0.1:$port_empty/discover.json" "X-IptvTunerr-Startup-State" "loading"
 assert_header "http://127.0.0.1:$port_empty/lineup.json" "X-IptvTunerr-Startup-State" "loading"
-
-port_assets="$(pick_port)"
-run_asset_server "$port_assets"
-wait_http_code "http://127.0.0.1:$port_assets/movie.bin" "200" || fail "asset server not ready"
-sed -i "s|REPLACE_MOVIE_URL|http://127.0.0.1:$port_assets/movie.bin|g" "$TMP_DIR/catalog-vod.json"
-sed -i "s|REPLACE_EPISODE_URL|http://127.0.0.1:$port_assets/episode.bin|g" "$TMP_DIR/catalog-vod.json"
 
 port_vod="$(pick_port)"
 run_vod_webdav "$TMP_DIR/catalog-vod.json" "$port_vod"
