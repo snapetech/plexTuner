@@ -36,6 +36,7 @@ live_race_harness: "RUN_SECONDS=30 CONCURRENCY=6 ./scripts/live-race-harness.sh 
 harness_index: "python3 scripts/harness-index.py  # list newest .diag/live-race|stream-compare|multi-stream runs; add --json"
 vod_webdav_client_harness: "./scripts/vod-webdav-client-harness.sh  # replay macOS Finder/WebDAVFS + Windows MiniRedir request shapes against vod-webdav and write a report bundle"
 vod_webdav_client_diff: "python3 scripts/vod-webdav-client-diff.py --left <baseline-run-dir> --right <real-host-run-dir> --left-label baseline --right-label macos --print  # compare two vod-webdav client harness bundles step-by-step"
+mac_baremetal_smoke: "./scripts/mac-baremetal-smoke.sh  # cross-build darwin/arm64, optionally Wake-on-LAN the Mac, run real macOS serve/webui + vod-webdav smoke, and pull artifacts back under .diag/mac-baremetal/"
 evidence_intake: "./scripts/evidence-intake.sh -id <case-id> -print  # scaffold .diag/evidence/<case-id>/ for debug-bundle + PMS logs + Tunerr logs + pcap"
 build_test_packages: "./scripts/build-test-packages.sh  # cross-platform tester archives + checksums"
 build_tester_release: "./scripts/build-tester-release.sh  # staged tester handoff bundle (packages/examples/docs/manifest)"

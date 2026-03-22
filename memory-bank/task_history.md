@@ -23,6 +23,23 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: Automate bare-metal macOS smoke with Wake-on-LAN
+  Summary:
+    - Added `scripts/mac-baremetal-smoke.sh`, a one-command Linux-side runner that cross-builds a darwin/arm64 `iptv-tunerr`, optionally sends Wake-on-LAN magic packets, stages the binary and helper scripts over SSH, runs a real macOS `serve`/web UI smoke plus the `vod-webdav` client-matrix harness, and pulls artifacts back under `.diag/mac-baremetal/`.
+    - Added `docs/how-to/mac-baremetal-smoke.md` and a `mac_baremetal_smoke` command entry so the workflow is documented and discoverable.
+    - Verified the end-to-end path on `192.168.50.108`; the first run passed and the Mac reported `womp=1`, so host-side wake-for-network access is already enabled.
+  Verification:
+    - `bash -n scripts/mac-baremetal-smoke.sh`
+    - `./scripts/mac-baremetal-smoke.sh`
+    - `./scripts/verify`
+  Notes:
+    - The Wake-on-LAN path is wired and host-side power settings are correct, but this specific run did not require waking the Mac from sleep because it was already online.
+  Opportunities filed:
+    - none
+  Links:
+    - bare-metal macOS smoke / Wake-on-LAN
+
+- Date: 2026-03-21
   Title: Add WebDAV header-diff tooling and validate on a real macOS host
   Summary:
     - Extended `scripts/vod-webdav-client-diff.py` so baseline-vs-host comparisons include key read-only/WebDAV response headers, not just HTTP status codes.

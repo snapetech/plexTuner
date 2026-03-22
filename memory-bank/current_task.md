@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-21):** **One-command macOS bare-metal smoke shipped:** added `scripts/mac-baremetal-smoke.sh`, which cross-builds a darwin/arm64 binary, optionally sends Wake-on-LAN magic packets to the MacBook, SSHes in, runs a real `serve`/web UI startup smoke plus the full `vod-webdav` Finder/MiniRedir request matrix, and pulls artifacts back under `.diag/mac-baremetal/<run-id>/`. The first live run passed on `192.168.50.108`, and the Mac already reports `womp=1`, so wake support is enabled on the host side.
+
 **Latest (2026-03-21):** **Real macOS WebDAV validation passed:** passwordless SSH is now configured from this workstation to `keith@192.168.50.108`, a darwin/arm64 `iptv-tunerr` binary was cross-built locally and copied to the Mac, and the Mac-hosted `vod-webdav` instance passed the full Finder/WebDAVFS + Windows MiniRedir request matrix using `scripts/vod-webdav-client-harness.sh` in external mode. The resulting bundle (`mac-selfhost`) diffs cleanly against the local baseline with **no status or header differences**. The cluster node `macair-m4` itself is still `NotReady`, so k8s scheduling is not back yet, but host-level validation is now real instead of purely synthetic.
 
 **Latest (2026-03-21):** **PM-009 regression coverage slice shipped:** Programming Manager now has restart/refresh survival coverage instead of only happy-path mutations. Added a tuner test proving saved category/channel/order/collapse recipe state survives `UpdateChannels` refresh churn and expanded `scripts/ci-smoke.sh` so it restarts `serve` against a reshuffled catalog while reusing the same recipe file, then reasserts curated lineup shape, custom order, and collapse state. **`./scripts/verify`** OK.
