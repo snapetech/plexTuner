@@ -20,6 +20,18 @@ type LibrarySection struct {
 	Locations []string
 }
 
+type libraryItemsMediaContainer struct {
+	TotalSize int `xml:"totalSize,attr"`
+	Size      int `xml:"size,attr"`
+	Videos    []libraryItemTitle `xml:"Video"`
+	Dirs      []libraryItemTitle `xml:"Directory"`
+}
+
+type libraryItemTitle struct {
+	Title    string `xml:"title,attr"`
+	TitleSort string `xml:"titleSort,attr"`
+}
+
 type LibrarySectionPrefs map[string]string
 
 type libraryMediaContainer struct {
@@ -111,6 +123,103 @@ func ListLibrarySections(plexBaseURL, plexToken string) ([]LibrarySection, error
 		out = append(out, sec)
 	}
 	return out, nil
+}
+
+func GetLibrarySectionItemCount(plexBaseURL, plexToken, key string) (int, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return 0, fmt.Errorf("library section key required")
+	}
+	q := url.Values{}
+	q.Set("X-Plex-Container-Start", "0")
+	q.Set("X-Plex-Container-Size", "0")
+	u, err := plexURL(plexBaseURL, "/library/sections/"+key+"/all", plexToken, q)
+	if err != nil {
+		return 0, err
+	}
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return 0, err
+	}
+	resp, err := plexHTTPClient().Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("get library section item count %s: %w", key, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("get library section item count %s returned %d: %s", key, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var mc libraryItemsMediaContainer
+	if err := xml.Unmarshal(body, &mc); err != nil {
+		return 0, fmt.Errorf("parse library section item count %s: %w", key, err)
+	}
+	if mc.TotalSize > 0 {
+		return mc.TotalSize, nil
+	}
+	return mc.Size, nil
+}
+
+func GetLibrarySectionItemTitles(plexBaseURL, plexToken, key string, limit int) ([]string, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil, fmt.Errorf("library section key required")
+	}
+	if limit <= 0 {
+		return nil, fmt.Errorf("library title sample limit required")
+	}
+	q := url.Values{}
+	q.Set("X-Plex-Container-Start", "0")
+	q.Set("X-Plex-Container-Size", fmt.Sprintf("%d", limit))
+	u, err := plexURL(plexBaseURL, "/library/sections/"+key+"/all", plexToken, q)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := plexHTTPClient().Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("get library section item titles %s: %w", key, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("get library section item titles %s returned %d: %s", key, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var mc libraryItemsMediaContainer
+	if err := xml.Unmarshal(body, &mc); err != nil {
+		return nil, fmt.Errorf("parse library section item titles %s: %w", key, err)
+	}
+	titles := make([]string, 0, limit)
+	for _, item := range mc.Videos {
+		if title := firstNonEmptyLibraryTitle(item.TitleSort, item.Title); title != "" {
+			titles = append(titles, title)
+		}
+	}
+	for _, item := range mc.Dirs {
+		if len(titles) >= limit {
+			break
+		}
+		if title := firstNonEmptyLibraryTitle(item.TitleSort, item.Title); title != "" {
+			titles = append(titles, title)
+		}
+	}
+	if len(titles) > limit {
+		titles = titles[:limit]
+	}
+	return titles, nil
+}
+
+func firstNonEmptyLibraryTitle(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func CreateLibrarySection(plexBaseURL, plexToken string, spec LibraryCreateSpec) (*LibrarySection, error) {

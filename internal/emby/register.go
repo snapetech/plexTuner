@@ -126,6 +126,23 @@ func RegisterTunerHost(cfg Config) (string, error) {
 	return resp.Id, nil
 }
 
+func ListTunerHosts(cfg Config) ([]TunerHostInfo, error) {
+	u := joinHostURL(cfg.Host, "/LiveTv/TunerHosts")
+	client := newHTTPClient()
+	status, data, err := apiRequest(client, http.MethodGet, u, cfg.Token, nil)
+	if err != nil {
+		return nil, fmt.Errorf("list tuner hosts: %w", err)
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("list tuner hosts returned %d: %s", status, trunc(string(data), 300))
+	}
+	var items []TunerHostInfo
+	if err := json.Unmarshal(data, &items); err != nil {
+		return nil, fmt.Errorf("parse tuner hosts: %w", err)
+	}
+	return items, nil
+}
+
 // DeleteTunerHost removes a tuner host by ID. Tolerates 404 (already gone).
 func DeleteTunerHost(cfg Config, id string) error {
 	if id == "" {
@@ -172,6 +189,23 @@ func RegisterListingProvider(cfg Config) (string, error) {
 	return resp.Id, nil
 }
 
+func ListListingProviders(cfg Config) ([]ListingsProviderInfo, error) {
+	u := joinHostURL(cfg.Host, "/LiveTv/ListingProviders")
+	client := newHTTPClient()
+	status, data, err := apiRequest(client, http.MethodGet, u, cfg.Token, nil)
+	if err != nil {
+		return nil, fmt.Errorf("list listing providers: %w", err)
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("list listing providers returned %d: %s", status, trunc(string(data), 300))
+	}
+	var items []ListingsProviderInfo
+	if err := json.Unmarshal(data, &items); err != nil {
+		return nil, fmt.Errorf("parse listing providers: %w", err)
+	}
+	return items, nil
+}
+
 // DeleteListingProvider removes a listing provider by ID. Tolerates 404 (already gone).
 func DeleteListingProvider(cfg Config, id string) error {
 	if id == "" {
@@ -193,18 +227,9 @@ func DeleteListingProvider(cfg Config, id string) error {
 // This is best-effort: Jellyfin auto-queues a refresh when the tuner is saved,
 // so a failure here is logged as a warning but does not fail registration.
 func TriggerGuideRefresh(cfg Config) error {
-	client := newHTTPClient()
-	u := joinHostURL(cfg.Host, "/ScheduledTasks")
-	status, data, err := apiRequest(client, http.MethodGet, u, cfg.Token, nil)
+	tasks, err := listScheduledTasks(cfg)
 	if err != nil {
-		return fmt.Errorf("list scheduled tasks: %w", err)
-	}
-	if status != http.StatusOK {
-		return fmt.Errorf("list scheduled tasks returned %d", status)
-	}
-	var tasks []ScheduledTask
-	if err := json.Unmarshal(data, &tasks); err != nil {
-		return fmt.Errorf("parse scheduled tasks: %w", err)
+		return err
 	}
 	var taskID string
 	for _, t := range tasks {
@@ -217,7 +242,8 @@ func TriggerGuideRefresh(cfg Config) error {
 		return fmt.Errorf("RefreshGuide task not found in %d scheduled tasks", len(tasks))
 	}
 	runURL := joinHostURL(cfg.Host, "/ScheduledTasks/Running/"+taskID)
-	status, _, err = apiRequest(client, http.MethodPost, runURL, cfg.Token, nil)
+	client := newHTTPClient()
+	status, _, err := apiRequest(client, http.MethodPost, runURL, cfg.Token, nil)
 	if err != nil {
 		return fmt.Errorf("trigger guide refresh task %s: %w", taskID, err)
 	}
@@ -225,6 +251,23 @@ func TriggerGuideRefresh(cfg Config) error {
 		return fmt.Errorf("trigger guide refresh returned %d", status)
 	}
 	return nil
+}
+
+func listScheduledTasks(cfg Config) ([]ScheduledTask, error) {
+	client := newHTTPClient()
+	u := joinHostURL(cfg.Host, "/ScheduledTasks")
+	status, data, err := apiRequest(client, http.MethodGet, u, cfg.Token, nil)
+	if err != nil {
+		return nil, fmt.Errorf("list scheduled tasks: %w", err)
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("list scheduled tasks returned %d", status)
+	}
+	var tasks []ScheduledTask
+	if err := json.Unmarshal(data, &tasks); err != nil {
+		return nil, fmt.Errorf("parse scheduled tasks: %w", err)
+	}
+	return tasks, nil
 }
 
 // GetChannelCount returns the total number of live TV channels the server has indexed.

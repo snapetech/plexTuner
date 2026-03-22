@@ -210,3 +210,87 @@ func TestListLibraries_trimsTrailingSlashHost(t *testing.T) {
 		t.Fatalf("ListLibraries: %v", err)
 	}
 }
+
+func TestGetLibraryItemCount(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/Items" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.URL.Query().Get("ParentId"); got != "lib-42" {
+			t.Fatalf("ParentId=%q", got)
+		}
+		if got := r.URL.Query().Get("Recursive"); got != "true" {
+			t.Fatalf("Recursive=%q", got)
+		}
+		if got := r.URL.Query().Get("Limit"); got != "0" {
+			t.Fatalf("Limit=%q", got)
+		}
+		_ = json.NewEncoder(w).Encode(ItemQueryResult{TotalRecordCount: 17})
+	}))
+	defer srv.Close()
+
+	count, err := GetLibraryItemCount(newTestConfig(srv.URL, "emby"), "lib-42")
+	if err != nil {
+		t.Fatalf("GetLibraryItemCount: %v", err)
+	}
+	if count != 17 {
+		t.Fatalf("count=%d", count)
+	}
+}
+
+func TestGetLibraryItemTitles(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/Items" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.URL.Query().Get("ParentId"); got != "lib-42" {
+			t.Fatalf("ParentId=%q", got)
+		}
+		if got := r.URL.Query().Get("Limit"); got != "2" {
+			t.Fatalf("Limit=%q", got)
+		}
+		if got := r.URL.Query().Get("SortBy"); got != "SortName" {
+			t.Fatalf("SortBy=%q", got)
+		}
+		_ = json.NewEncoder(w).Encode(ItemListResult{
+			Items: []ItemInfo{
+				{Name: "Zulu", SortName: "Alpha"},
+				{Name: "Bravo"},
+			},
+			TotalRecordCount: 2,
+		})
+	}))
+	defer srv.Close()
+
+	titles, err := GetLibraryItemTitles(newTestConfig(srv.URL, "emby"), "lib-42", 2)
+	if err != nil {
+		t.Fatalf("GetLibraryItemTitles: %v", err)
+	}
+	if len(titles) != 2 || titles[0] != "Alpha" || titles[1] != "Bravo" {
+		t.Fatalf("titles=%v", titles)
+	}
+}
+
+func TestGetLibraryScanStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/ScheduledTasks" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode([]ScheduledTask{
+			{Id: "guide-1", Key: "RefreshGuide", Name: "Refresh Guide"},
+			{Id: "scan-1", Key: "RefreshLibrary", Name: "Refresh Media Library", State: "Running", IsRunning: true, CurrentProgressPercentage: 37.5},
+		})
+	}))
+	defer srv.Close()
+
+	status, err := GetLibraryScanStatus(newTestConfig(srv.URL, "emby"))
+	if err != nil {
+		t.Fatalf("GetLibraryScanStatus: %v", err)
+	}
+	if status == nil {
+		t.Fatal("expected scan status")
+	}
+	if status.TaskID != "scan-1" || status.TaskKey != "RefreshLibrary" || !status.Running || status.ProgressPercent != 37.5 {
+		t.Fatalf("status=%+v", status)
+	}
+}

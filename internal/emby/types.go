@@ -28,9 +28,12 @@ type ListingsProviderInfo struct {
 
 // ScheduledTask is a single item from GET /ScheduledTasks.
 type ScheduledTask struct {
-	Id   string `json:"Id"`
-	Key  string `json:"Key"`
-	Name string `json:"Name"`
+	Id                        string  `json:"Id"`
+	Key                       string  `json:"Key"`
+	Name                      string  `json:"Name"`
+	State                     string  `json:"State,omitempty"`
+	IsRunning                 bool    `json:"IsRunning,omitempty"`
+	CurrentProgressPercentage float64 `json:"CurrentProgressPercentage,omitempty"`
 }
 
 // LiveTvChannelList is the response shape of GET /LiveTv/Channels.
@@ -45,6 +48,7 @@ type LibraryInfo struct {
 	Name           string   `json:"name"`
 	CollectionType string   `json:"collection_type"`
 	Locations      []string `json:"locations,omitempty"`
+	ItemCount      int      `json:"item_count,omitempty"`
 }
 
 // VirtualFolderQueryResult is the response shape of GET /Library/VirtualFolders/Query.
@@ -68,4 +72,31 @@ type AddVirtualFolder struct {
 	CollectionType string   `json:"CollectionType"`
 	RefreshLibrary bool     `json:"RefreshLibrary"`
 	Paths          []string `json:"Paths"`
+}
+
+// ItemQueryResult is the response shape of GET /Items.
+type ItemQueryResult struct {
+	TotalRecordCount int `json:"TotalRecordCount"`
+}
+
+// ItemInfo is a minimal item view returned by GET /Items.
+type ItemInfo struct {
+	Name     string `json:"Name"`
+	SortName string `json:"SortName"`
+}
+
+// ItemListResult is the response shape of GET /Items when item rows are needed.
+type ItemListResult struct {
+	Items            []ItemInfo `json:"Items"`
+	TotalRecordCount int        `json:"TotalRecordCount"`
+}
+
+// LibraryScanStatus is a simplified best-effort view of the media-server library scan task.
+type LibraryScanStatus struct {
+	TaskID          string  `json:"task_id,omitempty"`
+	TaskKey         string  `json:"task_key,omitempty"`
+	TaskName        string  `json:"task_name,omitempty"`
+	State           string  `json:"state,omitempty"`
+	Running         bool    `json:"running"`
+	ProgressPercent float64 `json:"progress_percent,omitempty"`
 }

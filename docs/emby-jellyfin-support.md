@@ -13,6 +13,10 @@ registration payload shape Emby/Jellyfin expect. `iptv-tunerr live-tv-bundle-app
 register that plan directly against a live Emby/Jellyfin server. This is a builder/converter/apply
 layer, not a raw DB dump tool.
 
+That Live TV lane now also has dry-run validation: `live-tv-bundle-diff` can compare a saved
+registration plan against a live target, and `live-tv-bundle-rollout-diff` can do the same across
+both Emby and Jellyfin from the same neutral bundle before anything is applied.
+
 For overlap migrations, `iptv-tunerr live-tv-bundle-rollout` can build or apply both Emby and
 Jellyfin targets from the same neutral bundle in one pass, so the non-Plex side can be pre-rolled
 together while Plex remains online.
@@ -20,6 +24,53 @@ together while Plex remains online.
 That means migration does not need to be a flag day. You can keep Plex live, pre-roll Emby or
 Jellyfin from the same Tunerr-backed tuner/guide identity, and move users over gradually instead of
 forcing everyone off Plex at once.
+
+The same builder/converter/apply idea now also covers server-facing library configuration:
+`live-tv-bundle-build -include-libraries` can capture Plex library sections and shared storage
+paths, `library-migration-convert` can turn those into Emby/Jellyfin library create/reuse plans,
+`library-migration-diff` can compare those plans against the live target first, and
+`library-migration-apply` can apply them against the target server.
+
+For coordinated overlap migrations, `library-migration-rollout` can build or apply both Emby and
+Jellyfin library targets from the same bundle in one pass, mirroring the Live TV rollout flow.
+`library-migration-rollout-diff` can query both live targets from that same bundle and show what
+would be reused, created, or blocked before you apply anything.
+
+At the top level, `migration-rollout-audit` now combines the Live TV and library/catch-up diff
+lanes into one per-target report, so you can answer "is this whole migration bundle ready for
+Emby/Jellyfin?" without manually correlating separate JSON outputs. The audit now also computes
+`ready_to_apply` per target and overall, so it acts like a real migration gate instead of only a
+raw diff feed. It also reports target `status` plus current indexed Live TV channel count so you
+can distinguish "clean but not applied/indexed yet" from "already converged". A target is only
+`converged` once Live TV is indexed and any bundled libraries/catch-up lanes are already present.
+The audit also lists which bundled libraries are already present and which are still missing, so
+partial migrations are actionable without manually scanning every diff row. For reused libraries
+it now also reports which ones are already populated versus still empty on the destination, which
+helps distinguish "library definition exists" from "library already has media under it" during an
+overlap migration. When the destination server exposes a recognizable library refresh task, the
+same audit also surfaces best-effort scan status and progress so you can tell whether a just-applied
+library rollout is still being ingested. The neutral bundle now also carries source Plex library
+item counts when they can be read, and the audit compares those against reused destination-library
+counts so it can tell you which reused libraries are already at parity and which are still lagging
+the Plex source.
+
+Generated Tunerr-side catch-up libraries can also ride in the same artifact now:
+`live-tv-bundle-attach-catchup` can import a saved catch-up publish manifest into the migration
+bundle, and the existing library migration commands will treat those generated movie libraries like
+any other shared-path library definition.
+
+This is still intentionally not a raw metadata-database converter. It migrates:
+- Live TV tuner and guide configuration
+- library names
+- movie/show type
+- shared storage paths
+- generated catch-up library layouts
+
+It does not attempt direct vendor-to-vendor conversion of:
+- watched state
+- thumbnails and analysis caches
+- agent/provider settings
+- Plex metadata rows into Emby/Jellyfin metadata rows
 
 ---
 

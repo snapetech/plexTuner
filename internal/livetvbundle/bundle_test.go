@@ -10,6 +10,7 @@ import (
 
 	"github.com/snapetech/iptvtunerr/internal/emby"
 	"github.com/snapetech/iptvtunerr/internal/plex"
+	"github.com/snapetech/iptvtunerr/internal/tuner"
 )
 
 func TestParsePlexLineupXMLTVURL(t *testing.T) {
@@ -76,13 +77,30 @@ func TestBuildFromPlexAPI(t *testing.T) {
 <MediaContainer>
   <Device key="10" uuid="device://tv.plex.grabbers.hdhomerun/sports" uri="http://tuner.example:5004" name="Sports HDHR" deviceId="sports" />
 </MediaContainer>`))
+		case "/library/sections":
+			w.Header().Set("Content-Type", "application/xml")
+			_, _ = w.Write([]byte(`<?xml version="1.0"?>
+<MediaContainer>
+  <Directory key="1" type="movie" title="Movies">
+    <Location path="/srv/media/movies" />
+  </Directory>
+  <Directory key="2" type="show" title="Shows">
+    <Location path="/srv/media/shows" />
+  </Directory>
+</MediaContainer>`))
+		case "/library/sections/1/all":
+			w.Header().Set("Content-Type", "application/xml")
+			_, _ = w.Write([]byte(`<?xml version="1.0"?><MediaContainer size="0" totalSize="120"></MediaContainer>`))
+		case "/library/sections/2/all":
+			w.Header().Set("Content-Type", "application/xml")
+			_, _ = w.Write([]byte(`<?xml version="1.0"?><MediaContainer size="0" totalSize="45"></MediaContainer>`))
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	defer srv.Close()
 
-	bundle, err := BuildFromPlexAPI(srv.URL, "token", BuildFromPlexOptions{DVRKeyOverride: 91, TunerCount: 6})
+	bundle, err := BuildFromPlexAPI(srv.URL, "token", BuildFromPlexOptions{DVRKeyOverride: 91, TunerCount: 6, IncludeLibraries: true})
 	if err != nil {
 		t.Fatalf("BuildFromPlexAPI: %v", err)
 	}
@@ -100,6 +118,15 @@ func TestBuildFromPlexAPI(t *testing.T) {
 	}
 	if bundle.Plex == nil || bundle.Plex.DVRKey != 91 {
 		t.Fatalf("plex source=%+v", bundle.Plex)
+	}
+	if len(bundle.Libraries) != 2 {
+		t.Fatalf("libraries=%d", len(bundle.Libraries))
+	}
+	if bundle.Libraries[0].Name != "Movies" || bundle.Libraries[1].Name != "Shows" {
+		t.Fatalf("libraries=%+v", bundle.Libraries)
+	}
+	if bundle.Libraries[0].SourceItemCount != 120 || bundle.Libraries[1].SourceItemCount != 45 {
+		t.Fatalf("libraries=%+v", bundle.Libraries)
 	}
 }
 
@@ -212,6 +239,96 @@ func TestApplyEmbyPlan(t *testing.T) {
 	}
 }
 
+func TestDiffEmbyPlan(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/LiveTv/TunerHosts":
+			_ = json.NewEncoder(w).Encode([]emby.TunerHostInfo{
+				{Id: "th-1", Type: "hdhomerun", Url: "http://tuner:5004", FriendlyName: "Sports Bundle"},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/LiveTv/ListingProviders":
+			_ = json.NewEncoder(w).Encode([]emby.ListingsProviderInfo{
+				{Id: "lp-1", Type: "xmltv", Path: "http://tuner:5004/guide.xml"},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	diff, err := DiffEmbyPlan(EmbyPlan{
+		Target: "emby",
+		RecommendedConfig: emby.Config{
+			Host:         srv.URL,
+			TunerURL:     "http://tuner:5004",
+			XMLTVURL:     "http://tuner:5004/guide.xml",
+			FriendlyName: "Sports Bundle",
+			TunerCount:   4,
+		},
+		TunerHost: emby.TunerHostInfo{
+			Type:         "hdhomerun",
+			Url:          "http://tuner:5004",
+			FriendlyName: "Sports Bundle",
+		},
+		ListingProvider: emby.ListingsProviderInfo{
+			Type: "xmltv",
+			Path: "http://tuner:5004/guide.xml",
+		},
+	}, "", "apitoken")
+	if err != nil {
+		t.Fatalf("DiffEmbyPlan: %v", err)
+	}
+	if diff.ReuseCount != 2 || diff.CreateCount != 0 || diff.ConflictCount != 0 {
+		t.Fatalf("diff=%+v", diff)
+	}
+}
+
+func TestDiffEmbyPlanDetectsConflicts(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/LiveTv/TunerHosts":
+			_ = json.NewEncoder(w).Encode([]emby.TunerHostInfo{
+				{Id: "th-1", Type: "hdhomerun", Url: "http://tuner:5004", FriendlyName: "Old Name"},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/LiveTv/ListingProviders":
+			_ = json.NewEncoder(w).Encode([]emby.ListingsProviderInfo{
+				{Id: "lp-1", Type: "m3u", Path: "http://tuner:5004/guide.xml"},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	diff, err := DiffEmbyPlan(EmbyPlan{
+		Target: "jellyfin",
+		RecommendedConfig: emby.Config{
+			Host:         srv.URL,
+			TunerURL:     "http://tuner:5004",
+			XMLTVURL:     "http://tuner:5004/guide.xml",
+			FriendlyName: "New Name",
+		},
+		TunerHost: emby.TunerHostInfo{
+			Type:         "hdhomerun",
+			Url:          "http://tuner:5004",
+			FriendlyName: "New Name",
+		},
+		ListingProvider: emby.ListingsProviderInfo{
+			Type: "xmltv",
+			Path: "http://tuner:5004/guide.xml",
+		},
+	}, "", "apitoken")
+	if err != nil {
+		t.Fatalf("DiffEmbyPlan: %v", err)
+	}
+	if diff.ConflictCount != 2 {
+		t.Fatalf("diff=%+v", diff)
+	}
+	if diff.Entries[0].Status != "conflict_name" || diff.Entries[1].Status != "conflict_type" {
+		t.Fatalf("entries=%+v", diff.Entries)
+	}
+}
+
 func TestBuildRolloutPlan(t *testing.T) {
 	rollout, err := BuildRolloutPlan(Bundle{
 		Source: "plex_api",
@@ -234,6 +351,65 @@ func TestBuildRolloutPlan(t *testing.T) {
 	}
 	if rollout.Plans[0].Target != "emby" || rollout.Plans[1].Target != "jellyfin" {
 		t.Fatalf("targets=%q,%q", rollout.Plans[0].Target, rollout.Plans[1].Target)
+	}
+}
+
+func TestDiffRolloutPlan(t *testing.T) {
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/LiveTv/TunerHosts":
+			_ = json.NewEncoder(w).Encode([]emby.TunerHostInfo{
+				{Id: "th-1", Type: "hdhomerun", Url: "http://tuner:5004", FriendlyName: "Shared"},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/LiveTv/ListingProviders":
+			_ = json.NewEncoder(w).Encode([]emby.ListingsProviderInfo{
+				{Id: "lp-1", Type: "xmltv", Path: "http://tuner:5004/guide.xml"},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer embySrv.Close()
+
+	jellySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/LiveTv/TunerHosts":
+			_ = json.NewEncoder(w).Encode([]emby.TunerHostInfo{})
+		case r.Method == http.MethodGet && r.URL.Path == "/LiveTv/ListingProviders":
+			_ = json.NewEncoder(w).Encode([]emby.ListingsProviderInfo{})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer jellySrv.Close()
+
+	res, err := DiffRolloutPlan(RolloutPlan{
+		Plans: []EmbyPlan{
+			{
+				Target:            "emby",
+				RecommendedConfig: emby.Config{Host: embySrv.URL, TunerURL: "http://tuner:5004", XMLTVURL: "http://tuner:5004/guide.xml", FriendlyName: "Shared"},
+				TunerHost:         emby.TunerHostInfo{Type: "hdhomerun", Url: "http://tuner:5004", FriendlyName: "Shared"},
+				ListingProvider:   emby.ListingsProviderInfo{Type: "xmltv", Path: "http://tuner:5004/guide.xml"},
+			},
+			{
+				Target:            "jellyfin",
+				RecommendedConfig: emby.Config{Host: jellySrv.URL, TunerURL: "http://tuner:5004", XMLTVURL: "http://tuner:5004/guide.xml", FriendlyName: "Shared"},
+				TunerHost:         emby.TunerHostInfo{Type: "hdhomerun", Url: "http://tuner:5004", FriendlyName: "Shared"},
+				ListingProvider:   emby.ListingsProviderInfo{Type: "xmltv", Path: "http://tuner:5004/guide.xml"},
+			},
+		},
+	}, map[string]ApplySpec{
+		"emby":     {Token: "emby-token"},
+		"jellyfin": {Token: "jf-token"},
+	})
+	if err != nil {
+		t.Fatalf("DiffRolloutPlan: %v", err)
+	}
+	if len(res.Results) != 2 {
+		t.Fatalf("results=%d", len(res.Results))
+	}
+	if res.Results[0].ReuseCount != 2 || res.Results[1].CreateCount != 2 {
+		t.Fatalf("results=%+v", res.Results)
 	}
 }
 
@@ -292,5 +468,585 @@ func TestApplyRolloutPlan(t *testing.T) {
 	}
 	if len(hits) != 8 {
 		t.Fatalf("hits=%v", hits)
+	}
+}
+
+func TestBuildLibraryPlan(t *testing.T) {
+	plan, err := BuildLibraryPlan(Bundle{
+		Source: "plex_api",
+		Libraries: []Library{
+			{Name: "Movies", Type: "movie", Locations: []string{"/srv/media/movies"}, SourceItemCount: 88},
+			{Name: "Shows", Type: "show", Locations: []string{"/srv/media/shows"}},
+			{Name: "Music", Type: "artist", Locations: []string{"/srv/media/music"}},
+		},
+		Catchup: []Library{
+			{Name: "Catchup Sports", Type: "movie", Locations: []string{"/srv/catchup/sports"}},
+		},
+	}, "emby", "http://emby.example:8096")
+	if err != nil {
+		t.Fatalf("BuildLibraryPlan: %v", err)
+	}
+	if len(plan.Libraries) != 3 {
+		t.Fatalf("libraries=%d", len(plan.Libraries))
+	}
+	if plan.Libraries[0].CollectionType != "movies" || plan.Libraries[1].CollectionType != "tvshows" || plan.Libraries[2].CollectionType != "movies" {
+		t.Fatalf("libraries=%+v", plan.Libraries)
+	}
+	if plan.Libraries[0].SourceItemCount != 88 {
+		t.Fatalf("libraries=%+v", plan.Libraries)
+	}
+}
+
+func TestApplyLibraryPlan(t *testing.T) {
+	var refreshCalled bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/Library/VirtualFolders/Query":
+			_ = json.NewEncoder(w).Encode(emby.VirtualFolderQueryResult{
+				Items: []emby.VirtualFolderInfo{
+					{Name: "Movies", CollectionType: "movies", ID: "movies-1", Locations: []string{"/srv/media/movies"}},
+					{Name: "Shows", CollectionType: "tvshows", ID: "shows-1", Locations: []string{"/srv/media/shows"}},
+				},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/Library/Refresh":
+			refreshCalled = true
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	res, err := ApplyLibraryPlan(LibraryPlan{
+		Target:     "jellyfin",
+		TargetHost: srv.URL,
+		Libraries: []emby.LibraryCreateSpec{
+			{Name: "Movies", CollectionType: "movies", Path: "/srv/media/movies"},
+			{Name: "Shows", CollectionType: "tvshows", Path: "/srv/media/shows"},
+		},
+	}, "", "apitoken", true)
+	if err != nil {
+		t.Fatalf("ApplyLibraryPlan: %v", err)
+	}
+	if !refreshCalled {
+		t.Fatal("expected refresh")
+	}
+	if len(res.Libraries) != 2 {
+		t.Fatalf("libraries=%d", len(res.Libraries))
+	}
+	if res.Libraries[0].ID == "" || res.Libraries[1].ID == "" {
+		t.Fatalf("libraries=%+v", res.Libraries)
+	}
+}
+
+func TestDiffLibraryPlan(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/Library/VirtualFolders/Query":
+			_ = json.NewEncoder(w).Encode(emby.VirtualFolderQueryResult{
+				Items: []emby.VirtualFolderInfo{
+					{Name: "Movies", CollectionType: "movies", ID: "movies-1", Locations: []string{"/srv/media/movies"}},
+					{Name: "Shows", CollectionType: "movies", ID: "shows-1", Locations: []string{"/srv/media/wrong-shows"}},
+					{Name: "Kids", CollectionType: "tvshows", ID: "kids-1", Locations: []string{"/srv/media/kids"}},
+				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/Items":
+			parentID := r.URL.Query().Get("ParentId")
+			switch parentID {
+			case "movies-1":
+				_ = json.NewEncoder(w).Encode(emby.ItemQueryResult{TotalRecordCount: 11})
+			default:
+				t.Fatalf("unexpected ParentId=%q", parentID)
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	diff, err := DiffLibraryPlan(LibraryPlan{
+		Target:     "emby",
+		TargetHost: srv.URL,
+		Libraries: []emby.LibraryCreateSpec{
+			{Name: "Movies", CollectionType: "movies", Path: "/srv/media/movies", SourceItemCount: 10},
+			{Name: "Shows", CollectionType: "tvshows", Path: "/srv/media/shows"},
+			{Name: "Kids", CollectionType: "movies", Path: "/srv/media/kids"},
+			{Name: "Sports Catchup", CollectionType: "movies", Path: "/srv/catchup/sports"},
+		},
+	}, "", "apitoken")
+	if err != nil {
+		t.Fatalf("DiffLibraryPlan: %v", err)
+	}
+	if diff.ReuseCount != 1 || diff.CreateCount != 1 || diff.ConflictCount != 2 {
+		t.Fatalf("counts create=%d reuse=%d conflict=%d", diff.CreateCount, diff.ReuseCount, diff.ConflictCount)
+	}
+	if diff.Libraries[0].Status != "reuse" {
+		t.Fatalf("movies diff=%+v", diff.Libraries[0])
+	}
+	if diff.Libraries[0].ExistingItemCount != 11 {
+		t.Fatalf("movies diff=%+v", diff.Libraries[0])
+	}
+	if diff.Libraries[0].ParityStatus != "synced" {
+		t.Fatalf("movies diff=%+v", diff.Libraries[0])
+	}
+	if diff.Libraries[1].Status != "conflict_type" {
+		t.Fatalf("shows diff=%+v", diff.Libraries[1])
+	}
+	if diff.Libraries[2].Status != "conflict_type" {
+		t.Fatalf("kids diff=%+v", diff.Libraries[2])
+	}
+	if diff.Libraries[3].Status != "create" {
+		t.Fatalf("sports diff=%+v", diff.Libraries[3])
+	}
+}
+
+func TestDiffLibraryPlanDetectsPathConflict(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/Library/VirtualFolders/Query":
+			_ = json.NewEncoder(w).Encode(emby.VirtualFolderQueryResult{
+				Items: []emby.VirtualFolderInfo{
+					{Name: "Shows", CollectionType: "tvshows", ID: "shows-1", Locations: []string{"/srv/media/old-shows"}},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	diff, err := DiffLibraryPlan(LibraryPlan{
+		Target:     "jellyfin",
+		TargetHost: srv.URL,
+		Libraries: []emby.LibraryCreateSpec{
+			{Name: "Shows", CollectionType: "tvshows", Path: "/srv/media/shows"},
+		},
+	}, "", "apitoken")
+	if err != nil {
+		t.Fatalf("DiffLibraryPlan: %v", err)
+	}
+	if len(diff.Libraries) != 1 || diff.Libraries[0].Status != "conflict_path" {
+		t.Fatalf("diff=%+v", diff.Libraries)
+	}
+}
+
+func TestBuildLibraryRolloutPlan(t *testing.T) {
+	plan, err := BuildLibraryRolloutPlan(Bundle{
+		Source: "plex_api",
+		Libraries: []Library{
+			{Name: "Movies", Type: "movie", Locations: []string{"/srv/media/movies"}, SourceItemCount: 5},
+			{Name: "Shows", Type: "show", Locations: []string{"/srv/media/shows"}},
+		},
+	}, []TargetSpec{
+		{Target: "emby", Host: "http://emby:8096"},
+		{Target: "jellyfin", Host: "http://jellyfin:8096"},
+	})
+	if err != nil {
+		t.Fatalf("BuildLibraryRolloutPlan: %v", err)
+	}
+	if len(plan.Plans) != 2 {
+		t.Fatalf("plans=%d", len(plan.Plans))
+	}
+}
+
+func TestApplyLibraryRolloutPlan(t *testing.T) {
+	var refreshCount int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/Library/VirtualFolders/Query":
+			_ = json.NewEncoder(w).Encode(emby.VirtualFolderQueryResult{
+				Items: []emby.VirtualFolderInfo{
+					{Name: "Movies", CollectionType: "movies", ID: "movies-1", Locations: []string{"/srv/media/movies"}},
+				},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/Library/Refresh":
+			refreshCount++
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	res, err := ApplyLibraryRolloutPlan(LibraryRolloutPlan{
+		Plans: []LibraryPlan{
+			{Target: "emby", TargetHost: srv.URL, Libraries: []emby.LibraryCreateSpec{{Name: "Movies", CollectionType: "movies", Path: "/srv/media/movies"}}},
+			{Target: "jellyfin", TargetHost: srv.URL, Libraries: []emby.LibraryCreateSpec{{Name: "Movies", CollectionType: "movies", Path: "/srv/media/movies"}}},
+		},
+	}, map[string]ApplySpec{
+		"emby":     {Token: "emby-token"},
+		"jellyfin": {Token: "jf-token"},
+	}, true)
+	if err != nil {
+		t.Fatalf("ApplyLibraryRolloutPlan: %v", err)
+	}
+	if len(res.Results) != 2 {
+		t.Fatalf("results=%d", len(res.Results))
+	}
+	if refreshCount != 2 {
+		t.Fatalf("refreshCount=%d", refreshCount)
+	}
+}
+
+func TestDiffLibraryRolloutPlan(t *testing.T) {
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/Library/VirtualFolders/Query":
+			_ = json.NewEncoder(w).Encode(emby.VirtualFolderQueryResult{
+				Items: []emby.VirtualFolderInfo{
+					{Name: "Movies", CollectionType: "movies", ID: "movies-1", Locations: []string{"/srv/media/movies"}},
+				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/Items":
+			_ = json.NewEncoder(w).Encode(emby.ItemQueryResult{TotalRecordCount: 5})
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/LiveTv/Channels"):
+			_ = json.NewEncoder(w).Encode(emby.LiveTvChannelList{TotalRecordCount: 42})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer embySrv.Close()
+
+	jellySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/Library/VirtualFolders/Query":
+			_ = json.NewEncoder(w).Encode(emby.VirtualFolderQueryResult{
+				Items: []emby.VirtualFolderInfo{
+					{Name: "Shows", CollectionType: "tvshows", ID: "shows-1", Locations: []string{"/srv/media/old-shows"}},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer jellySrv.Close()
+
+	res, err := DiffLibraryRolloutPlan(LibraryRolloutPlan{
+		Plans: []LibraryPlan{
+			{Target: "emby", TargetHost: embySrv.URL, Libraries: []emby.LibraryCreateSpec{{Name: "Movies", CollectionType: "movies", Path: "/srv/media/movies"}}},
+			{Target: "jellyfin", TargetHost: jellySrv.URL, Libraries: []emby.LibraryCreateSpec{{Name: "Shows", CollectionType: "tvshows", Path: "/srv/media/shows"}}},
+		},
+	}, map[string]ApplySpec{
+		"emby":     {Token: "emby-token"},
+		"jellyfin": {Token: "jf-token"},
+	})
+	if err != nil {
+		t.Fatalf("DiffLibraryRolloutPlan: %v", err)
+	}
+	if len(res.Results) != 2 {
+		t.Fatalf("results=%d", len(res.Results))
+	}
+	if res.Results[0].ReuseCount != 1 || res.Results[1].ConflictCount != 1 {
+		t.Fatalf("results=%+v", res.Results)
+	}
+}
+
+func TestAuditBundleTargets(t *testing.T) {
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/LiveTv/TunerHosts":
+			_ = json.NewEncoder(w).Encode([]emby.TunerHostInfo{
+				{Id: "th-1", Type: "hdhomerun", Url: "http://tuner:5004", FriendlyName: "Shared"},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/LiveTv/ListingProviders":
+			_ = json.NewEncoder(w).Encode([]emby.ListingsProviderInfo{
+				{Id: "lp-1", Type: "xmltv", Path: "http://tuner:5004/guide.xml"},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/Library/VirtualFolders/Query":
+			_ = json.NewEncoder(w).Encode(emby.VirtualFolderQueryResult{
+				Items: []emby.VirtualFolderInfo{
+					{Name: "Movies", CollectionType: "movies", ID: "movies-1", Locations: []string{"/srv/media/movies"}},
+				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/Items":
+			_ = json.NewEncoder(w).Encode(emby.ItemQueryResult{TotalRecordCount: 9})
+		case r.Method == http.MethodGet && r.URL.Path == "/ScheduledTasks":
+			_ = json.NewEncoder(w).Encode([]emby.ScheduledTask{
+				{Id: "scan-1", Key: "RefreshLibrary", Name: "Refresh Media Library", State: "Running", IsRunning: true, CurrentProgressPercentage: 80},
+			})
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/LiveTv/Channels"):
+			_ = json.NewEncoder(w).Encode(emby.LiveTvChannelList{TotalRecordCount: 42})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer embySrv.Close()
+
+	res, err := AuditBundleTargets(Bundle{
+		Source: "plex_api",
+		Tuner: Tuner{
+			FriendlyName: "Shared",
+			TunerURL:     "http://tuner:5004",
+			TunerCount:   4,
+		},
+		Guide: Guide{XMLTVURL: "http://tuner:5004/guide.xml"},
+		Libraries: []Library{
+			{Name: "Movies", Type: "movie", Locations: []string{"/srv/media/movies"}, SourceItemCount: 12},
+		},
+	}, []TargetSpec{
+		{Target: "emby", Host: embySrv.URL},
+	}, map[string]ApplySpec{
+		"emby": {Token: "emby-token"},
+	})
+	if err != nil {
+		t.Fatalf("AuditBundleTargets: %v", err)
+	}
+	if len(res.Results) != 1 {
+		t.Fatalf("results=%d", len(res.Results))
+	}
+	if res.Results[0].LiveTV.ReuseCount != 2 {
+		t.Fatalf("live=%+v", res.Results[0].LiveTV)
+	}
+	if res.Results[0].Library == nil || res.Results[0].Library.ReuseCount != 1 {
+		t.Fatalf("library=%+v", res.Results[0].Library)
+	}
+	if res.Results[0].LibraryMode != "included" {
+		t.Fatalf("mode=%q", res.Results[0].LibraryMode)
+	}
+	if !res.ReadyToApply || !res.Results[0].ReadyToApply || res.ConflictCount != 0 {
+		t.Fatalf("audit=%+v", res)
+	}
+	if res.Status != "converged" || res.Results[0].Status != "converged" || res.Results[0].LiveTV.IndexedChannelCount != 42 {
+		t.Fatalf("audit=%+v", res)
+	}
+	if res.Results[0].StatusReason == "" || len(res.Results[0].PresentLibraries) != 1 || res.Results[0].PresentLibraries[0] != "Movies" {
+		t.Fatalf("audit=%+v", res)
+	}
+	if len(res.Results[0].PopulatedLibraries) != 1 || res.Results[0].PopulatedLibraries[0] != "Movies" {
+		t.Fatalf("audit=%+v", res)
+	}
+	if len(res.Results[0].LaggingLibraries) != 1 || res.Results[0].LaggingLibraries[0] != "Movies" {
+		t.Fatalf("audit=%+v", res)
+	}
+	if len(res.Results[0].SyncedLibraries) != 0 {
+		t.Fatalf("audit=%+v", res)
+	}
+	if len(res.Results[0].EmptyLibraries) != 0 {
+		t.Fatalf("audit=%+v", res)
+	}
+	if res.Results[0].LibraryScan == nil || !res.Results[0].LibraryScan.Running || res.Results[0].LibraryScan.ProgressPercent != 80 {
+		t.Fatalf("audit=%+v", res)
+	}
+	if !strings.Contains(res.Results[0].StatusReason, "lag the Plex source counts") {
+		t.Fatalf("audit=%+v", res)
+	}
+}
+
+func TestAuditBundleTargetsEmptyPresentLibraryHint(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/LiveTv/TunerHosts":
+			_ = json.NewEncoder(w).Encode([]emby.TunerHostInfo{
+				{Id: "th-1", Type: "hdhomerun", Url: "http://tuner:5004", FriendlyName: "Shared"},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/LiveTv/ListingProviders":
+			_ = json.NewEncoder(w).Encode([]emby.ListingsProviderInfo{
+				{Id: "lp-1", Type: "xmltv", Path: "http://tuner:5004/guide.xml"},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/Library/VirtualFolders/Query":
+			_ = json.NewEncoder(w).Encode(emby.VirtualFolderQueryResult{
+				Items: []emby.VirtualFolderInfo{
+					{Name: "Movies", CollectionType: "movies", ID: "movies-1", Locations: []string{"/srv/media/movies"}},
+				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/Items":
+			_ = json.NewEncoder(w).Encode(emby.ItemQueryResult{TotalRecordCount: 0})
+		case r.Method == http.MethodGet && r.URL.Path == "/ScheduledTasks":
+			_ = json.NewEncoder(w).Encode([]emby.ScheduledTask{
+				{Id: "scan-1", Key: "RefreshLibrary", Name: "Refresh Media Library", State: "Idle"},
+			})
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/LiveTv/Channels"):
+			_ = json.NewEncoder(w).Encode(emby.LiveTvChannelList{TotalRecordCount: 42})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	res, err := AuditBundleTargets(Bundle{
+		Source: "plex_api",
+		Tuner: Tuner{
+			FriendlyName: "Shared",
+			TunerURL:     "http://tuner:5004",
+			TunerCount:   4,
+		},
+		Guide: Guide{XMLTVURL: "http://tuner:5004/guide.xml"},
+		Libraries: []Library{
+			{Name: "Movies", Type: "movie", Locations: []string{"/srv/media/movies"}, SourceItemCount: 5},
+		},
+	}, []TargetSpec{
+		{Target: "emby", Host: srv.URL},
+	}, map[string]ApplySpec{
+		"emby": {Token: "emby-token"},
+	})
+	if err != nil {
+		t.Fatalf("AuditBundleTargets: %v", err)
+	}
+	if len(res.Results[0].PresentLibraries) != 1 || res.Results[0].PresentLibraries[0] != "Movies" {
+		t.Fatalf("audit=%+v", res)
+	}
+	if len(res.Results[0].PopulatedLibraries) != 0 {
+		t.Fatalf("audit=%+v", res)
+	}
+	if len(res.Results[0].EmptyLibraries) != 1 || res.Results[0].EmptyLibraries[0] != "Movies" {
+		t.Fatalf("audit=%+v", res)
+	}
+	if len(res.Results[0].LaggingLibraries) != 1 || res.Results[0].LaggingLibraries[0] != "Movies" {
+		t.Fatalf("audit=%+v", res)
+	}
+	if res.Results[0].LibraryScan == nil || res.Results[0].LibraryScan.Running || res.Results[0].LibraryScan.State != "Idle" {
+		t.Fatalf("audit=%+v", res)
+	}
+}
+
+func TestAuditBundleTargetsWithoutLibraries(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/LiveTv/TunerHosts":
+			_ = json.NewEncoder(w).Encode([]emby.TunerHostInfo{})
+		case r.Method == http.MethodGet && r.URL.Path == "/LiveTv/ListingProviders":
+			_ = json.NewEncoder(w).Encode([]emby.ListingsProviderInfo{})
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/LiveTv/Channels"):
+			_ = json.NewEncoder(w).Encode(emby.LiveTvChannelList{TotalRecordCount: 0})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	res, err := AuditBundleTargets(Bundle{
+		Source: "plex_api",
+		Tuner:  Tuner{FriendlyName: "Shared", TunerURL: "http://tuner:5004"},
+		Guide:  Guide{XMLTVURL: "http://tuner:5004/guide.xml"},
+	}, []TargetSpec{{Target: "jellyfin", Host: srv.URL}}, map[string]ApplySpec{
+		"jellyfin": {Token: "jf-token"},
+	})
+	if err != nil {
+		t.Fatalf("AuditBundleTargets: %v", err)
+	}
+	if len(res.Results) != 1 || res.Results[0].Library != nil || res.Results[0].LibraryMode != "not_in_bundle" {
+		t.Fatalf("results=%+v", res.Results)
+	}
+	if !res.ReadyToApply || !res.Results[0].LibraryReady || !res.Results[0].ReadyToApply {
+		t.Fatalf("audit=%+v", res)
+	}
+	if res.Status != "ready_to_apply" || res.Results[0].Status != "ready_to_apply" {
+		t.Fatalf("audit=%+v", res)
+	}
+	if len(res.Results[0].MissingLibraries) != 0 || len(res.Results[0].PresentLibraries) != 0 {
+		t.Fatalf("audit=%+v", res)
+	}
+	if !strings.Contains(res.Results[0].StatusReason, "has not indexed Live TV channels yet") {
+		t.Fatalf("audit=%+v", res)
+	}
+}
+
+func TestAuditBundleTargetsMissingLibraryStaysReadyNotConverged(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/LiveTv/TunerHosts":
+			_ = json.NewEncoder(w).Encode([]emby.TunerHostInfo{
+				{Id: "th-1", Type: "hdhomerun", Url: "http://tuner:5004", FriendlyName: "Shared"},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/LiveTv/ListingProviders":
+			_ = json.NewEncoder(w).Encode([]emby.ListingsProviderInfo{
+				{Id: "lp-1", Type: "xmltv", Path: "http://tuner:5004/guide.xml"},
+			})
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/LiveTv/Channels"):
+			_ = json.NewEncoder(w).Encode(emby.LiveTvChannelList{TotalRecordCount: 42})
+		case r.Method == http.MethodGet && r.URL.Path == "/Library/VirtualFolders/Query":
+			_ = json.NewEncoder(w).Encode(emby.VirtualFolderQueryResult{Items: []emby.VirtualFolderInfo{}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	res, err := AuditBundleTargets(Bundle{
+		Source: "plex_api",
+		Tuner:  Tuner{FriendlyName: "Shared", TunerURL: "http://tuner:5004"},
+		Guide:  Guide{XMLTVURL: "http://tuner:5004/guide.xml"},
+		Libraries: []Library{
+			{Name: "Movies", Type: "movie", Locations: []string{"/srv/media/movies"}},
+		},
+	}, []TargetSpec{{Target: "emby", Host: srv.URL}}, map[string]ApplySpec{
+		"emby": {Token: "emby-token"},
+	})
+	if err != nil {
+		t.Fatalf("AuditBundleTargets: %v", err)
+	}
+	if !res.ReadyToApply || !res.Results[0].ReadyToApply {
+		t.Fatalf("audit=%+v", res)
+	}
+	if res.Status != "ready_to_apply" || res.Results[0].Status != "ready_to_apply" {
+		t.Fatalf("audit=%+v", res)
+	}
+	if res.Results[0].Library == nil || res.Results[0].Library.CreateCount != 1 || res.Results[0].Library.PresentCount != 0 {
+		t.Fatalf("library=%+v", res.Results[0].Library)
+	}
+}
+
+func TestAuditBundleTargetsConflictMarksNotReady(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/LiveTv/TunerHosts":
+			_ = json.NewEncoder(w).Encode([]emby.TunerHostInfo{
+				{Id: "th-1", Type: "hdhomerun", Url: "http://tuner:5004", FriendlyName: "Wrong Name"},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/LiveTv/ListingProviders":
+			_ = json.NewEncoder(w).Encode([]emby.ListingsProviderInfo{})
+		case r.Method == http.MethodGet && r.URL.Path == "/Library/VirtualFolders/Query":
+			_ = json.NewEncoder(w).Encode(emby.VirtualFolderQueryResult{
+				Items: []emby.VirtualFolderInfo{
+					{Name: "Movies", CollectionType: "tvshows", ID: "movies-1", Locations: []string{"/srv/media/movies"}},
+				},
+			})
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/LiveTv/Channels"):
+			_ = json.NewEncoder(w).Encode(emby.LiveTvChannelList{TotalRecordCount: 3})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	res, err := AuditBundleTargets(Bundle{
+		Source: "plex_api",
+		Tuner:  Tuner{FriendlyName: "Right Name", TunerURL: "http://tuner:5004"},
+		Guide:  Guide{XMLTVURL: "http://tuner:5004/guide.xml"},
+		Libraries: []Library{
+			{Name: "Movies", Type: "movie", Locations: []string{"/srv/media/movies"}},
+		},
+	}, []TargetSpec{{Target: "emby", Host: srv.URL}}, map[string]ApplySpec{
+		"emby": {Token: "emby-token"},
+	})
+	if err != nil {
+		t.Fatalf("AuditBundleTargets: %v", err)
+	}
+	if res.ReadyToApply || res.Results[0].ReadyToApply || res.ReadyTargetCount != 0 {
+		t.Fatalf("audit=%+v", res)
+	}
+	if res.ConflictCount != 2 || res.Results[0].ConflictCount != 2 {
+		t.Fatalf("audit=%+v", res)
+	}
+	if res.Status != "blocked_conflicts" || res.Results[0].Status != "blocked_conflicts" {
+		t.Fatalf("audit=%+v", res)
+	}
+	if !strings.Contains(res.Results[0].StatusReason, "definition conflicts") {
+		t.Fatalf("audit=%+v", res)
+	}
+}
+
+func TestAttachCatchupManifest(t *testing.T) {
+	out := AttachCatchupManifest(Bundle{Source: "plex_api"}, tuner.CatchupPublishManifest{
+		Libraries: []tuner.CatchupPublishedLibrary{
+			{Name: "Catchup Sports", CollectionType: "movies", Path: "/srv/catchup/sports"},
+			{Name: "Catchup Movies", CollectionType: "movies", Path: "/srv/catchup/movies"},
+		},
+	})
+	if len(out.Catchup) != 2 {
+		t.Fatalf("catchup=%d", len(out.Catchup))
+	}
+	if out.Catchup[0].Name != "Catchup Sports" || out.Catchup[1].Locations[0] != "/srv/catchup/movies" {
+		t.Fatalf("catchup=%+v", out.Catchup)
 	}
 }

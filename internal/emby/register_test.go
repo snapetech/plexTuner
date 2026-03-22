@@ -172,6 +172,48 @@ func TestRegisterListingProvider_success(t *testing.T) {
 	}
 }
 
+func TestListTunerHosts(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/LiveTv/TunerHosts" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode([]TunerHostInfo{
+			{Id: "th-1", Type: "hdhomerun", Url: "http://tuner:5004", FriendlyName: "Tunerr"},
+		})
+	}))
+	defer srv.Close()
+
+	items, err := ListTunerHosts(Config{Host: srv.URL, Token: "token"})
+	if err != nil {
+		t.Fatalf("ListTunerHosts: %v", err)
+	}
+	if len(items) != 1 || items[0].Id != "th-1" {
+		t.Fatalf("items=%+v", items)
+	}
+}
+
+func TestListListingProviders(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/LiveTv/ListingProviders" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode([]ListingsProviderInfo{
+			{Id: "lp-1", Type: "xmltv", Path: "http://tuner:5004/guide.xml"},
+		})
+	}))
+	defer srv.Close()
+
+	items, err := ListListingProviders(Config{Host: srv.URL, Token: "token"})
+	if err != nil {
+		t.Fatalf("ListListingProviders: %v", err)
+	}
+	if len(items) != 1 || items[0].Id != "lp-1" {
+		t.Fatalf("items=%+v", items)
+	}
+}
+
 // TestDeleteTunerHost_tolerates404 ensures a 404 response is not treated as an error.
 func TestDeleteTunerHost_tolerates404(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

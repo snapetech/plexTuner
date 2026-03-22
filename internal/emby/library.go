@@ -11,10 +11,12 @@ import (
 
 // LibraryCreateSpec describes a library/virtual folder to create or reuse.
 type LibraryCreateSpec struct {
-	Name           string
-	CollectionType string // "movies" or "tvshows"
-	Path           string
-	Refresh        bool
+	Name            string
+	CollectionType  string // "movies" or "tvshows"
+	Path            string
+	Refresh         bool
+	SourceItemCount int // optional migration hint; ignored by create/apply
+	SourceTitles    []string // optional migration hint; ignored by create/apply
 }
 
 func ListLibraries(cfg Config) ([]LibraryInfo, error) {
@@ -44,6 +46,105 @@ func ListLibraries(cfg Config) ([]LibraryInfo, error) {
 		})
 	}
 	return out, nil
+}
+
+func GetLibraryItemCount(cfg Config, id string) (int, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return 0, fmt.Errorf("library id required")
+	}
+	q := url.Values{}
+	q.Set("ParentId", id)
+	q.Set("Recursive", "true")
+	q.Set("Limit", "0")
+	u := joinHostURL(cfg.Host, "/Items") + "?" + q.Encode()
+	client := newHTTPClient()
+	status, data, err := apiRequest(client, http.MethodGet, u, cfg.Token, nil)
+	if err != nil {
+		return 0, fmt.Errorf("get library item count: %w", err)
+	}
+	if status != http.StatusOK {
+		return 0, fmt.Errorf("get library item count returned %d: %s", status, trunc(string(data), 300))
+	}
+	var resp ItemQueryResult
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return 0, fmt.Errorf("parse library item count: %w", err)
+	}
+	return resp.TotalRecordCount, nil
+}
+
+func GetLibraryItemTitles(cfg Config, id string, limit int) ([]string, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, fmt.Errorf("library id required")
+	}
+	if limit <= 0 {
+		return nil, fmt.Errorf("library title sample limit required")
+	}
+	q := url.Values{}
+	q.Set("ParentId", id)
+	q.Set("Recursive", "true")
+	q.Set("Limit", fmt.Sprintf("%d", limit))
+	q.Set("SortBy", "SortName")
+	q.Set("SortOrder", "Ascending")
+	u := joinHostURL(cfg.Host, "/Items") + "?" + q.Encode()
+	client := newHTTPClient()
+	status, data, err := apiRequest(client, http.MethodGet, u, cfg.Token, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get library item titles: %w", err)
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("get library item titles returned %d: %s", status, trunc(string(data), 300))
+	}
+	var resp ItemListResult
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("parse library item titles: %w", err)
+	}
+	titles := make([]string, 0, len(resp.Items))
+	for _, item := range resp.Items {
+		title := strings.TrimSpace(item.SortName)
+		if title == "" {
+			title = strings.TrimSpace(item.Name)
+		}
+		if title != "" {
+			titles = append(titles, title)
+		}
+	}
+	return titles, nil
+}
+
+func GetLibraryScanStatus(cfg Config) (*LibraryScanStatus, error) {
+	tasks, err := listScheduledTasks(cfg)
+	if err != nil {
+		return nil, err
+	}
+	for _, task := range tasks {
+		if !looksLikeLibraryScanTask(task) {
+			continue
+		}
+		return &LibraryScanStatus{
+			TaskID:          strings.TrimSpace(task.Id),
+			TaskKey:         strings.TrimSpace(task.Key),
+			TaskName:        strings.TrimSpace(task.Name),
+			State:           strings.TrimSpace(task.State),
+			Running:         task.IsRunning || strings.EqualFold(strings.TrimSpace(task.State), "Running"),
+			ProgressPercent: task.CurrentProgressPercentage,
+		}, nil
+	}
+	return nil, nil
+}
+
+func looksLikeLibraryScanTask(task ScheduledTask) bool {
+	key := strings.ToLower(strings.TrimSpace(task.Key))
+	name := strings.ToLower(strings.TrimSpace(task.Name))
+	switch key {
+	case "refreshlibrary", "refreshmedialibrary":
+		return true
+	}
+	if strings.Contains(name, "library") && (strings.Contains(name, "refresh") || strings.Contains(name, "scan")) {
+		return true
+	}
+	return false
 }
 
 func listVirtualFolders(client *http.Client, cfg Config) ([]VirtualFolderInfo, error) {

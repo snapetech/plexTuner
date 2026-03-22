@@ -37,7 +37,7 @@ IPTV Tunerr sits in the middle and fixes those problems. It can:
 
 You can use it for just the tuner, just the guide, or as the full control plane in front of Plex, Emby, and Jellyfin.
 
-It also supports gradual migration between them. The same Tunerr-backed tuner and guide identity can stay online for Plex while you pre-roll Emby or Jellyfin from built-in migration commands instead of hand-copying Live TV settings or forcing a one-shot cutover.
+It also supports gradual migration between them. The same Tunerr-backed tuner and guide identity can stay online for Plex while you pre-roll Emby or Jellyfin from built-in migration commands instead of hand-copying Live TV settings or forcing a one-shot cutover. That migration lane now also reaches shared library definitions and storage paths, not just the Live TV side, and it can audit both Live TV registrations and planned libraries against one or both live Emby/Jellyfin targets before apply, including explicit `ready_to_apply`, `status`, missing-library hints, reused-library population hints, source-vs-destination library parity hints, and best-effort library-scan progress per target.
 
 ### It makes unreliable IPTV behave like a normal DVR source
 
