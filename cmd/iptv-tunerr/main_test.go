@@ -851,6 +851,12 @@ func TestFetchCatalog_DoesNotUseGetPHPWhenLaterRankedPlayerAPISucceeds(t *testin
 	if len(res.Live) != 1 {
 		t.Fatalf("live len=%d want 1", len(res.Live))
 	}
+	if got := res.Live[0].StreamURL; !strings.HasPrefix(got, baseURL2+"/") {
+		t.Fatalf("StreamURL=%q want winning provider prefix %q", got, baseURL2+"/")
+	}
+	if len(res.Live[0].StreamURLs) == 0 || !strings.HasPrefix(res.Live[0].StreamURLs[0], baseURL2+"/") {
+		t.Fatalf("StreamURLs[0]=%q want winning provider first", res.Live[0].StreamURLs[0])
+	}
 	if getPHPHits["u1|p1"] != 0 || getPHPHits["u2|p2"] != 0 {
 		t.Fatalf("expected no get.php attempts while ranked player_api candidates remained, got %#v", getPHPHits)
 	}

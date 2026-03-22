@@ -490,6 +490,32 @@ func applyStreamVariants(live []catalog.LiveChannel, variantsByProvider []provid
 	}
 }
 
+func prioritizeWinningProvider(ranked []provider.EntryResult, winner provider.EntryResult) []provider.EntryResult {
+	if len(ranked) == 0 {
+		return nil
+	}
+	winnerKey := strings.TrimSuffix(winner.Entry.BaseURL, "/") + "|" + winner.Entry.User + "|" + winner.Entry.Pass
+	out := make([]provider.EntryResult, 0, len(ranked))
+	for _, entry := range ranked {
+		key := strings.TrimSuffix(entry.Entry.BaseURL, "/") + "|" + entry.Entry.User + "|" + entry.Entry.Pass
+		if key == winnerKey {
+			out = append(out, entry)
+			break
+		}
+	}
+	for _, entry := range ranked {
+		key := strings.TrimSuffix(entry.Entry.BaseURL, "/") + "|" + entry.Entry.User + "|" + entry.Entry.Pass
+		if key == winnerKey {
+			continue
+		}
+		out = append(out, entry)
+	}
+	if len(out) == 0 {
+		return ranked
+	}
+	return out
+}
+
 func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error) {
 	var res catalogResult
 
@@ -574,7 +600,7 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 					res.ProviderBase = candidate.Entry.BaseURL
 					res.ProviderUser = candidate.Entry.User
 					res.ProviderPass = candidate.Entry.Pass
-					applyStreamVariants(res.Live, ranked)
+					applyStreamVariants(res.Live, prioritizeWinningProvider(ranked, candidate))
 					break
 				}
 				lockoutTracker.notePlayerAPI(strings.TrimSuffix(candidate.Entry.BaseURL, "/")+"|"+candidate.Entry.User+"|"+candidate.Entry.Pass, fetchErr)

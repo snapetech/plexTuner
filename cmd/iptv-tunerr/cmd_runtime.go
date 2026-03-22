@@ -203,18 +203,9 @@ func handleRun(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendl
 			len(res.Movies), len(res.Series), len(res.Live), epgLinked, withBackups)
 	}
 
-	var checkURL string
-	if cfg.ProviderUser != "" && cfg.ProviderPass != "" {
-		base := runApiBase
-		if base == "" && !cfg.BlockCFProviders {
-			if baseURLs := cfg.ProviderURLs(); len(baseURLs) > 0 {
-				base = strings.TrimSuffix(baseURLs[0], "/")
-			}
-		}
-		if base != "" {
-			checkURL = base + "/player_api.php?username=" + url.QueryEscape(cfg.ProviderUser) + "&password=" + url.QueryEscape(cfg.ProviderPass)
-		}
-	}
+	effectiveProviderUser := firstNonEmpty(runProviderUser, cfg.ProviderUser)
+	effectiveProviderPass := firstNonEmpty(runProviderPass, cfg.ProviderPass)
+	checkURL := runtimeHealthCheckURL(cfg, runApiBase, runProviderBase, effectiveProviderUser, effectiveProviderPass)
 	if !skipHealth && checkURL != "" {
 		log.Print("Checking provider ...")
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -246,7 +237,7 @@ func handleRun(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendl
 	srv.UpdateChannels(live)
 	registrationLive := applyRegistrationRecipe(live, registerRecipe)
 
-	credentials := cfg.ProviderUser != "" && cfg.ProviderPass != ""
+	credentials := effectiveProviderUser != "" && effectiveProviderPass != ""
 	if credentials {
 		sigHUP := make(chan os.Signal, 1)
 		signal.Notify(sigHUP, syscall.SIGHUP)
@@ -299,4 +290,23 @@ func handleRun(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendl
 		log.Printf("Tuner failed: %v", err)
 		os.Exit(1)
 	}
+}
+
+func runtimeHealthCheckURL(cfg *config.Config, runAPIBase, runProviderBase, effectiveProviderUser, effectiveProviderPass string) string {
+	if effectiveProviderUser == "" || effectiveProviderPass == "" {
+		return ""
+	}
+	base := strings.TrimSuffix(strings.TrimSpace(runAPIBase), "/")
+	if base == "" && !cfg.BlockCFProviders {
+		base = strings.TrimSuffix(strings.TrimSpace(firstNonEmpty(runProviderBase, cfg.ProviderBaseURL)), "/")
+		if base == "" {
+			if baseURLs := cfg.ProviderURLs(); len(baseURLs) > 0 {
+				base = strings.TrimSuffix(baseURLs[0], "/")
+			}
+		}
+	}
+	if base == "" {
+		return ""
+	}
+	return base + "/player_api.php?username=" + url.QueryEscape(effectiveProviderUser) + "&password=" + url.QueryEscape(effectiveProviderPass)
 }

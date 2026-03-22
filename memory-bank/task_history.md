@@ -23,6 +23,27 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-22
+  Title: Fix winning-provider stream ordering and runtime health-check credentials
+  Summary:
+    - Fixed `fetchCatalog` so when a later ranked provider wins `player_api` indexing, that winning provider stays first in `StreamURL` / `StreamURLs` instead of reintroducing an earlier failed provider as the primary playback target.
+    - Added a regression proving later ranked `player_api` success keeps the winning provider first in channel stream ordering.
+    - Fixed `run` startup health checks to use the effective winning provider base URL and credentials, rather than always combining the winning base with the primary env credentials.
+    - Added focused runtime helper tests and revalidated live single-account and multi-account indexing with the current local `.env`.
+  Verification:
+    - `go test ./cmd/iptv-tunerr -run 'Test(RuntimeHealthCheckURL_|FetchCatalog_)'`
+    - `set -a && source ./.env && set +a && IPTV_TUNERR_PROVIDER_URL=\"$IPTV_TUNERR_PROVIDER_URL_3\" IPTV_TUNERR_PROVIDER_USER=\"$IPTV_TUNERR_PROVIDER_USER_3\" IPTV_TUNERR_PROVIDER_PASS=\"$IPTV_TUNERR_PROVIDER_PASS_3\" IPTV_TUNERR_PROVIDER_URLS=\"\" IPTV_TUNERR_PROVIDER_URL_2=\"\" IPTV_TUNERR_PROVIDER_USER_2=\"\" IPTV_TUNERR_PROVIDER_PASS_2=\"\" IPTV_TUNERR_PROVIDER_URL_3=\"\" IPTV_TUNERR_PROVIDER_USER_3=\"\" IPTV_TUNERR_PROVIDER_PASS_3=\"\" IPTV_TUNERR_LIVE_ONLY=true IPTV_TUNERR_CF_AUTO_BOOT=false go run ./cmd/iptv-tunerr index -catalog /tmp/review-single.json`
+    - `set -a && source ./.env && set +a && IPTV_TUNERR_LIVE_ONLY=true IPTV_TUNERR_CF_AUTO_BOOT=false go run ./cmd/iptv-tunerr index -catalog /tmp/review-multi.json`
+    - `./scripts/verify`
+  Notes:
+    - This review did not change the upstream `get.php` conclusion: on this machine it remains CF/WAF-blocked while `player_api` works.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/cmd_catalog.go`
+    - `cmd/iptv-tunerr/cmd_runtime.go`
+    - `cmd/iptv-tunerr/cmd_runtime_test.go`
+
+- Date: 2026-03-22
   Title: Make catalog ingest player_api-first and reserve get.php for final backup
   Summary:
     - Changed `fetchCatalog` so ranked and direct provider attempts exhaust `player_api` candidates before trying any `get.php` fallback.
