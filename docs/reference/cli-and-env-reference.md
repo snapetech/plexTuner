@@ -782,7 +782,7 @@ IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_COUNTRIES=us \
   iptv-tunerr free-sources -by-group
 
 # What would be added to an existing catalog?
-IPTV_TUNERR_FREE_SOURCES=https://m3u.prigoana.com/all.m3u \
+IPTV_TUNERR_FREE_SOURCES="$IPTV_TUNERR_FREE_SOURCE_PRIGOANA_URL" \
   iptv-tunerr free-sources -catalog ./catalog.json
 
 # Probe a sample of 50 channels to check live pass rate
@@ -1017,7 +1017,7 @@ IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_COUNTRIES=us,gb
 IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_CATEGORIES=news,sports
 
 # Use a custom public feed, keep NSFW but route via supervisor
-IPTV_TUNERR_FREE_SOURCES=https://m3u.prigoana.com/all.m3u
+IPTV_TUNERR_FREE_SOURCES="$IPTV_TUNERR_FREE_SOURCE_PRIGOANA_URL"
 IPTV_TUNERR_FREE_SOURCE_FILTER_NSFW=false
 
 # Append free URLs as fallbacks behind paid channels

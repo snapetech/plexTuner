@@ -4592,3 +4592,18 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
   Links:
     - `Dockerfile`
     - `k8s/vod-webdav-client-macair-job.yaml`
+- Date: 2026-03-22
+  Title: Move the public-feed sample URL out of README/reference literals
+  Summary:
+    - Removed the hardcoded `https://m3u.prigoana.com/all.m3u` sample from README and reference examples.
+    - Added a commented `.env.example` convenience preset `IPTV_TUNERR_FREE_SOURCE_PRIGOANA_URL` and updated examples to feed `IPTV_TUNERR_FREE_SOURCES` from that shell/env variable instead.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - This is a docs/env hygiene change only; Tunerr does not read `IPTV_TUNERR_FREE_SOURCE_PRIGOANA_URL` directly.
+  Opportunities filed:
+    - none
+  Links:
+    - `.env.example`
+    - `README.md`
+    - `docs/reference/cli-and-env-reference.md`

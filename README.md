@@ -841,7 +841,7 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
 IPTV_TUNERR_FREE_SOURCE_IPTV_ORG_CATEGORIES=news,sports
 
 # Use a custom aggregator feed
-IPTV_TUNERR_FREE_SOURCES=https://m3u.prigoana.com/all.m3u
+IPTV_TUNERR_FREE_SOURCES="$IPTV_TUNERR_FREE_SOURCE_PRIGOANA_URL"
 ```
 
 ### Merge modes
