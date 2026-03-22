@@ -133,6 +133,48 @@ cat >"$TMP_DIR/catalog-empty.json" <<'JSON'
 }
 JSON
 
+cat >"$TMP_DIR/catalog-full-shuffled.json" <<'JSON'
+{
+  "movies": [],
+  "series": [],
+  "live_channels": [
+    {
+      "channel_id": "ch3",
+      "dna_id": "dna-news",
+      "guide_number": "1001",
+      "guide_name": "Smoke One",
+      "group_title": "DirecTV",
+      "source_tag": "directv",
+      "stream_url": "http://example.invalid/stream-3.ts",
+      "stream_urls": ["http://example.invalid/stream-3.ts"],
+      "epg_linked": true,
+      "tvg_id": "smoke.one"
+    },
+    {
+      "channel_id": "ch2",
+      "guide_number": "102",
+      "guide_name": "Smoke Two",
+      "group_title": "Sports",
+      "stream_url": "http://example.invalid/stream-2.ts",
+      "stream_urls": ["http://example.invalid/stream-2.ts"],
+      "epg_linked": true,
+      "tvg_id": "smoke.two"
+    },
+    {
+      "channel_id": "ch1",
+      "dna_id": "dna-news",
+      "guide_number": "101",
+      "guide_name": "Smoke One",
+      "group_title": "News",
+      "stream_url": "http://example.invalid/stream-1.ts",
+      "stream_urls": ["http://example.invalid/stream-1.ts"],
+      "epg_linked": true,
+      "tvg_id": "smoke.one"
+    }
+  ]
+}
+JSON
+
 cat >"$TMP_DIR/catalog-vod.json" <<'JSON'
 {
   "movies": [
@@ -222,6 +264,18 @@ collapse_code="$(curl -sS -X POST -H 'Content-Type: application/json' --data '{"
 grep -q '"curated_channels": 2' <(curl -sS "http://127.0.0.1:$port_full/programming/preview.json") || fail "programming preview missing collapsed curated count"
 grep -q '"stream_urls": \[' <(curl -sS "http://127.0.0.1:$port_full/programming/preview.json") || fail "programming preview missing lineup stream urls"
 grep -q '"group_count": 1' <(curl -sS "http://127.0.0.1:$port_full/programming/backups.json") || fail "programming backups missing grouped exact match"
+
+kill "${PIDS[0]}" 2>/dev/null || true
+wait "${PIDS[0]}" 2>/dev/null || true
+unset 'PIDS[0]'
+port_restart="$(pick_port)"
+run_serve "$TMP_DIR/catalog-full-shuffled.json" "$port_restart"
+wait_http_code "http://127.0.0.1:$port_restart/discover.json" "200" || fail "restart catalog discover.json not ready"
+grep -q '"curated_channels": 2' <(curl -sS "http://127.0.0.1:$port_restart/programming/preview.json") || fail "restart preview missing curated count"
+grep -q '"order_mode": "custom"' <(curl -sS "http://127.0.0.1:$port_restart/programming/order.json") || fail "restart order mode did not persist"
+grep -q '"collapse_backups": true' <(curl -sS "http://127.0.0.1:$port_restart/programming/order.json") || fail "restart collapse flag missing"
+grep -q '"GuideNumber":"102"' <(curl -sS "http://127.0.0.1:$port_restart/lineup.json") || fail "restart lineup missing pinned sports row"
+grep -q '"GuideNumber":"1001"' <(curl -sS "http://127.0.0.1:$port_restart/lineup.json") || fail "restart lineup missing directv backup row"
 
 port_empty="$(pick_port)"
 run_serve "$TMP_DIR/catalog-empty.json" "$port_empty"

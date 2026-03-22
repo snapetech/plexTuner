@@ -131,6 +131,10 @@ This needs a stable, testable classifier rather than a hand-wavy UI-only label.
   - The dedicated `internal/webui` control deck now has a real Programming lane instead of leaving the feature as backend JSON only.
   - Operators can bulk include/exclude categories, pin or block exact channels, nudge manual order from the curated preview (`prepend` / relative up/down / drop order), toggle `collapse_exact_backups`, and inspect exact backup groups.
   - The lane also exposes raw Programming payload drill-down so recipe, preview, categories, channels, order, and backups stay debuggable from the same control plane.
+- **2026-03-21:** first visible `PM-009` release-grade coverage shipped.
+  - Added tuner regression coverage proving saved programming recipe mutations survive `UpdateChannels` refresh churn instead of only passing in a static one-shot API flow.
+  - Expanded the binary smoke lane so it restarts `iptv-tunerr serve` against a reshuffled catalog while reusing the same programming recipe file, then reasserts curated lineup shape, persisted custom order, and `collapse_exact_backups` behavior after the restart.
+  - Remaining `PM-009` depth is richer operator/browser automation, not missing persistence coverage.
 
 ## Technical approach
 

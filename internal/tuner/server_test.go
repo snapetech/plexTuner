@@ -351,6 +351,73 @@ func TestServer_UpdateChannelsPreservesProgrammingCustomOrderAndCollapse(t *test
 	}
 }
 
+func TestServer_ProgrammingMutationsSurviveRefresh(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "programming.json")
+	s := &Server{ProgrammingRecipeFile: path, LineupMaxChannels: NoLineupCap}
+	initial := []catalog.LiveChannel{
+		{ChannelID: "news-a", DNAID: "dna-news", TVGID: "news.one", GuideNumber: "101", GuideName: "News One", GroupTitle: "News", SourceTag: "iptv", StreamURL: "http://a/1"},
+		{ChannelID: "sports-a", GuideNumber: "102", GuideName: "Sports Two", GroupTitle: "Sports", SourceTag: "iptv", StreamURL: "http://a/2"},
+		{ChannelID: "local-a", GuideNumber: "3", GuideName: "NBC 4", GroupTitle: "Local", SourceTag: "iptv", StreamURL: "http://a/3"},
+		{ChannelID: "news-b", DNAID: "dna-news", TVGID: "news.one", GuideNumber: "1101", GuideName: "News One", GroupTitle: "DirecTV", SourceTag: "directv", StreamURL: "http://b/1"},
+	}
+	s.UpdateChannels(initial)
+
+	postBody := strings.NewReader(`{
+  "selected_categories": ["iptv--news", "iptv--local", "directv"],
+  "included_channel_ids": ["sports-a"],
+  "excluded_channel_ids": ["news-a"],
+  "order_mode": "custom",
+  "custom_order": ["sports-a", "local-a", "news-b"],
+  "collapse_exact_backups": true
+}`)
+	req := httptest.NewRequest(http.MethodPost, "/programming/recipe.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.serveProgrammingRecipe().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("recipe status=%d body=%s", w.Code, w.Body.String())
+	}
+	if len(s.Channels) != 3 || s.Channels[0].ChannelID != "sports-a" || s.Channels[1].ChannelID != "local-a" || s.Channels[2].ChannelID != "news-b" {
+		t.Fatalf("initial curated=%#v", s.Channels)
+	}
+	if count := countVisibleStreamsForTest(s.Channels[2]); count != 1 {
+		t.Fatalf("collapsed streams visible=%d channel=%#v", count, s.Channels[2])
+	}
+
+	refreshed := []catalog.LiveChannel{
+		{ChannelID: "news-b", DNAID: "dna-news", TVGID: "news.one", GuideNumber: "1101", GuideName: "News One", GroupTitle: "DirecTV", SourceTag: "directv", StreamURL: "http://b/1"},
+		{ChannelID: "local-a", GuideNumber: "3", GuideName: "NBC 4", GroupTitle: "Local", SourceTag: "iptv", StreamURL: "http://a/3"},
+		{ChannelID: "sports-a", GuideNumber: "102", GuideName: "Sports Two", GroupTitle: "Sports", SourceTag: "iptv", StreamURL: "http://a/2"},
+		{ChannelID: "news-a", DNAID: "dna-news", TVGID: "news.one", GuideNumber: "101", GuideName: "News One", GroupTitle: "News", SourceTag: "iptv", StreamURL: "http://a/1"},
+		{ChannelID: "movie-a", GuideNumber: "700", GuideName: "HBO East", GroupTitle: "Premium", SourceTag: "iptv", StreamURL: "http://a/7"},
+	}
+	s.UpdateChannels(refreshed)
+	if len(s.RawChannels) != 5 {
+		t.Fatalf("raw channels=%d want 5", len(s.RawChannels))
+	}
+	if len(s.Channels) != 3 {
+		t.Fatalf("curated channels=%#v", s.Channels)
+	}
+	if s.Channels[0].ChannelID != "sports-a" || s.Channels[1].ChannelID != "local-a" || s.Channels[2].ChannelID != "news-b" {
+		t.Fatalf("refreshed curated order=%#v", s.Channels)
+	}
+	if count := countVisibleStreamsForTest(s.Channels[2]); count != 1 || strings.TrimSpace(s.Channels[2].StreamURL) == "" {
+		t.Fatalf("refreshed collapsed streams visible=%d channel=%#v", count, s.Channels[2])
+	}
+}
+
+func countVisibleStreamsForTest(ch catalog.LiveChannel) int {
+	seen := map[string]struct{}{}
+	for _, raw := range append([]string{ch.StreamURL}, ch.StreamURLs...) {
+		url := strings.TrimSpace(raw)
+		if url == "" {
+			continue
+		}
+		seen[url] = struct{}{}
+	}
+	return len(seen)
+}
+
 func TestSummarizeLineupIntegrity(t *testing.T) {
 	live := []catalog.LiveChannel{
 		{ChannelID: "1", GuideNumber: "101", GuideName: "Ch1", TVGID: "one", EPGLinked: true, StreamURL: "http://a/1"},

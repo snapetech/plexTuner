@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-21):** **PM-009 regression coverage slice shipped:** Programming Manager now has restart/refresh survival coverage instead of only happy-path mutations. Added a tuner test proving saved category/channel/order/collapse recipe state survives `UpdateChannels` refresh churn and expanded `scripts/ci-smoke.sh` so it restarts `serve` against a reshuffled catalog while reusing the same recipe file, then reasserts curated lineup shape, custom order, and collapse state. **`./scripts/verify`** OK.
+
 **Latest (2026-03-21):** **PM-008 deck lane shipped:** the dedicated web UI now has a real Programming lane backed by the existing `/programming/*.json` APIs. Operators can bulk include/exclude categories, pin or block exact channels, nudge manual order from the curated preview, toggle exact-backup collapse, inspect backup groups, and jump straight into raw Programming payloads without hand-posting JSON. Verified with `node --check internal/webui/deck.js`, targeted `go test`, and full `./scripts/verify`.
 
 **Latest (2026-03-21):** **PM-006 / PM-007 backend slice shipped:** Programming Manager now has durable order and backup-grouping primitives. Added `/programming/order.json` for server-side manual order mutations, `/programming/backups.json` for exact-match sibling-group inspection, and `collapse_exact_backups: true` in the saved recipe so strong same-channel siblings (`tvg_id` exact, else `dna_id` exact) can collapse into one visible row with merged backup stream URLs. Binary smoke now exercises the new order/backups flow and full `./scripts/verify` is green.
