@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-21):** **Windows bare-metal smoke prepared:** added `scripts/windows-baremetal-package.sh` to cross-build a `windows/amd64` package and `scripts/windows-baremetal-smoke.ps1` to run the same local `serve`/web UI/VOD contract on a Windows host without WSL. The package build is verified from Linux, but this path is still **prepared, not host-proven** until it runs on a real Windows VM or box.
+
 **Latest (2026-03-21):** **One-command macOS bare-metal smoke shipped:** added `scripts/mac-baremetal-smoke.sh`, which cross-builds a darwin/arm64 binary, optionally sends Wake-on-LAN magic packets to the MacBook, SSHes in, runs a real `serve`/web UI startup smoke plus the full `vod-webdav` Finder/MiniRedir request matrix, and pulls artifacts back under `.diag/mac-baremetal/<run-id>/`. The first live run passed on `192.168.50.108`, and the Mac already reports `womp=1`, so wake support is enabled on the host side.
 
 **Latest (2026-03-21):** **Real macOS WebDAV validation passed:** passwordless SSH is now configured from this workstation to `keith@192.168.50.108`, a darwin/arm64 `iptv-tunerr` binary was cross-built locally and copied to the Mac, and the Mac-hosted `vod-webdav` instance passed the full Finder/WebDAVFS + Windows MiniRedir request matrix using `scripts/vod-webdav-client-harness.sh` in external mode. The resulting bundle (`mac-selfhost`) diffs cleanly against the local baseline with **no status or header differences**. The cluster node `macair-m4` itself is still `NotReady`, so k8s scheduling is not back yet, but host-level validation is now real instead of purely synthetic.

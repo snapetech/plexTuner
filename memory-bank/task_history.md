@@ -23,6 +23,22 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: Prepare Windows bare-metal smoke package
+  Summary:
+    - Added `scripts/windows-baremetal-package.sh` to cross-build a `windows/amd64` `iptv-tunerr.exe` and bundle it with a Windows-local smoke runner.
+    - Added `scripts/windows-baremetal-smoke.ps1`, a PowerShell smoke that starts local asset/serve/vod-webdav processes and checks the same startup, web UI, and WebDAV contract we validate elsewhere.
+    - Added `docs/how-to/windows-baremetal-smoke.md` and a commands entry so the Windows path is ready the moment a real VM or host is available.
+  Verification:
+    - `bash -n scripts/windows-baremetal-package.sh`
+    - `./scripts/windows-baremetal-package.sh`
+  Notes:
+    - This is intentionally marked as prepared but not host-validated; there is still no real Windows execution result yet.
+  Opportunities filed:
+    - none
+  Links:
+    - windows bare-metal smoke package
+
+- Date: 2026-03-21
   Title: Automate bare-metal macOS smoke with Wake-on-LAN
   Summary:
     - Added `scripts/mac-baremetal-smoke.sh`, a one-command Linux-side runner that cross-builds a darwin/arm64 `iptv-tunerr`, optionally sends Wake-on-LAN magic packets, stages the binary and helper scripts over SSH, runs a real macOS `serve`/web UI smoke plus the `vod-webdav` client-matrix harness, and pulls artifacts back under `.diag/mac-baremetal/`.
