@@ -4226,3 +4226,9 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
   - Added `/player_api.php` support for `get_live_streams` and `get_live_categories`.
   - Added `/live/<user>/<pass>/<channel>.ts` proxying into the existing gateway.
   - Verification: `go test ./internal/tuner ./cmd/iptv-tunerr -run 'Test(Server_(XtreamPlayerAPI_LiveCategories|XtreamLiveProxy|ActiveStreamsReport)|Gateway_stream_rollsAcrossThreeXtreamPathAccounts|Gateway_authForURL_fallsBackToXtreamPathCredentials)' -count=1`.
+- 2026-03-21: Expanded downstream Xtream output to VOD and series, and added a focused Programming Manager detail view.
+  - `player_api.php` now serves `get_vod_categories`, `get_vod_streams`, `get_series_categories`, `get_series`, and `get_series_info`, and Tunerr-owned `/movie/<user>/<pass>/<id>.mp4` / `/series/<user>/<pass>/<episode>.mp4` paths proxy catalog VOD assets without exposing raw upstream URLs directly.
+  - Added `/programming/channel-detail.json` so category-first or curses-style tools can fetch one channel’s category/taxonomy metadata, exact-match backup alternatives, and a 3-hour upcoming-programme preview from the merged guide.
+  - Strengthened release gating: `scripts/ci-smoke.sh` now exercises the expanded Xtream VOD/series surface and the new programming channel-detail endpoint against a real temp binary.
+  - Added a multi-channel 3-account rollover regression (`TestGateway_stream_twoChannelsPreferDifferentXtreamPathAccounts`) so “second device didn’t rotate credentials” becomes a deterministic test failure.
+  - Verification: `go test ./internal/tuner ./cmd/iptv-tunerr -run 'Test(Server_(XtreamPlayerAPI_(LiveCategories|VODAndSeries)|XtreamLiveProxy|XtreamMovieAndSeriesProxy|programmingChannelDetail|programmingEndpoints)|Gateway_(stream_rollsAcrossThreeXtreamPathAccounts|stream_twoChannelsPreferDifferentXtreamPathAccounts))' -count=1`; `./scripts/verify`.

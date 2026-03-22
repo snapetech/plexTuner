@@ -57,7 +57,7 @@ func handleServe(cfg *config.Config, catalogPath, addr, baseURL, deviceID, frien
 	if path == "" {
 		path = cfg.CatalogPath
 	}
-	live, err := loadRuntimeLiveChannels(cfg, path, cfg.ProviderBaseURL, cfg.ProviderUser, cfg.ProviderPass)
+	movies, series, live, err := loadRuntimeCatalog(cfg, path, cfg.ProviderBaseURL, cfg.ProviderUser, cfg.ProviderPass)
 	if err != nil {
 		log.Printf("Load catalog (live channels): %v; serving with no channels", err)
 	}
@@ -66,6 +66,8 @@ func handleServe(cfg *config.Config, catalogPath, addr, baseURL, deviceID, frien
 		serveLineupCap = tuner.PlexDVRWizardSafeMax
 	}
 	srv := newRuntimeServer(cfg, addr, baseURL, deviceID, friendlyName, serveLineupCap, cfg.ProviderBaseURL, cfg.ProviderUser, cfg.ProviderPass)
+	srv.Movies = movies
+	srv.Series = series
 	srv.UpdateChannels(live)
 	epgSt, closeEpg, err := maybeOpenEpgStore(cfg)
 	if err != nil {
@@ -224,7 +226,7 @@ func handleRun(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendl
 		log.Print("Provider OK")
 	}
 
-	live, err := loadRuntimeLiveChannels(
+	movies, series, live, err := loadRuntimeCatalog(
 		cfg,
 		path,
 		firstNonEmpty(runProviderBase, cfg.ProviderBaseURL),
@@ -235,6 +237,8 @@ func handleRun(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendl
 		log.Printf("Load catalog failed: %v", err)
 		os.Exit(1)
 	}
+	srv.Movies = movies
+	srv.Series = series
 	srv.ProviderBaseURL = firstNonEmpty(runProviderBase, cfg.ProviderBaseURL)
 	srv.ProviderUser = firstNonEmpty(runProviderUser, cfg.ProviderUser)
 	srv.ProviderPass = firstNonEmpty(runProviderPass, cfg.ProviderPass)

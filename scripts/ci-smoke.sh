@@ -258,6 +258,8 @@ run_serve() {
   IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
   IPTV_TUNERR_XMLTV_URL= \
   IPTV_TUNERR_WEBUI_DISABLED=1 \
+  IPTV_TUNERR_XTREAM_USER=demo \
+  IPTV_TUNERR_XTREAM_PASS=secret \
   IPTV_TUNERR_PROGRAMMING_RECIPE_FILE="$TMP_DIR/programming.json" \
   IPTV_TUNERR_RECORDING_RULES_FILE="$TMP_DIR/recording-rules.json" \
   IPTV_TUNERR_CATCHUP_RECORDER_STATE_FILE="$TMP_DIR/recorder-state.json" \
@@ -298,6 +300,8 @@ grep -q '"curated_channels": 1' <(curl -sS "http://127.0.0.1:$port_full/programm
 grep -q '"id": "news"' <(curl -sS "http://127.0.0.1:$port_full/programming/categories.json") || fail "programming categories missing News"
 grep -q '"id": "sports"' <(curl -sS "http://127.0.0.1:$port_full/programming/categories.json") || fail "programming categories missing Sports"
 grep -q '"group_count": 0' <(curl -sS "http://127.0.0.1:$port_full/programming/backups.json") || fail "programming backups unexpected initial group"
+grep -q '"alternative_sources"' <(curl -sS "http://127.0.0.1:$port_full/programming/channel-detail.json?channel_id=ch1") || fail "programming channel detail missing alternatives section"
+grep -q '"stream_type":"live"' <(curl -sS "http://127.0.0.1:$port_full/player_api.php?username=demo&password=secret&action=get_live_streams") || fail "xtream live streams endpoint missing live row"
 category_mutate_code="$(curl -sS -X POST -H 'Content-Type: application/json' --data '{"action":"include","category_id":"sports"}' -o "$body_file" -w '%{http_code}' "http://127.0.0.1:$port_full/programming/categories.json" || true)"
 [[ "$category_mutate_code" == "200" ]] || fail "programming category mutation status=$category_mutate_code body=$(cat "$body_file" 2>/dev/null)"
 channel_mutate_code="$(curl -sS -X POST -H 'Content-Type: application/json' --data '{"action":"exclude","channel_id":"ch1"}' -o "$body_file" -w '%{http_code}' "http://127.0.0.1:$port_full/programming/channels.json" || true)"
@@ -375,5 +379,16 @@ episode_range_code="$(curl -sS -H 'Range: bytes=0-6' -o "$episode_range" -w '%{h
 grep -q '^episode$' "$episode_range" || fail "vod-webdav episode range body unexpected"
 readonly_code="$(curl -sS -X PUT -H 'Content-Type: application/octet-stream' --data 'bad' -o "$body_file" -w '%{http_code}' "http://127.0.0.1:$port_vod/Movies/Live:%20Smoke%20Movie%20%282024%29/Live:%20Smoke%20Movie%20%282024%29.mp4" || true)"
 [[ "$readonly_code" == "405" ]] || fail "vod-webdav readonly PUT status=$readonly_code body=$(cat "$body_file" 2>/dev/null)"
+
+port_xtream="$(pick_port)"
+run_serve "$TMP_DIR/catalog-vod.json" "$port_xtream"
+wait_http_code "http://127.0.0.1:$port_xtream/discover.json" "200" || fail "xtream catalog discover.json not ready"
+grep -q '"stream_type":"movie"' <(curl -sS "http://127.0.0.1:$port_xtream/player_api.php?username=demo&password=secret&action=get_vod_streams") || fail "xtream vod streams endpoint missing movie row"
+grep -q '"stream_type":"series"' <(curl -sS "http://127.0.0.1:$port_xtream/player_api.php?username=demo&password=secret&action=get_series") || fail "xtream series endpoint missing series row"
+grep -q '"episodes":{"1":\[' <(curl -sS "http://127.0.0.1:$port_xtream/player_api.php?username=demo&password=secret&action=get_series_info&series_id=s1") || fail "xtream series info missing episode list"
+movie_proxy_body="$(curl -sS "http://127.0.0.1:$port_xtream/movie/demo/secret/m1.mp4")"
+[[ "$movie_proxy_body" == "movie-bytes" ]] || fail "xtream movie proxy body unexpected"
+episode_proxy_body="$(curl -sS "http://127.0.0.1:$port_xtream/series/demo/secret/e1.mp4")"
+[[ "$episode_proxy_body" == "episode-bytes" ]] || fail "xtream series proxy body unexpected"
 
 log "smoke checks passed"

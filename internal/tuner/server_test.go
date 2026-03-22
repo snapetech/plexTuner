@@ -324,6 +324,55 @@ func TestServer_programmingEndpoints(t *testing.T) {
 	}
 }
 
+func TestServer_programmingChannelDetail(t *testing.T) {
+	start := time.Now().UTC().Add(30 * time.Minute).Format("20060102150405 -0700")
+	stop := time.Now().UTC().Add(90 * time.Minute).Format("20060102150405 -0700")
+	s := &Server{
+		RawChannels: []catalog.LiveChannel{
+			{ChannelID: "1", DNAID: "dna-syfy", GuideNumber: "101", GuideName: "Syfy East", GroupTitle: "Entertainment", SourceTag: "sling", StreamURL: "http://a/1", TVGID: "syfy.us"},
+			{ChannelID: "2", DNAID: "dna-syfy", GuideNumber: "201", GuideName: "Syfy West", GroupTitle: "Entertainment", SourceTag: "directv", StreamURL: "http://b/1", TVGID: "syfy.us"},
+		},
+		Channels: []catalog.LiveChannel{
+			{ChannelID: "1", DNAID: "dna-syfy", GuideNumber: "101", GuideName: "Syfy East", GroupTitle: "Entertainment", SourceTag: "sling", StreamURL: "http://a/1", TVGID: "syfy.us"},
+		},
+		xmltv: &XMLTV{
+			Channels: []catalog.LiveChannel{
+				{ChannelID: "1", GuideNumber: "101", GuideName: "Syfy East", TVGID: "syfy.us"},
+			},
+			cachedXML: []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="101"><display-name>Syfy East</display-name></channel>
+  <programme start="` + start + `" stop="` + stop + `" channel="101">
+    <title>Movie Block</title>
+  </programme>
+</tv>`),
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/programming/channel-detail.json?channel_id=1&limit=3", nil)
+	w := httptest.NewRecorder()
+	s.serveProgrammingChannelDetail().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("detail status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body programmingChannelDetailReport
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("detail unmarshal: %v", err)
+	}
+	if body.Channel.ChannelID != "1" || !body.Curated {
+		t.Fatalf("detail channel=%+v curated=%v", body.Channel, body.Curated)
+	}
+	if body.CategoryID == "" || body.Bucket == "" {
+		t.Fatalf("detail category/bucket missing: %+v", body)
+	}
+	if body.ExactBackupGroup == nil || len(body.AlternativeSources) != 1 || body.AlternativeSources[0].ChannelID != "2" {
+		t.Fatalf("detail alternatives=%+v group=%+v", body.AlternativeSources, body.ExactBackupGroup)
+	}
+	if !body.SourceReady || len(body.UpcomingProgrammes) != 1 || body.UpcomingProgrammes[0].Title != "Movie Block" {
+		t.Fatalf("detail upcoming=%+v sourceReady=%v", body.UpcomingProgrammes, body.SourceReady)
+	}
+}
+
 func TestServer_UpdateChannelsPreservesProgrammingCustomOrderAndCollapse(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "programming.json")
 	if err := os.WriteFile(path, []byte(`{
@@ -2223,5 +2272,102 @@ func TestServer_XtreamLiveProxy(t *testing.T) {
 	srv.serveXtreamLiveProxy().ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestServer_XtreamPlayerAPI_VODAndSeries(t *testing.T) {
+	srv := &Server{
+		BaseURL:          "http://127.0.0.1:5004",
+		XtreamOutputUser: "demo",
+		XtreamOutputPass: "secret",
+		Movies: []catalog.Movie{
+			{ID: "m1", Title: "Movie One", Category: "movies"},
+		},
+		Series: []catalog.Series{
+			{
+				ID:       "s1",
+				Title:    "Series One",
+				Category: "tv",
+				Seasons: []catalog.Season{{
+					Number: 1,
+					Episodes: []catalog.Episode{{
+						ID:         "e1",
+						SeasonNum:  1,
+						EpisodeNum: 1,
+						Title:      "Pilot",
+						StreamURL:  "http://provider.example/series/e1.mp4",
+					}},
+				}},
+			},
+		},
+	}
+	for _, tc := range []struct {
+		path string
+		want string
+	}{
+		{"/player_api.php?username=demo&password=secret&action=get_vod_categories", `"category_name":"movies"`},
+		{"/player_api.php?username=demo&password=secret&action=get_vod_streams", `"stream_type":"movie"`},
+		{"/player_api.php?username=demo&password=secret&action=get_series_categories", `"category_name":"tv"`},
+		{"/player_api.php?username=demo&password=secret&action=get_series", `"stream_type":"series"`},
+		{"/player_api.php?username=demo&password=secret&action=get_series_info&series_id=s1", `"episodes":{"1":[`},
+	} {
+		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		rr := httptest.NewRecorder()
+		srv.serveXtreamPlayerAPI().ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("%s status=%d body=%s", tc.path, rr.Code, rr.Body.String())
+		}
+		if !strings.Contains(rr.Body.String(), tc.want) {
+			t.Fatalf("%s body=%s want %q", tc.path, rr.Body.String(), tc.want)
+		}
+	}
+}
+
+func TestServer_XtreamMovieAndSeriesProxy(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "movie") {
+			_, _ = w.Write([]byte("movie-bytes"))
+			return
+		}
+		_, _ = w.Write([]byte("episode-bytes"))
+	}))
+	defer upstream.Close()
+
+	srv := &Server{
+		XtreamOutputUser: "demo",
+		XtreamOutputPass: "secret",
+		Movies: []catalog.Movie{
+			{ID: "m1", Title: "Movie One", StreamURL: upstream.URL + "/movie.mp4"},
+		},
+		Series: []catalog.Series{
+			{
+				ID: "s1",
+				Seasons: []catalog.Season{{
+					Number: 1,
+					Episodes: []catalog.Episode{{
+						ID:        "e1",
+						StreamURL: upstream.URL + "/episode.mp4",
+					}},
+				}},
+			},
+		},
+	}
+	for _, tc := range []struct {
+		path string
+		want string
+		h    http.Handler
+	}{
+		{"/movie/demo/secret/m1.mp4", "movie-bytes", srv.serveXtreamMovieProxy()},
+		{"/series/demo/secret/e1.mp4", "episode-bytes", srv.serveXtreamSeriesProxy()},
+	} {
+		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		rr := httptest.NewRecorder()
+		tc.h.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("%s status=%d body=%s", tc.path, rr.Code, rr.Body.String())
+		}
+		if rr.Body.String() != tc.want {
+			t.Fatalf("%s body=%q want %q", tc.path, rr.Body.String(), tc.want)
+		}
 	}
 }

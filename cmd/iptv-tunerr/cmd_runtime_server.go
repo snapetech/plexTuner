@@ -25,6 +25,19 @@ func loadRuntimeLiveChannels(cfg *config.Config, path, providerBase, providerUse
 	return live, nil
 }
 
+func loadRuntimeCatalog(cfg *config.Config, path, providerBase, providerUser, providerPass string) ([]catalog.Movie, []catalog.Series, []catalog.LiveChannel, error) {
+	c := catalog.New()
+	if err := c.Load(path); err != nil {
+		return nil, nil, nil, err
+	}
+	movies, series := c.Snapshot()
+	live := c.SnapshotLive()
+	applyRuntimeEPGRepairs(cfg, live, providerBase, providerUser, providerPass)
+	channeldna.Assign(live)
+	log.Printf("Loaded %d movies, %d series, %d live channels from %s", len(movies), len(series), len(live), path)
+	return movies, series, live, nil
+}
+
 func newRuntimeServer(cfg *config.Config, addr, baseURL, deviceID, friendlyName string, lineupCap int, providerBase, providerUser, providerPass string) *tuner.Server {
 	if deviceID == "" {
 		deviceID = cfg.DeviceID
@@ -246,11 +259,15 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"guide_lineup_match":     "/guide/lineup-match.json",
 			"programming_categories": "/programming/categories.json",
 			"programming_channels":   "/programming/channels.json",
+			"programming_channel":    "/programming/channel-detail.json",
 			"programming_order":      "/programming/order.json",
 			"programming_backups":    "/programming/backups.json",
 			"programming_recipe":     "/programming/recipe.json",
 			"programming_preview":    "/programming/preview.json",
 			"xtream_player_api":      "/player_api.php",
+			"xtream_live_proxy":      "/live/",
+			"xtream_movie_proxy":     "/movie/",
+			"xtream_series_proxy":    "/series/",
 			"guide_highlights":       "/guide/highlights.json",
 			"guide_epg_store":        "/guide/epg-store.json",
 			"guide_capsules":         "/guide/capsules.json",

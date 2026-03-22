@@ -74,6 +74,8 @@ type Server struct {
 	AutopilotStateFile    string // optional JSON file for remembered dna_id+client_class playback decisions
 	RecorderStateFile     string // optional JSON file written by catchup-daemon for recorder status/reporting
 	RecordingRulesFile    string // optional JSON file for durable recording rule configuration
+	Movies                []catalog.Movie
+	Series                []catalog.Series
 	Channels              []catalog.LiveChannel
 	RawChannels           []catalog.LiveChannel
 	ProgrammingRecipeFile string
@@ -1279,6 +1281,8 @@ func (s *Server) Run(ctx context.Context) error {
 	if s.xtreamOutputEnabled() {
 		mux.Handle("/player_api.php", s.serveXtreamPlayerAPI())
 		mux.Handle("/live/", s.serveXtreamLiveProxy())
+		mux.Handle("/movie/", s.serveXtreamMovieProxy())
+		mux.Handle("/series/", s.serveXtreamSeriesProxy())
 	}
 	mux.Handle("/guide.xml", xmltv)
 	mux.Handle("/guide/health.json", s.serveGuideHealth())
@@ -1288,6 +1292,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/guide/lineup-match.json", s.serveGuideLineupMatch())
 	mux.Handle("/programming/categories.json", s.serveProgrammingCategories())
 	mux.Handle("/programming/channels.json", s.serveProgrammingChannels())
+	mux.Handle("/programming/channel-detail.json", s.serveProgrammingChannelDetail())
 	mux.Handle("/programming/order.json", s.serveProgrammingOrder())
 	mux.Handle("/programming/backups.json", s.serveProgrammingBackups())
 	mux.Handle("/programming/recipe.json", s.serveProgrammingRecipe())
@@ -2350,6 +2355,20 @@ type programmingPreviewReport struct {
 	BackupGroups    []programming.BackupGroup     `json:"backup_groups,omitempty"`
 }
 
+type programmingChannelDetailReport struct {
+	GeneratedAt        string                          `json:"generated_at"`
+	Channel            catalog.LiveChannel             `json:"channel"`
+	Curated            bool                            `json:"curated"`
+	CategoryID         string                          `json:"category_id"`
+	CategoryLabel      string                          `json:"category_label"`
+	CategorySource     string                          `json:"category_source,omitempty"`
+	Bucket             string                          `json:"bucket"`
+	ExactBackupGroup   *programming.BackupGroup        `json:"exact_backup_group,omitempty"`
+	AlternativeSources []programming.BackupGroupMember `json:"alternative_sources,omitempty"`
+	UpcomingProgrammes []CatchupCapsule                `json:"upcoming_programmes,omitempty"`
+	SourceReady        bool                            `json:"source_ready"`
+}
+
 func (s *Server) serveProgrammingCategories() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -2571,6 +2590,91 @@ func (s *Server) serveProgrammingBackups() http.Handler {
 	})
 }
 
+func (s *Server) serveProgrammingChannelDetail() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		channelID := strings.TrimSpace(r.URL.Query().Get("channel_id"))
+		if channelID == "" {
+			http.Error(w, `{"error":"channel_id required"}`, http.StatusBadRequest)
+			return
+		}
+		sourceChannels := s.RawChannels
+		if len(sourceChannels) == 0 {
+			sourceChannels = s.Channels
+		}
+		var target catalog.LiveChannel
+		found := false
+		for _, ch := range sourceChannels {
+			if strings.TrimSpace(ch.ChannelID) == channelID {
+				target = ch
+				found = true
+				break
+			}
+		}
+		if !found {
+			http.Error(w, `{"error":"channel not found"}`, http.StatusNotFound)
+			return
+		}
+		categoryID, categoryLabel, categorySource := programming.CategoryIdentity(target)
+		report := programmingChannelDetailReport{
+			GeneratedAt:    time.Now().UTC().Format(time.RFC3339),
+			Channel:        target,
+			Curated:        containsLiveChannelID(s.Channels, channelID),
+			CategoryID:     categoryID,
+			CategoryLabel:  categoryLabel,
+			CategorySource: categorySource,
+			Bucket:         string(programming.ClassifyChannel(target)),
+		}
+		for _, group := range programming.BuildBackupGroups(sourceChannels) {
+			member := false
+			for _, row := range group.Members {
+				if strings.TrimSpace(row.ChannelID) == channelID {
+					member = true
+					continue
+				}
+				report.AlternativeSources = append(report.AlternativeSources, row)
+			}
+			if member {
+				groupCopy := group
+				report.ExactBackupGroup = &groupCopy
+				break
+			}
+		}
+		horizon := 3 * time.Hour
+		if raw := strings.TrimSpace(r.URL.Query().Get("horizon")); raw != "" {
+			if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+				horizon = d
+			}
+		}
+		limit := 6
+		if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+			if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 50 {
+				limit = n
+			}
+		}
+		if s.xmltv != nil {
+			if preview, err := s.xmltv.CatchupCapsulePreview(time.Now(), horizon, 256); err == nil {
+				report.SourceReady = preview.SourceReady
+				for _, capsule := range preview.Capsules {
+					if strings.TrimSpace(capsule.GuideNumber) != strings.TrimSpace(target.GuideNumber) {
+						continue
+					}
+					report.UpcomingProgrammes = append(report.UpcomingProgrammes, capsule)
+					if len(report.UpcomingProgrammes) >= limit {
+						break
+					}
+				}
+			}
+		}
+		body, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode programming channel detail"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
 func (s *Server) serveProgrammingRecipe() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -2625,6 +2729,19 @@ func (s *Server) serveProgrammingRecipe() http.Handler {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
+}
+
+func containsLiveChannelID(channels []catalog.LiveChannel, channelID string) bool {
+	channelID = strings.TrimSpace(channelID)
+	if channelID == "" {
+		return false
+	}
+	for _, ch := range channels {
+		if strings.TrimSpace(ch.ChannelID) == channelID {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) serveProgrammingPreview() http.Handler {
