@@ -33,6 +33,10 @@
         <strong>Operations</strong>
         <span>Autopilot, recorder, media-server hooks, ghosts.</span>
       </button>
+      <button type="button" data-mode="programming">
+        <strong>Programming</strong>
+        <span>Category curation, manual lineup shaping, backups.</span>
+      </button>
       <button type="button" data-mode="settings">
         <strong>Settings</strong>
         <span>Effective runtime config, endpoint index, raw JSON.</span>
@@ -232,6 +236,50 @@
               </div>
             </div>
             <div class="stack" id="channel-list"></div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="section" data-mode="programming">
+        <div class="panel-grid">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Programming Manager</h3>
+                <p>Build the exposed lineup from categories, exact channels, order, and backup collapse rules.</p>
+              </div>
+            </div>
+            <div class="stack" id="programming-list"></div>
+          </article>
+          <aside class="rail">
+            <div class="panel-head">
+              <div>
+                <h3>Category Inventory</h3>
+                <p>Bulk category controls with sample channels and direct drill-down.</p>
+              </div>
+            </div>
+            <div class="stack" id="programming-categories"></div>
+          </aside>
+        </div>
+
+        <div class="panel-grid">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Curated Preview</h3>
+                <p>The lineup Plex will actually see after recipe filters, ordering, and optional backup collapse.</p>
+              </div>
+            </div>
+            <div class="stack" id="programming-preview"></div>
+          </article>
+          <aside class="rail">
+            <div class="panel-head">
+              <div>
+                <h3>Exact Backup Groups</h3>
+                <p>Sibling sources that can collapse into one visible channel with fallback streams behind it.</p>
+              </div>
+            </div>
+            <div class="stack" id="programming-backups"></div>
           </aside>
         </div>
       </section>

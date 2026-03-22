@@ -18,6 +18,12 @@ const endpoints = {
   provider: "/api/provider/profile.json",
   recorder: "/api/recordings/recorder.json?limit=8",
   attempts: "/api/debug/stream-attempts.json?limit=8",
+  programmingCategories: "/api/programming/categories.json",
+  programmingChannels: "/api/programming/channels.json",
+  programmingOrder: "/api/programming/order.json",
+  programmingBackups: "/api/programming/backups.json",
+  programmingRecipe: "/api/programming/recipe.json",
+  programmingPreview: "/api/programming/preview.json?limit=12",
   operatorActionsStatus: "/api/ops/actions/status.json",
   guideWorkflow: "/api/ops/workflows/guide-repair.json",
   streamWorkflow: "/api/ops/workflows/stream-investigate.json",
@@ -43,6 +49,12 @@ const endpointCatalog = {
   provider: { title: "Provider Profile", category: "Routing", summary: "Tuner limits, CF/concurrency/mux counters, penalized hosts, advisory remediation_hints." },
   recorder: { title: "Recorder", category: "Operations", summary: "Catch-up recorder state, failures, and throughput." },
   attempts: { title: "Stream Attempts", category: "Routing", summary: "Recent fallback and failure evidence for live streams." },
+  programmingCategories: { title: "Programming Categories", category: "Programming", summary: "Category inventory and bulk include/exclude controls for lineup curation." },
+  programmingChannels: { title: "Programming Channels", category: "Programming", summary: "Exact include/exclude channel controls for the saved programming recipe." },
+  programmingOrder: { title: "Programming Order", category: "Programming", summary: "Manual lineup order mutations and order-mode state." },
+  programmingBackups: { title: "Programming Backups", category: "Programming", summary: "Exact sibling backup groups that can collapse into one visible lineup row." },
+  programmingRecipe: { title: "Programming Recipe", category: "Programming", summary: "Durable saved recipe file backing category/channel/order decisions." },
+  programmingPreview: { title: "Programming Preview", category: "Programming", summary: "Curated lineup preview with taxonomy buckets and backup groups." },
   operatorActionsStatus: { title: "Operator Action Status", category: "Deck Control", summary: "Availability and current status of safe operator actions." },
   guideWorkflow: { title: "Guide Workflow", category: "Workflows", summary: "Guided checklist for guide repair and freshness issues." },
   streamWorkflow: { title: "Stream Workflow", category: "Workflows", summary: "Guided lane for routing and upstream stream failures." },
@@ -92,6 +104,7 @@ const modeTitles = {
   guide: ["Guide", "Integrity"],
   routing: ["Routing", "Decision Trail"],
   ops: ["Operations", "Automation"],
+  programming: ["Programming", "Lineup Curation"],
   settings: ["Settings", "Runtime Snapshot"]
 };
 
@@ -145,6 +158,10 @@ const routingList = document.getElementById("routing-list");
 const attemptTrail = document.getElementById("attempt-trail");
 const opsList = document.getElementById("ops-list");
 const channelList = document.getElementById("channel-list");
+const programmingList = document.getElementById("programming-list");
+const programmingCategories = document.getElementById("programming-categories");
+const programmingPreview = document.getElementById("programming-preview");
+const programmingBackups = document.getElementById("programming-backups");
 const settingsList = document.getElementById("settings-list");
 const deckSettingsForm = document.getElementById("deck-settings-form");
 const endpointGrid = document.getElementById("endpoint-grid");
@@ -274,6 +291,63 @@ function createSettingsCard(title, summary, entries, endpointKey = "", extraActi
     endpointKey,
     extraActions
   );
+}
+
+function createTinyButton(attrs, label) {
+  return `<button class="tiny" type="button" ${attrs}>${esc(label)}</button>`;
+}
+
+function channelName(channel) {
+  return channel?.guide_name || channel?.GuideName || channel?.channel_id || channel?.ChannelID || "channel";
+}
+
+function programmingCategoryButtons(category, recipe) {
+  const selected = new Set(normalizeArray(recipe?.selected_categories));
+  const excluded = new Set(normalizeArray(recipe?.excluded_categories));
+  const id = category?.id || "";
+  return [
+    createTinyButton(`data-programming-post="category" data-programming-action="include" data-programming-id="${esc(id)}"`, selected.has(id) ? "Included" : "Include"),
+    createTinyButton(`data-programming-post="category" data-programming-action="exclude" data-programming-id="${esc(id)}"`, excluded.has(id) ? "Excluded" : "Exclude"),
+    createTinyButton(`data-programming-post="category" data-programming-action="remove" data-programming-id="${esc(id)}"`, "Clear"),
+    createTinyButton(`data-open-path="/api/programming/categories.json?category=${encodeURIComponent(id)}" data-open-title="Programming Category · ${esc(category?.label || id)}"`, "Members")
+  ].join("");
+}
+
+function programmingChannelButtons(channel, recipe) {
+  const included = new Set(normalizeArray(recipe?.included_channel_ids));
+  const excluded = new Set(normalizeArray(recipe?.excluded_channel_ids));
+  const id = channel?.ChannelID || channel?.channel_id || "";
+  const label = channelName(channel);
+  return [
+    createTinyButton(`data-programming-post="channel" data-programming-action="include" data-programming-id="${esc(id)}"`, included.has(id) ? "Pinned In" : "Include"),
+    createTinyButton(`data-programming-post="channel" data-programming-action="exclude" data-programming-id="${esc(id)}"`, excluded.has(id) ? "Blocked" : "Exclude"),
+    createTinyButton(`data-programming-post="channel" data-programming-action="remove" data-programming-id="${esc(id)}"`, "Clear"),
+    createTinyButton(`data-open-path="/api/programming/channels.json?category=${encodeURIComponent(channel?.GroupTitle || channel?.group_title || "")}" data-open-title="Programming Channel · ${esc(label)}"`, "Context")
+  ].join("");
+}
+
+function programmingOrderButtons(channel, lineup, recipe) {
+  const id = channel?.ChannelID || channel?.channel_id || "";
+  const ids = normalizeArray(lineup).map((item) => item?.ChannelID || item?.channel_id || "");
+  const idx = ids.indexOf(id);
+  const prev = idx > 0 ? ids[idx - 1] : "";
+  const next = idx >= 0 && idx < ids.length - 1 ? ids[idx + 1] : "";
+  return [
+    createTinyButton(`data-programming-post="order" data-programming-action="prepend" data-programming-id="${esc(id)}"`, "Pin First"),
+    prev ? createTinyButton(`data-programming-post="order" data-programming-action="before" data-programming-id="${esc(id)}" data-programming-anchor="${esc(prev)}"`, "Up") : "",
+    next ? createTinyButton(`data-programming-post="order" data-programming-action="after" data-programming-id="${esc(id)}" data-programming-anchor="${esc(next)}"`, "Down") : "",
+    createTinyButton(`data-programming-post="order" data-programming-action="remove" data-programming-id="${esc(id)}"`, "Drop Order"),
+    createTinyButton(`data-programming-post="channel" data-programming-action="include" data-programming-id="${esc(id)}"`, normalizeArray(recipe?.included_channel_ids).includes(id) ? "Pinned In" : "Include")
+  ].join("");
+}
+
+function backupGroupSummary(group) {
+  const members = normalizeArray(group?.members);
+  return members.slice(0, 4).map((member) => {
+    const name = member.guide_name || member.channel_id || "channel";
+    const source = member.source_tag ? ` · ${member.source_tag}` : "";
+    return `${name}${source}`;
+  }).join(" | ");
 }
 
 function renderDeckSettingsPanel(settings) {
@@ -787,6 +861,12 @@ function renderDeck() {
   const providerLoadErr = provider.error || (state.payloads.provider && state.payloads.provider.ok === false ? `HTTP ${state.payloads.provider.status || 0}` : null);
   const recorder = state.payloads.recorder?.body || {};
   const attempts = normalizeArray(state.payloads.attempts?.body);
+  const programmingCategoriesPayload = state.payloads.programmingCategories?.body || {};
+  const programmingChannelsPayload = state.payloads.programmingChannels?.body || {};
+  const programmingOrderPayload = state.payloads.programmingOrder?.body || {};
+  const programmingBackupsPayload = state.payloads.programmingBackups?.body || {};
+  const programmingRecipePayload = state.payloads.programmingRecipe?.body || {};
+  const programmingPreviewPayload = state.payloads.programmingPreview?.body || {};
   const operatorStatus = state.payloads.operatorActionsStatus?.body || {};
   const guideWorkflow = state.payloads.guideWorkflow?.body || {};
   const streamWorkflow = state.payloads.streamWorkflow?.body || {};
@@ -947,6 +1027,7 @@ function renderDeck() {
     createCard("Guide lane", "Guide health, doctor, highlights, capsules, and SQLite horizon in one place.", `<button class="tiny" type="button" data-mode-jump="guide">Open Guide</button>`),
     createCard("Routing lane", "Fallback evidence, provider posture, attempt trail, and mux behavior.", `<button class="tiny" type="button" data-mode-jump="routing">Open Routing</button>`),
     createCard("Operations lane", "Recorder status, autopilot memory, Plex ghost state, and media hooks.", `<button class="tiny" type="button" data-mode-jump="ops">Open Ops</button>`),
+    createCard("Programming lane", "Category-first curation, manual ordering, and exact backup grouping for the exposed lineup.", `<button class="tiny" type="button" data-mode-jump="programming">Open Programming</button>`),
     createCard("Settings lane", "Effective runtime config, endpoint index, and raw payload drill-down.", `<button class="tiny" type="button" data-mode-jump="settings">Open Settings</button>`)
   ]).join("");
 
@@ -1005,6 +1086,65 @@ function renderDeck() {
     createCard("What this means", "This lane is where duplicate-provider chaos becomes operator-readable channel structure.")
   ]).join("");
 
+  const programmingRecipe = programmingRecipePayload.recipe || programmingPreviewPayload.recipe || {};
+  const programmingInventory = normalizeArray(programmingCategoriesPayload.categories || programmingPreviewPayload.inventory);
+  const curatedLineup = normalizeArray(programmingPreviewPayload.lineup);
+  const backupGroups = normalizeArray(programmingBackupsPayload.groups || programmingPreviewPayload.backup_groups);
+  const bucketEntries = Object.entries(programmingPreviewPayload.buckets || {});
+  const topCategoryCards = programmingInventory.slice(0, 8).map((category) =>
+    createCard(
+      category.label || category.id,
+      `${pretty(category.count)} channels · ${pretty(category.epg_linked_count)} linked · source ${pretty(category.source_tag || "mixed")}`,
+      normalizeArray(category.sample_channels).length ? `Samples: ${normalizeArray(category.sample_channels).join(" · ")}` : "",
+      "",
+      "programmingCategories",
+      `<div class="card-actions">${programmingCategoryButtons(category, programmingRecipe)}</div>`
+    )
+  );
+
+  programmingList.innerHTML = filterCards([
+    createCard("Recipe posture", `File ${pretty(programmingPreviewPayload.recipe_file || programmingRecipePayload.recipe_file)} · writable=${pretty(programmingPreviewPayload.recipe_writable ?? programmingRecipePayload.recipe_writable)} · order=${pretty(programmingRecipe.order_mode)} · collapse_backups=${pretty(programmingRecipe.collapse_exact_backups)}`, "", "", "programmingRecipe",
+      `<button class="tiny" type="button" data-programming-toggle="collapse_backups">${programmingRecipe.collapse_exact_backups ? "Disable Backup Collapse" : "Enable Backup Collapse"}</button>
+       <button class="tiny" type="button" data-programming-mode="source">Source Order</button>
+       <button class="tiny" type="button" data-programming-mode="recommended">Recommended Order</button>
+       <button class="tiny" type="button" data-inspect="programmingRecipe">Inspect Recipe</button>`),
+    createCard("Preview impact", `${pretty(programmingPreviewPayload.raw_channels)} raw channels -> ${pretty(programmingPreviewPayload.curated_channels)} curated channels. ${pretty(programmingInventory.length)} categories inventoried and ${pretty(backupGroups.length)} exact backup groups detected.`, "", "", "programmingPreview",
+      `<button class="tiny" type="button" data-inspect="programmingPreview">Inspect Preview</button>`),
+    createCard("Recommended buckets", bucketEntries.length
+      ? bucketEntries.sort((a, b) => b[1] - a[1]).map(([bucket, count]) => `${bucket}: ${count}`).slice(0, 8).join(" | ")
+      : "No bucket counts yet.", "", "", "programmingPreview"),
+    createCard("Pinned channels", normalizeArray(programmingChannelsPayload.included_channels).length
+      ? normalizeArray(programmingChannelsPayload.included_channels).slice(0, 12).join(" · ")
+      : "No explicitly included channels yet.", "", "", "programmingChannels"),
+    createCard("Blocked channels", normalizeArray(programmingChannelsPayload.excluded_channels).length
+      ? normalizeArray(programmingChannelsPayload.excluded_channels).slice(0, 12).join(" · ")
+      : "No explicitly excluded channels yet.", "", "", "programmingChannels")
+  ]).join("");
+
+  programmingCategories.innerHTML = filterCards(topCategoryCards).join("") || createCard("Categories", "No category inventory is available yet.", "", "", "programmingCategories");
+
+  programmingPreview.innerHTML = filterCards(curatedLineup.slice(0, 12).map((channel) =>
+    createCard(
+      channelName(channel),
+      `${pretty(channel.GuideNumber || channel.guide_number)} · ${pretty(channel.TVGID || channel.tvg_id)} · source ${pretty(channel.SourceTag || channel.source_tag || "n/a")} · streams ${pretty((channel.StreamURLs || channel.stream_urls || []).length || (channel.StreamURL || channel.stream_url ? 1 : 0))}`,
+      `${pretty(channel.GroupTitle || channel.group_title || "Uncategorized")} · bucket ${(programmingPreviewPayload.buckets && channel.GuideName) ? pretty("") : ""}`,
+      "",
+      "programmingPreview",
+      `<div class="card-actions">${programmingOrderButtons(channel, curatedLineup, programmingRecipe)}</div>`
+    )
+  )).join("") || createCard("Preview", "No curated lineup preview is available yet.", "", "", "programmingPreview");
+
+  programmingBackups.innerHTML = filterCards(backupGroups.slice(0, 10).map((group) =>
+    createCard(
+      group.display_name || group.key,
+      `${pretty(group.member_count)} members · ${pretty(group.backup_count)} backup sources · ${pretty(group.match_strategy)}`,
+      backupGroupSummary(group),
+      "",
+      "programmingBackups",
+      `<button class="tiny" type="button" data-inspect="programmingBackups">Inspect Groups</button>`
+    )
+  )).join("") || createCard("Exact backups", "No strong same-channel sibling groups detected in the current preview.", "", "", "programmingBackups");
+
   settingsList.innerHTML = filterCards([
     createSettingsCard("Deck security posture", "Dedicated web UI auth, session, and persistence posture.", [
       ["Enabled", runtime.webui?.enabled],
@@ -1052,6 +1192,18 @@ function renderDeck() {
       ["Free source mode", runtime.provider?.free_source_mode],
       ["Free source count", runtime.provider?.free_source_count]
     ], "runtime"),
+    createSettingsCard("Programming Manager", "Saved recipe file, category inventory, ordering mode, and backup collapse posture.", [
+      ["Recipe file", programmingPreviewPayload.recipe_file || programmingRecipePayload.recipe_file],
+      ["Recipe writable", programmingPreviewPayload.recipe_writable ?? programmingRecipePayload.recipe_writable],
+      ["Order mode", programmingRecipe.order_mode],
+      ["Selected categories", normalizeArray(programmingRecipe.selected_categories).length],
+      ["Excluded categories", normalizeArray(programmingRecipe.excluded_categories).length],
+      ["Included channels", normalizeArray(programmingRecipe.included_channel_ids).length],
+      ["Excluded channels", normalizeArray(programmingRecipe.excluded_channel_ids).length],
+      ["Collapse exact backups", programmingRecipe.collapse_exact_backups],
+      ["Raw channels", programmingPreviewPayload.raw_channels],
+      ["Curated channels", programmingPreviewPayload.curated_channels]
+    ], "programmingRecipe", `<button class="tiny" type="button" data-mode-jump="programming">Open Programming</button>`),
     createSettingsCard("HDHR + media hooks", "Discovery/network mode plus downstream media-server hooks.", [
       ["HDHR network mode", runtime.hdhr?.network_mode],
       ["Device ID", runtime.hdhr?.device_id],
@@ -1076,6 +1228,35 @@ function renderDeck() {
 
   state.deckSettings = deckSettings;
   renderDeckSettingsPanel(deckSettings);
+}
+
+async function postProgramming(path, payload, successAction) {
+  try {
+    const res = await fetch(path, {
+      method: "POST",
+      headers: authHeaders({
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+      }),
+      body: JSON.stringify(payload)
+    });
+    const text = await res.text();
+    const body = text ? JSON.parse(text) : {};
+    if (!res.ok) {
+      throw new Error(body.error || `HTTP ${res.status}`);
+    }
+    setActionFeedback({ ok: true, action: successAction, message: "Programming recipe updated." });
+    await syncDeckActivity({
+      kind: "programming",
+      title: successAction,
+      message: "Programming recipe updated."
+    });
+    await reloadDeck();
+    applyMode("programming");
+  } catch (err) {
+    setActionFeedback({ ok: false, action: successAction, message: String(err) });
+    renderDeck();
+  }
 }
 
 async function renderRaw() {
@@ -1248,6 +1429,48 @@ function bindUI() {
     const jump = event.target.closest("[data-mode-jump]");
     if (jump) {
       applyMode(jump.getAttribute("data-mode-jump"));
+      return;
+    }
+    const programmingPost = event.target.closest("[data-programming-post]");
+    if (programmingPost) {
+      const kind = programmingPost.getAttribute("data-programming-post");
+      const action = programmingPost.getAttribute("data-programming-action") || "";
+      const id = programmingPost.getAttribute("data-programming-id") || "";
+      const anchor = programmingPost.getAttribute("data-programming-anchor") || "";
+      if (kind === "category") {
+        postProgramming(endpoints.programmingCategories, { action, category_id: id }, `programming_category_${action}`);
+        return;
+      }
+      if (kind === "channel") {
+        postProgramming(endpoints.programmingChannels, { action, channel_id: id }, `programming_channel_${action}`);
+        return;
+      }
+      if (kind === "order") {
+        const payload = { action, channel_id: id };
+        if (action === "before") payload.before_channel_id = anchor;
+        if (action === "after") payload.after_channel_id = anchor;
+        postProgramming(endpoints.programmingOrder, payload, `programming_order_${action}`);
+        return;
+      }
+    }
+    const programmingToggle = event.target.closest("[data-programming-toggle]");
+    if (programmingToggle) {
+      const recipe = state.payloads.programmingRecipe?.body?.recipe || state.payloads.programmingPreview?.body?.recipe || {};
+      if (programmingToggle.getAttribute("data-programming-toggle") === "collapse_backups") {
+        postProgramming(endpoints.programmingRecipe, {
+          ...recipe,
+          collapse_exact_backups: !recipe.collapse_exact_backups
+        }, "programming_toggle_collapse_backups");
+        return;
+      }
+    }
+    const programmingMode = event.target.closest("[data-programming-mode]");
+    if (programmingMode) {
+      const recipe = state.payloads.programmingRecipe?.body?.recipe || state.payloads.programmingPreview?.body?.recipe || {};
+      postProgramming(endpoints.programmingRecipe, {
+        ...recipe,
+        order_mode: programmingMode.getAttribute("data-programming-mode")
+      }, "programming_order_mode");
       return;
     }
     const rawButton = event.target.closest("[data-select-raw]");

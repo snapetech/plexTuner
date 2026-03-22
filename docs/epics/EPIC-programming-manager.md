@@ -127,6 +127,10 @@ This needs a stable, testable classifier rather than a hand-wavy UI-only label.
   - `/programming/order.json` now supports durable server-side manual order mutations (`prepend`, `append`, `before`, `after`, `remove`) and automatically flips the recipe into `order_mode: "custom"` when operators start pinning rows deliberately.
   - `/programming/backups.json` now reports exact-match sibling groups using strong identity only (`tvg_id` exact, else `dna_id` exact).
   - `collapse_exact_backups: true` on the saved recipe now collapses those exact sibling rows into one visible lineup channel with merged `stream_urls`, so “Sling SyFy” and “DirecTV SyFy” can become one visible row with backup sources behind it.
+- **2026-03-21:** `PM-008` deck lane shipped.
+  - The dedicated `internal/webui` control deck now has a real Programming lane instead of leaving the feature as backend JSON only.
+  - Operators can bulk include/exclude categories, pin or block exact channels, nudge manual order from the curated preview (`prepend` / relative up/down / drop order), toggle `collapse_exact_backups`, and inspect exact backup groups.
+  - The lane also exposes raw Programming payload drill-down so recipe, preview, categories, channels, order, and backups stay debuggable from the same control plane.
 
 ## Technical approach
 
