@@ -31,6 +31,17 @@ func ffmpegHLSFirstBytesTimeout() time.Duration {
 	return time.Duration(ms) * time.Millisecond
 }
 
+func quickAbortStickyThreshold() time.Duration {
+	ms := getenvInt("IPTV_TUNERR_CLIENT_ADAPT_QUICK_ABORT_STICKY_MS", 12000)
+	if ms <= 0 {
+		return 0
+	}
+	if ms < 1000 {
+		ms = 1000
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
 func resolveFFmpegPath() (string, error) {
 	if v := strings.TrimSpace(os.Getenv("IPTV_TUNERR_FFMPEG_PATH")); v != "" {
 		return exec.LookPath(v)
@@ -550,8 +561,17 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	waitErr := cmd.Wait()
 
 	if r.Context().Err() != nil {
+		elapsed := time.Since(start).Round(time.Millisecond)
 		log.Printf("gateway:%s channel=%q id=%s %s client-done bytes=%d dur=%s",
-			reqField, channelName, channelID, modeLabel, n, time.Since(start).Round(time.Millisecond))
+			reqField, channelName, channelID, modeLabel, n, elapsed)
+		if !transcode {
+			threshold := quickAbortStickyThreshold()
+			if threshold > 0 && elapsed > 0 && elapsed <= threshold {
+				g.noteAdaptStickyFallbackForRequest(channelID, plexRequestHints(r), r.UserAgent())
+				log.Printf("gateway:%s channel=%q id=%s %s quick-abort sticky-fallback elapsed=%s threshold=%s ua=%q",
+					reqField, channelName, channelID, modeLabel, elapsed, threshold, strings.TrimSpace(r.UserAgent()))
+			}
+		}
 		return nil
 	}
 	if copyErr != nil && r.Context().Err() == nil {

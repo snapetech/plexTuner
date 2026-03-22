@@ -9,13 +9,27 @@ import (
 )
 
 const adaptStickyKeySep = "\x1f"
+const adaptUnknownInternalGlobalChannel = "*"
+
+func adaptUnknownInternalFetcherFallbackEnabled() bool {
+	return getenvBool("IPTV_TUNERR_CLIENT_ADAPT_UNKNOWN_INTERNAL_STICKY_FALLBACK", true)
+}
+
+func adaptUnknownInternalGlobalFallbackEnabled() bool {
+	return getenvBool("IPTV_TUNERR_CLIENT_ADAPT_UNKNOWN_INTERNAL_GLOBAL_FALLBACK", true)
+}
 
 // adaptSessionKey identifies a Plex playback session for sticky WebSafe fallback (HR-004).
 // Empty return means sticky is disabled for this request (no session/client hints).
-func adaptSessionKey(channelID string, h plexForwardedHints) string {
+func adaptSessionKey(channelID string, h plexForwardedHints, userAgent string) string {
 	sid := strings.TrimSpace(h.SessionIdentifier)
 	cid := strings.TrimSpace(h.ClientIdentifier)
 	if sid == "" && cid == "" {
+		ua := strings.ToLower(strings.TrimSpace(userAgent))
+		if adaptUnknownInternalFetcherFallbackEnabled() &&
+			(strings.Contains(ua, "lavf/") || strings.Contains(ua, "plexmediaserver/")) {
+			return channelID + adaptStickyKeySep + "unknown-internal" + adaptStickyKeySep + "-"
+		}
 		return ""
 	}
 	if sid == "" {
@@ -25,6 +39,23 @@ func adaptSessionKey(channelID string, h plexForwardedHints) string {
 		cid = "-"
 	}
 	return channelID + adaptStickyKeySep + sid + adaptStickyKeySep + cid
+}
+
+func adaptSessionKeys(channelID string, h plexForwardedHints, userAgent string) []string {
+	key := adaptSessionKey(channelID, h, userAgent)
+	if key == "" {
+		return nil
+	}
+	keys := []string{key}
+	sid := strings.TrimSpace(h.SessionIdentifier)
+	cid := strings.TrimSpace(h.ClientIdentifier)
+	if adaptUnknownInternalGlobalFallbackEnabled() && sid == "" && cid == "" {
+		ua := strings.ToLower(strings.TrimSpace(userAgent))
+		if strings.Contains(ua, "lavf/") || strings.Contains(ua, "plexmediaserver/") {
+			keys = append(keys, adaptUnknownInternalGlobalChannel+adaptStickyKeySep+"unknown-internal"+adaptStickyKeySep+"-")
+		}
+	}
+	return keys
 }
 
 func adaptStickyFallbackEnabled() bool {
@@ -54,11 +85,15 @@ func (g *Gateway) pruneAdaptStickyLocked(now time.Time) {
 }
 
 func (g *Gateway) shouldAdaptStickyWebsafe(channelID string, h plexForwardedHints) bool {
+	return g.shouldAdaptStickyWebsafeForRequest(channelID, h, "")
+}
+
+func (g *Gateway) shouldAdaptStickyWebsafeForRequest(channelID string, h plexForwardedHints, userAgent string) bool {
 	if g == nil || !g.PlexClientAdapt || !adaptStickyFallbackEnabled() {
 		return false
 	}
-	key := adaptSessionKey(channelID, h)
-	if key == "" {
+	keys := adaptSessionKeys(channelID, h, userAgent)
+	if len(keys) == 0 {
 		return false
 	}
 	now := time.Now()
@@ -68,23 +103,30 @@ func (g *Gateway) shouldAdaptStickyWebsafe(channelID string, h plexForwardedHint
 		return false
 	}
 	g.pruneAdaptStickyLocked(now)
-	exp, ok := g.adaptStickyUntil[key]
-	if !ok {
-		return false
+	for _, key := range keys {
+		exp, ok := g.adaptStickyUntil[key]
+		if !ok {
+			continue
+		}
+		if now.After(exp) {
+			delete(g.adaptStickyUntil, key)
+			continue
+		}
+		return true
 	}
-	if now.After(exp) {
-		delete(g.adaptStickyUntil, key)
-		return false
-	}
-	return true
+	return false
 }
 
 func (g *Gateway) noteAdaptStickyFallback(channelID string, h plexForwardedHints) {
+	g.noteAdaptStickyFallbackForRequest(channelID, h, "")
+}
+
+func (g *Gateway) noteAdaptStickyFallbackForRequest(channelID string, h plexForwardedHints, userAgent string) {
 	if g == nil || !g.PlexClientAdapt || !adaptStickyFallbackEnabled() {
 		return
 	}
-	key := adaptSessionKey(channelID, h)
-	if key == "" {
+	keys := adaptSessionKeys(channelID, h, userAgent)
+	if len(keys) == 0 {
 		return
 	}
 	ttl := adaptStickyTTL()
@@ -95,9 +137,11 @@ func (g *Gateway) noteAdaptStickyFallback(channelID string, h plexForwardedHints
 		g.adaptStickyUntil = make(map[string]time.Time)
 	}
 	g.pruneAdaptStickyLocked(now)
-	g.adaptStickyUntil[key] = now.Add(ttl)
+	for _, key := range keys {
+		g.adaptStickyUntil[key] = now.Add(ttl)
+	}
 	if getenvBool("IPTV_TUNERR_STREAM_DEBUG", false) || strings.TrimSpace(os.Getenv("IPTV_TUNERR_CLIENT_ADAPT_STICKY_LOG")) == "1" {
-		log.Printf("gateway: adapt sticky websafe channel=%q key_present=%t ttl=%s", channelID, key != "", ttl)
+		log.Printf("gateway: adapt sticky websafe channel=%q key_present=%t ttl=%s", channelID, len(keys) > 0, ttl)
 		return
 	}
 	log.Printf("gateway: adapt sticky websafe channel=%q ttl=%s", channelID, ttl)
@@ -107,7 +151,7 @@ func (g *Gateway) stickyFallbackClientClass(ctx context.Context, hints plexForwa
 	if g == nil || !g.PlexClientAdapt {
 		return "unknown"
 	}
-	info, err := g.resolvePlexClient(ctx, hints)
+	info, err := g.resolvePlexClient(ctx, hints, "")
 	if err != nil || info == nil {
 		return "unknown"
 	}

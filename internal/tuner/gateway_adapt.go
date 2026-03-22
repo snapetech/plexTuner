@@ -121,14 +121,17 @@ func xmlStartAttr(start xml.StartElement, name string) string {
 	return ""
 }
 
-func (g *Gateway) resolvePlexClient(ctx context.Context, hints plexForwardedHints) (*plexResolvedClient, error) {
+func (g *Gateway) resolvePlexClient(ctx context.Context, hints plexForwardedHints, userAgent string) (*plexResolvedClient, error) {
 	if g == nil || !g.PlexClientAdapt {
 		return nil, nil
 	}
 	if strings.TrimSpace(g.PlexPMSURL) == "" || strings.TrimSpace(g.PlexPMSToken) == "" {
 		return nil, nil
 	}
-	if hints.SessionIdentifier == "" && hints.ClientIdentifier == "" {
+	allowAmbiguousInternalFetcher := hints.SessionIdentifier == "" &&
+		hints.ClientIdentifier == "" &&
+		looksLikePlexInternalFetcherUserAgent(userAgent)
+	if hints.SessionIdentifier == "" && hints.ClientIdentifier == "" && !allowAmbiguousInternalFetcher {
 		return nil, nil
 	}
 	base := strings.TrimRight(strings.TrimSpace(g.PlexPMSURL), "/")
@@ -157,6 +160,7 @@ func (g *Gateway) resolvePlexClient(ctx context.Context, hints plexForwardedHint
 		session  string
 		clientID string
 	}
+	var candidates []candidate
 	var stack []string
 	var cur *candidate
 	for {
@@ -208,11 +212,42 @@ func (g *Gateway) resolvePlexClient(ctx context.Context, hints plexForwardedHint
 					}
 					return &out, nil
 				}
+				candidates = append(candidates, *cur)
 				cur = nil
 			}
 		}
 	}
-	return nil, nil
+	if !allowAmbiguousInternalFetcher || len(candidates) == 0 {
+		return nil, nil
+	}
+	nonInternal := make([]plexResolvedClient, 0, len(candidates))
+	webOnly := make([]plexResolvedClient, 0, len(candidates))
+	nativeOnly := make([]plexResolvedClient, 0, len(candidates))
+	for _, c := range candidates {
+		info := c.player
+		info.SessionIdentifier = c.session
+		info.Title = c.title
+		if looksLikePlexInternalFetcher(info.Product, info.Platform) {
+			continue
+		}
+		nonInternal = append(nonInternal, info)
+		switch plexClientClass(&info) {
+		case "web":
+			webOnly = append(webOnly, info)
+		case "native":
+			nativeOnly = append(nativeOnly, info)
+		}
+	}
+	switch {
+	case len(nonInternal) == 1:
+		return &nonInternal[0], nil
+	case len(webOnly) == 1 && len(nativeOnly) == 0:
+		return &webOnly[0], nil
+	case len(nativeOnly) == 1 && len(webOnly) == 0:
+		return &nativeOnly[0], nil
+	default:
+		return nil, nil
+	}
 }
 
 func looksLikePlexWeb(s string) bool {
@@ -235,6 +270,11 @@ func looksLikePlexInternalFetcher(product, platform string) bool {
 	return false
 }
 
+func looksLikePlexInternalFetcherUserAgent(userAgent string) bool {
+	ua := strings.ToLower(strings.TrimSpace(userAgent))
+	return strings.Contains(ua, "lavf/") || strings.Contains(ua, "plexmediaserver/")
+}
+
 func plexClientClass(info *plexResolvedClient) string {
 	if info == nil {
 		return "unknown"
@@ -246,6 +286,70 @@ func plexClientClass(info *plexResolvedClient) string {
 		return "internal"
 	}
 	return "native"
+}
+
+type plexAdaptPolicy string
+
+const (
+	plexAdaptPolicyDirect  plexAdaptPolicy = "direct"
+	plexAdaptPolicyWebsafe plexAdaptPolicy = "websafe"
+	plexAdaptPolicyInherit plexAdaptPolicy = "inherit"
+)
+
+func parsePlexAdaptPolicy(raw string, fallback plexAdaptPolicy) plexAdaptPolicy {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "default":
+		return fallback
+	case "direct", "native", "remux", "copy", "off":
+		return plexAdaptPolicyDirect
+	case "websafe", "safe", "transcode", "on":
+		return plexAdaptPolicyWebsafe
+	case "inherit", "none":
+		return plexAdaptPolicyInherit
+	default:
+		return fallback
+	}
+}
+
+func plexUnknownClientPolicy() plexAdaptPolicy {
+	return parsePlexAdaptPolicy(os.Getenv("IPTV_TUNERR_PLEX_UNKNOWN_CLIENT_POLICY"), plexAdaptPolicyWebsafe)
+}
+
+func plexResolveErrorPolicy() plexAdaptPolicy {
+	return parsePlexAdaptPolicy(os.Getenv("IPTV_TUNERR_PLEX_RESOLVE_ERROR_POLICY"), plexAdaptPolicyWebsafe)
+}
+
+func plexInternalFetcherPolicy() plexAdaptPolicy {
+	return parsePlexAdaptPolicy(os.Getenv("IPTV_TUNERR_PLEX_INTERNAL_FETCHER_POLICY"), plexAdaptPolicyWebsafe)
+}
+
+func plexResolvedWebsafeProfileName(clientClass string) string {
+	switch strings.ToLower(strings.TrimSpace(clientClass)) {
+	case "web":
+		if raw := strings.TrimSpace(os.Getenv("IPTV_TUNERR_PLEX_WEB_CLIENT_PROFILE")); raw != "" {
+			return normalizeConfiguredProfileName(raw)
+		}
+	case "internal":
+		if raw := strings.TrimSpace(os.Getenv("IPTV_TUNERR_PLEX_INTERNAL_FETCHER_PROFILE")); raw != "" {
+			return normalizeConfiguredProfileName(raw)
+		}
+	case "native":
+		if raw := strings.TrimSpace(os.Getenv("IPTV_TUNERR_PLEX_NATIVE_CLIENT_PROFILE")); raw != "" {
+			return normalizeConfiguredProfileName(raw)
+		}
+	}
+	return forcedWebsafeProfileName()
+}
+
+func applyPlexAdaptPolicy(policy plexAdaptPolicy, reason, clientClass string) (bool, bool, string, string, string) {
+	switch policy {
+	case plexAdaptPolicyDirect:
+		return true, false, "", reason, clientClass
+	case plexAdaptPolicyInherit:
+		return false, false, "", reason, clientClass
+	default:
+		return true, true, plexResolvedWebsafeProfileName(clientClass), reason, clientClass
+	}
 }
 
 func (g *Gateway) requestAdaptation(ctx context.Context, r *http.Request, channel *catalog.LiveChannel, channelID string) (bool, bool, string, string, string) {
@@ -262,24 +366,27 @@ func (g *Gateway) requestAdaptation(ctx context.Context, r *http.Request, channe
 	if getenvBool("IPTV_TUNERR_FORCE_WEBSAFE", false) {
 		return true, true, forcedWebsafeProfileName(), "force-websafe", "manual"
 	}
-	if g.shouldAdaptStickyWebsafe(channelID, hints) {
+	if g.shouldAdaptStickyWebsafeForRequest(channelID, hints, r.UserAgent()) {
 		cc := g.stickyFallbackClientClass(ctx, hints)
 		return true, true, forcedWebsafeProfileName(), "sticky-fallback-websafe", cc
 	}
 	if !g.PlexClientAdapt {
 		return false, false, "", "adapt-disabled", "unknown"
 	}
-	info, err := g.resolvePlexClient(ctx, hints)
+	info, err := g.resolvePlexClient(ctx, hints, r.UserAgent())
 	if err != nil {
 		log.Printf("gateway: channel=%q id=%s plex-client-resolve err=%v", channel.GuideName, channelID, err)
-		return true, true, forcedWebsafeProfileName(), "resolve-error-websafe", "unknown"
+		return applyPlexAdaptPolicy(plexResolveErrorPolicy(), "resolve-error-websafe", "unknown")
 	}
 	clientClass := plexClientClass(info)
 	if row, ok := g.lookupAutopilotDecision(channel, clientClass); ok {
 		return true, row.Transcode, normalizeProfileName(row.Profile), "autopilot-memory", clientClass
 	}
 	if info == nil {
-		return true, true, forcedWebsafeProfileName(), "unknown-client-websafe", clientClass
+		if hints.SessionIdentifier == "" && hints.ClientIdentifier == "" && looksLikePlexInternalFetcherUserAgent(r.UserAgent()) {
+			return applyPlexAdaptPolicy(plexInternalFetcherPolicy(), "ambiguous-internal-fetcher-websafe", "internal")
+		}
+		return applyPlexAdaptPolicy(plexUnknownClientPolicy(), "unknown-client-websafe", clientClass)
 	}
 	log.Printf("gateway: channel=%q id=%s plex-client-resolved class=%s sid=%t cid=%t product=%t platform=%t title=%t",
 		channel.GuideName, channelID, clientClass,
@@ -289,10 +396,10 @@ func (g *Gateway) requestAdaptation(ctx context.Context, r *http.Request, channe
 		info.Platform != "",
 		info.Title != "")
 	if looksLikePlexWeb(info.Product) || looksLikePlexWeb(info.Platform) {
-		return true, true, forcedWebsafeProfileName(), "resolved-web-client", clientClass
+		return true, true, plexResolvedWebsafeProfileName(clientClass), "resolved-web-client", clientClass
 	}
 	if looksLikePlexInternalFetcher(info.Product, info.Platform) {
-		return true, true, forcedWebsafeProfileName(), "internal-fetcher-websafe", clientClass
+		return applyPlexAdaptPolicy(plexInternalFetcherPolicy(), "internal-fetcher-websafe", clientClass)
 	}
 	return true, false, "", "resolved-nonweb-client", clientClass
 }

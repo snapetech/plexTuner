@@ -13,14 +13,18 @@ import (
 )
 
 const (
-	profileDefault    = "default"
-	profilePlexSafe   = "plexsafe"
-	profilePlexSafeHQ = "plexsafehq"
-	profileAACCFR     = "aaccfr"
-	profileVideoOnly  = "videoonlyfast"
-	profileLowBitrate = "lowbitrate"
-	profileDashFast   = "dashfast"
-	profilePMSXcode   = "pmsxcode"
+	profileDefault      = "default"
+	profilePlexSafe     = "plexsafe"
+	profilePlexSafeHQ   = "plexsafehq"
+	profilePlexSafeMax  = "plexsafemax"
+	profilePlexSafeAAC  = "plexsafeaac"
+	profileCopyClean    = "copyclean"
+	profileCopyVideoMP3 = "copyvideomp3"
+	profileAACCFR       = "aaccfr"
+	profileVideoOnly    = "videoonlyfast"
+	profileLowBitrate   = "lowbitrate"
+	profileDashFast     = "dashfast"
+	profilePMSXcode     = "pmsxcode"
 )
 
 type NamedStreamProfile struct {
@@ -60,6 +64,14 @@ func builtinProfileName(v string) (string, bool) {
 		return profilePlexSafe, true
 	case "plexsafehq", "plex-safe-hq", "safehq", "safe-hq", "plexhq", "plex-safe-max":
 		return profilePlexSafeHQ, true
+	case "plexsafemax", "plex-safe-max-hq", "safemax", "safe-max", "plexhqmax", "plex-safe-ultra":
+		return profilePlexSafeMax, true
+	case "plexsafeaac", "plex-safe-aac", "safeaac", "safe-aac", "plexaac":
+		return profilePlexSafeAAC, true
+	case "copyclean", "copy-clean", "cleanremux", "remuxclean", "firstavcopy":
+		return profileCopyClean, true
+	case "copyvideomp3", "copy-video-mp3", "copyvideo", "video-copy-mp3", "tvsafeaudio", "audiofix":
+		return profileCopyVideoMP3, true
 	case "aaccfr", "aac-cfr", "aac":
 		return profileAACCFR, true
 	case "videoonlyfast", "video-only-fast", "videoonly", "video":
@@ -282,10 +294,14 @@ func (g *Gateway) resolveProfileSelection(name string) resolvedStreamProfile {
 		}
 	}
 	if builtIn, ok := builtinProfileName(resolvedName); ok {
+		forceTranscode := builtIn != profileDefault || strings.TrimSpace(name) != ""
+		if builtIn == profileCopyClean {
+			forceTranscode = false
+		}
 		return resolvedStreamProfile{
 			Name:           builtIn,
 			BaseProfile:    builtIn,
-			ForceTranscode: builtIn != profileDefault || strings.TrimSpace(name) != "",
+			ForceTranscode: forceTranscode,
 			Known:          true,
 		}
 	}
@@ -363,10 +379,34 @@ func buildFFmpegStreamOutputArgs(transcode bool, profile string, outputMux strin
 func buildFFmpegStreamCodecArgs(transcode bool, profile string, outputMux string) []string {
 	var codecArgs []string
 	if !transcode {
+		switch normalizeProfileName(profile) {
+		case profileCopyClean:
+			codecArgs = []string{
+				"-map", "0:v:0",
+				"-map", "0:a:0?",
+				"-sn",
+				"-dn",
+				"-c", "copy",
+			}
+		default:
+			codecArgs = []string{
+				"-map", "0:v:0",
+				"-map", "0:a?",
+				"-c", "copy",
+			}
+		}
+	} else if profile == profileCopyVideoMP3 {
 		codecArgs = []string{
 			"-map", "0:v:0",
-			"-map", "0:a?",
-			"-c", "copy",
+			"-map", "0:a:0?",
+			"-sn",
+			"-dn",
+			"-c:v", "copy",
+			"-c:a", "libmp3lame",
+			"-ac", "2",
+			"-ar", "48000",
+			"-b:a", "192k",
+			"-af", "aresample=async=1:first_pts=0",
 		}
 	} else if profile == profilePMSXcode {
 		// Diagnostic profile: make the source less likely to stay on Plex's copy path.
@@ -435,6 +475,40 @@ func buildFFmpegStreamCodecArgs(transcode bool, profile string, outputMux string
 				"-b:a", "192k",
 				"-af", "aresample=async=1:first_pts=0",
 			)
+		case profilePlexSafeMax:
+			// Higher-quality TV-safe profile: preserve the same compatibility shape as plexsafehq
+			// but give x264 more headroom and a slightly slower preset.
+			codecArgs = append(codecArgs,
+				"-preset", "faster",
+				"-vf", "fps=30000/1001,setsar=1,format=yuv420p",
+				"-crf", "16",
+				"-maxrate", "30000k",
+				"-bufsize", "60000k",
+				"-c:a", "libmp3lame",
+				"-ac", "2",
+				"-ar", "48000",
+				"-b:a", "256k",
+				"-af", "aresample=async=1:first_pts=0",
+			)
+		case profilePlexSafeAAC:
+			// Experimental TV-safe profile: keep the higher-quality video settings from
+			// plexsafemax but use AAC audio instead of MP3 for A/B compatibility tests.
+			codecArgs = append(codecArgs,
+				"-preset", "faster",
+				"-vf", "fps=30000/1001,setsar=1,format=yuv420p",
+				"-crf", "16",
+				"-maxrate", "30000k",
+				"-bufsize", "60000k",
+				"-c:a", "aac",
+				"-profile:a", "aac_low",
+				"-ac", "2",
+				"-ar", "48000",
+				"-b:a", "256k",
+				"-af", "aresample=async=1:first_pts=0",
+			)
+		case profileCopyVideoMP3:
+			// Preserve source video but normalize audio and strip subtitle/data baggage
+			// that can push Plex Live TV sessions into a bad decision branch.
 		case profileAACCFR:
 			codecArgs = append(codecArgs,
 				// Browser-oriented "boring" output to help Plex Web DASH startup.
@@ -535,6 +609,31 @@ func bootstrapAudioArgsForProfile(profile string) []string {
 			"-b:a", "192k",
 			"-af", "aresample=async=1:first_pts=0",
 		}
+	case profilePlexSafeMax:
+		return []string{
+			"-c:a", "libmp3lame",
+			"-ac", "2",
+			"-ar", "48000",
+			"-b:a", "256k",
+			"-af", "aresample=async=1:first_pts=0",
+		}
+	case profilePlexSafeAAC:
+		return []string{
+			"-c:a", "aac",
+			"-profile:a", "aac_low",
+			"-ac", "2",
+			"-ar", "48000",
+			"-b:a", "256k",
+			"-af", "aresample=async=1:first_pts=0",
+		}
+	case profileCopyVideoMP3:
+		return []string{
+			"-c:a", "libmp3lame",
+			"-ac", "2",
+			"-ar", "48000",
+			"-b:a", "192k",
+			"-af", "aresample=async=1:first_pts=0",
+		}
 	case profilePMSXcode:
 		return []string{
 			"-c:a", "mp2",
@@ -560,6 +659,12 @@ func bootstrapAudioArgsForProfile(profile string) []string {
 func mpegTSMuxRateForProfile(profile string) string {
 	switch normalizeProfileName(profile) {
 	case profilePlexSafeHQ:
+		return "18000000"
+	case profilePlexSafeMax:
+		return "34000000"
+	case profilePlexSafeAAC:
+		return "34000000"
+	case profileCopyVideoMP3:
 		return "18000000"
 	default:
 		return "3000000"

@@ -185,6 +185,72 @@
 - `memory-bank/current_task.md` (2026-02-24 live triage notes)
 - `internal/tuner/gateway.go` (client adaptation + profile selection path)
 
+### Loop: Host-local smart-TV playback gets forced back into transcode because PMS forwards weak client identity
+
+**Symptom**
+- Operators deliberately turn off blanket WebSafe, but the helper still transcodes because Tunerr logs `plex-hints none` or resolves the PMS/Lavf internal fetcher and adaptation immediately flips back to WebSafe.
+
+**Why it's tricky**
+- The bad path is not just a stream-format issue; PMS sometimes fails later in its own `universal/decision` phase after Tunerr already served a healthy stream.
+- That means forcing WebSafe "just to be safe" can hide whether remux still works for the actual TV, while a pure tuner-side fallback cannot perfectly detect every PMS-only failure after the fact.
+
+**What works**
+- Use the explicit adaptation policy envs instead of blanket `IPTV_TUNERR_FORCE_WEBSAFE` for host-local smart-TV testing:
+  - `IPTV_TUNERR_PLEX_UNKNOWN_CLIENT_POLICY=direct`
+  - `IPTV_TUNERR_PLEX_INTERNAL_FETCHER_POLICY=direct`
+  - `IPTV_TUNERR_PLEX_RESOLVE_ERROR_POLICY=direct`
+- Keep `IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE=true` and the existing lineup shaping/music-drop settings.
+- Treat this as a remux-first posture, not a perfect automatic fallback solution; PMS-only post-tune failures still need separate evidence.
+
+**Where it's documented**
+- `memory-bank/current_task.md` (2026-03-22 remux-first host-local entry)
+- `memory-bank/known_issues.md` (host-local Plex DVR smart-TV entry)
+- `internal/tuner/gateway_adapt.go`
+
+### Loop: Plex Web/TV can work only after one failed attempt because the helper only learns ambiguous PMS fetchers reactively
+
+**Symptom**
+- First playback attempt on Plex Web or an LG TV fails, but a later retry on the same or nearby channel suddenly works.
+- Logs show the helper initially treated the request as `unknown-client` or plain internal `Lavf/PlexMediaServer`, then sticky fallback later promoted it to the safer audio-normalized path.
+
+**Why it's tricky**
+- Tunerr often sees only the PMS/Lavf internal fetcher on `/stream/...`, not the actual browser or TV.
+- If no `X-Plex-*` session/client hints are forwarded, a pure tuner-side decision cannot tell web from native just from the incoming request.
+- Reactive sticky fallback works, but it means the first attempt can still fail before the helper learns what Plex wanted.
+
+**What works**
+- For no-hints `Lavf/...` / `PlexMediaServer/...` requests, query PMS `/status/sessions` and infer the real client only when the result is unambiguous:
+  - exactly one non-internal active client, or
+  - exactly one web client and no native competitor
+- Route inferred web clients straight to the safe-audio fallback (`copyvideomp3`), while inferred native clients stay on direct/remux.
+- Keep sticky fallback as the backup path for genuinely ambiguous concurrent sessions.
+
+**Where it's documented**
+- `internal/tuner/gateway_adapt.go`
+- `internal/tuner/gateway_test.go`
+- `memory-bank/current_task.md` (2026-03-22 deterministic no-hints inference entry)
+
+### Loop: One shared Plex "websafe" profile keeps breaking either browsers or TVs
+
+**Symptom**
+- A profile that fixes Plex Web (`copyvideomp3`) still leaves the LG TV spinning/buffering forever, while a stricter profile that fixes the TV (`plexsafehq`) needlessly re-encodes browser playback too.
+
+**Why it's tricky**
+- On the helper side, both browser and TV requests can collapse into the same no-hints PMS/Lavf internal-fetcher shape.
+- If the adaptation logic has only one global WebSafe profile knob, whichever client lane is more fragile wins and the other lane gets dragged onto the wrong compromise.
+
+**What works**
+- Keep the general adaptation policy split (`direct` vs `websafe`), but split the fallback profile itself by client lane:
+  - `IPTV_TUNERR_PLEX_WEB_CLIENT_PROFILE=copyvideomp3`
+  - `IPTV_TUNERR_PLEX_INTERNAL_FETCHER_PROFILE=plexsafehq`
+- Leave `IPTV_TUNERR_FORCE_WEBSAFE_PROFILE` as the fallback/default for any client class without an explicit override.
+- Verify the live process via `/debug/runtime.json`; do not assume a restart picked up the new envs.
+
+**Where it's documented**
+- `internal/tuner/gateway_adapt.go`
+- `cmd/iptv-tunerr/cmd_runtime_server.go`
+- `memory-bank/current_task.md` (2026-03-22 profile split entry)
+
 ### Loop: Falling back to Threadfin during IptvTunerr playback triage hides whether the app path is actually fixed
 
 **Symptom**

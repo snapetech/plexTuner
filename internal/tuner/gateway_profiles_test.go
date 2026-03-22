@@ -9,18 +9,26 @@ import (
 
 func TestNormalizeProfileName_HDHRStyleAliases(t *testing.T) {
 	cases := map[string]string{
-		"native":         profileDefault,
-		"heavy":          profileDefault,
-		"plexsafehq":     profilePlexSafeHQ,
-		"plex-safe-hq":   profilePlexSafeHQ,
-		"internet":       profileDashFast,
-		"internet360":    profileAACCFR,
-		"mobile":         profileLowBitrate,
-		"cell":           profileLowBitrate,
-		"Internet-1080":  profileDashFast,
-		"INTERNET480":    profileAACCFR,
-		"pms-xcode":      profilePMSXcode,
-		"unknown-custom": profileDefault,
+		"native":          profileDefault,
+		"heavy":           profileDefault,
+		"plexsafehq":      profilePlexSafeHQ,
+		"plex-safe-hq":    profilePlexSafeHQ,
+		"plexsafemax":     profilePlexSafeMax,
+		"plex-safe-ultra": profilePlexSafeMax,
+		"plexsafeaac":     profilePlexSafeAAC,
+		"plex-safe-aac":   profilePlexSafeAAC,
+		"copy-clean":      profileCopyClean,
+		"cleanremux":      profileCopyClean,
+		"copy-video-mp3":  profileCopyVideoMP3,
+		"tvsafeaudio":     profileCopyVideoMP3,
+		"internet":        profileDashFast,
+		"internet360":     profileAACCFR,
+		"mobile":          profileLowBitrate,
+		"cell":            profileLowBitrate,
+		"Internet-1080":   profileDashFast,
+		"INTERNET480":     profileAACCFR,
+		"pms-xcode":       profilePMSXcode,
+		"unknown-custom":  profileDefault,
 	}
 	for in, want := range cases {
 		if got := normalizeProfileName(in); got != want {
@@ -43,6 +51,86 @@ func TestBuildFFmpegStreamCodecArgs_plexsafeHQ(t *testing.T) {
 		if !strings.Contains(s, needle) {
 			t.Fatalf("expected %q in %s", needle, s)
 		}
+	}
+}
+
+func TestBuildFFmpegStreamCodecArgs_plexsafeMax(t *testing.T) {
+	args := buildFFmpegStreamCodecArgs(true, profilePlexSafeMax, streamMuxMPEGTS)
+	s := strings.Join(args, " ")
+	for _, needle := range []string{
+		"-preset faster",
+		"setsar=1",
+		"-crf 16",
+		"-maxrate 30000k",
+		"-bufsize 60000k",
+		"-b:a 256k",
+		"-muxrate 34000000",
+	} {
+		if !strings.Contains(s, needle) {
+			t.Fatalf("expected %q in %s", needle, s)
+		}
+	}
+}
+
+func TestBuildFFmpegStreamCodecArgs_plexsafeAAC(t *testing.T) {
+	args := buildFFmpegStreamCodecArgs(true, profilePlexSafeAAC, streamMuxMPEGTS)
+	s := strings.Join(args, " ")
+	for _, needle := range []string{
+		"-preset faster",
+		"setsar=1",
+		"-crf 16",
+		"-maxrate 30000k",
+		"-bufsize 60000k",
+		"-c:a aac",
+		"-profile:a aac_low",
+		"-b:a 256k",
+		"-muxrate 34000000",
+	} {
+		if !strings.Contains(s, needle) {
+			t.Fatalf("expected %q in %s", needle, s)
+		}
+	}
+	if strings.Contains(s, "libmp3lame") {
+		t.Fatalf("did not expect MP3 audio in %s", s)
+	}
+}
+
+func TestBuildFFmpegStreamCodecArgs_copyClean(t *testing.T) {
+	args := buildFFmpegStreamCodecArgs(false, profileCopyClean, streamMuxMPEGTS)
+	s := strings.Join(args, " ")
+	for _, needle := range []string{
+		"-map 0:v:0",
+		"-map 0:a:0?",
+		"-sn",
+		"-dn",
+		"-c copy",
+	} {
+		if !strings.Contains(s, needle) {
+			t.Fatalf("expected %q in %s", needle, s)
+		}
+	}
+	if strings.Contains(s, "-map 0:a?") {
+		t.Fatalf("did not expect all-audio mapping in %s", s)
+	}
+}
+
+func TestBuildFFmpegStreamCodecArgs_copyVideoMP3(t *testing.T) {
+	args := buildFFmpegStreamCodecArgs(true, profileCopyVideoMP3, streamMuxMPEGTS)
+	s := strings.Join(args, " ")
+	for _, needle := range []string{
+		"-c:v copy",
+		"-c:a libmp3lame",
+		"-sn",
+		"-dn",
+		"-b:a 192k",
+		"-muxrate 18000000",
+	} {
+		if !strings.Contains(s, needle) {
+			t.Fatalf("expected %q in %s", needle, s)
+		}
+	}
+	if strings.Contains(s, "libx264") {
+		t.Fatalf("did not expect video re-encode in %s", s)
 	}
 }
 
@@ -191,6 +279,19 @@ func TestResolveProfileSelection_builtinInternet360(t *testing.T) {
 	sel := (&Gateway{}).resolveProfileSelection("internet360")
 	if !sel.Known || sel.BaseProfile != profileAACCFR || sel.Name != profileAACCFR {
 		t.Fatalf("unexpected: %#v", sel)
+	}
+}
+
+func TestResolveProfileSelection_builtinCopyCleanDoesNotForceTranscode(t *testing.T) {
+	sel := (&Gateway{}).resolveProfileSelection("copyclean")
+	if !sel.Known {
+		t.Fatalf("expected builtin profile: %#v", sel)
+	}
+	if sel.Name != profileCopyClean || sel.BaseProfile != profileCopyClean {
+		t.Fatalf("unexpected profile selection: %#v", sel)
+	}
+	if sel.ForceTranscode {
+		t.Fatalf("copyclean should not force transcode: %#v", sel)
 	}
 }
 

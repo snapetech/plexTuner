@@ -19,7 +19,10 @@ IPTV Tunerr’s gateway can **transcode** live HLS/MPEG-TS to a Plex-friendly **
 |------|-------------|-------------|
 | Default | `default` | Balanced x264 + AAC when transcoding |
 | Plex Web–safe | `plexsafe` | MP3 audio, conservative video — good for Plex Web DASH |
-| Plex Web–safe HQ | `plexsafehq` | MP3 audio with higher quality and `setsar=1` for smart-TV/browser compatibility testing |
+| Plex Web–safe HQ | `plexsafehq` | MP3 audio with higher quality and `setsar=1` for smart-TV/browser compatibility testing; preserves source geometry instead of forcing an upscale |
+| Plex Web–safe Max | `plexsafemax` | Higher-quality TV-safe H.264 + MP3 profile: same compatibility shape as `plexsafehq`, but with a slower preset, lower CRF, and higher bitrate ceilings |
+| Plex Web–safe AAC | `plexsafeaac` | Experimental TV-safe H.264 + AAC variant of `plexsafemax`; use for A/B testing only, because AAC may or may not satisfy the PMS/LG compatibility path that MP3 fixed |
+| Copy-video + MP3 audio | `copyvideomp3` | Preserve source video, strip subtitle/data baggage, and normalize audio to MP3 stereo for Plex client-decision troubleshooting |
 | AAC CFR | `aaccfr` | Baseline-ish H.264 + AAC CFR |
 | Video-only (fast) | `videoonlyfast` | Video transcode, no audio |
 | Low bitrate | `lowbitrate` | Smaller video + AAC |
@@ -87,6 +90,7 @@ Notes:
 
 - **Query string:** `GET /stream/<id>?profile=<name>` — forces adaptation using built-in or loaded named profiles (e.g. `?profile=internet360` → `aaccfr`, or `?profile=ISP-web` from the matrix file).
 - **Environment:** `IPTV_TUNERR_PROFILE`, `IPTV_TUNERR_PLEX_SAFE`, `IPTV_TUNERR_FORCE_WEBSAFE`, `IPTV_TUNERR_FORCE_WEBSAFE_PROFILE`, profile overrides file, named profile matrix file.
+- **Plex adaptation policy:** `IPTV_TUNERR_PLEX_UNKNOWN_CLIENT_POLICY`, `IPTV_TUNERR_PLEX_INTERNAL_FETCHER_POLICY`, and `IPTV_TUNERR_PLEX_RESOLVE_ERROR_POLICY` can keep remux/direct as the first attempt for host-local smart-TV lanes instead of forcing websafe as soon as PMS forwards weak client identity.
 - **Autopilot:** remembered per `dna_id` + client class when enabled.
 
 ## See also

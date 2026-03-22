@@ -2573,6 +2573,30 @@ func TestGateway_requestAdaptation_unknownDefaultsWebsafe(t *testing.T) {
 	}
 }
 
+func TestGateway_requestAdaptation_unknownPolicyDirect(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PLEX_UNKNOWN_CLIENT_POLICY", "direct")
+	g := &Gateway{PlexClientAdapt: true}
+	ch := &catalog.LiveChannel{GuideName: "Test"}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/test", nil)
+
+	hasOverride, transcode, profile, reason, clientClass := g.requestAdaptation(context.Background(), req, ch, "test")
+	if !hasOverride {
+		t.Fatalf("expected direct override for unknown client")
+	}
+	if transcode {
+		t.Fatalf("expected unknown client direct policy to keep transcode off")
+	}
+	if profile != "" {
+		t.Fatalf("profile=%q want empty", profile)
+	}
+	if reason != "unknown-client-websafe" {
+		t.Fatalf("reason=%q", reason)
+	}
+	if clientClass != "unknown" {
+		t.Fatalf("clientClass=%q want unknown", clientClass)
+	}
+}
+
 func TestGateway_requestAdaptation_stickyFallbackWebsafe(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_CLIENT_ADAPT_STICKY_FALLBACK", "true")
 	key := "ch1" + adaptStickyKeySep + "sid-a" + adaptStickyKeySep + "-"
@@ -2636,6 +2660,41 @@ func TestGateway_adaptSticky_skipsWithoutPlexHints(t *testing.T) {
 	g.adaptStickyMu.Unlock()
 	if n != 0 {
 		t.Fatalf("expected no sticky without session/client id, got %d entries", n)
+	}
+}
+
+func TestGateway_adaptSticky_unknownInternalFetcherKeyedByChannel(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_CLIENT_ADAPT_STICKY_FALLBACK", "true")
+	t.Setenv("IPTV_TUNERR_CLIENT_ADAPT_UNKNOWN_INTERNAL_STICKY_FALLBACK", "true")
+	t.Setenv("IPTV_TUNERR_CLIENT_ADAPT_UNKNOWN_INTERNAL_GLOBAL_FALLBACK", "false")
+	g := &Gateway{PlexClientAdapt: true}
+	g.noteAdaptStickyFallbackForRequest("ch1", plexForwardedHints{}, "Lavf/60.16.100")
+	if !g.shouldAdaptStickyWebsafeForRequest("ch1", plexForwardedHints{}, "Lavf/60.16.100") {
+		t.Fatal("expected sticky for unknown internal fetcher")
+	}
+	if g.shouldAdaptStickyWebsafeForRequest("ch2", plexForwardedHints{}, "Lavf/60.16.100") {
+		t.Fatal("did not expect sticky on different channel")
+	}
+}
+
+func TestGateway_adaptSticky_unknownInternalFetcherDisabled(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_CLIENT_ADAPT_STICKY_FALLBACK", "true")
+	t.Setenv("IPTV_TUNERR_CLIENT_ADAPT_UNKNOWN_INTERNAL_STICKY_FALLBACK", "false")
+	g := &Gateway{PlexClientAdapt: true}
+	g.noteAdaptStickyFallbackForRequest("ch1", plexForwardedHints{}, "Lavf/60.16.100")
+	if g.shouldAdaptStickyWebsafeForRequest("ch1", plexForwardedHints{}, "Lavf/60.16.100") {
+		t.Fatal("did not expect sticky when unknown internal fallback disabled")
+	}
+}
+
+func TestGateway_adaptSticky_unknownInternalFetcherGlobal(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_CLIENT_ADAPT_STICKY_FALLBACK", "true")
+	t.Setenv("IPTV_TUNERR_CLIENT_ADAPT_UNKNOWN_INTERNAL_STICKY_FALLBACK", "true")
+	t.Setenv("IPTV_TUNERR_CLIENT_ADAPT_UNKNOWN_INTERNAL_GLOBAL_FALLBACK", "true")
+	g := &Gateway{PlexClientAdapt: true}
+	g.noteAdaptStickyFallbackForRequest("ch1", plexForwardedHints{}, "Lavf/60.16.100")
+	if !g.shouldAdaptStickyWebsafeForRequest("ch2", plexForwardedHints{}, "Lavf/60.16.100") {
+		t.Fatal("expected sticky on different channel when global unknown-internal fallback enabled")
 	}
 }
 
@@ -2780,6 +2839,41 @@ func TestGateway_requestAdaptation_resolvedWebGetsWebsafe(t *testing.T) {
 	}
 }
 
+func TestGateway_requestAdaptation_resolvedWebUsesWebProfileOverride(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_FORCE_WEBSAFE_PROFILE", "plexsafehq")
+	t.Setenv("IPTV_TUNERR_PLEX_WEB_CLIENT_PROFILE", "copyvideomp3")
+	pms := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/status/sessions" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer size="1"><Video title="Live TV"><Session id="sid-web"/><Player machineIdentifier="cid-web" product="Plex Web" platform="Firefox"/></Video></MediaContainer>`))
+	}))
+	defer pms.Close()
+
+	g := &Gateway{
+		PlexClientAdapt: true,
+		PlexPMSURL:      pms.URL,
+		PlexPMSToken:    "tok",
+		Client:          pms.Client(),
+	}
+	ch := &catalog.LiveChannel{GuideName: "Test"}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/test", nil)
+	req.Header.Set("X-Plex-Session-Identifier", "sid-web")
+
+	hasOverride, transcode, profile, reason, clientClass := g.requestAdaptation(context.Background(), req, ch, "test")
+	if !hasOverride || !transcode {
+		t.Fatalf("override=%v transcode=%v", hasOverride, transcode)
+	}
+	if profile != profileCopyVideoMP3 {
+		t.Fatalf("profile=%q want %q", profile, profileCopyVideoMP3)
+	}
+	if reason != "resolved-web-client" || clientClass != "web" {
+		t.Fatalf("reason=%q clientClass=%q", reason, clientClass)
+	}
+}
+
 func TestGateway_requestAdaptation_internalFetcherGetsWebsafe(t *testing.T) {
 	// When Plex matches the internal fetcher (Lavf/PMS) session instead of the browser,
 	// we treat it as websafe so Chrome and other browsers still get MP3 audio.
@@ -2815,6 +2909,241 @@ func TestGateway_requestAdaptation_internalFetcherGetsWebsafe(t *testing.T) {
 	}
 	if reason != "internal-fetcher-websafe" {
 		t.Fatalf("reason=%q want internal-fetcher-websafe", reason)
+	}
+	if clientClass != "internal" {
+		t.Fatalf("clientClass=%q want internal", clientClass)
+	}
+}
+
+func TestGateway_requestAdaptation_internalFetcherUsesInternalProfileOverride(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_FORCE_WEBSAFE_PROFILE", "copyvideomp3")
+	t.Setenv("IPTV_TUNERR_PLEX_INTERNAL_FETCHER_PROFILE", "plexsafehq")
+	pms := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/status/sessions" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer size="1"><Video title="Live TV"><Session id="sid-lavf"/><Player machineIdentifier="cid-lavf" product="Lavf" platform="Plex Media Server"/></Video></MediaContainer>`))
+	}))
+	defer pms.Close()
+
+	g := &Gateway{
+		PlexClientAdapt: true,
+		PlexPMSURL:      pms.URL,
+		PlexPMSToken:    "tok",
+		Client:          pms.Client(),
+	}
+	ch := &catalog.LiveChannel{GuideName: "Test"}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/test", nil)
+	req.Header.Set("X-Plex-Session-Identifier", "sid-lavf")
+
+	hasOverride, transcode, profile, reason, clientClass := g.requestAdaptation(context.Background(), req, ch, "test")
+	if !hasOverride || !transcode {
+		t.Fatalf("override=%v transcode=%v", hasOverride, transcode)
+	}
+	if profile != profilePlexSafeHQ {
+		t.Fatalf("profile=%q want %q", profile, profilePlexSafeHQ)
+	}
+	if reason != "internal-fetcher-websafe" || clientClass != "internal" {
+		t.Fatalf("reason=%q clientClass=%q", reason, clientClass)
+	}
+}
+
+func TestGateway_requestAdaptation_internalFetcherPolicyDirect(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PLEX_INTERNAL_FETCHER_POLICY", "direct")
+	pms := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/status/sessions" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer size="1"><Video title="Live TV"><Session id="sid-lavf"/><Player machineIdentifier="cid-lavf" product="Lavf" platform="Plex Media Server"/></Video></MediaContainer>`))
+	}))
+	defer pms.Close()
+
+	g := &Gateway{
+		PlexClientAdapt: true,
+		PlexPMSURL:      pms.URL,
+		PlexPMSToken:    "tok",
+		Client:          pms.Client(),
+	}
+	ch := &catalog.LiveChannel{GuideName: "Test"}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/test", nil)
+	req.Header.Set("X-Plex-Session-Identifier", "sid-lavf")
+
+	hasOverride, transcode, profile, reason, clientClass := g.requestAdaptation(context.Background(), req, ch, "test")
+	if !hasOverride {
+		t.Fatalf("expected override for internal fetcher")
+	}
+	if transcode {
+		t.Fatalf("expected internal fetcher direct policy to keep transcode off")
+	}
+	if profile != "" {
+		t.Fatalf("profile=%q want empty", profile)
+	}
+	if reason != "internal-fetcher-websafe" {
+		t.Fatalf("reason=%q want internal-fetcher-websafe", reason)
+	}
+	if clientClass != "internal" {
+		t.Fatalf("clientClass=%q want internal", clientClass)
+	}
+}
+
+func TestGateway_requestAdaptation_unknownInternalFetcherInfersSingleWebSession(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_FORCE_WEBSAFE_PROFILE", "copyvideomp3")
+	pms := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/status/sessions" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer size="2"><Video title="Live TV"><Session id="sid-lavf"/><Player machineIdentifier="cid-lavf" product="Lavf" platform="Plex Media Server"/></Video><Video title="Live TV"><Session id="sid-web"/><Player machineIdentifier="cid-web" product="Plex Web" platform="Firefox"/></Video></MediaContainer>`))
+	}))
+	defer pms.Close()
+
+	g := &Gateway{
+		PlexClientAdapt: true,
+		PlexPMSURL:      pms.URL,
+		PlexPMSToken:    "tok",
+		Client:          pms.Client(),
+	}
+	ch := &catalog.LiveChannel{GuideName: "Test"}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/test", nil)
+	req.Header.Set("User-Agent", "Lavf/60.16.100")
+
+	hasOverride, transcode, profile, reason, clientClass := g.requestAdaptation(context.Background(), req, ch, "test")
+	if !hasOverride {
+		t.Fatalf("expected override for inferred web session")
+	}
+	if !transcode {
+		t.Fatalf("expected inferred web session to use fallback profile")
+	}
+	if profile != profileCopyVideoMP3 {
+		t.Fatalf("profile=%q want %q", profile, profileCopyVideoMP3)
+	}
+	if reason != "resolved-web-client" {
+		t.Fatalf("reason=%q want resolved-web-client", reason)
+	}
+	if clientClass != "web" {
+		t.Fatalf("clientClass=%q want web", clientClass)
+	}
+}
+
+func TestGateway_requestAdaptation_unknownInternalFetcherInfersSingleNativeSession(t *testing.T) {
+	pms := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/status/sessions" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer size="2"><Video title="Live TV"><Session id="sid-lavf"/><Player machineIdentifier="cid-lavf" product="Lavf" platform="Plex Media Server"/></Video><Video title="Live TV"><Session id="sid-tv"/><Player machineIdentifier="cid-tv" product="Plex for LG" platform="LG"/></Video></MediaContainer>`))
+	}))
+	defer pms.Close()
+
+	g := &Gateway{
+		PlexClientAdapt: true,
+		PlexPMSURL:      pms.URL,
+		PlexPMSToken:    "tok",
+		Client:          pms.Client(),
+	}
+	ch := &catalog.LiveChannel{GuideName: "Test"}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/test", nil)
+	req.Header.Set("User-Agent", "Lavf/60.16.100")
+
+	hasOverride, transcode, profile, reason, clientClass := g.requestAdaptation(context.Background(), req, ch, "test")
+	if !hasOverride {
+		t.Fatalf("expected override for inferred native session")
+	}
+	if transcode {
+		t.Fatalf("expected inferred native session to stay direct")
+	}
+	if profile != "" {
+		t.Fatalf("profile=%q want empty", profile)
+	}
+	if reason != "resolved-nonweb-client" {
+		t.Fatalf("reason=%q want resolved-nonweb-client", reason)
+	}
+	if clientClass != "native" {
+		t.Fatalf("clientClass=%q want native", clientClass)
+	}
+}
+
+func TestGateway_requestAdaptation_unknownInternalFetcherAmbiguousFallsBackToInternalPolicy(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_FORCE_WEBSAFE_PROFILE", "copyvideomp3")
+	t.Setenv("IPTV_TUNERR_PLEX_INTERNAL_FETCHER_PROFILE", "plexsafehq")
+	pms := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/status/sessions" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer size="3"><Video title="Live TV"><Session id="sid-lavf"/><Player machineIdentifier="cid-lavf" product="Lavf" platform="Plex Media Server"/></Video><Video title="Live TV"><Session id="sid-web"/><Player machineIdentifier="cid-web" product="Plex Web" platform="Firefox"/></Video><Video title="Live TV"><Session id="sid-tv"/><Player machineIdentifier="cid-tv" product="Plex for LG" platform="LG"/></Video></MediaContainer>`))
+	}))
+	defer pms.Close()
+
+	g := &Gateway{
+		PlexClientAdapt: true,
+		PlexPMSURL:      pms.URL,
+		PlexPMSToken:    "tok",
+		Client:          pms.Client(),
+	}
+	ch := &catalog.LiveChannel{GuideName: "Test"}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/test", nil)
+	req.Header.Set("User-Agent", "Lavf/60.16.100")
+
+	hasOverride, transcode, profile, reason, clientClass := g.requestAdaptation(context.Background(), req, ch, "test")
+	if !hasOverride {
+		t.Fatalf("expected override for ambiguous internal fetcher")
+	}
+	if !transcode {
+		t.Fatalf("expected ambiguous internal fetcher to use internal fetcher policy")
+	}
+	if profile != profilePlexSafeHQ {
+		t.Fatalf("profile=%q want %q", profile, profilePlexSafeHQ)
+	}
+	if reason != "ambiguous-internal-fetcher-websafe" {
+		t.Fatalf("reason=%q want ambiguous-internal-fetcher-websafe", reason)
+	}
+	if clientClass != "internal" {
+		t.Fatalf("clientClass=%q want internal", clientClass)
+	}
+}
+
+func TestGateway_requestAdaptation_unknownInternalFetcherAmbiguousPolicyDirect(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PLEX_INTERNAL_FETCHER_POLICY", "direct")
+	pms := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/status/sessions" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer size="3"><Video title="Live TV"><Session id="sid-lavf"/><Player machineIdentifier="cid-lavf" product="Lavf" platform="Plex Media Server"/></Video><Video title="Live TV"><Session id="sid-web"/><Player machineIdentifier="cid-web" product="Plex Web" platform="Firefox"/></Video><Video title="Live TV"><Session id="sid-tv"/><Player machineIdentifier="cid-tv" product="Plex for LG" platform="LG"/></Video></MediaContainer>`))
+	}))
+	defer pms.Close()
+
+	g := &Gateway{
+		PlexClientAdapt: true,
+		PlexPMSURL:      pms.URL,
+		PlexPMSToken:    "tok",
+		Client:          pms.Client(),
+	}
+	ch := &catalog.LiveChannel{GuideName: "Test"}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/test", nil)
+	req.Header.Set("User-Agent", "Lavf/60.16.100")
+
+	hasOverride, transcode, profile, reason, clientClass := g.requestAdaptation(context.Background(), req, ch, "test")
+	if !hasOverride {
+		t.Fatalf("expected override for ambiguous internal fetcher")
+	}
+	if transcode {
+		t.Fatalf("expected ambiguous internal fetcher direct policy to keep transcode off")
+	}
+	if profile != "" {
+		t.Fatalf("profile=%q want empty", profile)
+	}
+	if reason != "ambiguous-internal-fetcher-websafe" {
+		t.Fatalf("reason=%q want ambiguous-internal-fetcher-websafe", reason)
 	}
 	if clientClass != "internal" {
 		t.Fatalf("clientClass=%q want internal", clientClass)

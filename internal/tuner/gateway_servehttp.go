@@ -140,7 +140,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			g.EventHooks.Dispatch("stream.finished", "gateway", payload)
 		}
 		if adaptStickyCandidate && (finalStatus == "all_upstreams_failed" || finalStatus == "upstream_concurrency_limited") {
-			g.noteAdaptStickyFallback(channelID, plexRequestHints(r))
+			g.noteAdaptStickyFallbackForRequest(channelID, plexRequestHints(r), r.UserAgent())
 		}
 	}()
 	urls = g.reorderStreamURLs(channel, clientClass, urls)
