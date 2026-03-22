@@ -23,6 +23,23 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: Expand macOS host proof beyond WebDAV
+  Summary:
+    - Extended `scripts/mac-baremetal-smoke.sh` so the real Mac host lane now covers the startup contract, dedicated web UI, Xtream `get.php` / `xmltv.php`, virtual-channel live/short-EPG/schedule/playback, and the existing WebDAV checks.
+    - Re-ran `./scripts/release-readiness.sh --include-mac` successfully with that expanded scope.
+    - Tightened the release-readiness matrix to mark startup, Xtream export, virtual-channel, and deck rows as macOS host-proven where that evidence now exists.
+  Verification:
+    - `./scripts/mac-baremetal-smoke.sh`
+    - `./scripts/release-readiness.sh --include-mac`
+  Notes:
+    - This still does not replace real Windows host proof or live provider/client matrix proof, but it removes several "partial" host-proof gaps for surfaces we directly control.
+  Opportunities filed:
+    - none
+  Links:
+    - `scripts/mac-baremetal-smoke.sh`
+    - `docs/explanations/release-readiness-matrix.md`
+
+- Date: 2026-03-21
   Title: Add dedicated web UI binary smoke proof
   Summary:
     - Extended `scripts/ci-smoke.sh` to start a real `run --skip-index --skip-health` instance with the dedicated web UI enabled.

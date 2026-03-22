@@ -213,10 +213,54 @@ cat >"$WORKDIR/programming.json" <<'JSON'
 }
 JSON
 
+cat >"$WORKDIR/virtual-channels.json" <<'JSON'
+{
+  "channels": [
+    {
+      "id": "vc-news",
+      "name": "News Loop",
+      "guide_number": "9001",
+      "enabled": true,
+      "loop_daily_utc": true,
+      "entries": [
+        { "type": "movie", "movie_id": "m1", "duration_mins": 60 }
+      ]
+    }
+  ]
+}
+JSON
+
 cat >"$WORKDIR/catalog-full.json" <<'JSON'
 {
-  "movies": [],
-  "series": [],
+  "movies": [
+    {
+      "id": "m1",
+      "title": "Movie One",
+      "year": 2024,
+      "stream_url": "http://127.0.0.1:REPLACE_ASSET_PORT/movie.bin"
+    }
+  ],
+  "series": [
+    {
+      "id": "s1",
+      "title": "Smoke Show",
+      "year": 2023,
+      "seasons": [
+        {
+          "number": 1,
+          "episodes": [
+            {
+              "id": "e1",
+              "season_num": 1,
+              "episode_num": 1,
+              "title": "Pilot",
+              "stream_url": "http://127.0.0.1:REPLACE_ASSET_PORT/episode.bin"
+            }
+          ]
+        }
+      ]
+    }
+  ],
   "live_channels": [
     {
       "channel_id": "ch1",
@@ -267,15 +311,26 @@ cd "$WORKDIR/assets"
 python3 -m http.server "$asset_port" --bind 127.0.0.1 >"$ROOT/out/assets.log" 2>&1 &
 PIDS+=("$!")
 wait_http_code "http://127.0.0.1:${asset_port}/movie.bin" "200" || fail "asset server not ready"
+python3 - "$WORKDIR/catalog-full.json" "$asset_port" <<'PY'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+asset_port = sys.argv[2]
+path.write_text(path.read_text().replace("REPLACE_ASSET_PORT", asset_port))
+PY
 
 cd "$ROOT"
 IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
 IPTV_TUNERR_XMLTV_URL= \
 IPTV_TUNERR_PROGRAMMING_RECIPE_FILE="$WORKDIR/programming.json" \
+IPTV_TUNERR_VIRTUAL_CHANNELS_FILE="$WORKDIR/virtual-channels.json" \
 IPTV_TUNERR_WEBUI_DISABLED=0 \
 IPTV_TUNERR_WEBUI_USER=admin \
 IPTV_TUNERR_WEBUI_PASS=admin \
 IPTV_TUNERR_WEBUI_PORT="$webui_port" \
+IPTV_TUNERR_XTREAM_USER=demo \
+IPTV_TUNERR_XTREAM_PASS=secret \
 ./iptv-tunerr serve -catalog "$WORKDIR/catalog-full.json" -addr ":$serve_port" -base-url "http://127.0.0.1:$serve_port" \
   >"$ROOT/out/serve-full.log" 2>&1 &
 FULL_PID=$!
@@ -292,6 +347,14 @@ grep -q '"GuideNumber":"101"' <(curl -sS "http://127.0.0.1:$serve_port/lineup.js
 grep -q '"raw_channels": 3' <(curl -sS "http://127.0.0.1:$serve_port/programming/preview.json") || fail "programming preview missing raw count"
 grep -q '"curated_channels": 1' <(curl -sS "http://127.0.0.1:$serve_port/programming/preview.json") || fail "programming preview missing curated count"
 grep -q 'login' <(curl -sS "http://127.0.0.1:$webui_port/login") || fail "webui login page body unexpected"
+grep -q '/live/demo/secret/ch1.ts' <(curl -sS "http://127.0.0.1:$serve_port/get.php?username=demo&password=secret&type=m3u_plus&output=ts") || fail "xtream get.php missing live row"
+grep -q '/live/demo/secret/virtual.vc-news.mp4' <(curl -sS "http://127.0.0.1:$serve_port/get.php?username=demo&password=secret&type=m3u_plus&output=ts") || fail "xtream get.php missing virtual row"
+grep -q '<channel id="smoke.one">' <(curl -sS "http://127.0.0.1:$serve_port/xmltv.php?username=demo&password=secret") || fail "xtream xmltv missing live row"
+grep -q '<channel id="virtual.vc-news">' <(curl -sS "http://127.0.0.1:$serve_port/xmltv.php?username=demo&password=secret") || fail "xtream xmltv missing virtual row"
+grep -q '"stream_id":"virtual.vc-news"' <(curl -sS "http://127.0.0.1:$serve_port/player_api.php?username=demo&password=secret&action=get_live_streams") || fail "xtream live streams missing virtual row"
+grep -q '"title":"Movie One"' <(curl -sS "http://127.0.0.1:$serve_port/player_api.php?username=demo&password=secret&action=get_simple_data_table&stream_id=virtual.vc-news&limit=1") || fail "xtream short epg missing virtual title"
+grep -q '"channels": 1' <(curl -sS "http://127.0.0.1:$serve_port/virtual-channels/schedule.json?horizon=3h") || fail "virtual schedule missing enabled channel count"
+grep -q '^movie-bytes$' <(curl -sS "http://127.0.0.1:$serve_port/virtual-channels/stream/vc-news.mp4") || fail "virtual channel stream body unexpected"
 
 kill "$FULL_PID" 2>/dev/null || true
 wait "$FULL_PID" 2>/dev/null || true

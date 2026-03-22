@@ -32,22 +32,22 @@ every release should at least make those gaps explicit.
 
 | Surface | Unit / focused | Binary smoke | Host / live proof | Current stance |
 |---|---|---|---|---|
-| Startup contract (`/healthz`, `/readyz`, `guide.xml`, `lineup.json`) | Yes | Yes | Partial | Release-gated |
+| Startup contract (`/healthz`, `/readyz`, `guide.xml`, `lineup.json`) | Yes | Yes | Yes on macOS | Release-gated with host proof |
 | HDHR discovery / lineup exposure | Yes | Yes | Partial | Release-gated |
 | HLS relay / mux fallback / provider-pressure logic | Yes | Yes | Partial live evidence | Release-gated with stronger fallback proof and known live variance |
 | Provider account pooling / rollover | Yes | Yes | Partial live evidence | Release-gated with stronger binary proof |
 | Shared HLS relay reuse | Yes | Yes | Not broadly host-proven | Release-gated with stronger binary proof |
 | Xtream live / VOD / series output | Yes | Yes | Partial | Release-gated |
-| Xtream `get.php` / `xmltv.php` / short EPG | Yes | Yes | Partial | Release-gated |
+| Xtream `get.php` / `xmltv.php` / short EPG | Yes | Yes | Yes on macOS | Release-gated with host proof |
 | Programming Manager recipe / order / backups | Yes | Yes | N/A | Release-gated |
 | Programming backup preference | Yes | Yes | N/A | Release-gated |
 | Harvest import / assist flows | Yes | Yes | N/A | Release-gated |
 | Diagnostics workflows / bounded harness launchers | Yes | Yes | N/A | Release-gated |
-| Virtual channels preview / schedule / playback / guide | Yes | Yes | Partial via downstream output | Release-gated |
+| Virtual channels preview / schedule / playback / guide | Yes | Yes | Yes on macOS | Release-gated with host proof |
 | WebDAV VOD protocol contract | Yes | Yes | Yes on macOS | Strong |
 | macOS VOD/WebDAV client behavior | Harness + diff | N/A | Yes | Host-proven |
 | Windows VOD/WebDAV client behavior | Harness shape only | Package prep only | No | Not host-proven |
-| Web UI programming / diagnostics lane behavior | Yes | Yes | Partial macOS host proof | Release-gated, still not browser-exhaustive |
+| Web UI programming / diagnostics lane behavior | Yes | Yes | Yes on macOS | Release-gated, still not browser-exhaustive |
 
 ## What “good enough to release” means here
 
