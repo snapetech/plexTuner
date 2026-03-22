@@ -1,0 +1,55 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vod-webdav-client-macair
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 3600
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: vod-webdav-client-macair
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        kubernetes.io/hostname: macair-m4
+        kubernetes.io/os: darwin
+        kubernetes.io/arch: arm64
+      tolerations:
+        - key: lifecycle
+          operator: Equal
+          value: fairweather
+          effect: NoSchedule
+        - key: virtual-kubelet.io/provider
+          operator: Equal
+          value: macos-vz
+          effect: NoSchedule
+      containers:
+        - name: harness
+          image: golang:1.24-bookworm
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: BASE_URL
+              value: "http://REPLACE_TUNERR_HOST:58188"
+            - name: RUN_ID
+              value: "macair-k8s"
+          command:
+            - /bin/bash
+            - -lc
+            - |
+              set -euo pipefail
+              apt-get update >/dev/null
+              apt-get install -y git >/dev/null
+              git clone --depth=1 https://github.com/snapetech/iptvtunerr.git /work/iptvtunerr >/dev/null
+              cd /work/iptvtunerr
+              ./scripts/vod-webdav-client-harness.sh
+              latest="$(ls -1dt .diag/vod-webdav-client/* | head -n1)"
+              echo "=== report.txt ==="
+              cat "$latest/report.txt"
+          volumeMounts:
+            - name: work
+              mountPath: /work
+      volumes:
+        - name: work
+          emptyDir: {}

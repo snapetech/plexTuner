@@ -54,6 +54,26 @@ BASE_URL=http://127.0.0.1:58188 ./scripts/vod-webdav-client-harness.sh
 This skips the temporary binary and local asset source and only captures the
 request/response matrix.
 
+## Run it on the Mac node in Kubernetes
+
+A starter job template lives at:
+
+```text
+k8s/vod-webdav-client-macair-job.yaml
+```
+
+Before applying it:
+- replace `REPLACE_TUNERR_HOST` with the host serving `vod-webdav`
+- make sure `macair-m4` is actually `Ready`
+- confirm your macOS virtual-kubelet/vz setup can run the chosen image
+
+Apply:
+
+```bash
+sudo kubectl apply -f k8s/vod-webdav-client-macair-job.yaml
+sudo kubectl logs -f job/vod-webdav-client-macair
+```
+
 ## Diff a real-host run against a baseline
 
 ```bash

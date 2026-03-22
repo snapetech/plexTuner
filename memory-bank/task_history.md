@@ -23,6 +23,25 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: Add WebDAV header-diff tooling and validate on a real macOS host
+  Summary:
+    - Extended `scripts/vod-webdav-client-diff.py` so baseline-vs-host comparisons include key read-only/WebDAV response headers, not just HTTP status codes.
+    - Added `k8s/vod-webdav-client-macair-job.yaml` and updated the harness how-to with the Mac-node execution path for when `macair-m4` returns to `Ready`.
+    - Verified a real macOS host run by cross-building a darwin/arm64 `iptv-tunerr`, copying it to the Mac, running `vod-webdav` locally there, and replaying the full Finder/WebDAVFS + Windows MiniRedir matrix; the resulting bundle matched the local baseline with no status or header differences.
+  Verification:
+    - `python3 -m py_compile scripts/vod-webdav-client-diff.py`
+    - `python3 scripts/vod-webdav-client-diff.py --left <bundle> --right <same-bundle> --print`
+    - macOS host run via `scripts/vod-webdav-client-harness.sh` in external mode against a darwin/arm64 binary on `192.168.50.108`
+    - `python3 scripts/vod-webdav-client-diff.py --left .diag/vod-webdav-client/<baseline> --right /tmp/iptvtunerr-mac-bundles/mac-selfhost --left-label baseline --right-label macos --print`
+    - `./scripts/verify`
+  Notes:
+    - The Mac itself is usable over SSH now, but the `macair-m4` Kubernetes node still has stale heartbeats and remains `NotReady`, so host-level validation is ahead of cluster scheduling.
+  Opportunities filed:
+    - none
+  Links:
+    - WebDAV client diff + macOS host validation
+
+- Date: 2026-03-21
   Title: Start cross-platform VOD parity with shared tree and WebDAV backend
   Summary:
     - Extracted VOD naming/tree generation out of Linux-only files so it can back more than the existing `go-fuse` mount path.
