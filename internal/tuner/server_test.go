@@ -414,6 +414,7 @@ func TestServer_programmingHarvestImport(t *testing.T) {
 			Channels: []plexharvest.HarvestedChannel{
 				{GuideNumber: "101", GuideName: "CBC Regina", TVGID: "cbc.regina"},
 				{GuideNumber: "102", GuideName: "CTV Regina", TVGID: "ctv.regina"},
+				{GuideNumber: "103", GuideName: "CBC Saskatoon"},
 			},
 		}},
 	}); err != nil {
@@ -425,6 +426,7 @@ func TestServer_programmingHarvestImport(t *testing.T) {
 		RawChannels: []catalog.LiveChannel{
 			{ChannelID: "cbc-1", GuideNumber: "4", GuideName: "CBC Regina", TVGID: "cbc.regina", StreamURL: "http://a/1"},
 			{ChannelID: "ctv-1", GuideNumber: "5", GuideName: "CTV Regina", TVGID: "ctv.regina", StreamURL: "http://a/2"},
+			{ChannelID: "cbc-2", GuideNumber: "6", GuideName: "CBC Winnipeg", TVGID: "", GroupTitle: "CBC", StreamURL: "http://a/4"},
 			{ChannelID: "sports-1", GuideNumber: "300", GuideName: "Sports Net", TVGID: "sports.net", StreamURL: "http://a/3"},
 		},
 	}
@@ -440,8 +442,11 @@ func TestServer_programmingHarvestImport(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &preview); err != nil {
 		t.Fatalf("preview unmarshal: %v", err)
 	}
-	if preview.MatchedChannels != 2 || len(preview.OrderedChannelIDs) != 2 || preview.Recipe.OrderMode != "custom" {
+	if preview.MatchedChannels != 3 || len(preview.OrderedChannelIDs) != 3 || preview.Recipe.OrderMode != "custom" {
 		t.Fatalf("preview=%+v", preview)
+	}
+	if preview.MatchStrategies["local_broadcast_stem"] != 1 {
+		t.Fatalf("preview strategies=%+v", preview.MatchStrategies)
 	}
 
 	postBody := strings.NewReader(`{"lineup_title":"Rogers West","replace":true,"collapse_exact_backups":true}`)
@@ -456,10 +461,10 @@ func TestServer_programmingHarvestImport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load recipe: %v", err)
 	}
-	if len(loaded.IncludedChannelIDs) != 2 || len(loaded.ExcludedChannelIDs) != 1 || !loaded.CollapseExactBackups {
+	if len(loaded.IncludedChannelIDs) != 3 || len(loaded.ExcludedChannelIDs) != 1 || !loaded.CollapseExactBackups {
 		t.Fatalf("loaded recipe=%+v", loaded)
 	}
-	if len(s.Channels) != 2 {
+	if len(s.Channels) != 3 {
 		t.Fatalf("curated channels=%d", len(s.Channels))
 	}
 }
@@ -562,6 +567,22 @@ func TestServer_virtualChannelRulesAndPreview(t *testing.T) {
 	}
 	if w.Body.String() != "movie-bytes" {
 		t.Fatalf("virtual stream body=%q", w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/schedule.json?horizon=3h", nil)
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelSchedule().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual schedule status=%d body=%s", w.Code, w.Body.String())
+	}
+	var scheduleBody struct {
+		Report virtualchannels.ScheduleReport `json:"report"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &scheduleBody); err != nil {
+		t.Fatalf("virtual schedule unmarshal: %v", err)
+	}
+	if len(scheduleBody.Report.Slots) < 4 {
+		t.Fatalf("virtual schedule=%+v", scheduleBody.Report)
 	}
 }
 

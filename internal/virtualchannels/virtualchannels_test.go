@@ -110,3 +110,43 @@ func TestResolveCurrentSlot_resolvesCurrentEntryAndSource(t *testing.T) {
 		t.Fatalf("source_url=%q", slot.SourceURL)
 	}
 }
+
+func TestBuildSchedule_coversHorizonAcrossLoop(t *testing.T) {
+	set := Ruleset{
+		Channels: []Channel{{
+			ID:          "vc-news",
+			Name:        "News Loop",
+			GuideNumber: "9001",
+			Enabled:     true,
+			Entries: []Entry{
+				{Type: "movie", MovieID: "m1", DurationMins: 60},
+				{Type: "episode", SeriesID: "s1", EpisodeID: "e1", DurationMins: 30},
+			},
+		}},
+	}
+	report := BuildSchedule(set,
+		[]catalog.Movie{{ID: "m1", Title: "Movie One"}},
+		[]catalog.Series{{
+			ID:    "s1",
+			Title: "Series One",
+			Seasons: []catalog.Season{{
+				Number: 1,
+				Episodes: []catalog.Episode{{
+					ID:    "e1",
+					Title: "Pilot",
+				}},
+			}},
+		}},
+		time.Date(2026, 3, 21, 0, 15, 0, 0, time.UTC),
+		3*time.Hour,
+	)
+	if len(report.Slots) < 4 {
+		t.Fatalf("slots=%#v", report.Slots)
+	}
+	if report.Slots[0].ResolvedName != "Movie One" {
+		t.Fatalf("first slot=%+v", report.Slots[0])
+	}
+	if report.Slots[1].ResolvedName != "Series One · Pilot" {
+		t.Fatalf("second slot=%+v", report.Slots[1])
+	}
+}

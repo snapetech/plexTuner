@@ -4265,3 +4265,8 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
   - The Programming lane now offers direct Preview Import and Apply actions for harvested lineup candidates instead of only an inspect button.
   - The deck now calls `/programming/harvest-import.json` directly, so the new backend import flow is operable without hand-posting JSON.
   - Verification: `node --check internal/webui/deck.js`; `./scripts/verify`.
+- 2026-03-21: Added smarter harvest matching diagnostics and a real virtual-channel schedule surface.
+  - Programming harvest imports now report match-strategy counts and can fall back to a local-broadcast stem heuristic when exact market strings differ across equivalent locals.
+  - Added `/virtual-channels/schedule.json` so the synthetic-channel starter now exposes a rolling schedule horizon instead of only static preview JSON plus current-slot playback.
+  - Expanded tuner tests and smoke coverage for the new strategy summary and schedule endpoint.
+  - Verification: `go test ./internal/virtualchannels ./internal/tuner -run 'Test(BuildSchedule_coversHorizonAcrossLoop|Server_(virtualChannelRulesAndPreview|programmingHarvestImport))' -count=1`; `bash ./scripts/ci-smoke.sh`; `./scripts/verify`.

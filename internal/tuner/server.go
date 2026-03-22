@@ -1398,6 +1398,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/programming/preview.json", s.serveProgrammingPreview())
 	mux.Handle("/virtual-channels/rules.json", s.serveVirtualChannelRules())
 	mux.Handle("/virtual-channels/preview.json", s.serveVirtualChannelPreview())
+	mux.Handle("/virtual-channels/schedule.json", s.serveVirtualChannelSchedule())
 	mux.Handle("/virtual-channels/live.m3u", s.serveVirtualChannelM3U())
 	mux.Handle("/virtual-channels/stream/", s.serveVirtualChannelStream())
 	mux.Handle("/guide/highlights.json", s.serveGuideHighlights())
@@ -2484,6 +2485,7 @@ type programmingHarvestImportReport struct {
 	CollapseExactBackups bool                  `json:"collapse_exact_backups"`
 	HarvestedChannels    int                   `json:"harvested_channels"`
 	MatchedChannels      int                   `json:"matched_channels"`
+	MatchStrategies      map[string]int        `json:"match_strategies,omitempty"`
 	OrderedChannelIDs    []string              `json:"ordered_channel_ids,omitempty"`
 	MissingGuideNames    []string              `json:"missing_guide_names,omitempty"`
 	Recipe               programming.Recipe    `json:"recipe"`
@@ -2494,6 +2496,27 @@ func normalizeHarvestGuideName(raw string) string {
 	raw = strings.ToLower(strings.TrimSpace(raw))
 	raw = strings.Join(strings.Fields(raw), " ")
 	return raw
+}
+
+func normalizeHarvestBroadcastStem(raw string) string {
+	raw = normalizeHarvestGuideName(raw)
+	replacer := strings.NewReplacer(
+		" east", "",
+		" west", "",
+		" hd", "",
+		" us", "",
+		" usa", "",
+		" canada", "",
+	)
+	raw = replacer.Replace(raw)
+	fields := strings.Fields(raw)
+	if len(fields) > 1 {
+		last := fields[len(fields)-1]
+		if len(last) >= 3 && len(last) <= 12 && !strings.ContainsAny(last, "0123456789") {
+			fields = fields[:len(fields)-1]
+		}
+	}
+	return strings.Join(fields, " ")
 }
 
 func chooseHarvestResult(rep plexharvest.Report, lineupTitle, friendlyName string) (plexharvest.Result, bool) {
@@ -2531,6 +2554,60 @@ func chooseHarvestResult(rep plexharvest.Report, lineupTitle, friendlyName strin
 	return best, found
 }
 
+func harvestCandidateKeys(ch catalog.LiveChannel) []string {
+	keys := make([]string, 0, 4)
+	if tvg := strings.TrimSpace(ch.TVGID); tvg != "" {
+		keys = append(keys, "tvg:"+tvg)
+	}
+	if name := normalizeHarvestGuideName(ch.GuideName); name != "" {
+		keys = append(keys, "name:"+name)
+	}
+	if num := strings.TrimSpace(ch.GuideNumber); num != "" {
+		keys = append(keys, "number:"+num)
+	}
+	if programming.ClassifyChannel(ch) == programming.BucketLocalBroadcast {
+		if stem := normalizeHarvestBroadcastStem(ch.GuideName); stem != "" {
+			keys = append(keys, "local_stem:"+stem)
+		}
+	}
+	return keys
+}
+
+func harvestLookupKeys(harvested plexharvest.HarvestedChannel) []struct {
+	key      string
+	strategy string
+} {
+	keys := make([]struct {
+		key      string
+		strategy string
+	}, 0, 4)
+	if tvg := strings.TrimSpace(harvested.TVGID); tvg != "" {
+		keys = append(keys, struct {
+			key      string
+			strategy string
+		}{key: "tvg:" + tvg, strategy: "tvg_id_exact"})
+	}
+	if name := normalizeHarvestGuideName(harvested.GuideName); name != "" {
+		keys = append(keys, struct {
+			key      string
+			strategy string
+		}{key: "name:" + name, strategy: "guide_name_exact"})
+	}
+	if num := strings.TrimSpace(harvested.GuideNumber); num != "" {
+		keys = append(keys, struct {
+			key      string
+			strategy string
+		}{key: "number:" + num, strategy: "guide_number_exact"})
+	}
+	if stem := normalizeHarvestBroadcastStem(harvested.GuideName); stem != "" {
+		keys = append(keys, struct {
+			key      string
+			strategy string
+		}{key: "local_stem:" + stem, strategy: "local_broadcast_stem"})
+	}
+	return keys
+}
+
 func buildProgrammingHarvestImport(existing programming.Recipe, raw []catalog.LiveChannel, result plexharvest.Result, replace bool, collapse bool) programmingHarvestImportReport {
 	report := programmingHarvestImportReport{
 		GeneratedAt:          time.Now().UTC().Format(time.RFC3339),
@@ -2539,16 +2616,12 @@ func buildProgrammingHarvestImport(existing programming.Recipe, raw []catalog.Li
 		Replace:              replace,
 		CollapseExactBackups: collapse,
 		HarvestedChannels:    len(result.Channels),
+		MatchStrategies:      map[string]int{},
 	}
-	byTVGID := map[string][]catalog.LiveChannel{}
-	byName := map[string][]catalog.LiveChannel{}
+	indexed := map[string][]catalog.LiveChannel{}
 	for _, ch := range raw {
-		if tvg := strings.TrimSpace(ch.TVGID); tvg != "" {
-			byTVGID[tvg] = append(byTVGID[tvg], ch)
-		}
-		nameKey := normalizeHarvestGuideName(ch.GuideName)
-		if nameKey != "" {
-			byName[nameKey] = append(byName[nameKey], ch)
+		for _, key := range harvestCandidateKeys(ch) {
+			indexed[key] = append(indexed[key], ch)
 		}
 	}
 	seen := map[string]struct{}{}
@@ -2556,12 +2629,18 @@ func buildProgrammingHarvestImport(existing programming.Recipe, raw []catalog.Li
 	matched := make([]catalog.LiveChannel, 0)
 	missing := make([]string, 0)
 	for _, harvested := range result.Channels {
-		candidates := []catalog.LiveChannel(nil)
-		if tvg := strings.TrimSpace(harvested.TVGID); tvg != "" {
-			candidates = append(candidates, byTVGID[tvg]...)
-		}
-		if len(candidates) == 0 {
-			candidates = append(candidates, byName[normalizeHarvestGuideName(harvested.GuideName)]...)
+		var (
+			candidates []catalog.LiveChannel
+			matchedVia string
+		)
+		for _, rule := range harvestLookupKeys(harvested) {
+			rows := indexed[rule.key]
+			if len(rows) == 0 {
+				continue
+			}
+			candidates = append(candidates, rows...)
+			matchedVia = rule.strategy
+			break
 		}
 		if len(candidates) == 0 {
 			if name := strings.TrimSpace(harvested.GuideName); name != "" {
@@ -2569,6 +2648,7 @@ func buildProgrammingHarvestImport(existing programming.Recipe, raw []catalog.Li
 			}
 			continue
 		}
+		report.MatchStrategies[matchedVia]++
 		sort.SliceStable(candidates, func(i, j int) bool {
 			hi := strings.TrimSpace(harvested.GuideNumber)
 			ai := strings.TrimSpace(candidates[i].GuideNumber)
@@ -3308,6 +3388,29 @@ func (s *Server) serveVirtualChannelPreview() http.Handler {
 		}, "", "  ")
 		if err != nil {
 			http.Error(w, `{"error":"encode virtual channel preview"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveVirtualChannelSchedule() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		horizon := 6 * time.Hour
+		if raw := strings.TrimSpace(r.URL.Query().Get("horizon")); raw != "" {
+			if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+				horizon = d
+			}
+		}
+		report := virtualchannels.BuildSchedule(s.reloadVirtualChannels(), s.Movies, s.Series, timeNow(), horizon)
+		body, err := json.MarshalIndent(map[string]interface{}{
+			"generated_at": time.Now().UTC().Format(time.RFC3339),
+			"rules_file":   strings.TrimSpace(s.VirtualChannelsFile),
+			"report":       report,
+		}, "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode virtual channel schedule"}`, http.StatusInternalServerError)
 			return
 		}
 		_, _ = w.Write(body)

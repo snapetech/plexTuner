@@ -62,6 +62,14 @@ type ResolvedSlot struct {
 	SourceURL string `json:"source_url,omitempty"`
 }
 
+type ScheduleReport struct {
+	GeneratedAt string        `json:"generated_at"`
+	StartsAtUTC string        `json:"starts_at_utc"`
+	EndsAtUTC   string        `json:"ends_at_utc"`
+	Channels    int           `json:"channels"`
+	Slots       []PreviewSlot `json:"slots,omitempty"`
+}
+
 func LoadFile(path string) (Ruleset, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -241,6 +249,55 @@ func ResolveCurrentSlot(set Ruleset, channelID string, movies []catalog.Movie, s
 		break
 	}
 	return ResolvedSlot{}, false
+}
+
+func BuildSchedule(set Ruleset, movies []catalog.Movie, series []catalog.Series, start time.Time, horizon time.Duration) ScheduleReport {
+	set = NormalizeRuleset(set)
+	if horizon <= 0 {
+		horizon = 6 * time.Hour
+	}
+	start = start.UTC().Truncate(time.Minute)
+	end := start.Add(horizon)
+	report := ScheduleReport{
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		StartsAtUTC: start.Format(time.RFC3339),
+		EndsAtUTC:   end.Format(time.RFC3339),
+		Channels:    len(set.Channels),
+	}
+	for _, ch := range set.Channels {
+		if !ch.Enabled || len(ch.Entries) == 0 {
+			continue
+		}
+		dayStart := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.UTC)
+		cursor := dayStart
+		for cursor.Before(end) {
+			for _, entry := range ch.Entries {
+				duration := entry.DurationMins
+				if duration <= 0 {
+					duration = 30
+				}
+				slotEnd := cursor.Add(time.Duration(duration) * time.Minute)
+				if slotEnd.After(start) && cursor.Before(end) {
+					report.Slots = append(report.Slots, PreviewSlot{
+						ChannelID:    ch.ID,
+						ChannelName:  ch.Name,
+						GuideNumber:  ch.GuideNumber,
+						StartsAtUTC:  cursor.Format(time.RFC3339),
+						EndsAtUTC:    slotEnd.Format(time.RFC3339),
+						EntryType:    entry.Type,
+						EntryID:      entryID(entry),
+						ResolvedName: resolveEntryName(entry, movies, series),
+						DurationMins: duration,
+					})
+				}
+				cursor = slotEnd
+				if !cursor.Before(end) {
+					break
+				}
+			}
+		}
+	}
+	return report
 }
 
 func previewSlotsForChannel(ch Channel, movies []catalog.Movie, series []catalog.Series, start time.Time, perChannel int) []PreviewSlot {
