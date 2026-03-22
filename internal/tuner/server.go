@@ -3382,17 +3382,55 @@ func (s *Server) serveProgrammingOrder() http.Handler {
 func (s *Server) serveProgrammingBackups() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodGet:
+		case http.MethodPost:
+			if !operatorUIAllowed(w, r) {
+				return
+			}
+			if strings.TrimSpace(s.ProgrammingRecipeFile) == "" {
+				http.Error(w, `{"error":"programming recipe file not configured"}`, http.StatusServiceUnavailable)
+				return
+			}
+			limited := http.MaxBytesReader(w, r.Body, 65536)
+			defer limited.Close()
+			var req struct {
+				Action     string   `json:"action"`
+				ChannelID  string   `json:"channel_id"`
+				ChannelIDs []string `json:"channel_ids"`
+			}
+			if err := json.NewDecoder(limited).Decode(&req); err != nil {
+				http.Error(w, `{"error":"invalid programming backups json"}`, http.StatusBadRequest)
+				return
+			}
+			ids := append([]string(nil), req.ChannelIDs...)
+			if strings.TrimSpace(req.ChannelID) != "" {
+				ids = append(ids, strings.TrimSpace(req.ChannelID))
+			}
+			recipe := programming.UpdateRecipeBackupPreferences(s.reloadProgrammingRecipe(), req.Action, ids)
+			saved, err := programming.SaveRecipeFile(s.ProgrammingRecipeFile, recipe)
+			if err != nil {
+				http.Error(w, `{"error":"save programming recipe failed"}`, http.StatusBadGateway)
+				return
+			}
+			s.ProgrammingRecipe = saved
+			s.rebuildCuratedChannelsFromRaw()
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 		recipe := s.reloadProgrammingRecipe()
 		preview := programming.ApplyRecipePreview(cloneLiveChannels(s.RawChannels), recipe)
-		groups := programming.BuildBackupGroups(preview)
+		groups := programming.BuildBackupGroupsWithPreferences(preview, recipe.PreferredBackupIDs)
 		body, err := json.MarshalIndent(map[string]interface{}{
-			"generated_at":     time.Now().UTC().Format(time.RFC3339),
-			"recipe_file":      strings.TrimSpace(s.ProgrammingRecipeFile),
-			"collapse_enabled": recipe.CollapseExactBackups,
-			"raw_channels":     len(s.RawChannels),
-			"curated_preview":  len(preview),
-			"group_count":      len(groups),
-			"groups":           groups,
+			"generated_at":         time.Now().UTC().Format(time.RFC3339),
+			"recipe_file":          strings.TrimSpace(s.ProgrammingRecipeFile),
+			"collapse_enabled":     recipe.CollapseExactBackups,
+			"preferred_backup_ids": append([]string(nil), recipe.PreferredBackupIDs...),
+			"raw_channels":         len(s.RawChannels),
+			"curated_preview":      len(preview),
+			"group_count":          len(groups),
+			"groups":               groups,
 		}, "", "  ")
 		if err != nil {
 			http.Error(w, `{"error":"encode programming backups"}`, http.StatusInternalServerError)

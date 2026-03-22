@@ -323,14 +323,44 @@ func TestServer_programmingEndpoints(t *testing.T) {
 		t.Fatalf("backups status=%d body=%s", w.Code, w.Body.String())
 	}
 	var backups struct {
-		GroupCount int                       `json:"group_count"`
-		Groups     []programming.BackupGroup `json:"groups"`
+		GroupCount         int                       `json:"group_count"`
+		PreferredBackupIDs []string                  `json:"preferred_backup_ids"`
+		Groups             []programming.BackupGroup `json:"groups"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &backups); err != nil {
 		t.Fatalf("backups unmarshal: %v", err)
 	}
 	if backups.GroupCount != 1 || len(backups.Groups) != 1 || backups.Groups[0].MemberCount != 2 {
 		t.Fatalf("backups=%+v", backups)
+	}
+
+	postBody = strings.NewReader(`{
+  "action": "prefer",
+  "channel_id": "4"
+}`)
+	req = httptest.NewRequest(http.MethodPost, "/programming/backups.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveProgrammingBackups().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("backups prefer status=%d body=%s", w.Code, w.Body.String())
+	}
+	backups = struct {
+		GroupCount         int                       `json:"group_count"`
+		PreferredBackupIDs []string                  `json:"preferred_backup_ids"`
+		Groups             []programming.BackupGroup `json:"groups"`
+	}{}
+	if err := json.Unmarshal(w.Body.Bytes(), &backups); err != nil {
+		t.Fatalf("backups prefer unmarshal: %v", err)
+	}
+	if len(backups.PreferredBackupIDs) != 1 || backups.PreferredBackupIDs[0] != "4" {
+		t.Fatalf("preferred backups=%+v", backups.PreferredBackupIDs)
+	}
+	if len(backups.Groups) != 1 || backups.Groups[0].PrimaryID != "4" {
+		t.Fatalf("preferred group=%+v", backups.Groups)
+	}
+	if len(s.Channels) != 2 || s.Channels[1].ChannelID != "4" || s.Channels[1].StreamURL != "http://b/1" {
+		t.Fatalf("curated channels after backup prefer=%#v", s.Channels)
 	}
 }
 

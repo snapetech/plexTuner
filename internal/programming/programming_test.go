@@ -69,15 +69,17 @@ func TestUpdateRecipeMutations(t *testing.T) {
 	recipe = UpdateRecipeCategories(recipe, "exclude", []string{"cat-c"})
 	recipe = UpdateRecipeChannels(recipe, "include", []string{"ch1"})
 	recipe = UpdateRecipeChannels(recipe, "exclude", []string{"ch2"})
+	recipe = UpdateRecipeBackupPreferences(recipe, "prefer", []string{"ch2", "ch1"})
 	if len(recipe.SelectedCategories) != 2 || len(recipe.ExcludedCategories) != 1 {
 		t.Fatalf("category recipe=%#v", recipe)
 	}
-	if len(recipe.IncludedChannelIDs) != 1 || len(recipe.ExcludedChannelIDs) != 1 {
+	if len(recipe.IncludedChannelIDs) != 1 || len(recipe.ExcludedChannelIDs) != 1 || len(recipe.PreferredBackupIDs) != 2 {
 		t.Fatalf("channel recipe=%#v", recipe)
 	}
 	recipe = UpdateRecipeCategories(recipe, "remove", []string{"cat-b", "cat-c"})
 	recipe = UpdateRecipeChannels(recipe, "clear", []string{"ch1", "ch2"})
-	if len(recipe.SelectedCategories) != 1 || len(recipe.ExcludedCategories) != 0 || len(recipe.IncludedChannelIDs) != 0 || len(recipe.ExcludedChannelIDs) != 0 {
+	recipe = UpdateRecipeBackupPreferences(recipe, "remove", []string{"ch2"})
+	if len(recipe.SelectedCategories) != 1 || len(recipe.ExcludedCategories) != 0 || len(recipe.IncludedChannelIDs) != 0 || len(recipe.ExcludedChannelIDs) != 0 || len(recipe.PreferredBackupIDs) != 1 {
 		t.Fatalf("mutated recipe=%#v", recipe)
 	}
 }
@@ -145,6 +147,24 @@ func TestBuildBackupGroupsAndCollapse(t *testing.T) {
 		t.Fatalf("collapsed=%#v", collapsed)
 	}
 	if collapsed[0].ChannelID != "sling-syfy" || len(collapsed[0].StreamURLs) != 2 {
+		t.Fatalf("collapsed primary=%#v", collapsed[0])
+	}
+}
+
+func TestBuildBackupGroupsAndCollapse_WithPreferences(t *testing.T) {
+	channels := []catalog.LiveChannel{
+		{ChannelID: "sling-syfy", DNAID: "dna-syfy", TVGID: "syfy.us", GuideNumber: "401", GuideName: "SyFy", SourceTag: "sling", StreamURL: "http://a/1", StreamURLs: []string{"http://a/1"}},
+		{ChannelID: "directv-syfy", DNAID: "dna-syfy", TVGID: "syfy.us", GuideNumber: "5401", GuideName: "SyFy", SourceTag: "directv", StreamURL: "http://b/1", StreamURLs: []string{"http://b/1"}},
+	}
+	groups := BuildBackupGroupsWithPreferences(channels, []string{"directv-syfy"})
+	if len(groups) != 1 || groups[0].PrimaryID != "directv-syfy" {
+		t.Fatalf("groups=%#v", groups)
+	}
+	collapsed := CollapseExactBackupGroupsWithPreferences(channels, []string{"directv-syfy"})
+	if len(collapsed) != 1 {
+		t.Fatalf("collapsed=%#v", collapsed)
+	}
+	if collapsed[0].ChannelID != "directv-syfy" || collapsed[0].StreamURL != "http://b/1" || len(collapsed[0].StreamURLs) != 2 {
 		t.Fatalf("collapsed primary=%#v", collapsed[0])
 	}
 }

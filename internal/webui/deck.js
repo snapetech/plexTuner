@@ -465,8 +465,17 @@ function backupGroupSummary(group) {
     const name = member.guide_name || member.channel_id || "channel";
     const descriptor = channelDescriptorLabel(member);
     const source = member.source_tag ? ` · ${member.source_tag}` : "";
-    return `${name}${descriptor ? ` · ${descriptor}` : ""}${source}`;
+    const preferred = member.channel_id === group?.primary_channel_id ? " · preferred" : "";
+    return `${name}${descriptor ? ` · ${descriptor}` : ""}${source}${preferred}`;
   }).join(" | ");
+}
+
+function programmingBackupPreferenceButtons(group) {
+  return normalizeArray(group?.members)
+    .filter((member) => member?.channel_id && member.channel_id !== group?.primary_channel_id)
+    .slice(0, 3)
+    .map((member) => `<button class="tiny" type="button" data-programming-backup-prefer="${member.channel_id}">Prefer ${pretty(member.source_tag || member.guide_name || member.channel_id)}</button>`)
+    .join("");
 }
 
 function renderDeckSettingsPanel(settings) {
@@ -1448,7 +1457,7 @@ function renderDeck() {
       backupGroupSummary(group),
       "",
       "programmingBackups",
-      `<button class="tiny" type="button" data-inspect="programmingBackups">Inspect Groups</button>`
+      `<button class="tiny" type="button" data-inspect="programmingBackups">Inspect Groups</button>${programmingBackupPreferenceButtons(group)}`
     )
   )).join("") || createCard("Exact backups", "No strong same-channel sibling groups detected in the current preview.", "", "", "programmingBackups");
   if (harvestLineups.length) {
@@ -1868,6 +1877,14 @@ function bindUI() {
         }, "programming_toggle_collapse_backups");
         return;
       }
+    }
+    const programmingBackupPrefer = event.target.closest("[data-programming-backup-prefer]");
+    if (programmingBackupPrefer) {
+      postProgramming(endpoints.programmingBackups, {
+        action: "prefer",
+        channel_id: programmingBackupPrefer.getAttribute("data-programming-backup-prefer") || ""
+      }, "programming_backup_prefer");
+      return;
     }
     const programmingMode = event.target.closest("[data-programming-mode]");
     if (programmingMode) {

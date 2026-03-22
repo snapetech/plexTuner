@@ -23,6 +23,7 @@ type Recipe struct {
 	ExcludedCategories   []string `json:"excluded_categories,omitempty"`
 	IncludedChannelIDs   []string `json:"included_channel_ids,omitempty"`
 	ExcludedChannelIDs   []string `json:"excluded_channel_ids,omitempty"`
+	PreferredBackupIDs   []string `json:"preferred_backup_ids,omitempty"`
 	OrderMode            string   `json:"order_mode,omitempty"` // source | custom | recommended
 	CustomOrder          []string `json:"custom_order,omitempty"`
 	CollapseExactBackups bool     `json:"collapse_exact_backups,omitempty"`
@@ -183,6 +184,7 @@ func NormalizeRecipe(recipe Recipe) Recipe {
 	recipe.ExcludedCategories = dedupeSorted(recipe.ExcludedCategories)
 	recipe.IncludedChannelIDs = dedupeSorted(recipe.IncludedChannelIDs)
 	recipe.ExcludedChannelIDs = dedupeSorted(recipe.ExcludedChannelIDs)
+	recipe.PreferredBackupIDs = dedupeKeepOrder(recipe.PreferredBackupIDs)
 	recipe.CustomOrder = dedupeKeepOrder(recipe.CustomOrder)
 	switch strings.ToLower(strings.TrimSpace(recipe.OrderMode)) {
 	case "", "source", "custom", "recommended":
@@ -340,7 +342,7 @@ func applyRecipe(channels []catalog.LiveChannel, recipe Recipe, collapseBackups 
 		filtered = applyRecommendedOrder(filtered, recipe.CustomOrder)
 	}
 	if collapseBackups && recipe.CollapseExactBackups {
-		filtered = CollapseExactBackupGroups(filtered)
+		filtered = CollapseExactBackupGroupsWithPreferences(filtered, recipe.PreferredBackupIDs)
 	}
 	return filtered
 }
@@ -609,7 +611,32 @@ func UpdateRecipeChannels(recipe Recipe, action string, channelIDs []string) Rec
 	return NormalizeRecipe(recipe)
 }
 
+func UpdateRecipeBackupPreferences(recipe Recipe, action string, channelIDs []string) Recipe {
+	ids := dedupeKeepOrder(channelIDs)
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "prefer":
+		recipe.PreferredBackupIDs = append(ids, recipe.PreferredBackupIDs...)
+	case "remove", "unprefer":
+		deny := toSet(ids)
+		filtered := make([]string, 0, len(recipe.PreferredBackupIDs))
+		for _, id := range recipe.PreferredBackupIDs {
+			if _, drop := deny[strings.TrimSpace(id)]; drop {
+				continue
+			}
+			filtered = append(filtered, id)
+		}
+		recipe.PreferredBackupIDs = filtered
+	case "clear":
+		recipe.PreferredBackupIDs = nil
+	}
+	return NormalizeRecipe(recipe)
+}
+
 func BuildBackupGroups(channels []catalog.LiveChannel) []BackupGroup {
+	return BuildBackupGroupsWithPreferences(channels, nil)
+}
+
+func BuildBackupGroupsWithPreferences(channels []catalog.LiveChannel, preferred []string) []BackupGroup {
 	type accum struct {
 		strategy BackupMatchStrategy
 		key      string
@@ -636,8 +663,9 @@ func BuildBackupGroups(channels []catalog.LiveChannel) []BackupGroup {
 		if cur == nil || len(cur.members) < 2 {
 			continue
 		}
+		orderedMembers := preferBackupMembers(cur.members, preferred)
 		members := make([]BackupGroupMember, 0, len(cur.members))
-		for _, ch := range cur.members {
+		for _, ch := range orderedMembers {
 			members = append(members, BackupGroupMember{
 				ChannelID:   strings.TrimSpace(ch.ChannelID),
 				DNAID:       strings.TrimSpace(ch.DNAID),
@@ -651,7 +679,7 @@ func BuildBackupGroups(channels []catalog.LiveChannel) []BackupGroup {
 				Descriptor:  DescribeChannel(ch),
 			})
 		}
-		primary := cur.members[0]
+		primary := orderedMembers[0]
 		display := strings.TrimSpace(primary.GuideName)
 		if display == "" {
 			display = strings.TrimSpace(primary.ChannelID)
@@ -671,24 +699,79 @@ func BuildBackupGroups(channels []catalog.LiveChannel) []BackupGroup {
 }
 
 func CollapseExactBackupGroups(channels []catalog.LiveChannel) []catalog.LiveChannel {
+	return CollapseExactBackupGroupsWithPreferences(channels, nil)
+}
+
+func CollapseExactBackupGroupsWithPreferences(channels []catalog.LiveChannel, preferred []string) []catalog.LiveChannel {
 	if len(channels) < 2 {
 		return append([]catalog.LiveChannel(nil), channels...)
 	}
+	type accum struct {
+		order   int
+		members []catalog.LiveChannel
+	}
 	out := make([]catalog.LiveChannel, 0, len(channels))
 	indexByKey := map[string]int{}
+	grouped := map[string]*accum{}
 	for _, ch := range channels {
 		key, _, ok := backupIdentity(ch)
 		if !ok {
 			out = append(out, cloneChannel(ch))
 			continue
 		}
-		if idx, exists := indexByKey[key]; exists {
-			out[idx] = mergeBackupChannel(out[idx], ch)
+		cur, exists := grouped[key]
+		if !exists {
+			cur = &accum{order: len(out)}
+			grouped[key] = cur
+			indexByKey[key] = len(out)
+			out = append(out, catalog.LiveChannel{})
+		}
+		cur.members = append(cur.members, ch)
+	}
+	for key, idx := range indexByKey {
+		cur := grouped[key]
+		if cur == nil || len(cur.members) == 0 {
 			continue
 		}
-		indexByKey[key] = len(out)
-		out = append(out, cloneChannel(ch))
+		orderedMembers := preferBackupMembers(cur.members, preferred)
+		merged := cloneChannel(orderedMembers[0])
+		for _, backup := range orderedMembers[1:] {
+			merged = mergeBackupChannel(merged, backup)
+		}
+		out[idx] = merged
 	}
+	return out
+}
+
+func preferBackupMembers(channels []catalog.LiveChannel, preferred []string) []catalog.LiveChannel {
+	out := append([]catalog.LiveChannel(nil), channels...)
+	if len(out) < 2 || len(preferred) == 0 {
+		return out
+	}
+	rank := map[string]int{}
+	for i, id := range preferred {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, exists := rank[id]; !exists {
+			rank[id] = i
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		ri, iok := rank[strings.TrimSpace(out[i].ChannelID)]
+		rj, jok := rank[strings.TrimSpace(out[j].ChannelID)]
+		switch {
+		case iok && jok:
+			return ri < rj
+		case iok:
+			return true
+		case jok:
+			return false
+		default:
+			return false
+		}
+	})
 	return out
 }
 
@@ -1017,6 +1100,18 @@ func dedupeKeepOrder(in []string) []string {
 		}
 		seen[v] = struct{}{}
 		out = append(out, v)
+	}
+	return out
+}
+
+func toSet(in []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(in))
+	for _, v := range in {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		out[v] = struct{}{}
 	}
 	return out
 }

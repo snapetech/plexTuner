@@ -58,6 +58,25 @@ Append-only. One entry per completed task.
     - `scripts/ci-smoke.sh`
 
 - Date: 2026-03-21
+  Title: Add durable Programming backup-source preference
+  Summary:
+    - Extended the saved Programming recipe with explicit preferred backup-source IDs so exact-match sibling groups stop depending on incidental ingest order.
+    - `/programming/backups.json` now supports preference mutation, collapsed preview/output rows honor the preferred sibling as the visible primary, and the deck exposes one-click source preference in the Programming lane.
+    - Added targeted tests plus binary smoke coverage so the preferred sibling survives recipe application and stays release-gated.
+  Verification:
+    - `go test ./internal/programming ./internal/tuner -run 'Test(UpdateRecipeMutations|BuildBackupGroupsAndCollapse|BuildBackupGroupsAndCollapse_WithPreferences|Server_programmingEndpoints)$' -count=1`
+    - `node --check internal/webui/deck.js`
+    - `./scripts/verify`
+  Notes:
+    - This turns the tester's "use DirecTV SyFy when Sling SyFy is flaky" idea into durable server behavior, not just a diagnostics observation.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/programming/programming.go`
+    - `internal/tuner/server.go`
+    - `internal/webui/deck.js`
+
+- Date: 2026-03-21
   Title: Add batch Programming browse with cached next-hour EPG summaries
   Summary:
     - Added `/programming/browse.json`, which returns one category’s channel rows with derived feed descriptors, recipe inclusion flags, exact-backup counts, cached guide-health status, and next-hour programme titles/counts in one request.

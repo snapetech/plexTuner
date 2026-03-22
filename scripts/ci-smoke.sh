@@ -438,6 +438,10 @@ collapse_code="$(curl -sS -X POST -H 'Content-Type: application/json' --data '{"
 grep -q '"curated_channels": 2' <(curl -sS "http://127.0.0.1:$port_full/programming/preview.json") || fail "programming preview missing collapsed curated count"
 grep -q '"stream_urls": \[' <(curl -sS "http://127.0.0.1:$port_full/programming/preview.json") || fail "programming preview missing lineup stream urls"
 grep -q '"group_count": 1' <(curl -sS "http://127.0.0.1:$port_full/programming/backups.json") || fail "programming backups missing grouped exact match"
+backup_prefer_code="$(curl -sS -X POST -H 'Content-Type: application/json' --data '{"action":"prefer","channel_id":"ch3"}' -o "$body_file" -w '%{http_code}' "http://127.0.0.1:$port_full/programming/backups.json" || true)"
+[[ "$backup_prefer_code" == "200" ]] || fail "programming backup prefer status=$backup_prefer_code body=$(cat "$body_file" 2>/dev/null)"
+grep -q '"primary_channel_id": "ch3"' <(curl -sS "http://127.0.0.1:$port_full/programming/backups.json") || fail "programming backups missing preferred primary"
+grep -q '"channel_id": "ch3"' <(curl -sS "http://127.0.0.1:$port_full/programming/preview.json") || fail "programming preview missing preferred backup primary"
 
 kill "$full_pid" 2>/dev/null || true
 wait "$full_pid" 2>/dev/null || true
