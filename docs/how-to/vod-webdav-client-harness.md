@@ -38,6 +38,11 @@ The harness prints a short summary and writes:
 - `steps/*.body`
 - `vod-webdav.log`
 
+Recommended pattern:
+1. run the self-contained harness locally to create a known-good baseline
+2. run the harness on a real macOS or Windows host against the target `BASE_URL`
+3. diff the two bundles with `vod-webdav-client-diff.py`
+
 ## Run against an existing WebDAV instance
 
 If you already have `vod-webdav` running, point the harness at it directly:
@@ -48,6 +53,20 @@ BASE_URL=http://127.0.0.1:58188 ./scripts/vod-webdav-client-harness.sh
 
 This skips the temporary binary and local asset source and only captures the
 request/response matrix.
+
+## Diff a real-host run against a baseline
+
+```bash
+python3 scripts/vod-webdav-client-diff.py \
+  --left .diag/vod-webdav-client/<baseline-run> \
+  --right .diag/vod-webdav-client/<real-host-run> \
+  --left-label baseline \
+  --right-label macos \
+  --print
+```
+
+This highlights status differences per step, which is usually the fastest way
+to spot client-specific drift.
 
 ## What the harness checks
 
@@ -73,6 +92,28 @@ Expected outcomes:
 ```bash
 python3 scripts/vod-webdav-client-report.py \
   --dir .diag/vod-webdav-client/<run-id> \
+  --print
+```
+
+## Suggested real-host workflow
+
+On a Linux dev box:
+```bash
+./scripts/vod-webdav-client-harness.sh
+```
+
+On a real macOS or Windows host:
+```bash
+BASE_URL=http://<tunerr-host>:58188 ./scripts/vod-webdav-client-harness.sh
+```
+
+Back on the dev box:
+```bash
+python3 scripts/vod-webdav-client-diff.py \
+  --left .diag/vod-webdav-client/<baseline-run> \
+  --right .diag/vod-webdav-client/<real-host-run> \
+  --left-label baseline \
+  --right-label windows \
   --print
 ```
 

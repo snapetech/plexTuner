@@ -35,6 +35,7 @@ multi_stream_harness: "TUNERR_BASE_URL=http://127.0.0.1:5004 CHANNEL_IDS=123,456
 live_race_harness: "RUN_SECONDS=30 CONCURRENCY=6 ./scripts/live-race-harness.sh  # synthetic/replay + concurrent probes + optional PMS/tcpdump/Plex Web probe; .diag/live-race/<id>/"
 harness_index: "python3 scripts/harness-index.py  # list newest .diag/live-race|stream-compare|multi-stream runs; add --json"
 vod_webdav_client_harness: "./scripts/vod-webdav-client-harness.sh  # replay macOS Finder/WebDAVFS + Windows MiniRedir request shapes against vod-webdav and write a report bundle"
+vod_webdav_client_diff: "python3 scripts/vod-webdav-client-diff.py --left <baseline-run-dir> --right <real-host-run-dir> --left-label baseline --right-label macos --print  # compare two vod-webdav client harness bundles step-by-step"
 evidence_intake: "./scripts/evidence-intake.sh -id <case-id> -print  # scaffold .diag/evidence/<case-id>/ for debug-bundle + PMS logs + Tunerr logs + pcap"
 build_test_packages: "./scripts/build-test-packages.sh  # cross-platform tester archives + checksums"
 build_tester_release: "./scripts/build-tester-release.sh  # staged tester handoff bundle (packages/examples/docs/manifest)"
