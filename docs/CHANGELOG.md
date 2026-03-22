@@ -19,6 +19,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Event debug surface**: `/debug/event-hooks.json` reports configured hooks and recent deliveries, and `/debug/runtime.json` now surfaces event-hook runtime state.
 - **Active stream debug surface (`PAR-007` slice)**: `/debug/active-streams.json` now reports currently in-flight stream sessions and live tuner occupancy.
 - **Xtream-compatible live output starter (`PAR-004` slice)**: optional read-only downstream `player_api.php` (`get_live_streams`, `get_live_categories`) plus `/live/<user>/<pass>/<channel>.ts`, backed by the curated lineup and existing gateway.
+- **Recording rules/history starter (`PAR-003` slice)**: `IPTV_TUNERR_RECORDING_RULES_FILE` now enables durable server-side recording rules, `/recordings/rules.json` CRUD, `/recordings/rules/preview.json` against live catch-up capsules, and `/recordings/history.json` classification of recorder state against the current ruleset.
 
 ### Fixed
 

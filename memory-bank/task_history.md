@@ -23,6 +23,22 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-21
+  Title: Add parity recording-rules and recorder-history starter
+  Summary:
+    - Added a durable server-side recording-rules model behind `IPTV_TUNERR_RECORDING_RULES_FILE` with `/recordings/rules.json` CRUD.
+    - Added `/recordings/rules/preview.json` to evaluate the current ruleset against live catch-up capsules and `/recordings/history.json` to classify recorder state against the active rules.
+    - Extended `scripts/ci-smoke.sh` so the release gate now mutates recorder rules over HTTP and checks recorder-history output instead of leaving the new surface as unit-only coverage.
+  Verification:
+    - `go test ./internal/tuner ./cmd/iptv-tunerr -run 'Test(RecordingRulesFileRoundTrip|Server_recording(RulesEndpoint|RulePreview|History))' -count=1`
+    - `./scripts/verify`
+  Notes:
+    - This is the first `PAR-003` slice, not the final DVR product; it establishes durable rule state and operator-visible history without pretending full series-rule scheduling is already finished.
+  Opportunities filed:
+    - none
+  Links:
+    - recording rules / recorder history starter
+
+- Date: 2026-03-21
   Title: Prepare Windows bare-metal smoke package
   Summary:
     - Added `scripts/windows-baremetal-package.sh` to cross-build a `windows/amd64` `iptv-tunerr.exe` and bundle it with a Windows-local smoke runner.

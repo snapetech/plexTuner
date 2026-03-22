@@ -2,6 +2,8 @@
 
 <!-- Update at session start and when focus changes. -->
 
+**Latest (2026-03-21):** **`PAR-003` starter shipped:** Tunerr now has a durable server-side recording-rules model behind `IPTV_TUNERR_RECORDING_RULES_FILE`. `/recordings/rules.json` stores and mutates rule definitions, `/recordings/rules/preview.json` evaluates those rules against live catch-up capsules, `/recordings/history.json` classifies recorder state against the active ruleset, and `scripts/ci-smoke.sh` now exercises the rules/history path so it is covered in release gating. Next depth: `PAR-002` shared upstream stream fanout or broader `PAR-004` Xtream output.
+
 **Latest (2026-03-21):** **Tester-driven multi-account rollover fix shipped:** account pooling now falls back to the real Xtream path credentials (`/live/<user>/<pass>/...`, etc.) when `StreamAuths` metadata is missing or incomplete, so distinct provider accounts no longer collapse back to the one global default identity. In the same pass, Tunerr gained `/debug/active-streams.json` as the first `PAR-007` slice so operators can see live in-flight sessions, not just postmortem stream attempts. Next step: keep stacking richer active-stream/control surfaces and the first downstream publishing slice on top of the parity/event foundation.
 
 **Latest (2026-03-21):** **`PAR-004` starter shipped:** Tunerr now has a minimal read-only downstream Xtream-compatible live surface behind `IPTV_TUNERR_XTREAM_USER` / `IPTV_TUNERR_XTREAM_PASS`. `player_api.php` currently serves `get_live_streams` and `get_live_categories`, and `/live/<user>/<pass>/<channel>.ts` proxies through the existing stream gateway. Next depth: VOD/series actions and tighter client-shape validation if we keep pushing the Xtream output lane.

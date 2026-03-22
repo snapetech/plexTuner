@@ -389,6 +389,7 @@ Related env:
 - `/provider/profile.json` now includes `account_learned_limits[]` so operators can see which credential set has learned a tighter cap, how many contention signals were seen, and whether that account currently has leased streams.
 - `/provider/profile.json` and `/debug/runtime.json` now also expose the learned-limit state file path and TTL so the persistence/decay policy is visible at runtime.
 - `IPTV_TUNERR_PROGRAMMING_RECIPE_FILE` — optional JSON file storing the server-side Programming Manager recipe. When set, Tunerr applies the saved category/channel selection, manual/custom order, and optional exact-backup collapse after guide/DNA intelligence and before final lineup exposure. Surfaced via `/programming/categories.json`, `/programming/channels.json`, `/programming/order.json`, `/programming/backups.json`, `/programming/recipe.json`, `/programming/preview.json`, and `/debug/runtime.json`.
+- `IPTV_TUNERR_RECORDING_RULES_FILE` — optional JSON file storing durable server-side recording rules. Surfaced via `/recordings/rules.json`, `/recordings/rules/preview.json`, `/recordings/history.json`, and `/debug/runtime.json`.
 
 ## Programming Manager foundation endpoints
 
@@ -819,6 +820,7 @@ Merge semantics for HDHR + IPTV catalogs: [adr/0002-hdhr-hardware-iptv-merge.md]
 | `IPTV_TUNERR_WEBUI_USER` | Dedicated deck HTTP Basic auth username (defaults to `admin` only when unset at startup). |
 | `IPTV_TUNERR_WEBUI_PASS` | Dedicated deck HTTP Basic auth password. When unset, Tunerr generates a one-time startup password instead of using `admin/admin`. That generated password is logged once at startup and shown on the localhost login page until you pin a real password. |
 | `IPTV_TUNERR_EVENT_WEBHOOKS_FILE` | Optional JSON file that configures outbound event webhooks. Each hook can declare `name`, `url`, optional `events`, optional extra `headers`, and optional per-hook `timeout` duration. |
+| `IPTV_TUNERR_RECORDING_RULES_FILE` | Optional JSON file for durable server-side recording rules used by `/recordings/rules.json`, `/recordings/rules/preview.json`, and `/recordings/history.json`. |
 | `IPTV_TUNERR_XTREAM_USER` | Optional username for the read-only downstream Xtream-compatible live output. Requires `IPTV_TUNERR_XTREAM_PASS`. |
 | `IPTV_TUNERR_XTREAM_PASS` | Optional password for the read-only downstream Xtream-compatible live output. Requires `IPTV_TUNERR_XTREAM_USER`. |
 | `IPTV_TUNERR_UI_DISABLED` | If `1`, `/ui/` is not served. |
@@ -828,6 +830,7 @@ Browser URLs:
 - Dedicated deck: `http://127.0.0.1:48879/` by default. It reverse-proxies tuner endpoints under `/api/*`, surfaces runtime settings from `/api/debug/runtime.json`, opens on a login page with a cookie-backed session, accepts direct HTTP Basic auth for scriptable/API access without minting browser sessions, generates a one-time startup password when `IPTV_TUNERR_WEBUI_PASS` is unset, and exposes read-only deck telemetry under `/deck/telemetry.json` plus server-derived operator activity under `/deck/activity.json`.
 - Event hooks: `/debug/event-hooks.json` reports configured hooks and recent delivery attempts. Lifecycle events currently include `lineup.updated`, `stream.requested`, `stream.rejected`, and `stream.finished`.
 - Xtream live output (starter): when `IPTV_TUNERR_XTREAM_USER` and `IPTV_TUNERR_XTREAM_PASS` are set, Tunerr exposes a read-only downstream Xtream-compatible surface at `/player_api.php` (`get_live_streams`, `get_live_categories`) and `/live/<user>/<pass>/<channel>.ts`.
+- Recording rules (starter): when `IPTV_TUNERR_RECORDING_RULES_FILE` is set, Tunerr exposes durable recorder-rule CRUD at `/recordings/rules.json`, live capsule matching at `/recordings/rules/preview.json`, and recorder-state classification at `/recordings/history.json`.
 - Guide/operator endpoints include `/guide/lineup-match.json`, which reports whether current `lineup.json` rows have exact-name counterparts in emitted `guide.xml`, plus duplicate-name/number signals and a sample of unmatched rows including `channel_id`, `guide_number`, `guide_name`, and observed `tvg_id`.
 - Startup contract: until the first real merged guide is cached, `/guide.xml` returns `503 Service Unavailable` with `Retry-After: 5`, `X-IptvTunerr-Guide-State: loading`, and a visible placeholder XMLTV body. HDHR discovery/lineup endpoints stay `200`, but emit `X-IptvTunerr-Startup-State: loading` while no lineup channels are loaded yet; `/lineup_status.json` reports `ScanInProgress=1` and `LineupReady=false` during that startup window, and an empty `/lineup.json` adds `Retry-After: 5`.
 - Legacy pages on the tuner port: `http://127.0.0.1:<port>/ui/` (home), `/ui/guide/` (merged guide preview from cache), `/ui/guide-preview.json` (JSON; optional `?limit=`).

@@ -125,6 +125,36 @@ cat >"$TMP_DIR/programming.json" <<'JSON'
 }
 JSON
 
+cat >"$TMP_DIR/recording-rules.json" <<'JSON'
+{
+  "rules": [
+    {
+      "id": "news-live",
+      "name": "News Live",
+      "enabled": true,
+      "include_channel_ids": ["ch1"]
+    }
+  ]
+}
+JSON
+
+cat >"$TMP_DIR/recorder-state.json" <<'JSON'
+{
+  "completed": [
+    {
+      "capsule_id": "done-1",
+      "channel_id": "ch1",
+      "guide_number": "101",
+      "channel_name": "Smoke One",
+      "title": "Smoke Recording",
+      "lane": "general",
+      "status": "recorded",
+      "published_path": "/tmp/smoke-recording.ts"
+    }
+  ]
+}
+JSON
+
 cat >"$TMP_DIR/catalog-empty.json" <<'JSON'
 {
   "movies": [],
@@ -229,6 +259,8 @@ run_serve() {
   IPTV_TUNERR_XMLTV_URL= \
   IPTV_TUNERR_WEBUI_DISABLED=1 \
   IPTV_TUNERR_PROGRAMMING_RECIPE_FILE="$TMP_DIR/programming.json" \
+  IPTV_TUNERR_RECORDING_RULES_FILE="$TMP_DIR/recording-rules.json" \
+  IPTV_TUNERR_CATCHUP_RECORDER_STATE_FILE="$TMP_DIR/recorder-state.json" \
   "$BIN" serve -catalog "$catalog" -addr ":$port" -base-url "http://127.0.0.1:$port" \
     >"$TMP_DIR/serve-$port.log" 2>&1 &
   PIDS+=("$!")
@@ -258,6 +290,10 @@ assert_status "http://127.0.0.1:$port_full/lineup.json" "200"
 grep -q '"GuideNumber":"101"' <(curl -sS "http://127.0.0.1:$port_full/lineup.json") || fail "full catalog lineup missing expected guide number"
 ! grep -q '"GuideNumber":"102"' <(curl -sS "http://127.0.0.1:$port_full/lineup.json") || fail "programming recipe did not filter second category"
 grep -q '"raw_channels": 3' <(curl -sS "http://127.0.0.1:$port_full/programming/preview.json") || fail "programming preview missing raw channel count"
+grep -q '"name": "News Live"' <(curl -sS "http://127.0.0.1:$port_full/recordings/rules.json") || fail "recording rules endpoint missing seeded rule"
+curl -sS -X POST -H 'Content-Type: application/json' --data '{"action":"upsert","rule":{"id":"sports-live","name":"Sports Live","enabled":true,"include_channel_ids":["ch2"]}}' "http://127.0.0.1:$port_full/recordings/rules.json" >/dev/null
+grep -q '"sports-live"' <"$TMP_DIR/recording-rules.json" || fail "recording rules mutation did not persist to file"
+grep -q '"completed_count": 1' <(curl -sS "http://127.0.0.1:$port_full/recordings/history.json") || fail "recording history missing completed recorder item"
 grep -q '"curated_channels": 1' <(curl -sS "http://127.0.0.1:$port_full/programming/preview.json") || fail "programming preview missing curated channel count"
 grep -q '"id": "news"' <(curl -sS "http://127.0.0.1:$port_full/programming/categories.json") || fail "programming categories missing News"
 grep -q '"id": "sports"' <(curl -sS "http://127.0.0.1:$port_full/programming/categories.json") || fail "programming categories missing Sports"

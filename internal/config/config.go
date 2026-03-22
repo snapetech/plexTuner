@@ -105,13 +105,14 @@ type Config struct {
 	// XMLTV cache: cache the external XMLTV feed to avoid hammering the upstream on every /guide.xml request.
 	XMLTVCacheTTL time.Duration // 0 = use default 10m
 	// Web UI: dedicated dashboard listener on a separate port that proxies the tuner API.
-	WebUIEnabled      bool
-	WebUIPort         int
-	WebUIAllowLAN     bool
-	WebUIStateFile    string
-	WebUIUser         string
-	WebUIPass         string
-	EventWebhooksFile string
+	WebUIEnabled       bool
+	WebUIPort          int
+	WebUIAllowLAN      bool
+	WebUIStateFile     string
+	WebUIUser          string
+	WebUIPass          string
+	EventWebhooksFile  string
+	RecordingRulesFile string
 	// HDHomeRun network mode: native HDHomeRun protocol (UDP+TCP) instead of HTTP-only.
 	HDHREnabled      bool
 	HDHRDeviceID     uint32
@@ -228,6 +229,7 @@ func Load() *Config {
 		WebUIUser:                   strings.TrimSpace(os.Getenv("IPTV_TUNERR_WEBUI_USER")),
 		WebUIPass:                   strings.TrimSpace(os.Getenv("IPTV_TUNERR_WEBUI_PASS")),
 		EventWebhooksFile:           strings.TrimSpace(os.Getenv("IPTV_TUNERR_EVENT_WEBHOOKS_FILE")),
+		RecordingRulesFile:          strings.TrimSpace(os.Getenv("IPTV_TUNERR_RECORDING_RULES_FILE")),
 		HDHREnabled:                 getEnvBool("IPTV_TUNERR_HDHR_NETWORK_MODE", false),
 		HDHRDeviceID:                getEnvUint32("IPTV_TUNERR_HDHR_DEVICE_ID", 0x12345678),
 		HDHRTunerCount:              getEnvInt("IPTV_TUNERR_HDHR_TUNER_COUNT", 2),

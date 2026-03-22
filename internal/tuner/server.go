@@ -73,10 +73,12 @@ type Server struct {
 	StreamTranscodeMode   string // "off" | "on" | "auto"
 	AutopilotStateFile    string // optional JSON file for remembered dna_id+client_class playback decisions
 	RecorderStateFile     string // optional JSON file written by catchup-daemon for recorder status/reporting
+	RecordingRulesFile    string // optional JSON file for durable recording rule configuration
 	Channels              []catalog.LiveChannel
 	RawChannels           []catalog.LiveChannel
 	ProgrammingRecipeFile string
 	ProgrammingRecipe     programming.Recipe
+	RecordingRules        RecordingRuleset
 	EventHooksFile        string
 	EventHooks            *eventhooks.Dispatcher
 	XtreamOutputUser      string
@@ -270,6 +272,41 @@ func (s *Server) reloadProgrammingRecipe() programming.Recipe {
 func (s *Server) applyProgrammingRecipe(live []catalog.LiveChannel) []catalog.LiveChannel {
 	recipe := s.reloadProgrammingRecipe()
 	return programming.ApplyRecipe(live, recipe)
+}
+
+func (s *Server) reloadRecordingRules() RecordingRuleset {
+	path := strings.TrimSpace(s.RecordingRulesFile)
+	if path == "" {
+		s.RecordingRules = normalizeRecordingRuleset(s.RecordingRules)
+		return s.RecordingRules
+	}
+	set, err := loadRecordingRulesFile(path)
+	if err != nil {
+		log.Printf("Recording rules disabled: load %q failed: %v", path, err)
+		return s.RecordingRules
+	}
+	s.RecordingRules = set
+	return set
+}
+
+func (s *Server) saveRecordingRules(set RecordingRuleset) (RecordingRuleset, error) {
+	path := strings.TrimSpace(s.RecordingRulesFile)
+	if path == "" {
+		s.RecordingRules = normalizeRecordingRuleset(set)
+		return s.RecordingRules, nil
+	}
+	saved, err := saveRecordingRulesFile(path, set)
+	if err != nil {
+		return RecordingRuleset{}, err
+	}
+	s.RecordingRules = saved
+	if s.EventHooks != nil {
+		s.EventHooks.Dispatch("recording_rules.updated", "server", map[string]interface{}{
+			"rule_count": len(saved.Rules),
+			"rules_file": path,
+		})
+	}
+	return saved, nil
 }
 
 func (s *Server) rebuildCuratedChannelsFromRaw() {
@@ -1286,6 +1323,9 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/plex/ghost-report.json", s.serveGhostHunterReport())
 	mux.Handle("/provider/profile.json", s.serveProviderProfile())
 	mux.Handle("/recordings/recorder.json", s.serveCatchupRecorderReport())
+	mux.Handle("/recordings/rules.json", s.serveRecordingRules())
+	mux.Handle("/recordings/rules/preview.json", s.serveRecordingRulePreview())
+	mux.Handle("/recordings/history.json", s.serveRecordingHistory())
 	mux.Handle("/debug/active-streams.json", s.serveActiveStreamsReport())
 	mux.Handle("/debug/stream-attempts.json", s.serveRecentStreamAttempts())
 	mux.Handle("/debug/event-hooks.json", s.serveEventHooksReport())
@@ -2568,6 +2608,126 @@ func (s *Server) serveCatchupRecorderReport() http.Handler {
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
 			http.Error(w, `{"error":"encode recorder report"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveRecordingRules() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodGet:
+			body, err := json.MarshalIndent(s.reloadRecordingRules(), "", "  ")
+			if err != nil {
+				http.Error(w, `{"error":"encode recording rules"}`, http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write(body)
+		case http.MethodPost:
+			if !operatorUIAllowed(w, r) {
+				return
+			}
+			limited := http.MaxBytesReader(w, r.Body, 131072)
+			var req struct {
+				Action  string          `json:"action"`
+				RuleID  string          `json:"rule_id"`
+				Enabled *bool           `json:"enabled,omitempty"`
+				Rule    RecordingRule   `json:"rule"`
+				Rules   []RecordingRule `json:"rules"`
+			}
+			if err := json.NewDecoder(limited).Decode(&req); err != nil {
+				http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
+				return
+			}
+			rules := s.reloadRecordingRules()
+			switch strings.ToLower(strings.TrimSpace(req.Action)) {
+			case "", "upsert":
+				rules = upsertRecordingRule(rules, req.Rule)
+			case "replace":
+				rules = normalizeRecordingRuleset(RecordingRuleset{Rules: req.Rules})
+			case "delete":
+				rules = deleteRecordingRule(rules, req.RuleID)
+			case "toggle":
+				enabled := true
+				if req.Enabled != nil {
+					enabled = *req.Enabled
+				}
+				rules = toggleRecordingRule(rules, req.RuleID, enabled)
+			default:
+				http.Error(w, `{"error":"unsupported action"}`, http.StatusBadRequest)
+				return
+			}
+			saved, err := s.saveRecordingRules(rules)
+			if err != nil {
+				http.Error(w, `{"error":"save recording rules failed"}`, http.StatusBadGateway)
+				return
+			}
+			body, err := json.MarshalIndent(saved, "", "  ")
+			if err != nil {
+				http.Error(w, `{"error":"encode recording rules"}`, http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write(body)
+		default:
+			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+}
+
+func (s *Server) serveRecordingRulePreview() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if s.xmltv == nil {
+			http.Error(w, `{"error":"xmltv unavailable"}`, http.StatusServiceUnavailable)
+			return
+		}
+		horizon := 3 * time.Hour
+		if raw := strings.TrimSpace(r.URL.Query().Get("horizon")); raw != "" {
+			if d, err := time.ParseDuration(raw); err == nil {
+				horizon = d
+			}
+		}
+		limit := 50
+		if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+			if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+				limit = n
+			}
+		}
+		preview, err := s.xmltv.CatchupCapsulePreview(time.Now(), horizon, limit)
+		if err != nil {
+			http.Error(w, `{"error":"recording rule preview failed"}`, http.StatusBadGateway)
+			return
+		}
+		body, err := json.MarshalIndent(buildRecordingRulePreview(s.reloadRecordingRules(), preview), "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode recording rule preview"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveRecordingHistory() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		stateFile := strings.TrimSpace(s.RecorderStateFile)
+		if stateFile == "" {
+			stateFile = strings.TrimSpace(os.Getenv("IPTV_TUNERR_CATCHUP_RECORDER_STATE_FILE"))
+		}
+		if stateFile == "" {
+			http.Error(w, `{"error":"recorder state unavailable"}`, http.StatusServiceUnavailable)
+			return
+		}
+		report, err := LoadCatchupRecorderReport(stateFile, streamAttemptLimitFromQuery(r.URL.Query().Get("limit"), 25))
+		if err != nil {
+			http.Error(w, `{"error":"load recorder history failed"}`, http.StatusBadGateway)
+			return
+		}
+		body, err := json.MarshalIndent(buildRecordingRuleHistory(s.reloadRecordingRules(), report), "", "  ")
+		if err != nil {
+			http.Error(w, `{"error":"encode recording history"}`, http.StatusInternalServerError)
 			return
 		}
 		_, _ = w.Write(body)

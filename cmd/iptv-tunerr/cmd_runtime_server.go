@@ -45,6 +45,7 @@ func newRuntimeServer(cfg *config.Config, addr, baseURL, deviceID, friendlyName 
 		StreamTranscodeMode:        cfg.StreamTranscodeMode,
 		AutopilotStateFile:         cfg.AutopilotStateFile,
 		RecorderStateFile:          os.Getenv("IPTV_TUNERR_CATCHUP_RECORDER_STATE_FILE"),
+		RecordingRulesFile:         strings.TrimSpace(cfg.RecordingRulesFile),
 		ProgrammingRecipeFile:      strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROGRAMMING_RECIPE_FILE")),
 		EventHooksFile:             strings.TrimSpace(cfg.EventWebhooksFile),
 		ProviderUser:               providerUser,
@@ -148,6 +149,7 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"provider_account_limit_state_file":        strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_ACCOUNT_LIMIT_STATE_FILE")),
 			"provider_account_limit_ttl_hours":         strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_ACCOUNT_LIMIT_TTL_HOURS")),
 			"programming_recipe_file":                  strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROGRAMMING_RECIPE_FILE")),
+			"recording_rules_file":                     strings.TrimSpace(cfg.RecordingRulesFile),
 		},
 		Guide: map[string]interface{}{
 			"xmltv_url":                     cfg.XMLTVURL,
@@ -191,8 +193,10 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"free_source_iptv_org_all": cfg.FreeSourceIptvOrgAll,
 		},
 		Recorder: map[string]interface{}{
-			"state_file": recorderState,
-			"enabled":    recorderState != "",
+			"state_file":    recorderState,
+			"rules_file":    strings.TrimSpace(cfg.RecordingRulesFile),
+			"enabled":       recorderState != "",
+			"rules_enabled": strings.TrimSpace(cfg.RecordingRulesFile) != "",
 		},
 		HDHR: map[string]interface{}{
 			"network_mode":  cfg.HDHREnabled,
@@ -261,6 +265,9 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"ghost_hunter":           "/plex/ghost-report.json",
 			"provider_profile":       "/provider/profile.json",
 			"recorder":               "/recordings/recorder.json",
+			"recording_rules":        "/recordings/rules.json",
+			"recording_rule_preview": "/recordings/rules/preview.json",
+			"recording_history":      "/recordings/history.json",
 			"active_streams":         "/debug/active-streams.json",
 			"stream_attempts":        "/debug/stream-attempts.json",
 			"event_hooks":            "/debug/event-hooks.json",
