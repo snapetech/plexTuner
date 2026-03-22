@@ -89,7 +89,7 @@ type Config struct {
 	// StripStreamHosts is a comma-separated list of hostnames (e.g. "cdngold.me,othercf.net")
 	// whose stream URLs are removed from the catalog at index time.
 	// A channel whose every StreamURL matches a blocked host is dropped entirely.
-	// Suffix-matching: "cdngold.me" also matches "pod17546.cdngold.me".
+	// Suffix-matching: "provider.example.com" also matches "edge.provider.example.com".
 	// Enable with IPTV_TUNERR_STRIP_STREAM_HOSTS=cdngold.me
 	StripStreamHosts []string
 

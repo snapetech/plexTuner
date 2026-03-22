@@ -245,6 +245,29 @@
 - `scripts/live-race-harness.sh`
 - `scripts/stream-compare-harness.sh`
 - `memory-bank/current_task.md` (2026-03-19 harness notes)
+
+### Loop: "Single-provider" live checks are contaminated because repo `.env` repopulates numbered provider vars
+
+**Symptom**
+- A supposedly single-account `probe` or `index` still ranks or indexes a different provider than the one exported in the shell.
+- Results look contradictory, for example a "single-provider" run against provider 1 still indexing provider 3.
+
+**Why it's tricky**
+- `cmd/iptv-tunerr/main.go` always loads repo `.env` at startup.
+- `internal/config.LoadEnvFile` only refuses to overwrite keys that already exist in the process environment.
+- If you merely `unset IPTV_TUNERR_PROVIDER_URL_2` / `_3`, startup `.env` loading restores them.
+
+**What works**
+- For true single-provider live diagnostics from the repo root, export the numbered provider vars as empty strings instead of unsetting them:
+  - `IPTV_TUNERR_PROVIDER_URLS=""`
+  - `IPTV_TUNERR_PROVIDER_URL_2=""`, `IPTV_TUNERR_PROVIDER_USER_2=""`, `IPTV_TUNERR_PROVIDER_PASS_2=""`
+  - same for `_3`, `_4`, etc.
+- Then export the intended base `IPTV_TUNERR_PROVIDER_URL`, `...USER`, `...PASS` and run the command normally.
+
+**Where it's documented**
+- `cmd/iptv-tunerr/main.go`
+- `internal/config/env.go`
+- `memory-bank/current_task.md` (2026-03-22 provider regression notes)
 - `cmd/iptv-tunerr/cmd_catalog.go`
 - `cmd/iptv-tunerr/main_test.go`
 

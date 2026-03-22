@@ -228,6 +228,7 @@ This script correlates stream attempts, Tunerr stdout, PMS.log, and a pcap if on
 |----------|---------|-------------|
 | `IPTV_TUNERR_CF_AUTO_BOOT` | `false` | Enable CF auto-bootstrap at startup and freshness monitor |
 | `IPTV_TUNERR_COOKIE_JAR_FILE` | — | JSON cookie jar for cf_clearance persistence |
+| `IPTV_TUNERR_CF_REAL_BROWSER_FALLBACK` | `false` | Allow `xdg-open` / `open` fallback after headless Chromium fails |
 | `IPTV_TUNERR_CF_LEARNED_FILE` | auto | Per-host working UA and CF-tagged state; auto-derived beside jar |
 | `IPTV_TUNERR_HOST_UA` | — | `host:preset` pairs to pin UA per hostname at startup |
 | `IPTV_TUNERR_UPSTREAM_USER_AGENT` | — | Global upstream UA override (preset or literal string) |
@@ -242,7 +243,7 @@ For the full environment variable reference, see [cli-and-env-reference.md](../r
 
 **TLS fingerprint (JA3/JA4).** Go's standard TLS library produces a distinctive fingerprint that Cloudflare can detect regardless of what UA or header profile is sent. The `analyze-bundle.py` script flags this if a Go-like JA3 hash is found in a pcap alongside a CF block. If you are hitting TLS fingerprint detection, the only current workaround is manual cookie import from a browser session. `utls`-based TLS spoofing that impersonates browser TLS stacks is a planned future feature.
 
-**Headless browser challenge solving.** `IPTV_TUNERR_CF_AUTO_BOOT=true` triggers Chromium to solve the JS challenge automatically at startup. This requires `chromium` or `google-chrome` to be installed and a display to be available. It does not work in headless server deployments without a virtual framebuffer, and it does not work in container environments that do not include a Chromium binary. In these deployments, use manual cookie import instead.
+**Headless browser challenge solving.** `IPTV_TUNERR_CF_AUTO_BOOT=true` first tries headless Chromium to solve the JS challenge automatically. If that headless path fails, Tunerr now stays headless by default and logs that real-browser fallback is disabled. It only opens your desktop browser when you explicitly opt in with `IPTV_TUNERR_CF_REAL_BROWSER_FALLBACK=true`. Use manual cookie import instead when you do not want any desktop-browser interaction.
 
 **IP-scoped clearance.** `cf_clearance` cookies are bound to the IP address of the client that solved the challenge. If your Tunerr host has a different IP than the browser you solved the challenge on — for example because your browser is on a home network and Tunerr runs on a VPS — the imported cookie will not be accepted by Cloudflare. You must solve the challenge from a browser running on the same IP as your Tunerr instance, or use a browser extension or proxy that routes the challenge solve through that IP.
 

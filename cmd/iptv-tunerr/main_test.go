@@ -17,7 +17,7 @@ import (
 )
 
 func TestFreeSourceURLs_IncludesCanadaPresetFromEnv(t *testing.T) {
-	t.Setenv("IPTV_TUNERR_FREE_SOURCE_2", "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/ca.m3u")
+	t.Setenv("IPTV_TUNERR_FREE_SOURCE_2", "https://example.invalid/free-source-2.m3u")
 	cfg := &config.Config{
 		FreeSources: []string{"https://example.com/free.m3u"},
 	}
@@ -26,7 +26,7 @@ func TestFreeSourceURLs_IncludesCanadaPresetFromEnv(t *testing.T) {
 	if !slices.Contains(got, "https://example.com/free.m3u") {
 		t.Fatalf("freeSourceURLs missing custom source: %v", got)
 	}
-	if !slices.Contains(got, "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/ca.m3u") {
+	if !slices.Contains(got, "https://example.invalid/free-source-2.m3u") {
 		t.Fatalf("freeSourceURLs missing numbered env source: %v", got)
 	}
 }

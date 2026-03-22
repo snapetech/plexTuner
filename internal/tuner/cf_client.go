@@ -3,6 +3,7 @@ package tuner
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
@@ -21,14 +22,13 @@ func PrepareCloudflareAwareClient(ctx context.Context, rawURL string, base *http
 	if client == nil {
 		client = httpclient.Default()
 	}
-	if client.Jar == nil {
-		jarPath := strings.TrimSpace(os.Getenv("IPTV_TUNERR_COOKIE_JAR_FILE"))
-		jar, err := newPersistentCookieJar(jarPath)
-		if err != nil {
-			return client, nil, err
-		}
+	persistentJar, changed, err := ensurePersistentCookieJar(client, rawURL)
+	if err != nil {
+		return client, nil, err
+	}
+	if changed {
 		clone := *client
-		clone.Jar = jar
+		clone.Jar = persistentJar
 		client = &clone
 	}
 
@@ -36,14 +36,71 @@ func PrepareCloudflareAwareClient(ctx context.Context, rawURL string, base *http
 		return client, nil, nil
 	}
 
-	jar, ok := client.Jar.(*persistentCookieJar)
-	if !ok {
-		return client, nil, nil
-	}
-	boot := newCFBootstrapper(jar, uaCycleCandidates(detectedLavfUA))
+	boot := newCFBootstrapper(persistentJar, uaCycleCandidates(detectedLavfUA))
 	workingUA := strings.TrimSpace(boot.EnsureAccess(ctx, rawURL, client))
 	if workingUA == "" {
 		return client, nil, nil
 	}
 	return client, []string{workingUA}, nil
+}
+
+func ensurePersistentCookieJar(client *http.Client, rawURL string) (*persistentCookieJar, bool, error) {
+	if client != nil {
+		if jar, ok := client.Jar.(*persistentCookieJar); ok {
+			return jar, false, nil
+		}
+	}
+	jarPath := strings.TrimSpace(os.Getenv("IPTV_TUNERR_COOKIE_JAR_FILE"))
+	jar, err := newPersistentCookieJar(jarPath)
+	if err != nil {
+		return nil, false, err
+	}
+	if client == nil || client.Jar == nil {
+		return jar, true, nil
+	}
+	importCookiesForRawURL(jar, client.Jar, rawURL)
+	return jar, true, nil
+}
+
+func importCookiesForRawURL(dst *persistentCookieJar, src http.CookieJar, rawURL string) {
+	if dst == nil || src == nil {
+		return
+	}
+	target, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || target == nil || strings.TrimSpace(target.Host) == "" {
+		return
+	}
+	for _, candidate := range cookieImportCandidates(target) {
+		cookies := src.Cookies(candidate)
+		if len(cookies) == 0 {
+			continue
+		}
+		dst.SetCookies(candidate, cookies)
+	}
+}
+
+func cookieImportCandidates(target *url.URL) []*url.URL {
+	candidates := []*url.URL{target}
+	if target == nil || target.Host == "" {
+		return candidates
+	}
+	oppositeScheme := "http"
+	if strings.EqualFold(target.Scheme, "http") {
+		oppositeScheme = "https"
+	}
+	if !strings.EqualFold(target.Scheme, oppositeScheme) {
+		alt := *target
+		alt.Scheme = oppositeScheme
+		candidates = append(candidates, &alt)
+	}
+	root := &url.URL{Scheme: target.Scheme, Host: target.Host, Path: "/"}
+	if root.String() != target.String() {
+		candidates = append(candidates, root)
+	}
+	if !strings.EqualFold(root.Scheme, oppositeScheme) {
+		altRoot := *root
+		altRoot.Scheme = oppositeScheme
+		candidates = append(candidates, &altRoot)
+	}
+	return candidates
 }

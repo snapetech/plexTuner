@@ -2936,18 +2936,18 @@ func TestParseCustomHeaders(t *testing.T) {
 func TestGateway_applyUpstreamRequestHeaders_customHeaders(t *testing.T) {
 	g := &Gateway{
 		CustomHeaders: map[string]string{
-			"Referer":  "http://smarter8k.ru",
-			"Origin":   "http://smarter8k.ru",
+			"Referer":  "http://provider.example.com",
+			"Origin":   "http://provider.example.com",
 			"X-Custom": "custom-value",
 		},
 	}
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/segment.ts", nil)
 	g.applyUpstreamRequestHeaders(req, nil)
-	if req.Header.Get("Referer") != "http://smarter8k.ru" {
-		t.Errorf("Referer = %q, want http://smarter8k.ru", req.Header.Get("Referer"))
+	if req.Header.Get("Referer") != "http://provider.example.com" {
+		t.Errorf("Referer = %q, want http://provider.example.com", req.Header.Get("Referer"))
 	}
-	if req.Header.Get("Origin") != "http://smarter8k.ru" {
-		t.Errorf("Origin = %q, want http://smarter8k.ru", req.Header.Get("Origin"))
+	if req.Header.Get("Origin") != "http://provider.example.com" {
+		t.Errorf("Origin = %q, want http://provider.example.com", req.Header.Get("Origin"))
 	}
 	if req.Header.Get("X-Custom") != "custom-value" {
 		t.Errorf("X-Custom = %q, want custom-value", req.Header.Get("X-Custom"))
@@ -3021,16 +3021,16 @@ func TestGateway_applyUpstreamRequestHeaders_customHostOverride(t *testing.T) {
 func TestGateway_ffmpegInputHeaderBlock_includesCustomHeaders(t *testing.T) {
 	g := &Gateway{
 		CustomHeaders: map[string]string{
-			"Referer":  "http://smarter8k.ru",
-			"Origin":   "http://smarter8k.ru",
+			"Referer":  "http://provider.example.com",
+			"Origin":   "http://provider.example.com",
 			"X-Custom": "custom-value",
 		},
 	}
 	block := g.ffmpegInputHeaderBlock(nil, "http://cdn.example/live/u/p/1.m3u8", "cdn.example")
-	if !strings.Contains(block, "Referer: http://smarter8k.ru") {
+	if !strings.Contains(block, "Referer: http://provider.example.com") {
 		t.Fatalf("missing custom Referer in block: %q", block)
 	}
-	if !strings.Contains(block, "Origin: http://smarter8k.ru") {
+	if !strings.Contains(block, "Origin: http://provider.example.com") {
 		t.Fatalf("missing custom Origin in block: %q", block)
 	}
 	if !strings.Contains(block, "X-Custom: custom-value") {

@@ -95,14 +95,16 @@ func (c *cfBootstrapper) EnsureAccess(ctx context.Context, rawURL string, client
 		return ""
 	}
 
-	// Step 4: open real browser and wait for the user to clear the challenge.
-	if hasDisplay() {
+	// Step 4: open a real browser only when explicitly allowed by env.
+	if allowRealBrowserCFFallback() {
 		log.Printf("cf-bootstrap: %s — opening browser for CF challenge (waiting up to 60s)...", host)
 		if c.tryRealBrowser(ctx, rawURL, host) {
 			log.Printf("cf-bootstrap: %s — cf_clearance obtained via real browser", host)
 			c.markResolved(host, "")
 			return ""
 		}
+	} else if hasDisplay() {
+		log.Printf("cf-bootstrap: %s — real-browser fallback disabled; set IPTV_TUNERR_CF_REAL_BROWSER_FALLBACK=true to opt in", host)
 	}
 
 	log.Printf("cf-bootstrap: %s — could not obtain CF clearance automatically", host)
@@ -370,6 +372,10 @@ func findChromeBin() string {
 // hasDisplay returns true if a graphical display is available (needed for real-browser fallback).
 func hasDisplay() bool {
 	return os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != ""
+}
+
+func allowRealBrowserCFFallback() bool {
+	return hasDisplay() && envBool("IPTV_TUNERR_CF_REAL_BROWSER_FALLBACK", false)
 }
 
 // hostFromURL extracts the bare hostname from a URL string.

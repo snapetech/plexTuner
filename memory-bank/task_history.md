@@ -23,6 +23,27 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-22
+  Title: Restore CF auto-boot on shared clients and disable desktop-browser fallback by default
+  Summary:
+    - Fixed `PrepareCloudflareAwareClient` so env-configured shared HTTP clients are upgraded to the persistent cookie-jar type required by the CF bootstrapper, while preserving existing host cookies for the target provider.
+    - Added regression coverage for the shared-client jar upgrade path and for the new real-browser fallback gate.
+    - Changed CF auto-boot so desktop-browser launch is opt-in via `IPTV_TUNERR_CF_REAL_BROWSER_FALLBACK=true`; default behavior remains headless-only and now logs that real-browser fallback is disabled.
+    - Documented the `.env` contamination trap for single-provider diagnostics and reconfirmed live `player_api` success in both single-account and multi-account modes.
+  Verification:
+    - `go test ./internal/tuner ./cmd/iptv-tunerr`
+    - `set -a && source ./.env && set +a && IPTV_TUNERR_PROVIDER_URL=\"$IPTV_TUNERR_PROVIDER_URL_3\" IPTV_TUNERR_PROVIDER_USER=\"$IPTV_TUNERR_PROVIDER_USER_3\" IPTV_TUNERR_PROVIDER_PASS=\"$IPTV_TUNERR_PROVIDER_PASS_3\" IPTV_TUNERR_PROVIDER_URLS=\"\" IPTV_TUNERR_PROVIDER_URL_2=\"\" IPTV_TUNERR_PROVIDER_USER_2=\"\" IPTV_TUNERR_PROVIDER_PASS_2=\"\" IPTV_TUNERR_PROVIDER_URL_3=\"\" IPTV_TUNERR_PROVIDER_USER_3=\"\" IPTV_TUNERR_PROVIDER_PASS_3=\"\" IPTV_TUNERR_LIVE_ONLY=true IPTV_TUNERR_CF_AUTO_BOOT=false go run ./cmd/iptv-tunerr index -catalog /tmp/playerapi-single-provider3.json`
+    - `set -a && source ./.env && set +a && IPTV_TUNERR_LIVE_ONLY=true IPTV_TUNERR_CF_AUTO_BOOT=false go run ./cmd/iptv-tunerr index -catalog /tmp/playerapi-multi.json`
+  Notes:
+    - `get.php` remains provider-blocked in the live environment (`884` / timeout) even though `player_api` remains healthy.
+    - The newly added local free-source URL currently parses as `0` channels from the fetched response.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/cf_client.go`
+    - `internal/tuner/cf_bootstrap.go`
+    - `docs/how-to/cloudflare-bypass.md`
+
+- Date: 2026-03-22
   Title: Add single-credential provider fallback regression test
   Summary:
     - Added `TestFetchCatalog_SingleCredentialDoesNotRetryGetPHPOnPlayerAPIFailure` to lock the single-credential failure/retry shape when `player_api` returns 403 and `get.php` fallback also fails.
@@ -4631,12 +4652,12 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
 - Date: 2026-03-22
   Title: Move the public-feed sample URL out of README/reference literals
   Summary:
-    - Removed the hardcoded `https://m3u.prigoana.com/all.m3u` sample from README and reference examples.
-    - Added a commented `.env.example` convenience preset `IPTV_TUNERR_FREE_SOURCE_PRIGOANA_URL` and updated examples to feed `IPTV_TUNERR_FREE_SOURCES` from that shell/env variable instead.
+    - Removed the hardcoded public-feed sample URL from README and reference examples.
+    - Added a commented `.env.example` convenience preset for a custom free-source URL and updated examples to feed `IPTV_TUNERR_FREE_SOURCES` from that shell/env variable instead.
   Verification:
     - `./scripts/verify`
   Notes:
-    - This is a docs/env hygiene change only; Tunerr does not read `IPTV_TUNERR_FREE_SOURCE_PRIGOANA_URL` directly.
+    - This is a docs/env hygiene change only; Tunerr does not read the convenience alias directly.
   Opportunities filed:
     - none
   Links:
