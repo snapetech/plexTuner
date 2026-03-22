@@ -2,6 +2,7 @@ package tuner
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -15,6 +16,11 @@ import (
 )
 
 func (x *XMLTV) GuideHealth(now time.Time, aliasesRef string) (guidehealth.Report, error) {
+	if strings.TrimSpace(aliasesRef) == "" {
+		if rep, ok := x.cachedGuideHealthReport(); ok {
+			return rep, nil
+		}
+	}
 	x.mu.RLock()
 	data := append([]byte(nil), x.cachedXML...)
 	x.mu.RUnlock()
@@ -62,7 +68,8 @@ func (x *XMLTV) buildMatchReport(aliasesRef string) (*epglink.Report, error) {
 	}
 	providerRef := ""
 	if x.ProviderEPGEnabled {
-		providerRef = guideinput.ProviderXMLTVURL(x.ProviderBaseURL, x.ProviderUser, x.ProviderPass)
+		baseURL, user, pass := x.providerIdentity()
+		providerRef = guideinput.ProviderXMLTVURLWithSuffix(baseURL, user, pass, x.ProviderEPGURLSuffix)
 		if providerRef != "" {
 			allowedRefs = append(allowedRefs, providerRef)
 		}
@@ -170,15 +177,29 @@ func loadGuideHealthXMLTVChannelsWithAllowed(ref string, extraAllowedRemoteRefs 
 	return guideinput.LoadXMLTVChannelsWithAllowed(ref, extraAllowedRemoteRefs)
 }
 
+func writeGuideDiagnosticsJSONError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte(fmt.Sprintf("{\"error\":%q}\n", msg)))
+}
+
 func (s *Server) serveGuideHealth() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if s.xmltv == nil {
+			writeGuideDiagnosticsJSONError(w, http.StatusServiceUnavailable, "xmltv unavailable")
+			return
+		}
 		aliasesRef := strings.TrimSpace(r.URL.Query().Get("aliases"))
 		if aliasesRef == "" {
 			aliasesRef = strings.TrimSpace(os.Getenv("IPTV_TUNERR_XMLTV_ALIASES"))
 		}
 		rep, err := s.xmltv.GuideHealth(time.Now(), aliasesRef)
 		if err != nil {
-			http.Error(w, "guide health unavailable: "+err.Error(), http.StatusBadGateway)
+			writeGuideDiagnosticsJSONError(w, http.StatusBadGateway, "guide health unavailable: "+err.Error())
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -188,13 +209,21 @@ func (s *Server) serveGuideHealth() http.Handler {
 
 func (s *Server) serveEPGDoctor() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if s.xmltv == nil {
+			writeGuideDiagnosticsJSONError(w, http.StatusServiceUnavailable, "xmltv unavailable")
+			return
+		}
 		aliasesRef := strings.TrimSpace(r.URL.Query().Get("aliases"))
 		if aliasesRef == "" {
 			aliasesRef = strings.TrimSpace(os.Getenv("IPTV_TUNERR_XMLTV_ALIASES"))
 		}
 		rep, err := s.xmltv.EPGDoctor(time.Now(), aliasesRef)
 		if err != nil {
-			http.Error(w, "epg doctor unavailable: "+err.Error(), http.StatusBadGateway)
+			writeGuideDiagnosticsJSONError(w, http.StatusBadGateway, "epg doctor unavailable: "+err.Error())
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -204,13 +233,21 @@ func (s *Server) serveEPGDoctor() http.Handler {
 
 func (s *Server) serveSuggestedAliasOverrides() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if s.xmltv == nil {
+			writeGuideDiagnosticsJSONError(w, http.StatusServiceUnavailable, "xmltv unavailable")
+			return
+		}
 		aliasesRef := strings.TrimSpace(r.URL.Query().Get("aliases"))
 		if aliasesRef == "" {
 			aliasesRef = strings.TrimSpace(os.Getenv("IPTV_TUNERR_XMLTV_ALIASES"))
 		}
 		rep, err := s.xmltv.EPGDoctor(time.Now(), aliasesRef)
 		if err != nil {
-			http.Error(w, "alias suggestions unavailable: "+err.Error(), http.StatusBadGateway)
+			writeGuideDiagnosticsJSONError(w, http.StatusBadGateway, "alias suggestions unavailable: "+err.Error())
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")

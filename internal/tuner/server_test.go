@@ -126,6 +126,110 @@ func TestServer_readyz(t *testing.T) {
 	}
 }
 
+func TestServer_publicReadOnlyEndpointsRequireGet(t *testing.T) {
+	s := &Server{xmltv: &XMLTV{}}
+
+	for _, tc := range []struct {
+		name  string
+		req   *http.Request
+		h     http.Handler
+		allow string
+	}{
+		{name: "healthz", req: httptest.NewRequest(http.MethodPost, "/healthz", nil), h: s.serveHealth(), allow: "GET, HEAD"},
+		{name: "readyz", req: httptest.NewRequest(http.MethodPost, "/readyz", nil), h: s.serveReady(), allow: "GET, HEAD"},
+		{name: "epg_store", req: httptest.NewRequest(http.MethodPost, "/guide/epg-store.json", nil), h: s.serveEpgStoreReport(), allow: http.MethodGet},
+		{name: "guide_health", req: httptest.NewRequest(http.MethodPost, "/guide/health.json", nil), h: s.serveGuideHealth(), allow: http.MethodGet},
+		{name: "epg_doctor", req: httptest.NewRequest(http.MethodPost, "/guide/doctor.json", nil), h: s.serveEPGDoctor(), allow: http.MethodGet},
+		{name: "alias_overrides", req: httptest.NewRequest(http.MethodPost, "/guide/aliases.json", nil), h: s.serveSuggestedAliasOverrides(), allow: http.MethodGet},
+		{name: "guide_highlights", req: httptest.NewRequest(http.MethodPost, "/guide/highlights.json", nil), h: s.serveGuideHighlights(), allow: http.MethodGet},
+		{name: "catchup_capsules", req: httptest.NewRequest(http.MethodPost, "/guide/capsules.json", nil), h: s.serveCatchupCapsules(), allow: http.MethodGet},
+		{name: "guide_policy", req: httptest.NewRequest(http.MethodPost, "/guide/policy.json", nil), h: s.serveGuidePolicy(), allow: http.MethodGet},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.req.RemoteAddr = "127.0.0.1:12345"
+			w := httptest.NewRecorder()
+			tc.h.ServeHTTP(w, tc.req)
+			if w.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+			}
+			if got := w.Header().Get("Allow"); got != tc.allow {
+				t.Fatalf("Allow=%q", got)
+			}
+		})
+	}
+}
+
+func TestServer_operatorReadOnlyEndpointsRequireGet(t *testing.T) {
+	s := &Server{}
+
+	for _, tc := range []struct {
+		name  string
+		req   *http.Request
+		h     http.Handler
+		allow string
+	}{
+		{name: "programming_browse", req: httptest.NewRequest(http.MethodPost, "/programming/browse.json?category=test", nil), h: s.serveProgrammingBrowse(), allow: http.MethodGet},
+		{name: "programming_harvest_assist", req: httptest.NewRequest(http.MethodPost, "/programming/harvest/assist.json", nil), h: s.serveProgrammingHarvestAssist(), allow: http.MethodGet},
+		{name: "programming_channel_detail", req: httptest.NewRequest(http.MethodPost, "/programming/channel-detail.json?channel_id=1", nil), h: s.serveProgrammingChannelDetail(), allow: http.MethodGet},
+		{name: "programming_preview", req: httptest.NewRequest(http.MethodPost, "/programming/preview.json", nil), h: s.serveProgrammingPreview(), allow: http.MethodGet},
+		{name: "virtual_preview", req: httptest.NewRequest(http.MethodPost, "/virtual-channels/preview.json", nil), h: s.serveVirtualChannelPreview(), allow: http.MethodGet},
+		{name: "virtual_schedule", req: httptest.NewRequest(http.MethodPost, "/virtual-channels/schedule.json", nil), h: s.serveVirtualChannelSchedule(), allow: http.MethodGet},
+		{name: "virtual_detail", req: httptest.NewRequest(http.MethodPost, "/virtual-channels/channel-detail.json?channel_id=vc1", nil), h: s.serveVirtualChannelDetail(), allow: http.MethodGet},
+		{name: "recorder_report", req: httptest.NewRequest(http.MethodPost, "/recordings/recorder-report.json", nil), h: s.serveCatchupRecorderReport(), allow: http.MethodGet},
+		{name: "recording_preview", req: httptest.NewRequest(http.MethodPost, "/recordings/rule-preview.json", nil), h: s.serveRecordingRulePreview(), allow: http.MethodGet},
+		{name: "recording_history", req: httptest.NewRequest(http.MethodPost, "/recordings/history.json", nil), h: s.serveRecordingHistory(), allow: http.MethodGet},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			tc.h.ServeHTTP(w, tc.req)
+			if w.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+			}
+			if got := w.Header().Get("Allow"); got != tc.allow {
+				t.Fatalf("Allow=%q", got)
+			}
+		})
+	}
+}
+
+func TestServer_operatorJSONMethodRejectionsStayJSON(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "1")
+	s := &Server{}
+
+	for _, tc := range []struct {
+		name  string
+		req   *http.Request
+		h     http.Handler
+		allow string
+	}{
+		{name: "programming_categories", req: httptest.NewRequest(http.MethodDelete, "/programming/categories.json", nil), h: s.serveProgrammingCategories(), allow: "GET, POST"},
+		{name: "programming_browse", req: httptest.NewRequest(http.MethodPost, "/programming/browse.json?category=test", nil), h: s.serveProgrammingBrowse(), allow: http.MethodGet},
+		{name: "virtual_rules", req: httptest.NewRequest(http.MethodDelete, "/virtual-channels/rules.json", nil), h: s.serveVirtualChannelRules(), allow: "GET, POST"},
+		{name: "recording_preview", req: httptest.NewRequest(http.MethodPost, "/recordings/rule-preview.json", nil), h: s.serveRecordingRulePreview(), allow: http.MethodGet},
+		{name: "recording_history", req: httptest.NewRequest(http.MethodPost, "/recordings/history.json", nil), h: s.serveRecordingHistory(), allow: http.MethodGet},
+		{name: "guide_refresh_action", req: httptest.NewRequest(http.MethodGet, "/ops/actions/guide-refresh", nil), h: s.serveGuideRefreshAction(), allow: http.MethodPost},
+		{name: "ghost_hunter_stop", req: httptest.NewRequest(http.MethodGet, "/ghost/report.json?stop=1", nil), h: s.serveGhostHunterReport(), allow: http.MethodPost},
+		{name: "runtime_snapshot", req: httptest.NewRequest(http.MethodPost, "/debug/runtime.json", nil), h: s.serveRuntimeSnapshot(), allow: http.MethodGet},
+		{name: "event_hooks", req: httptest.NewRequest(http.MethodPost, "/debug/event-hooks.json", nil), h: s.serveEventHooksReport(), allow: http.MethodGet},
+		{name: "active_streams", req: httptest.NewRequest(http.MethodPost, "/debug/active-streams.json", nil), h: s.serveActiveStreamsReport(), allow: http.MethodGet},
+		{name: "guide_lineup_match", req: httptest.NewRequest(http.MethodPost, "/guide/lineup-match.json", nil), h: s.serveGuideLineupMatch(), allow: http.MethodGet},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			tc.h.ServeHTTP(w, tc.req)
+			if w.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+			}
+			if got := w.Header().Get("Allow"); got != tc.allow {
+				t.Fatalf("Allow=%q", got)
+			}
+			if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+				t.Fatalf("content-type=%q", got)
+			}
+		})
+	}
+}
+
 func TestServer_guideLineupMatch(t *testing.T) {
 	s := &Server{
 		xmltv: &XMLTV{
@@ -140,6 +244,7 @@ func TestServer_guideLineupMatch(t *testing.T) {
 		},
 	}
 	req := httptest.NewRequest(http.MethodGet, "/guide/lineup-match.json?limit=5", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	s.serveGuideLineupMatch().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -192,6 +297,7 @@ func TestServer_programmingEndpoints(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/programming/categories.json?category=iptv--news", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	s.serveProgrammingCategories().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -259,6 +365,7 @@ func TestServer_programmingEndpoints(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/programming/preview.json?limit=1", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w = httptest.NewRecorder()
 	s.serveProgrammingPreview().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -317,6 +424,7 @@ func TestServer_programmingEndpoints(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/programming/backups.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w = httptest.NewRecorder()
 	s.serveProgrammingBackups().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -364,6 +472,111 @@ func TestServer_programmingEndpoints(t *testing.T) {
 	}
 }
 
+func TestServer_methodNotAllowedSetsAllowHeadersAcrossTunerSurfaces(t *testing.T) {
+	s := &Server{}
+
+	req := httptest.NewRequest(http.MethodPost, "/ops/action-status.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.serveOperatorActionStatus().ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("operator action status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Allow"); got != http.MethodGet {
+		t.Fatalf("operator action status Allow=%q", got)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/ops/actions/guide-refresh", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveGuideRefreshAction().ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("guide refresh=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Allow"); got != http.MethodPost {
+		t.Fatalf("guide refresh Allow=%q", got)
+	}
+
+	req = httptest.NewRequest(http.MethodDelete, "/programming/categories.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveProgrammingCategories().ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("programming categories=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Allow"); got != "GET, POST" {
+		t.Fatalf("programming categories Allow=%q", got)
+	}
+
+	req = httptest.NewRequest(http.MethodDelete, "/recordings/rules.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveRecordingRules().ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("recording rules=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Allow"); got != "GET, POST" {
+		t.Fatalf("recording rules Allow=%q", got)
+	}
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("recording rules content-type=%q", got)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/hls-mux-demo", nil)
+	w = httptest.NewRecorder()
+	s.serveHlsMuxWebDemo().ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("hls mux demo=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Allow"); got != "GET, HEAD" {
+		t.Fatalf("hls mux demo Allow=%q", got)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/mux/seg-decode", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveMuxSegDecodeAction().ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("mux seg decode=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Allow"); got != http.MethodPost {
+		t.Fatalf("mux seg decode Allow=%q", got)
+	}
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("mux seg decode content-type=%q", got)
+	}
+
+	for _, tc := range []struct {
+		name string
+		req  *http.Request
+		h    http.Handler
+	}{
+		{name: "channel_report", req: httptest.NewRequest(http.MethodPost, "/channels/report.json", nil), h: s.serveChannelReport()},
+		{name: "channel_leaderboard", req: httptest.NewRequest(http.MethodPost, "/channels/leaderboard.json", nil), h: s.serveChannelLeaderboard()},
+		{name: "channel_dna", req: httptest.NewRequest(http.MethodPost, "/channels/dna.json", nil), h: s.serveChannelDNAReport()},
+		{name: "autopilot_report", req: httptest.NewRequest(http.MethodPost, "/autopilot/report.json", nil), h: s.serveAutopilotReport()},
+		{name: "provider_profile", req: httptest.NewRequest(http.MethodPost, "/provider/profile.json", nil), h: s.serveProviderProfile()},
+		{name: "recent_stream_attempts", req: httptest.NewRequest(http.MethodPost, "/debug/stream-attempts.json", nil), h: s.serveRecentStreamAttempts()},
+		{name: "shared_relay_report", req: httptest.NewRequest(http.MethodPost, "/debug/shared-relays.json", nil), h: s.serveSharedRelayReport()},
+		{name: "runtime_snapshot", req: httptest.NewRequest(http.MethodPost, "/debug/runtime.json", nil), h: s.serveRuntimeSnapshot()},
+		{name: "event_hooks_report", req: httptest.NewRequest(http.MethodPost, "/debug/event-hooks.json", nil), h: s.serveEventHooksReport()},
+		{name: "active_streams_report", req: httptest.NewRequest(http.MethodPost, "/debug/active-streams.json", nil), h: s.serveActiveStreamsReport()},
+		{name: "guide_lineup_match", req: httptest.NewRequest(http.MethodPost, "/guide/lineup-match.json", nil), h: s.serveGuideLineupMatch()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.req.RemoteAddr = "127.0.0.1:12345"
+			w := httptest.NewRecorder()
+			tc.h.ServeHTTP(w, tc.req)
+			if w.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+			}
+			if got := w.Header().Get("Allow"); got != http.MethodGet {
+				t.Fatalf("Allow=%q", got)
+			}
+		})
+	}
+}
+
 func TestServer_programmingHarvestEndpoint(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "harvest.json")
 	s := &Server{PlexLineupHarvestFile: path}
@@ -388,6 +601,7 @@ func TestServer_programmingHarvestEndpoint(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/programming/harvest.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w = httptest.NewRecorder()
 	s.serveProgrammingHarvest().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -425,6 +639,7 @@ func TestServer_programmingPreviewIncludesHarvestSummary(t *testing.T) {
 		{ChannelID: "1", GuideNumber: "101", GuideName: "News One", GroupTitle: "News", SourceTag: "iptv", StreamURL: "http://a/1"},
 	})
 	req := httptest.NewRequest(http.MethodGet, "/programming/preview.json?limit=1", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	s.serveProgrammingPreview().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -470,6 +685,7 @@ func TestServer_programmingHarvestImport(t *testing.T) {
 	s.rebuildCuratedChannelsFromRaw()
 
 	req := httptest.NewRequest(http.MethodGet, "/programming/harvest-import.json?lineup_title=Rogers%20West&replace=1&collapse_exact_backups=1", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	s.serveProgrammingHarvestImport().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -487,6 +703,7 @@ func TestServer_programmingHarvestImport(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/programming/harvest-assist.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w = httptest.NewRecorder()
 	s.serveProgrammingHarvestAssist().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -578,6 +795,7 @@ func TestServer_virtualChannelRulesAndPreview(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/preview.json?per_channel=2", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w = httptest.NewRecorder()
 	s.serveVirtualChannelPreview().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -621,6 +839,7 @@ func TestServer_virtualChannelRulesAndPreview(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/schedule.json?horizon=3h", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w = httptest.NewRecorder()
 	s.serveVirtualChannelSchedule().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -637,6 +856,7 @@ func TestServer_virtualChannelRulesAndPreview(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/channel-detail.json?channel_id=vc-news&limit=2&horizon=3h", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w = httptest.NewRecorder()
 	s.serveVirtualChannelDetail().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -658,6 +878,77 @@ func TestServer_virtualChannelRulesAndPreview(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), `<channel id="virtual.vc-news">`) || !strings.Contains(w.Body.String(), "<title>Movie One</title>") {
 		t.Fatalf("virtual guide body=%s", w.Body.String())
+	}
+}
+
+func TestServer_virtualChannelExportsRequireGetOrHead(t *testing.T) {
+	s := &Server{}
+
+	req := httptest.NewRequest(http.MethodPost, "/virtual-channels/live.m3u", nil)
+	w := httptest.NewRecorder()
+	s.serveVirtualChannelM3U().ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("virtual m3u status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Allow"); got != "GET, HEAD" {
+		t.Fatalf("virtual m3u Allow=%q", got)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/virtual-channels/guide.xml", nil)
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelGuide().ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("virtual guide status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Allow"); got != "GET, HEAD" {
+		t.Fatalf("virtual guide Allow=%q", got)
+	}
+}
+
+func TestServer_virtualChannelStreamMissingSourceStaysJSON(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "virtual-channels.json")
+	s := &Server{
+		VirtualChannelsFile: path,
+		Movies:              []catalog.Movie{{ID: "m1", Title: "Movie One"}},
+	}
+
+	postBody := strings.NewReader(`{
+  "channels": [
+    {
+      "id": "vc-empty",
+      "name": "Empty Loop",
+      "guide_number": "9002",
+      "enabled": true,
+      "loop_daily_utc": true,
+      "entries": [
+        { "type": "movie", "movie_id": "m1", "duration_mins": 60 }
+      ]
+    }
+  ]
+}`)
+	req := httptest.NewRequest(http.MethodPost, "/virtual-channels/rules.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.serveVirtualChannelRules().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual rules status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	withNow := time.Date(2026, 3, 21, 0, 15, 0, 0, time.UTC)
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/stream/vc-empty.mp4", nil)
+	origNow := timeNow
+	timeNow = func() time.Time { return withNow }
+	defer func() { timeNow = origNow }()
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelStream().ServeHTTP(w, req)
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("virtual stream status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("content-type=%q", got)
+	}
+	if !strings.Contains(w.Body.String(), "virtual channel slot has no source") {
+		t.Fatalf("body=%q", w.Body.String())
 	}
 }
 
@@ -687,6 +978,7 @@ func TestServer_programmingChannelDetail(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/programming/channel-detail.json?channel_id=1&limit=3", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	s.serveProgrammingChannelDetail().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -741,6 +1033,7 @@ func TestServer_programmingBrowse(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/programming/browse.json?category=strong8k--entertainment&limit=10&horizon=1h", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	s.serveProgrammingBrowse().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -761,6 +1054,7 @@ func TestServer_programmingBrowse(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/programming/browse.json?category=strong8k--entertainment&limit=10&horizon=1h&guide=real&curated=missing", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w = httptest.NewRecorder()
 	s.serveProgrammingBrowse().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -1025,6 +1319,173 @@ func TestServer_ProgrammingMutationsSurviveRefresh(t *testing.T) {
 	}
 }
 
+func TestServer_ProgrammingPreviewReloadsRecipeFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "programming.json")
+	if err := os.WriteFile(path, []byte(`{
+  "selected_categories": ["iptv--news"]
+}`), 0o600); err != nil {
+		t.Fatalf("write recipe: %v", err)
+	}
+	s := &Server{ProgrammingRecipeFile: path, LineupMaxChannels: NoLineupCap}
+	s.UpdateChannels([]catalog.LiveChannel{
+		{ChannelID: "news-a", GuideNumber: "101", GuideName: "News", GroupTitle: "News", SourceTag: "iptv", StreamURL: "http://a/1"},
+		{ChannelID: "sports-a", GuideNumber: "102", GuideName: "Sports", GroupTitle: "Sports", SourceTag: "iptv", StreamURL: "http://a/2"},
+	})
+	if len(s.Channels) != 1 || s.Channels[0].ChannelID != "news-a" {
+		t.Fatalf("initial curated=%#v", s.Channels)
+	}
+	if err := os.WriteFile(path, []byte(`{
+  "selected_categories": ["iptv--sports"]
+}`), 0o600); err != nil {
+		t.Fatalf("overwrite recipe: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/programming/preview.json?limit=5", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.serveProgrammingPreview().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("preview status=%d body=%s", w.Code, w.Body.String())
+	}
+	var preview programmingPreviewReport
+	if err := json.Unmarshal(w.Body.Bytes(), &preview); err != nil {
+		t.Fatalf("preview unmarshal: %v", err)
+	}
+	if preview.CuratedChannels != 1 || len(preview.Lineup) != 1 || preview.Lineup[0].ChannelID != "sports-a" {
+		t.Fatalf("preview=%+v", preview)
+	}
+	if preview.Buckets["sports"] != 1 || preview.Buckets["news"] != 0 {
+		t.Fatalf("preview buckets=%+v", preview.Buckets)
+	}
+}
+
+func TestServer_ProgrammingRecipeRequiresOperatorAccess(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "programming.json")
+	if err := os.WriteFile(path, []byte(`{"selected_categories":["iptv--news"]}`), 0o600); err != nil {
+		t.Fatalf("write recipe: %v", err)
+	}
+	s := &Server{ProgrammingRecipeFile: path}
+
+	req := httptest.NewRequest(http.MethodGet, "/programming/recipe.json", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	w := httptest.NewRecorder()
+	s.serveProgrammingRecipe().ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/programming/recipe.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveProgrammingRecipe().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("localhost status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestServer_ProgrammingReadEndpointsRequireOperatorAccess(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "programming.json")
+	if err := os.WriteFile(path, []byte(`{"selected_categories":["iptv--news"]}`), 0o600); err != nil {
+		t.Fatalf("write recipe: %v", err)
+	}
+	s := &Server{ProgrammingRecipeFile: path}
+	s.UpdateChannels([]catalog.LiveChannel{
+		{ChannelID: "1", GuideNumber: "101", GuideName: "News One", GroupTitle: "News", SourceTag: "iptv", StreamURL: "http://a/1"},
+	})
+
+	for _, target := range []string{
+		"/programming/categories.json",
+		"/programming/browse.json?category=iptv--news",
+		"/programming/channel-detail.json?channel_id=1",
+		"/programming/channels.json",
+		"/programming/order.json",
+		"/programming/backups.json",
+		"/programming/preview.json",
+	} {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		req.RemoteAddr = "203.0.113.10:12345"
+		w := httptest.NewRecorder()
+		switch {
+		case strings.HasPrefix(target, "/programming/categories.json"):
+			s.serveProgrammingCategories().ServeHTTP(w, req)
+		case strings.HasPrefix(target, "/programming/browse.json"):
+			s.serveProgrammingBrowse().ServeHTTP(w, req)
+		case strings.HasPrefix(target, "/programming/channel-detail.json"):
+			s.serveProgrammingChannelDetail().ServeHTTP(w, req)
+		case target == "/programming/channels.json":
+			s.serveProgrammingChannels().ServeHTTP(w, req)
+		case target == "/programming/order.json":
+			s.serveProgrammingOrder().ServeHTTP(w, req)
+		case target == "/programming/backups.json":
+			s.serveProgrammingBackups().ServeHTTP(w, req)
+		case target == "/programming/preview.json":
+			s.serveProgrammingPreview().ServeHTTP(w, req)
+		}
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("%s status=%d body=%s", target, w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestServer_operatorJSONEndpointsStayJSONWhenOperatorAccessDenied(t *testing.T) {
+	s := &Server{}
+	for _, tc := range []struct {
+		name    string
+		req     *http.Request
+		handler http.Handler
+	}{
+		{
+			name: "programming_preview",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "/programming/preview.json", nil)
+				r.RemoteAddr = "203.0.113.10:12345"
+				return r
+			}(),
+			handler: s.serveProgrammingPreview(),
+		},
+		{
+			name: "guide_preview_json",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "/ui/guide-preview.json", nil)
+				r.RemoteAddr = "203.0.113.10:12345"
+				return r
+			}(),
+			handler: s.serveOperatorGuidePreviewJSON(),
+		},
+		{
+			name: "ops_action_status",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "/ops/actions/status.json", nil)
+				r.RemoteAddr = "203.0.113.10:12345"
+				return r
+			}(),
+			handler: s.serveOperatorActionStatus(),
+		},
+		{
+			name: "ops_action_post",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodPost, "/ops/actions/guide-refresh", nil)
+				r.RemoteAddr = "203.0.113.10:12345"
+				return r
+			}(),
+			handler: s.serveGuideRefreshAction(),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			tc.handler.ServeHTTP(w, tc.req)
+			if w.Code != http.StatusForbidden {
+				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+			}
+			if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+				t.Fatalf("content-type=%q", got)
+			}
+			if !strings.Contains(w.Body.String(), "localhost-only") {
+				t.Fatalf("body=%q", w.Body.String())
+			}
+		})
+	}
+}
+
 func countVisibleStreamsForTest(ch catalog.LiveChannel) int {
 	seen := map[string]struct{}{}
 	for _, raw := range append([]string{ch.StreamURL}, ch.StreamURLs...) {
@@ -1098,6 +1559,7 @@ func TestServer_channelReport(t *testing.T) {
 		{ChannelID: "1", GuideNumber: "101", GuideName: "FOX News", TVGID: "foxnews.us", EPGLinked: true, StreamURL: "http://a/1", StreamURLs: []string{"http://a/1", "http://b/1"}},
 	})
 	req := httptest.NewRequest(http.MethodGet, "/channels/report.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	s.serveChannelReport().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -1127,6 +1589,7 @@ func TestServer_channelLeaderboard(t *testing.T) {
 		{ChannelID: "2", GuideNumber: "102", GuideName: "Weak Guide", StreamURL: "http://a/2"},
 	})
 	req := httptest.NewRequest(http.MethodGet, "/channels/leaderboard.json?limit=1", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	s.serveChannelLeaderboard().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -1162,6 +1625,7 @@ func TestServer_channelDNAReport(t *testing.T) {
 		{ChannelID: "2", GuideName: "FOX News HD", TVGID: "foxnews.us", DNAID: "dna-fox"},
 	})
 	req := httptest.NewRequest(http.MethodGet, "/channels/dna.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	s.serveChannelDNAReport().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -1184,6 +1648,45 @@ func TestServer_channelDNAReport(t *testing.T) {
 	}
 }
 
+func TestServer_channelDNAReportRequiresOperatorAccess(t *testing.T) {
+	s := &Server{LineupMaxChannels: NoLineupCap}
+	s.UpdateChannels([]catalog.LiveChannel{
+		{ChannelID: "1", GuideName: "FOX News", TVGID: "foxnews.us", DNAID: "dna-fox"},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/channels/dna.json", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	w := httptest.NewRecorder()
+	s.serveChannelDNAReport().ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestServer_channelIntelligenceRequiresOperatorAccess(t *testing.T) {
+	s := &Server{LineupMaxChannels: NoLineupCap}
+	s.UpdateChannels([]catalog.LiveChannel{
+		{ChannelID: "1", GuideNumber: "101", GuideName: "Best News", TVGID: "best.news", EPGLinked: true, StreamURL: "http://a/1", StreamURLs: []string{"http://a/1", "http://b/1"}},
+	})
+
+	for _, target := range []string{
+		"/channels/report.json",
+		"/channels/leaderboard.json?limit=1",
+	} {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		req.RemoteAddr = "203.0.113.10:12345"
+		w := httptest.NewRecorder()
+		switch {
+		case strings.HasPrefix(target, "/channels/report.json"):
+			s.serveChannelReport().ServeHTTP(w, req)
+		default:
+			s.serveChannelLeaderboard().ServeHTTP(w, req)
+		}
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("%s status=%d body=%s", target, w.Code, w.Body.String())
+		}
+	}
+}
+
 func TestServer_autopilotReport(t *testing.T) {
 	s := &Server{
 		gateway: &Gateway{
@@ -1201,6 +1704,7 @@ func TestServer_autopilotReport(t *testing.T) {
 		},
 	}
 	req := httptest.NewRequest(http.MethodGet, "/autopilot/report.json?limit=1", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	s.serveAutopilotReport().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -1239,6 +1743,7 @@ func TestServer_providerProfile(t *testing.T) {
 		},
 	}
 	req := httptest.NewRequest(http.MethodGet, "/provider/profile.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	s.serveProviderProfile().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -1256,6 +1761,26 @@ func TestServer_providerProfile(t *testing.T) {
 	}
 	if body.CFBlockHits != 1 {
 		t.Fatalf("cf_block_hits=%d want 1", body.CFBlockHits)
+	}
+}
+
+func TestServer_AutopilotReportRequiresOperatorAccess(t *testing.T) {
+	s := &Server{gateway: &Gateway{Autopilot: &autopilotStore{byKey: map[string]autopilotDecision{}}}}
+
+	req := httptest.NewRequest(http.MethodGet, "/autopilot/report.json", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	w := httptest.NewRecorder()
+	s.serveAutopilotReport().ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/autopilot/report.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveAutopilotReport().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("localhost status=%d body=%s", w.Code, w.Body.String())
 	}
 }
 
@@ -1281,6 +1806,7 @@ func TestServer_catchupRecorderReport(t *testing.T) {
 	}
 	s := &Server{RecorderStateFile: stateFile}
 	req := httptest.NewRequest(http.MethodGet, "/recordings/recorder.json?limit=5", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	s.serveCatchupRecorderReport().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -1321,6 +1847,7 @@ func TestServer_recentStreamAttempts(t *testing.T) {
 		},
 	})
 	req := httptest.NewRequest(http.MethodGet, "/debug/stream-attempts.json?limit=1", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	s.serveRecentStreamAttempts().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -1353,6 +1880,7 @@ func TestServer_recentStreamAttempts_clampsLargeLimit(t *testing.T) {
 		})
 	}
 	req := httptest.NewRequest(http.MethodGet, "/debug/stream-attempts.json?limit=999999", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	s.serveRecentStreamAttempts().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -1452,6 +1980,188 @@ func TestServer_operatorGuidePreviewJSON(t *testing.T) {
 	}
 }
 
+func TestServer_operatorGuidePreviewJSONErrorsStayJSON(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
+
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodGet, "/ui/guide-preview.json?limit=5", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	s.serveOperatorGuidePreviewJSON().ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("content-type=%q", got)
+	}
+}
+
+func TestServer_operatorGuidePreviewJSONMethodRejectionStaysJSON(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
+
+	req := httptest.NewRequest(http.MethodPost, "/ui/guide-preview.json?limit=5", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	(&Server{}).serveOperatorGuidePreviewJSON().ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Allow"); got != http.MethodGet {
+		t.Fatalf("Allow=%q", got)
+	}
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("content-type=%q", got)
+	}
+}
+
+func TestServer_operatorGuidePreviewJSONAllowsHostnameLocalhost(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
+
+	now := time.Now().UTC()
+	p1 := now.Add(1 * time.Hour).Format("20060102150405 +0000")
+	stop := now.Add(2 * time.Hour).Format("20060102150405 +0000")
+	s := &Server{
+		xmltv: &XMLTV{
+			cachedXML: []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="101"><display-name>One</display-name></channel>
+  <programme start="` + p1 + `" stop="` + stop + `" channel="101"><title>First</title></programme>
+</tv>`),
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/ui/guide-preview.json?limit=5", nil)
+	req.RemoteAddr = "localhost:1234"
+	w := httptest.NewRecorder()
+	s.serveOperatorGuidePreviewJSON().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestServer_operatorHTMLPagesAllowHead(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
+	now := time.Now().UTC()
+	p1 := now.Add(1 * time.Hour).Format("20060102150405 +0000")
+	stop := now.Add(2 * time.Hour).Format("20060102150405 +0000")
+	s := &Server{
+		AppVersion: "testver",
+		xmltv: &XMLTV{
+			cachedXML: []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="101"><display-name>One</display-name></channel>
+  <programme start="` + p1 + `" stop="` + stop + `" channel="101"><title>First</title></programme>
+</tv>`),
+		},
+	}
+
+	for _, tc := range []struct {
+		name  string
+		req   *http.Request
+		h     http.Handler
+		allow string
+	}{
+		{
+			name: "ui_head",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodHead, "/ui/", nil)
+				r.RemoteAddr = "127.0.0.1:1234"
+				return r
+			}(),
+			h: s.serveOperatorUI(),
+		},
+		{
+			name: "guide_head",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodHead, "/ui/guide/", nil)
+				r.RemoteAddr = "127.0.0.1:1234"
+				return r
+			}(),
+			h: s.serveOperatorGuidePreviewPage(),
+		},
+		{
+			name: "ui_post_rejected",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodPost, "/ui/", nil)
+				r.RemoteAddr = "127.0.0.1:1234"
+				return r
+			}(),
+			h:     s.serveOperatorUI(),
+			allow: "GET, HEAD",
+		},
+		{
+			name: "guide_post_rejected",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodPost, "/ui/guide/", nil)
+				r.RemoteAddr = "127.0.0.1:1234"
+				return r
+			}(),
+			h:     s.serveOperatorGuidePreviewPage(),
+			allow: "GET, HEAD",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			tc.h.ServeHTTP(w, tc.req)
+			if tc.allow == "" {
+				if w.Code != http.StatusOK {
+					t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+				}
+				return
+			}
+			if w.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+			}
+			if got := w.Header().Get("Allow"); got != tc.allow {
+				t.Fatalf("Allow=%q", got)
+			}
+		})
+	}
+}
+
+func TestServer_operatorRedirectsPreserveReadMethods(t *testing.T) {
+	s := &Server{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ui/guide", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		http.Redirect(w, r, "/ui/guide/", http.StatusTemporaryRedirect)
+	})
+	mux.HandleFunc("/ui", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		http.Redirect(w, r, "/ui/", http.StatusTemporaryRedirect)
+	})
+	_ = s
+
+	for _, tc := range []struct {
+		name     string
+		req      *http.Request
+		location string
+	}{
+		{name: "ui_get", req: httptest.NewRequest(http.MethodGet, "/ui", nil), location: "/ui/"},
+		{name: "ui_head", req: httptest.NewRequest(http.MethodHead, "/ui", nil), location: "/ui/"},
+		{name: "guide_get", req: httptest.NewRequest(http.MethodGet, "/ui/guide", nil), location: "/ui/guide/"},
+		{name: "guide_head", req: httptest.NewRequest(http.MethodHead, "/ui/guide", nil), location: "/ui/guide/"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, tc.req)
+			if w.Code != http.StatusTemporaryRedirect {
+				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+			}
+			if got := w.Header().Get("Location"); got != tc.location {
+				t.Fatalf("Location=%q", got)
+			}
+		})
+	}
+}
+
 func TestServer_epgStoreReport_disabled(t *testing.T) {
 	s := &Server{}
 	req := httptest.NewRequest(http.MethodGet, "/guide/epg-store.json", nil)
@@ -1459,6 +2169,9 @@ func TestServer_epgStoreReport_disabled(t *testing.T) {
 	s.serveEpgStoreReport().ServeHTTP(w, req)
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status=%d want 503", w.Code)
+	}
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("content-type=%q", got)
 	}
 }
 
@@ -1526,6 +2239,73 @@ func TestServer_epgStoreReport_incrementalFlags(t *testing.T) {
 	}
 }
 
+func TestServer_guideDiagnosticsRequireXMLTV(t *testing.T) {
+	s := &Server{}
+	tests := []struct {
+		name    string
+		path    string
+		handler http.Handler
+	}{
+		{name: "guide_health", path: "/guide/health.json", handler: s.serveGuideHealth()},
+		{name: "epg_doctor", path: "/guide/doctor.json", handler: s.serveEPGDoctor()},
+		{name: "guide_aliases", path: "/guide/aliases.json", handler: s.serveSuggestedAliasOverrides()},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			w := httptest.NewRecorder()
+			tc.handler.ServeHTTP(w, req)
+			if w.Code != http.StatusServiceUnavailable {
+				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+			}
+			if !strings.Contains(w.Body.String(), "xmltv unavailable") {
+				t.Fatalf("body=%s", w.Body.String())
+			}
+			if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+				t.Fatalf("content-type=%q", got)
+			}
+		})
+	}
+}
+
+func TestServer_guideDiagnosticsFailuresStayJSON(t *testing.T) {
+	s := &Server{
+		xmltv: &XMLTV{
+			Channels:  []catalog.LiveChannel{{ChannelID: "1", GuideNumber: "101", GuideName: "News One"}},
+			cachedXML: []byte(`<?xml version="1.0" encoding="UTF-8"?><tv></tv>`),
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/guide/health.json?aliases=/definitely/missing-aliases.json", nil)
+	w := httptest.NewRecorder()
+	s.serveGuideHealth().ServeHTTP(w, req)
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("content-type=%q", got)
+	}
+	if !strings.Contains(w.Body.String(), `"error"`) {
+		t.Fatalf("body=%s", w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/guide/doctor.json", nil)
+	w = httptest.NewRecorder()
+	s.serveEPGDoctor().ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("method status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Allow"); got != http.MethodGet {
+		t.Fatalf("Allow=%q", got)
+	}
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("method content-type=%q", got)
+	}
+	if !strings.Contains(w.Body.String(), `"error"`) {
+		t.Fatalf("method body=%s", w.Body.String())
+	}
+}
+
 func TestServer_runtimeSnapshot(t *testing.T) {
 	s := &Server{
 		RuntimeSnapshot: &RuntimeSnapshot{
@@ -1545,6 +2325,7 @@ func TestServer_runtimeSnapshot(t *testing.T) {
 		},
 	}
 	req := httptest.NewRequest(http.MethodGet, "/debug/runtime.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	s.serveRuntimeSnapshot().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -1559,6 +2340,182 @@ func TestServer_runtimeSnapshot(t *testing.T) {
 	}
 	if body.WebUI["state_file"] != "/tmp/deck-state.json" || body.WebUI["auth_user"] != "admin" || body.WebUI["activity_endpoint"] != "/deck/activity.json" {
 		t.Fatalf("unexpected webui snapshot: %+v", body.WebUI)
+	}
+	if _, ok := s.RuntimeSnapshot.Events["hook_count"]; ok {
+		t.Fatalf("serveRuntimeSnapshot should not mutate shared snapshot events map: %+v", s.RuntimeSnapshot.Events)
+	}
+}
+
+func TestServer_reportJSONFailuresStayJSON(t *testing.T) {
+	baseReq := httptest.NewRequest(http.MethodGet, "/ignored", nil)
+	baseReq.RemoteAddr = "127.0.0.1:12345"
+
+	for _, tc := range []struct {
+		name    string
+		handler http.Handler
+		code    int
+		want    string
+	}{
+		{name: "guide_highlights", handler: (&Server{}).serveGuideHighlights(), code: http.StatusServiceUnavailable, want: "xmltv unavailable"},
+		{name: "catchup_capsules", handler: (&Server{}).serveCatchupCapsules(), code: http.StatusServiceUnavailable, want: "xmltv unavailable"},
+		{name: "guide_policy", handler: (&Server{}).serveGuidePolicy(), code: http.StatusServiceUnavailable, want: "xmltv unavailable"},
+		{name: "provider_profile", handler: (&Server{}).serveProviderProfile(), code: http.StatusServiceUnavailable, want: "gateway unavailable"},
+		{name: "recent_stream_attempts", handler: (&Server{}).serveRecentStreamAttempts(), code: http.StatusServiceUnavailable, want: "gateway unavailable"},
+		{name: "guide_lineup_match", handler: (&Server{}).serveGuideLineupMatch(), code: http.StatusServiceUnavailable, want: "guide unavailable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := baseReq.Clone(baseReq.Context())
+			w := httptest.NewRecorder()
+			tc.handler.ServeHTTP(w, req)
+			if w.Code != tc.code {
+				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+			}
+			if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+				t.Fatalf("content-type=%q", got)
+			}
+			if !strings.Contains(w.Body.String(), tc.want) {
+				t.Fatalf("body=%s want %q", w.Body.String(), tc.want)
+			}
+		})
+	}
+}
+
+func TestServer_lowerJSONFailuresStayJSON(t *testing.T) {
+	baseReq := httptest.NewRequest(http.MethodGet, "/ignored", nil)
+	baseReq.RemoteAddr = "127.0.0.1:12345"
+
+	for _, tc := range []struct {
+		name    string
+		req     *http.Request
+		handler http.Handler
+		code    int
+		want    string
+	}{
+		{
+			name: "programming_categories_missing_file",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodPost, "/programming/categories.json", strings.NewReader(`{}`))
+				r.RemoteAddr = "127.0.0.1:12345"
+				return r
+			}(),
+			handler: (&Server{}).serveProgrammingCategories(),
+			code:    http.StatusServiceUnavailable,
+			want:    "programming recipe file not configured",
+		},
+		{
+			name: "programming_channel_detail_missing_id",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "/programming/channel-detail.json", nil)
+				r.RemoteAddr = "127.0.0.1:12345"
+				return r
+			}(),
+			handler: (&Server{}).serveProgrammingChannelDetail(),
+			code:    http.StatusBadRequest,
+			want:    "channel_id required",
+		},
+		{
+			name: "virtual_rules_missing_file",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodPost, "/virtual-channels/rules.json", strings.NewReader(`{}`))
+				r.RemoteAddr = "127.0.0.1:12345"
+				return r
+			}(),
+			handler: (&Server{}).serveVirtualChannelRules(),
+			code:    http.StatusServiceUnavailable,
+			want:    "virtual channels file not configured",
+		},
+		{
+			name: "virtual_detail_missing_id",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "/virtual-channels/channel-detail.json", nil)
+				r.RemoteAddr = "127.0.0.1:12345"
+				return r
+			}(),
+			handler: (&Server{}).serveVirtualChannelDetail(),
+			code:    http.StatusBadRequest,
+			want:    "channel_id required",
+		},
+		{
+			name:    "recorder_report_missing_state",
+			req:     baseReq.Clone(baseReq.Context()),
+			handler: (&Server{}).serveCatchupRecorderReport(),
+			code:    http.StatusServiceUnavailable,
+			want:    "recorder state unavailable",
+		},
+		{
+			name:    "recording_preview_missing_xmltv",
+			req:     baseReq.Clone(baseReq.Context()),
+			handler: (&Server{}).serveRecordingRulePreview(),
+			code:    http.StatusServiceUnavailable,
+			want:    "xmltv unavailable",
+		},
+		{
+			name:    "recording_history_missing_state",
+			req:     baseReq.Clone(baseReq.Context()),
+			handler: (&Server{}).serveRecordingHistory(),
+			code:    http.StatusServiceUnavailable,
+			want:    "recorder state unavailable",
+		},
+		{
+			name: "mux_seg_decode_invalid_json",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodPost, "/ops/actions/mux-seg-decode", strings.NewReader(`{`))
+				r.RemoteAddr = "127.0.0.1:12345"
+				return r
+			}(),
+			handler: (&Server{}).serveMuxSegDecodeAction(),
+			code:    http.StatusBadRequest,
+			want:    "invalid json",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			tc.handler.ServeHTTP(w, tc.req)
+			if w.Code != tc.code {
+				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+			}
+			if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+				t.Fatalf("content-type=%q", got)
+			}
+			if !strings.Contains(w.Body.String(), tc.want) {
+				t.Fatalf("body=%s want %q", w.Body.String(), tc.want)
+			}
+		})
+	}
+}
+
+func TestServer_UpdateProviderContextUpdatesRuntimeChildren(t *testing.T) {
+	s := &Server{
+		ProviderBaseURL: "http://old.example",
+		ProviderUser:    "old-user",
+		ProviderPass:    "old-pass",
+		gateway:         &Gateway{ProviderUser: "old-user", ProviderPass: "old-pass"},
+		xmltv: &XMLTV{
+			ProviderBaseURL: "http://old.example",
+			ProviderUser:    "old-user",
+			ProviderPass:    "old-pass",
+		},
+		RuntimeSnapshot: &RuntimeSnapshot{
+			Provider: map[string]interface{}{"base_url": "http://old.example"},
+		},
+	}
+
+	newSnapshot := &RuntimeSnapshot{
+		Provider: map[string]interface{}{"base_url": "http://new.example"},
+	}
+	s.UpdateProviderContext("http://new.example", "new-user", "new-pass", newSnapshot)
+
+	if s.ProviderBaseURL != "http://new.example" || s.ProviderUser != "new-user" || s.ProviderPass != "new-pass" {
+		t.Fatalf("server provider context not updated: base=%q user=%q pass=%q", s.ProviderBaseURL, s.ProviderUser, s.ProviderPass)
+	}
+	if gotUser, gotPass := s.gateway.providerCredentials(); gotUser != "new-user" || gotPass != "new-pass" {
+		t.Fatalf("gateway provider credentials = %q/%q want new-user/new-pass", gotUser, gotPass)
+	}
+	if gotBase, gotUser, gotPass := s.xmltv.providerIdentity(); gotBase != "http://new.example" || gotUser != "new-user" || gotPass != "new-pass" {
+		t.Fatalf("xmltv provider identity = %q/%q/%q want http://new.example/new-user/new-pass", gotBase, gotUser, gotPass)
+	}
+	if rep := s.runtimeSnapshotClone(); rep == nil || rep.Provider["base_url"] != "http://new.example" {
+		t.Fatalf("runtime snapshot not updated: %+v", rep)
 	}
 }
 
@@ -1578,6 +2535,7 @@ func TestServer_operatorGuidePreview_forbiddenNonLoopback(t *testing.T) {
 
 func TestServer_operatorActionStatus(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
+	t.Setenv("IPTV_TUNERR_SHARED_RELAY_REPLAY_BYTES", "131072")
 	s := &Server{
 		xmltv: &XMLTV{
 			cachedXML: []byte(`<?xml version="1.0"?><tv></tv>`),
@@ -1601,6 +2559,13 @@ func TestServer_operatorActionStatus(t *testing.T) {
 		AutopilotReset struct {
 			Available bool `json:"available"`
 		} `json:"autopilot_reset"`
+		SharedRelayReplayUpdate struct {
+			Available    bool   `json:"available"`
+			Endpoint     string `json:"endpoint"`
+			CurrentBytes string `json:"current_bytes"`
+			AppliesTo    string `json:"applies_to"`
+			SupportsZero bool   `json:"supports_zero"`
+		} `json:"shared_relay_replay_update"`
 		GhostVisibleStop struct {
 			Available bool `json:"available"`
 		} `json:"ghost_visible_stop"`
@@ -1621,11 +2586,50 @@ func TestServer_operatorActionStatus(t *testing.T) {
 	if !body.AutopilotReset.Available {
 		t.Fatal("expected autopilot_reset available")
 	}
+	if !body.SharedRelayReplayUpdate.Available {
+		t.Fatal("expected shared_relay_replay_update available")
+	}
+	if body.SharedRelayReplayUpdate.Endpoint != "/ops/actions/shared-relay-replay" {
+		t.Fatalf("endpoint=%q", body.SharedRelayReplayUpdate.Endpoint)
+	}
+	if body.SharedRelayReplayUpdate.CurrentBytes != "131072" {
+		t.Fatalf("current_bytes=%q", body.SharedRelayReplayUpdate.CurrentBytes)
+	}
+	if body.SharedRelayReplayUpdate.AppliesTo != "new shared relay sessions" {
+		t.Fatalf("applies_to=%q", body.SharedRelayReplayUpdate.AppliesTo)
+	}
+	if !body.SharedRelayReplayUpdate.SupportsZero {
+		t.Fatal("expected shared_relay_replay_update supports_zero")
+	}
 	if body.GhostVisibleStop.Available {
 		t.Fatal("expected ghost_visible_stop unavailable without PMS config")
 	}
 	if body.GhostHiddenRecover.Available {
 		t.Fatal("expected ghost_hidden_recover unavailable without PMS config")
+	}
+}
+
+func TestServer_operatorActionStatusWithoutXMLTVDoesNotPanic(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodGet, "/ops/actions/status.json", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	s.serveOperatorActionStatus().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body struct {
+		GuideRefresh struct {
+			Available bool               `json:"available"`
+			Status    XMLTVRefreshStatus `json:"status"`
+		} `json:"guide_refresh"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body.GuideRefresh.Available {
+		t.Fatal("expected guide_refresh unavailable")
 	}
 }
 
@@ -1721,6 +2725,64 @@ func TestServer_providerProfileResetAction(t *testing.T) {
 	}
 }
 
+func TestServer_sharedRelayReplayUpdateAction(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
+	t.Setenv("IPTV_TUNERR_SHARED_RELAY_REPLAY_BYTES", "262144")
+	s := &Server{
+		RuntimeSnapshot: &RuntimeSnapshot{
+			Tuner: map[string]interface{}{"shared_relay_replay_bytes": "262144"},
+		},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/ops/actions/shared-relay-replay", strings.NewReader(`{"shared_relay_replay_bytes":65536}`))
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	s.serveSharedRelayReplayUpdateAction().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body struct {
+		OK     bool   `json:"ok"`
+		Action string `json:"action"`
+		Detail struct {
+			SharedRelayReplayBytes string `json:"shared_relay_replay_bytes"`
+			AppliesTo              string `json:"applies_to"`
+		} `json:"detail"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !body.OK || body.Action != "shared_relay_replay_update" {
+		t.Fatalf("unexpected body=%+v", body)
+	}
+	if body.Detail.SharedRelayReplayBytes != "65536" {
+		t.Fatalf("shared_relay_replay_bytes=%q", body.Detail.SharedRelayReplayBytes)
+	}
+	if body.Detail.AppliesTo != "new shared relay sessions" {
+		t.Fatalf("applies_to=%q", body.Detail.AppliesTo)
+	}
+	if got := os.Getenv("IPTV_TUNERR_SHARED_RELAY_REPLAY_BYTES"); got != "65536" {
+		t.Fatalf("env=%q want 65536", got)
+	}
+	if rep := s.runtimeSnapshotClone(); rep == nil || fmt.Sprintf("%v", rep.Tuner["shared_relay_replay_bytes"]) != "65536" {
+		t.Fatalf("runtime snapshot not updated: %+v", rep)
+	}
+}
+
+func TestServer_sharedRelayReplayUpdateActionRejectsNegative(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodPost, "/ops/actions/shared-relay-replay", strings.NewReader(`{"shared_relay_replay_bytes":-1}`))
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	s.serveSharedRelayReplayUpdateAction().ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "shared_relay_replay_bytes must be") {
+		t.Fatalf("body=%q", w.Body.String())
+	}
+}
+
 func TestServer_autopilotResetAction(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
 	path := filepath.Join(t.TempDir(), "autopilot.json")
@@ -1791,6 +2853,67 @@ func TestServer_ghostVisibleStopAction(t *testing.T) {
 	}
 	if !body.OK || body.Action != "ghost_visible_stop" || body.Detail.StaleCount != 1 {
 		t.Fatalf("unexpected body=%+v", body)
+	}
+}
+
+func TestServer_ghostReportStopRequiresOperatorPost(t *testing.T) {
+	prev := runGhostHunterAction
+	runGhostHunterAction = func(ctx context.Context, cfg GhostHunterConfig, stop bool, client *http.Client) (GhostHunterReport, error) {
+		if !stop {
+			t.Fatal("expected stop=true")
+		}
+		return GhostHunterReport{RecommendedAction: "stopped"}, nil
+	}
+	defer func() { runGhostHunterAction = prev }()
+
+	s := &Server{}
+
+	req := httptest.NewRequest(http.MethodGet, "/plex/ghost-report.json?stop=1", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	s.serveGhostHunterReport().ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("get status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Allow"); got != http.MethodPost {
+		t.Fatalf("Allow=%q", got)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/plex/ghost-report.json?stop=1", nil)
+	req.RemoteAddr = "203.0.113.10:1234"
+	w = httptest.NewRecorder()
+	s.serveGhostHunterReport().ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("remote post status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/plex/ghost-report.json?stop=1", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	w = httptest.NewRecorder()
+	s.serveGhostHunterReport().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("localhost post status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestServer_ghostReportRequiresOperatorAccess(t *testing.T) {
+	prev := runGhostHunterAction
+	runGhostHunterAction = func(ctx context.Context, cfg GhostHunterConfig, stop bool, client *http.Client) (GhostHunterReport, error) {
+		if stop {
+			t.Fatal("expected stop=false")
+		}
+		return GhostHunterReport{}, nil
+	}
+	defer func() { runGhostHunterAction = prev }()
+
+	s := &Server{}
+
+	req := httptest.NewRequest(http.MethodGet, "/plex/ghost-report.json?observe=0s", nil)
+	req.RemoteAddr = "203.0.113.10:1234"
+	w := httptest.NewRecorder()
+	s.serveGhostHunterReport().ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
 }
 
@@ -1976,6 +3099,41 @@ func TestServer_guideHealth(t *testing.T) {
 	}
 	if len(body.Channels) != 2 {
 		t.Fatalf("channels len=%d want 2", len(body.Channels))
+	}
+}
+
+func TestServer_guideHealthUsesCachedReport(t *testing.T) {
+	s := &Server{
+		xmltv: &XMLTV{
+			cachedGuideHealth: &guidehealth.Report{
+				SourceReady: true,
+				Summary: guidehealth.Summary{
+					ChannelsWithRealProgrammes: 1,
+				},
+				Channels: []guidehealth.ChannelHealth{
+					{ChannelID: "1", GuideNumber: "101", GuideName: "News One", Status: "healthy", HasRealProgrammes: true},
+				},
+			},
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/guide/health.json", nil)
+	w := httptest.NewRecorder()
+	s.serveGuideHealth().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d want 200", w.Code)
+	}
+	var body guidehealth.Report
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !body.SourceReady {
+		t.Fatal("expected cached guide health to be source ready")
+	}
+	if body.Summary.ChannelsWithRealProgrammes != 1 {
+		t.Fatalf("channels_with_real_programmes=%d want 1", body.Summary.ChannelsWithRealProgrammes)
+	}
+	if len(body.Channels) != 1 || body.Channels[0].ChannelID != "1" {
+		t.Fatalf("unexpected channels=%+v", body.Channels)
 	}
 }
 
@@ -2683,13 +3841,48 @@ func TestServer_UpdateChannelsEmitsLineupEvent(t *testing.T) {
 func TestServer_EventHooksReport(t *testing.T) {
 	srv := &Server{EventHooksFile: "/tmp/hooks.json"}
 	req := httptest.NewRequest(http.MethodGet, "/debug/event-hooks.json", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
 	rr := httptest.NewRecorder()
 	srv.serveEventHooksReport().ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status = %d; want 403", rr.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/debug/event-hooks.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rr = httptest.NewRecorder()
+	srv.serveEventHooksReport().ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d; want 200", rr.Code)
+		t.Fatalf("localhost status = %d; want 200", rr.Code)
 	}
 	if !strings.Contains(rr.Body.String(), `"enabled": false`) {
 		t.Fatalf("unexpected body: %s", rr.Body.String())
+	}
+}
+
+func TestServer_RuntimeSnapshotRequiresOperatorAccess(t *testing.T) {
+	srv := &Server{
+		RuntimeSnapshot: &RuntimeSnapshot{
+			GeneratedAt: "2026-03-22T00:00:00Z",
+			WebUI: map[string]interface{}{
+				"state_file": "/tmp/deck-state.json",
+			},
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/debug/runtime.json", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rr := httptest.NewRecorder()
+	srv.serveRuntimeSnapshot().ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/debug/runtime.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rr = httptest.NewRecorder()
+	srv.serveRuntimeSnapshot().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("localhost status=%d body=%s", rr.Code, rr.Body.String())
 	}
 }
 
@@ -2714,6 +3907,7 @@ func TestServer_ActiveStreamsReport(t *testing.T) {
 		},
 	}
 	req := httptest.NewRequest(http.MethodGet, "/debug/active-streams.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	rr := httptest.NewRecorder()
 	srv.serveActiveStreamsReport().ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
@@ -2732,11 +3926,23 @@ func TestServer_ActiveStreamsReport(t *testing.T) {
 	}
 }
 
+func TestServer_ActiveStreamsReportRequiresOperatorAccess(t *testing.T) {
+	srv := &Server{gateway: &Gateway{}}
+	req := httptest.NewRequest(http.MethodGet, "/debug/active-streams.json", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rr := httptest.NewRecorder()
+	srv.serveActiveStreamsReport().ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestServer_SharedRelayReport(t *testing.T) {
 	srv := &Server{
 		gateway: &Gateway{
 			sharedRelays: map[string]*sharedRelaySession{
-				"ch1": {
+				sharedHLSGoRelayKey("ch1"): {
+					RelayKey:    sharedHLSGoRelayKey("ch1"),
 					ChannelID:   "ch1",
 					ProducerReq: "r000001",
 					StartedAt:   time.Now().Add(-2 * time.Second),
@@ -2748,6 +3954,7 @@ func TestServer_SharedRelayReport(t *testing.T) {
 		},
 	}
 	req := httptest.NewRequest(http.MethodGet, "/debug/shared-relays.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	rr := httptest.NewRecorder()
 	srv.serveSharedRelayReport().ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
@@ -3011,6 +4218,82 @@ func TestServer_XtreamPlayerAPI_ShortEPG(t *testing.T) {
 	}
 }
 
+func TestServer_XtreamPlayerAPIFailuresStayJSON(t *testing.T) {
+	srv := &Server{
+		BaseURL:          "http://127.0.0.1:5004",
+		XtreamOutputUser: "demo",
+		XtreamOutputPass: "secret",
+	}
+
+	for _, tc := range []struct {
+		name string
+		path string
+		code int
+		want string
+	}{
+		{
+			name: "unauthorized",
+			path: "/player_api.php?username=wrong&password=nope",
+			code: http.StatusUnauthorized,
+			want: `"auth":0`,
+		},
+		{
+			name: "unsupported_action",
+			path: "/player_api.php?username=demo&password=secret&action=nope",
+			code: http.StatusBadRequest,
+			want: `"error":"unsupported action"`,
+		},
+		{
+			name: "missing_series",
+			path: "/player_api.php?username=demo&password=secret&action=get_series_info&series_id=missing",
+			code: http.StatusNotFound,
+			want: `"error":"series not found"`,
+		},
+		{
+			name: "missing_stream",
+			path: "/player_api.php?username=demo&password=secret&action=get_short_epg&stream_id=missing",
+			code: http.StatusNotFound,
+			want: `"error":"stream not found"`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			rr := httptest.NewRecorder()
+			srv.serveXtreamPlayerAPI().ServeHTTP(rr, req)
+			if rr.Code != tc.code {
+				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+			}
+			if got := rr.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+				t.Fatalf("content-type=%q", got)
+			}
+			if !strings.Contains(rr.Body.String(), tc.want) {
+				t.Fatalf("body=%s want %q", rr.Body.String(), tc.want)
+			}
+		})
+	}
+}
+
+func TestServer_XtreamPlayerAPIMethodRejectionStaysJSON(t *testing.T) {
+	srv := &Server{
+		BaseURL:          "http://127.0.0.1:5004",
+		XtreamOutputUser: "demo",
+		XtreamOutputPass: "secret",
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/player_api.php?username=demo&password=secret&action=get_live_streams", nil)
+	rr := httptest.NewRecorder()
+	srv.serveXtreamPlayerAPI().ServeHTTP(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if got := rr.Header().Get("Allow"); got != http.MethodGet {
+		t.Fatalf("Allow=%q", got)
+	}
+	if got := rr.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("content-type=%q", got)
+	}
+}
+
 func TestServer_XtreamExports_M3UAndXMLTV(t *testing.T) {
 	start := time.Now().UTC().Add(10 * time.Minute).Format("20060102150405 -0700")
 	stop := time.Now().UTC().Add(70 * time.Minute).Format("20060102150405 -0700")
@@ -3123,6 +4406,97 @@ func TestServer_XtreamExports_M3UAndXMLTV(t *testing.T) {
 	}
 }
 
+func TestServer_XtreamExportsRequireGetOrHead(t *testing.T) {
+	srv := &Server{
+		BaseURL:          "http://127.0.0.1:5004",
+		XtreamOutputUser: "demo",
+		XtreamOutputPass: "secret",
+		xmltv:            &XMLTV{cachedXML: []byte(`<?xml version="1.0" encoding="UTF-8"?><tv></tv>`)},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/get.php?username=demo&password=secret&type=m3u_plus&output=ts", nil)
+	rr := httptest.NewRecorder()
+	srv.serveXtreamM3U().ServeHTTP(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("xtream m3u status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if got := rr.Header().Get("Allow"); got != "GET, HEAD" {
+		t.Fatalf("xtream m3u Allow=%q", got)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/xmltv.php?username=demo&password=secret", nil)
+	rr = httptest.NewRecorder()
+	srv.serveXtreamXMLTV().ServeHTTP(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("xtream xmltv status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if got := rr.Header().Get("Allow"); got != "GET, HEAD" {
+		t.Fatalf("xtream xmltv Allow=%q", got)
+	}
+}
+
+func TestServer_XtreamExports_NormalizeBaseURLWhitespace(t *testing.T) {
+	srv := &Server{
+		BaseURL:          "  http://127.0.0.1:5004/  ",
+		XtreamOutputUser: "demo",
+		XtreamOutputPass: "secret",
+		Channels: []catalog.LiveChannel{{
+			ChannelID:   "100",
+			GuideNumber: "100",
+			GuideName:   "News 1",
+		}},
+		Movies: []catalog.Movie{{
+			ID:    "m1",
+			Title: "Movie One",
+		}},
+		Series: []catalog.Series{{
+			ID:    "s1",
+			Title: "Series One",
+			Seasons: []catalog.Season{{
+				Number: 1,
+				Episodes: []catalog.Episode{{
+					ID:         "e1",
+					Title:      "Pilot",
+					SeasonNum:  1,
+					EpisodeNum: 1,
+				}},
+			}},
+		}},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/get.php?username=demo&password=secret&type=m3u_plus&output=ts", nil)
+	rr := httptest.NewRecorder()
+	srv.serveXtreamM3U().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("xtream m3u status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `#EXTM3U url-tvg="http://127.0.0.1:5004/xmltv.php?username=demo&password=secret"`) {
+		t.Fatalf("xtream m3u guide url=%s", body)
+	}
+	if strings.Contains(body, "//xmltv.php") || strings.Contains(body, "//live/demo/secret/100.ts") {
+		t.Fatalf("xtream m3u contains malformed url=%s", body)
+	}
+	if !strings.Contains(body, "http://127.0.0.1:5004/live/demo/secret/100.ts") {
+		t.Fatalf("xtream m3u missing normalized live url=%s", body)
+	}
+
+	if got := srv.xtreamLiveDirectSource(xtreamPrincipal{Username: "demo"}, "100"); got != "http://127.0.0.1:5004/live/demo/secret/100.ts" {
+		t.Fatalf("live direct source=%s", got)
+	}
+	movies := srv.xtreamMovieStreams(xtreamPrincipal{Username: "demo"})
+	if len(movies) != 1 || movies[0].DirectSource != "http://127.0.0.1:5004/movie/demo/secret/m1.mp4" {
+		t.Fatalf("movie streams=%+v", movies)
+	}
+	info, ok := srv.xtreamSeriesInfo(xtreamPrincipal{Username: "demo"}, "s1")
+	if !ok {
+		t.Fatal("expected series info")
+	}
+	if got := info.Episodes["1"][0].DirectSource; got != "http://127.0.0.1:5004/series/demo/secret/e1.mp4" {
+		t.Fatalf("series direct source=%s", got)
+	}
+}
+
 func TestServer_XtreamMovieAndSeriesProxy(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if raw := strings.TrimSpace(r.Header.Get("Range")); raw != "" {
@@ -3203,6 +4577,53 @@ func TestServer_XtreamMovieAndSeriesProxy(t *testing.T) {
 	}
 	if rr.Header().Get("Content-Range") == "" || rr.Header().Get("Accept-Ranges") != "bytes" {
 		t.Fatalf("movie range headers=%v", rr.Header())
+	}
+}
+
+func TestServer_XtreamProxySurfacesRequireGetOrHead(t *testing.T) {
+	srv := &Server{
+		XtreamOutputUser: "demo",
+		XtreamOutputPass: "secret",
+		Channels: []catalog.LiveChannel{
+			{ChannelID: "100", GuideNumber: "100", GuideName: "News 1"},
+		},
+		Movies: []catalog.Movie{
+			{ID: "m1", Title: "Movie One", StreamURL: "http://provider.example/movie.mp4"},
+		},
+		Series: []catalog.Series{
+			{
+				ID: "s1",
+				Seasons: []catalog.Season{{
+					Number: 1,
+					Episodes: []catalog.Episode{{
+						ID:        "e1",
+						StreamURL: "http://provider.example/episode.mp4",
+					}},
+				}},
+			},
+		},
+	}
+
+	for _, tc := range []struct {
+		name string
+		path string
+		h    http.Handler
+	}{
+		{name: "live", path: "/live/demo/secret/100.ts", h: srv.serveXtreamLiveProxy()},
+		{name: "movie", path: "/movie/demo/secret/m1.mp4", h: srv.serveXtreamMovieProxy()},
+		{name: "series", path: "/series/demo/secret/e1.mp4", h: srv.serveXtreamSeriesProxy()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, tc.path, nil)
+			rr := httptest.NewRecorder()
+			tc.h.ServeHTTP(rr, req)
+			if rr.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+			}
+			if got := rr.Header().Get("Allow"); got != "GET, HEAD" {
+				t.Fatalf("Allow=%q", got)
+			}
+		})
 	}
 }
 
@@ -3336,5 +4757,173 @@ func TestServer_XtreamEntitlementsLimitOutput(t *testing.T) {
 	srv.serveXtreamLiveProxy().ServeHTTP(rr, req)
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("live proxy status=%d body=%q", rr.Code, rr.Body.String())
+	}
+}
+
+func TestServer_XtreamEntitlementsRequiresOperatorAccess(t *testing.T) {
+	usersPath := filepath.Join(t.TempDir(), "xtream-users.json")
+	if _, err := entitlements.SaveFile(usersPath, entitlements.Ruleset{
+		Users: []entitlements.User{{
+			Username:  "limited",
+			Password:  "pw",
+			AllowLive: true,
+		}},
+	}); err != nil {
+		t.Fatalf("save entitlements: %v", err)
+	}
+	srv := &Server{XtreamUsersFile: usersPath}
+
+	req := httptest.NewRequest(http.MethodGet, "/entitlements.json", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rr := httptest.NewRecorder()
+	srv.serveXtreamEntitlements().ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/entitlements.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rr = httptest.NewRecorder()
+	srv.serveXtreamEntitlements().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("localhost status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"username": "limited"`) {
+		t.Fatalf("entitlements body=%s", rr.Body.String())
+	}
+}
+
+func TestServer_ProgrammingHarvestRequiresOperatorAccess(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "harvest.json")
+	if _, err := plexharvest.SaveReportFile(path, plexharvest.Report{
+		PlexURL: "plex.example:32400",
+		Results: []plexharvest.Result{{BaseURL: "http://oracle-100:5004", LineupTitle: "Rogers West"}},
+	}); err != nil {
+		t.Fatalf("save harvest: %v", err)
+	}
+	srv := &Server{PlexLineupHarvestFile: path}
+
+	req := httptest.NewRequest(http.MethodGet, "/programming/harvest.json", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rr := httptest.NewRecorder()
+	srv.serveProgrammingHarvest().ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/programming/harvest.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rr = httptest.NewRecorder()
+	srv.serveProgrammingHarvest().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("localhost status=%d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestServer_RecordingHistoryRequiresOperatorAccess(t *testing.T) {
+	stateFile := filepath.Join(t.TempDir(), "recorder-state.json")
+	data := []byte(`{"completed":[{"capsule_id":"done-1","channel_id":"ch1","channel_name":"Smoke One","title":"Smoke Recording","status":"recorded","published_path":"/tmp/smoke-recording.ts"}]}`)
+	if err := os.WriteFile(stateFile, data, 0o600); err != nil {
+		t.Fatalf("write recorder state: %v", err)
+	}
+	srv := &Server{RecorderStateFile: stateFile}
+
+	req := httptest.NewRequest(http.MethodGet, "/recordings/history.json", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rr := httptest.NewRecorder()
+	srv.serveRecordingHistory().ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/recordings/history.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rr = httptest.NewRecorder()
+	srv.serveRecordingHistory().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("localhost status=%d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestServer_VirtualChannelRulesRequireOperatorAccess(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "virtual.json")
+	if _, err := virtualchannels.SaveFile(path, virtualchannels.Ruleset{
+		Channels: []virtualchannels.Channel{{ID: "vc-news", Name: "News Loop", Enabled: true}},
+	}); err != nil {
+		t.Fatalf("save virtual rules: %v", err)
+	}
+	srv := &Server{VirtualChannelsFile: path}
+
+	req := httptest.NewRequest(http.MethodGet, "/virtual-channels/rules.json", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rr := httptest.NewRecorder()
+	srv.serveVirtualChannelRules().ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/rules.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rr = httptest.NewRecorder()
+	srv.serveVirtualChannelRules().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("localhost status=%d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestServer_VirtualChannelReadEndpointsRequireOperatorAccess(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "virtual.json")
+	if _, err := virtualchannels.SaveFile(path, virtualchannels.Ruleset{
+		Channels: []virtualchannels.Channel{{ID: "vc-news", Name: "News Loop", Enabled: true}},
+	}); err != nil {
+		t.Fatalf("save virtual rules: %v", err)
+	}
+	srv := &Server{VirtualChannelsFile: path}
+
+	for _, target := range []string{
+		"/virtual-channels/preview.json",
+		"/virtual-channels/schedule.json",
+		"/virtual-channels/channel-detail.json?channel_id=vc-news",
+	} {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		req.RemoteAddr = "203.0.113.10:12345"
+		rr := httptest.NewRecorder()
+		switch {
+		case strings.HasPrefix(target, "/virtual-channels/preview.json"):
+			srv.serveVirtualChannelPreview().ServeHTTP(rr, req)
+		case strings.HasPrefix(target, "/virtual-channels/schedule.json"):
+			srv.serveVirtualChannelSchedule().ServeHTTP(rr, req)
+		default:
+			srv.serveVirtualChannelDetail().ServeHTTP(rr, req)
+		}
+		if rr.Code != http.StatusForbidden {
+			t.Fatalf("%s status=%d body=%s", target, rr.Code, rr.Body.String())
+		}
+	}
+}
+
+func TestServer_RecordingRulesRequireOperatorAccess(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "recording-rules.json")
+	if _, err := saveRecordingRulesFile(path, RecordingRuleset{
+		Rules: []RecordingRule{{ID: "rule-1", TitleContains: []string{"news"}}},
+	}); err != nil {
+		t.Fatalf("save recording rules: %v", err)
+	}
+	srv := &Server{RecordingRulesFile: path}
+
+	req := httptest.NewRequest(http.MethodGet, "/recordings/rules.json", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rr := httptest.NewRecorder()
+	srv.serveRecordingRules().ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/recordings/rules.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rr = httptest.NewRecorder()
+	srv.serveRecordingRules().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("localhost status=%d body=%s", rr.Code, rr.Body.String())
 	}
 }
