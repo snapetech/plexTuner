@@ -653,6 +653,8 @@ Relevant streaming env knobs for tricky HLS/CDN paths:
 - `IPTV_TUNERR_FFMPEG_HLS_MULTIPLE_REQUESTS` (`true|false`, default `true`) — allow multiple HTTP requests on a persistent connection for HLS input
 - `IPTV_TUNERR_HLS_PLAYLIST_RETRY_LIMIT` (default `2`) — extra retries for playlist refreshes that fail with a learned/concurrency-style upstream limit (`423`, `429`, `458`, `509`, or matching body text)
 - `IPTV_TUNERR_HLS_PLAYLIST_RETRY_BACKOFF_MS` (default `1000`) — base backoff for those retries; attempts use `1x`, `2x`, `4x`
+- `IPTV_TUNERR_UPSTREAM_RETRY_LIMIT` (default `2`) — extra retries on the same stream URL when response indicates upstream concurrency limits (`423`, `429`, `458`, `509`, or matching body text) before moving to backups
+- `IPTV_TUNERR_UPSTREAM_RETRY_BACKOFF_MS` (default `1000`) — base backoff for same-URL stream retries; attempts use `1x`, `2x`, `4x`, with `Retry-After` honored when larger
 - `IPTV_TUNERR_HLS_RELAY_PREFER_GO_ON_PROVIDER_PRESSURE` (`true|false`, default `true`) — for non-transcode HLS, prefer the Go relay over ffmpeg remux when Tunerr has seen **provider concurrency pressure** *or* the current stream host has a **non-zero penalty** from **`IPTV_TUNERR_PROVIDER_AUTOTUNE`** failure accounting (e.g. a recent **`ffmpeg_hls_failed`** on that host). Set `false` to disable this entire branch (concurrency + host-penalty); use **`IPTV_TUNERR_HLS_RELAY_PREFER_GO`** to force Go relay regardless.
 - `IPTV_TUNERR_HLS_RELAY_PREFER_GO` (`true|false`, default `false`) — force Go-relay preference even when the pressure/penalty signals above are absent
 
@@ -1146,7 +1148,7 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
 - `IPTV_TUNERR_HOT_START_PROGRAM_KEEPALIVE` — enable PAT/PMT keepalive automatically for hot channels (default `true`)
 - `IPTV_TUNERR_FORCE_WEBSAFE` — when `true`, always transcode with MP3 audio regardless of client. Use if client detection misclassifies a browser client or after a Plex update changes the session UA.
 - `IPTV_TUNERR_STRIP_STREAM_HOSTS` — comma-separated hostnames (e.g. `cf.like-cdn.com,like-cdn.com`) whose stream URLs are removed at catalog build time. Channels with only stripped hosts are dropped entirely so the tuner never attempts CF-blocked endpoints.
-- `IPTV_TUNERR_DEDUPE_BY_TVG_ID` — when `true`/`1`/`on` (default), merge catalog rows that share the same **`tvg_id`** during **`index`** (including a **post-merge** pass after free sources + HDHR hardware lineup). Set `false`/`0`/`off` to disable (niche debugging).
+- `IPTV_TUNERR_DEDUPE_BY_TVG_ID` — when `true`/`1`/`on` (default), merge catalog rows that share the same **`tvg_id`** **and matching normalized guide-name identity** during **`index`** (including a **post-merge** pass after free sources + HDHR hardware lineup). This keeps intentional `tvg_id` variants like East/West or `Plus` variants separate. Set `false`/`0`/`off` to disable (niche debugging).
 
 ## Live TV startup race hardening (websafe bootstrap)
 

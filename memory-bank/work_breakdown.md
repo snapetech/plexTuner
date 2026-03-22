@@ -21,6 +21,14 @@ Create or update this file when **any** of these are true:
 - **Goal (2–5 sentences):** Make IptvTunerr the "home run" Plex IPTV bridge by outperforming common Threadfin/xTeVe setups on the things users actually feel: stream correctness, client compatibility, lineup/EPG hygiene, resilience, and low overhead. Success means a direct IptvTunerr deployment can be dropped into Plex with minimal manual cleanup, stable playback across Plex Web and TV clients, and reliable recordings under normal upstream instability. This epic is the durable product-hardening track; bugfixes should map back to one of these pillars.
 - **Non-goals (scope fence):** Building a full UI, replacing Plex's DVR/channel UX, supporting every IPTV provider edge case in one pass, or introducing placeholder/disabled fallback behavior that cannot be exercised in real Plex tests.
 
+### Active epic overlay (operator completion umbrella, 2026-03-22)
+
+- **Doc:** [docs/epics/EPIC-operator-completion.md](../docs/epics/EPIC-operator-completion.md)
+- **Goal:** Execute one coordinated completion pass across `LP-*`, `PM-*`, `LH-*`, `PAR-*`, `ACC-*`, `HR-*`, `INT-*`, `REC-*`, and `VODX-*` follow-through where shipped slices are already proven but remaining non-excluded behavior is still ambiguous to users, operators, or CI.
+- **Non-goals (scope fence):** Public admin SaaS/control-plane productization and Postgres/shared-writer architecture (tracked separately), or any speculative architecture not currently represented as `CMP-*` slices.
+- **Story IDs:** `CMP-001` … `CMP-018`
+- **Status:** This overlay now owns the lane-wide PR plan and final convergence proof for all non-excluded operator slices not yet in a closed delivery loop. See the epic for current story-level acceptance criteria.
+
 ### Active epic overlay (2026-03-18)
 
 - **Goal (2–5 sentences):** Consolidate the new intelligence layer so it feeds runtime behavior instead of staying report-only, while also paying down the biggest structural hotspots created by rapid feature growth. Success means guide quality can drive lineup and catch-up decisions, shared file/URL loading is consistent across runtime and tooling, and the next refactors can land on smaller, cleaner seams.

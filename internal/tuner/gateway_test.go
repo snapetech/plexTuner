@@ -1872,6 +1872,7 @@ func TestGateway_stream_successReleasesProviderAccountLease(t *testing.T) {
 }
 
 func TestGateway_stream_learnsProviderAccountLimit(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UPSTREAM_RETRY_LIMIT", "0")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "maximum 1 connections allowed", 423)
 	}))
@@ -2085,6 +2086,7 @@ func TestGateway_stream_skipsQuarantinedPrimaryUsesBackup(t *testing.T) {
 }
 
 func TestGateway_learnsUpstreamConcurrencyLimitAndRejectsLocally(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UPSTREAM_RETRY_LIMIT", "0")
 	hits := 0
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2132,6 +2134,81 @@ func TestGateway_learnsUpstreamConcurrencyLimitAndRejectsLocally(t *testing.T) {
 	}
 	if hits != 1 {
 		t.Fatalf("upstream hits=%d want=1", hits)
+	}
+}
+
+func TestGateway_stream_concurrencyLimitRetriesThenFallback(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UPSTREAM_RETRY_LIMIT", "2")
+	t.Setenv("IPTV_TUNERR_UPSTREAM_RETRY_BACKOFF_MS", "1")
+
+	var hits int32
+	var backupHits int32
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		http.Error(w, "max connections reached", 423)
+	}))
+	defer primary.Close()
+	backup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&backupHits, 1)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("backup"))
+	}))
+	defer backup.Close()
+
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "1", GuideName: "Ch1", StreamURLs: []string{primary.URL, backup.URL}},
+		},
+		TunerCount: 2,
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code=%d", w.Code)
+	}
+	if w.Body.String() != "backup" {
+		t.Fatalf("body=%q", w.Body.String())
+	}
+	if got := atomic.LoadInt32(&hits); got != 3 {
+		t.Fatalf("primary hits=%d want=3", got)
+	}
+	if got := atomic.LoadInt32(&backupHits); got != 1 {
+		t.Fatalf("backup hits=%d want=1", got)
+	}
+}
+
+func TestGateway_stream_nonConcurrencyErrorsStillFallbackImmediately(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UPSTREAM_RETRY_LIMIT", "2")
+	t.Setenv("IPTV_TUNERR_UPSTREAM_RETRY_BACKOFF_MS", "1")
+
+	var primaryHits int32
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&primaryHits, 1)
+		http.Error(w, "server error", 500)
+	}))
+	defer primary.Close()
+	backup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("backup"))
+	}))
+	defer backup.Close()
+
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "1", GuideName: "Ch1", StreamURLs: []string{primary.URL, backup.URL}},
+		},
+		TunerCount: 2,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code=%d", w.Code)
+	}
+	if got := atomic.LoadInt32(&primaryHits); got != 1 {
+		t.Fatalf("primary hits=%d want=1", got)
 	}
 }
 

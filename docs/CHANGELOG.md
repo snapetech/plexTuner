@@ -13,6 +13,10 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+### Fixed
+
+- **Catalog identity collapse hardening**: `dedupeByTVGID` now merges duplicate channels only when `tvg_id` and normalized guide-name identity align (and still keeps same-name backups merged), preventing unrelated market or variant feeds (`Plus`, `East`, `West`) from disappearing into one channel when providers over-normalize identifiers.
+
 ## [v0.1.29] — 2026-03-21
 
 ### Fixed

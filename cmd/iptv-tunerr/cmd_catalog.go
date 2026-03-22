@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -84,8 +85,30 @@ func maybeDedupeByTVGID(live []catalog.LiveChannel, cfHosts []string) []catalog.
 	return dedupeByTVGID(live, cfHosts)
 }
 
-// dedupeByTVGID merges LiveChannel entries that share the same TVGID into a single entry,
-// combining their StreamURLs lists. Channels without a TVGID pass through unchanged.
+var tvgDedupeNameNoise = regexp.MustCompile(`[^a-z0-9]+`)
+
+var tvgDedupeIgnoredTokens = map[string]struct{}{
+	"":          {},
+	"4k":        {},
+	"60fps":     {},
+	"30fps":     {},
+	"uhd":       {},
+	"fhd":       {},
+	"hd":        {},
+	"sd":        {},
+	"us":        {},
+	"usa":       {},
+	"ca":        {},
+	"uk":        {},
+	"raw":       {},
+	"backup":    {},
+	"bkup":      {},
+	"alt":       {},
+	"alternate": {},
+}
+
+// dedupeByTVGID merges LiveChannel entries that share the same TVGID + normalized name
+// into a single entry, combining their StreamURLs lists. Channels without a TVGID pass through unchanged.
 func dedupeByTVGID(live []catalog.LiveChannel, cfHosts []string) []catalog.LiveChannel {
 	if len(live) == 0 {
 		return live
@@ -102,14 +125,15 @@ func dedupeByTVGID(live []catalog.LiveChannel, cfHosts []string) []catalog.LiveC
 			out = append(out, ch)
 			continue
 		}
-		e, exists := byTVGID[ch.TVGID]
+		key := dedupeTVGIDKey(ch)
+		e, exists := byTVGID[key]
 		if !exists {
 			seen := make(map[string]struct{}, len(ch.StreamURLs))
 			for _, u := range ch.StreamURLs {
 				seen[u] = struct{}{}
 			}
 			ch.StreamAuths = filterStreamAuthRules(ch.StreamAuths, ch.StreamURLs)
-			byTVGID[ch.TVGID] = &entry{idx: len(out), seen: seen}
+			byTVGID[key] = &entry{idx: len(out), seen: seen}
 			out = append(out, ch)
 			continue
 		}
@@ -146,6 +170,35 @@ func dedupeByTVGID(live []catalog.LiveChannel, cfHosts []string) []catalog.LiveC
 		}
 	}
 	return out
+}
+
+func dedupeTVGIDKey(ch catalog.LiveChannel) string {
+	nameKey := dedupeTVGIDName(ch.GuideName)
+	sourceTag := strings.TrimSpace(strings.ToLower(ch.SourceTag))
+	key := strings.TrimSpace(strings.ToLower(ch.TVGID))
+	if nameKey != "" {
+		key = key + "|" + nameKey
+	}
+	if sourceTag != "" {
+		key = key + "|source:" + sourceTag
+	}
+	return key
+}
+
+func dedupeTVGIDName(raw string) string {
+	clean := strings.ToLower(strings.TrimSpace(raw))
+	if clean == "" {
+		return ""
+	}
+	parts := strings.Fields(tvgDedupeNameNoise.ReplaceAllString(clean, " "))
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if _, skip := tvgDedupeIgnoredTokens[part]; skip {
+			continue
+		}
+		out = append(out, part)
+	}
+	return strings.Join(out, " ")
 }
 
 func enrichM3UWithProviderBases(cfg *config.Config, live []catalog.LiveChannel) {
@@ -464,6 +517,7 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 		}
 		usedGetPHPFallback := false
 		getPHPUsed := map[string]struct{}{}
+		getPHPAttempted := map[string]struct{}{}
 		providerKey := func(e config.ProviderEntry) string {
 			return strings.TrimSuffix(e.BaseURL, "/") + "|" + e.User + "|" + e.Pass
 		}
@@ -519,6 +573,7 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 						gMovies, gSeries, gLive, err = catalogFromGetPHP(e.BaseURL, e.User, e.Pass)
 						return err
 					})
+					getPHPAttempted[providerKey(e)] = struct{}{}
 					if fallbackErr == nil {
 						if getPHPCount == 0 {
 							getPHPFirst = provider.Entry{BaseURL: e.BaseURL, User: e.User, Pass: e.Pass}
@@ -560,6 +615,9 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 				firstProvider = getPHPFirst
 			)
 			for _, e := range entries {
+				if _, ok := getPHPAttempted[providerKey(e)]; ok {
+					continue
+				}
 				if usedGetPHPFallback {
 					if _, ok := getPHPUsed[providerKey(e)]; ok {
 						continue

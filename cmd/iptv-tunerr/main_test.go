@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -343,6 +344,69 @@ func TestFetchCatalog_FallsBackToGetPHPOnPlayerAPIForbidden(t *testing.T) {
 	}
 	if getPHPHits != 2 {
 		t.Fatalf("get.php hits=%d want 2", getPHPHits)
+	}
+}
+
+func TestFetchCatalog_DoesNotRetryGetPHPAfterDirectForbiddenFallback(t *testing.T) {
+	var baseURL string
+	playerAPIHits := map[string]int{}
+	getPHPHits := map[string]int{}
+	var mu sync.Mutex
+	credFromQuery := func(r *http.Request) string {
+		q := r.URL.Query()
+		return q.Get("username") + "|" + q.Get("password")
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodHead && r.URL.Path == "/":
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/player_api.php":
+			mu.Lock()
+			playerAPIHits[credFromQuery(r)]++
+			mu.Unlock()
+			http.Error(w, "forbidden", http.StatusForbidden)
+		case r.URL.Path == "/get.php":
+			mu.Lock()
+			getPHPHits[credFromQuery(r)]++
+			mu.Unlock()
+			http.Error(w, "forbidden", http.StatusForbidden)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	baseURL = srv.URL
+
+	cfg := &config.Config{
+		ProviderBaseURL: baseURL,
+		ProviderUser:    "u1",
+		ProviderPass:    "p1",
+		LiveOnly:        true,
+	}
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL_2", baseURL)
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER_2", "u2")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS_2", "p2")
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL_3", baseURL)
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER_3", "u3")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS_3", "p3")
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL_4", baseURL)
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER_4", "u4")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS_4", "p4")
+
+	_, err := fetchCatalog(cfg, "")
+	if err == nil {
+		t.Fatalf("fetchCatalog error expected due all providers failing")
+	}
+	if len(playerAPIHits) != 4 {
+		t.Fatalf("player_api entries=%d want 4", len(playerAPIHits))
+	}
+	for _, cred := range []string{"u1|p1", "u2|p2", "u3|p3", "u4|p4"} {
+		if got := playerAPIHits[cred]; got != 2 {
+			t.Fatalf("player_api hits=%d for %s want 2", got, cred)
+		}
+		if got := getPHPHits[cred]; got != 1 {
+			t.Fatalf("get.php hits=%d for %s want 1", got, cred)
+		}
 	}
 }
 

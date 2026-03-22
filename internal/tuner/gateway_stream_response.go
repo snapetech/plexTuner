@@ -52,21 +52,26 @@ func (g *Gateway) handleNonOKStreamUpstream(
 	attemptIdx, upstreamIdx, upstreamTotal int,
 	client *http.Client,
 	resp *http.Response,
-) (recovered *http.Response, effectiveURL string, upstreamConcurrencyLimited, ok bool) {
-	preview := readUpstreamErrorPreview(resp)
+	preview string,
+) (recovered *http.Response, effectiveURL string, upstreamConcurrencyLimited, ok bool, retryAfter time.Duration) {
+	preview = strings.TrimSpace(preview)
+	if preview == "" {
+		preview = readUpstreamErrorPreview(resp)
+	}
 	logPreview := sanitizeUpstreamPreviewForLog(preview)
 	resp.Body.Close()
 
 	if isCFLikeStatus(resp.StatusCode, preview) {
 		if recovered = g.tryRecoverCFUpstream(r.Context(), r, streamURL, client, resp.StatusCode, channel, channelID, upstreamIdx, upstreamTotal); recovered != nil {
-			return recovered, streamEffectiveURL(streamURL, recovered), false, true
+			return recovered, streamEffectiveURL(streamURL, recovered), false, true, 0
 		}
 		g.noteUpstreamCFBlock(streamURL)
 		log.Printf("gateway: channel=%q id=%s upstream[%d/%d] CF-blocked url=%s",
 			channel.GuideName, channelID, upstreamIdx, upstreamTotal, safeurl.RedactURL(streamURL))
-		return nil, "", false, false
+		return nil, "", false, false, 0
 	}
 
+	retryAfter = parseRetryAfterHeader(resp.Header.Get("Retry-After"))
 	attempt.markUpstreamError(attemptIdx, "http_status", errors.New(preview))
 	g.noteUpstreamFailure(streamURL, resp.StatusCode, "http_status")
 	limited := isUpstreamConcurrencyLimit(resp.StatusCode, preview)
@@ -93,7 +98,7 @@ func (g *Gateway) handleNonOKStreamUpstream(
 		log.Printf("gateway: channel=%q id=%s upstream[%d/%d] status=%d url=%s body=%q",
 			channel.GuideName, channelID, upstreamIdx, upstreamTotal, resp.StatusCode, safeurl.RedactURL(streamURL), logPreview)
 	}
-	return nil, "", upstreamConcurrencyLimited, false
+	return nil, "", upstreamConcurrencyLimited, false, retryAfter
 }
 
 func (g *Gateway) relaySuccessfulStreamUpstream(

@@ -56,6 +56,7 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[k8s/README.md](../k8s/README.md)** | Kubernetes deployment (HDHR in cluster). |
 | **[epics/](epics/EPIC-template.md)** | Multi-PR epic template. Use with [memory-bank/work_breakdown.md](../memory-bank/work_breakdown.md). |
 | **[epics/EPIC-lineup-parity.md](epics/EPIC-lineup-parity.md)** | Optional **Lineup-app-style** track: real HDHomeRun client, web dashboard, SQLite EPG, HLS/fMP4 profiles ([inspiration](https://github.com/am385/lineup)). |
+| **[epics/EPIC-operator-completion.md](epics/EPIC-operator-completion.md)** | Umbrella completion lane for all non-admin, non-Postgres follow-through across LP/PM/LH/PAR/ACC/HR/INT/REC/VODX. |
 | **[epics/EPIC-programming-manager.md](epics/EPIC-programming-manager.md)** | Category-driven lineup curation, backup groups, quick-add flows, and operator preview UX. |
 | **[epics/EPIC-lineup-harvest.md](epics/EPIC-lineup-harvest.md)** | Harvest Plex local-market lineups and bridge them into Programming Manager. |
 | **[epics/EPIC-feature-parity.md](epics/EPIC-feature-parity.md)** | Broader ecosystem parity roadmap: downstream outputs, operator workflows, users, and publishing. |

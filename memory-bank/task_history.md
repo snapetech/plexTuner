@@ -22,6 +22,24 @@ Append-only. One entry per completed task.
 
 ## Entries
 
+- Date: 2026-03-22
+  Title: Fix duplicated get.php fallback attempts after player_api 403 failures
+  Summary:
+    - Added tracking of attempted provider credentials in `fetchCatalog` to avoid calling `get.php` twice for the same `(base,user,pass)` when direct `player_api` probing returns 403 and later fallback loops run.
+    - Kept the existing merge behavior for successful `get.php` feeds while ensuring each credential is attempted at most once in the direct/rollback/fallback passes.
+    - Added regression coverage in `TestFetchCatalog_DoesNotRetryGetPHPAfterDirectForbiddenFallback` and exercised mixed candidate counts in `cmd/iptv-tunerr/main_test.go`.
+  Verification:
+    - `go test -count=1 ./cmd/iptv-tunerr -run 'TestFetchCatalog_DoesNotRetryGetPHPAfterDirectForbiddenFallback|TestFetchCatalog_FallsBackToGetPHPOnPlayerAPIForbidden|TestFetchCatalog_FallsBackToPlayerAPIWhenBuiltGetPHPFails'`
+    - `go test ./...`
+    - `./scripts/verify`
+  Notes:
+    - Addresses the tester-reported 403 churn with 3–4 configured credentials and makes provider index fallback behavior deterministic again.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/cmd_catalog.go`
+    - `cmd/iptv-tunerr/main_test.go`
+
 - Date: 2026-03-21
   Title: Expand macOS host proof beyond WebDAV
   Summary:

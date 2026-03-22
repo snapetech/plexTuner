@@ -17,6 +17,7 @@ This page is the **single entry point** for “what is left to work on” across
 | [EPIC-lineup-parity](../epics/EPIC-lineup-parity.md) | **LP** hybrid HDHR + IPTV, SQLite EPG, mux profiles — implementation status and PR-sized history. |
 | [EPIC-programming-manager](../epics/EPIC-programming-manager.md) | **PM** channel-builder / lineup-curation product plan: categories, per-channel selection, custom order, backup grouping. |
 | [memory-bank/opportunities.md](../../memory-bank/opportunities.md) | **Continuous improvement** backlog: dated entries with **Status** where known (many items are **sibling-repo** / k8s / Plex-helper scripts — read each entry). |
+| [EPIC-operator-completion](../epics/EPIC-operator-completion.md) | **Active completion umbrella** for all non-postgres, non-admin-plane operator work across LP/ACC/PM/LH/PAR/HR/VODX/REC lineages. |
 | [memory-bank/known_issues.md](../../memory-bank/known_issues.md) | **Operational** limitations, cluster quirks, and design tradeoffs (not always a code change in *this* repo). |
 | [docs-gaps.md](../docs-gaps.md) | **Documentation** gaps (currently none tracked at High/Medium/Low — see Resolved table). |
 | [CHANGELOG.md](../CHANGELOG.md) **[Unreleased]** | **Current engineering** slices landing on `main`. |
@@ -50,13 +51,10 @@ These are **done enough** that new work should extend them, not re-ask for the b
 
 ## 2. Still open (strategic / epic-sized)
 
-Multi-PR or product-decision items; details in **[EPIC-live-tv-intelligence](../epics/EPIC-live-tv-intelligence.md)** (“Next recommended slices”).
+Multi-PR or product-decision items; details in **[EPIC-operator-completion](../epics/EPIC-operator-completion.md)** (all non-postgres, non-admin completion work). That epic now owns the cross-track open slices that are still needed for parity and operator confidence.
 
-- Richer **Channel DNA** graph (cross-provider relationships, long-lived match provenance store beyond current **`dna_id`** + reports).
-- **Autopilot policy beyond JSON file + env:** UI-driven or dynamic policy, stronger **automatic strip/cap** beyond **`STRIP_STREAM_HOSTS`**, blocked lists, and **host quarantine** (needs product + safety review). *(JSON host policy file + global env are already shipped — §1.)*
-- **Ghost Hunter:** deeper product loop (evidence correlation, recovery policy) — baseline + ops actions already exist (§1).
-- **Active remediation automation:** automatic strip/cap driven by policy — **`remediation_hints`** stay **advisory** only.
-- **Always-on recorder “full vision”** — extensions beyond **`catchup-daemon`** MVP (non-replay rolling libraries, retention stories) — see [always-on-recorder-daemon](always-on-recorder-daemon.md) **Current status**.
+- Public-grade multi-user admin plane and Postgres/shared writer architecture are explicitly deferred (intentional exclusions in this cycle).
+- All remaining non-excluded `LP-*`, `PM-*`, `LH-*`, `PAR-*`, `ACC-*`, `HR-*`, `INT-*`, `REC-*`, and `VODX-*` follow-through slices are represented as `CMP-*` stories in that epic.
 
 ---
 

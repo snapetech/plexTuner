@@ -33,8 +33,8 @@ func (g *Gateway) walkStreamUpstreams(
 	providerAccountLimited = false
 	attemptedAnyUpstream := false
 	urls = g.filterQuarantinedUpstreams(urls)
-	// Try primary then backups until one works. Do not retry or backoff on 429/423 here:
-	// that would block stream throughput. We only fail over to next URL and return 502 if all fail.
+	// Try primary then backups until one works, with bounded retries on
+	// upstream concurrency-limit responses before switching URLs.
 	// Reject non-http(s) URLs to prevent SSRF (e.g. file:// or provider-supplied internal URLs).
 	for i, streamURL := range urls {
 		lease, leaseHeld, leaseAllowed := g.tryAcquireProviderAccountLease(channel, streamURL)
@@ -71,56 +71,78 @@ func (g *Gateway) walkStreamUpstreams(
 		userAgentOverride := strings.TrimSpace(req.Header.Get("User-Agent")) != "" && strings.TrimSpace(req.Header.Get("User-Agent")) != "IptvTunerr/1.0"
 		attemptIdx := attempt.addUpstream(i+1, streamURL, requestHeaderSummary(req), authApplied, cookiesForwarded, hostOverride, userAgentOverride)
 
-		client := g.Client
-		if client == nil {
-			client = httpclient.ForStreaming()
-		}
-		client = cloneClientWithCookieJar(client)
-		resp, err := client.Do(req)
-		if err != nil {
-			attempt.markUpstreamError(attemptIdx, "request_error", err)
-			g.noteUpstreamFailure(streamURL, 0, "request_error")
-			if leaseHeld {
-				g.releaseProviderAccountLease(lease.Key)
+		retryLimit := upstreamStreamRetryLimit()
+		for attemptIdxRetry := 0; ; attemptIdxRetry++ {
+			client := g.Client
+			if client == nil {
+				client = httpclient.ForStreaming()
 			}
-			log.Printf("gateway: channel=%q id=%s upstream[%d/%d] error url=%s err=%v",
-				channel.GuideName, channelID, i+1, len(urls), safeurl.RedactURL(streamURL), err)
-			continue
-		}
-		effectiveURL := streamURL
-		if resp.Request != nil && resp.Request.URL != nil {
-			effectiveURL = resp.Request.URL.String()
-		}
-		attempt.markUpstreamResponse(attemptIdx, resp.StatusCode, resp.Header.Get("Content-Type"), effectiveURL)
-		if resp.StatusCode != http.StatusOK {
-			recovered, recoveredURL, limited, proceed := g.handleNonOKStreamUpstream(
-				r, channel, channelID, streamURL, attempt, attemptIdx, i+1, len(urls), client, resp,
-			)
-			if limited {
-				upstreamConcurrencyLimited = true
-			}
-			if !proceed {
+			client = cloneClientWithCookieJar(client)
+			resp, err := client.Do(req)
+			if err != nil {
+				attempt.markUpstreamError(attemptIdx, "request_error", err)
+				g.noteUpstreamFailure(streamURL, 0, "request_error")
 				if leaseHeld {
 					g.releaseProviderAccountLease(lease.Key)
 				}
-				continue
+				log.Printf("gateway: channel=%q id=%s upstream[%d/%d] error url=%s err=%v",
+					channel.GuideName, channelID, i+1, len(urls), safeurl.RedactURL(streamURL), err)
+				break
 			}
-			resp = recovered
-			effectiveURL = recoveredURL
-		}
-		finalStatus, finalMode, finalEffectiveURL, ok = g.relaySuccessfulStreamUpstream(
-			w, r, channel, channelID, reqID, streamURL, effectiveURL, start, attempt, attemptIdx, client, resp,
-			hasTranscodeOverride, forceTranscode, forcedProfile, adaptReason, clientClass, requestMux,
-			inUseNow, limit, i+1, len(urls),
-		)
-		if ok {
+
+			effectiveURL := streamURL
+			if resp.Request != nil && resp.Request.URL != nil {
+				effectiveURL = resp.Request.URL.String()
+			}
+			attempt.markUpstreamResponse(attemptIdx, resp.StatusCode, resp.Header.Get("Content-Type"), effectiveURL)
+			if resp.StatusCode != http.StatusOK {
+				preview := readUpstreamErrorPreview(resp)
+				recovered, recoveredURL, limited, proceed, retryAfter := g.handleNonOKStreamUpstream(
+					r, channel, channelID, streamURL, attempt, attemptIdx, i+1, len(urls), client, resp, preview,
+				)
+				if limited {
+					upstreamConcurrencyLimited = true
+					if attemptIdxRetry < retryLimit {
+						backoff := upstreamStreamRetryDelay(attemptIdxRetry+1, resp.StatusCode, retryAfter)
+						if backoff > 0 {
+							log.Printf("gateway: channel=%q id=%s upstream[%d/%d] concurrency-limited status=%d retrying same URL retry=%d/%d backoff=%s body=%q",
+								channel.GuideName, channelID, i+1, len(urls), resp.StatusCode, attemptIdxRetry+1, retryLimit, backoff, sanitizeUpstreamPreviewForLog(preview))
+							if err := sleepWithContext(r.Context(), backoff); err != nil {
+								if leaseHeld {
+									g.releaseProviderAccountLease(lease.Key)
+								}
+								return "", "", "", "", false, false, false
+							}
+							continue
+						}
+					}
+				}
+				if !proceed {
+					if leaseHeld {
+						g.releaseProviderAccountLease(lease.Key)
+					}
+					break
+				}
+				resp = recovered
+				effectiveURL = recoveredURL
+			}
+
+			finalStatus, finalMode, finalEffectiveURL, ok = g.relaySuccessfulStreamUpstream(
+				w, r, channel, channelID, reqID, streamURL, effectiveURL, start, attempt, attemptIdx, client, resp,
+				hasTranscodeOverride, forceTranscode, forcedProfile, adaptReason, clientClass, requestMux,
+				inUseNow, limit, i+1, len(urls),
+			)
+			if ok {
+				if leaseHeld {
+					leasedAccountKey = lease.Key
+				}
+				return finalStatus, finalMode, finalEffectiveURL, leasedAccountKey, upstreamConcurrencyLimited, providerAccountLimited, true
+			}
+
 			if leaseHeld {
-				leasedAccountKey = lease.Key
+				g.releaseProviderAccountLease(lease.Key)
 			}
-			return finalStatus, finalMode, finalEffectiveURL, leasedAccountKey, upstreamConcurrencyLimited, providerAccountLimited, true
-		}
-		if leaseHeld {
-			g.releaseProviderAccountLease(lease.Key)
+			break
 		}
 	}
 	if !attemptedAnyUpstream && providerAccountLimited {
