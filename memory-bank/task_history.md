@@ -4563,3 +4563,17 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - `docs/index.md`
     - `docs/how-to/index.md`
     - `docs/reference/index.md`
+- Date: 2026-03-21
+  Title: Expand README to reflect the recent parity and programming work
+  Summary:
+    - Added substantial README sections for Programming Manager, Plex lineup harvest import/assist flows, downstream Xtream publishing, virtual channels, and the current release-proof/testing story.
+    - Updated the README contents map so those newer product surfaces are visible from the top instead of buried under older tuner/EPG framing.
+    - Kept the existing docs-index sync from the previous pass, but made the README itself carry the product narrative instead of only acting as a link hub.
+  Verification:
+    - `./scripts/verify`
+  Notes:
+    - This was the missing “real README update” after the earlier lighter docs-sync pass.
+  Opportunities filed:
+    - none
+  Links:
+    - `README.md`

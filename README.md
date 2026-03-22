@@ -57,6 +57,9 @@ You can inspect channel health, guide confidence, provider behavior, stale Plex-
 - [Getting Your Binary](#getting-your-binary)
 - [Core Capabilities](#core-capabilities)
 - [Channel Intelligence](#channel-intelligence)
+- [Programming Manager](#programming-manager)
+- [Downstream Publishing And Virtual Channels](#downstream-publishing-and-virtual-channels)
+- [Testing And Release Proof](#testing-and-release-proof)
 - [Cloudflare Provider Support](#cloudflare-provider-support)
 - [Free Public Sources](#free-public-sources)
 - [Setup Paths](#setup-paths) — wizard · programmatic · supervisor · HDHR network mode
@@ -570,6 +573,185 @@ For catch-up preview/publish flows:
 ```bash
 IPTV_TUNERR_CATCHUP_GUIDE_POLICY=healthy
 ```
+
+---
+
+## Programming Manager
+
+This is the part of Tunerr that turns "here is a giant merged provider mess" into
+"here is my actual lineup."
+
+The dedicated deck now has a real server-backed Programming lane. It is not
+just a thin browser filter over `lineup.json`.
+
+What it can do now:
+- browse one source/category at a time without losing global context
+- show cached guide-health and next-hour EPG for large category lists in one request
+- filter to channels that already have real guide coverage
+- filter to channels that are not already in the curated lineup
+- preview the selected channel live in the web UI through Tunerr’s own stream path
+- inspect exact-match backup sources behind a visible channel
+- set a preferred primary source for that collapsed row
+- persist server-side manual ordering
+- save all of that into a durable recipe file that survives refreshes and restarts
+
+Key server surfaces:
+- `/programming/categories.json`
+- `/programming/browse.json`
+- `/programming/channels.json`
+- `/programming/channel-detail.json`
+- `/programming/order.json`
+- `/programming/backups.json`
+- `/programming/recipe.json`
+- `/programming/preview.json`
+
+The practical effect is that "browse channels, check if guide data is real, hit
+space, save lineup" is no longer only a tester-side curses experiment. Tunerr
+now owns that workflow.
+
+It also carries richer source descriptors when the provider gives enough signal,
+so the UI can show context like:
+
+```text
+US | ENTERTAINMENT | HD / RAW / 60 FPS
+```
+
+That context is derived from source metadata where possible; Tunerr does not
+fake codec/resolution truth it has not actually inferred.
+
+### Plex lineup harvest → Programming import
+
+Tunerr also productized the old Plex wizard/oracle experiments.
+
+`plex-lineup-harvest` can now:
+- probe several lineup cap/shape variants against Plex
+- capture discovered lineup titles and channel-map strength
+- save structured harvest reports
+- feed those reports back into Programming Manager
+
+That means you can now go from:
+- "what local-market/cable lineup does Plex like here?"
+
+to:
+- "apply that harvested lineup as a starting recipe for my real curated lineup"
+
+Key pieces:
+- CLI: `iptv-tunerr plex-lineup-harvest`
+- saved report file: `IPTV_TUNERR_PLEX_LINEUP_HARVEST_FILE`
+- `/programming/harvest.json`
+- `/programming/harvest-import.json`
+- `/programming/harvest-assist.json`
+
+The deck can now preview and apply the top-ranked harvest assists directly.
+
+---
+
+## Downstream Publishing And Virtual Channels
+
+Tunerr is no longer only an ingest-and-relay box. It now has meaningful
+downstream publishing surfaces too.
+
+### Xtream-compatible output
+
+For downstream clients that want Xtream-style access instead of HDHR-style
+tuner endpoints, Tunerr now has a read-only Xtream layer with entitlement
+scoping.
+
+It includes:
+- `player_api.php`
+- `get.php`
+- `xmltv.php`
+- `/live/<user>/<pass>/<channel>.ts`
+- `/movie/<user>/<pass>/<id>.mp4`
+- `/series/<user>/<pass>/<episode>.mp4`
+
+That surface is backed by Tunerr’s real guide, lineup, VOD, and virtual-channel
+pipeline. It is not a disconnected side export.
+
+### Virtual channels from owned media
+
+Virtual channels have moved well beyond a toy preview.
+
+With `IPTV_TUNERR_VIRTUAL_CHANNELS_FILE`, Tunerr now supports:
+- durable virtual-channel rules
+- schedule preview
+- rolling synthetic schedule output
+- focused channel detail
+- live M3U export
+- a synthetic guide at `/virtual-channels/guide.xml`
+- current-slot playback at `/virtual-channels/stream/<id>.mp4`
+- downstream Xtream live exposure for the same virtual channels
+
+So the owned-media path now behaves like a real publishable TV surface instead
+of only a lab preview.
+
+### Recording, catch-up, and publish flows
+
+Tunerr also now has a broader "live source becomes library/product output" story:
+- catch-up capsules
+- catch-up publishing
+- recorder rules/history
+- one-shot and daemonized capture
+- virtual channels
+- Xtream publishing
+
+That combination is the start of "simulate cable TV from messy IPTV + owned
+media" rather than only "make Plex accept a playlist."
+
+---
+
+## Testing And Release Proof
+
+This repo is much more aggressively gated than it used to be.
+
+The release story is now split into layers:
+
+1. `./scripts/verify`
+   - `gofmt`
+   - `go vet`
+   - script syntax checks
+   - `go test ./...`
+   - binary build
+   - binary smoke via `scripts/ci-smoke.sh`
+
+2. `./scripts/release-readiness.sh`
+   - full repo verify
+   - focused parity/programming/provider/WebDAV suites
+   - optional host lanes like `--include-mac`
+
+3. Host proof where available
+   - macOS bare-metal smoke is real and passing
+   - Windows smoke is prepared and waiting on the host/VM
+
+What is actually smoke-covered now:
+- startup/readiness contract
+- guide loading behavior
+- provider-account rollover
+- dead ffmpeg-remux fallback to Go relay
+- shared HLS relay reuse
+- dedicated web UI login/session/settings/diagnostics path
+- Programming Manager mutations
+- harvest import flow
+- Xtream publishing surfaces
+- virtual-channel schedule/playback basics
+- WebDAV protocol contract
+
+What is host-proven today:
+- macOS `serve` / web UI / Xtream / virtual-channel / WebDAV path
+
+What still needs real external environments:
+- Windows host proof
+- some live provider/CDN edge cases
+- some real client-device playback differences
+
+The point is not to pretend every environment is solved. The point is that
+"green before release" now means something specific and inspectable instead of
+just "unit tests passed."
+
+Reference:
+- [`docs/explanations/release-readiness-matrix.md`](docs/explanations/release-readiness-matrix.md)
+- [`docs/how-to/mac-baremetal-smoke.md`](docs/how-to/mac-baremetal-smoke.md)
+- [`docs/how-to/windows-baremetal-smoke.md`](docs/how-to/windows-baremetal-smoke.md)
 
 ---
 
