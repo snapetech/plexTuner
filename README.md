@@ -38,8 +38,6 @@ IPTV Tunerr sits in the middle and fixes those problems. It can:
 
 You can use it for just the tuner, just the guide, or as the full control plane in front of Plex, Emby, and Jellyfin.
 
-It also supports staged migration, so you do not have to do a one-shot cutover.
-
 ### It makes unreliable IPTV behave like a normal DVR source
 
 Instead of pointing Plex or Jellyfin directly at a fragile provider playlist, you give them one stable tuner endpoint. IPTV Tunerr handles probing, fallbacks, guide shaping, and client quirks upstream so your media server sees something boring and predictable.
