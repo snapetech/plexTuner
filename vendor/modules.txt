@@ -1,5 +1,5 @@
-# github.com/andybalholm/brotli v1.1.1
-## explicit; go 1.13
+# github.com/andybalholm/brotli v1.2.0
+## explicit; go 1.22
 github.com/andybalholm/brotli
 github.com/andybalholm/brotli/matchfinder
 # github.com/beorn7/perks v1.0.1
