@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -299,6 +300,8 @@ var runChannelDiffHarnessAction = func(ctx context.Context, env map[string]strin
 var runStreamCompareHarnessAction = func(ctx context.Context, env map[string]string) (map[string]interface{}, error) {
 	return runDiagnosticsHarnessAction(ctx, "stream-compare-harness.sh", ".diag/stream-compare", env)
 }
+var runPlexLineupHarvestProbe = plexharvest.Probe
+var runPlexProviderLineupHarvestProbe = plexharvest.ProbeProviderLineups
 
 // UpdateChannels updates the channel list for all handlers so -refresh can serve new lineup without restart.
 // Caps at LineupMaxChannels (default PlexDVRMaxChannels) so Plex DVR can save the lineup when using the wizard (Plex fails above ~480).
@@ -1517,6 +1520,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/programming/order.json", s.serveProgrammingOrder())
 	mux.Handle("/programming/backups.json", s.serveProgrammingBackups())
 	mux.Handle("/programming/harvest.json", s.serveProgrammingHarvest())
+	mux.Handle("/programming/harvest-request.json", s.serveProgrammingHarvestRequest())
 	mux.Handle("/programming/harvest-import.json", s.serveProgrammingHarvestImport())
 	mux.Handle("/programming/harvest-assist.json", s.serveProgrammingHarvestAssist())
 	mux.Handle("/programming/recipe.json", s.serveProgrammingRecipe())
@@ -1586,6 +1590,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.Handle("/ops/workflows/guide-repair.json", s.serveGuideRepairWorkflow())
 	mux.Handle("/ops/workflows/stream-investigate.json", s.serveStreamInvestigateWorkflow())
 	mux.Handle("/ops/workflows/diagnostics.json", s.serveDiagnosticsWorkflow())
+	mux.Handle("/ops/workflows/programming-harvest.json", s.serveProgrammingHarvestWorkflow())
 	mux.Handle("/ops/workflows/ops-recovery.json", s.serveOpsRecoveryWorkflow())
 	mux.Handle("/ops/actions/guide-refresh", s.serveGuideRefreshAction())
 	mux.Handle("/ops/actions/stream-attempts-clear", s.serveStreamAttemptsClearAction())
@@ -2405,6 +2410,284 @@ func (s *Server) serveDiagnosticsWorkflow() http.Handler {
 	})
 }
 
+type programmingHarvestRequestConfig struct {
+	Mode               string               `json:"mode,omitempty"`
+	PlexURL            string               `json:"plex_url,omitempty"`
+	PlexHost           string               `json:"plex_host,omitempty"`
+	Targets            []plexharvest.Target `json:"targets,omitempty"`
+	BaseURLs           string               `json:"base_urls,omitempty"`
+	BaseURLTemplate    string               `json:"base_url_template,omitempty"`
+	Caps               string               `json:"caps,omitempty"`
+	FriendlyNamePrefix string               `json:"friendly_name_prefix,omitempty"`
+	Country            string               `json:"country,omitempty"`
+	PostalCode         string               `json:"postal_code,omitempty"`
+	LineupTypes        []string             `json:"lineup_types,omitempty"`
+	TitleQuery         string               `json:"title_query,omitempty"`
+	LineupLimit        int                  `json:"lineup_limit,omitempty"`
+	IncludeChannels    bool                 `json:"include_channels"`
+	ProviderBaseURL    string               `json:"provider_base_url,omitempty"`
+	ProviderVersion    string               `json:"provider_version,omitempty"`
+	Wait               time.Duration        `json:"-"`
+	Poll               time.Duration        `json:"-"`
+	WaitSeconds        int                  `json:"wait_seconds"`
+	PollSeconds        int                  `json:"poll_seconds"`
+	ReloadGuide        bool                 `json:"reload_guide"`
+	Activate           bool                 `json:"activate"`
+	Configured         bool                 `json:"configured"`
+}
+
+func splitCSV(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+func envBoolDefault(key string, def bool) bool {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return def
+	}
+	switch strings.ToLower(raw) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return def
+	}
+}
+
+func envDurationDefault(key string, def time.Duration) time.Duration {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return def
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		return def
+	}
+	return d
+}
+
+func defaultProviderHarvestLocation() plexharvest.ProviderDefaultLocation {
+	for _, zone := range []string{
+		strings.TrimSpace(os.Getenv("TZ")),
+		time.Now().Location().String(),
+	} {
+		if loc := plexharvest.DefaultProviderLocationFromTZ(zone); loc.Country != "" && loc.PostalCode != "" {
+			return loc
+		}
+	}
+	return plexharvest.ProviderDefaultLocation{}
+}
+
+func plexHarvestPMSURL() string {
+	baseURL := strings.TrimSpace(os.Getenv("IPTV_TUNERR_PMS_URL"))
+	if baseURL != "" {
+		return baseURL
+	}
+	if host := strings.TrimSpace(os.Getenv("PLEX_HOST")); host != "" {
+		if strings.HasPrefix(host, "http://") || strings.HasPrefix(host, "https://") {
+			return host
+		}
+		return "http://" + host
+	}
+	return ""
+}
+
+func plexHarvestPMSToken() string {
+	return strings.TrimSpace(firstNonEmptyString(os.Getenv("IPTV_TUNERR_PMS_TOKEN"), os.Getenv("PLEX_TOKEN")))
+}
+
+func harvestPlexHost(baseURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(parsed.Host)
+}
+
+func resolveProgrammingHarvestRequestConfig(req struct {
+	Mode               string `json:"mode"`
+	BaseURLs           string `json:"base_urls"`
+	BaseURLTemplate    string `json:"base_url_template"`
+	Caps               string `json:"caps"`
+	FriendlyNamePrefix string `json:"friendly_name_prefix"`
+	Country            string `json:"country"`
+	PostalCode         string `json:"postal_code"`
+	LineupTypes        string `json:"lineup_types"`
+	TitleQuery         string `json:"title_query"`
+	LineupLimit        *int   `json:"lineup_limit,omitempty"`
+	IncludeChannels    *bool  `json:"include_channels,omitempty"`
+	ProviderBaseURL    string `json:"provider_base_url"`
+	ProviderVersion    string `json:"provider_version"`
+	WaitSeconds        *int   `json:"wait_seconds,omitempty"`
+	PollSeconds        *int   `json:"poll_seconds,omitempty"`
+	ReloadGuide        *bool  `json:"reload_guide,omitempty"`
+	Activate           *bool  `json:"activate,omitempty"`
+}) programmingHarvestRequestConfig {
+	cfg := programmingHarvestRequestConfig{
+		Mode:               strings.ToLower(strings.TrimSpace(firstNonEmptyString(req.Mode, os.Getenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_MODE")))),
+		PlexURL:            plexHarvestPMSURL(),
+		BaseURLs:           strings.TrimSpace(firstNonEmptyString(req.BaseURLs, os.Getenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_BASE_URLS"))),
+		BaseURLTemplate:    strings.TrimSpace(firstNonEmptyString(req.BaseURLTemplate, os.Getenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_BASE_URL_TEMPLATE"))),
+		Caps:               strings.TrimSpace(firstNonEmptyString(req.Caps, os.Getenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_CAPS"))),
+		FriendlyNamePrefix: strings.TrimSpace(firstNonEmptyString(req.FriendlyNamePrefix, os.Getenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_FRIENDLY_NAME_PREFIX"))),
+		Country:            strings.TrimSpace(firstNonEmptyString(req.Country, os.Getenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_COUNTRY"))),
+		PostalCode:         strings.TrimSpace(firstNonEmptyString(req.PostalCode, os.Getenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_POSTAL_CODE"))),
+		TitleQuery:         strings.TrimSpace(firstNonEmptyString(req.TitleQuery, os.Getenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_TITLE_QUERY"))),
+		ProviderBaseURL:    strings.TrimSpace(firstNonEmptyString(req.ProviderBaseURL, os.Getenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_PROVIDER_BASE_URL"))),
+		ProviderVersion:    strings.TrimSpace(firstNonEmptyString(req.ProviderVersion, os.Getenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_PROVIDER_VERSION"))),
+		Wait:               envDurationDefault("IPTV_TUNERR_PLEX_LINEUP_HARVEST_WAIT", 60*time.Second),
+		Poll:               envDurationDefault("IPTV_TUNERR_PLEX_LINEUP_HARVEST_POLL", 5*time.Second),
+		ReloadGuide:        envBoolDefault("IPTV_TUNERR_PLEX_LINEUP_HARVEST_RELOAD_GUIDE", true),
+		Activate:           envBoolDefault("IPTV_TUNERR_PLEX_LINEUP_HARVEST_ACTIVATE", false),
+		IncludeChannels:    envBoolDefault("IPTV_TUNERR_PLEX_LINEUP_HARVEST_INCLUDE_CHANNELS", true),
+	}
+	if cfg.Mode == "" {
+		cfg.Mode = "oracle"
+	}
+	if cfg.ProviderBaseURL == "" {
+		cfg.ProviderBaseURL = "https://epg.provider.plex.tv"
+	}
+	if cfg.ProviderVersion == "" {
+		cfg.ProviderVersion = "5.1"
+	}
+	if cfg.Country == "" || cfg.PostalCode == "" {
+		loc := defaultProviderHarvestLocation()
+		if cfg.Country == "" {
+			cfg.Country = loc.Country
+		}
+		if cfg.PostalCode == "" {
+			cfg.PostalCode = loc.PostalCode
+		}
+	}
+	cfg.LineupTypes = splitCSV(firstNonEmptyString(req.LineupTypes, os.Getenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_LINEUP_TYPES")))
+	if req.WaitSeconds != nil && *req.WaitSeconds > 0 {
+		cfg.Wait = time.Duration(*req.WaitSeconds) * time.Second
+	}
+	if req.PollSeconds != nil && *req.PollSeconds > 0 {
+		cfg.Poll = time.Duration(*req.PollSeconds) * time.Second
+	}
+	if req.ReloadGuide != nil {
+		cfg.ReloadGuide = *req.ReloadGuide
+	}
+	if req.Activate != nil {
+		cfg.Activate = *req.Activate
+	}
+	if req.LineupLimit != nil && *req.LineupLimit > 0 {
+		cfg.LineupLimit = *req.LineupLimit
+	} else if raw := strings.TrimSpace(os.Getenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_LINEUP_LIMIT")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			cfg.LineupLimit = parsed
+		}
+	}
+	if req.IncludeChannels != nil {
+		cfg.IncludeChannels = *req.IncludeChannels
+	}
+	cfg.PlexHost = harvestPlexHost(cfg.PlexURL)
+	cfg.Targets = plexharvest.ExpandTargets(cfg.BaseURLs, cfg.BaseURLTemplate, cfg.Caps, cfg.FriendlyNamePrefix)
+	cfg.WaitSeconds = int(cfg.Wait / time.Second)
+	cfg.PollSeconds = int(cfg.Poll / time.Second)
+	switch cfg.Mode {
+	case "provider":
+		cfg.Configured = plexHarvestPMSToken() != "" && cfg.Country != "" && cfg.PostalCode != ""
+	default:
+		cfg.Configured = cfg.PlexHost != "" && plexHarvestPMSToken() != "" && len(cfg.Targets) > 0
+	}
+	return cfg
+}
+
+func (s *Server) serveProgrammingHarvestWorkflow() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowedJSON(w, http.MethodGet)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		cfg := resolveProgrammingHarvestRequestConfig(struct {
+			Mode               string `json:"mode"`
+			BaseURLs           string `json:"base_urls"`
+			BaseURLTemplate    string `json:"base_url_template"`
+			Caps               string `json:"caps"`
+			FriendlyNamePrefix string `json:"friendly_name_prefix"`
+			Country            string `json:"country"`
+			PostalCode         string `json:"postal_code"`
+			LineupTypes        string `json:"lineup_types"`
+			TitleQuery         string `json:"title_query"`
+			LineupLimit        *int   `json:"lineup_limit,omitempty"`
+			IncludeChannels    *bool  `json:"include_channels,omitempty"`
+			ProviderBaseURL    string `json:"provider_base_url"`
+			ProviderVersion    string `json:"provider_version"`
+			WaitSeconds        *int   `json:"wait_seconds,omitempty"`
+			PollSeconds        *int   `json:"poll_seconds,omitempty"`
+			ReloadGuide        *bool  `json:"reload_guide,omitempty"`
+			Activate           *bool  `json:"activate,omitempty"`
+		}{})
+		harvest := s.reloadPlexLineupHarvest()
+		steps := []string{
+			"Run a bounded Plex lineup harvest against the configured oracle-cap sweep targets.",
+			"Inspect the resulting lineup titles and strongest channel-map counts before touching the saved programming recipe.",
+			"Use harvest import or harvest assist to preview the chosen lineup as a Programming Manager recipe.",
+			"Apply the imported recipe only after the harvested lineup shape matches the target market you want Plex to imitate.",
+		}
+		if cfg.Mode == "provider" {
+			steps = []string{
+				"Query Plex's real provider lineup catalog for the configured country and postal code.",
+				"Inspect the returned cable, satellite, or OTA lineup titles and channel counts before importing anything.",
+				"Use harvest import or harvest assist to preview the chosen real provider lineup as a Programming Manager recipe.",
+				"Treat upstream provider errors as real Plex/provider failures instead of falling back to synthetic harvest-* labels.",
+			}
+		}
+		report := OperatorWorkflowReport{
+			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+			Name:        "programming_harvest",
+			Summary: map[string]interface{}{
+				"mode":              cfg.Mode,
+				"configured":        cfg.Configured,
+				"target_count":      len(cfg.Targets),
+				"country":           cfg.Country,
+				"postal_code":       cfg.PostalCode,
+				"lineup_types":      cfg.LineupTypes,
+				"title_query":       cfg.TitleQuery,
+				"lineup_limit":      cfg.LineupLimit,
+				"include_channels":  cfg.IncludeChannels,
+				"provider_base_url": cfg.ProviderBaseURL,
+				"provider_version":  cfg.ProviderVersion,
+				"wait_seconds":      cfg.WaitSeconds,
+				"poll_seconds":      cfg.PollSeconds,
+				"reload_guide":      cfg.ReloadGuide,
+				"activate":          cfg.Activate,
+				"harvest_file":      strings.TrimSpace(s.PlexLineupHarvestFile),
+				"harvest_ready":     len(harvest.Results) > 0 || len(harvest.Lineups) > 0,
+				"harvest_lineups":   len(harvest.Lineups),
+			},
+			Steps: steps,
+			Actions: []string{
+				"/programming/harvest-request.json",
+				"/programming/harvest.json",
+				"/programming/harvest-assist.json",
+				"/programming/harvest-import.json",
+				"/programming/preview.json",
+			},
+		}
+		body, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			writeServerJSONError(w, http.StatusInternalServerError, "encode programming harvest workflow")
+			return
+		}
+		_, _ = w.Write(body)
+	})
+}
+
 func (s *Server) serveOpsRecoveryWorkflow() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -2485,6 +2768,168 @@ func (s *Server) serveOpsRecoveryWorkflow() http.Handler {
 			return
 		}
 		_, _ = w.Write(body)
+	})
+}
+
+func (s *Server) serveProgrammingHarvestRequest() http.Handler {
+	type request struct {
+		Mode               string `json:"mode"`
+		BaseURLs           string `json:"base_urls"`
+		BaseURLTemplate    string `json:"base_url_template"`
+		Caps               string `json:"caps"`
+		FriendlyNamePrefix string `json:"friendly_name_prefix"`
+		Country            string `json:"country"`
+		PostalCode         string `json:"postal_code"`
+		LineupTypes        string `json:"lineup_types"`
+		TitleQuery         string `json:"title_query"`
+		LineupLimit        *int   `json:"lineup_limit,omitempty"`
+		IncludeChannels    *bool  `json:"include_channels,omitempty"`
+		ProviderBaseURL    string `json:"provider_base_url"`
+		ProviderVersion    string `json:"provider_version"`
+		WaitSeconds        *int   `json:"wait_seconds,omitempty"`
+		PollSeconds        *int   `json:"poll_seconds,omitempty"`
+		ReloadGuide        *bool  `json:"reload_guide,omitempty"`
+		Activate           *bool  `json:"activate,omitempty"`
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodGet:
+			if !operatorUIAllowed(w, r) {
+				return
+			}
+			cfg := resolveProgrammingHarvestRequestConfig(request{})
+			harvest := s.reloadPlexLineupHarvest()
+			body, err := json.MarshalIndent(map[string]interface{}{
+				"generated_at":         time.Now().UTC().Format(time.RFC3339),
+				"mode":                 cfg.Mode,
+				"configured":           cfg.Configured,
+				"plex_url":             cfg.PlexURL,
+				"targets":              cfg.Targets,
+				"target_count":         len(cfg.Targets),
+				"base_urls":            cfg.BaseURLs,
+				"base_url_template":    cfg.BaseURLTemplate,
+				"caps":                 cfg.Caps,
+				"friendly_name_prefix": cfg.FriendlyNamePrefix,
+				"country":              cfg.Country,
+				"postal_code":          cfg.PostalCode,
+				"lineup_types":         cfg.LineupTypes,
+				"title_query":          cfg.TitleQuery,
+				"lineup_limit":         cfg.LineupLimit,
+				"include_channels":     cfg.IncludeChannels,
+				"provider_base_url":    cfg.ProviderBaseURL,
+				"provider_version":     cfg.ProviderVersion,
+				"wait_seconds":         cfg.WaitSeconds,
+				"poll_seconds":         cfg.PollSeconds,
+				"reload_guide":         cfg.ReloadGuide,
+				"activate":             cfg.Activate,
+				"harvest_file":         strings.TrimSpace(s.PlexLineupHarvestFile),
+				"report_ready":         len(harvest.Results) > 0 || len(harvest.Lineups) > 0,
+				"report":               harvest,
+				"lineups":              harvest.Lineups,
+			}, "", "  ")
+			if err != nil {
+				writeServerJSONError(w, http.StatusInternalServerError, "encode programming harvest request")
+				return
+			}
+			_, _ = w.Write(body)
+		case http.MethodPost:
+			if !operatorUIAllowed(w, r) {
+				return
+			}
+			var req request
+			limited := http.MaxBytesReader(w, r.Body, 65536)
+			defer limited.Close()
+			if data, err := io.ReadAll(limited); err != nil {
+				writeOperatorActionJSON(w, http.StatusBadRequest, OperatorActionResponse{OK: false, Action: "programming_harvest_request", Message: "invalid json"})
+				return
+			} else if trimmed := strings.TrimSpace(string(data)); trimmed != "" {
+				if err := json.Unmarshal([]byte(trimmed), &req); err != nil {
+					writeOperatorActionJSON(w, http.StatusBadRequest, OperatorActionResponse{OK: false, Action: "programming_harvest_request", Message: "invalid json"})
+					return
+				}
+			}
+			cfg := resolveProgrammingHarvestRequestConfig(req)
+			token := plexHarvestPMSToken()
+			if token == "" {
+				writeOperatorActionJSON(w, http.StatusServiceUnavailable, OperatorActionResponse{OK: false, Action: "programming_harvest_request", Message: "plex token is not configured"})
+				return
+			}
+			var rep plexharvest.Report
+			switch cfg.Mode {
+			case "provider":
+				if cfg.Country == "" || cfg.PostalCode == "" {
+					writeOperatorActionJSON(w, http.StatusServiceUnavailable, OperatorActionResponse{OK: false, Action: "programming_harvest_request", Message: "provider mode requires country and postal_code"})
+					return
+				}
+				rep = runPlexProviderLineupHarvestProbe(plexharvest.ProviderProbeRequest{
+					ProviderBaseURL: cfg.ProviderBaseURL,
+					ProviderVersion: cfg.ProviderVersion,
+					PlexToken:       token,
+					Country:         cfg.Country,
+					PostalCode:      cfg.PostalCode,
+					Types:           append([]string(nil), cfg.LineupTypes...),
+					TitleQuery:      cfg.TitleQuery,
+					Limit:           cfg.LineupLimit,
+					IncludeChannels: cfg.IncludeChannels,
+				})
+			default:
+				if cfg.PlexHost == "" || cfg.PlexURL == "" {
+					writeOperatorActionJSON(w, http.StatusServiceUnavailable, OperatorActionResponse{OK: false, Action: "programming_harvest_request", Message: "plex url is not configured"})
+					return
+				}
+				if len(cfg.Targets) == 0 {
+					writeOperatorActionJSON(w, http.StatusServiceUnavailable, OperatorActionResponse{OK: false, Action: "programming_harvest_request", Message: "no harvest targets are configured"})
+					return
+				}
+				rep = runPlexLineupHarvestProbe(plexharvest.ProbeRequest{
+					PlexHost:     cfg.PlexHost,
+					PlexToken:    token,
+					Targets:      cfg.Targets,
+					Wait:         cfg.Wait,
+					PollInterval: cfg.Poll,
+					ReloadGuide:  cfg.ReloadGuide,
+					Activate:     cfg.Activate,
+				})
+			}
+			saved, err := s.savePlexLineupHarvest(rep)
+			if err != nil {
+				writeOperatorActionJSON(w, http.StatusBadGateway, OperatorActionResponse{OK: false, Action: "programming_harvest_request", Message: "save programming harvest failed", Detail: err.Error()})
+				return
+			}
+			message := fmt.Sprintf("Plex lineup harvest completed across %d target(s)", len(cfg.Targets))
+			if cfg.Mode == "provider" {
+				message = fmt.Sprintf("Plex provider lineup harvest completed for %s %s", cfg.Country, cfg.PostalCode)
+			}
+			writeOperatorActionJSON(w, http.StatusOK, OperatorActionResponse{
+				OK:      true,
+				Action:  "programming_harvest_request",
+				Message: message,
+				Detail: map[string]interface{}{
+					"mode":              cfg.Mode,
+					"plex_url":          cfg.PlexURL,
+					"target_count":      len(cfg.Targets),
+					"targets":           cfg.Targets,
+					"country":           cfg.Country,
+					"postal_code":       cfg.PostalCode,
+					"lineup_types":      cfg.LineupTypes,
+					"title_query":       cfg.TitleQuery,
+					"lineup_limit":      cfg.LineupLimit,
+					"provider_base_url": cfg.ProviderBaseURL,
+					"provider_version":  cfg.ProviderVersion,
+					"harvest_file":      strings.TrimSpace(s.PlexLineupHarvestFile),
+					"report":            saved,
+					"lineups":           saved.Lineups,
+					"wait_seconds":      cfg.WaitSeconds,
+					"poll_seconds":      cfg.PollSeconds,
+					"reload_guide":      cfg.ReloadGuide,
+					"activate":          cfg.Activate,
+					"saved_to_file":     strings.TrimSpace(s.PlexLineupHarvestFile) != "",
+				},
+			})
+		default:
+			writeMethodNotAllowedJSON(w, http.MethodGet, http.MethodPost)
+		}
 	})
 }
 

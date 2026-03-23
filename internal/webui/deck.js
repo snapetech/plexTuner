@@ -24,6 +24,7 @@ const endpoints = {
   programmingOrder: "/api/programming/order.json",
   programmingBackups: "/api/programming/backups.json",
   programmingHarvest: "/api/programming/harvest.json",
+  programmingHarvestRequest: "/api/programming/harvest-request.json",
   programmingHarvestImport: "/api/programming/harvest-import.json",
   programmingHarvestAssist: "/api/programming/harvest-assist.json",
   programmingRecipe: "/api/programming/recipe.json",
@@ -35,6 +36,7 @@ const endpoints = {
   guideWorkflow: "/api/ops/workflows/guide-repair.json",
   streamWorkflow: "/api/ops/workflows/stream-investigate.json",
   diagnosticsWorkflow: "/api/ops/workflows/diagnostics.json",
+  programmingHarvestWorkflow: "/api/ops/workflows/programming-harvest.json",
   migrationWorkflow: "/deck/migration-audit.json",
   identityMigrationWorkflow: "/deck/identity-migration-audit.json",
   oidcMigrationWorkflow: "/deck/oidc-migration-audit.json",
@@ -68,6 +70,7 @@ const endpointCatalog = {
   programmingOrder: { title: "Programming Order", category: "Programming", summary: "Manual lineup order mutations and order-mode state." },
   programmingBackups: { title: "Programming Backups", category: "Programming", summary: "Exact sibling backup groups that can collapse into one visible lineup row." },
   programmingHarvest: { title: "Programming Harvest", category: "Programming", summary: "Persisted Plex lineup-harvest report and deduped candidate lineup titles." },
+  programmingHarvestRequest: { title: "Programming Harvest Request", category: "Programming", summary: "Configured Plex harvest mode and the live control surface that requests fresh lineup candidates from Plex." },
   programmingHarvestImport: { title: "Programming Harvest Import", category: "Programming", summary: "Preview/apply a harvested lineup as a real Programming Manager recipe." },
   programmingHarvestAssist: { title: "Programming Harvest Assist", category: "Programming", summary: "Ranked local-market and exact-match recipe assists derived from harvested lineups." },
   programmingRecipe: { title: "Programming Recipe", category: "Programming", summary: "Durable saved recipe file backing category/channel/order decisions." },
@@ -79,6 +82,7 @@ const endpointCatalog = {
   guideWorkflow: { title: "Guide Workflow", category: "Workflows", summary: "Guided checklist for guide repair and freshness issues." },
   streamWorkflow: { title: "Stream Workflow", category: "Workflows", summary: "Guided lane for routing and upstream stream failures." },
   diagnosticsWorkflow: { title: "Diagnostics Workflow", category: "Workflows", summary: "Good-vs-bad capture plan, recent harness artifacts, and evidence-bundle intake for intermittent channel failures." },
+  programmingHarvestWorkflow: { title: "Programming Harvest Workflow", category: "Workflows", summary: "Guided lane for requesting fresh Plex lineup candidates in oracle or provider mode and importing the chosen result into Programming Manager." },
   migrationWorkflow: { title: "Migration Workflow", category: "Workflows", summary: "Overlap migration readiness and sync posture from a saved neutral bundle plus live Emby/Jellyfin targets." },
   identityMigrationWorkflow: { title: "Identity Migration Workflow", category: "Workflows", summary: "Account-cutover readiness from a saved Plex-user bundle plus live Emby/Jellyfin targets." },
   oidcMigrationWorkflow: { title: "OIDC Migration Workflow", category: "Workflows", summary: "IdP bootstrap readiness from a saved OIDC plan plus live Keycloak/Authentik targets." },
@@ -150,6 +154,11 @@ const actionDefinitions = {
     path: "/api/ops/actions/stream-compare-run",
     label: "Run Stream Compare",
     confirm: "Run a bounded stream-compare capture for the currently suggested failing channel?"
+  },
+  programming_harvest_request: {
+    path: "/api/programming/harvest-request.json",
+    label: "Request From Plex",
+    confirm: "Run a fresh Plex lineup harvest using the currently configured mode now?"
   }
 };
 
@@ -1884,6 +1893,7 @@ function renderDeck() {
   const programmingLineupDescriptors = programmingPreviewPayload.lineup_descriptors || {};
   const backupGroups = normalizeArray(programmingBackupsPayload.groups || programmingPreviewPayload.backup_groups);
   const harvestPayload = state.payloads.programmingHarvest?.body || {};
+  const harvestRequestPayload = state.payloads.programmingHarvestRequest?.body || {};
   const harvestLineups = normalizeArray(harvestPayload.lineups || programmingPreviewPayload.harvest_lineups);
   const harvestAssists = normalizeArray(programmingHarvestAssistPayload.assists);
   const bucketEntries = Object.entries(programmingPreviewPayload.buckets || {});
@@ -1922,6 +1932,15 @@ function renderDeck() {
        <button class="tiny" type="button" data-inspect="programmingRecipe">Inspect Recipe</button>`),
     createCard("Preview impact", `${pretty(programmingPreviewPayload.raw_channels)} raw channels -> ${pretty(programmingPreviewPayload.curated_channels)} curated channels. ${pretty(programmingInventory.length)} categories inventoried and ${pretty(backupGroups.length)} exact backup groups detected.`, "", "", "programmingPreview",
       `<button class="tiny" type="button" data-inspect="programmingPreview">Inspect Preview</button>`),
+    createCard("Plex lineup request", harvestRequestPayload.configured
+      ? `${pretty(harvestRequestPayload.target_count)} oracle target(s) configured · wait ${pretty(harvestRequestPayload.wait_seconds)}s · reload=${pretty(harvestRequestPayload.reload_guide)}`
+      : "No Plex lineup harvest request targets are configured yet.",
+      normalizeArray(harvestRequestPayload.targets).length
+        ? normalizeArray(harvestRequestPayload.targets).slice(0, 4).map((row) => `${row.friendly_name || row.device_id || row.base_url} -> ${row.base_url}`).join(" | ")
+        : "",
+      harvestRequestPayload.configured ? "tone-good" : "tone-warn",
+      "programmingHarvestRequest",
+      `${createActionButton("programming_harvest_request", "Request From Plex")}${createWorkflowButton("programmingHarvestWorkflow", "Harvest Workflow")}`),
     createCard("Harvested lineup candidates", harvestLineups.length
       ? harvestLineups.slice(0, 6).map((row) => `${row.lineup_title} (${row.best_channelmap_rows || 0})`).join(" | ")
       : "No persisted Plex lineup harvest report configured yet.", "", "", "programmingHarvest",
@@ -2118,6 +2137,9 @@ function renderDeck() {
       ["Recipe writable", programmingPreviewPayload.recipe_writable ?? programmingRecipePayload.recipe_writable],
       ["Harvest file", harvestPayload.harvest_file || programmingPreviewPayload.harvest_file],
       ["Harvest ready", harvestPayload.report_ready ?? programmingPreviewPayload.harvest_ready],
+      ["Harvest target count", harvestRequestPayload.target_count],
+      ["Harvest base template", harvestRequestPayload.base_url_template],
+      ["Harvest caps", harvestRequestPayload.caps],
       ["Order mode", programmingRecipe.order_mode],
       ["Selected categories", normalizeArray(programmingRecipe.selected_categories).length],
       ["Excluded categories", normalizeArray(programmingRecipe.excluded_categories).length],
@@ -2144,13 +2166,14 @@ function renderDeck() {
       ["Guide workflow", endpoints.guideWorkflow],
       ["Stream workflow", endpoints.streamWorkflow],
       ["Diagnostics workflow", endpoints.diagnosticsWorkflow],
+      ["Programming harvest workflow", endpoints.programmingHarvestWorkflow],
       ["Migration workflow", endpoints.migrationWorkflow],
       ["Identity migration workflow", endpoints.identityMigrationWorkflow],
       ["OIDC migration workflow", endpoints.oidcMigrationWorkflow],
       ["Ops workflow", endpoints.opsWorkflow],
       ["Legacy UI", runtime.webui?.legacy_ui],
       ["Legacy LAN policy", runtime.webui?.legacy_lan]
-    ], "operatorActionsStatus", `${createWorkflowButton("guideWorkflow", "Guide Playbook")}${createWorkflowButton("streamWorkflow", "Stream Playbook")}${createWorkflowButton("diagnosticsWorkflow", "Diagnostics")}${createWorkflowButton("migrationWorkflow", "Migration")}${createWorkflowButton("identityMigrationWorkflow", "Identity")}${createWorkflowButton("oidcMigrationWorkflow", "OIDC")}${createWorkflowButton("opsWorkflow", "Ops Playbook")}`)
+    ], "operatorActionsStatus", `${createWorkflowButton("guideWorkflow", "Guide Playbook")}${createWorkflowButton("streamWorkflow", "Stream Playbook")}${createWorkflowButton("diagnosticsWorkflow", "Diagnostics")}${createWorkflowButton("programmingHarvestWorkflow", "Harvest")}${createWorkflowButton("migrationWorkflow", "Migration")}${createWorkflowButton("identityMigrationWorkflow", "Identity")}${createWorkflowButton("oidcMigrationWorkflow", "OIDC")}${createWorkflowButton("opsWorkflow", "Ops Playbook")}`)
   ]).join("");
 
   state.deckSettings = deckSettings;

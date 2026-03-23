@@ -1577,20 +1577,32 @@ Use for:
 
 ## `iptv-tunerr plex-lineup-harvest`
 
-Probe Plex's HDHR guide/channelmap flow across several tuner lineup variants and
-emit a structured report of the discovered lineup titles.
+Harvest Plex lineup candidates and emit a structured report.
 
-This is the productized successor to the older oracle-only flow when you want
-to sweep lineup caps or tuner shapes and see which market/provider lineup Plex
-matches back.
+Modes:
+- `-mode oracle`
+  - probe Plex's HDHR guide/channelmap flow across several tuner lineup variants
+  - useful when you want to sweep lineup caps or tuner shapes and see which lineup Plex maps back
+- `-mode provider`
+  - query Plex's real provider lineup catalog directly by country + postal code
+  - useful when you want real provider titles and lineup rows instead of synthetic `harvest-*` DVR titles
 
 Common flags:
+- `-mode`
 - `-plex-url`
 - `-token`
 - `-base-urls`
 - `-base-url-template`
 - `-caps`
 - `-friendly-name-prefix`
+- `-country`
+- `-postal-code`
+- `-lineup-types`
+- `-title-query`
+- `-lineup-limit`
+- `-include-channels`
+- `-provider-base-url`
+- `-provider-version`
 - `-wait`
 - `-poll`
 - `-reload-guide`
@@ -1598,10 +1610,30 @@ Common flags:
 - `-out`
 
 Notes:
-- Creates/registers real Plex DVR/device rows during the probe flow.
-- Polls channel-map results for a bounded time instead of fetching only once.
-- Emits both per-target results and a deduped `lineups[]` summary in JSON.
+- `oracle` mode creates/registers real Plex DVR/device rows during the probe flow.
+- `oracle` mode polls channel-map results for a bounded time instead of fetching only once.
+- `provider` mode talks to Plex's provider EPG service directly and does not create DVR/device rows.
+- Both modes emit per-result rows plus a deduped `lineups[]` summary in JSON.
 - See [plex-lineup-harvest](../how-to/plex-lineup-harvest.md).
+
+Relevant env vars for deck / operator-driven harvest:
+- `IPTV_TUNERR_PLEX_LINEUP_HARVEST_MODE`
+- `IPTV_TUNERR_PLEX_LINEUP_HARVEST_BASE_URLS`
+- `IPTV_TUNERR_PLEX_LINEUP_HARVEST_BASE_URL_TEMPLATE`
+- `IPTV_TUNERR_PLEX_LINEUP_HARVEST_CAPS`
+- `IPTV_TUNERR_PLEX_LINEUP_HARVEST_FRIENDLY_NAME_PREFIX`
+- `IPTV_TUNERR_PLEX_LINEUP_HARVEST_WAIT`
+- `IPTV_TUNERR_PLEX_LINEUP_HARVEST_POLL`
+- `IPTV_TUNERR_PLEX_LINEUP_HARVEST_RELOAD_GUIDE`
+- `IPTV_TUNERR_PLEX_LINEUP_HARVEST_ACTIVATE`
+- `IPTV_TUNERR_PLEX_LINEUP_HARVEST_COUNTRY`
+- `IPTV_TUNERR_PLEX_LINEUP_HARVEST_POSTAL_CODE`
+- `IPTV_TUNERR_PLEX_LINEUP_HARVEST_LINEUP_TYPES`
+- `IPTV_TUNERR_PLEX_LINEUP_HARVEST_TITLE_QUERY`
+- `IPTV_TUNERR_PLEX_LINEUP_HARVEST_LINEUP_LIMIT`
+- `IPTV_TUNERR_PLEX_LINEUP_HARVEST_INCLUDE_CHANNELS`
+- `IPTV_TUNERR_PLEX_LINEUP_HARVEST_PROVIDER_BASE_URL`
+- `IPTV_TUNERR_PLEX_LINEUP_HARVEST_PROVIDER_VERSION`
 
 ## `iptv-tunerr plex-epg-oracle`
 

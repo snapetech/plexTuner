@@ -232,6 +232,73 @@ func TestServer_operatorJSONMethodRejectionsStayJSON(t *testing.T) {
 	}
 }
 
+func TestResolveProgrammingHarvestRequestConfig_usesTimezoneDefaultForProviderMode(t *testing.T) {
+	t.Setenv("TZ", "America/Regina")
+	t.Setenv("IPTV_TUNERR_PMS_TOKEN", "token")
+
+	cfg := resolveProgrammingHarvestRequestConfig(struct {
+		Mode               string `json:"mode"`
+		BaseURLs           string `json:"base_urls"`
+		BaseURLTemplate    string `json:"base_url_template"`
+		Caps               string `json:"caps"`
+		FriendlyNamePrefix string `json:"friendly_name_prefix"`
+		Country            string `json:"country"`
+		PostalCode         string `json:"postal_code"`
+		LineupTypes        string `json:"lineup_types"`
+		TitleQuery         string `json:"title_query"`
+		LineupLimit        *int   `json:"lineup_limit,omitempty"`
+		IncludeChannels    *bool  `json:"include_channels,omitempty"`
+		ProviderBaseURL    string `json:"provider_base_url"`
+		ProviderVersion    string `json:"provider_version"`
+		WaitSeconds        *int   `json:"wait_seconds,omitempty"`
+		PollSeconds        *int   `json:"poll_seconds,omitempty"`
+		ReloadGuide        *bool  `json:"reload_guide,omitempty"`
+		Activate           *bool  `json:"activate,omitempty"`
+	}{
+		Mode: "provider",
+	})
+
+	if cfg.Country != "CA" || cfg.PostalCode != "S4P 3X1" {
+		t.Fatalf("country=%q postal=%q", cfg.Country, cfg.PostalCode)
+	}
+	if !cfg.Configured {
+		t.Fatalf("configured=%v", cfg.Configured)
+	}
+}
+
+func TestResolveProgrammingHarvestRequestConfig_explicitProviderLocationBeatsTimezone(t *testing.T) {
+	t.Setenv("TZ", "America/Regina")
+	t.Setenv("IPTV_TUNERR_PMS_TOKEN", "token")
+
+	cfg := resolveProgrammingHarvestRequestConfig(struct {
+		Mode               string `json:"mode"`
+		BaseURLs           string `json:"base_urls"`
+		BaseURLTemplate    string `json:"base_url_template"`
+		Caps               string `json:"caps"`
+		FriendlyNamePrefix string `json:"friendly_name_prefix"`
+		Country            string `json:"country"`
+		PostalCode         string `json:"postal_code"`
+		LineupTypes        string `json:"lineup_types"`
+		TitleQuery         string `json:"title_query"`
+		LineupLimit        *int   `json:"lineup_limit,omitempty"`
+		IncludeChannels    *bool  `json:"include_channels,omitempty"`
+		ProviderBaseURL    string `json:"provider_base_url"`
+		ProviderVersion    string `json:"provider_version"`
+		WaitSeconds        *int   `json:"wait_seconds,omitempty"`
+		PollSeconds        *int   `json:"poll_seconds,omitempty"`
+		ReloadGuide        *bool  `json:"reload_guide,omitempty"`
+		Activate           *bool  `json:"activate,omitempty"`
+	}{
+		Mode:       "provider",
+		Country:    "US",
+		PostalCode: "10001",
+	})
+
+	if cfg.Country != "US" || cfg.PostalCode != "10001" {
+		t.Fatalf("country=%q postal=%q", cfg.Country, cfg.PostalCode)
+	}
+}
+
 func TestServer_guideLineupMatch(t *testing.T) {
 	s := &Server{
 		xmltv: &XMLTV{
@@ -619,6 +686,109 @@ func TestServer_programmingHarvestEndpoint(t *testing.T) {
 	}
 	if !body.ReportReady || len(body.Lineups) != 1 || body.Lineups[0].LineupTitle != "Rogers West" {
 		t.Fatalf("harvest body=%+v", body)
+	}
+}
+
+func TestServer_programmingHarvestRequestEndpoint(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PMS_URL", "http://plex.example:32400")
+	t.Setenv("IPTV_TUNERR_PMS_TOKEN", "token")
+	t.Setenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_BASE_URL_TEMPLATE", "http://iptvtunerr-oracle{cap}.plex.svc:5004")
+	t.Setenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_CAPS", "100,200")
+	t.Setenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_FRIENDLY_NAME_PREFIX", "harvest-")
+	path := filepath.Join(t.TempDir(), "harvest.json")
+	s := &Server{PlexLineupHarvestFile: path}
+
+	savedProbe := runPlexLineupHarvestProbe
+	defer func() { runPlexLineupHarvestProbe = savedProbe }()
+	runPlexLineupHarvestProbe = func(req plexharvest.ProbeRequest) plexharvest.Report {
+		if req.PlexHost != "plex.example:32400" {
+			t.Fatalf("plex host=%q", req.PlexHost)
+		}
+		if len(req.Targets) != 2 {
+			t.Fatalf("targets=%d", len(req.Targets))
+		}
+		return plexharvest.Report{
+			PlexURL: "http://plex.example:32400",
+			Results: []plexharvest.Result{{
+				BaseURL:        req.Targets[0].BaseURL,
+				FriendlyName:   req.Targets[0].FriendlyName,
+				LineupTitle:    "Rogers West",
+				ChannelMapRows: 420,
+			}},
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/programming/harvest-request.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.serveProgrammingHarvestRequest().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("harvest request get status=%d body=%s", w.Code, w.Body.String())
+	}
+	var getBody struct {
+		Configured  bool                 `json:"configured"`
+		TargetCount int                  `json:"target_count"`
+		Targets     []plexharvest.Target `json:"targets"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &getBody); err != nil {
+		t.Fatalf("harvest request get unmarshal: %v", err)
+	}
+	if !getBody.Configured || getBody.TargetCount != 2 || len(getBody.Targets) != 2 {
+		t.Fatalf("harvest request get body=%+v", getBody)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/programming/harvest-request.json", strings.NewReader(`{"wait_seconds":30}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveProgrammingHarvestRequest().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("harvest request post status=%d body=%s", w.Code, w.Body.String())
+	}
+	var postBody struct {
+		OK     bool   `json:"ok"`
+		Action string `json:"action"`
+		Detail struct {
+			HarvestFile string                      `json:"harvest_file"`
+			Lineups     []plexharvest.SummaryLineup `json:"lineups"`
+		} `json:"detail"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &postBody); err != nil {
+		t.Fatalf("harvest request post unmarshal: %v", err)
+	}
+	if !postBody.OK || postBody.Action != "programming_harvest_request" {
+		t.Fatalf("harvest request post body=%+v", postBody)
+	}
+	loaded, err := plexharvest.LoadReportFile(path)
+	if err != nil {
+		t.Fatalf("load saved harvest: %v", err)
+	}
+	if len(loaded.Lineups) != 1 || loaded.Lineups[0].LineupTitle != "Rogers West" {
+		t.Fatalf("loaded report=%+v", loaded)
+	}
+}
+
+func TestServer_programmingHarvestWorkflow(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PMS_URL", "http://plex.example:32400")
+	t.Setenv("IPTV_TUNERR_PMS_TOKEN", "token")
+	t.Setenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_BASE_URL_TEMPLATE", "http://iptvtunerr-oracle{cap}.plex.svc:5004")
+	t.Setenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_CAPS", "100,200,300")
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodGet, "/ops/workflows/programming-harvest.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.serveProgrammingHarvestWorkflow().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("workflow status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body OperatorWorkflowReport
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("workflow unmarshal: %v", err)
+	}
+	if body.Name != "programming_harvest" {
+		t.Fatalf("workflow name=%q", body.Name)
+	}
+	if got, ok := body.Summary["target_count"].(float64); !ok || int(got) != 3 {
+		t.Fatalf("workflow summary=%+v", body.Summary)
 	}
 }
 

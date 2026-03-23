@@ -661,9 +661,15 @@ fake codec/resolution truth it has not actually inferred.
 
 Tunerr also productized the old Plex wizard/oracle experiments.
 
-`plex-lineup-harvest` can now:
-- probe several lineup cap/shape variants against Plex
-- capture discovered lineup titles and channel-map strength
+`plex-lineup-harvest` now supports two modes:
+- `oracle`
+  - probe several tuner cap/shape variants against Plex's HDHR/XMLTV path
+  - capture discovered lineup titles and channel-map strength
+- `provider`
+  - query Plex's real provider lineup catalog directly by country + postal code
+  - capture real cable / satellite / OTA lineup titles and optional lineup channel rows
+
+In both modes it can:
 - save structured harvest reports
 - feed those reports back into Programming Manager
 
@@ -676,11 +682,21 @@ to:
 Key pieces:
 - CLI: `iptv-tunerr plex-lineup-harvest`
 - saved report file: `IPTV_TUNERR_PLEX_LINEUP_HARVEST_FILE`
+- live request surface: `/programming/harvest-request.json`
+- operator workflow: `/ops/workflows/programming-harvest.json`
 - `/programming/harvest.json`
 - `/programming/harvest-import.json`
 - `/programming/harvest-assist.json`
 
-The deck can now preview and apply the top-ranked harvest assists directly.
+The deck can now:
+- request a fresh harvest run directly from Plex
+- preview and apply the top-ranked harvest assists directly
+
+Important operational distinction:
+- `oracle` mode is synthetic on purpose: it learns what lineup Plex maps back when you hand it a Tunerr/XMLTV tuner shape.
+- `provider` mode is the real provider path: it asks Plex's lineup catalog for provider titles like cable or OTA offerings and stores those real titles in the harvest report.
+- Canadian provider harvest works with a full postal code such as `S4P3X1` or `S4P 3X1`, and Tunerr now normalizes lowercase country input like `ca` before querying Plex.
+- If `provider` mode is requested without an explicit country/postal code, Tunerr now falls back to a built-in timezone lookup with two stages: exact timezone matches for many common zones, then a timezone-family approximation when there is no direct hit. The lookup data lives in `internal/plexharvest/provider_tz_defaults.json`. This is deterministic and local; it does not depend on a public geolocation API.
 
 ---
 

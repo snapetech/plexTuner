@@ -169,3 +169,159 @@ func TestFetchLineupAcceptsObjectShapedPayload(t *testing.T) {
 		t.Fatalf("rows=%#v", rows)
 	}
 }
+
+func TestProbeProviderLineups_fetchesRealProviderShape(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/lineups":
+			if got := r.URL.Query().Get("country"); got != "US" {
+				t.Fatalf("country=%q", got)
+			}
+			if got := r.URL.Query().Get("postalCode"); got != "10001" {
+				t.Fatalf("postalCode=%q", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"MediaContainer":{"size":2,"Lineup":[{"id":"lineup-1","key":"/lineups/lineup-1/channels","source":"Gracenote","title":"Charter Spectrum Southern Manhattan (697 channels)","type":"cable"},{"id":"lineup-2","key":"/lineups/lineup-2/channels","source":"Gracenote","title":"Local Broadcast Listings (163 channels)","type":"ota"}]}}`))
+		case "/lineups/lineup-1/channels":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"MediaContainer":{"size":2,"Channel":[{"id":"row-1","title":"WCBS","vcn":"002"},{"id":"row-2","title":"TNT","vcn":"003"}]}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	report := ProbeProviderLineups(ProviderProbeRequest{
+		ProviderBaseURL: srv.URL,
+		ProviderVersion: "5.1",
+		PlexToken:       "token",
+		Country:         "US",
+		PostalCode:      "10001",
+		Types:           []string{"cable"},
+		TitleQuery:      "spectrum",
+		Limit:           1,
+		IncludeChannels: true,
+	})
+	if len(report.Results) != 1 {
+		t.Fatalf("results=%#v", report.Results)
+	}
+	got := report.Results[0]
+	if got.LineupID != "lineup-1" || got.LineupType != "cable" || got.LineupSource != "Gracenote" {
+		t.Fatalf("result=%#v", got)
+	}
+	if got.ChannelCount != 2 || len(got.Channels) != 2 || got.Channels[0].GuideName != "WCBS" {
+		t.Fatalf("channels=%#v", got.Channels)
+	}
+	if len(report.Lineups) != 1 || report.Lineups[0].BestChannelCount != 2 {
+		t.Fatalf("lineups=%#v", report.Lineups)
+	}
+}
+
+func TestProbeProviderLineups_normalizesCanadianCountryCode(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/lineups" {
+			http.NotFound(w, r)
+			return
+		}
+		if got := r.URL.Query().Get("country"); got != "CA" {
+			t.Fatalf("country=%q", got)
+		}
+		if got := r.URL.Query().Get("postalCode"); got != "S4P 3X1" {
+			t.Fatalf("postalCode=%q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"MediaContainer":{"size":1,"Lineup":[{"id":"lineup-ca-1","key":"/lineups/lineup-ca-1/channels","source":"Gracenote","title":"Access Communications (494 channels)","type":"cable"}]}}`))
+	}))
+	defer srv.Close()
+
+	report := ProbeProviderLineups(ProviderProbeRequest{
+		ProviderBaseURL: srv.URL,
+		ProviderVersion: "5.1",
+		PlexToken:       "token",
+		Country:         "ca",
+		PostalCode:      "S4P 3X1",
+		Types:           []string{"cable"},
+		IncludeChannels: false,
+	})
+	if len(report.Results) != 1 {
+		t.Fatalf("results=%#v", report.Results)
+	}
+	if got := report.Results[0].LineupTitle; got != "Access Communications (494 channels)" {
+		t.Fatalf("lineupTitle=%q", got)
+	}
+}
+
+func TestDefaultProviderLocationFromTZ(t *testing.T) {
+	loc := DefaultProviderLocationFromTZ("America/Regina")
+	if loc.Country != "CA" || loc.PostalCode != "S4P 3X1" {
+		t.Fatalf("loc=%#v", loc)
+	}
+}
+
+func TestDefaultProviderLocationFromTZ_supportsCanadianAliasZones(t *testing.T) {
+	loc := DefaultProviderLocationFromTZ("America/Swift_Current")
+	if loc.Country != "CA" || loc.PostalCode != "S6H 3E6" {
+		t.Fatalf("swift_current=%#v", loc)
+	}
+
+	loc = DefaultProviderLocationFromTZ("America/Vancouver")
+	if loc.Country != "CA" || loc.PostalCode != "V6B 1A1" {
+		t.Fatalf("vancouver=%#v", loc)
+	}
+}
+
+func TestDefaultProviderLocationFromTZ_supportsUSEdgeZones(t *testing.T) {
+	loc := DefaultProviderLocationFromTZ("US/Eastern")
+	if loc.Country != "US" || loc.PostalCode != "10001" {
+		t.Fatalf("us_eastern=%#v", loc)
+	}
+
+	loc = DefaultProviderLocationFromTZ("America/Phoenix")
+	if loc.Country != "US" || loc.PostalCode != "85004" {
+		t.Fatalf("phoenix=%#v", loc)
+	}
+
+	loc = DefaultProviderLocationFromTZ("Pacific/Honolulu")
+	if loc.Country != "US" || loc.PostalCode != "96813" {
+		t.Fatalf("honolulu=%#v", loc)
+	}
+}
+
+func TestDefaultProviderLocationFromTZ_supportsBroaderWorldZones(t *testing.T) {
+	loc := DefaultProviderLocationFromTZ("Europe/Berlin")
+	if loc.Country != "DE" || loc.PostalCode != "10115" {
+		t.Fatalf("berlin=%#v", loc)
+	}
+
+	loc = DefaultProviderLocationFromTZ("Asia/Tokyo")
+	if loc.Country != "JP" || loc.PostalCode != "100-0001" {
+		t.Fatalf("tokyo=%#v", loc)
+	}
+
+	loc = DefaultProviderLocationFromTZ("America/Sao_Paulo")
+	if loc.Country != "BR" || loc.PostalCode != "01000-000" {
+		t.Fatalf("saopaulo=%#v", loc)
+	}
+}
+
+func TestDefaultProviderLocationFromTZ_fallsBackByTimezoneFamily(t *testing.T) {
+	loc := DefaultProviderLocationFromTZ("Africa/Abidjan")
+	if loc.Country != "ZA" || loc.PostalCode != "2000" {
+		t.Fatalf("africa_fallback=%#v", loc)
+	}
+
+	loc = DefaultProviderLocationFromTZ("Pacific/Guam")
+	if loc.Country != "NZ" || loc.PostalCode != "1010" {
+		t.Fatalf("pacific_fallback=%#v", loc)
+	}
+}
+
+func TestProviderDefaultCatalogData_embeddedJSONLoads(t *testing.T) {
+	cat := providerDefaultCatalogData()
+	if len(cat.Timezones) < 50 {
+		t.Fatalf("timezone_count=%d", len(cat.Timezones))
+	}
+	if got := cat.Families["Europe"].Country; got != "GB" {
+		t.Fatalf("europe_family=%q", got)
+	}
+}
