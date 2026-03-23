@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/livetvbundle"
@@ -53,6 +54,8 @@ var deckJS string
 
 //go:embed login.html
 var loginHTML string
+
+var fallbackTokenSeq uint64
 
 // Server is the dedicated web dashboard HTTP server.
 type Server struct {
@@ -1475,15 +1478,12 @@ func (s *Server) validSessionToken(r *http.Request) (string, bool) {
 func (s *Server) startSession(w http.ResponseWriter, r *http.Request) {
 	token, err := newSessionToken()
 	if err != nil {
-		s.settingsMu.RLock()
-		authUser, authPass := s.settings.AuthUser, s.settings.AuthPass
-		s.settingsMu.RUnlock()
-		sum := sha256.Sum256([]byte(fmt.Sprintf("%d-%s-%s", time.Now().UnixNano(), authUser, authPass)))
+		sum := sha256.Sum256([]byte(fmt.Sprintf("session-%d-%d-%d", time.Now().UnixNano(), os.Getpid(), atomic.AddUint64(&fallbackTokenSeq, 1))))
 		token = hex.EncodeToString(sum[:])
 	}
 	csrfToken, err := newSessionToken()
 	if err != nil {
-		sum := sha256.Sum256([]byte(fmt.Sprintf("csrf-%d-%s", time.Now().UnixNano(), token)))
+		sum := sha256.Sum256([]byte(fmt.Sprintf("csrf-%d-%d-%d", time.Now().UnixNano(), os.Getpid(), atomic.AddUint64(&fallbackTokenSeq, 1))))
 		csrfToken = hex.EncodeToString(sum[:])
 	}
 	s.sessionMu.Lock()

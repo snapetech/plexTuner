@@ -1415,7 +1415,7 @@ That gate now layers the full repo verify, focused parity/programming/provider/W
 
 ## License
 
-This project is licensed under the GNU Affero General Public License v3.0 only. See [LICENSE](LICENSE).
+This project is dual-licensed under the GNU Affero General Public License v3.0-or-later or a commercial license. See [LICENSE](LICENSE) and [LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md).
 
 ---
 

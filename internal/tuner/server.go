@@ -2824,7 +2824,7 @@ func (s *Server) serveEvidenceIntakeStartAction() http.Handler {
 			writeServerJSONError(w, http.StatusBadRequest, "invalid json")
 			return
 		}
-		caseID := strings.TrimSpace(req.CaseID)
+		caseID := sanitizeDiagRunID(req.CaseID)
 		if caseID == "" {
 			caseID = "evidence-" + time.Now().UTC().Format("20060102-150405")
 		}
@@ -6817,6 +6817,14 @@ Recommended next steps:
 	return nil
 }
 
+func sanitizeDiagRunID(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	return sanitizeFileToken(value)
+}
+
 func mergeOperatorActionDetail(left, right map[string]interface{}) map[string]interface{} {
 	out := map[string]interface{}{}
 	for k, v := range left {
@@ -6849,7 +6857,7 @@ func runDiagnosticsHarnessAction(ctx context.Context, scriptName, outRoot string
 	}
 	cmd.Env = runEnv
 	out, err := cmd.CombinedOutput()
-	runID := strings.TrimSpace(env["RUN_ID"])
+	runID := sanitizeDiagRunID(env["RUN_ID"])
 	outDir := ""
 	if strings.TrimSpace(outRoot) != "" && runID != "" {
 		outDir = filepath.Join(outRoot, runID)

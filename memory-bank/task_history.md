@@ -7764,3 +7764,26 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - none
   Links:
     - `README.md`
+- Date: 2026-03-23
+  Title: Close release hardening items for CodeQL, Dependabot, and licensing
+  Summary:
+    - Bumped `.github/workflows/docker.yml` from `docker/setup-buildx-action@v3` to `@v4`.
+    - Fixed the open diagnostics path-traversal class by sanitizing operator/env run identifiers before `filepath.Join(...)` in `internal/tuner/server.go`, with a regression that exercises a malicious `case_id`.
+    - Removed credential-derived fallback session token generation from `internal/webui/webui.go` so the deck no longer hashes configured auth credentials when `crypto/rand` fails.
+    - Clarified repository licensing as AGPL-3.0-or-later or commercial via `LICENSE`, `LICENSE-COMMERCIAL.md`, `README.md`, and `docs/CHANGELOG.md`.
+  Verification:
+    - `go test ./internal/tuner ./internal/webui`
+    - `./scripts/verify`
+  Notes:
+    - This pass was driven by live release prep: one Dependabot PR, five CodeQL path-expression alerts in `internal/tuner/server.go`, one CodeQL crypto alert in `internal/webui/webui.go`, and the requested dual-license wording update.
+  Opportunities filed:
+    - none
+  Links:
+    - `.github/workflows/docker.yml`
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+    - `internal/webui/webui.go`
+    - `LICENSE`
+    - `LICENSE-COMMERCIAL.md`
+    - `README.md`
+    - `docs/CHANGELOG.md`

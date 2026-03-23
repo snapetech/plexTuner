@@ -2525,6 +2525,36 @@ func TestServer_diagnosticsWorkflowAndEvidenceAction(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(tmp, ".diag", "evidence", "smoke-case", "notes.md")); err != nil {
 		t.Fatalf("expected notes.md: %v", err)
 	}
+
+	req = httptest.NewRequest(http.MethodPost, "/ops/actions/evidence-intake-start", strings.NewReader(`{"case_id":"../../escape/me"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveEvidenceIntakeStartAction().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("sanitized evidence action status=%d body=%s", w.Code, w.Body.String())
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &action); err != nil {
+		t.Fatalf("sanitized action unmarshal: %v", err)
+	}
+	detail, ok := action.Detail.(map[string]interface{})
+	if !ok {
+		t.Fatalf("detail type=%T value=%#v", action.Detail, action.Detail)
+	}
+	gotCaseID, _ := detail["case_id"].(string)
+	gotOutputDir, _ := detail["output_dir"].(string)
+	if gotCaseID == "" || strings.Contains(gotCaseID, "..") || strings.Contains(gotCaseID, "/") || strings.Contains(gotCaseID, "\\") {
+		t.Fatalf("unsanitized case_id=%q detail=%+v", gotCaseID, detail)
+	}
+	if strings.Contains(gotOutputDir, "..") || strings.Contains(gotOutputDir, "\\") {
+		t.Fatalf("output_dir escaped repo root: %q", gotOutputDir)
+	}
+	expectedPrefix := filepath.Join(".diag", "evidence") + string(os.PathSeparator)
+	if !strings.HasPrefix(gotOutputDir, expectedPrefix) {
+		t.Fatalf("unexpected output_dir=%q expected_prefix=%q", gotOutputDir, expectedPrefix)
+	}
+	if _, err := os.Stat(filepath.Join(gotOutputDir, "notes.md")); err != nil {
+		t.Fatalf("expected sanitized notes.md: %v", err)
+	}
 }
 
 func TestServer_diagnosticsHarnessActions(t *testing.T) {
