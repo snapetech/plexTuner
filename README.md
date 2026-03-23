@@ -30,12 +30,15 @@ Most IPTV setups fail in the same ways:
 
 IPTV Tunerr sits in the middle and fixes those problems. It can:
 - present IPTV as a normal HDHomeRun-style tuner
-- repair and merge guide data instead of just passing broken `tvg-id` values through
+- repair, merge, and publish guide data instead of just passing broken `tvg-id` values through
 - rank and fail over between provider hosts and duplicate streams
 - adapt playback behavior by client
 - generate near-live catch-up libraries when Live TV alone is not enough
+- build owned-media virtual channels with branding, recovery, and station-style publishing
 
 You can use it for just the tuner, just the guide, or as the full control plane in front of Plex, Emby, and Jellyfin.
+
+It also supports staged migration, so you do not have to do a one-shot cutover.
 
 ### It makes unreliable IPTV behave like a normal DVR source
 
@@ -49,15 +52,19 @@ If channels only show names and no programme blocks, if one provider host keeps 
 
 You can inspect channel health, guide confidence, provider behavior, stale Plex-session signals, and catch-up candidates directly. That turns "why is this channel bad?" into an answerable question.
 
-It also supports staged migration, so you do not have to do a one-shot cutover.
+### It can generate and publish your own guide and channels
 
-### Media-server migration (Plex -> Emby/Jelly)
+Tunerr is not limited to relaying someone else’s EPG. It can merge provider XMLTV, external XMLTV, optional HDHomeRun guide data, placeholder fallback, and SQLite-backed guide state into one publishable surface. It can also generate guide output for owned-media virtual channels, so you can build a custom EPG instead of only consuming upstream listings.
 
-Tunerr can facilitate moving users and libraries from Plex to Jellyfin or Emby, and keep the same live tuner and guide identity online for Plex while you pre-roll Emby or Jellyfin beside it. Instead of hand-copying Live TV settings, you can build a migration bundle, audit one or both live targets, and apply when the result is actually ready. That migration lane now covers more than Live TV: it also reaches planned libraries, storage paths, and rollout parity checks.
+That same lane reaches station-style publishing. Virtual channels can carry their own metadata, branding, logos, bug text, banner text, theme color, branded stream mode, filler/recovery policy, and synthetic schedule. In practice, that means Tunerr now covers a real “indie broadcaster” slice: build your own channel, brand it, publish a guide for it, and keep it on-air when the primary source fails.
 
-The important part is that the audit is meant to be usable. It reports `ready_to_apply`, target status, missing-library hints, reused-library population hints, source-vs-destination parity hints, bounded title-sample parity hints, and best-effort library-scan progress. You can use that either from the CLI or from the deck when the running process knows where the saved migration bundle lives.
+### It supports staged migration instead of one-shot cutovers
 
-### Identity and OIDC migration
+Tunerr can keep the same tuner and guide identity online for Plex while you pre-roll Emby or Jellyfin beside it. Instead of hand-copying Live TV settings, you can build a migration bundle, audit one or both live targets, and apply when the result is actually ready. That migration lane now covers more than Live TV: it also reaches planned libraries, storage paths, and rollout parity checks.
+
+The audit is meant to be usable. It reports `ready_to_apply`, target status, missing-library hints, reused-library population hints, source-vs-destination parity hints, bounded title-sample parity hints, and best-effort library-scan progress. You can use that either from the CLI or from the deck when the running process knows where the saved migration bundle lives.
+
+### It handles identity and OIDC migration too
 
 Tunerr can export Plex users and visible share/tuner entitlement hints into a neutral bundle, turn that into Emby or Jellyfin local-user plans, diff those plans against live targets, and apply only the missing users. It can also push the first safe layer of additive policy parity: Live TV access, sync/download access, all-library access when Plex exposes it as global, and remote access for Plex-shared users.
 
@@ -65,7 +72,7 @@ That same lane is now split cleanly enough to answer the real operator questions
 
 For IdP migration, Tunerr can emit a provider-agnostic OIDC identity/group plan from the same Plex bundle and apply it to Keycloak or Authentik. It supports practical onboarding controls like bootstrap passwords, Keycloak `execute-actions-email` options, redirect/lifespan hints, and Authentik recovery-email onboarding. It also stamps stable Tunerr migration metadata onto IdP-side users so the cutover stays traceable later instead of becoming a blind username/group shove.
 
-### Operator workflow and limits
+### It gives operators a real control plane
 
 The deck can show the same migration and OIDC readiness state as the CLI, and the OIDC workflow keeps recent apply history with success/failure badges, per-target delta counts, failure context, and `all / success / failed` filtering. That makes it possible to separate bad IdP runs from good ones without reading raw JSON walls.
 

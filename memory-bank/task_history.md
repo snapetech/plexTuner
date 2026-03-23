@@ -7750,3 +7750,17 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - `internal/tuner/server_test.go`
     - `README.md`
     - `docs/features.md`
+- Date: 2026-03-22
+  Title: Rewrite the README opening into a real product intro
+  Summary:
+    - Rewrote the README opening again so the top of the repo reads like a product summary instead of a migration/identity wall.
+    - Pulled custom EPG generation/repair, staged migration, and the owned-media / indie-broadcaster story higher into the visible intro instead of leaving them implied or buried later.
+    - Replaced the earlier dense list-heavy migration block with shorter paragraphs that match the rest of the README better.
+  Verification:
+    - manual README review
+  Notes:
+    - This was a docs-only pass aimed at discoverability and readability, not a runtime behavior change.
+  Opportunities filed:
+    - none
+  Links:
+    - `README.md`
