@@ -40,65 +40,24 @@ You can use it for just the tuner, just the guide, or as the full control plane 
 It also supports staged migration, so you do not have to do a one-shot cutover.
 
 **Media-server migration**
-- Keep the same Tunerr-backed tuner and guide online for Plex while you pre-roll Emby or Jellyfin.
-- Build and audit migration bundles before apply instead of hand-copying Live TV settings.
-- Extend the migration lane beyond Live TV into shared library definitions, storage paths, and planned library parity checks.
-- Audit one or both live targets and get:
-  - `ready_to_apply`
-  - target `status`
-  - missing-library hints
-  - reused-library population hints
-  - source-vs-destination parity hints
-  - bounded title-sample parity hints
-  - best-effort library-scan progress
-- Use either the CLI summary or the deck workflow when the saved migration bundle is configured on the running process.
 
-**Identity migration**
-- Export Plex users plus visible share/tuner entitlement hints into a neutral bundle.
-- Convert that bundle into Emby/Jellyfin local-user plans.
-- Diff those plans against live targets and apply only missing users.
-- Push the first safe layer of policy parity:
-  - Live TV access
-  - sync/download access
-  - all-library access when Plex exposes it as global
-  - remote access for Plex-shared users
-- Audit results are split clearly into:
-  - users missing entirely
-  - existing users that still need additive policy grants
-  - users that are still not activation-ready because they have no password or auto-login path
+Tunerr can keep the same tuner and guide identity online for Plex while you pre-roll Emby or Jellyfin beside it. Instead of hand-copying Live TV settings, you can build a migration bundle, audit one or both live targets, and apply when the result is actually ready. That migration lane now covers more than Live TV: it also reaches planned libraries, storage paths, and rollout parity checks.
 
-**OIDC / IdP migration**
-- Emit a provider-agnostic OIDC identity/group plan from the same Plex bundle.
-- Apply that plan to:
-  - Keycloak
-  - Authentik
-- Support practical onboarding controls:
-  - Keycloak bootstrap password
-  - temporary-password choice
-  - `execute-actions-email` actions plus redirect/lifespan hints
-  - Authentik bootstrap password
-  - Authentik recovery-email onboarding
-- Stamp stable Tunerr migration metadata onto IdP-side users so the cutover remains traceable later.
-- Audit before apply and see:
-  - missing IdP users
-  - missing migration groups
-  - missing group membership
-  - metadata drift on existing IdP users
+The important part is that the audit is meant to be usable. It reports `ready_to_apply`, target status, missing-library hints, reused-library population hints, source-vs-destination parity hints, bounded title-sample parity hints, and best-effort library-scan progress. You can use that either from the CLI or from the deck when the running process knows where the saved migration bundle lives.
 
-**Operator workflow**
-- The deck can show the same migration and OIDC readiness state as the CLI.
-- The OIDC workflow keeps recent apply history with:
-  - success/failure badges
-  - per-target delta counts
-  - failure phase/error context
-  - `all / success / failed` filtering
-- That makes it possible to separate bad IdP runs from good ones without reading raw JSON walls.
+**Identity and OIDC migration**
 
-**Current limit**
-- Tunerr does not clone Plex passwords.
-- It does not solve folder-by-folder library grants yet.
-- It does not automate every OIDC provider.
-- The current slice is overlap-friendly account bootstrap, additive rights sync, and staged migration while Plex stays online.
+Tunerr can export Plex users and visible share/tuner entitlement hints into a neutral bundle, turn that into Emby or Jellyfin local-user plans, diff those plans against live targets, and apply only the missing users. It can also push the first safe layer of additive policy parity: Live TV access, sync/download access, all-library access when Plex exposes it as global, and remote access for Plex-shared users.
+
+That same lane is now split cleanly enough to answer the real operator questions: who is missing entirely, which existing destination accounts still need additive grants, and which users are still not activation-ready because they do not have a password or auto-login path yet.
+
+For IdP migration, Tunerr can emit a provider-agnostic OIDC identity/group plan from the same Plex bundle and apply it to Keycloak or Authentik. It supports practical onboarding controls like bootstrap passwords, Keycloak `execute-actions-email` options, redirect/lifespan hints, and Authentik recovery-email onboarding. It also stamps stable Tunerr migration metadata onto IdP-side users so the cutover stays traceable later instead of becoming a blind username/group shove.
+
+**Operator workflow and limits**
+
+The deck can show the same migration and OIDC readiness state as the CLI, and the OIDC workflow keeps recent apply history with success/failure badges, per-target delta counts, failure context, and `all / success / failed` filtering. That makes it possible to separate bad IdP runs from good ones without reading raw JSON walls.
+
+The current limits are deliberate: Tunerr does not clone Plex passwords, it does not solve folder-by-folder library grants yet, and it does not automate every OIDC provider. The current slice is overlap-friendly account bootstrap, additive rights sync, and staged migration while Plex stays online.
 
 ### It makes unreliable IPTV behave like a normal DVR source
 
