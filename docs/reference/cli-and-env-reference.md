@@ -12,6 +12,12 @@ Reference for primary commands, key flags, and commonly used environment variabl
 This is focused on practical operation/testing. For tester bundles and supervisor-specific lab knobs, also see:
 - [testing-and-supervisor-config](testing-and-supervisor-config.md)
 
+Deck OIDC workflow note:
+- when `IPTV_TUNERR_IDENTITY_OIDC_PLAN_FILE` and the relevant Keycloak/Authentik envs are set, the
+  deck exposes `/deck/oidc-migration-audit.json` plus an OIDC workflow surface that includes recent
+  apply history in both the summary card and workflow modal, with `all / success / failed`
+  filtering, success/failure badges, and modal per-target outcome rows for partial or failed runs
+
 ## Commands
 
 ## `iptv-tunerr run`
@@ -451,6 +457,7 @@ Common flags:
 - `-emby-token`
 - `-jellyfin-host`
 - `-jellyfin-token`
+- `-summary` (emit a compact human-readable report instead of JSON)
 - `-out`
 
 Use for:
@@ -590,7 +597,12 @@ Notes:
 - For operator use, the audit also includes `status_reason` plus `present_libraries` / `missing_libraries` so a partial migration shows exactly what is still absent on the target.
 - When a bundled library is already being reused, the audit also exposes `populated_libraries` / `empty_libraries` based on the target server's current item counts. These are visibility hints only; they do not currently change readiness or convergence logic.
 - When the bundle carries source Plex library counts, reused libraries also report parity via `synced_libraries` / `lagging_libraries`, plus per-library `source_item_count`, `existing_item_count`, and `parity_status` values in the nested library diff rows.
+- When the bundle also carries sampled source Plex item titles, reused libraries report title-level sample parity via `title_synced_libraries` / `title_lagging_libraries`, plus per-library `source_titles`, `existing_titles`, `missing_titles`, and `title_parity_status` values in the nested library diff rows. This is a bounded sample hint, not a full metadata-equivalence proof.
 - When the target server exposes a recognizable library-refresh scheduled task, the audit also includes `library_scan` with best-effort running/state/progress fields. This is visibility only and is intentionally not required for readiness.
+- `-summary` is intended for operators and shell use. It keeps the same audit logic, but flattens the main verdicts, reasons, lagging-library hints, and bounded per-library missing-title samples into a compact text report per target.
+
+Related env:
+- `IPTV_TUNERR_MIGRATION_BUNDLE_FILE` enables the dedicated deck's built-in migration workflow report at `/deck/migration-audit.json`. It points at the saved neutral migration bundle that the running process should audit against the configured Emby/Jellyfin targets.
 
 ## `iptv-tunerr live-tv-bundle-attach-catchup`
 
@@ -608,6 +620,312 @@ Use for:
 Notes:
 - The manifest should come from `iptv-tunerr catchup-publish` output, specifically its `publish-manifest.json`.
 - Attached catch-up lanes are treated as movie libraries backed by generated shared paths; they do not imply metadata DB conversion.
+
+## `iptv-tunerr plex-user-bundle-build`
+
+Build a neutral Plex-user identity bundle.
+
+Common flags:
+- `-plex-url`
+- `-token`
+- `-out`
+
+Use for:
+- exporting Plex users before a gradual Emby/Jellyfin cutover
+- capturing visible share/tuner entitlement hints from plex.tv into one artifact
+
+Notes:
+- Requires Plex API access plus a valid Plex owner token.
+- Exports account identity hints only, not passwords.
+
+## `iptv-tunerr identity-migration-convert`
+
+Convert a Plex-user bundle into an Emby/Jellyfin local-user plan.
+
+Common flags:
+- `-in`
+- `-target` (`emby` or `jellyfin`)
+- `-host`
+- `-out`
+
+Use for:
+- turning Plex-user exports into destination local-account create/reuse plans
+- reviewing the derived destination usernames before diff/apply
+
+Notes:
+- Current plans are username-based and also carry additive destination policy grants when Plex share state exposes them cleanly.
+- They still do not claim to clone passwords, folder-by-folder grants, or OIDC state.
+
+## `iptv-tunerr identity-migration-oidc-plan`
+
+Build a provider-agnostic OIDC user/group plan from a Plex-user bundle.
+
+Common flags:
+- `-in`
+- `-issuer`
+- `-client-id`
+- `-out`
+
+Use for:
+- deriving stable OIDC subject hints, usernames, display names, email hints, and group claims from Plex users
+- feeding Authentik/Keycloak-backed automation from the same neutral migration artifact
+
+Notes:
+- This command itself does not apply anything to a live identity provider.
+- Group claims are Tunerr-owned migration hints such as `tunerr:migrated`, `tunerr:live-tv`, `tunerr:sync`, and `tunerr:plex-shared`.
+
+## `iptv-tunerr identity-migration-oidc-audit`
+
+Audit an OIDC migration plan against live IdP targets.
+
+Common flags:
+- `-in`
+- `-targets` (`keycloak`, `authentik`, or both)
+- `-keycloak-host`
+- `-keycloak-realm`
+- `-keycloak-token`
+- `-keycloak-user`
+- `-keycloak-password`
+- `-authentik-host`
+- `-authentik-token`
+- `-summary`
+- `-out`
+
+Use for:
+- checking missing IdP users before apply
+- checking whether Tunerr-owned migration groups already exist
+- checking which IdP users still need migration-group membership
+- checking which existing IdP users still need Tunerr-owned metadata refresh
+- getting one compact provisioning-readiness report across Keycloak and Authentik
+
+Env fallback:
+- `IPTV_TUNERR_KEYCLOAK_HOST`
+- `IPTV_TUNERR_KEYCLOAK_REALM`
+- `IPTV_TUNERR_KEYCLOAK_TOKEN`
+- `IPTV_TUNERR_KEYCLOAK_USER`
+- `IPTV_TUNERR_KEYCLOAK_PASSWORD`
+- `IPTV_TUNERR_AUTHENTIK_HOST`
+- `IPTV_TUNERR_AUTHENTIK_TOKEN`
+
+Notes:
+- This is provisioning-focused readiness, not full SSO-policy parity.
+- For Keycloak, username/password credentials are preferred over a static token because Tunerr will
+  mint a fresh `admin-cli` token for the audit/apply run.
+- `-summary` emits a compact human-readable IdP migration report instead of JSON.
+
+## `iptv-tunerr identity-migration-authentik-diff`
+
+Compare an OIDC migration plan against a live Authentik instance.
+
+Common flags:
+- `-in`
+- `-host`
+- `-token`
+- `-out`
+
+Use for:
+- seeing which OIDC-plan users are missing from Authentik
+- seeing which Tunerr-owned migration groups are missing
+- seeing which group memberships would be added before apply
+
+Env fallback:
+- `IPTV_TUNERR_AUTHENTIK_HOST`
+- `IPTV_TUNERR_AUTHENTIK_TOKEN`
+
+## `iptv-tunerr identity-migration-authentik-apply`
+
+Apply an OIDC migration plan to a live Authentik instance.
+
+Common flags:
+- `-in`
+- `-host`
+- `-token`
+- `-bootstrap-password`
+- `-recovery-email`
+- `-out`
+
+Use for:
+- creating missing Authentik users from the OIDC plan
+- creating missing Tunerr-owned migration groups
+- attaching users to the required groups for staged cutover
+- optionally setting a bootstrap password or triggering recovery-email onboarding
+
+Notes:
+- Current Authentik scope is user/group provisioning plus optional bootstrap/onboarding.
+- `-bootstrap-password` calls Authentik's user password endpoint.
+- `-recovery-email` triggers Authentik recovery email for users with email addresses in the OIDC plan.
+- New users created through this path are stamped with stable Tunerr migration metadata attributes, and existing users get those Tunerr-owned fields refreshed when they drift.
+
+## `iptv-tunerr identity-migration-keycloak-diff`
+
+Compare an OIDC migration plan against a live Keycloak realm.
+
+Common flags:
+- `-in`
+- `-host`
+- `-realm`
+- `-token`
+- `-user`
+- `-password`
+- `-out`
+
+Use for:
+- seeing which OIDC-plan users are missing from Keycloak
+- seeing which Tunerr-owned migration groups are missing
+- seeing which group memberships would be added before apply
+
+Env fallback:
+- `IPTV_TUNERR_KEYCLOAK_HOST`
+- `IPTV_TUNERR_KEYCLOAK_REALM`
+- `IPTV_TUNERR_KEYCLOAK_TOKEN`
+- `IPTV_TUNERR_KEYCLOAK_USER`
+- `IPTV_TUNERR_KEYCLOAK_PASSWORD`
+
+Notes:
+- If `-user` and `-password` are provided, Tunerr mints a fresh Keycloak admin token instead of
+  relying on `-token`.
+
+## `iptv-tunerr identity-migration-keycloak-apply`
+
+Apply an OIDC migration plan to a live Keycloak realm.
+
+Common flags:
+- `-in`
+- `-host`
+- `-realm`
+- `-token`
+- `-user`
+- `-password`
+- `-bootstrap-password`
+- `-password-temporary`
+- `-email-actions`
+- `-email-client-id`
+- `-email-redirect-uri`
+- `-email-lifespan-sec`
+- `-out`
+
+Use for:
+- creating missing Keycloak users from the OIDC plan
+- creating missing Tunerr-owned migration groups
+- attaching users to the required groups for staged cutover
+- optionally setting a bootstrap password or triggering execute-actions-email onboarding
+
+Notes:
+- Current Keycloak scope is user/group provisioning only.
+- If `-user` and `-password` are provided, Tunerr mints a fresh Keycloak admin token for the apply
+  run instead of relying on `-token`.
+- `-bootstrap-password` sets a password via Keycloak admin reset-password; `-password-temporary` defaults to `true`.
+- `-email-actions` sends Keycloak `execute-actions-email` for users with email addresses in the OIDC plan.
+- New users created through this path are stamped with stable Tunerr migration metadata attributes, and existing users get those Tunerr-owned fields refreshed when they drift.
+
+## `iptv-tunerr identity-migration-diff`
+
+Compare an identity migration plan against a live Emby/Jellyfin server.
+
+Common flags:
+- `-in`
+- `-target`
+- `-host`
+- `-token`
+- `-out`
+
+Use for:
+- seeing which users already exist on the destination
+- proving how many local users would be created before apply
+- seeing which existing destination users still need additive policy updates
+- seeing which destination users still are not activation-ready
+
+Env fallback:
+- `IPTV_TUNERR_EMBY_HOST` / `IPTV_TUNERR_EMBY_TOKEN`
+- `IPTV_TUNERR_JELLYFIN_HOST` / `IPTV_TUNERR_JELLYFIN_TOKEN`
+
+## `iptv-tunerr identity-migration-apply`
+
+Apply an identity migration plan to a live Emby/Jellyfin server.
+
+Common flags:
+- `-in`
+- `-target`
+- `-host`
+- `-token`
+- `-out`
+
+Use for:
+- creating missing destination local users while reusing ones that already exist
+- overlap migrations where Plex stays online and destination accounts are pre-rolled first
+- pushing the first safe additive access-policy layer (Live TV, sync/download, all-library, remote-access-for-shared-users)
+
+Notes:
+- Existing destination users are reused by case-insensitive username match.
+- Current apply updates additive destination policy only when it can be inferred safely from Plex share state.
+- It does not set passwords, complete invite/activation, wire OIDC, or guess folder-specific library grants.
+
+## `iptv-tunerr identity-migration-rollout`
+
+Build or apply a multi-target Emby/Jellyfin identity rollout from one Plex-user bundle.
+
+Common flags:
+- `-in`
+- `-targets`
+- `-emby-host`
+- `-emby-token`
+- `-jellyfin-host`
+- `-jellyfin-token`
+- `-apply`
+- `-out`
+
+Use for:
+- pre-rolling the same Plex user set across both Emby and Jellyfin during overlap migrations
+
+## `iptv-tunerr identity-migration-rollout-diff`
+
+Compare one Plex-user identity bundle against live Emby/Jellyfin targets.
+
+Common flags:
+- `-in`
+- `-targets`
+- `-emby-host`
+- `-emby-token`
+- `-jellyfin-host`
+- `-jellyfin-token`
+- `-out`
+
+Use for:
+- validating both non-Plex targets before creating users
+- keeping dual-host overlap migrations consistent from one bundle
+
+## `iptv-tunerr identity-migration-audit`
+
+Audit one Plex-user identity bundle against live Emby/Jellyfin targets.
+
+Common flags:
+- `-in`
+- `-targets`
+- `-emby-host`
+- `-emby-token`
+- `-jellyfin-host`
+- `-jellyfin-token`
+- `-summary`
+- `-out`
+
+Use for:
+- getting one readiness report per target instead of only raw create/reuse counts
+- seeing which Plex users still need destination accounts
+- surfacing which existing destination users still need additive policy updates
+- surfacing which destination users still have no configured password or auto-login path
+- surfacing which managed/shared/tuner-entitled users still need manual post-create follow-up
+
+Notes:
+- Current status values are:
+  - `blocked_conflicts`
+  - `ready_to_apply`
+  - `converged`
+- `ready_to_apply` only means the destination is structurally unblocked; it does not mean activation, folder-specific grants, or OIDC state are complete.
+- `-summary` flattens the main verdicts plus missing-user, policy-update, activation-pending, and manual-follow-up hints into compact text output.
+
+Related env:
+- `IPTV_TUNERR_IDENTITY_MIGRATION_BUNDLE_FILE` enables the dedicated deck's built-in identity migration workflow report at `/deck/identity-migration-audit.json`. It points at the saved Plex-user identity bundle that the running process should audit against the configured Emby/Jellyfin targets.
+- `IPTV_TUNERR_IDENTITY_OIDC_PLAN_FILE` enables the dedicated deck's built-in OIDC migration workflow report at `/deck/oidc-migration-audit.json` and the corresponding apply surface at `/deck/oidc-migration-apply.json`. The deck-side apply path supports the same practical IdP onboarding knobs as the CLI: Keycloak bootstrap password, temporary-password choice, execute-actions-email actions plus optional client/redirect/lifespan hints, and Authentik bootstrap password plus recovery-email delivery. The workflow summary also carries a short recent OIDC apply history from deck activity, including per-target delta counts for successful runs and phase/error context for failed ones, and the deck can filter that history to `all`, `success`, or `failed` runs.
 
 - `GET /provider/profile.json` — runtime provider profile including learned tuner caps, HLS instability, Cloudflare hits, penalized upstream hosts, and **`remediation_hints`** (advisory heuristic suggestions with optional related **`IPTV_TUNERR_*`** env names)
 
@@ -1216,6 +1534,11 @@ Merge semantics for HDHR + IPTV catalogs: [adr/0002-hdhr-hardware-iptv-merge.md]
 | `IPTV_TUNERR_RECORDING_RULES_FILE` | Optional JSON file for durable server-side recording rules used by `/recordings/rules.json`, `/recordings/rules/preview.json`, and `/recordings/history.json`. |
 | `IPTV_TUNERR_PLEX_LINEUP_HARVEST_FILE` | Optional JSON file storing the latest persisted Plex lineup-harvest report, surfaced via `/programming/harvest.json`, `/programming/preview.json`, and `/programming/harvest-import.json`. |
 | `IPTV_TUNERR_VIRTUAL_CHANNELS_FILE` | Optional JSON file for file-backed virtual-channel rules used by `/virtual-channels/rules.json`, `/virtual-channels/preview.json`, `/virtual-channels/schedule.json`, `/virtual-channels/live.m3u`, and `/virtual-channels/stream/<id>.mp4`. |
+| `IPTV_TUNERR_VIRTUAL_CHANNEL_BRANDING_DEFAULT` | When truthy, virtual channels that carry branding metadata are published through `/virtual-channels/branded-stream/<id>.ts` by default in `/virtual-channels/live.m3u` instead of the plain `/virtual-channels/stream/<id>.mp4` path. |
+| `IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_WARMUP_SEC` | Optional startup monitoring window for virtual-channel recovery. When higher than a channel’s `recovery.black_screen_seconds`, the response-byte sampler keeps watching until this longer warmup window before deciding whether to cut over to filler. |
+| `IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_MIDSTREAM_PROBE_BYTES` | Optional rolling sampled-byte window for in-session virtual-channel media-content checks. When set, the live recovery relay repeatedly probes windows of this many bytes from the active stream body after startup and can trigger filler if a later sampled window probes as black/silent. Defaults to a bounded value derived from `IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_PROBE_MAX_BYTES`. |
+| `IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_LIVE_STALL_SEC` | Optional per-read stall watchdog for virtual-channel filler recovery. When set, the plain/branded virtual stream path will attempt a one-time switch to the configured filler entry if the active upstream stops producing bytes for this many seconds after startup. |
+| `IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_STATE_FILE` | Optional JSON file for persisting recent virtual-channel recovery events across restarts so `/virtual-channels/recovery-report.json` and `/virtual-channels/report.json` keep historical recovery posture instead of resetting to empty on process start. |
 | `IPTV_TUNERR_XTREAM_USER` | Optional username for the read-only downstream Xtream-compatible live output. Requires `IPTV_TUNERR_XTREAM_PASS`. |
 | `IPTV_TUNERR_XTREAM_PASS` | Optional password for the read-only downstream Xtream-compatible live output. Requires `IPTV_TUNERR_XTREAM_USER`. |
 | `IPTV_TUNERR_UI_DISABLED` | If `1`, `/ui/` is not served. |
@@ -1228,7 +1551,9 @@ Browser URLs:
 - Xtream entitlements (starter): when `IPTV_TUNERR_XTREAM_USERS_FILE` is set, Tunerr loads file-backed downstream users with per-user live/VOD/series access scopes, filters `player_api.php` results for those users, gates `/live|movie|series/...` playback by the same rules, and exposes the current ruleset at `/entitlements.json`.
 - Recording rules (starter): when `IPTV_TUNERR_RECORDING_RULES_FILE` is set, Tunerr exposes durable recorder-rule CRUD at `/recordings/rules.json`, live capsule matching at `/recordings/rules/preview.json`, and recorder-state classification at `/recordings/history.json`.
 - Programming harvest bridge: when `IPTV_TUNERR_PLEX_LINEUP_HARVEST_FILE` is set, Tunerr reloads the saved harvest report and exposes it at `/programming/harvest.json`; `/programming/preview.json` also includes `harvest_ready` plus deduped `harvest_lineups` so the Programming lane can surface harvested candidate lineups alongside recipe state; `/programming/harvest-import.json` can preview or apply a chosen harvested lineup as a real saved Programming Manager recipe and reports which matching strategy succeeded (`tvg_id_exact`, `guide_name_exact`, `guide_number_exact`, or `local_broadcast_stem`).
-- Virtual channels (starter): when `IPTV_TUNERR_VIRTUAL_CHANNELS_FILE` is set, Tunerr exposes `/virtual-channels/rules.json` for durable file-backed rules, `/virtual-channels/preview.json` for schedule previews over catalog movies/episodes, `/virtual-channels/schedule.json` for a rolling schedule horizon, `/virtual-channels/live.m3u` for a publishable synthetic-channel export, and `/virtual-channels/stream/<id>.mp4` for the current scheduled asset proxy.
+- Virtual channels (starter): when `IPTV_TUNERR_VIRTUAL_CHANNELS_FILE` is set, Tunerr exposes `/virtual-channels/rules.json` for durable file-backed rules, `/virtual-channels/preview.json` for schedule previews over catalog movies/episodes, `/virtual-channels/schedule.json` for a rolling schedule horizon, `/virtual-channels/live.m3u` for a publishable synthetic-channel export, `/virtual-channels/recovery-report.json` for recent filler/recovery events, `/virtual-channels/branded-stream/<id>.ts` for branded playback, and `/virtual-channels/stream/<id>.mp4` for the current scheduled asset proxy. When `IPTV_TUNERR_VIRTUAL_CHANNEL_BRANDING_DEFAULT` is truthy, branded virtual channels are published through the branded stream path by default in `/virtual-channels/live.m3u`. `IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_LIVE_STALL_SEC` extends that recovery lane past startup by enabling live cutover across the ordered fallback chain when the active upstream stalls, `IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_MIDSTREAM_PROBE_BYTES` lets that same relay perform repeated rolling in-session media-byte probes for later black/silent degradation, and `IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_STATE_FILE` makes those recovery events survive process restarts.
+- The deck Settings lane can now also apply `virtual_channel_recovery_live_stall_sec` live through the localhost-only operator action path. Like shared replay bytes, it affects new sessions only.
+- When `IPTV_TUNERR_WEBUI_STATE_FILE` is configured, the deck now persists both `shared_relay_replay_bytes` and `virtual_channel_recovery_live_stall_sec` and replays them to the tuner on startup, so those live runtime settings survive process restarts.
 - Active stream intervention: `/debug/active-streams.json` shows live request IDs and `/ops/actions/stream-stop` accepts `{"request_id":"..."}` or `{"channel_id":"..."}` to cancel matching active stream contexts from the localhost operator plane.
 - Shared relay visibility: `/debug/shared-relays.json` shows current same-channel shared-output sessions across `hls_go`, live FFmpeg HLS reuse, and packaged-HLS reuse, including `shared_upstream`, `content_type`, producer request ID, start time, and subscriber counts when duplicate consumers are attached to one upstream producer.
 - Shared relay control: `/ops/actions/shared-relay-replay` accepts `POST {"shared_relay_replay_bytes":262144}` from the localhost operator plane and applies that replay window to new shared live sessions; the deck Settings lane drives the same action and reflects the active value from `/debug/runtime.json`.

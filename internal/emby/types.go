@@ -42,6 +42,24 @@ type LiveTvChannelList struct {
 	TotalRecordCount int `json:"TotalRecordCount"`
 }
 
+// LiveTVInfo is a coarse status view returned by GET /LiveTv/Info.
+type LiveTVInfo struct {
+	IsEnabled bool            `json:"IsEnabled"`
+	Services  []LiveTVService `json:"Services"`
+}
+
+// LiveTVService is one service row from GET /LiveTv/Info.
+type LiveTVService struct {
+	Name   string `json:"Name"`
+	Status string `json:"Status"`
+}
+
+// LiveTVConfiguration is the response shape of GET /System/Configuration/livetv.
+type LiveTVConfiguration struct {
+	TunerHosts       []TunerHostInfo        `json:"TunerHosts"`
+	ListingProviders []ListingsProviderInfo `json:"ListingProviders"`
+}
+
 // LibraryInfo is a simplified view of a configured Emby/Jellyfin library.
 type LibraryInfo struct {
 	ID             string   `json:"id,omitempty"`
@@ -99,4 +117,34 @@ type LibraryScanStatus struct {
 	State           string  `json:"state,omitempty"`
 	Running         bool    `json:"running"`
 	ProgressPercent float64 `json:"progress_percent,omitempty"`
+}
+
+// UserInfo is a simplified Emby/Jellyfin user record.
+type UserInfo struct {
+	ID                     string         `json:"Id,omitempty"`
+	Name                   string         `json:"Name"`
+	ServerID               string         `json:"ServerId,omitempty"`
+	Policy                 map[string]any `json:"Policy,omitempty"`
+	HasPassword            bool           `json:"HasPassword,omitempty"`
+	HasConfiguredPassword  bool           `json:"HasConfiguredPassword,omitempty"`
+	HasConfiguredEasyPwd   bool           `json:"HasConfiguredEasyPassword,omitempty"`
+	EnableAutoLogin        bool           `json:"EnableAutoLogin,omitempty"`
+	EnableLocalPassword    bool           `json:"EnableLocalPassword,omitempty"`
+	EnableRemoteAccess     bool           `json:"EnableRemoteAccess,omitempty"`
+	EnableContentDeletion  bool           `json:"EnableContentDeletion,omitempty"`
+	IsAdministrator        bool           `json:"IsAdministrator,omitempty"`
+	IsHidden               bool           `json:"IsHidden,omitempty"`
+	IsDisabled             bool           `json:"IsDisabled,omitempty"`
+	InvalidLoginAttemptCnt int            `json:"InvalidLoginAttemptCount,omitempty"`
+}
+
+// DesiredUserPolicy is the additive subset of user policy that Tunerr can
+// safely infer from Plex identity/share state without guessing folder-level or
+// SSO-only permissions.
+type DesiredUserPolicy struct {
+	EnableLiveTvAccess       *bool `json:"enable_live_tv_access,omitempty"`
+	EnableRemoteAccess       *bool `json:"enable_remote_access,omitempty"`
+	EnableContentDownloading *bool `json:"enable_content_downloading,omitempty"`
+	EnableSyncTranscoding    *bool `json:"enable_sync_transcoding,omitempty"`
+	EnableAllFolders         *bool `json:"enable_all_folders,omitempty"`
 }

@@ -446,8 +446,9 @@ type xmlTVRoot struct {
 }
 
 type xmlChannel struct {
-	ID      string `xml:"id,attr"`
-	Display string `xml:"display-name"`
+	ID      string    `xml:"id,attr"`
+	Display string    `xml:"display-name"`
+	Icons   []xmlIcon `xml:"icon,omitempty"`
 }
 
 type xmlProgramme struct {
@@ -462,6 +463,10 @@ type xmlProgramme struct {
 
 type xmlValue struct {
 	Value string `xml:",chardata"`
+}
+
+type xmlIcon struct {
+	Src string `xml:"src,attr"`
 }
 
 type GuideHighlight struct {

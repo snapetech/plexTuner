@@ -16,6 +16,7 @@ Dense and factual. Add CLI reference, env vars, API docs as needed.
 | [../explanations/release-readiness-matrix.md](../explanations/release-readiness-matrix.md) | What the repo actually proves before a tag: unit, smoke, focused, and optional host lanes. |
 | [cli-and-env-reference](cli-and-env-reference.md) | Canonical hand-maintained commands, flags, and environment variables (multi-DVR, mux, HTTP pool, web UI, recorder, …). |
 | [transcode-profiles](transcode-profiles.md) | Gateway transcode profile names, HDHR-style aliases, `?profile=`, optional `?mux=fmp4` / `?mux=hls`. |
+| [virtual-channel-stations](virtual-channel-stations.md) | Station-definition fields for virtual channels: branding, recovery policy, and export behavior. |
 | [hls-mux-toolkit](hls-mux-toolkit.md) | Native **`?mux=hls`** / **`?mux=dash`** mux: diagnostics, Prometheus, DNS SSRF options, operator **`curl`**, remaining backlog. |
 | [hls-mux-ll-hls-tags](hls-mux-ll-hls-tags.md) | LL-HLS / low-latency HLS tag rewrite coverage for **`?mux=hls`**. |
 | [plex-livetv-http-tuning](plex-livetv-http-tuning.md) | Plex/Lavf parallel HTTP, shared client idle pool, tuner vs **`seg=`** caps (**HR-008** / **HR-010**). |

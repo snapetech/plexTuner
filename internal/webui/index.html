@@ -8,36 +8,37 @@
 
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
 <div class="app">
-  <aside class="sidebar">
+  <aside class="sidebar" aria-label="Primary navigation and deck summary">
     <div class="brand">
       <div class="eyebrow">Port [[.Port]] · v[[.Version]]</div>
       <h1>Control Deck</h1>
       <p>Operator surface for guide health, routing, intelligence, recordings, and runtime state.</p>
     </div>
 
-    <nav class="nav" id="mode-nav">
-      <button type="button" data-mode="overview" class="active">
+    <nav class="nav" id="mode-nav" aria-label="Deck modes">
+      <button type="button" data-mode="overview" class="active" aria-controls="section-overview" aria-pressed="true">
         <strong>Overview</strong>
         <span>Front page, major signals, quick routes.</span>
       </button>
-      <button type="button" data-mode="guide">
+      <button type="button" data-mode="guide" aria-controls="section-guide" aria-pressed="false">
         <strong>Guide</strong>
         <span>EPG quality, doctoring, highlights, capsules.</span>
       </button>
-      <button type="button" data-mode="routing">
+      <button type="button" data-mode="routing" aria-controls="section-routing" aria-pressed="false">
         <strong>Routing</strong>
         <span>Provider behavior, fallback evidence, HDHR surfaces.</span>
       </button>
-      <button type="button" data-mode="ops">
+      <button type="button" data-mode="ops" aria-controls="section-ops" aria-pressed="false">
         <strong>Operations</strong>
         <span>Autopilot, recorder, media-server hooks, ghosts.</span>
       </button>
-      <button type="button" data-mode="programming">
+      <button type="button" data-mode="programming" aria-controls="section-programming" aria-pressed="false">
         <strong>Programming</strong>
         <span>Category curation, manual lineup shaping, backups.</span>
       </button>
-      <button type="button" data-mode="settings">
+      <button type="button" data-mode="settings" aria-controls="section-settings" aria-pressed="false">
         <strong>Settings</strong>
         <span>Effective runtime config, endpoint index, raw JSON.</span>
       </button>
@@ -59,18 +60,21 @@
     </div>
   </aside>
 
-  <main class="content">
+  <main class="content" id="main-content" tabindex="-1">
     <header class="topbar">
       <div class="topbar-shell">
-        <div class="crumbs">
+        <div class="crumbs" aria-label="Current deck location">
           <span>Deck</span>
           <span class="slash">/</span>
           <span id="crumb-mode">Overview</span>
           <span class="slash">/</span>
           <span id="crumb-focus">Live State</span>
         </div>
-        <div class="controls">
-          <input id="deck-search" class="search" type="search" placeholder="Filter cards, endpoints, hosts, channels, settings">
+        <div class="controls" aria-label="Deck controls">
+          <label class="sr-only" for="deck-search">Filter deck cards and endpoints</label>
+          <input id="deck-search" class="search" type="search" placeholder="Filter cards, endpoints, hosts, channels, settings" aria-describedby="deck-search-help">
+          <span class="sr-only" id="deck-search-help">Type to filter the currently visible deck content.</span>
+          <label class="sr-only" for="refresh-rate">Auto refresh interval</label>
           <select id="refresh-rate" class="control-select" aria-label="Auto refresh">
             <option value="0">Refresh: manual</option>
             <option value="15">Refresh: 15s</option>
@@ -107,9 +111,9 @@
               <div class="panel-head">
                 <div>
                   <h3>Current Posture</h3>
-                  <p id="posture-copy">Reading runtime state.</p>
+                  <p id="posture-copy" aria-live="polite">Reading runtime state.</p>
                 </div>
-                <span id="health-pill" class="status-badge warn">Loading</span>
+                <span id="health-pill" class="status-badge warn" role="status" aria-live="polite">Loading</span>
               </div>
               <dl class="detail-rail" id="session-kv"></dl>
             </div>
@@ -127,22 +131,22 @@
       </section>
     </header>
 
-    <section class="stats" id="stats"></section>
-    <section class="alert-board" id="alert-board"></section>
-    <section class="action-dock" id="action-dock"></section>
-    <section class="signal-grid" id="signal-grid"></section>
+    <section class="stats" id="stats" aria-label="Operational summary cards"></section>
+    <section class="alert-board" id="alert-board" aria-label="Alerts and highlights"></section>
+    <section class="action-dock" id="action-dock" aria-label="Operator actions and feedback"></section>
+    <section class="signal-grid" id="signal-grid" aria-label="Operational signal bars"></section>
     <section class="history-shell">
       <div class="history-bar" id="history-bar"></div>
       <section class="trend-grid" id="trend-grid"></section>
     </section>
 
     <div class="surface">
-      <section class="section active" data-mode="overview">
+      <section class="section active" data-mode="overview" id="section-overview" aria-labelledby="section-overview-title">
         <div class="panel-grid">
           <article class="panel">
             <div class="panel-head">
               <div>
-                <h3>Executive Overview</h3>
+                <h3 id="section-overview-title">Executive Overview</h3>
                 <p>The “is this box actually healthy?” layer.</p>
               </div>
             </div>
@@ -171,12 +175,12 @@
         </article>
       </section>
 
-      <section class="section" data-mode="guide">
+      <section class="section" data-mode="guide" id="section-guide" aria-labelledby="section-guide-title">
         <div class="panel-grid">
           <article class="panel">
             <div class="panel-head">
               <div>
-                <h3>Guide Integrity</h3>
+                <h3 id="section-guide-title">Guide Integrity</h3>
                 <p>Programmes, placeholders, freshness, and doctoring state.</p>
               </div>
             </div>
@@ -194,12 +198,12 @@
         </div>
       </section>
 
-      <section class="section" data-mode="routing">
+      <section class="section" data-mode="routing" id="section-routing" aria-labelledby="section-routing-title">
         <div class="panel-grid">
           <article class="panel">
             <div class="panel-head">
               <div>
-                <h3>Routing + Debug</h3>
+                <h3 id="section-routing-title">Routing + Debug</h3>
                 <p>Fallbacks, host pain, mux decisions, and HDHR-facing surfaces.</p>
               </div>
             </div>
@@ -217,12 +221,12 @@
         </div>
       </section>
 
-      <section class="section" data-mode="ops">
+      <section class="section" data-mode="ops" id="section-ops" aria-labelledby="section-ops-title">
         <div class="panel-grid">
           <article class="panel">
             <div class="panel-head">
               <div>
-                <h3>Automation + Operations</h3>
+                <h3 id="section-ops-title">Automation + Operations</h3>
                 <p>Recorder, autopilot memory, Plex ghost hunting, and media hooks.</p>
               </div>
             </div>
@@ -240,12 +244,12 @@
         </div>
       </section>
 
-      <section class="section" data-mode="programming">
+      <section class="section" data-mode="programming" id="section-programming" aria-labelledby="section-programming-title">
         <div class="panel-grid">
           <article class="panel">
             <div class="panel-head">
               <div>
-                <h3>Programming Manager</h3>
+                <h3 id="section-programming-title">Programming Manager</h3>
                 <p>Build the exposed lineup from categories, exact channels, order, and backup collapse rules.</p>
               </div>
             </div>
@@ -305,12 +309,12 @@
         </div>
       </section>
 
-      <section class="section" data-mode="settings">
+      <section class="section" data-mode="settings" id="section-settings" aria-labelledby="section-settings-title">
         <div class="panel-grid">
           <article class="panel">
             <div class="panel-head">
               <div>
-                <h3>Runtime Settings</h3>
+                <h3 id="section-settings-title">Runtime Settings</h3>
                 <p>Read-only effective config grouped by subsystem.</p>
               </div>
             </div>
@@ -323,7 +327,8 @@
                 <p>Browse every proxied surface and open raw payloads in context.</p>
               </div>
               <div class="controls">
-                <select id="raw-select"></select>
+                <label class="sr-only" for="raw-select">Raw payload endpoint</label>
+                <select id="raw-select" aria-label="Raw payload endpoint"></select>
               </div>
             </div>
             <div class="index-grid" id="endpoint-grid"></div>
@@ -356,19 +361,20 @@
   </main>
 </div>
 
-<div class="modal" id="raw-modal" aria-hidden="true">
-  <div class="modal-card">
+<div class="modal" id="raw-modal" aria-hidden="true" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby="modal-description">
     <div class="modal-head">
       <div>
         <div class="eyebrow" id="modal-label">Raw Payload</div>
         <h3 id="modal-title">Endpoint Viewer</h3>
+        <p class="sr-only" id="modal-description">Modal dialog for raw payloads, workflows, and operator editing.</p>
       </div>
       <div class="controls">
         <button id="modal-refresh" type="button">Reload</button>
         <button id="modal-close" type="button">Close</button>
       </div>
     </div>
-    <div class="modal-body">
+    <div class="modal-body" id="modal-body">
       <div id="modal-rich"></div>
       <pre class="raw-inline" id="modal-output">Loading...</pre>
     </div>

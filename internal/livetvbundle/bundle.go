@@ -100,6 +100,8 @@ type LiveTVDiffResult struct {
 	ComparedAt          string            `json:"compared_at"`
 	Target              string            `json:"target"`
 	TargetHost          string            `json:"target_host"`
+	VerificationMode    string            `json:"verification_mode,omitempty"`
+	ExactMatchSupported bool              `json:"exact_match_supported"`
 	CreateCount         int               `json:"create_count"`
 	ReuseCount          int               `json:"reuse_count"`
 	ConflictCount       int               `json:"conflict_count"`
@@ -214,26 +216,26 @@ type LibraryRolloutDiffResult struct {
 }
 
 type MigrationTargetAudit struct {
-	Target             string                  `json:"target"`
-	TargetHost         string                  `json:"target_host"`
-	Status             string                  `json:"status"`
-	StatusReason       string                  `json:"status_reason,omitempty"`
-	ReadyToApply       bool                    `json:"ready_to_apply"`
-	LiveTVReady        bool                    `json:"live_tv_ready"`
-	LibraryReady       bool                    `json:"library_ready"`
-	LiveTV             LiveTVDiffResult        `json:"live_tv"`
-	Library            *LibraryDiffResult      `json:"library,omitempty"`
-	LibraryMode        string                  `json:"library_mode,omitempty"`
-	LibraryScan        *emby.LibraryScanStatus `json:"library_scan,omitempty"`
-	SyncedLibraries    []string                `json:"synced_libraries,omitempty"`
-	LaggingLibraries   []string                `json:"lagging_libraries,omitempty"`
-	TitleSyncedLibraries []string              `json:"title_synced_libraries,omitempty"`
-	TitleLaggingLibraries []string             `json:"title_lagging_libraries,omitempty"`
-	PresentLibraries   []string                `json:"present_libraries,omitempty"`
-	MissingLibraries   []string                `json:"missing_libraries,omitempty"`
-	PopulatedLibraries []string                `json:"populated_libraries,omitempty"`
-	EmptyLibraries     []string                `json:"empty_libraries,omitempty"`
-	ConflictCount      int                     `json:"conflict_count"`
+	Target                string                  `json:"target"`
+	TargetHost            string                  `json:"target_host"`
+	Status                string                  `json:"status"`
+	StatusReason          string                  `json:"status_reason,omitempty"`
+	ReadyToApply          bool                    `json:"ready_to_apply"`
+	LiveTVReady           bool                    `json:"live_tv_ready"`
+	LibraryReady          bool                    `json:"library_ready"`
+	LiveTV                LiveTVDiffResult        `json:"live_tv"`
+	Library               *LibraryDiffResult      `json:"library,omitempty"`
+	LibraryMode           string                  `json:"library_mode,omitempty"`
+	LibraryScan           *emby.LibraryScanStatus `json:"library_scan,omitempty"`
+	SyncedLibraries       []string                `json:"synced_libraries,omitempty"`
+	LaggingLibraries      []string                `json:"lagging_libraries,omitempty"`
+	TitleSyncedLibraries  []string                `json:"title_synced_libraries,omitempty"`
+	TitleLaggingLibraries []string                `json:"title_lagging_libraries,omitempty"`
+	PresentLibraries      []string                `json:"present_libraries,omitempty"`
+	MissingLibraries      []string                `json:"missing_libraries,omitempty"`
+	PopulatedLibraries    []string                `json:"populated_libraries,omitempty"`
+	EmptyLibraries        []string                `json:"empty_libraries,omitempty"`
+	ConflictCount         int                     `json:"conflict_count"`
 }
 
 type MigrationAuditResult struct {
@@ -490,16 +492,45 @@ func DiffEmbyPlan(plan EmbyPlan, host, token string) (*LiveTVDiffResult, error) 
 	}
 	channelCount := emby.GetChannelCount(cfg)
 	tunerHosts, err := emby.ListTunerHosts(cfg)
-	if err != nil {
+	exactMatchSupported := true
+	verificationMode := "exact"
+	entries := []LiveTVDiffEntry{}
+	notes := []string{
+		"Diff compares the planned tuner host and XMLTV listing provider against the current target server state before apply.",
+	}
+	var configFallback *emby.LiveTVConfiguration
+	if err != nil && cfg.ServerType == "jellyfin" && emby.IsMethodNotAllowed(err) {
+		configFallback, err = emby.GetLiveTVConfiguration(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("get live tv configuration: %w", err)
+		}
+		tunerHosts = configFallback.TunerHosts
+		verificationMode = "configuration_endpoint"
+		notes = append(notes, "Jellyfin exact diff used /System/Configuration/livetv because current Jellyfin builds do not expose read-side GET /LiveTv/TunerHosts.")
+		err = nil
+	}
+	if err == nil {
+		entries = append(entries, diffTunerHost(plan.TunerHost, tunerHosts))
+	} else {
 		return nil, fmt.Errorf("list tuner hosts: %w", err)
 	}
 	listingProviders, err := emby.ListListingProviders(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("list listing providers: %w", err)
+	if err != nil && cfg.ServerType == "jellyfin" && emby.IsMethodNotAllowed(err) {
+		if configFallback == nil {
+			configFallback, err = emby.GetLiveTVConfiguration(cfg)
+			if err != nil {
+				return nil, fmt.Errorf("get live tv configuration: %w", err)
+			}
+			verificationMode = "configuration_endpoint"
+			notes = append(notes, "Jellyfin exact diff used /System/Configuration/livetv because current Jellyfin builds do not expose read-side GET /LiveTv/ListingProviders.")
+		}
+		listingProviders = configFallback.ListingProviders
+		err = nil
 	}
-	entries := []LiveTVDiffEntry{
-		diffTunerHost(plan.TunerHost, tunerHosts),
-		diffListingProvider(plan.ListingProvider, listingProviders),
+	if err == nil {
+		entries = append(entries, diffListingProvider(plan.ListingProvider, listingProviders))
+	} else {
+		return nil, fmt.Errorf("list listing providers: %w", err)
 	}
 	var createCount, reuseCount, conflictCount int
 	for _, entry := range entries {
@@ -512,9 +543,6 @@ func DiffEmbyPlan(plan EmbyPlan, host, token string) (*LiveTVDiffResult, error) 
 			conflictCount++
 		}
 	}
-	notes := []string{
-		"Diff compares the planned tuner host and XMLTV listing provider against the current target server state before apply.",
-	}
 	if conflictCount > 0 {
 		notes = append(notes, "Conflicts should be resolved before apply to avoid duplicate or mismatched Live TV registrations.")
 	}
@@ -522,6 +550,8 @@ func DiffEmbyPlan(plan EmbyPlan, host, token string) (*LiveTVDiffResult, error) 
 		ComparedAt:          time.Now().UTC().Format(time.RFC3339),
 		Target:              cfg.ServerType,
 		TargetHost:          cfg.Host,
+		VerificationMode:    verificationMode,
+		ExactMatchSupported: exactMatchSupported,
 		CreateCount:         createCount,
 		ReuseCount:          reuseCount,
 		ConflictCount:       conflictCount,
@@ -912,7 +942,7 @@ func AuditBundleTargets(bundle Bundle, specs []TargetSpec, apply map[string]Appl
 			LiveTV:       res,
 			LiveTVReady:  res.ConflictCount == 0,
 			ReadyToApply: res.ConflictCount == 0,
-			Status:       auditTargetStatus(res.ConflictCount == 0, true, res.IndexedChannelCount, true),
+			Status:       auditTargetStatus(res.ConflictCount == 0, true, res.IndexedChannelCount, true, res.ExactMatchSupported),
 		})
 	}
 
@@ -924,7 +954,7 @@ func AuditBundleTargets(bundle Bundle, specs []TargetSpec, apply map[string]Appl
 			results[i].LibraryMode = "not_in_bundle"
 			results[i].LibraryReady = true
 			results[i].ConflictCount = results[i].LiveTV.ConflictCount
-			results[i].Status = auditTargetStatus(results[i].LiveTVReady, true, results[i].LiveTV.IndexedChannelCount, true)
+			results[i].Status = auditTargetStatus(results[i].LiveTVReady, true, results[i].LiveTV.IndexedChannelCount, true, results[i].LiveTV.ExactMatchSupported)
 			results[i].StatusReason = auditTargetReason(results[i])
 			if results[i].ReadyToApply {
 				readyCount++
@@ -987,14 +1017,20 @@ func AuditBundleTargets(bundle Bundle, specs []TargetSpec, apply map[string]Appl
 					results[i].LibraryScan = scanStatus
 				}
 			}
-			results[i].Status = auditTargetStatus(results[i].LiveTVReady, results[i].LibraryReady, results[i].LiveTV.IndexedChannelCount, copyLib.CreateCount == 0)
+			results[i].Status = auditTargetStatus(
+				results[i].LiveTVReady,
+				results[i].LibraryReady,
+				results[i].LiveTV.IndexedChannelCount,
+				auditLibraryConverged(results[i]),
+				results[i].LiveTV.ExactMatchSupported,
+			)
 			results[i].StatusReason = auditTargetReason(results[i])
 		} else {
 			results[i].LibraryMode = "not_requested"
 			results[i].LibraryReady = true
 			results[i].ReadyToApply = results[i].LiveTVReady
 			results[i].ConflictCount = results[i].LiveTV.ConflictCount
-			results[i].Status = auditTargetStatus(results[i].LiveTVReady, true, results[i].LiveTV.IndexedChannelCount, true)
+			results[i].Status = auditTargetStatus(results[i].LiveTVReady, true, results[i].LiveTV.IndexedChannelCount, true, results[i].LiveTV.ExactMatchSupported)
 			results[i].StatusReason = auditTargetReason(results[i])
 		}
 	}
@@ -1244,14 +1280,24 @@ func filepathClean(value string) string {
 	return filepath.Clean(strings.ReplaceAll(value, `\`, `/`))
 }
 
-func auditTargetStatus(liveReady, libraryReady bool, indexedChannelCount int, libraryConverged bool) string {
+func auditTargetStatus(liveReady, libraryReady bool, indexedChannelCount int, libraryConverged, liveExact bool) string {
 	if !liveReady || !libraryReady {
 		return "blocked_conflicts"
 	}
-	if indexedChannelCount > 0 && libraryConverged {
+	if indexedChannelCount > 0 && libraryConverged && liveExact {
 		return "converged"
 	}
 	return "ready_to_apply"
+}
+
+func auditLibraryConverged(result MigrationTargetAudit) bool {
+	if result.LibraryMode != "included" {
+		return true
+	}
+	return len(result.MissingLibraries) == 0 &&
+		len(result.LaggingLibraries) == 0 &&
+		len(result.TitleLaggingLibraries) == 0 &&
+		len(result.EmptyLibraries) == 0
 }
 
 func auditOverallStatus(conflictCount, readyCount, total int, results []MigrationTargetAudit) string {
@@ -1278,6 +1324,12 @@ func auditTargetReason(result MigrationTargetAudit) string {
 	if result.ConflictCount > 0 {
 		return "definition conflicts must be resolved before apply"
 	}
+	if !result.LiveTV.ExactMatchSupported && result.LiveTV.IndexedChannelCount > 0 {
+		return "live tv is indexed, but exact Jellyfin tuner/listing parity is not readable through the current API"
+	}
+	if !result.LiveTV.ExactMatchSupported {
+		return "no conflicts detected, but exact Jellyfin tuner/listing parity is not readable through the current API"
+	}
 	if result.LibraryMode == "not_in_bundle" && result.LiveTV.IndexedChannelCount == 0 {
 		return "no conflicts detected, but the target has not indexed Live TV channels yet"
 	}
@@ -1292,6 +1344,12 @@ func auditTargetReason(result MigrationTargetAudit) string {
 	}
 	if len(result.TitleLaggingLibraries) > 0 {
 		return "no conflicts detected, but some reused libraries are still missing source sample titles"
+	}
+	if len(result.EmptyLibraries) > 0 && result.LiveTV.IndexedChannelCount > 0 {
+		return "live tv is indexed, but some reused libraries are still empty"
+	}
+	if len(result.EmptyLibraries) > 0 {
+		return "no conflicts detected, but some reused libraries are still empty"
 	}
 	if len(result.MissingLibraries) > 0 && result.LiveTV.IndexedChannelCount > 0 {
 		return "live tv is indexed, but bundled libraries are still missing"

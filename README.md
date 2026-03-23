@@ -37,7 +37,9 @@ IPTV Tunerr sits in the middle and fixes those problems. It can:
 
 You can use it for just the tuner, just the guide, or as the full control plane in front of Plex, Emby, and Jellyfin.
 
-It also supports gradual migration between them. The same Tunerr-backed tuner and guide identity can stay online for Plex while you pre-roll Emby or Jellyfin from built-in migration commands instead of hand-copying Live TV settings or forcing a one-shot cutover. That migration lane now also reaches shared library definitions and storage paths, not just the Live TV side, and it can audit both Live TV registrations and planned libraries against one or both live Emby/Jellyfin targets before apply, including explicit `ready_to_apply`, `status`, missing-library hints, reused-library population hints, source-vs-destination library parity hints, and best-effort library-scan progress per target.
+It also supports gradual migration between them. The same Tunerr-backed tuner and guide identity can stay online for Plex while you pre-roll Emby or Jellyfin from built-in migration commands instead of hand-copying Live TV settings or forcing a one-shot cutover. That migration lane now also reaches shared library definitions, storage paths, and Plex-user account bootstrap plans, not just the Live TV side, and it can audit both Live TV registrations and planned libraries against one or both live Emby/Jellyfin targets before apply, including explicit `ready_to_apply`, `status`, missing-library hints, reused-library population hints, source-vs-destination library parity hints, bounded title-sample parity hints, best-effort library-scan progress per target, a built-in human-readable rollout summary when you do not want to inspect the raw JSON directly, and a deck/operator workflow surface when the running process knows where the saved migration bundle lives.
+
+On the identity side, Tunerr can now export Plex users plus visible share/tuner entitlement hints into a neutral bundle, turn that into Emby/Jellyfin local-user creation plans, diff those plans against live targets, apply only the missing users, and now also push the first safe layer of access-policy parity: Live TV access, sync/download access, all-library access when Plex exposes that it is global, and remote access for Plex-shared users. The same audit now tells you three different things separately: who is missing, which existing destination accounts still need those additive policy grants, and which destination users still are not activation-ready because they have no configured password or auto-login path yet. Tunerr can also emit a provider-agnostic OIDC identity/group plan from the same Plex bundle, and it now has two live IdP backends on top of that plan: Keycloak and Authentik diff/apply for users plus Tunerr-owned migration groups. Keycloak can optionally set a bootstrap password and trigger `execute-actions-email`; Authentik can optionally set a bootstrap password and trigger recovery-email onboarding. New IdP-side users now also get stable Tunerr migration metadata on creation so the cutover can be traced later instead of being just a username/group shove, and existing IdP users are no longer treated as “reuse and ignore” when that Tunerr-owned metadata, display name, or email drifts. That OIDC lane now has its own audit too, so you can see missing IdP users, missing migration groups, missing group membership, and metadata-drift users before apply, and the deck can both show that same IdP bootstrap readiness and execute the saved OIDC apply path from the running appliance when the OIDC plan file is configured. The deck-side apply path now accepts the same practical onboarding knobs as the CLI too: Keycloak bootstrap password, temporary-password choice, execute-actions-email list and redirect/lifespan hints, plus Authentik bootstrap password and recovery-email delivery. The deck workflow now also keeps a short recent OIDC apply history in both the summary card and the OIDC workflow modal, including both successful and failed runs, with per-target delta counts like created users, created groups, added membership, metadata updates, and activation-pending users when available, plus validation/provider failure phase and error context when a run fails. The modal history now also expands those runs into per-target outcome rows, including which target was applied and which target was not reached before a failed run stopped. That recent-history lane now also supports explicit `all / success / failed` filtering with visual badges in both surfaces, so operators can separate bad IdP runs from good ones without parsing a flat text wall. It intentionally still does not clone Plex passwords, solve folder-by-folder library grants, or automate every OIDC provider yet; the current slice is for overlap-friendly account bootstrap, additive rights sync, and staged IdP migration while Plex stays online.
 
 ### It makes unreliable IPTV behave like a normal DVR source
 
@@ -124,7 +126,9 @@ Three ways to add IPTV Tunerr to Plex, Emby, or Jellyfin — pick the one that f
 > Then: Dashboard → Live TV → + (guide) → XMLTV
 > Guide URL: `http://<this-host>:5004/guide.xml`
 
-Dedicated web UI: `http://127.0.0.1:48879/` by default (`0xBEEF`) with integrated health, guide, channel, recorder, provider, debug, and runtime-settings views. It opens on a dedicated login page and creates a cookie-backed deck session; if `IPTV_TUNERR_WEBUI_PASS` is unset, Tunerr now generates a one-time startup password instead of falling back to `admin/admin`. Direct HTTP Basic auth still works for scripts. It stays localhost-only unless `IPTV_TUNERR_WEBUI_ALLOW_LAN=1`, optional `IPTV_TUNERR_WEBUI_STATE_FILE` persists server-derived operator activity plus non-secret deck preferences across web UI restarts, and the deck now includes safe operator actions/workflows, grouped raw-endpoint indexing, and session-bound CSRF protection for state-changing controls.
+Dedicated web UI: `http://127.0.0.1:48879/` by default (`0xBEEF`) with integrated health, guide, channel, recorder, provider, shared-live-session, debug, and runtime-settings views. It opens on a dedicated login page and creates a cookie-backed deck session; if `IPTV_TUNERR_WEBUI_PASS` is unset, Tunerr now generates a one-time startup password instead of falling back to `admin/admin`. Direct HTTP Basic auth still works for scripts. It stays localhost-only unless `IPTV_TUNERR_WEBUI_ALLOW_LAN=1`, optional `IPTV_TUNERR_WEBUI_STATE_FILE` persists server-derived operator activity plus non-secret deck preferences across web UI restarts, and the deck now includes safe operator actions/workflows, grouped raw-endpoint indexing, session-bound CSRF protection for state-changing controls, accessible keyboard/focus/modal behavior, plus built-in migration, identity-cutover, and OIDC/IdP workflow views when the matching saved bundle/plan files are configured.
+
+Legacy `/ui/` shell: still available on the tuner port for lightweight read-only access and compatibility, but it is no longer the primary operator plane. The served `/ui/` and `/ui/guide/` pages now explicitly point operators back to the dedicated Control Deck.
 
 **Programmatic (all servers, headless):**
 ```bash
@@ -688,13 +692,26 @@ With `IPTV_TUNERR_VIRTUAL_CHANNELS_FILE`, Tunerr now supports:
 - schedule preview
 - rolling synthetic schedule output
 - focused channel detail
+- station report and recovery report surfaces
 - live M3U export
 - a synthetic guide at `/virtual-channels/guide.xml`
 - current-slot playback at `/virtual-channels/stream/<id>.mp4`
+- optional branded playback at `/virtual-channels/branded-stream/<id>.ts`
 - downstream Xtream live exposure for the same virtual channels
 
 So the owned-media path now behaves like a real publishable TV surface instead
 of only a lab preview.
+
+It also now has the first real station-ops runtime loop instead of only static
+schedule metadata:
+- station branding metadata with per-channel `stream_mode`
+- rendered slate output and branded-stream overlays
+- deck-side branding and recovery controls
+- filler/recovery execution on startup failures, bad response bodies, and
+  repeated midstream stall/error/content-probe events
+- ordered fallback-chain walking with explicit exhaustion reporting
+- persisted virtual recovery history when
+  `IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_STATE_FILE` is configured
 
 ### Recording, catch-up, and publish flows
 
@@ -1384,6 +1401,7 @@ This project is licensed under the GNU Affero General Public License v3.0 only. 
 - **Release-readiness is explicit now:** use [`scripts/release-readiness.sh`](scripts/release-readiness.sh) plus [`docs/explanations/release-readiness-matrix.md`](docs/explanations/release-readiness-matrix.md) to see which surfaces are unit-proven, smoke-proven, or host-proven before tagging.
 - **Programming Manager is now a real product surface:** server-backed category browse, quick filters, manual order, exact-backup grouping and preference, harvest assists/import, and live preview all ship in the dedicated deck — see [`docs/features.md`](docs/features.md) and [`docs/epics/EPIC-programming-manager.md`](docs/epics/EPIC-programming-manager.md).
 - **Virtual channels now publish downstream, not just preview:** the owned-media schedule path now has `/virtual-channels/guide.xml`, focused detail/schedule surfaces, and Xtream live exposure through `player_api.php`, `get.php`, and `/live/<user>/<pass>/virtual.<id>.mp4`.
+- **Station ops is now real runtime behavior, not only metadata:** branded virtual channels can publish plain or branded stream paths, recovery/filler can cut over on startup and midstream failures, recovery history/reporting can persist across restarts, and the deck can edit branding/recovery posture directly.
 - **Diagnostics moved into the operator plane:** the deck can now launch bounded `stream-compare` / `channel-diff` runs, scaffold evidence bundles, and summarize the latest `.diag` findings instead of leaving those workflows buried in shell scripts.
 - **Provider-account pooling is deeper:** Tunerr now spreads live sessions across distinct account credentials, learns tighter per-account upstream caps from real limit responses, persists those learned caps across restarts, and exposes them on `/provider/profile.json`.
 - **Cross-platform VOD parity is stronger:** Linux keeps native `mount`, while macOS/Windows use the read-only `vod-webdav` surface with explicit protocol contract, client-matrix harnesses, baseline-vs-host diff tooling, and a passing macOS bare-metal smoke lane.

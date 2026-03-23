@@ -193,6 +193,19 @@ func TestListTunerHosts(t *testing.T) {
 	}
 }
 
+func TestListTunerHostsMethodNotAllowed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Allow", "DELETE, POST")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}))
+	defer srv.Close()
+
+	_, err := ListTunerHosts(Config{Host: srv.URL, Token: "token"})
+	if err == nil || !IsMethodNotAllowed(err) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestListListingProviders(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/LiveTv/ListingProviders" {
@@ -211,6 +224,19 @@ func TestListListingProviders(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].Id != "lp-1" {
 		t.Fatalf("items=%+v", items)
+	}
+}
+
+func TestListListingProvidersMethodNotAllowed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Allow", "DELETE, POST")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}))
+	defer srv.Close()
+
+	_, err := ListListingProviders(Config{Host: srv.URL, Token: "token"})
+	if err == nil || !IsMethodNotAllowed(err) {
+		t.Fatalf("err=%v", err)
 	}
 }
 
@@ -269,6 +295,50 @@ func TestGetChannelCount_serverDown(t *testing.T) {
 	}
 	if got := GetChannelCount(cfg); got != 0 {
 		t.Errorf("want 0 for unreachable server, got %d", got)
+	}
+}
+
+func TestGetLiveTVInfo(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/LiveTv/Info" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(LiveTVInfo{
+			IsEnabled: true,
+			Services:  []LiveTVService{{Name: "Emby", Status: "Ok"}},
+		})
+	}))
+	defer srv.Close()
+
+	info, err := GetLiveTVInfo(Config{Host: srv.URL, Token: "token"})
+	if err != nil {
+		t.Fatalf("GetLiveTVInfo: %v", err)
+	}
+	if !info.IsEnabled || len(info.Services) != 1 || info.Services[0].Status != "Ok" {
+		t.Fatalf("info=%+v", info)
+	}
+}
+
+func TestGetLiveTVConfiguration(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/System/Configuration/livetv" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(LiveTVConfiguration{
+			TunerHosts:       []TunerHostInfo{{Id: "th-1", Url: "http://tuner:5004", Type: "hdhomerun"}},
+			ListingProviders: []ListingsProviderInfo{{Id: "lp-1", Type: "xmltv", Path: "http://tuner:5004/guide.xml"}},
+		})
+	}))
+	defer srv.Close()
+
+	cfg, err := GetLiveTVConfiguration(Config{Host: srv.URL, Token: "token"})
+	if err != nil {
+		t.Fatalf("GetLiveTVConfiguration: %v", err)
+	}
+	if len(cfg.TunerHosts) != 1 || len(cfg.ListingProviders) != 1 {
+		t.Fatalf("cfg=%+v", cfg)
 	}
 }
 

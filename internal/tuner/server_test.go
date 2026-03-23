@@ -173,8 +173,10 @@ func TestServer_operatorReadOnlyEndpointsRequireGet(t *testing.T) {
 		{name: "programming_channel_detail", req: httptest.NewRequest(http.MethodPost, "/programming/channel-detail.json?channel_id=1", nil), h: s.serveProgrammingChannelDetail(), allow: http.MethodGet},
 		{name: "programming_preview", req: httptest.NewRequest(http.MethodPost, "/programming/preview.json", nil), h: s.serveProgrammingPreview(), allow: http.MethodGet},
 		{name: "virtual_preview", req: httptest.NewRequest(http.MethodPost, "/virtual-channels/preview.json", nil), h: s.serveVirtualChannelPreview(), allow: http.MethodGet},
-		{name: "virtual_schedule", req: httptest.NewRequest(http.MethodPost, "/virtual-channels/schedule.json", nil), h: s.serveVirtualChannelSchedule(), allow: http.MethodGet},
-		{name: "virtual_detail", req: httptest.NewRequest(http.MethodPost, "/virtual-channels/channel-detail.json?channel_id=vc1", nil), h: s.serveVirtualChannelDetail(), allow: http.MethodGet},
+		{name: "virtual_schedule", req: httptest.NewRequest(http.MethodDelete, "/virtual-channels/schedule.json", nil), h: s.serveVirtualChannelSchedule(), allow: "GET, POST"},
+		{name: "virtual_detail", req: httptest.NewRequest(http.MethodDelete, "/virtual-channels/channel-detail.json?channel_id=vc1", nil), h: s.serveVirtualChannelDetail(), allow: "GET, POST"},
+		{name: "virtual_report", req: httptest.NewRequest(http.MethodPost, "/virtual-channels/report.json", nil), h: s.serveVirtualChannelReport(), allow: http.MethodGet},
+		{name: "virtual_recovery_report", req: httptest.NewRequest(http.MethodPost, "/virtual-channels/recovery-report.json", nil), h: s.serveVirtualChannelRecoveryReport(), allow: http.MethodGet},
 		{name: "recorder_report", req: httptest.NewRequest(http.MethodPost, "/recordings/recorder-report.json", nil), h: s.serveCatchupRecorderReport(), allow: http.MethodGet},
 		{name: "recording_preview", req: httptest.NewRequest(http.MethodPost, "/recordings/rule-preview.json", nil), h: s.serveRecordingRulePreview(), allow: http.MethodGet},
 		{name: "recording_history", req: httptest.NewRequest(http.MethodPost, "/recordings/history.json", nil), h: s.serveRecordingHistory(), allow: http.MethodGet},
@@ -777,8 +779,22 @@ func TestServer_virtualChannelRulesAndPreview(t *testing.T) {
       "id": "vc-news",
       "name": "News Loop",
       "guide_number": "9001",
+      "description": "Daily scheduled station",
       "enabled": true,
       "loop_daily_utc": true,
+      "branding": {
+        "logo_url": "https://img.example/news.png",
+        "bug_text": "NEWS",
+        "bug_position": "top-left",
+        "banner_text": "Breaking now"
+      },
+      "recovery": {
+        "mode": "filler",
+        "black_screen_seconds": 3,
+        "fallback_entries": [
+          { "type": "movie", "movie_id": "m1", "duration_mins": 5 }
+        ]
+      },
       "entries": [
         { "type": "movie", "movie_id": "m1", "duration_mins": 60 },
         { "type": "episode", "series_id": "s1", "episode_id": "e1", "duration_mins": 30 }
@@ -822,6 +838,19 @@ func TestServer_virtualChannelRulesAndPreview(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "/virtual-channels/stream/vc-news.mp4") {
 		t.Fatalf("virtual m3u=%q", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `tvg-logo="https://img.example/news.png"`) {
+		t.Fatalf("virtual m3u missing logo=%q", w.Body.String())
+	}
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_BRANDING_DEFAULT", "true")
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/live.m3u", nil)
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelM3U().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual branded-default m3u status=%d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "/virtual-channels/branded-stream/vc-news.ts") {
+		t.Fatalf("virtual branded-default m3u=%q", w.Body.String())
 	}
 
 	withNow := time.Date(2026, 3, 21, 0, 15, 0, 0, time.UTC)
@@ -869,6 +898,36 @@ func TestServer_virtualChannelRulesAndPreview(t *testing.T) {
 	if detailBody.Channel.ID != "vc-news" || detailBody.ResolvedNow == nil || len(detailBody.Schedule) < 4 {
 		t.Fatalf("virtual detail=%+v", detailBody)
 	}
+	if detailBody.Channel.Branding.LogoURL != "https://img.example/news.png" || detailBody.Channel.Recovery.Mode != "filler" {
+		t.Fatalf("virtual detail station metadata=%+v", detailBody.Channel)
+	}
+	if !strings.Contains(detailBody.PublishedStreamURL, "/virtual-channels/branded-stream/vc-news.ts") {
+		t.Fatalf("virtual detail published stream=%q", detailBody.PublishedStreamURL)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/report.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelReport().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual report status=%d body=%s", w.Code, w.Body.String())
+	}
+	var stationReport virtualChannelStationReport
+	if err := json.Unmarshal(w.Body.Bytes(), &stationReport); err != nil {
+		t.Fatalf("virtual report unmarshal: %v", err)
+	}
+	if stationReport.Count != 1 || len(stationReport.Channels) != 1 {
+		t.Fatalf("virtual report=%+v", stationReport)
+	}
+	if stationReport.Channels[0].ChannelID != "vc-news" || !strings.Contains(stationReport.Channels[0].PublishedStreamURL, "/virtual-channels/branded-stream/vc-news.ts") {
+		t.Fatalf("virtual report row=%+v", stationReport.Channels[0])
+	}
+	if stationReport.Channels[0].RecoveryMode != "filler" || stationReport.Channels[0].BlackScreenSeconds != 3 || stationReport.Channels[0].FallbackEntries != 1 {
+		t.Fatalf("virtual report recovery row=%+v", stationReport.Channels[0])
+	}
+	if stationReport.Channels[0].RecoveryEvents != 0 || stationReport.Channels[0].RecoveryExhausted || stationReport.Channels[0].LastRecoveryReason != "" {
+		t.Fatalf("virtual report recovery summary row=%+v", stationReport.Channels[0])
+	}
 
 	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/guide.xml?horizon=3h", nil)
 	w = httptest.NewRecorder()
@@ -878,6 +937,322 @@ func TestServer_virtualChannelRulesAndPreview(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), `<channel id="virtual.vc-news">`) || !strings.Contains(w.Body.String(), "<title>Movie One</title>") {
 		t.Fatalf("virtual guide body=%s", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `<icon src="https://img.example/news.png"></icon>`) {
+		t.Fatalf("virtual guide missing icon=%s", w.Body.String())
+	}
+
+	postBody = strings.NewReader(`{
+  "action": "update_metadata",
+  "channel_id": "vc-news",
+  "description": "Updated station",
+  "branding": {
+    "logo_url": "https://img.example/news2.png",
+    "bug_text": "NEWS2",
+    "bug_position": "bottom-left",
+    "stream_mode": "plain"
+  },
+  "recovery": {
+    "mode": "filler",
+    "black_screen_seconds": 4,
+    "fallback_entries": [
+      { "type": "movie", "movie_id": "m1", "duration_mins": 5 }
+    ]
+  }
+}`)
+	req = httptest.NewRequest(http.MethodPost, "/virtual-channels/channel-detail.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelDetail().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual detail mutate status=%d body=%s", w.Code, w.Body.String())
+	}
+	detailBody = virtualChannelDetailReport{}
+	if err := json.Unmarshal(w.Body.Bytes(), &detailBody); err != nil {
+		t.Fatalf("virtual detail mutate unmarshal: %v", err)
+	}
+	if detailBody.Channel.Description != "Updated station" || detailBody.Channel.Branding.LogoURL != "https://img.example/news2.png" {
+		t.Fatalf("virtual detail mutate=%+v", detailBody.Channel)
+	}
+	if detailBody.Channel.Branding.StreamMode != "plain" {
+		t.Fatalf("virtual detail mutate stream mode=%q", detailBody.Channel.Branding.StreamMode)
+	}
+	if !strings.Contains(detailBody.PublishedStreamURL, "/virtual-channels/stream/vc-news.mp4") {
+		t.Fatalf("virtual detail mutate published stream=%q", detailBody.PublishedStreamURL)
+	}
+
+	postBody = strings.NewReader(`{
+  "action": "update_metadata",
+  "channel_id": "vc-news",
+  "branding": {
+    "stream_mode": "branded"
+  }
+}`)
+	req = httptest.NewRequest(http.MethodPost, "/virtual-channels/channel-detail.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelDetail().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual detail stream-mode-only status=%d body=%s", w.Code, w.Body.String())
+	}
+	detailBody = virtualChannelDetailReport{}
+	if err := json.Unmarshal(w.Body.Bytes(), &detailBody); err != nil {
+		t.Fatalf("virtual detail stream-mode-only unmarshal: %v", err)
+	}
+	if detailBody.Channel.Branding.LogoURL != "https://img.example/news2.png" {
+		t.Fatalf("virtual detail stream-mode-only lost logo=%+v", detailBody.Channel.Branding)
+	}
+	if detailBody.Channel.Branding.StreamMode != "branded" {
+		t.Fatalf("virtual detail stream-mode-only stream mode=%q", detailBody.Channel.Branding.StreamMode)
+	}
+	if !strings.Contains(detailBody.PublishedStreamURL, "/virtual-channels/branded-stream/vc-news.ts") {
+		t.Fatalf("virtual detail stream-mode-only published stream=%q", detailBody.PublishedStreamURL)
+	}
+
+	postBody = strings.NewReader(`{
+  "action": "update_metadata",
+  "channel_id": "vc-news",
+  "branding_clear": ["bug_text"]
+}`)
+	req = httptest.NewRequest(http.MethodPost, "/virtual-channels/channel-detail.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelDetail().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual detail branding-clear status=%d body=%s", w.Code, w.Body.String())
+	}
+	detailBody = virtualChannelDetailReport{}
+	if err := json.Unmarshal(w.Body.Bytes(), &detailBody); err != nil {
+		t.Fatalf("virtual detail branding-clear unmarshal: %v", err)
+	}
+	if detailBody.Channel.Branding.BugText != "" {
+		t.Fatalf("virtual detail branding-clear bug text=%q", detailBody.Channel.Branding.BugText)
+	}
+	if detailBody.Channel.Branding.LogoURL != "https://img.example/news2.png" {
+		t.Fatalf("virtual detail branding-clear lost logo=%+v", detailBody.Channel.Branding)
+	}
+
+	postBody = strings.NewReader(`{
+  "action": "update_metadata",
+  "channel_id": "vc-news",
+  "recovery": {
+    "black_screen_seconds": 9
+  }
+}`)
+	req = httptest.NewRequest(http.MethodPost, "/virtual-channels/channel-detail.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelDetail().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual detail recovery-merge status=%d body=%s", w.Code, w.Body.String())
+	}
+	detailBody = virtualChannelDetailReport{}
+	if err := json.Unmarshal(w.Body.Bytes(), &detailBody); err != nil {
+		t.Fatalf("virtual detail recovery-merge unmarshal: %v", err)
+	}
+	if detailBody.Channel.Recovery.Mode != "filler" || detailBody.Channel.Recovery.BlackScreenSeconds != 9 || len(detailBody.Channel.Recovery.FallbackEntries) != 1 {
+		t.Fatalf("virtual detail recovery-merge=%+v", detailBody.Channel.Recovery)
+	}
+
+	postBody = strings.NewReader(`{
+  "action": "update_metadata",
+  "channel_id": "vc-news",
+  "recovery_clear": ["mode"]
+}`)
+	req = httptest.NewRequest(http.MethodPost, "/virtual-channels/channel-detail.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelDetail().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual detail recovery-clear status=%d body=%s", w.Code, w.Body.String())
+	}
+	detailBody = virtualChannelDetailReport{}
+	if err := json.Unmarshal(w.Body.Bytes(), &detailBody); err != nil {
+		t.Fatalf("virtual detail recovery-clear unmarshal: %v", err)
+	}
+	if detailBody.Channel.Recovery.Mode != "" || detailBody.Channel.Recovery.BlackScreenSeconds != 9 || len(detailBody.Channel.Recovery.FallbackEntries) != 1 {
+		t.Fatalf("virtual detail recovery-clear=%+v", detailBody.Channel.Recovery)
+	}
+
+	postBody = strings.NewReader(`{
+  "action": "append_movies",
+  "channel_id": "vc-news",
+  "movie_ids": ["m1"],
+  "duration_mins": 45
+}`)
+	req = httptest.NewRequest(http.MethodPost, "/virtual-channels/schedule.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelSchedule().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual schedule mutate status=%d body=%s", w.Code, w.Body.String())
+	}
+	var scheduleMutation struct {
+		Channel virtualchannels.Channel `json:"channel"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &scheduleMutation); err != nil {
+		t.Fatalf("virtual schedule mutate unmarshal: %v", err)
+	}
+	if len(scheduleMutation.Channel.Entries) != 3 || scheduleMutation.Channel.Entries[2].DurationMins != 45 {
+		t.Fatalf("virtual schedule mutate=%+v", scheduleMutation.Channel.Entries)
+	}
+
+	postBody = strings.NewReader(`{
+  "action": "remove_entries",
+  "channel_id": "vc-news",
+  "remove_entry_ids": ["m1"]
+}`)
+	req = httptest.NewRequest(http.MethodPost, "/virtual-channels/schedule.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelSchedule().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual schedule remove status=%d body=%s", w.Code, w.Body.String())
+	}
+	scheduleMutation = struct {
+		Channel virtualchannels.Channel `json:"channel"`
+	}{}
+	if err := json.Unmarshal(w.Body.Bytes(), &scheduleMutation); err != nil {
+		t.Fatalf("virtual schedule remove unmarshal: %v", err)
+	}
+	if len(scheduleMutation.Channel.Entries) != 1 || scheduleMutation.Channel.Entries[0].EpisodeID != "e1" {
+		t.Fatalf("virtual schedule remove=%+v", scheduleMutation.Channel.Entries)
+	}
+
+	postBody = strings.NewReader(`{
+  "action": "replace_slots",
+  "channel_id": "vc-news",
+  "slots": [
+    {
+      "start_hhmm": "06:00",
+      "duration_mins": 60,
+      "label": "Morning News",
+      "entry": { "type": "movie", "movie_id": "m1", "duration_mins": 60 }
+    },
+    {
+      "start_hhmm": "08:30",
+      "duration_mins": 30,
+      "entry": { "type": "episode", "series_id": "s1", "episode_id": "e1", "duration_mins": 30 }
+    }
+  ]
+}`)
+	req = httptest.NewRequest(http.MethodPost, "/virtual-channels/schedule.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelSchedule().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual schedule replace slots status=%d body=%s", w.Code, w.Body.String())
+	}
+	scheduleMutation = struct {
+		Channel virtualchannels.Channel `json:"channel"`
+	}{}
+	if err := json.Unmarshal(w.Body.Bytes(), &scheduleMutation); err != nil {
+		t.Fatalf("virtual schedule replace slots unmarshal: %v", err)
+	}
+	if len(scheduleMutation.Channel.Slots) != 2 || scheduleMutation.Channel.Slots[0].StartHHMM != "06:00" {
+		t.Fatalf("virtual schedule replace slots=%+v", scheduleMutation.Channel.Slots)
+	}
+
+	withNow = time.Date(2026, 3, 21, 8, 35, 0, 0, time.UTC)
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/channel-detail.json?channel_id=vc-news&limit=2&horizon=3h", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	timeNow = func() time.Time { return withNow }
+	s.serveVirtualChannelDetail().ServeHTTP(w, req)
+	timeNow = origNow
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual detail slot schedule status=%d body=%s", w.Code, w.Body.String())
+	}
+	detailBody = virtualChannelDetailReport{}
+	if err := json.Unmarshal(w.Body.Bytes(), &detailBody); err != nil {
+		t.Fatalf("virtual detail slot schedule unmarshal: %v", err)
+	}
+	if detailBody.ResolvedNow == nil || detailBody.ResolvedNow.EntryID != "s1:e1" {
+		t.Fatalf("virtual detail slot resolved=%+v", detailBody.ResolvedNow)
+	}
+
+	postBody = strings.NewReader(`{
+  "action": "fill_daypart",
+  "channel_id": "vc-news",
+  "daypart_start_hhmm": "18:00",
+  "daypart_end_hhmm": "20:00",
+  "label_prefix": "Prime",
+  "movie_ids": ["m1", "m1"],
+  "duration_mins": 60
+}`)
+	req = httptest.NewRequest(http.MethodPost, "/virtual-channels/schedule.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelSchedule().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual schedule fill daypart status=%d body=%s", w.Code, w.Body.String())
+	}
+	scheduleMutation = struct {
+		Channel virtualchannels.Channel `json:"channel"`
+	}{}
+	if err := json.Unmarshal(w.Body.Bytes(), &scheduleMutation); err != nil {
+		t.Fatalf("virtual schedule fill daypart unmarshal: %v", err)
+	}
+	if len(scheduleMutation.Channel.Slots) != 4 {
+		t.Fatalf("virtual schedule fill daypart slots=%+v", scheduleMutation.Channel.Slots)
+	}
+	if scheduleMutation.Channel.Slots[2].StartHHMM != "18:00" || scheduleMutation.Channel.Slots[3].StartHHMM != "19:00" {
+		t.Fatalf("virtual schedule fill daypart merged=%+v", scheduleMutation.Channel.Slots)
+	}
+	if scheduleMutation.Channel.Slots[2].Label != "Prime 1" || scheduleMutation.Channel.Slots[3].Label != "Prime 2" {
+		t.Fatalf("virtual schedule fill daypart labels=%+v", scheduleMutation.Channel.Slots)
+	}
+
+	postBody = strings.NewReader(`{
+  "action": "fill_movie_category",
+  "channel_id": "vc-news",
+  "daypart_start_hhmm": "20:00",
+  "daypart_end_hhmm": "22:00",
+  "category": "movies",
+  "label_prefix": "Movies",
+  "duration_mins": 60
+}`)
+	s.Movies = append(s.Movies, catalog.Movie{ID: "m2", Title: "Movie Two", StreamURL: upstream.URL + "/movie.mp4", Category: "movies"})
+	req = httptest.NewRequest(http.MethodPost, "/virtual-channels/schedule.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelSchedule().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual schedule fill movie category status=%d body=%s", w.Code, w.Body.String())
+	}
+	scheduleMutation = struct {
+		Channel virtualchannels.Channel `json:"channel"`
+	}{}
+	if err := json.Unmarshal(w.Body.Bytes(), &scheduleMutation); err != nil {
+		t.Fatalf("virtual schedule fill movie category unmarshal: %v", err)
+	}
+	if len(scheduleMutation.Channel.Slots) != 6 || scheduleMutation.Channel.Slots[4].StartHHMM != "20:00" {
+		t.Fatalf("virtual schedule fill movie category slots=%+v", scheduleMutation.Channel.Slots)
+	}
+
+	postBody = strings.NewReader(`{
+  "action": "fill_series",
+  "channel_id": "vc-news",
+  "daypart_start_hhmm": "22:00",
+  "daypart_end_hhmm": "23:00",
+  "series_id": "s1",
+  "duration_mins": 30
+}`)
+	req = httptest.NewRequest(http.MethodPost, "/virtual-channels/schedule.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelSchedule().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual schedule fill series status=%d body=%s", w.Code, w.Body.String())
+	}
+	scheduleMutation = struct {
+		Channel virtualchannels.Channel `json:"channel"`
+	}{}
+	if err := json.Unmarshal(w.Body.Bytes(), &scheduleMutation); err != nil {
+		t.Fatalf("virtual schedule fill series unmarshal: %v", err)
+	}
+	if len(scheduleMutation.Channel.Slots) != 8 || scheduleMutation.Channel.Slots[6].StartHHMM != "22:00" {
+		t.Fatalf("virtual schedule fill series slots=%+v", scheduleMutation.Channel.Slots)
 	}
 }
 
@@ -949,6 +1324,1008 @@ func TestServer_virtualChannelStreamMissingSourceStaysJSON(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "virtual channel slot has no source") {
 		t.Fatalf("body=%q", w.Body.String())
+	}
+}
+
+func TestServer_virtualChannelStreamFallsBackToRecoveryFiller(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/bad.html":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write([]byte("<html>bad</html>"))
+		case "/slow.mp4":
+			w.Header().Set("Content-Type", "video/mp4")
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			time.Sleep(1800 * time.Millisecond)
+			_, _ = w.Write([]byte("too-slow"))
+		case "/fallback.mp4":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte("fallback-bytes"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	path := filepath.Join(t.TempDir(), "virtual-channels.json")
+	s := &Server{
+		VirtualChannelsFile: path,
+		Movies: []catalog.Movie{
+			{ID: "m1", Title: "Broken", StreamURL: upstream.URL + "/bad.html"},
+			{ID: "m2", Title: "Fallback", StreamURL: upstream.URL + "/fallback.mp4"},
+		},
+	}
+	postBody := strings.NewReader(`{
+  "channels": [
+    {
+      "id": "vc-fallback",
+      "name": "Fallback Loop",
+      "guide_number": "9003",
+      "enabled": true,
+      "entries": [
+        { "type": "movie", "movie_id": "m1", "duration_mins": 60 }
+      ],
+      "recovery": {
+        "mode": "filler",
+        "fallback_entries": [
+          { "type": "movie", "movie_id": "m2", "duration_mins": 5 }
+        ]
+      }
+    }
+  ]
+}`)
+	req := httptest.NewRequest(http.MethodPost, "/virtual-channels/rules.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.serveVirtualChannelRules().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual rules status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	origNow := timeNow
+	timeNow = func() time.Time { return time.Date(2026, 3, 21, 0, 15, 0, 0, time.UTC) }
+	defer func() { timeNow = origNow }()
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/stream/vc-fallback.mp4", nil)
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelStream().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual stream fallback status=%d body=%s", w.Code, w.Body.String())
+	}
+	if w.Body.String() != "fallback-bytes" {
+		t.Fatalf("virtual stream fallback body=%q", w.Body.String())
+	}
+	if got := w.Header().Get("X-IptvTunerr-Virtual-Recovery"); got != "filler" {
+		t.Fatalf("recovery header=%q", got)
+	}
+
+	postBody = strings.NewReader(`{
+  "channels": [
+    {
+      "id": "vc-slow",
+      "name": "Slow Loop",
+      "guide_number": "9004",
+      "enabled": true,
+      "entries": [
+        { "type": "movie", "movie_id": "m3", "duration_mins": 60 }
+      ],
+      "recovery": {
+        "mode": "filler",
+        "black_screen_seconds": 1,
+        "fallback_entries": [
+          { "type": "movie", "movie_id": "m2", "duration_mins": 5 }
+        ]
+      }
+    }
+  ]
+}`)
+	s.Movies = append(s.Movies, catalog.Movie{ID: "m3", Title: "Slow", StreamURL: upstream.URL + "/slow.mp4"})
+	req = httptest.NewRequest(http.MethodPost, "/virtual-channels/rules.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelRules().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual slow rules status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/stream/vc-slow.mp4", nil)
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelStream().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual stream slow fallback status=%d body=%s", w.Code, w.Body.String())
+	}
+	if w.Body.String() != "fallback-bytes" {
+		t.Fatalf("virtual stream slow fallback body=%q", w.Body.String())
+	}
+}
+
+func TestServer_virtualChannelStreamFallsBackDuringLiveStall(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_LIVE_STALL_SEC", "1")
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_PROBE_MAX_BYTES", "4096")
+	lead := strings.Repeat("a", 4096)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/stall.mp4":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte(lead))
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			time.Sleep(1800 * time.Millisecond)
+			_, _ = w.Write([]byte("late"))
+		case "/fallback.mp4":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte("fallback-tail"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	path := filepath.Join(t.TempDir(), "virtual-channels.json")
+	s := &Server{
+		VirtualChannelsFile: path,
+		Movies: []catalog.Movie{
+			{ID: "m1", Title: "Stall", StreamURL: upstream.URL + "/stall.mp4"},
+			{ID: "m2", Title: "Fallback", StreamURL: upstream.URL + "/fallback.mp4"},
+		},
+	}
+	postBody := strings.NewReader(`{
+  "channels": [
+    {
+      "id": "vc-live-stall",
+      "name": "Live Stall Loop",
+      "guide_number": "9010",
+      "enabled": true,
+      "entries": [
+        { "type": "movie", "movie_id": "m1", "duration_mins": 60 }
+      ],
+      "recovery": {
+        "mode": "filler",
+        "black_screen_seconds": 1,
+        "fallback_entries": [
+          { "type": "movie", "movie_id": "m2", "duration_mins": 5 }
+        ]
+      }
+    }
+  ]
+}`)
+	req := httptest.NewRequest(http.MethodPost, "/virtual-channels/rules.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.serveVirtualChannelRules().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual rules status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	origNow := timeNow
+	timeNow = func() time.Time { return time.Date(2026, 3, 21, 0, 15, 0, 0, time.UTC) }
+	defer func() { timeNow = origNow }()
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/stream/vc-live-stall.mp4", nil)
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelStream().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual stream live-stall status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Body.String(); got != lead+"fallback-tail" {
+		t.Fatalf("virtual stream live-stall body=%q", got)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/recovery-report.json?channel_id=vc-live-stall&limit=5", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelRecoveryReport().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual recovery live-stall report status=%d body=%s", w.Code, w.Body.String())
+	}
+	var report virtualChannelRecoveryReport
+	if err := json.Unmarshal(w.Body.Bytes(), &report); err != nil {
+		t.Fatalf("virtual recovery live-stall unmarshal: %v", err)
+	}
+	if len(report.Events) == 0 || report.Events[0].Reason != "live-stall-timeout" {
+		t.Fatalf("virtual recovery live-stall report=%+v", report.Events)
+	}
+}
+
+func TestServer_virtualChannelStreamLiveStallSkipsBrokenFirstFallback(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_LIVE_STALL_SEC", "1")
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_PROBE_MAX_BYTES", "4096")
+	lead := strings.Repeat("b", 4096)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/stall.mp4":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte(lead))
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			time.Sleep(1800 * time.Millisecond)
+			_, _ = w.Write([]byte("late"))
+		case "/broken-fallback.mp4":
+			http.Error(w, "broken", http.StatusBadGateway)
+		case "/good-fallback.mp4":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte("good-fallback"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	path := filepath.Join(t.TempDir(), "virtual-channels.json")
+	s := &Server{
+		VirtualChannelsFile: path,
+		Movies: []catalog.Movie{
+			{ID: "m1", Title: "Stall", StreamURL: upstream.URL + "/stall.mp4"},
+			{ID: "m2", Title: "Broken Fallback", StreamURL: upstream.URL + "/broken-fallback.mp4"},
+			{ID: "m3", Title: "Good Fallback", StreamURL: upstream.URL + "/good-fallback.mp4"},
+		},
+	}
+	postBody := strings.NewReader(`{
+  "channels": [
+    {
+      "id": "vc-live-stall-chain",
+      "name": "Live Stall Chain",
+      "guide_number": "9011",
+      "enabled": true,
+      "entries": [
+        { "type": "movie", "movie_id": "m1", "duration_mins": 60 }
+      ],
+      "recovery": {
+        "mode": "filler",
+        "black_screen_seconds": 1,
+        "fallback_entries": [
+          { "type": "movie", "movie_id": "m2", "duration_mins": 5 },
+          { "type": "movie", "movie_id": "m3", "duration_mins": 5 }
+        ]
+      }
+    }
+  ]
+}`)
+	req := httptest.NewRequest(http.MethodPost, "/virtual-channels/rules.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.serveVirtualChannelRules().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual rules status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	origNow := timeNow
+	timeNow = func() time.Time { return time.Date(2026, 3, 21, 0, 15, 0, 0, time.UTC) }
+	defer func() { timeNow = origNow }()
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/stream/vc-live-stall-chain.mp4", nil)
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelStream().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual stream live-stall-chain status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Body.String(); got != lead+"good-fallback" {
+		t.Fatalf("virtual stream live-stall-chain body=%q", got)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/recovery-report.json?channel_id=vc-live-stall-chain&limit=5", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelRecoveryReport().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual recovery live-stall-chain report status=%d body=%s", w.Code, w.Body.String())
+	}
+	var report virtualChannelRecoveryReport
+	if err := json.Unmarshal(w.Body.Bytes(), &report); err != nil {
+		t.Fatalf("virtual recovery live-stall-chain unmarshal: %v", err)
+	}
+	if len(report.Events) == 0 {
+		t.Fatalf("virtual recovery live-stall-chain events empty")
+	}
+	if report.Events[0].Reason != "live-stall-timeout" || report.Events[0].FallbackEntryID != "m3" {
+		t.Fatalf("virtual recovery live-stall-chain report=%+v", report.Events)
+	}
+}
+
+func TestServer_virtualChannelStreamFallsBackAgainAfterFallbackStalls(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_LIVE_STALL_SEC", "1")
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_PROBE_MAX_BYTES", "4096")
+	lead := strings.Repeat("c", 4096)
+	fallbackLead := strings.Repeat("d", 4096)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/stall.mp4":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte(lead))
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			time.Sleep(1800 * time.Millisecond)
+			_, _ = w.Write([]byte("late"))
+		case "/fallback-stall.mp4":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte(fallbackLead))
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			time.Sleep(1800 * time.Millisecond)
+			_, _ = w.Write([]byte("later"))
+		case "/final.mp4":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte("final-tail"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	path := filepath.Join(t.TempDir(), "virtual-channels.json")
+	s := &Server{
+		VirtualChannelsFile: path,
+		Movies: []catalog.Movie{
+			{ID: "m1", Title: "Primary", StreamURL: upstream.URL + "/stall.mp4"},
+			{ID: "m2", Title: "Fallback Stall", StreamURL: upstream.URL + "/fallback-stall.mp4"},
+			{ID: "m3", Title: "Final Fallback", StreamURL: upstream.URL + "/final.mp4"},
+		},
+	}
+	postBody := strings.NewReader(`{
+  "channels": [
+    {
+      "id": "vc-live-stall-loop",
+      "name": "Live Stall Loop",
+      "guide_number": "9012",
+      "enabled": true,
+      "entries": [
+        { "type": "movie", "movie_id": "m1", "duration_mins": 60 }
+      ],
+      "recovery": {
+        "mode": "filler",
+        "black_screen_seconds": 1,
+        "fallback_entries": [
+          { "type": "movie", "movie_id": "m2", "duration_mins": 5 },
+          { "type": "movie", "movie_id": "m3", "duration_mins": 5 }
+        ]
+      }
+    }
+  ]
+}`)
+	req := httptest.NewRequest(http.MethodPost, "/virtual-channels/rules.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.serveVirtualChannelRules().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual rules status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	origNow := timeNow
+	timeNow = func() time.Time { return time.Date(2026, 3, 21, 0, 15, 0, 0, time.UTC) }
+	defer func() { timeNow = origNow }()
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/stream/vc-live-stall-loop.mp4", nil)
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelStream().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual stream live-stall-loop status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Body.String(); got != lead+fallbackLead+"final-tail" {
+		t.Fatalf("virtual stream live-stall-loop body=%q", got)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/recovery-report.json?channel_id=vc-live-stall-loop&limit=5", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelRecoveryReport().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual recovery live-stall-loop report status=%d body=%s", w.Code, w.Body.String())
+	}
+	var report virtualChannelRecoveryReport
+	if err := json.Unmarshal(w.Body.Bytes(), &report); err != nil {
+		t.Fatalf("virtual recovery live-stall-loop unmarshal: %v", err)
+	}
+	if len(report.Events) < 2 {
+		t.Fatalf("virtual recovery live-stall-loop events=%+v", report.Events)
+	}
+	if report.Events[0].FallbackEntryID != "m3" || report.Events[0].SourceURL != upstream.URL+"/fallback-stall.mp4" {
+		t.Fatalf("latest recovery event=%+v", report.Events[0])
+	}
+	if report.Events[1].FallbackEntryID != "m2" || report.Events[1].SourceURL != upstream.URL+"/stall.mp4" {
+		t.Fatalf("previous recovery event=%+v", report.Events[1])
+	}
+}
+
+func TestServer_virtualChannelStreamReportsRecoveryExhaustion(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_LIVE_STALL_SEC", "1")
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_PROBE_MAX_BYTES", "4096")
+	lead := strings.Repeat("e", 4096)
+	fallbackLead := strings.Repeat("f", 4096)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/stall.mp4":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte(lead))
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			time.Sleep(1200 * time.Millisecond)
+		case "/fallback-stall.mp4":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte(fallbackLead))
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			time.Sleep(1200 * time.Millisecond)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	path := filepath.Join(t.TempDir(), "virtual-channels.json")
+	s := &Server{
+		VirtualChannelsFile: path,
+		Movies: []catalog.Movie{
+			{ID: "m1", Title: "Primary", StreamURL: upstream.URL + "/stall.mp4"},
+			{ID: "m2", Title: "Fallback Stall", StreamURL: upstream.URL + "/fallback-stall.mp4"},
+		},
+	}
+	postBody := strings.NewReader(`{
+  "channels": [
+    {
+      "id": "vc-live-exhausted",
+      "name": "Live Exhausted",
+      "guide_number": "9013",
+      "enabled": true,
+      "entries": [
+        { "type": "movie", "movie_id": "m1", "duration_mins": 60 }
+      ],
+      "recovery": {
+        "mode": "filler",
+        "black_screen_seconds": 1,
+        "fallback_entries": [
+          { "type": "movie", "movie_id": "m2", "duration_mins": 5 }
+        ]
+      }
+    }
+  ]
+}`)
+	req := httptest.NewRequest(http.MethodPost, "/virtual-channels/rules.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.serveVirtualChannelRules().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual rules status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	origNow := timeNow
+	timeNow = func() time.Time { return time.Date(2026, 3, 21, 0, 15, 0, 0, time.UTC) }
+	defer func() { timeNow = origNow }()
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/stream/vc-live-exhausted.mp4", nil)
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelStream().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual stream live-exhausted status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Body.String(); got != lead+fallbackLead {
+		t.Fatalf("virtual stream live-exhausted body=%q", got)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/recovery-report.json?channel_id=vc-live-exhausted&limit=5", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelRecoveryReport().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual recovery live-exhausted report status=%d body=%s", w.Code, w.Body.String())
+	}
+	var report virtualChannelRecoveryReport
+	if err := json.Unmarshal(w.Body.Bytes(), &report); err != nil {
+		t.Fatalf("virtual recovery live-exhausted unmarshal: %v", err)
+	}
+	if len(report.Events) < 2 {
+		t.Fatalf("virtual recovery live-exhausted events=%+v", report.Events)
+	}
+	if report.Events[0].Reason != "live-stall-timeout-exhausted" || report.Events[0].FallbackEntryID != "" {
+		t.Fatalf("latest recovery event=%+v", report.Events[0])
+	}
+	if report.Events[1].Reason != "live-stall-timeout" || report.Events[1].FallbackEntryID != "m2" {
+		t.Fatalf("previous recovery event=%+v", report.Events[1])
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/report.json", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelReport().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual report exhausted status=%d body=%s", w.Code, w.Body.String())
+	}
+	var stationReport virtualChannelStationReport
+	if err := json.Unmarshal(w.Body.Bytes(), &stationReport); err != nil {
+		t.Fatalf("virtual report exhausted unmarshal: %v", err)
+	}
+	if len(stationReport.Channels) != 1 {
+		t.Fatalf("virtual report exhausted=%+v", stationReport)
+	}
+	row := stationReport.Channels[0]
+	if row.RecoveryEvents < 2 || !row.RecoveryExhausted || row.LastRecoveryReason != "live-stall-timeout-exhausted" {
+		t.Fatalf("virtual report exhausted row=%+v", row)
+	}
+}
+
+func TestServer_virtualRecoveryStatePersistsAcrossRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "virtual-recovery-state.json")
+	slot := virtualchannels.ResolvedSlot{PreviewSlot: virtualchannels.PreviewSlot{ChannelID: "vc-persist", EntryID: "m1"}}
+	channel := virtualchannels.Channel{ID: "vc-persist", Name: "Persist Station"}
+
+	s1 := &Server{VirtualRecoveryStateFile: path}
+	s1.recordVirtualChannelRecoveryEvent(channel, slot, "http://src/primary.mp4", "http://src/fallback.mp4", "m2", "live-stall-timeout", "stream")
+	s1.recordVirtualChannelRecoveryEvent(channel, slot, "http://src/fallback.mp4", "", "", "live-stall-timeout-exhausted", "stream")
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read recovery state file: %v", err)
+	}
+	if !bytes.Contains(data, []byte(`"live-stall-timeout-exhausted"`)) {
+		t.Fatalf("recovery state file=%s", string(data))
+	}
+
+	s2 := &Server{VirtualRecoveryStateFile: path}
+	events := s2.virtualRecoveryHistory("vc-persist", 10)
+	if len(events) != 2 {
+		t.Fatalf("loaded events=%+v", events)
+	}
+	if events[0].Reason != "live-stall-timeout-exhausted" || events[1].Reason != "live-stall-timeout" {
+		t.Fatalf("loaded events=%+v", events)
+	}
+}
+
+func TestServer_virtualChannelStreamFallsBackOnContentProbe(t *testing.T) {
+	ffmpegPath := filepath.Join(t.TempDir(), "fake-ffmpeg.sh")
+	if err := os.WriteFile(ffmpegPath, []byte(`#!/bin/sh
+case " $* " in
+  *" pipe:0 "*)
+    cat >/dev/null
+    echo 'black_start:0 black_end:2.0' 1>&2
+    ;;
+  *)
+    ;;
+esac
+exit 0
+`), 0o755); err != nil {
+		t.Fatalf("write fake ffmpeg: %v", err)
+	}
+	t.Setenv("IPTV_TUNERR_FFMPEG_PATH", ffmpegPath)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/source.mp4":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte("black-source"))
+		case "/fallback.mp4":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte("filler-source"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	path := filepath.Join(t.TempDir(), "virtual-channels.json")
+	s := &Server{
+		VirtualChannelsFile: path,
+		Movies: []catalog.Movie{
+			{ID: "m1", Title: "Primary", StreamURL: upstream.URL + "/source.mp4"},
+			{ID: "m2", Title: "Fallback", StreamURL: upstream.URL + "/fallback.mp4"},
+		},
+	}
+	postBody := strings.NewReader(`{
+  "channels": [
+    {
+      "id": "vc-probe",
+      "name": "Probe Loop",
+      "guide_number": "9005",
+      "enabled": true,
+      "entries": [
+        { "type": "movie", "movie_id": "m1", "duration_mins": 60 }
+      ],
+      "recovery": {
+        "mode": "filler",
+        "black_screen_seconds": 2,
+        "fallback_entries": [
+          { "type": "movie", "movie_id": "m2", "duration_mins": 5 }
+        ]
+      }
+    }
+  ]
+}`)
+	req := httptest.NewRequest(http.MethodPost, "/virtual-channels/rules.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.serveVirtualChannelRules().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual rules status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	origNow := timeNow
+	timeNow = func() time.Time { return time.Date(2026, 3, 21, 0, 15, 0, 0, time.UTC) }
+	defer func() { timeNow = origNow }()
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/stream/vc-probe.mp4", nil)
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelStream().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual stream probe fallback status=%d body=%s", w.Code, w.Body.String())
+	}
+	if w.Body.String() != "filler-source" {
+		t.Fatalf("virtual stream probe fallback body=%q", w.Body.String())
+	}
+	if got := w.Header().Get("X-IptvTunerr-Virtual-Recovery-Reason"); got != "content-blackdetect-bytes" {
+		t.Fatalf("recovery reason=%q", got)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/recovery-report.json?channel_id=vc-probe&limit=5", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelRecoveryReport().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual recovery report status=%d body=%s", w.Code, w.Body.String())
+	}
+	var report virtualChannelRecoveryReport
+	if err := json.Unmarshal(w.Body.Bytes(), &report); err != nil {
+		t.Fatalf("virtual recovery report unmarshal: %v", err)
+	}
+	if len(report.Events) != 1 {
+		t.Fatalf("virtual recovery report events=%d body=%s", len(report.Events), w.Body.String())
+	}
+	if report.Events[0].Reason != "content-blackdetect-bytes" || report.Events[0].FallbackEntryID == "" {
+		t.Fatalf("virtual recovery report event=%+v", report.Events[0])
+	}
+}
+
+func TestServer_virtualChannelStreamFallsBackOnMidstreamContentProbe(t *testing.T) {
+	ffmpegPath := filepath.Join(t.TempDir(), "fake-ffmpeg.sh")
+	if err := os.WriteFile(ffmpegPath, []byte(`#!/bin/sh
+case " $* " in
+  *" pipe:0 "*)
+    sample="$(cat)"
+    case "$sample" in
+      *MIDBLACK*)
+        echo 'black_start:0 black_end:2.0' 1>&2
+        ;;
+    esac
+    ;;
+esac
+exit 0
+`), 0o755); err != nil {
+		t.Fatalf("write fake ffmpeg: %v", err)
+	}
+	t.Setenv("IPTV_TUNERR_FFMPEG_PATH", ffmpegPath)
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_PROBE_MAX_BYTES", "4096")
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_MIDSTREAM_PROBE_BYTES", "8192")
+
+	lead := strings.Repeat("good", 1024) // 4096 bytes, stays clean for startup probe
+	midblack := strings.Repeat("MIDBLACK", 512)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/source.mp4":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte(lead))
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			time.Sleep(50 * time.Millisecond)
+			_, _ = w.Write([]byte(midblack))
+		case "/fallback.mp4":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte("filler-midstream"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	path := filepath.Join(t.TempDir(), "virtual-channels.json")
+	s := &Server{
+		VirtualChannelsFile: path,
+		Movies: []catalog.Movie{
+			{ID: "m1", Title: "Primary", StreamURL: upstream.URL + "/source.mp4"},
+			{ID: "m2", Title: "Fallback", StreamURL: upstream.URL + "/fallback.mp4"},
+		},
+	}
+	postBody := strings.NewReader(`{
+  "channels": [
+    {
+      "id": "vc-midstream-probe",
+      "name": "Midstream Probe",
+      "guide_number": "9006",
+      "enabled": true,
+      "entries": [
+        { "type": "movie", "movie_id": "m1", "duration_mins": 60 }
+      ],
+      "recovery": {
+        "mode": "filler",
+        "black_screen_seconds": 2,
+        "fallback_entries": [
+          { "type": "movie", "movie_id": "m2", "duration_mins": 5 }
+        ]
+      }
+    }
+  ]
+}`)
+	req := httptest.NewRequest(http.MethodPost, "/virtual-channels/rules.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.serveVirtualChannelRules().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual rules status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	origNow := timeNow
+	timeNow = func() time.Time { return time.Date(2026, 3, 21, 0, 15, 0, 0, time.UTC) }
+	defer func() { timeNow = origNow }()
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/stream/vc-midstream-probe.mp4", nil)
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelStream().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual stream midstream probe status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Body.String(); got != lead+midblack+"filler-midstream" {
+		t.Fatalf("virtual stream midstream probe body=%q", got)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/recovery-report.json?channel_id=vc-midstream-probe&limit=5", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelRecoveryReport().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual recovery midstream probe status=%d body=%s", w.Code, w.Body.String())
+	}
+	var report virtualChannelRecoveryReport
+	if err := json.Unmarshal(w.Body.Bytes(), &report); err != nil {
+		t.Fatalf("virtual recovery midstream probe unmarshal: %v", err)
+	}
+	if len(report.Events) == 0 || report.Events[0].Reason != "content-blackdetect-bytes" || report.Events[0].FallbackEntryID != "m2" {
+		t.Fatalf("virtual recovery midstream probe report=%+v", report.Events)
+	}
+}
+
+func TestServer_virtualChannelStreamFallsBackOnLaterRollingMidstreamProbe(t *testing.T) {
+	ffmpegPath := filepath.Join(t.TempDir(), "fake-ffmpeg.sh")
+	if err := os.WriteFile(ffmpegPath, []byte(`#!/bin/sh
+case " $* " in
+  *" pipe:0 "*)
+    sample="$(cat)"
+    case "$sample" in
+      *MIDBLACK*)
+        echo 'black_start:0 black_end:2.0' 1>&2
+        ;;
+    esac
+    ;;
+esac
+exit 0
+`), 0o755); err != nil {
+		t.Fatalf("write fake ffmpeg: %v", err)
+	}
+	t.Setenv("IPTV_TUNERR_FFMPEG_PATH", ffmpegPath)
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_PROBE_MAX_BYTES", "4096")
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_MIDSTREAM_PROBE_BYTES", "4096")
+
+	goodWindow := strings.Repeat("good", 1024)   // 4096 bytes
+	badWindow := strings.Repeat("MIDBLACK", 512) // 4096 bytes
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/source.mp4":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte(goodWindow))
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			time.Sleep(30 * time.Millisecond)
+			_, _ = w.Write([]byte(goodWindow))
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			time.Sleep(30 * time.Millisecond)
+			_, _ = w.Write([]byte(badWindow))
+		case "/fallback.mp4":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte("filler-late-midstream"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	path := filepath.Join(t.TempDir(), "virtual-channels.json")
+	s := &Server{
+		VirtualChannelsFile: path,
+		Movies: []catalog.Movie{
+			{ID: "m1", Title: "Primary", StreamURL: upstream.URL + "/source.mp4"},
+			{ID: "m2", Title: "Fallback", StreamURL: upstream.URL + "/fallback.mp4"},
+		},
+	}
+	postBody := strings.NewReader(`{
+  "channels": [
+    {
+      "id": "vc-late-midstream-probe",
+      "name": "Late Midstream Probe",
+      "guide_number": "9007",
+      "enabled": true,
+      "entries": [
+        { "type": "movie", "movie_id": "m1", "duration_mins": 60 }
+      ],
+      "recovery": {
+        "mode": "filler",
+        "black_screen_seconds": 2,
+        "fallback_entries": [
+          { "type": "movie", "movie_id": "m2", "duration_mins": 5 }
+        ]
+      }
+    }
+  ]
+}`)
+	req := httptest.NewRequest(http.MethodPost, "/virtual-channels/rules.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.serveVirtualChannelRules().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual rules status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	origNow := timeNow
+	timeNow = func() time.Time { return time.Date(2026, 3, 21, 0, 15, 0, 0, time.UTC) }
+	defer func() { timeNow = origNow }()
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/stream/vc-late-midstream-probe.mp4", nil)
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelStream().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual stream late midstream probe status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Body.String(); got != goodWindow+goodWindow+badWindow+"filler-late-midstream" {
+		t.Fatalf("virtual stream late midstream probe body=%q", got)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/recovery-report.json?channel_id=vc-late-midstream-probe&limit=5", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelRecoveryReport().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual recovery late midstream probe status=%d body=%s", w.Code, w.Body.String())
+	}
+	var report virtualChannelRecoveryReport
+	if err := json.Unmarshal(w.Body.Bytes(), &report); err != nil {
+		t.Fatalf("virtual recovery late midstream probe unmarshal: %v", err)
+	}
+	if len(report.Events) == 0 || report.Events[0].Reason != "content-blackdetect-bytes" || report.Events[0].FallbackEntryID != "m2" {
+		t.Fatalf("virtual recovery late midstream probe report=%+v", report.Events)
+	}
+}
+
+func TestServer_virtualChannelSlateRendersBranding(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "virtual-channels.json")
+	s := &Server{VirtualChannelsFile: path}
+	postBody := strings.NewReader(`{
+  "channels": [
+    {
+      "id": "vc-brand",
+      "name": "Brand Station",
+      "description": "A branded station",
+      "guide_number": "9006",
+      "enabled": true,
+      "branding": {
+        "logo_url": "https://img.example/brand.png",
+        "bug_text": "BUG",
+        "bug_position": "top-left",
+        "banner_text": "Tonight at 8",
+        "theme_color": "#112233"
+      },
+      "entries": [
+        { "type": "movie", "movie_id": "m1", "duration_mins": 60 }
+      ]
+    }
+  ]
+}`)
+	req := httptest.NewRequest(http.MethodPost, "/virtual-channels/rules.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.serveVirtualChannelRules().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual rules status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/slate/vc-brand.svg", nil)
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelSlate().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual slate status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "Brand Station") || !strings.Contains(body, "Tonight at 8") || !strings.Contains(body, "https://img.example/brand.png") {
+		t.Fatalf("virtual slate body=%s", body)
+	}
+	if got := w.Header().Get("Content-Type"); got != "image/svg+xml" {
+		t.Fatalf("content-type=%q", got)
+	}
+}
+
+func TestServer_virtualChannelBrandedStreamUsesFFmpegPath(t *testing.T) {
+	argsPath := filepath.Join(t.TempDir(), "ffmpeg-args.txt")
+	ffmpegPath := filepath.Join(t.TempDir(), "fake-ffmpeg.sh")
+	if err := os.WriteFile(ffmpegPath, []byte("#!/bin/sh\nprintf '%s\n' \"$@\" > \""+argsPath+"\"\ncat >/dev/null\nprintf 'branded-output'\n"), 0o755); err != nil {
+		t.Fatalf("write fake ffmpeg: %v", err)
+	}
+	t.Setenv("IPTV_TUNERR_FFMPEG_PATH", ffmpegPath)
+	bugImagePath := filepath.Join(t.TempDir(), "bug.png")
+	if err := os.WriteFile(bugImagePath, []byte("fakepng"), 0o600); err != nil {
+		t.Fatalf("write bug image: %v", err)
+	}
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/mp4")
+		_, _ = w.Write([]byte("source-bytes"))
+	}))
+	defer upstream.Close()
+
+	path := filepath.Join(t.TempDir(), "virtual-channels.json")
+	s := &Server{
+		VirtualChannelsFile: path,
+		Movies: []catalog.Movie{
+			{ID: "m1", Title: "Movie One", StreamURL: upstream.URL},
+		},
+	}
+	postBody := strings.NewReader(`{
+  "channels": [
+    {
+      "id": "vc-brandstream",
+      "name": "Brand Stream",
+      "guide_number": "9007",
+      "enabled": true,
+      "branding": {
+        "bug_text": "BUG",
+        "bug_image_url": "` + bugImagePath + `",
+        "bug_position": "top-right",
+        "banner_text": "Banner"
+      },
+      "entries": [
+        { "type": "movie", "movie_id": "m1", "duration_mins": 60 }
+      ]
+    }
+  ]
+}`)
+	req := httptest.NewRequest(http.MethodPost, "/virtual-channels/rules.json", postBody)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.serveVirtualChannelRules().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual rules status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	origNow := timeNow
+	timeNow = func() time.Time { return time.Date(2026, 3, 21, 0, 15, 0, 0, time.UTC) }
+	defer func() { timeNow = origNow }()
+
+	req = httptest.NewRequest(http.MethodGet, "/virtual-channels/branded-stream/vc-brandstream.ts", nil)
+	w = httptest.NewRecorder()
+	s.serveVirtualChannelBrandedStream().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual branded stream status=%d body=%s", w.Code, w.Body.String())
+	}
+	if w.Body.String() != "branded-output" {
+		t.Fatalf("virtual branded stream body=%q", w.Body.String())
+	}
+	if got := w.Header().Get("Content-Type"); got != "video/mp2t" {
+		t.Fatalf("content-type=%q", got)
+	}
+	argsRaw, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatalf("read ffmpeg args: %v", err)
+	}
+	argsText := string(argsRaw)
+	if !strings.Contains(argsText, bugImagePath) {
+		t.Fatalf("ffmpeg args missing bug image: %s", argsText)
+	}
+	if !strings.Contains(argsText, "-filter_complex") {
+		t.Fatalf("ffmpeg args missing filter_complex: %s", argsText)
 	}
 }
 
@@ -2118,6 +3495,51 @@ func TestServer_operatorHTMLPagesAllowHead(t *testing.T) {
 	}
 }
 
+func TestServer_operatorUIPagesAdvertiseDeckAsPrimarySurface(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
+	t.Setenv("IPTV_TUNERR_WEBUI_PORT", "48879")
+	now := time.Now().UTC()
+	p1 := now.Add(1 * time.Hour).Format("20060102150405 +0000")
+	stop := now.Add(2 * time.Hour).Format("20060102150405 +0000")
+	s := &Server{
+		AppVersion: "testver",
+		xmltv: &XMLTV{
+			cachedXML: []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="101"><display-name>One</display-name></channel>
+  <programme start="` + p1 + `" stop="` + stop + `" channel="101"><title>First</title></programme>
+</tv>`),
+		},
+	}
+
+	uiReq := httptest.NewRequest(http.MethodGet, "/ui/", nil)
+	uiReq.Host = "tunerr.local:5004"
+	uiReq.RemoteAddr = "127.0.0.1:1234"
+	uiW := httptest.NewRecorder()
+	s.serveOperatorUI().ServeHTTP(uiW, uiReq)
+	if uiW.Code != http.StatusOK {
+		t.Fatalf("ui status=%d body=%s", uiW.Code, uiW.Body.String())
+	}
+	if !strings.Contains(uiW.Body.String(), "Compatibility UI") || !strings.Contains(uiW.Body.String(), "Control Deck") {
+		t.Fatalf("ui body missing compatibility note: %s", uiW.Body.String())
+	}
+	if !strings.Contains(uiW.Body.String(), "http://tunerr.local:48879/") {
+		t.Fatalf("ui body missing deck url: %s", uiW.Body.String())
+	}
+
+	guideReq := httptest.NewRequest(http.MethodGet, "/ui/guide/", nil)
+	guideReq.Host = "tunerr.local:5004"
+	guideReq.RemoteAddr = "127.0.0.1:1234"
+	guideW := httptest.NewRecorder()
+	s.serveOperatorGuidePreviewPage().ServeHTTP(guideW, guideReq)
+	if guideW.Code != http.StatusOK {
+		t.Fatalf("guide status=%d body=%s", guideW.Code, guideW.Body.String())
+	}
+	if !strings.Contains(guideW.Body.String(), "Compatibility UI") || !strings.Contains(guideW.Body.String(), "Control Deck") {
+		t.Fatalf("guide body missing compatibility note: %s", guideW.Body.String())
+	}
+}
+
 func TestServer_operatorRedirectsPreserveReadMethods(t *testing.T) {
 	s := &Server{}
 	mux := http.NewServeMux()
@@ -2566,6 +3988,13 @@ func TestServer_operatorActionStatus(t *testing.T) {
 			AppliesTo    string `json:"applies_to"`
 			SupportsZero bool   `json:"supports_zero"`
 		} `json:"shared_relay_replay_update"`
+		VirtualChannelLiveStallUpdate struct {
+			Available      bool   `json:"available"`
+			Endpoint       string `json:"endpoint"`
+			CurrentSeconds string `json:"current_seconds"`
+			AppliesTo      string `json:"applies_to"`
+			SupportsZero   bool   `json:"supports_zero"`
+		} `json:"virtual_channel_live_stall_update"`
 		GhostVisibleStop struct {
 			Available bool `json:"available"`
 		} `json:"ghost_visible_stop"`
@@ -2600,6 +4029,18 @@ func TestServer_operatorActionStatus(t *testing.T) {
 	}
 	if !body.SharedRelayReplayUpdate.SupportsZero {
 		t.Fatal("expected shared_relay_replay_update supports_zero")
+	}
+	if !body.VirtualChannelLiveStallUpdate.Available {
+		t.Fatal("expected virtual_channel_live_stall_update available")
+	}
+	if body.VirtualChannelLiveStallUpdate.Endpoint != "/ops/actions/virtual-channel-live-stall" {
+		t.Fatalf("endpoint=%q", body.VirtualChannelLiveStallUpdate.Endpoint)
+	}
+	if body.VirtualChannelLiveStallUpdate.AppliesTo != "new virtual channel sessions" {
+		t.Fatalf("applies_to=%q", body.VirtualChannelLiveStallUpdate.AppliesTo)
+	}
+	if !body.VirtualChannelLiveStallUpdate.SupportsZero {
+		t.Fatal("expected virtual_channel_live_stall_update supports_zero")
 	}
 	if body.GhostVisibleStop.Available {
 		t.Fatal("expected ghost_visible_stop unavailable without PMS config")
@@ -2779,6 +4220,64 @@ func TestServer_sharedRelayReplayUpdateActionRejectsNegative(t *testing.T) {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
 	if !strings.Contains(w.Body.String(), "shared_relay_replay_bytes must be") {
+		t.Fatalf("body=%q", w.Body.String())
+	}
+}
+
+func TestServer_virtualChannelLiveStallUpdateAction(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_LIVE_STALL_SEC", "5")
+	s := &Server{
+		RuntimeSnapshot: &RuntimeSnapshot{
+			Tuner: map[string]interface{}{"virtual_channel_recovery_live_stall_sec": "5"},
+		},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/ops/actions/virtual-channel-live-stall", strings.NewReader(`{"virtual_channel_recovery_live_stall_sec":9}`))
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	s.serveVirtualChannelLiveStallUpdateAction().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body struct {
+		OK     bool   `json:"ok"`
+		Action string `json:"action"`
+		Detail struct {
+			VirtualChannelRecoveryLiveStallSec string `json:"virtual_channel_recovery_live_stall_sec"`
+			AppliesTo                          string `json:"applies_to"`
+		} `json:"detail"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !body.OK || body.Action != "virtual_channel_live_stall_update" {
+		t.Fatalf("unexpected body=%+v", body)
+	}
+	if body.Detail.VirtualChannelRecoveryLiveStallSec != "9" {
+		t.Fatalf("virtual_channel_recovery_live_stall_sec=%q", body.Detail.VirtualChannelRecoveryLiveStallSec)
+	}
+	if body.Detail.AppliesTo != "new virtual channel sessions" {
+		t.Fatalf("applies_to=%q", body.Detail.AppliesTo)
+	}
+	if got := os.Getenv("IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_LIVE_STALL_SEC"); got != "9" {
+		t.Fatalf("env=%q want 9", got)
+	}
+	if rep := s.runtimeSnapshotClone(); rep == nil || fmt.Sprintf("%v", rep.Tuner["virtual_channel_recovery_live_stall_sec"]) != "9" {
+		t.Fatalf("runtime snapshot not updated: %+v", rep)
+	}
+}
+
+func TestServer_virtualChannelLiveStallUpdateActionRejectsNegative(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_UI_ALLOW_LAN", "")
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodPost, "/ops/actions/virtual-channel-live-stall", strings.NewReader(`{"virtual_channel_recovery_live_stall_sec":-1}`))
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	s.serveVirtualChannelLiveStallUpdateAction().ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "virtual_channel_recovery_live_stall_sec must be") {
 		t.Fatalf("body=%q", w.Body.String())
 	}
 }

@@ -16,6 +16,7 @@ This page is the **single entry point** for “what is left to work on” across
 | [EPIC-live-tv-intelligence](../epics/EPIC-live-tv-intelligence.md) | **LTV** strategic “next recommended slices” and **shipped** status narrative. |
 | [EPIC-lineup-parity](../epics/EPIC-lineup-parity.md) | **LP** hybrid HDHR + IPTV, SQLite EPG, mux profiles — implementation status and PR-sized history. |
 | [EPIC-programming-manager](../epics/EPIC-programming-manager.md) | **PM** channel-builder / lineup-curation product plan: categories, per-channel selection, custom order, backup grouping. |
+| [EPIC-station-ops](../epics/EPIC-station-ops.md) | **STN** free "run your own TV station" lane: branding, scheduling, filler recovery, and multi-backend station operations. |
 | [memory-bank/opportunities.md](../../memory-bank/opportunities.md) | **Continuous improvement** backlog: dated entries with **Status** where known (many items are **sibling-repo** / k8s / Plex-helper scripts — read each entry). |
 | [EPIC-operator-completion](../epics/EPIC-operator-completion.md) | **Active completion umbrella** for all non-postgres, non-admin-plane operator work across LP/ACC/PM/LH/PAR/HR/VODX/REC lineages. |
 | [memory-bank/known_issues.md](../../memory-bank/known_issues.md) | **Operational** limitations, cluster quirks, and design tradeoffs (not always a code change in *this* repo). |
@@ -55,6 +56,7 @@ Multi-PR or product-decision items; details in **[EPIC-operator-completion](../e
 
 - Public-grade multi-user admin plane and Postgres/shared writer architecture are explicitly deferred (intentional exclusions in this cycle).
 - All remaining non-excluded `LP-*`, `PM-*`, `LH-*`, `PAR-*`, `ACC-*`, `HR-*`, `INT-*`, `REC-*`, and `VODX-*` follow-through slices are represented as `CMP-*` stories in that epic.
+- Station-operations/productization work for branded synthetic channels, filler recovery, and station rollout now lives in `STN-*` stories under [EPIC-station-ops](../epics/EPIC-station-ops.md).
 
 ---
 
@@ -66,6 +68,7 @@ The opportunities file is authoritative for **dated entries** (including **Statu
 - **EPG:** provider-specific contracts for true incremental-only pulls; **Postgres** for multi-writer EPG only if HA becomes a requirement ([ADR 0003](../adr/0003-epg-sqlite-vs-postgres.md)).
 - **Guide-health:** optional deeper wiring of scores into more paths (policy already shipped — see opportunities).
 - **Catch-up:** programme-bound / “true replay” vs near-live launcher; category libraries / scans (large scope).
+- **Migration / janitor:** identity-cutover/OIDC follow-through and the larger “Tunerr as a general-purpose library janitor” direction remain future backlog themes; see `memory-bank/opportunities.md`.
 - **Plex / k8s adjacent:** split-pipeline instrumentation, postvalidate tuning, external scripts — often **sibling repo**; read each entry’s **Context**.
 - **Gateway / WebSafe:** ffmpeg DNS vs k8s service names, IDR-aware startup, TS debug — see opportunities.
 - **Maintainability:** e.g. dedupe **`hdhomerun`** env helpers vs **`internal/config`** (refactor).

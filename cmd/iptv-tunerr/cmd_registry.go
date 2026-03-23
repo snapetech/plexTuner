@@ -30,6 +30,7 @@ func allCommands() []commandSpec {
 	commands = append(commands, freeSourcesCommands()...)
 	commands = append(commands, hdhrScanCommands()...)
 	commands = append(commands, liveTVBundleCommands()...)
+	commands = append(commands, identityMigrationCommands()...)
 	commands = append(commands, plexOpsCommands()...)
 	return commands
 }

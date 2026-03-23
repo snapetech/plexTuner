@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/snapetech/iptvtunerr/internal/livetvbundle"
@@ -100,5 +101,67 @@ func TestFilterRequestedTargets(t *testing.T) {
 	}
 	if !want["emby"] || !want["jellyfin"] || len(want) != 2 {
 		t.Fatalf("want=%v", want)
+	}
+}
+
+func TestFormatMigrationAuditSummary(t *testing.T) {
+	text := formatMigrationAuditSummary(livetvbundle.MigrationAuditResult{
+		Status:        "ready_to_apply",
+		ReadyToApply:  true,
+		ConflictCount: 1,
+		Results: []livetvbundle.MigrationTargetAudit{
+			{
+				Target:                "emby",
+				TargetHost:            "http://emby:8096",
+				Status:                "ready_to_apply",
+				ReadyToApply:          true,
+				StatusReason:          "live tv is indexed, but some reused libraries are still missing source sample titles",
+				MissingLibraries:      []string{"Shows"},
+				LaggingLibraries:      []string{"Movies"},
+				TitleLaggingLibraries: []string{"Movies"},
+				EmptyLibraries:        []string{"Catchup Sports"},
+				LibraryMode:           "included",
+				Library: &livetvbundle.LibraryDiffResult{
+					ConflictCount: 1,
+					Libraries: []livetvbundle.LibraryDiffLibrary{
+						{
+							Name:              "Movies",
+							TitleParityStatus: "sample_missing",
+							MissingTitles:     []string{"Bravo", "Charlie"},
+						},
+					},
+				},
+				LiveTV: livetvbundle.LiveTVDiffResult{
+					IndexedChannelCount: 321,
+					ConflictCount:       0,
+				},
+			},
+			{
+				Target:      "jellyfin",
+				TargetHost:  "http://jellyfin:8096",
+				Status:      "converged",
+				LibraryMode: "skipped",
+				LiveTV: livetvbundle.LiveTVDiffResult{
+					IndexedChannelCount: 400,
+				},
+			},
+		},
+	})
+
+	for _, want := range []string{
+		"Migration rollout audit",
+		"overall_status: ready_to_apply",
+		"[emby] http://emby:8096",
+		"missing_libraries: Shows",
+		"count_lagging_libraries: Movies",
+		"title_lagging_libraries: Movies",
+		"title_missing[Movies]: Bravo, Charlie",
+		"empty_libraries: Catchup Sports",
+		"[jellyfin] http://jellyfin:8096",
+		"library_mode: skipped",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("summary missing %q\n%s", want, text)
+		}
 	}
 }

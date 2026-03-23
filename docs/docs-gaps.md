@@ -13,25 +13,25 @@ Known missing or incomplete documentation. Address these when touching the relev
 
 ## Critical (blocks or misleads users)
 
-*(None at this time.)*
+*(None at this time — revalidated 2026-03-22 after station-ops/runtime and command-surface doc audit.)*
 
 ---
 
 ## High (users or contributors need this)
 
-*(None — validated 2026-03-19. Hand-maintained commands/flags/env: [cli-and-env-reference](reference/cli-and-env-reference.md); exhaustive raw list: [.env.example](../.env.example).)*
+*(None — revalidated 2026-03-22. Hand-maintained commands/flags/env: [cli-and-env-reference](reference/cli-and-env-reference.md); exhaustive raw list: [.env.example](../.env.example).)*
 
 ---
 
 ## Medium (improves clarity or onboarding)
 
-*(None — [architecture](explanations/architecture.md) includes a Mermaid flowchart under **Visual (Mermaid)** alongside the ASCII diagram.)*
+*(None — revalidated 2026-03-22. [architecture](explanations/architecture.md) includes a Mermaid flowchart under **Visual (Mermaid)** alongside the ASCII diagram.)*
 
 ---
 
 ## Low (nice to have)
 
-*(None — validated 2026-03-19. [glossary](glossary.md) defines core terms; [runbooks](runbooks/index.md) + [iptvtunerr-troubleshooting](runbooks/iptvtunerr-troubleshooting.md) cover common failures; [deployment](how-to/deployment.md) §§1–3 covers binary **`run`** vs **`index`/`serve`**, Docker Compose/`docker run` overrides, and systemd.)*
+*(None — revalidated 2026-03-22. [glossary](glossary.md) defines core terms; [runbooks](runbooks/index.md) + [iptvtunerr-troubleshooting](runbooks/iptvtunerr-troubleshooting.md) cover common failures; [deployment](how-to/deployment.md) §§1–3 covers binary **`run`** vs **`index`/`serve`**, Docker Compose/`docker run` overrides, and systemd.)*
 
 ---
 

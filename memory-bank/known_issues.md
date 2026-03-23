@@ -2,7 +2,34 @@
 
 <!-- Add bugs, limitations, and design tradeoffs as they are discovered or fixed. -->
 
+## Migration / identity live-testing limits
+
+- **Jellyfin `10.11.x` list-endpoint gap is fixed through `System/Configuration/livetv`, but that fallback is now a compatibility dependency:** confirmed on 2026-03-22 against the live `jellyfin-test` nodeport target (`192.168.50.148:30097`).
+  - `GET /LiveTv/TunerHosts` returns `405 Method Not Allowed` with `Allow: DELETE, POST`
+  - `GET /LiveTv/ListingProviders` returns `405 Method Not Allowed` with `Allow: DELETE, POST`
+  - `GET /System/Configuration/livetv` returns exact `TunerHosts` and `ListingProviders`, and Tunerr now uses that endpoint for Jellyfin Live TV diffing.
+  - Residual limitation: if Jellyfin removes or restricts `System/Configuration/livetv` in a future release, Tunerr should fail loudly again rather than guessing or silently assuming empty state.
+
+- **Static Keycloak bearer tokens are still short-lived in the disposable test realm, so credentials are the durable path:** confirmed on 2026-03-22 against the disposable `keycloak.home` test deployment.
+  - Tunerr now supports `IPTV_TUNERR_KEYCLOAK_USER` + `IPTV_TUNERR_KEYCLOAK_PASSWORD` in addition to `IPTV_TUNERR_KEYCLOAK_TOKEN`, and it will mint a fresh `admin-cli` token for diff/audit/apply when username/password are configured.
+  - Residual limitation: a static `IPTV_TUNERR_KEYCLOAK_TOKEN` can still go stale quickly in that realm, so release docs and operator setup should prefer credentials over a pasted bearer token.
+
 ## Cluster / Plex
+
+- **Station Ops recovery/overlay runtime is now real but still not full continuous media analysis:** updated 2026-03-22 after adding virtual recovery reports, ffmpeg black/silence preflight, the first branded stream image/text overlays, and repeated live fallback-chain cutover.
+  - Current behavior:
+    - virtual playback can switch to filler on missing source, failed upstream request, obviously bad non-media response, stalled startup, or ffmpeg `blackdetect` / `silencedetect` results from a short preflight probe
+    - startup recovery now also samples bounded bytes from the actual upstream response body before publish, so it is no longer limited to a separate URL-only ffmpeg probe
+    - the plain and branded virtual stream paths can now also cut over midstream across the ordered fallback chain when the active upstream stops producing bytes or hard-errors after startup
+    - recovery actions are now recorded in-memory and exposed at `/virtual-channels/recovery-report.json`
+    - when the ordered recovery chain runs out, Tunerr now records explicit `*-exhausted` recovery events instead of leaving only a timeout-shaped symptom
+    - when `IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_STATE_FILE` is set, those recent recovery events now survive restarts too
+    - `/virtual-channels/branded-stream/<id>.ts` can burn text/banner overlays and a corner image using `branding.bug_image_url` or `branding.logo_url`
+  - Remaining limitation:
+    - the black/silence detection now has repeated rolling in-session sampled-byte checks after startup, but it is still not full decoded-media analysis across the whole live session
+    - live-session recovery can now walk the configured fallback chain more than once, but it still keys only off transport/stall/error signals rather than repeated decoded media-health analysis
+    - branded playback is a separate endpoint, not yet the default path used by ordinary `/virtual-channels/stream/`
+  - Impact: operators can now inspect why filler triggered and survive a degrading primary plus degrading early filler sources, but true black-screen/dead-air substitution during a long-running session and decoded-media health-based switching are still follow-on work.
 
 - **The host-local LG TV lane still appears to require full video transcode for reliability, but browser playback can use the lighter audio-normalization path:** updated 2026-03-22 after moving the split-profile runtime from `plexsafehq` to the new higher-quality `plexsafemax`. Current mitigation is:
   - browser/resolved web => `copyvideomp3`

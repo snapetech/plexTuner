@@ -24,6 +24,17 @@ It exists to encourage quality gains without derailing the current task.
 
 ## Entries
 
+- Date: 2026-03-22
+  Category: other
+  Title: Grow Tunerr into a full general-purpose library janitor
+  Context: Migration work is expanding from Live TV into library definitions, catch-up publishing, parity audit, and now identity/account cutover. The user explicitly wants the broader direction on the backlog too: use Tunerr as the operator control plane for cross-server library hygiene, not just one-shot migration.
+  Why it matters: Large Plex/Emby/Jellyfin estates end up needing continuous reconciliation for stale libraries, path drift, unwanted leftovers, scan lag, parity gaps, and clean shutdown of old platform-specific state. That is adjacent to the migration lane but materially larger than the current scope.
+  Evidence: Current repo now has `internal/livetvbundle`, migration audit/reporting, and generated-library registration flows, but no general-purpose janitor/rule engine for ongoing cleanup and reconciliation.
+  Suggested fix: Treat this as a dedicated future epic: build a rule-driven janitor surface with preview/diff/apply, exclusions, safe delete/archive policies, scan/parity repair actions, and operator-visible reports across Plex/Emby/Jellyfin.
+  Risk/Scope: high | fits current scope? no
+  User decision needed?: yes
+  If yes: 1) Janitor design spike only (Recommended), 2) MVP cleanup/reconciliation rules for generated libraries only, 3) Full cross-server janitor roadmap. If no answer: keep as backlog and continue identity/account migration plus overlap-sync work.
+
 - Date: 2026-03-21
   Category: reliability
   Title: Adaptive per-account contract learning for provider pools

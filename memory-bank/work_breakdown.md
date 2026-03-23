@@ -29,6 +29,14 @@ Create or update this file when **any** of these are true:
 - **Story IDs:** `CMP-001` … `CMP-018`
 - **Status:** This overlay now owns the lane-wide PR plan and final convergence proof for all non-excluded operator slices not yet in a closed delivery loop. See the epic for current story-level acceptance criteria.
 
+### Active epic overlay (Station Ops, 2026-03-22)
+
+- **Doc:** [docs/epics/EPIC-station-ops.md](../docs/epics/EPIC-station-ops.md)
+- **Goal:** Turn virtual channels plus programming foundations into a real "run your own TV station" product lane: branded synthetic stations, slot authoring, black-screen/filler recovery, and eventually multi-backend rollout, with the feature set staying free instead of being split into paid tiers.
+- **Non-goals (scope fence):** Building every runtime/media-processing feature in one PR, inventing a separate admin-plane product, or pretending metadata-only foundation work already executes overlays/filler recovery at runtime.
+- **Story IDs:** `STN-001` … `STN-006`
+- **Status:** `STN-001` through the first operator-visible `STN-004` / `STN-005` depth slices are now active in-tree: station metadata, mutation APIs, slots/dayparts, collection-aware fillers, startup/content-probe filler cutover, runtime recovery reporting, slates, and the first branded-stream overlay surface.
+
 ### Active epic overlay (2026-03-18)
 
 - **Goal (2–5 sentences):** Consolidate the new intelligence layer so it feeds runtime behavior instead of staying report-only, while also paying down the biggest structural hotspots created by rapid feature growth. Success means guide quality can drive lineup and catch-up decisions, shared file/URL loading is consistent across runtime and tooling, and the next refactors can land on smaller, cleaner seams.

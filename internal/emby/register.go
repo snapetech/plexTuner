@@ -3,6 +3,7 @@ package emby
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -64,17 +65,22 @@ func joinHostURL(host, path string) string {
 // apiRequest performs a JSON API request with the MediaBrowser auth header.
 // body may be nil for requests without a payload (GET, DELETE).
 func apiRequest(client *http.Client, method, url, token string, body interface{}) (int, []byte, error) {
+	status, _, data, err := apiRequestDetailed(client, method, url, token, body)
+	return status, data, err
+}
+
+func apiRequestDetailed(client *http.Client, method, url, token string, body interface{}) (int, http.Header, []byte, error) {
 	var bodyReader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
 		if err != nil {
-			return 0, nil, fmt.Errorf("marshal request body: %w", err)
+			return 0, nil, nil, fmt.Errorf("marshal request body: %w", err)
 		}
 		bodyReader = bytes.NewReader(data)
 	}
 	req, err := http.NewRequest(method, url, bodyReader)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	req.Header.Set("Authorization", authHeader(token))
 	if body != nil {
@@ -82,11 +88,28 @@ func apiRequest(client *http.Client, method, url, token string, body interface{}
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	return resp.StatusCode, data, nil
+	return resp.StatusCode, resp.Header.Clone(), data, nil
+}
+
+type MethodNotAllowedError struct {
+	Operation string
+	Allow     string
+}
+
+func (e *MethodNotAllowedError) Error() string {
+	if strings.TrimSpace(e.Allow) != "" {
+		return fmt.Sprintf("%s returned 405 (Allow: %s)", strings.TrimSpace(e.Operation), strings.TrimSpace(e.Allow))
+	}
+	return fmt.Sprintf("%s returned 405", strings.TrimSpace(e.Operation))
+}
+
+func IsMethodNotAllowed(err error) bool {
+	var target *MethodNotAllowedError
+	return errors.As(err, &target)
 }
 
 // RegisterTunerHost registers this tuner as an HDHomeRun tuner host on the server.
@@ -129,9 +152,12 @@ func RegisterTunerHost(cfg Config) (string, error) {
 func ListTunerHosts(cfg Config) ([]TunerHostInfo, error) {
 	u := joinHostURL(cfg.Host, "/LiveTv/TunerHosts")
 	client := newHTTPClient()
-	status, data, err := apiRequest(client, http.MethodGet, u, cfg.Token, nil)
+	status, headers, data, err := apiRequestDetailed(client, http.MethodGet, u, cfg.Token, nil)
 	if err != nil {
 		return nil, fmt.Errorf("list tuner hosts: %w", err)
+	}
+	if status == http.StatusMethodNotAllowed {
+		return nil, &MethodNotAllowedError{Operation: "list tuner hosts", Allow: headers.Get("Allow")}
 	}
 	if status != http.StatusOK {
 		return nil, fmt.Errorf("list tuner hosts returned %d: %s", status, trunc(string(data), 300))
@@ -192,9 +218,12 @@ func RegisterListingProvider(cfg Config) (string, error) {
 func ListListingProviders(cfg Config) ([]ListingsProviderInfo, error) {
 	u := joinHostURL(cfg.Host, "/LiveTv/ListingProviders")
 	client := newHTTPClient()
-	status, data, err := apiRequest(client, http.MethodGet, u, cfg.Token, nil)
+	status, headers, data, err := apiRequestDetailed(client, http.MethodGet, u, cfg.Token, nil)
 	if err != nil {
 		return nil, fmt.Errorf("list listing providers: %w", err)
+	}
+	if status == http.StatusMethodNotAllowed {
+		return nil, &MethodNotAllowedError{Operation: "list listing providers", Allow: headers.Get("Allow")}
 	}
 	if status != http.StatusOK {
 		return nil, fmt.Errorf("list listing providers returned %d: %s", status, trunc(string(data), 300))
@@ -284,6 +313,40 @@ func GetChannelCount(cfg Config) int {
 		return 0
 	}
 	return list.TotalRecordCount
+}
+
+func GetLiveTVInfo(cfg Config) (*LiveTVInfo, error) {
+	u := joinHostURL(cfg.Host, "/LiveTv/Info")
+	client := newHTTPClient()
+	status, data, err := apiRequest(client, http.MethodGet, u, cfg.Token, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get live tv info: %w", err)
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("get live tv info returned %d: %s", status, trunc(string(data), 300))
+	}
+	var info LiveTVInfo
+	if err := json.Unmarshal(data, &info); err != nil {
+		return nil, fmt.Errorf("parse live tv info: %w", err)
+	}
+	return &info, nil
+}
+
+func GetLiveTVConfiguration(cfg Config) (*LiveTVConfiguration, error) {
+	u := joinHostURL(cfg.Host, "/System/Configuration/livetv")
+	client := newHTTPClient()
+	status, data, err := apiRequest(client, http.MethodGet, u, cfg.Token, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get live tv configuration: %w", err)
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("get live tv configuration returned %d: %s", status, trunc(string(data), 300))
+	}
+	var cfgBody LiveTVConfiguration
+	if err := json.Unmarshal(data, &cfgBody); err != nil {
+		return nil, fmt.Errorf("parse live tv configuration: %w", err)
+	}
+	return &cfgBody, nil
 }
 
 // FullRegister registers this tuner with the Emby or Jellyfin server. It is

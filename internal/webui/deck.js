@@ -16,6 +16,7 @@ const endpoints = {
   autopilot: "/api/autopilot/report.json?limit=8",
   ghost: "/api/plex/ghost-report.json?observe=0s",
   provider: "/api/provider/profile.json",
+  sharedRelays: "/api/debug/shared-relays.json",
   recorder: "/api/recordings/recorder.json?limit=8",
   attempts: "/api/debug/stream-attempts.json?limit=8",
   programmingCategories: "/api/programming/categories.json",
@@ -28,10 +29,16 @@ const endpoints = {
   programmingRecipe: "/api/programming/recipe.json",
   programmingPreview: "/api/programming/preview.json?limit=12",
   virtualChannelSchedule: "/api/virtual-channels/schedule.json?horizon=3h",
+  virtualChannelReport: "/api/virtual-channels/report.json",
+  virtualChannelRecovery: "/api/virtual-channels/recovery-report.json?limit=8",
   operatorActionsStatus: "/api/ops/actions/status.json",
   guideWorkflow: "/api/ops/workflows/guide-repair.json",
   streamWorkflow: "/api/ops/workflows/stream-investigate.json",
   diagnosticsWorkflow: "/api/ops/workflows/diagnostics.json",
+  migrationWorkflow: "/deck/migration-audit.json",
+  identityMigrationWorkflow: "/deck/identity-migration-audit.json",
+  oidcMigrationWorkflow: "/deck/oidc-migration-audit.json",
+  oidcMigrationApply: "/deck/oidc-migration-apply.json",
   opsWorkflow: "/api/ops/workflows/ops-recovery.json"
 };
 const csrfHeaderName = "X-IPTVTunerr-Deck-CSRF";
@@ -52,6 +59,7 @@ const endpointCatalog = {
   autopilot: { title: "Autopilot", category: "Operations", summary: "Hot channels, decision count, optional multi-DNA consensus host (when enabled)." },
   ghost: { title: "Ghost Hunter", category: "Operations", summary: "Plex stale-session and hidden-grab signals." },
   provider: { title: "Provider Profile", category: "Routing", summary: "Tuner limits, CF/concurrency/mux counters, penalized hosts, advisory remediation_hints." },
+  sharedRelays: { title: "Shared Relays", category: "Routing", summary: "Current shared live sessions, replay-backed fanout, and subscriber counts." },
   recorder: { title: "Recorder", category: "Operations", summary: "Catch-up recorder state, failures, and throughput." },
   attempts: { title: "Stream Attempts", category: "Routing", summary: "Recent fallback and failure evidence for live streams." },
   programmingCategories: { title: "Programming Categories", category: "Programming", summary: "Category inventory and bulk include/exclude controls for lineup curation." },
@@ -65,10 +73,15 @@ const endpointCatalog = {
   programmingRecipe: { title: "Programming Recipe", category: "Programming", summary: "Durable saved recipe file backing category/channel/order decisions." },
   programmingPreview: { title: "Programming Preview", category: "Programming", summary: "Curated lineup preview with taxonomy buckets and backup groups." },
   virtualChannelSchedule: { title: "Virtual Channel Schedule", category: "Programming", summary: "Synthetic schedule horizon for published virtual channels." },
+  virtualChannelReport: { title: "Virtual Channel Report", category: "Programming", summary: "Per-station publish mode, current slot, and recent recovery state for virtual channels." },
+  virtualChannelRecovery: { title: "Virtual Channel Recovery", category: "Programming", summary: "Recent filler/recovery events from the virtual-channel runtime." },
   operatorActionsStatus: { title: "Operator Action Status", category: "Deck Control", summary: "Availability and current status of safe operator actions." },
   guideWorkflow: { title: "Guide Workflow", category: "Workflows", summary: "Guided checklist for guide repair and freshness issues." },
   streamWorkflow: { title: "Stream Workflow", category: "Workflows", summary: "Guided lane for routing and upstream stream failures." },
   diagnosticsWorkflow: { title: "Diagnostics Workflow", category: "Workflows", summary: "Good-vs-bad capture plan, recent harness artifacts, and evidence-bundle intake for intermittent channel failures." },
+  migrationWorkflow: { title: "Migration Workflow", category: "Workflows", summary: "Overlap migration readiness and sync posture from a saved neutral bundle plus live Emby/Jellyfin targets." },
+  identityMigrationWorkflow: { title: "Identity Migration Workflow", category: "Workflows", summary: "Account-cutover readiness from a saved Plex-user bundle plus live Emby/Jellyfin targets." },
+  oidcMigrationWorkflow: { title: "OIDC Migration Workflow", category: "Workflows", summary: "IdP bootstrap readiness from a saved OIDC plan plus live Keycloak/Authentik targets." },
   opsWorkflow: { title: "Ops Workflow", category: "Workflows", summary: "Guided lane for recorder, ghost, and Autopilot recovery." }
 };
 
@@ -93,6 +106,11 @@ const actionDefinitions = {
     label: "Apply Shared Replay Bytes",
     confirm: "Apply the new shared replay byte window for future shared sessions?"
   },
+  virtual_channel_live_stall_update: {
+    path: "/api/ops/actions/virtual-channel-live-stall",
+    label: "Apply Virtual Live Stall Seconds",
+    confirm: "Apply the new virtual live-stall watchdog for future virtual-channel sessions?"
+  },
   autopilot_reset: {
     path: "/api/ops/actions/autopilot-reset",
     label: "Reset Autopilot Memory",
@@ -112,6 +130,11 @@ const actionDefinitions = {
     path: "/api/ops/actions/ghost-hidden-recover?mode=restart",
     label: "Restart Hidden-Grabs",
     confirm: "Run the guarded hidden-grab recovery helper with restart mode?"
+  },
+  oidc_migration_apply: {
+    path: "/deck/oidc-migration-apply.json",
+    label: "Apply OIDC Migration",
+    confirm: "Apply the saved OIDC migration plan to the configured IdP targets now?"
   },
   evidence_intake_start: {
     path: "/api/ops/actions/evidence-intake-start",
@@ -142,9 +165,12 @@ const modeTitles = {
 const state = {
   mode: "overview",
   filter: "",
+  oidcApplyHistoryFilter: "all",
   payloads: {},
   selectedRaw: "runtime",
   modalView: { kind: "raw", key: "runtime" },
+  modalForm: null,
+  lastFocusedElement: null,
   refreshTimer: null,
   refreshRateSec: Number(bootData.defaultRefreshSec || 30),
   csrfToken: String(bootData.csrfToken || ""),
@@ -210,10 +236,13 @@ const endpointGrid = document.getElementById("endpoint-grid");
 const rawSelect = document.getElementById("raw-select");
 const rawOutput = document.getElementById("raw-output");
 const rawModal = document.getElementById("raw-modal");
+const modalCard = rawModal?.querySelector(".modal-card");
+const modalBody = document.getElementById("modal-body");
 const modalRich = document.getElementById("modal-rich");
 const modalOutput = document.getElementById("modal-output");
 const modalTitle = document.getElementById("modal-title");
 const modalLabel = document.getElementById("modal-label");
+const modalRefresh = document.getElementById("modal-refresh");
 const refreshRate = document.getElementById("refresh-rate");
 
 function esc(value) {
@@ -237,6 +266,26 @@ function normalizeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function virtualRecoverySummary(item) {
+  if (!item || typeof item !== "object") return "";
+  const when = formatWhen(item.detected_at_utc || item.detectedAtUTC);
+  const channel = item.channel_name || item.channel_id || "channel";
+  const reason = item.reason || "unknown";
+  const surface = item.surface ? ` · ${item.surface}` : "";
+  const fallback = item.fallback_entry_id ? ` -> ${item.fallback_entry_id}` : "";
+  return `${when} · ${channel} · ${reason}${surface}${fallback}`;
+}
+
+function virtualStationRecoveryBadge(row) {
+  if (!row || !row.recovery_events) {
+    return "No recent recovery events";
+  }
+  if (row.recovery_exhausted) {
+    return `${pretty(row.recovery_events)} recovery events · exhausted on ${pretty(row.last_recovery_reason || "latest attempt")}`;
+  }
+  return `${pretty(row.recovery_events)} recovery events · last ${pretty(row.last_recovery_reason || "unknown")}`;
+}
+
 function diagnosticsRunSummary(run) {
   if (!run || typeof run !== "object") return "";
   const parts = [];
@@ -245,6 +294,171 @@ function diagnosticsRunSummary(run) {
   const summary = normalizeArray(run.summary).filter(Boolean).slice(0, 2).join(" | ");
   if (summary) parts.push(summary);
   return parts.join(" · ");
+}
+
+function migrationTargetSummary(item) {
+  if (!item || typeof item !== "object") return "";
+  const parts = [];
+  if (item.target) parts.push(String(item.target));
+  if (item.status) parts.push(`status=${item.status}`);
+  if (item.indexed_channel_count !== undefined) parts.push(`indexed=${item.indexed_channel_count}`);
+  if (normalizeArray(item.missing_libraries).length) parts.push(`missing=${normalizeArray(item.missing_libraries).join("/")}`);
+  if (normalizeArray(item.title_lagging_libraries).length) parts.push(`title_lag=${normalizeArray(item.title_lagging_libraries).join("/")}`);
+  return parts.join(" · ");
+}
+
+function identityMigrationTargetSummary(item) {
+  if (!item || typeof item !== "object") return "";
+  const parts = [];
+  if (item.target) parts.push(String(item.target));
+  if (item.status) parts.push(`status=${item.status}`);
+  if (item.create_count !== undefined) parts.push(`create=${item.create_count}`);
+  if (item.manual_follow_up_count !== undefined) parts.push(`follow_up=${item.manual_follow_up_count}`);
+  if (normalizeArray(item.missing_users).length) parts.push(`missing=${normalizeArray(item.missing_users).join("/")}`);
+  return parts.join(" · ");
+}
+
+function oidcMigrationTargetSummary(item) {
+  if (!item || typeof item !== "object") return "";
+  const parts = [];
+  if (item.target) parts.push(String(item.target));
+  if (item.status) parts.push(`status=${item.status}`);
+  if (item.create_user_count !== undefined) parts.push(`create=${item.create_user_count}`);
+  if (item.metadata_update_count !== undefined) parts.push(`meta=${item.metadata_update_count}`);
+  if (normalizeArray(item.missing_users).length) parts.push(`missing=${normalizeArray(item.missing_users).join("/")}`);
+  if (normalizeArray(item.metadata_users).length) parts.push(`meta_users=${normalizeArray(item.metadata_users).join("/")}`);
+  return parts.join(" · ");
+}
+
+function oidcMigrationLastApplySummary(item) {
+  if (!item || typeof item !== "object") return "";
+  const parts = [];
+  if (item.at) parts.push(formatWhen(item.at));
+  parts.push(item.detail?.ok === false ? `<span class="pill badge-fail">failed</span>` : `<span class="pill badge-ok">success</span>`);
+  if (item.message) parts.push(String(item.message));
+  const targets = normalizeArray(item.detail?.targets);
+  if (targets.length) parts.push(`targets=${targets.join("/")}`);
+  if (item.detail?.phase) parts.push(`phase=${item.detail.phase}`);
+  if (item.detail?.error) parts.push(`error=${item.detail.error}`);
+  if (item.detail?.keycloak?.bootstrap_password) parts.push("keycloak_password");
+  if (normalizeArray(item.detail?.keycloak?.email_actions).length) parts.push(`keycloak_email=${normalizeArray(item.detail.keycloak.email_actions).join("/")}`);
+  if (item.detail?.authentik?.bootstrap_password) parts.push("authentik_password");
+  if (item.detail?.authentik?.recovery_email) parts.push("authentik_recovery_email");
+  const resultTargets = item.detail?.result_targets && typeof item.detail.result_targets === "object" ? item.detail.result_targets : {};
+  Object.entries(resultTargets).forEach(([target, result]) => {
+    if (!result || typeof result !== "object") return;
+    const targetParts = [];
+    if (result.create_user_count !== undefined) targetParts.push(`create=${result.create_user_count}`);
+    if (result.create_group_count !== undefined) targetParts.push(`groups=${result.create_group_count}`);
+    if (result.add_membership_count !== undefined) targetParts.push(`membership=${result.add_membership_count}`);
+    if (result.metadata_update_count !== undefined) targetParts.push(`meta=${result.metadata_update_count}`);
+    if (result.activation_pending_count !== undefined) targetParts.push(`pending=${result.activation_pending_count}`);
+    if (targetParts.length) parts.push(`${target}[${targetParts.join(",")}]`);
+  });
+  return parts.join(" · ");
+}
+
+function oidcApplyResultTargetParts(result) {
+  if (!result || typeof result !== "object") return [];
+  const parts = [];
+  if (result.create_user_count !== undefined) parts.push(`create=${result.create_user_count}`);
+  if (result.create_group_count !== undefined) parts.push(`groups=${result.create_group_count}`);
+  if (result.add_membership_count !== undefined) parts.push(`membership=${result.add_membership_count}`);
+  if (result.metadata_update_count !== undefined) parts.push(`meta=${result.metadata_update_count}`);
+  if (result.activation_pending_count !== undefined) parts.push(`pending=${result.activation_pending_count}`);
+  return parts;
+}
+
+function renderOIDCApplyHistoryTargetRows(item) {
+  if (!item || typeof item !== "object") return "";
+  const detail = item.detail && typeof item.detail === "object" ? item.detail : {};
+  const requestedTargets = normalizeArray(detail.targets);
+  const targetStatuses = detail.target_statuses && typeof detail.target_statuses === "object" ? detail.target_statuses : {};
+  const seen = new Set();
+  const targetNames = [];
+  requestedTargets.forEach((target) => {
+    const normalized = String(target || "").trim();
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    targetNames.push(normalized);
+  });
+  Object.keys(targetStatuses).forEach((target) => {
+    const normalized = String(target || "").trim();
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    targetNames.push(normalized);
+  });
+  if (!targetNames.length) return "";
+  return `
+    <div class="workflow-targets">
+      ${targetNames.map((target) => {
+        const status = targetStatuses[target] && typeof targetStatuses[target] === "object" ? targetStatuses[target] : {};
+        const parts = oidcApplyResultTargetParts(status);
+        let badge = `<span class="pill badge-ok">applied</span>`;
+        if (status.status === "failed") {
+          badge = `<span class="pill badge-fail">failed</span>`;
+          if (status.phase) parts.push(`phase=${status.phase}`);
+          if (status.error) parts.push(`error=${status.error}`);
+        } else if (status.status === "validation_failed") {
+          badge = `<span class="pill badge-fail">validation failed</span>`;
+          if (status.error) parts.push(`error=${status.error}`);
+        } else if (status.status === "not_reached") {
+          badge = `<span class="pill badge-fail">not reached</span>`;
+          if (status.blocked_by) parts.push(`blocked_by=${status.blocked_by}`);
+        } else if (detail.ok !== false && parts.length === 0) {
+          parts.push("no changes reported");
+        }
+        return `
+          <div class="workflow-target-row">
+            <strong>${esc(target)}</strong>
+            ${badge}
+            <span>${esc(parts.join(" · ") || "no changes reported")}</span>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderOIDCApplyHistoryItem(item) {
+  if (!item || typeof item !== "object") return "";
+  const detail = item.detail && typeof item.detail === "object" ? item.detail : {};
+  const failureMeta = detail.ok === false && (detail.error || detail.phase)
+    ? `<div class="workflow-note">failure: ${esc([detail.phase ? `phase=${detail.phase}` : "", detail.error || ""].filter(Boolean).join(" · "))}</div>`
+    : "";
+  return `
+    <div class="workflow-step">
+      <div>${oidcMigrationLastApplySummary(item)}</div>
+      ${failureMeta}
+      ${renderOIDCApplyHistoryTargetRows(item)}
+    </div>
+  `;
+}
+
+function filteredOIDCMigrationApplyHistory(items) {
+  const all = normalizeArray(items).slice(0, 8);
+  if (state.oidcApplyHistoryFilter === "success") {
+    return all.filter((item) => item?.detail?.ok !== false);
+  }
+  if (state.oidcApplyHistoryFilter === "failed") {
+    return all.filter((item) => item?.detail?.ok === false);
+  }
+  return all;
+}
+
+function oidcMigrationApplyHistorySummary(items) {
+  return filteredOIDCMigrationApplyHistory(items).slice(0, 4).map((item) => oidcMigrationLastApplySummary(item)).filter(Boolean).join(" || ");
+}
+
+function oidcApplyHistoryActions(items) {
+  const all = normalizeArray(items).slice(0, 8);
+  const successCount = all.filter((item) => item?.detail?.ok !== false).length;
+  const failedCount = all.filter((item) => item?.detail?.ok === false).length;
+  return [
+    createTinyButton(`data-oidc-apply-filter="all"`, `All (${all.length})`),
+    createTinyButton(`data-oidc-apply-filter="success"`, `Success (${successCount})`),
+    createTinyButton(`data-oidc-apply-filter="failed"`, `Failed (${failedCount})`)
+  ].join("");
 }
 
 /** Compact operator view: /provider/profile.json is a flat JSON object (no legacy summary wrapper). */
@@ -454,6 +668,124 @@ function programmingHarvestAssistButtons(row) {
   ].join("");
 }
 
+function virtualStationButtons(row) {
+  const id = String(row?.channel_id || "");
+  if (!id) return "";
+  const mode = String(row?.stream_mode || "").toLowerCase();
+  const recoveryMode = String(row?.recovery_mode || "").toLowerCase();
+  return [
+    createTinyButton(`data-open-path="/api/virtual-channels/channel-detail.json?channel_id=${encodeURIComponent(id)}" data-open-title="Virtual Channel · ${esc(row?.name || id)}"`, "Inspect"),
+    createTinyButton(`data-virtual-station-mode="${esc(id)}" data-virtual-station-target="plain"`, mode === "plain" ? "Plain On" : "Force Plain"),
+    createTinyButton(`data-virtual-station-mode="${esc(id)}" data-virtual-station-target="branded"`, mode === "branded" ? "Branded On" : "Force Branded"),
+    createTinyButton(`data-virtual-station-mode="${esc(id)}" data-virtual-station-target="auto"`, mode === "" ? "Auto On" : "Auto"),
+    createTinyButton(`data-virtual-station-recovery-mode="${esc(id)}" data-virtual-station-recovery-target="none"`, recoveryMode === "" ? "Recovery Off" : "Disable Recovery"),
+    createTinyButton(`data-virtual-station-recovery-mode="${esc(id)}" data-virtual-station-recovery-target="filler"`, recoveryMode === "filler" ? "Filler On" : "Enable Filler"),
+    createTinyButton(`data-virtual-station-recovery-edit="${esc(id)}" data-virtual-station-recovery-field="black_screen_seconds" data-virtual-station-label="${esc(row?.name || id)}"`, "Black Sec"),
+    createTinyButton(`data-virtual-station-edit="${esc(id)}" data-virtual-station-field="logo_url" data-virtual-station-label="${esc(row?.name || id)}"`, "Logo"),
+    createTinyButton(`data-virtual-station-edit="${esc(id)}" data-virtual-station-field="bug_image_url" data-virtual-station-label="${esc(row?.name || id)}"`, "Bug Img"),
+    createTinyButton(`data-virtual-station-edit="${esc(id)}" data-virtual-station-field="bug_text" data-virtual-station-label="${esc(row?.name || id)}"`, "Bug"),
+    createTinyButton(`data-virtual-station-edit="${esc(id)}" data-virtual-station-field="bug_position" data-virtual-station-label="${esc(row?.name || id)}"`, "Position"),
+    createTinyButton(`data-virtual-station-edit="${esc(id)}" data-virtual-station-field="banner_text" data-virtual-station-label="${esc(row?.name || id)}"`, "Banner"),
+    createTinyButton(`data-virtual-station-edit="${esc(id)}" data-virtual-station-field="theme_color" data-virtual-station-label="${esc(row?.name || id)}"`, "Theme")
+  ].join("");
+}
+
+async function promptVirtualStationBrandingField(id, field, label) {
+  const stationRows = normalizeArray(state.payloads.virtualChannelReport?.body?.channels);
+  const row = stationRows.find((item) => String(item?.channel_id || "") === String(id));
+  const current = row && typeof row === "object" ? (
+    field === "logo_url" ? (row.logo_url || row.channel?.branding?.logo_url || "") :
+    field === "bug_image_url" ? (row.bug_image_url || row.channel?.branding?.bug_image_url || "") :
+    field === "bug_text" ? (row.bug_text || row.channel?.branding?.bug_text || "") :
+    field === "bug_position" ? (row.bug_position || row.channel?.branding?.bug_position || "") :
+    field === "banner_text" ? (row.banner_text || row.channel?.branding?.banner_text || "") :
+    field === "theme_color" ? (row.theme_color || row.channel?.branding?.theme_color || "") :
+    ""
+  ) : "";
+  const promptLabel =
+    field === "logo_url" ? "Logo URL" :
+    field === "bug_image_url" ? "Bug image URL" :
+    field === "bug_text" ? "Bug text" :
+    field === "bug_position" ? "Bug position (top-left, top-right, bottom-left, bottom-right)" :
+    field === "theme_color" ? "Theme color (#RRGGBB)" :
+    "Banner text";
+  renderModalForm({
+    kind: "virtual-branding",
+    title: `${promptLabel} · ${label || id}`,
+    label: `Virtual station · ${id}`,
+    description: "Edit station branding metadata without leaving the deck.",
+    fieldLabel: promptLabel,
+    value: current || "",
+    placeholder: field === "theme_color" ? "#BF4F26" : "",
+    helpText: "Use Clear to remove this branding field.",
+    allowClear: true,
+    submitLabel: "Save Branding",
+    clearLabel: "Clear Field",
+    control: field === "bug_position" ? "select" : "input",
+    options: field === "bug_position" ? [
+      { value: "top-left", label: "Top Left" },
+      { value: "top-right", label: "Top Right" },
+      { value: "bottom-left", label: "Bottom Left" },
+      { value: "bottom-right", label: "Bottom Right" }
+    ] : [],
+    onSubmit: async (value) => postVirtualChannelDetail({
+      action: "update_metadata",
+      channel_id: id,
+      branding: {
+        [field]: String(value)
+      }
+    }, `virtual_station_${field}_set`),
+    onClear: async () => postVirtualChannelDetail({
+      action: "update_metadata",
+      channel_id: id,
+      branding_clear: [field]
+    }, `virtual_station_${field}_clear`)
+  });
+}
+
+async function promptVirtualStationRecoveryField(id, field, label) {
+  const stationRows = normalizeArray(state.payloads.virtualChannelReport?.body?.channels);
+  const row = stationRows.find((item) => String(item?.channel_id || "") === String(id));
+  const current = row && typeof row === "object"
+    ? (field === "black_screen_seconds" ? String(row.black_screen_seconds || "") : "")
+    : "";
+  const promptLabel = field === "black_screen_seconds" ? "Black-screen seconds" : field;
+  renderModalForm({
+    kind: "virtual-recovery",
+    title: `${promptLabel} · ${label || id}`,
+    label: `Virtual station recovery · ${id}`,
+    description: "Tune the virtual-channel recovery watchdog from the deck.",
+    fieldLabel: promptLabel,
+    value: current || "",
+    inputType: "number",
+    min: "1",
+    step: "1",
+    placeholder: "5",
+    helpText: "Enter a positive integer, or clear the field to remove the explicit override.",
+    allowClear: true,
+    submitLabel: "Save Recovery",
+    clearLabel: "Clear Field",
+    onSubmit: async (value) => {
+      const parsed = Number.parseInt(String(value).trim(), 10);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        throw new Error("Black-screen seconds must be a positive integer.");
+      }
+      return postVirtualChannelDetail({
+        action: "update_metadata",
+        channel_id: id,
+        recovery: {
+          black_screen_seconds: parsed
+        }
+      }, `virtual_station_${field}_set`);
+    },
+    onClear: async () => postVirtualChannelDetail({
+      action: "update_metadata",
+      channel_id: id,
+      recovery_clear: [field]
+    }, `virtual_station_${field}_clear`)
+  });
+}
+
 function harvestAssistSummary(row) {
   const bits = [];
   if (row?.recommended) bits.push("recommended");
@@ -486,6 +818,7 @@ function programmingBackupPreferenceButtons(group) {
 function renderDeckSettingsPanel(settings) {
   const refreshValue = Number(settings?.default_refresh_sec ?? state.refreshRateSec ?? 30);
   const runtimeReplayBytes = state.payloads.runtime?.body?.tuner?.shared_relay_replay_bytes ?? "";
+  const runtimeVirtualLiveStall = state.payloads.runtime?.body?.tuner?.virtual_channel_recovery_live_stall_sec ?? "";
   deckSettingsForm.innerHTML = `
     <div class="deck-settings-grid">
       <label>
@@ -502,12 +835,16 @@ function renderDeckSettingsPanel(settings) {
         Shared Replay Bytes
         <input id="deck-settings-shared-replay-bytes" type="number" min="0" step="1" value="${esc(runtimeReplayBytes)}" placeholder="262144" />
       </label>
+      <label>
+        Virtual Live Stall Sec
+        <input id="deck-settings-virtual-live-stall-sec" type="number" min="0" step="1" value="${esc(runtimeVirtualLiveStall)}" placeholder="5" />
+      </label>
     </div>
     <div class="deck-settings-actions">
       <button id="deck-settings-save" type="button">Save Deck Preferences</button>
     </div>
     <div class="deck-settings-note">
-      Session TTL: ${esc(pretty(settings?.effective_session_ttl_minutes))} minutes. Login rate limit: ${esc(pretty(settings?.login_failure_limit))} failures per ${esc(pretty(settings?.login_failure_window_minutes))} minutes. Authentication is configured from startup env only. Shared replay bytes apply to new shared live sessions only. ${settings?.state_persisted ? "Deck preferences persist across restarts." : "Without a web UI state file, deck preferences last only until this process restarts."}
+      Session TTL: ${esc(pretty(settings?.effective_session_ttl_minutes))} minutes. Login rate limit: ${esc(pretty(settings?.login_failure_limit))} failures per ${esc(pretty(settings?.login_failure_window_minutes))} minutes. Authentication is configured from startup env only. Shared replay bytes apply to new shared live sessions only. Virtual live stall seconds apply to new virtual-channel sessions only. ${settings?.state_persisted ? "Deck preferences persist across restarts." : "Without a web UI state file, deck preferences last only until this process restarts."}
     </div>
   `;
 }
@@ -554,6 +891,72 @@ function setActionFeedback(result) {
   };
 }
 
+function parseCSVInput(value) {
+  return String(value || "").split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function promptBool(message, defaultValue = false) {
+  const raw = window.prompt(message, defaultValue ? "yes" : "no");
+  if (raw === null) return null;
+  const normalized = String(raw).trim().toLowerCase();
+  if (!normalized) return defaultValue;
+  if (["y", "yes", "true", "1", "on"].includes(normalized)) return true;
+  if (["n", "no", "false", "0", "off"].includes(normalized)) return false;
+  window.alert("Enter yes or no.");
+  return null;
+}
+
+function buildOIDCMigrationApplyPayload() {
+  const workflow = state.payloads.oidcMigrationWorkflow?.body || {};
+  const configuredTargets = normalizeArray(workflow.summary?.targets).map((item) => String(item?.target || "").trim().toLowerCase()).filter(Boolean);
+  const targetInput = window.prompt("OIDC targets to apply (comma-separated: keycloak, authentik). Leave blank for configured targets.", configuredTargets.join(", "));
+  if (targetInput === null) return null;
+  const targets = parseCSVInput(targetInput || configuredTargets.join(", "));
+  if (!targets.length) {
+    window.alert("Choose at least one OIDC target.");
+    return null;
+  }
+  const payload = { targets };
+  if (targets.includes("keycloak")) {
+    const bootstrapPassword = window.prompt("Keycloak bootstrap password (optional; leave blank to skip).", "");
+    if (bootstrapPassword === null) return null;
+    const passwordTemporary = promptBool("Mark Keycloak bootstrap password as temporary? yes/no", true);
+    if (passwordTemporary === null) return null;
+    const emailActionsRaw = window.prompt("Keycloak execute-actions-email list (optional, comma-separated, e.g. UPDATE_PASSWORD,VERIFY_EMAIL).", "");
+    if (emailActionsRaw === null) return null;
+    const emailClientID = window.prompt("Keycloak email client_id (optional).", "");
+    if (emailClientID === null) return null;
+    const emailRedirectURI = window.prompt("Keycloak email redirect_uri (optional).", "");
+    if (emailRedirectURI === null) return null;
+    const emailLifespanRaw = window.prompt("Keycloak execute-actions-email lifespan seconds (optional; blank or 0 for default).", "0");
+    if (emailLifespanRaw === null) return null;
+    const emailLifespanSec = Number(String(emailLifespanRaw || "0").trim() || "0");
+    if (!Number.isFinite(emailLifespanSec) || emailLifespanSec < 0) {
+      window.alert("Keycloak email lifespan must be a non-negative integer.");
+      return null;
+    }
+    payload.keycloak = {
+      bootstrap_password: String(bootstrapPassword || ""),
+      password_temporary: passwordTemporary,
+      email_actions: parseCSVInput(emailActionsRaw),
+      email_client_id: String(emailClientID || "").trim(),
+      email_redirect_uri: String(emailRedirectURI || "").trim(),
+      email_lifespan_sec: Math.trunc(emailLifespanSec)
+    };
+  }
+  if (targets.includes("authentik")) {
+    const bootstrapPassword = window.prompt("Authentik bootstrap password (optional; leave blank to skip).", "");
+    if (bootstrapPassword === null) return null;
+    const recoveryEmail = promptBool("Trigger Authentik recovery email for migrated users with email addresses? yes/no", false);
+    if (recoveryEmail === null) return null;
+    payload.authentik = {
+      bootstrap_password: String(bootstrapPassword || ""),
+      recovery_email: recoveryEmail
+    };
+  }
+  return payload;
+}
+
 function safeLocalStorage() {
   try {
     return window.localStorage;
@@ -572,6 +975,7 @@ function loadPersistedState() {
       if (prefs.mode && modeTitles[prefs.mode]) state.mode = prefs.mode;
       if (Number.isFinite(Number(prefs.refreshRateSec))) state.refreshRateSec = Number(prefs.refreshRateSec);
       if (prefs.selectedRaw && endpoints[prefs.selectedRaw]) state.selectedRaw = prefs.selectedRaw;
+      if (["all", "success", "failed"].includes(String(prefs.oidcApplyHistoryFilter || ""))) state.oidcApplyHistoryFilter = String(prefs.oidcApplyHistoryFilter);
       if (prefs.programmingSelectedChannelId) state.programmingSelectedChannelId = String(prefs.programmingSelectedChannelId);
       if (prefs.programmingSelectedCategoryId) state.programmingSelectedCategoryId = String(prefs.programmingSelectedCategoryId);
       state.programmingBrowseGuideOnly = !!prefs.programmingBrowseGuideOnly;
@@ -589,6 +993,7 @@ function persistPrefs() {
       mode: state.mode,
       refreshRateSec: state.refreshRateSec,
       selectedRaw: state.selectedRaw,
+      oidcApplyHistoryFilter: state.oidcApplyHistoryFilter,
       programmingSelectedChannelId: state.programmingSelectedChannelId,
       programmingSelectedCategoryId: state.programmingSelectedCategoryId,
       programmingBrowseGuideOnly: state.programmingBrowseGuideOnly,
@@ -823,22 +1228,81 @@ function setHealth(ok, label) {
 }
 
 function showModalRaw(text, title, label) {
+  state.modalForm = null;
   modalRich.hidden = true;
   modalRich.innerHTML = "";
   modalOutput.hidden = false;
   modalTitle.textContent = title;
   modalLabel.textContent = label;
   modalOutput.textContent = text;
+  if (modalRefresh) modalRefresh.hidden = false;
 }
 
-function openModal() {
+function modalFocusableElements() {
+  return normalizeArray(Array.from(rawModal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')))
+    .filter((el) => !el.hidden && !el.disabled && el.getAttribute("aria-hidden") !== "true");
+}
+
+function openModal(options = {}) {
+  state.lastFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  rawModal.hidden = false;
   rawModal.classList.add("open");
   rawModal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+  window.requestAnimationFrame(() => {
+    const wanted = options.focusSelector ? rawModal.querySelector(options.focusSelector) : null;
+    const focusTarget = wanted || modalFocusableElements()[0] || modalCard;
+    if (focusTarget && typeof focusTarget.focus === "function") {
+      focusTarget.focus();
+    }
+  });
 }
 
 function closeModal() {
   rawModal.classList.remove("open");
   rawModal.setAttribute("aria-hidden", "true");
+  rawModal.hidden = true;
+  document.body.classList.remove("modal-open");
+  state.modalForm = null;
+  const last = state.lastFocusedElement;
+  state.lastFocusedElement = null;
+  if (last && typeof last.focus === "function") {
+    last.focus();
+  }
+}
+
+function renderModalForm(spec) {
+  state.modalForm = spec;
+  modalOutput.hidden = true;
+  modalOutput.textContent = "";
+  modalRich.hidden = false;
+  modalTitle.textContent = spec.title;
+  modalLabel.textContent = spec.label;
+  if (modalRefresh) modalRefresh.hidden = true;
+  const control = spec.control === "select"
+    ? `<select id="modal-form-input" name="value">${normalizeArray(spec.options).map((option) => {
+        const value = String(option?.value ?? "");
+        const label = String(option?.label ?? value);
+        return `<option value="${esc(value)}"${String(spec.value ?? "") === value ? " selected" : ""}>${esc(label)}</option>`;
+      }).join("")}</select>`
+    : spec.control === "textarea"
+      ? `<textarea id="modal-form-input" name="value" placeholder="${esc(spec.placeholder || "")}">${esc(spec.value || "")}</textarea>`
+      : `<input id="modal-form-input" name="value" type="${esc(spec.inputType || "text")}" value="${esc(spec.value || "")}" placeholder="${esc(spec.placeholder || "")}"${spec.min !== undefined ? ` min="${esc(spec.min)}"` : ""}${spec.step !== undefined ? ` step="${esc(spec.step)}"` : ""} />`;
+  modalRich.innerHTML = `
+    <form class="modal-form" id="modal-editor-form">
+      <div class="modal-form-note">${esc(spec.description || "")}</div>
+      <label for="modal-form-input">${esc(spec.fieldLabel)}</label>
+      ${control}
+      ${spec.helpText ? `<div class="modal-form-note">${esc(spec.helpText)}</div>` : ""}
+      <div class="deck-settings-actions">
+        <button type="submit">${esc(spec.submitLabel || "Save")}</button>
+        ${spec.allowClear ? `<button type="button" data-modal-clear="1">${esc(spec.clearLabel || "Clear")}</button>` : ""}
+        <button type="button" id="modal-cancel-secondary">Cancel</button>
+      </div>
+    </form>
+  `;
+  state.modalView = { kind: "form", key: spec.kind || "editor" };
+  openModal({ focusSelector: "#modal-form-input" });
 }
 
 function actionPathToKey(path) {
@@ -856,6 +1320,21 @@ function renderWorkflowAction(path) {
     return `<button class="tiny" type="button" data-inspect="${esc(endpointKey)}">Inspect ${esc(path)}</button>`;
   }
   return `<button class="tiny" type="button" data-open-path="${esc(`/api${path}`)}" data-open-title="${esc(path)}">Open ${esc(path)}</button>`;
+}
+
+function renderOIDCWorkflowModalExtras(summary) {
+  const recentItems = filteredOIDCMigrationApplyHistory(summary?.recent_applies);
+  return `
+    <div class="workflow-summary">
+      <div class="workflow-note">OIDC apply history</div>
+      <div class="workflow-actions">${oidcApplyHistoryActions(summary?.recent_applies)}</div>
+      <div class="workflow-history">
+        ${recentItems.length
+          ? recentItems.map((item) => renderOIDCApplyHistoryItem(item)).join("")
+          : `<div class="workflow-note">No recent OIDC apply history matches the current filter.</div>`}
+      </div>
+    </div>
+  `;
 }
 
 function renderWorkflowModal(workflowKey) {
@@ -877,6 +1356,7 @@ function renderWorkflowModal(workflowKey) {
           ).join("")
           : `<div class="workflow-note">No summary payload returned.</div>`}
       </div>
+      ${workflowKey === "oidcMigrationWorkflow" ? renderOIDCWorkflowModalExtras(summary) : ""}
       <div class="workflow-steps">
         ${steps.length
           ? steps.map((step, index) => `<div class="workflow-step"><strong>${index + 1}.</strong> ${esc(step)}</div>`).join("")
@@ -895,7 +1375,7 @@ function renderWorkflowModal(workflowKey) {
 function renderActionDock(operatorStatus, guideWorkflow, streamWorkflow, opsWorkflow) {
   const refreshStatus = operatorStatus.guide_refresh?.status || {};
   const banner = state.actionFeedback
-    ? `<div class="action-banner ${actionKind(state.actionFeedback)}"><strong>${esc(state.actionFeedback.action)}</strong><div>${esc(state.actionFeedback.message)}</div><div class="meta">${esc(formatWhen(state.actionFeedback.at))}${state.actionFeedback.detail ? ` · detail: ${esc(pretty(state.actionFeedback.detail))}` : ""}</div></div>`
+    ? `<div class="action-banner ${actionKind(state.actionFeedback)}" role="status" aria-live="polite" tabindex="-1"><strong>${esc(state.actionFeedback.action)}</strong><div>${esc(state.actionFeedback.message)}</div><div class="meta">${esc(formatWhen(state.actionFeedback.at))}${state.actionFeedback.detail ? ` · detail: ${esc(pretty(state.actionFeedback.detail))}` : ""}</div></div>`
     : "";
 
   actionDock.innerHTML = `
@@ -949,10 +1429,14 @@ function renderActionDock(operatorStatus, guideWorkflow, streamWorkflow, opsWork
 function applyMode(mode) {
   state.mode = mode;
   document.querySelectorAll("#mode-nav button").forEach((button) => {
-    button.classList.toggle("active", button.dataset.mode === mode);
+    const active = button.dataset.mode === mode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
   });
   document.querySelectorAll(".section").forEach((section) => {
-    section.classList.toggle("active", section.dataset.mode === mode);
+    const active = section.dataset.mode === mode;
+    section.classList.toggle("active", active);
+    section.setAttribute("aria-hidden", active ? "false" : "true");
   });
   const pair = modeTitles[mode] || ["Deck", "View"];
   crumbMode.textContent = pair[0];
@@ -1125,6 +1609,7 @@ function renderDeck() {
   const providerSummary = summarizeProviderProfile(provider);
   const remediationHints = remediationHintsFromProfile(provider);
   const providerLoadErr = provider.error || (state.payloads.provider && state.payloads.provider.ok === false ? `HTTP ${state.payloads.provider.status || 0}` : null);
+  const sharedRelays = state.payloads.sharedRelays?.body || {};
   const recorder = state.payloads.recorder?.body || {};
   const attempts = normalizeArray(state.payloads.attempts?.body);
   const programmingCategoriesPayload = state.payloads.programmingCategories?.body || {};
@@ -1139,6 +1624,9 @@ function renderDeck() {
   const streamWorkflow = state.payloads.streamWorkflow?.body || {};
   const diagnosticsWorkflow = state.payloads.diagnosticsWorkflow?.body || {};
   const diagnosticRuns = normalizeArray(diagnosticsWorkflow.summary?.diag_runs);
+  const migrationWorkflow = state.payloads.migrationWorkflow?.body || {};
+  const identityMigrationWorkflow = state.payloads.identityMigrationWorkflow?.body || {};
+  const oidcMigrationWorkflow = state.payloads.oidcMigrationWorkflow?.body || {};
   const opsWorkflow = state.payloads.opsWorkflow?.body || {};
   const deckSettings = state.payloads.deckSettings?.body || state.deckSettings || {};
   const activity = normalizeArray(state.payloads.deckActivity?.body?.entries).length
@@ -1325,6 +1813,9 @@ function renderDeck() {
       if (provider.client_behavior) parts.push(`client_behavior=${esc(JSON.stringify(provider.client_behavior))}`);
       return parts.join(" · ");
     })(), "", "provider", `${createActionButton("provider_profile_reset")}`),
+    createCard("Shared live sessions", normalizeArray(sharedRelays.relays).length
+      ? normalizeArray(sharedRelays.relays).slice(0, 4).map((item) => `${item.channel_id || "channel"} · ${item.shared_upstream || "shared"} · subs=${pretty(item.subscriber_count)}`).join(" | ")
+      : (sharedRelays.count === 0 ? "No shared live sessions are active right now." : pretty(sharedRelays.error || "Shared relay report unavailable")), `count=${pretty(sharedRelays.count || 0)}`, "", "sharedRelays"),
     createCard("Attempt volume", `${attempts.length} recent attempts in buffer. Top host pressure: ${attempts.slice(0, 3).map((item) => item.upstream_url_host || item.upstream_host || "unknown").join(", ") || "none"}`, "", failedAttempts.length > 0 ? "tone-warn" : "", "attempts", `${createWorkflowButton("streamWorkflow", "Failure Workflow")}${createWorkflowButton("diagnosticsWorkflow", "Capture Workflow")}${createActionButton("stream_attempts_clear")}`),
     createCard("Fallback evidence", attempts.slice(0, 4).map((item) => `${item.channel_name || item.channel_id || "channel"} -> ${item.reason || item.result || item.status || "unknown"}`).join(" | ") || "No fallback evidence", "", "", "attempts", `<button class="tiny" type="button" data-inspect="streamWorkflow">Workflow Payload</button>`),
     createCard("Diagnostics capture", diagnosticsWorkflow.summary?.suggested_bad_channel_id || diagnosticsWorkflow.summary?.suggested_good_channel_id
@@ -1333,6 +1824,26 @@ function renderDeck() {
     createCard("Latest diagnostics", diagnosticRuns.length
       ? diagnosticRuns.map((run) => diagnosticsRunSummary(run)).filter(Boolean).join(" || ")
       : "No recent channel-diff, stream-compare, multi-stream, or evidence bundle runs detected under .diag.", "", "", "diagnosticsWorkflow", `<button class="tiny" type="button" data-inspect="diagnosticsWorkflow">Workflow Payload</button>`),
+    createCard("Migration overlap", migrationWorkflow.summary?.configured
+      ? `${pretty(migrationWorkflow.summary?.overall_status)} · ready ${pretty(migrationWorkflow.summary?.ready_target_count)}/${pretty(migrationWorkflow.summary?.target_count)} targets`
+      : pretty(migrationWorkflow.summary?.error || "Migration workflow is not configured on this process."), "", (migrationWorkflow.summary?.overall_status === "blocked_conflicts" ? "tone-warn" : migrationWorkflow.summary?.ready_to_apply ? "tone-good" : ""), "migrationWorkflow", `${createWorkflowButton("migrationWorkflow", "Open Migration Workflow")}<button class="tiny" type="button" data-inspect="migrationWorkflow">Workflow Payload</button>`),
+    createCard("Migration targets", normalizeArray(migrationWorkflow.summary?.targets).length
+      ? normalizeArray(migrationWorkflow.summary.targets).map((item) => migrationTargetSummary(item)).filter(Boolean).join(" | ")
+      : "No migration target summary available yet.", "", "", "migrationWorkflow"),
+    createCard("Identity cutover", identityMigrationWorkflow.summary?.configured
+      ? `${pretty(identityMigrationWorkflow.summary?.overall_status)} · ready ${pretty(identityMigrationWorkflow.summary?.ready_target_count)}/${pretty(identityMigrationWorkflow.summary?.target_count)} targets`
+      : pretty(identityMigrationWorkflow.summary?.error || "Identity migration workflow is not configured on this process."), "", (identityMigrationWorkflow.summary?.overall_status === "blocked_conflicts" ? "tone-warn" : identityMigrationWorkflow.summary?.ready_to_apply ? "tone-good" : ""), "identityMigrationWorkflow", `${createWorkflowButton("identityMigrationWorkflow", "Open Identity Workflow")}<button class="tiny" type="button" data-inspect="identityMigrationWorkflow">Workflow Payload</button>`),
+    createCard("Identity targets", normalizeArray(identityMigrationWorkflow.summary?.targets).length
+      ? normalizeArray(identityMigrationWorkflow.summary.targets).map((item) => identityMigrationTargetSummary(item)).filter(Boolean).join(" | ")
+      : "No identity target summary available yet.", "", "", "identityMigrationWorkflow"),
+    createCard("OIDC cutover", oidcMigrationWorkflow.summary?.configured
+      ? `${pretty(oidcMigrationWorkflow.summary?.overall_status)} · ready ${pretty(oidcMigrationWorkflow.summary?.ready_target_count)}/${pretty(oidcMigrationWorkflow.summary?.target_count)} targets`
+      : pretty(oidcMigrationWorkflow.summary?.error || "OIDC migration workflow is not configured on this process."), "", (oidcMigrationWorkflow.summary?.ready_to_apply ? "tone-good" : ""), "oidcMigrationWorkflow", `${createWorkflowButton("oidcMigrationWorkflow", "Open OIDC Workflow")}${createActionButton("oidc_migration_apply")}<button class="tiny" type="button" data-inspect="oidcMigrationWorkflow">Workflow Payload</button>`),
+    createCard("OIDC targets", normalizeArray(oidcMigrationWorkflow.summary?.targets).length
+      ? normalizeArray(oidcMigrationWorkflow.summary.targets).map((item) => oidcMigrationTargetSummary(item)).filter(Boolean).join(" | ")
+      : "No OIDC target summary available yet.", "", "", "oidcMigrationWorkflow"),
+    createCard("OIDC last apply", oidcMigrationLastApplySummary(oidcMigrationWorkflow.summary?.last_apply) || "No OIDC apply has been recorded in deck activity yet.", "", "", "oidcMigrationWorkflow"),
+    createCard("OIDC recent applies", oidcMigrationApplyHistorySummary(oidcMigrationWorkflow.summary?.recent_applies) || "No recent OIDC apply history matches the current filter.", `filter=${state.oidcApplyHistoryFilter}`, "", "oidcMigrationWorkflow", oidcApplyHistoryActions(oidcMigrationWorkflow.summary?.recent_applies)),
     createCard("HDHR contract", "discover.json, lineup.json, lineup_status.json, device.xml, and guide.xml still live on the tuner and are proxied here under /api.", "", "", "runtime"),
     createCard("Mux choices", "Native TS/fMP4/HLS surfaces exist; the deck is a supervisor over those capabilities, not a stream path itself.", "", "", "provider")
   ]).join("");
@@ -1363,6 +1874,8 @@ function renderDeck() {
 
   const programmingDetailPayload = state.payloads.programmingChannelDetail?.body || {};
   const virtualChannelSchedulePayload = state.payloads.virtualChannelSchedule?.body || {};
+  const virtualChannelReportPayload = state.payloads.virtualChannelReport?.body || {};
+  const virtualChannelRecoveryPayload = state.payloads.virtualChannelRecovery?.body || {};
   const programmingRecipe = programmingRecipePayload.recipe || programmingPreviewPayload.recipe || {};
   const programmingInventory = normalizeArray(programmingCategoriesPayload.categories || programmingPreviewPayload.inventory);
   const programmingBrowsePayload = state.payloads.programmingBrowse?.body || {};
@@ -1374,6 +1887,8 @@ function renderDeck() {
   const harvestLineups = normalizeArray(harvestPayload.lineups || programmingPreviewPayload.harvest_lineups);
   const harvestAssists = normalizeArray(programmingHarvestAssistPayload.assists);
   const bucketEntries = Object.entries(programmingPreviewPayload.buckets || {});
+  const virtualRecoveryEvents = normalizeArray(virtualChannelRecoveryPayload.events);
+  const virtualStationRows = normalizeArray(virtualChannelReportPayload.channels);
   const selectedProgrammingChannel = findProgrammingChannel(curatedLineup, state.programmingSelectedChannelId) || programmingDetailPayload.Channel || null;
   const selectedProgrammingID = programmingChannelID(selectedProgrammingChannel);
   const selectedProgrammingName = selectedProgrammingChannel ? channelName(selectedProgrammingChannel) : "No channel selected";
@@ -1419,6 +1934,14 @@ function renderDeck() {
       ? virtualScheduleSlots.slice(0, 4).map((slot) => `${slot.display_name || slot.rule_name || slot.channel_id}: ${slot.asset_title || slot.asset_id || "asset"} @ ${formatWhen(slot.starts_at || slot.startsAt)}`).join(" | ")
       : "No virtual-channel schedule is configured yet.", "", "", "virtualChannelSchedule",
       `<button class="tiny" type="button" data-inspect="virtualChannelSchedule">Inspect Schedule</button>`),
+    createCard("Virtual stations", virtualStationRows.length
+      ? virtualStationRows.slice(0, 4).map((row) => `${row.name || row.channel_id} · mode=${pretty(row.stream_mode || "auto")} · now=${row.resolved_now?.resolved_name || "n/a"}`).join(" | ")
+      : "No virtual-channel station report is available yet.", "", "", "virtualChannelReport",
+      `<button class="tiny" type="button" data-inspect="virtualChannelReport">Inspect Stations</button>`),
+    createCard("Virtual recovery history", virtualRecoveryEvents.length
+      ? virtualRecoveryEvents.slice(0, 4).map((item) => virtualRecoverySummary(item)).join(" | ")
+      : "No recent virtual-channel filler/recovery events are recorded yet.", "", virtualRecoveryEvents.length ? "tone-warn" : "", "virtualChannelRecovery",
+      `<button class="tiny" type="button" data-inspect="virtualChannelRecovery">Inspect Recovery</button>`),
     createCard("Recommended buckets", bucketEntries.length
       ? bucketEntries.sort((a, b) => b[1] - a[1]).map(([bucket, count]) => `${bucket}: ${count}`).slice(0, 8).join(" | ")
       : "No bucket counts yet.", "", "", "programmingPreview"),
@@ -1494,6 +2017,18 @@ function renderDeck() {
       )
     )).join("");
   }
+  if (virtualStationRows.length) {
+    programmingBackups.innerHTML += filterCards(virtualStationRows.slice(0, 6).map((row) =>
+      createCard(
+        row.name || row.channel_id || "virtual station",
+        `${pretty(row.guide_number)} · mode ${pretty(row.stream_mode || "auto")} · recovery ${pretty(row.recovery_mode || "off")} · enabled=${pretty(row.enabled)}`,
+        `${row.resolved_now?.resolved_name || "No current slot"} · black ${pretty(row.black_screen_seconds || 0)}s · fallback ${pretty(row.fallback_entries || 0)} · ${virtualStationRecoveryBadge(row)}`,
+        row.recovery_exhausted ? "tone-bad" : (row.recovery_events ? "tone-warn" : ""),
+        "virtualChannelReport",
+        `<div class="card-actions">${virtualStationButtons(row)}</div>`
+      )
+    )).join("");
+  }
 
   const previewCardBody = selectedProgrammingID
     ? `
@@ -1522,6 +2057,8 @@ function renderDeck() {
     `<div class="detail-chip"><strong>Upcoming programmes</strong><span>${esc(upcomingProgrammes.length ? upcomingProgrammes.map((item) => `${item.title || item.Title || "programme"} @ ${formatWhen(item.start || item.Start)}`).join(" | ") : (selectedProgrammingID ? "No upcoming guide rows available for this channel yet." : "No channel selected."))}</span></div>`,
     `<div class="detail-chip"><strong>Alternative sources</strong><span>${esc(alternativeSources.length ? alternativeSources.map((item) => `${channelName(item)} · ${channelDescriptorLabel(item) || pretty(item.SourceTag || item.source_tag || "source?")}${(item.descriptor?.variant || item.Descriptor?.Variant) ? ` · ${item.descriptor?.variant || item.Descriptor?.Variant}` : ""}`).join(" | ") : "No exact alternative sources detected for the current selection.")}</span></div>`,
     `<div class="detail-chip"><strong>Virtual schedule context</strong><span>${esc(virtualScheduleSlots.length ? virtualScheduleSlots.slice(0, 4).map((slot) => `${slot.display_name || slot.rule_name || slot.channel_id} · ${slot.asset_title || slot.asset_id || "asset"} @ ${formatWhen(slot.starts_at || slot.startsAt)}`).join(" | ") : "No virtual-channel schedule configured yet.")}</span></div>`,
+    `<div class="detail-chip"><strong>Virtual station posture</strong><span>${esc(virtualStationRows.length ? virtualStationRows.slice(0, 4).map((row) => `${row.name || row.channel_id} · mode=${pretty(row.stream_mode || "auto")} · published=${row.published_stream_url || "n/a"}`).join(" | ") : "No virtual-channel station report is available yet.")}</span></div>`,
+    `<div class="detail-chip"><strong>Virtual recovery context</strong><span>${esc(virtualRecoveryEvents.length ? virtualRecoveryEvents.slice(0, 4).map((item) => virtualRecoverySummary(item)).join(" | ") : "No recent virtual-channel recovery events are recorded yet.")}</span></div>`,
     selectedProgrammingID ? `<div class="detail-chip"><strong>Diagnostics</strong><span>Run bounded capture straight from the current Programming selection.</span><div class="card-actions">${programmingStreamCompareButton(programmingDetailPayload.Channel || selectedProgrammingChannel)}${alternativeSourceButtons}</div></div>` : ""
   ].join("");
 
@@ -1547,6 +2084,9 @@ function renderDeck() {
       ["Buffer bytes", runtime.tuner?.stream_buffer_bytes],
       ["Public base URL", runtime.tuner?.stream_public_base_url],
       ["Shared replay bytes", runtime.tuner?.shared_relay_replay_bytes],
+      ["Virtual branding default", runtime.tuner?.virtual_channel_branding_default],
+      ["Virtual recovery warmup (sec)", runtime.tuner?.virtual_channel_recovery_warmup_sec],
+      ["Virtual live stall (sec)", runtime.tuner?.virtual_channel_recovery_live_stall_sec],
       ["HLS mux CORS", runtime.tuner?.hls_mux_cors],
       ["Metrics enabled", runtime.tuner?.metrics_enable],
       ["Fetch CF reject", runtime.tuner?.fetch_cf_reject]
@@ -1604,10 +2144,13 @@ function renderDeck() {
       ["Guide workflow", endpoints.guideWorkflow],
       ["Stream workflow", endpoints.streamWorkflow],
       ["Diagnostics workflow", endpoints.diagnosticsWorkflow],
+      ["Migration workflow", endpoints.migrationWorkflow],
+      ["Identity migration workflow", endpoints.identityMigrationWorkflow],
+      ["OIDC migration workflow", endpoints.oidcMigrationWorkflow],
       ["Ops workflow", endpoints.opsWorkflow],
       ["Legacy UI", runtime.webui?.legacy_ui],
       ["Legacy LAN policy", runtime.webui?.legacy_lan]
-    ], "operatorActionsStatus", `${createWorkflowButton("guideWorkflow", "Guide Playbook")}${createWorkflowButton("streamWorkflow", "Stream Playbook")}${createWorkflowButton("diagnosticsWorkflow", "Diagnostics")}${createWorkflowButton("opsWorkflow", "Ops Playbook")}`)
+    ], "operatorActionsStatus", `${createWorkflowButton("guideWorkflow", "Guide Playbook")}${createWorkflowButton("streamWorkflow", "Stream Playbook")}${createWorkflowButton("diagnosticsWorkflow", "Diagnostics")}${createWorkflowButton("migrationWorkflow", "Migration")}${createWorkflowButton("identityMigrationWorkflow", "Identity")}${createWorkflowButton("oidcMigrationWorkflow", "OIDC")}${createWorkflowButton("opsWorkflow", "Ops Playbook")}`)
   ]).join("");
 
   state.deckSettings = deckSettings;
@@ -1634,6 +2177,35 @@ async function postProgramming(path, payload, successAction) {
       kind: "programming",
       title: successAction,
       message: "Programming recipe updated."
+    });
+    await reloadDeck();
+    applyMode("programming");
+  } catch (err) {
+    setActionFeedback({ ok: false, action: successAction, message: String(err) });
+    renderDeck();
+  }
+}
+
+async function postVirtualChannelDetail(payload, successAction) {
+  try {
+    const res = await fetch("/api/virtual-channels/channel-detail.json", {
+      method: "POST",
+      headers: authHeaders({
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+      }),
+      body: JSON.stringify(payload)
+    });
+    const text = await res.text();
+    const body = text ? JSON.parse(text) : {};
+    if (!res.ok) {
+      throw new Error(body.error || `HTTP ${res.status}`);
+    }
+    setActionFeedback({ ok: true, action: successAction, message: "Virtual station updated." });
+    await syncDeckActivity({
+      kind: "virtual_station",
+      title: successAction,
+      message: "Virtual station updated."
     });
     await reloadDeck();
     applyMode("programming");
@@ -1750,16 +2322,36 @@ async function postAction(actionKey, payload = null, confirmOverride = "") {
   }
 }
 
+async function postOIDCMigrationApply() {
+  const payload = buildOIDCMigrationApplyPayload();
+  if (!payload) return;
+  const targetSummary = normalizeArray(payload.targets).join(", ") || "configured targets";
+  await postAction("oidc_migration_apply", payload, `Apply the saved OIDC migration plan to ${targetSummary} now?`);
+}
+
 async function saveDeckSettings() {
   const refreshEl = document.getElementById("deck-settings-refresh");
   const replayEl = document.getElementById("deck-settings-shared-replay-bytes");
+  const virtualLiveStallEl = document.getElementById("deck-settings-virtual-live-stall-sec");
   if (!refreshEl) return;
   const payload = {
     default_refresh_sec: Number(refreshEl.value || 0)
   };
   const replayPayload = replayEl ? Number(replayEl.value || 0) : null;
+  const virtualLiveStallPayload = virtualLiveStallEl ? Number(virtualLiveStallEl.value || 0) : null;
+  if (replayEl) {
+    payload.shared_relay_replay_bytes = replayPayload;
+  }
+  if (virtualLiveStallEl) {
+    payload.virtual_channel_recovery_live_stall_sec = virtualLiveStallPayload;
+  }
   if (replayEl && (!Number.isFinite(replayPayload) || replayPayload < 0)) {
     setActionFeedback({ ok: false, action: "shared_relay_replay_update", message: "Shared replay bytes must be a non-negative integer." });
+    renderDeck();
+    return;
+  }
+  if (virtualLiveStallEl && (!Number.isFinite(virtualLiveStallPayload) || virtualLiveStallPayload < 0)) {
+    setActionFeedback({ ok: false, action: "virtual_channel_live_stall_update", message: "Virtual live stall seconds must be a non-negative integer." });
     renderDeck();
     return;
   }
@@ -1804,11 +2396,36 @@ async function saveDeckSettings() {
         detail: { shared_relay_replay_bytes: replayPayload }
       });
     }
+    if (virtualLiveStallEl) {
+      const stallRes = await fetch(actionDefinitions.virtual_channel_live_stall_update.path, {
+        method: "POST",
+        headers: authHeaders({
+          "Accept": "application/json",
+          "Content-Type": "application/json"
+        }),
+        body: JSON.stringify({ virtual_channel_recovery_live_stall_sec: virtualLiveStallPayload })
+      });
+      const stallText = await stallRes.text();
+      const stallBody = stallText ? JSON.parse(stallText) : {};
+      if (!stallRes.ok) {
+        throw new Error(stallBody.message || stallBody.error || `HTTP ${stallRes.status}`);
+      }
+      await syncDeckActivity({
+        kind: "settings",
+        title: "virtual_channel_live_stall_updated",
+        message: "Virtual live stall watchdog updated.",
+        detail: { virtual_channel_recovery_live_stall_sec: virtualLiveStallPayload }
+      });
+    }
     await syncDeckActivity({
       kind: "settings",
       title: "deck_settings_saved",
       message: "Deck preferences updated.",
-      detail: { default_refresh_sec: body.default_refresh_sec, shared_relay_replay_bytes: replayPayload }
+      detail: {
+        default_refresh_sec: body.default_refresh_sec,
+        shared_relay_replay_bytes: replayPayload,
+        virtual_channel_recovery_live_stall_sec: virtualLiveStallPayload
+      }
     });
     setActionFeedback({ ok: true, action: "deck_settings", message: "Deck preferences saved." });
     await reloadDeck();
@@ -1819,6 +2436,9 @@ async function saveDeckSettings() {
 }
 
 async function refreshModal() {
+  if (state.modalView.kind === "form") {
+    return;
+  }
   if (state.modalView.kind === "workflow") {
     await reloadDeck();
     renderWorkflowModal(state.modalView.key);
@@ -1854,19 +2474,24 @@ function bindUI() {
     }
     const action = event.target.closest("[data-action]");
     if (action) {
+      const actionKey = action.getAttribute("data-action");
+      if (actionKey === "oidc_migration_apply") {
+        postOIDCMigrationApply();
+        return;
+      }
       let payload = null;
       const rawPayload = action.getAttribute("data-action-payload");
       if (rawPayload) {
         try {
           payload = JSON.parse(rawPayload);
         } catch (error) {
-          setActionFeedback({ ok: false, action: action.getAttribute("data-action"), message: `invalid action payload: ${error}` });
+          setActionFeedback({ ok: false, action: actionKey, message: `invalid action payload: ${error}` });
           renderDeck();
           return;
         }
       }
       const confirmText = action.getAttribute("data-action-confirm") || "";
-      postAction(action.getAttribute("data-action"), payload, confirmText);
+      postAction(actionKey, payload, confirmText);
       return;
     }
     const workflow = event.target.closest("[data-workflow]");
@@ -1882,6 +2507,16 @@ function bindUI() {
     const jump = event.target.closest("[data-mode-jump]");
     if (jump) {
       applyMode(jump.getAttribute("data-mode-jump"));
+      return;
+    }
+    const oidcApplyFilter = event.target.closest("[data-oidc-apply-filter]");
+    if (oidcApplyFilter) {
+      state.oidcApplyHistoryFilter = oidcApplyFilter.getAttribute("data-oidc-apply-filter") || "all";
+      persistPrefs();
+      renderDeck();
+      if (state.modalView.kind === "workflow" && state.modalView.key === "oidcMigrationWorkflow") {
+        renderWorkflowModal("oidcMigrationWorkflow");
+      }
       return;
     }
     const programmingPost = event.target.closest("[data-programming-post]");
@@ -1941,6 +2576,59 @@ function bindUI() {
         replace: true,
         collapse_exact_backups: programmingHarvestImport.getAttribute("data-programming-harvest-collapse") === "1"
       }, "programming_harvest_import");
+      return;
+    }
+    const virtualStationMode = event.target.closest("[data-virtual-station-mode]");
+    if (virtualStationMode) {
+      const id = virtualStationMode.getAttribute("data-virtual-station-mode") || "";
+      const target = virtualStationMode.getAttribute("data-virtual-station-target") || "";
+      if (id && target) {
+        postVirtualChannelDetail({
+          action: "update_metadata",
+          channel_id: id,
+          branding: {
+            stream_mode: target
+          }
+        }, `virtual_station_stream_mode_${target}`);
+      }
+      return;
+    }
+    const virtualStationEdit = event.target.closest("[data-virtual-station-edit]");
+    if (virtualStationEdit) {
+      const id = virtualStationEdit.getAttribute("data-virtual-station-edit") || "";
+      const field = virtualStationEdit.getAttribute("data-virtual-station-field") || "";
+      const label = virtualStationEdit.getAttribute("data-virtual-station-label") || id;
+      if (id && field) {
+        promptVirtualStationBrandingField(id, field, label);
+      }
+      return;
+    }
+    const virtualStationRecoveryMode = event.target.closest("[data-virtual-station-recovery-mode]");
+    if (virtualStationRecoveryMode) {
+      const id = virtualStationRecoveryMode.getAttribute("data-virtual-station-recovery-mode") || "";
+      const target = virtualStationRecoveryMode.getAttribute("data-virtual-station-recovery-target") || "";
+      if (id && target) {
+        const payload = {
+          action: "update_metadata",
+          channel_id: id
+        };
+        if (target === "none") {
+          payload.recovery_clear = ["mode"];
+        } else {
+          payload.recovery = { mode: target };
+        }
+        postVirtualChannelDetail(payload, `virtual_station_recovery_mode_${target}`);
+      }
+      return;
+    }
+    const virtualStationRecoveryEdit = event.target.closest("[data-virtual-station-recovery-edit]");
+    if (virtualStationRecoveryEdit) {
+      const id = virtualStationRecoveryEdit.getAttribute("data-virtual-station-recovery-edit") || "";
+      const field = virtualStationRecoveryEdit.getAttribute("data-virtual-station-recovery-field") || "";
+      const label = virtualStationRecoveryEdit.getAttribute("data-virtual-station-label") || id;
+      if (id && field) {
+        promptVirtualStationRecoveryField(id, field, label);
+      }
       return;
     }
     const programmingSelect = event.target.closest("[data-programming-select]");
@@ -2004,8 +2692,53 @@ function bindUI() {
   rawModal.addEventListener("click", (event) => {
     if (event.target === rawModal) closeModal();
   });
+  rawModal.addEventListener("submit", async (event) => {
+    const form = event.target.closest("#modal-editor-form");
+    if (!form || !state.modalForm) return;
+    event.preventDefault();
+    const value = form.querySelector('[name="value"]')?.value ?? "";
+    try {
+      await state.modalForm.onSubmit?.(value);
+      closeModal();
+    } catch (err) {
+      setActionFeedback({ ok: false, action: "modal_form_submit", message: String(err) });
+      renderDeck();
+    }
+  });
+  rawModal.addEventListener("click", async (event) => {
+    if (event.target && event.target.id === "modal-cancel-secondary") {
+      closeModal();
+      return;
+    }
+    const clearButton = event.target.closest("[data-modal-clear]");
+    if (!clearButton || !state.modalForm?.onClear) return;
+    try {
+      await state.modalForm.onClear();
+      closeModal();
+    } catch (err) {
+      setActionFeedback({ ok: false, action: "modal_form_clear", message: String(err) });
+      renderDeck();
+    }
+  });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") closeModal();
+    if (!rawModal.classList.contains("open")) return;
+    if (event.key === "Escape") {
+      closeModal();
+      return;
+    }
+    if (event.key === "Tab") {
+      const focusables = modalFocusableElements();
+      if (!focusables.length) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
   });
   document.addEventListener("click", (event) => {
     if (event.target && event.target.id === "history-reset") {

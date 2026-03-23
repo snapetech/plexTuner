@@ -113,6 +113,7 @@ func liveTVBundleCommands() []commandSpec {
 	migrationAuditEmbyToken := migrationAuditCmd.String("emby-token", "", "Optional Emby token override")
 	migrationAuditJellyfinHost := migrationAuditCmd.String("jellyfin-host", "", "Optional Jellyfin host override")
 	migrationAuditJellyfinToken := migrationAuditCmd.String("jellyfin-token", "", "Optional Jellyfin token override")
+	migrationAuditSummary := migrationAuditCmd.Bool("summary", false, "Emit a human-readable rollout summary instead of JSON")
 	migrationAuditOut := migrationAuditCmd.String("out", "", "Optional JSON output path")
 
 	attachCatchupCmd := flag.NewFlagSet("live-tv-bundle-attach-catchup", flag.ExitOnError)
@@ -282,6 +283,7 @@ func liveTVBundleCommands() []commandSpec {
 					*migrationAuditEmbyToken,
 					*migrationAuditJellyfinHost,
 					*migrationAuditJellyfinToken,
+					*migrationAuditSummary,
 					*migrationAuditOut,
 				)
 			},
@@ -604,7 +606,7 @@ func handleLibraryMigrationRolloutDiff(inPath, targetsRaw, embyHost, embyToken, 
 	writeJSONOrStdout(result, outPath)
 }
 
-func handleMigrationRolloutAudit(inPath, targetsRaw, embyHost, embyToken, jellyfinHost, jellyfinToken, outPath string) {
+func handleMigrationRolloutAudit(inPath, targetsRaw, embyHost, embyToken, jellyfinHost, jellyfinToken string, summary bool, outPath string) {
 	inPath = strings.TrimSpace(inPath)
 	if inPath == "" {
 		log.Print("Set -in")
@@ -632,6 +634,10 @@ func handleMigrationRolloutAudit(inPath, targetsRaw, embyHost, embyToken, jellyf
 	if err != nil {
 		log.Printf("Migration rollout audit failed: %v", err)
 		os.Exit(1)
+	}
+	if summary {
+		writeStringOrStdout(formatMigrationAuditSummary(*result), outPath)
+		return
 	}
 	writeJSONOrStdout(result, outPath)
 }
@@ -681,6 +687,25 @@ func loadJSONFile(path string, dst any) error {
 		return err
 	}
 	return json.Unmarshal(data, dst)
+}
+
+func writeStringOrStdout(text, path string) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		fmt.Print(text)
+		if !strings.HasSuffix(text, "\n") {
+			fmt.Println()
+		}
+		return
+	}
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		log.Printf("Write output failed: %v", err)
+		os.Exit(1)
+	}
+}
+
+func formatMigrationAuditSummary(result livetvbundle.MigrationAuditResult) string {
+	return livetvbundle.FormatMigrationAuditSummary(result)
 }
 
 func firstNonEmptyCLI(values ...string) string {

@@ -23,6 +23,833 @@ Append-only. One entry per completed task.
 ## Entries
 
 - Date: 2026-03-22
+  Title: Correct Jellyfin migration convergence semantics
+  Summary:
+    - Tightened `internal/livetvbundle` audit status logic so bundled library parity warnings are no longer treated as converged state.
+    - `AuditBundleTargets(...)` now keeps a target at `ready_to_apply` when bundled libraries are still missing, lagging Plex source counts, missing sampled titles, or completely empty, even if Live TV is indexed and the definitions are already present.
+    - Updated the dependent deck/web UI migration audit expectation so the operator surface matches the corrected backend semantics.
+    - Re-ran the live Jellyfin rollout audit from the real `.env`; the target now truthfully reports `ready_to_apply` with explicit lagging/empty library reasons instead of the earlier false `converged`.
+  Verification:
+    - `go test ./internal/livetvbundle ./internal/emby -run 'Test(AuditBundleTargets.*|DiffEmbyPlanJellyfinConfigurationFallback|GetLiveTVConfiguration|ListTunerHostsMethodNotAllowed|ListListingProvidersMethodNotAllowed)$'`
+    - `go test ./cmd/iptv-tunerr ./internal/webui ./internal/migrationident ./internal/keycloak`
+    - `set -a; source ./.env; set +a; go run ./cmd/iptv-tunerr migration-rollout-audit -in "$IPTV_TUNERR_MIGRATION_BUNDLE_FILE" -targets jellyfin -summary`
+    - `./scripts/verify`
+  Notes:
+    - The remaining live Jellyfin gap is now content parity, not definition parity: libraries are mounted and created, but the test target still shows lagging counts/titles and empty mounted roots.
+    - A future audit refinement may want a stronger status than `ready_to_apply` for “definitions present but content not synced.”
+  Opportunities filed:
+    - `memory-bank/opportunities.md` existing migration-reporting refinement backlog is still the right home; no new backlog file created in this pass.
+  Links:
+    - `internal/livetvbundle/bundle.go`
+    - `internal/livetvbundle/bundle_test.go`
+    - `internal/webui/webui_test.go`
+
+- Date: 2026-03-22
+  Title: Fix live Jellyfin migration audit and Keycloak credential auth
+  Summary:
+    - Added an explicit Jellyfin Live TV exact-read fallback so `migration-rollout-audit` no longer fails closed when Jellyfin `10.11.x` returns `405` on `GET /LiveTv/TunerHosts` and `GET /LiveTv/ListingProviders`.
+    - Tunerr now switches to Jellyfin's `GET /System/Configuration/livetv` endpoint for exact tuner/listing parity when those read-side list endpoints are unavailable, instead of silently assuming empty state or downgrading to a vague best-effort read.
+    - Added Keycloak admin username/password support across the core IdP migration lane, CLI, and deck env handling so Tunerr can mint a fresh `admin-cli` token per diff/audit/apply run instead of depending on a fragile static bearer token.
+    - Revalidated both fixes live from the restored cluster-backed `.env`: Jellyfin migration audit now returns `ready_to_apply` with normal exact diff semantics, and Keycloak OIDC audit now succeeds without an inline hand-minted token.
+  Verification:
+    - `go test ./internal/keycloak ./internal/emby ./internal/livetvbundle ./internal/migrationident ./cmd/iptv-tunerr ./internal/webui`
+    - `go run ./cmd/iptv-tunerr migration-rollout-audit -in .diag/live-migration/migration-bundle.json -targets jellyfin -summary`
+    - `go run ./cmd/iptv-tunerr identity-migration-oidc-audit -in .diag/live-migration/identity-oidc-plan.json -targets keycloak -summary`
+    - `./scripts/verify`
+  Notes:
+    - Jellyfin still does not expose exact read-side tuner/listing object lists under `/LiveTv/*`, but `System/Configuration/livetv` contains the same state on the tested `10.11.6` server and is now the exact diff source.
+    - `.env` now prefers `IPTV_TUNERR_KEYCLOAK_USER` / `IPTV_TUNERR_KEYCLOAK_PASSWORD` for the disposable test realm, but the old token env remains supported as a fallback.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/emby/register.go`
+    - `internal/livetvbundle/bundle.go`
+    - `internal/keycloak/keycloak.go`
+    - `internal/migrationident/bundle.go`
+    - `cmd/iptv-tunerr/cmd_identity_migration.go`
+    - `internal/webui/webui.go`
+
+- Date: 2026-03-22
+  Title: Fill live migration env from k3s and validate migration/IdP workflows
+  Summary:
+    - Restored and expanded the repo `.env` with live cluster-backed Plex, Emby, Jellyfin, Authentik, and disposable Keycloak test values without printing secrets.
+    - Built live migration artifacts under `.diag/live-migration/` (`migration-bundle.json`, `identity-bundle.json`, and `identity-oidc-plan.json`) from the real Plex DVR and real Plex user/share state.
+    - Fixed the `identity-migration-oidc-audit` CLI target-filter bug so `keycloak,authentik` targets are accepted instead of being incorrectly validated as Emby/Jelly-only targets.
+    - Verified live identity migration against Emby and Jellyfin, live OIDC migration against Authentik, and live OIDC migration against Keycloak when supplied a freshly minted admin token.
+  Verification:
+    - `go test ./cmd/iptv-tunerr -run 'Test(FilterRequestedOIDCTargets|FilterRequestedOIDCTargetsRejectsUnknownTarget)$'`
+    - `go run ./cmd/iptv-tunerr migration-rollout-audit -in .diag/live-migration/migration-bundle.json -targets emby -summary`
+    - `go run ./cmd/iptv-tunerr identity-migration-audit -in .diag/live-migration/identity-bundle.json -summary`
+    - `go run ./cmd/iptv-tunerr identity-migration-oidc-audit -in .diag/live-migration/identity-oidc-plan.json -targets authentik -summary`
+    - `go run ./cmd/iptv-tunerr identity-migration-oidc-audit -in .diag/live-migration/identity-oidc-plan.json -targets keycloak -keycloak-token <fresh token> -summary`
+  Notes:
+    - Live provider/tuner smoke and probe were healthy enough to support real migration testing, and the live multi-stream harness showed one concrete upstream-path failure rather than a tuner-limit failure.
+    - Jellyfin `10.11.6` currently rejects `GET /LiveTv/TunerHosts` and `GET /LiveTv/ListingProviders` with `405`, so live-TV rollout audit currently works on Emby but fails closed on Jellyfin.
+    - The current Keycloak env-token model is fragile in live use because short-lived admin access tokens expire quickly; a fresh token works immediately, but a static env token does not stay valid.
+  Opportunities filed:
+    - none
+  Links:
+    - `.diag/live-migration/migration-bundle.json`
+    - `.diag/live-migration/identity-bundle.json`
+    - `.diag/live-migration/identity-oidc-plan.json`
+    - `cmd/iptv-tunerr/cmd_identity_migration.go`
+    - `cmd/iptv-tunerr/cmd_identity_migration_test.go`
+
+- Date: 2026-03-22
+  Title: Raise `cmd/iptv-tunerr` coverage on runtime and free-source helpers
+  Summary:
+    - Added direct command-layer tests for `loadRuntimeLiveChannels`, `loadRuntimeCatalog`, runtime snapshot exposure, and runtime server propagation of virtual recovery state.
+    - Added helper tests for `parseCSV` and `hostPortFromBaseURL`.
+    - Added free-source tests for cache-dir/key helpers plus supplement, merge, and full application behavior so those paths are no longer sitting at zero coverage.
+  Verification:
+    - `go test ./cmd/iptv-tunerr -run 'Test(ParseCSV_TrimAndDropEmpty|ParseCSV_BlankReturnsNil|HostPortFromBaseURL_ReturnsHostPort|HostPortFromBaseURL_RejectsMissingHost|LoadRuntimeLiveChannels_LoadsCatalogAndAssignsDNA|LoadRuntimeCatalog_LoadsMoviesSeriesAndLive|FreeSourceCacheDir_PrefersExplicitDir|FreeSourceCacheDir_FallsBackToCacheDirChild|URLCacheKey_UsesHashPrefixAndLastSegment|MaxPaidGuideNumber_UsesLeadingIntegerOnly|AssignFreeGuideNumbers_StartsAfterBase|ApplyFreeSourcesSupplement_AddsOnlyNewTVGIDsAndRenumbers|ApplyFreeSourcesMerge_EnrichesPaidAndAddsNewChannels|ApplyFreeSourcesFull_RenumbersOnlyAppendedChannels|BuildRuntimeSnapshot_ExposesVirtualRecoveryRuntimeFields|NewRuntimeServer_PropagatesVirtualRecoveryStateFile)$' -v`
+    - `go test -coverprofile=/tmp/cmd-cover.out ./cmd/iptv-tunerr`
+    - `go test ./internal/tuner ./internal/webui ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - `cmd/iptv-tunerr` package coverage moved to `34.3%`.
+    - The biggest remaining low-cost command-layer targets are still `fetchRawCached`, `loadIptvOrgFilter`, and `applyIptvOrgFilter`.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/cmd_runtime_test.go`
+    - `cmd/iptv-tunerr/cmd_util_test.go`
+    - `cmd/iptv-tunerr/free_sources_test.go`
+
+- Date: 2026-03-22
+  Title: Cover free-source cache and iptv-org filter loading paths
+  Summary:
+    - Added direct tests for `fetchRawCached` using a real cache-hit flow, so the command-layer free-source cache path is exercised instead of assumed.
+    - Added a seeded-cache test for `loadIptvOrgFilter`, covering real parsing of cached iptv-org blocklist/channels metadata without relying on the network.
+    - Added `applyIptvOrgFilter` tests for both tag-only and drop behavior across blocked, NSFW, closed, and safe channels.
+  Verification:
+    - `go test ./cmd/iptv-tunerr -run 'Test(FetchRawCached_UsesCacheAfterFirstFetch|LoadIptvOrgFilter_LoadsFromSeededCache|ApplyIptvOrgFilter_TagsOrDropsChannels|FreeSourceCacheDir_PrefersExplicitDir|FreeSourceCacheDir_FallsBackToCacheDirChild|URLCacheKey_UsesHashPrefixAndLastSegment|MaxPaidGuideNumber_UsesLeadingIntegerOnly|AssignFreeGuideNumbers_StartsAfterBase|ApplyFreeSourcesSupplement_AddsOnlyNewTVGIDsAndRenumbers|ApplyFreeSourcesMerge_EnrichesPaidAndAddsNewChannels|ApplyFreeSourcesFull_RenumbersOnlyAppendedChannels)$' -v`
+    - `go test -coverprofile=/tmp/cmd-cover.out ./cmd/iptv-tunerr`
+    - `go test ./internal/tuner ./internal/webui ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - `cmd/iptv-tunerr` package coverage moved to `36.3%`.
+    - The largest remaining low-cost command-layer targets are `fetchFreeSources` and the `applyFreeSources` dispatcher, followed by command handlers in `cmd_runtime_register.go`.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/free_sources_test.go`
+
+- Date: 2026-03-22
+  Title: Cover free-source fetch/dispatch and runtime-register helpers
+  Summary:
+    - Added `fetchFreeSources` tests for both the no-source path and a real cached-filter M3U ingest path.
+    - Added direct coverage for the `applyFreeSources` dispatcher so supplement/merge/full mode selection is exercised through the public helper too.
+    - Added cheap helper coverage in `cmd_runtime_register_test.go` for `guideURLForBase`, `streamURLForBase`, `minInt`, and `maxInt`.
+  Verification:
+    - `go test ./cmd/iptv-tunerr -run 'Test(FetchFreeSources_NoURLsReturnsNil|FetchFreeSources_UsesCachedFilterAndDropsBlockedChannels|ApplyFreeSources_DispatchesByMode|GuideURLForBase_TrimsTrailingSlash|StreamURLForBase_TrimsTrailingSlash|MinInt|MaxInt)$' -v`
+    - `go test -coverprofile=/tmp/cmd-cover.out ./cmd/iptv-tunerr`
+    - `go test ./internal/tuner ./internal/webui ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - `cmd/iptv-tunerr` package coverage moved to `36.5%`.
+    - The remaining low-coverage areas are now mainly heavier integration-style command handlers such as `registerRunPlex`, `registerRunMediaServers`, and `handleRun`.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/free_sources_test.go`
+    - `cmd/iptv-tunerr/cmd_runtime_register_test.go`
+
+- Date: 2026-03-22
+  Title: Cover runtime guard branches and registration policy paths
+  Summary:
+    - Added registration-path tests for `applyRegistrationRecipe` off/healthy behavior, easy-mode `registerRunPlex`, and missing-credentials `registerRunMediaServers`.
+    - Added runtime guard tests for disabled `maybeOpenEpgStore` and disabled/nil `startDedicatedWebUI`.
+    - Pushed the command package coverage further without introducing brittle network-heavy integration fixtures.
+  Verification:
+    - `go test ./cmd/iptv-tunerr -run 'Test(MaybeOpenEpgStore_DisabledReturnsNil|StartDedicatedWebUI_DisabledIsNoOp|ApplyRegistrationRecipe_OffReturnsInput|ApplyRegistrationRecipe_HealthyDropsWeakGuide|RegisterRunPlex_EasyModeReturnsFalseWithoutRegistration|RegisterRunMediaServers_MissingCredentialsDoesNothing)$' -v`
+    - `go test -coverprofile=/tmp/cmd-cover.out ./cmd/iptv-tunerr`
+    - `go test ./internal/tuner ./internal/webui ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - `cmd/iptv-tunerr` package coverage moved to `37.7%`.
+    - The remaining low-coverage command paths are now mostly heavier integration-style handlers such as `handleServe`, `handleRun`, and deeper media-server registration flows.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/cmd_runtime_test.go`
+    - `cmd/iptv-tunerr/cmd_runtime_register_test.go`
+
+- Date: 2026-03-22
+  Title: Add file-backed EPG open coverage and another safe Plex registration branch
+  Summary:
+    - Added a real temp-SQLite integration test for `maybeOpenEpgStore`, verifying the command layer can open and close an on-disk EPG store successfully.
+    - Added a `registerRunPlex` test for the register-only/no-live branch so that path is exercised without needing live Plex credentials or a PMS instance.
+  Verification:
+    - `go test ./cmd/iptv-tunerr -run 'Test(MaybeOpenEpgStore_OpensSQLiteFile|RegisterRunPlex_RegisterOnlyWithoutLiveReturnsTrue|MaybeOpenEpgStore_DisabledReturnsNil|ApplyRegistrationRecipe_HealthyDropsWeakGuide)$' -v`
+    - `go test -coverprofile=/tmp/cmd-cover.out ./cmd/iptv-tunerr`
+    - `go test ./internal/tuner ./internal/webui ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - `cmd/iptv-tunerr` package coverage moved to `38.2%`.
+    - The remaining command-layer gaps are now mostly in the blocking/`os.Exit`-driven handlers such as `handleServe`, `handleRun`, and the VOD mount/WebDAV flows.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/cmd_runtime_test.go`
+    - `cmd/iptv-tunerr/cmd_runtime_register_test.go`
+
+- Date: 2026-03-22
+  Title: Add subprocess integration coverage for blocking VOD command handlers
+  Summary:
+    - Added a subprocess-based helper harness in `cmd_vod_integration_test.go` so blocking `os.Exit`/`ListenAndServe` VOD handlers can be exercised without refactoring production code.
+    - Covered `handleVODWebDAV` success with a real served catalog and read-only DAV response validation.
+    - Covered `handleVODWebDAV` and `handleMount` failure exits on missing catalog inputs.
+  Verification:
+    - `go test ./cmd/iptv-tunerr -run 'Test(HandleVODWebDAV_ServesReadOnlyDAV|HandleVODWebDAV_MissingCatalogExits|HandleMount_MissingCatalogExits)$' -v`
+    - `go test -coverprofile=/tmp/cmd-cover.out ./cmd/iptv-tunerr`
+    - `go test ./internal/tuner ./internal/webui ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - `cmd/iptv-tunerr` package coverage moved to `38.5%`.
+    - `cmd_vod.go` is no longer a total blind spot; the remaining big runtime gaps are now mostly `handleServe` and `handleRun`.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/cmd_vod_integration_test.go`
+
+- Date: 2026-03-22
+  Title: Add subprocess integration coverage for runtime entrypoints
+  Summary:
+    - Added a subprocess helper harness in `cmd_runtime_integration_test.go` to exercise `handleRun` register-only success/failure paths and `handleServe` startup against a real temp catalog.
+    - Changed the `handleServe` integration test to stop the helper with `SIGTERM` instead of killing it so Go coverage data flushes from the child process.
+    - Raised command-layer confidence on the last major runtime blind spot without refactoring the blocking entrypoints themselves.
+  Verification:
+    - `go test ./cmd/iptv-tunerr -run 'Test(HandleServe_ServesDiscoverJSON|HandleRun_RegisterOnlySuccess|HandleRun_MissingCatalogExits)$' -v`
+    - `go test -coverprofile=/tmp/cmd-cover.out ./cmd/iptv-tunerr`
+    - `go test ./internal/tuner ./internal/webui ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - `cmd/iptv-tunerr` package coverage moved to `40.0%`.
+    - `handleServe` now reports `52.4%` coverage and `handleRun` `37.3%`.
+    - The remaining command-layer cliff is now mainly `main()` dispatch and deeper long-lived `handleRun` branches, which would need a larger CLI subprocess harness to improve further.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/cmd_runtime_integration_test.go`
+
+- Date: 2026-03-22
+  Title: Add CLI subprocess coverage for `main()` and deeper `handleRun` refresh
+  Summary:
+    - Added `main_integration_test.go` so the real `main()` command dispatch is exercised through subprocess-driven `run` invocations instead of only helper functions.
+    - Added a deeper `handleRun` subprocess path that refreshes a catalog from a direct M3U source before exiting in register-only mode.
+    - Raised the last major command-layer success-path blind spots instead of only covering helper logic.
+  Verification:
+    - `go test ./cmd/iptv-tunerr -run 'Test(Main_RunCommandDispatchesSuccessfully|Main_RunCommandRefreshesFromM3UEnv|HandleRun_RefreshesCatalogFromDirectM3U)$' -v`
+    - `go test -coverprofile=/tmp/cmd-cover.out ./cmd/iptv-tunerr`
+    - `go test ./internal/tuner ./internal/webui ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - `cmd/iptv-tunerr` package coverage moved to `41.1%`.
+    - `handleRun` is now `56.4%` and `main()` `60.0%`.
+    - What remains is mostly lower-value or more brittle coverage: long-lived loops, more registration combinations, and CLI error-exit branches.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/main_integration_test.go`
+    - `cmd/iptv-tunerr/cmd_runtime_integration_test.go`
+
+- Date: 2026-03-22
+  Title: Finish top-level CLI dispatch coverage
+  Summary:
+    - Extended the `main()` subprocess harness to cover `index`, `version`, `--help`, no-args usage, and unknown-command exits in addition to the existing `run` coverage.
+    - Finished covering the meaningful top-level CLI success/error dispatch behavior without refactoring production command wiring.
+  Verification:
+    - `go test ./cmd/iptv-tunerr -run 'Test(Main_IndexCommandDispatchesSuccessfully|Main_VersionCommand|Main_HelpExitsZero|Main_NoArgsExitsNonZero|Main_UnknownCommandExitsNonZero)$' -v`
+    - `go test -coverprofile=/tmp/cmd-cover.out ./cmd/iptv-tunerr`
+    - `go test ./internal/tuner ./internal/webui ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - `main()` is now `100.0%` covered.
+    - `cmd/iptv-tunerr` package coverage moved to `41.6%`.
+    - Remaining gaps are mostly lower-yield or more brittle: long-lived runtime loops, deeper registration permutations, and OS-specific successful VOD mount behavior.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/main_integration_test.go`
+
+- Date: 2026-03-22
+  Title: Audit README and station-ops docs for final runtime behavior
+  Summary:
+    - Updated `README.md` so the virtual-channel/station-ops section now reflects branded stream publishing, report surfaces, deck-side branding/recovery controls, fallback-chain recovery, and persisted recovery history.
+    - Updated `docs/reference/virtual-channel-stations.md` so branding fields are described as active branded-stream/slate behavior instead of future-only metadata.
+    - Updated `docs/index.md` so the station reference is framed as runtime station-operations behavior, not only schema/reference metadata.
+  Verification:
+    - `go test ./internal/tuner ./internal/webui ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - This was a docs/readme alignment pass only; no production code changed.
+  Opportunities filed:
+    - none
+  Links:
+    - `README.md`
+    - `docs/reference/virtual-channel-stations.md`
+    - `docs/index.md`
+
+- Date: 2026-03-22
+  Title: Audit deck and docs for release-surface coverage
+  Summary:
+    - Added a shared-relay Routing card to the deck so active shared live sessions and subscriber counts are visible from the operator plane.
+    - Tightened the deck asset test to pin the shared-relay endpoint.
+    - Updated `docs/features.md` and `README.md` so the release docs explicitly mention migration, identity, OIDC/IdP, and shared-relay operator surfaces.
+  Verification:
+    - `node -c internal/webui/deck.js`
+    - `go test ./internal/webui ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - The deck already had the migration/identity/OIDC workflow cards; the main operator-plane gap was shared-relay visibility and the main doc gap was `docs/features.md`.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/deck.js`
+    - `internal/webui/webui_test.go`
+    - `docs/features.md`
+    - `README.md`
+
+- Date: 2026-03-22
+  Title: Persist explicit OIDC target failure status in deck activity
+  Summary:
+    - Added backend `target_statuses` recording for deck-side OIDC applies so each requested IdP target now has an explicit `applied`, `failed`, `validation_failed`, or `not_reached` state in persisted activity.
+    - Switched the OIDC workflow modal to use that explicit target-status map instead of inferring failures from missing result rows.
+    - Added regression coverage for target-status maps and provider-failure target state.
+  Verification:
+    - `node -c internal/webui/deck.js`
+    - `go test ./internal/webui ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - The target-status map still carries summary-level failure context, not provider-native per-user failure details.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/webui/deck.js`
+    - `internal/webui/webui_test.go`
+
+- Date: 2026-03-22
+  Title: Add per-target OIDC apply outcome rows to the workflow modal
+  Summary:
+    - Extended the OIDC workflow modal so each recent apply entry now renders structured per-target outcome rows instead of only one compact summary line.
+    - Failed partial runs now show which target was not reached before the apply stopped, which makes Keycloak vs Authentik partial failures much easier to triage during release work.
+    - Updated release-facing docs and the deck asset guardrail to pin the modal target-detail UI.
+  Verification:
+    - `node -c internal/webui/deck.js`
+    - `go test ./internal/webui ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - Target-specific failure reasons are still inferred from missing result rows; the backend does not yet persist per-target failure payloads.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/deck.js`
+    - `internal/webui/deck.css`
+    - `internal/webui/webui_test.go`
+    - `docs/emby-jellyfin-support.md`
+
+- Date: 2026-03-22
+  Title: Extend OIDC apply history controls into the workflow modal
+  Summary:
+    - Reused the deck's OIDC apply history filter controls inside the OIDC workflow modal so operators can inspect recent IdP runs without leaving the modal.
+    - Added a dedicated modal history wrapper and tightened the deck asset test so the modal-specific history strings/classes stay pinned.
+    - Updated README, migration docs, changelog, and current-task notes to reflect that the OIDC history filters now exist in both the card and the modal.
+  Verification:
+    - `node -c internal/webui/deck.js`
+    - `go test ./internal/webui ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - The modal still uses the compact per-run summary string; richer per-target failure drill-down is the next likely refinement.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/deck.js`
+    - `internal/webui/deck.css`
+    - `internal/webui/webui_test.go`
+    - `docs/emby-jellyfin-support.md`
+
+- Date: 2026-03-22
+  Title: Add OIDC success/failure filters to deck history
+  Summary:
+    - Added `all / success / failed` filtering to the deck's `OIDC recent applies` card.
+    - Added simple success/failure badge styling so recent OIDC history is scannable without parsing every line.
+    - Tightened the deck asset test so these OIDC history controls do not quietly disappear in later frontend edits.
+  Verification:
+    - `node -c internal/webui/deck.js`
+    - `go test ./internal/webui ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - Filtering is currently card-level only; the workflow modal still shows the raw payload.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/deck.js`
+    - `internal/webui/deck.css`
+    - `internal/webui/webui_test.go`
+
+- Date: 2026-03-22
+  Title: Record failed OIDC apply attempts in deck workflow history
+  Summary:
+    - Normalized deck-side OIDC apply failures into the same persisted `oidc_migration_apply` activity history used by successful runs.
+    - Added validation/provider failure phase and error context so recent OIDC history can show what failed, not just what succeeded.
+    - Added regression coverage for validation failure and provider failure activity entries in the OIDC apply handler.
+  Verification:
+    - `go test ./internal/webui ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - The workflow history is still rendered as flat text summaries; success/failure badges remain follow-on work.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/webui/deck.js`
+    - `internal/webui/webui_test.go`
+
+- Date: 2026-03-22
+  Title: Extend virtual live recovery across the fallback chain
+  Summary:
+    - Changed the recoverable virtual-channel relay so it can switch again after the first rescue source if that fallback later stalls or hard-errors too.
+    - Recovery events now record the actual hop that happened at each cutover, instead of only the original source-to-first-fallback picture.
+    - Recovery now also records explicit exhausted events when the fallback chain runs out, the station report/deck summarize that posture with `recovery_events`, `recovery_exhausted`, and `last_recovery_reason`, an optional recovery state file preserves those events across restarts, and the relay now performs repeated rolling in-session media-content probes after startup.
+  Verification:
+    - `go test ./internal/tuner -run 'TestServer_virtualChannelStream(FallsBackDuringLiveStall|LiveStallSkipsBrokenFirstFallback|FallsBackAgainAfterFallbackStalls|ReportsRecoveryExhaustion)$' -v`
+    - `node -c internal/webui/deck.js`
+    - `go test ./internal/tuner ./internal/webui ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - This still reacts to byte-level stalls/errors, not decoded black-frame or silence analysis over the full live session.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+    - `docs/reference/virtual-channel-stations.md`
+
+- Date: 2026-03-22
+  Title: Add recent OIDC apply history to the deck workflow
+  Summary:
+    - Extended `/deck/oidc-migration-audit.json` with a short recent `oidc_migration_apply` history derived from persisted deck activity.
+    - Added an `OIDC recent applies` card so the deck workflow now shows a few recent Keycloak/Authentik pushes instead of only the latest run.
+    - Added regression coverage for the recent-history helper ordering and the richer workflow summary payload.
+  Verification:
+    - `go test ./internal/webui ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - This is still success-history only; failed apply attempts are not yet normalized into the same structured summary.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/webui/deck.js`
+    - `internal/webui/webui_test.go`
+
+- Date: 2026-03-22
+  Title: Add per-target OIDC apply deltas to the deck workflow
+  Summary:
+    - Extended the persisted `oidc_migration_apply` activity detail with compact per-target apply deltas for Keycloak/Authentik results.
+    - Updated the deck OIDC workflow summary so `OIDC last apply` now shows those per-target created-user/group, membership, metadata-update, and activation-pending counts.
+    - Added regression coverage for the compact result-summary helper and the richer workflow summary payload.
+  Verification:
+    - `go test ./internal/webui ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - The workflow still only keeps the latest recorded apply in its summary; multi-run history remains in the general activity log.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/webui/deck.js`
+    - `internal/webui/webui_test.go`
+
+- Date: 2026-03-22
+  Title: Surface last OIDC apply result in the deck workflow
+  Summary:
+    - Extended `/deck/oidc-migration-audit.json` so it includes the latest recorded `oidc_migration_apply` activity entry as `summary.last_apply`.
+    - Updated the deck workflow cards to show an `OIDC last apply` summary, including target/provider onboarding hints from the most recent push.
+    - Added regression coverage for the workflow summary and the helper that selects the most recent matching activity entry.
+  Verification:
+    - `go test ./internal/webui ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - This reuses persisted deck activity instead of introducing a second OIDC-apply state store.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/webui/deck.js`
+    - `internal/webui/webui_test.go`
+
+- Date: 2026-03-22
+  Title: Add deck-side OIDC onboarding apply controls
+  Summary:
+    - Extended `/deck/oidc-migration-apply.json` so the deck can pass the same practical Keycloak/Authentik onboarding options as the CLI: bootstrap passwords, Keycloak temporary-password choice, Keycloak execute-actions-email settings, and Authentik recovery-email delivery.
+    - Updated the deck UI to prompt for those provider-specific knobs before running OIDC apply, so the workflow card is no longer a stripped-down wrapper over the backend migration path.
+    - Added validation and regression coverage for the new request shape, including negative Keycloak email-lifespan rejection and activity logging of the apply options.
+  Verification:
+    - `go test ./internal/webui ./internal/migrationident ./internal/keycloak ./internal/authentik ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - The deck still does not persist reusable provider-onboarding presets; it prompts interactively each time.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/webui/deck.js`
+    - `internal/webui/webui_test.go`
+
+- Date: 2026-03-22
+  Title: Add Keycloak onboarding bootstrap options
+  Summary:
+    - Extended the Keycloak apply path with optional bootstrap-password and execute-actions-email support so IdP migration can now do basic onboarding, not just user/group provisioning.
+    - Added the corresponding CLI flags to `identity-migration-keycloak-apply` and kept the provider-agnostic OIDC plan unchanged.
+    - Updated docs and current-task state to reflect that the first live IdP backend can now help with staged onboarding too.
+  Verification:
+    - `go test ./internal/keycloak ./internal/migrationident ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - This still does not attempt full Keycloak attribute sync or arbitrary required-action policy mapping.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/keycloak/keycloak.go`
+    - `cmd/iptv-tunerr/cmd_identity_migration.go`
+
+- Date: 2026-03-22
+  Title: Surface station-ops recovery in the deck
+  Summary:
+    - Added the virtual recovery endpoint to the deck endpoint catalog and raw inspector.
+    - The Programming lane now shows a Virtual recovery history card built from `/api/virtual-channels/recovery-report.json?limit=8`.
+    - Programming detail panels now include recent virtual recovery context alongside schedule context.
+  Verification:
+    - `go test ./internal/webui ./internal/tuner ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - This is UI wiring only; it reuses the existing tuner-side recovery report instead of inventing a separate deck backend surface.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/deck.js`
+    - `internal/webui/webui_test.go`
+    - `docs/features.md`
+
+- Date: 2026-03-22
+  Title: Add branded-default virtual channel publishing
+  Summary:
+    - Added `published_stream_url` to virtual channel detail responses so operators can see which stream surface is actually being exported.
+    - Added `IPTV_TUNERR_VIRTUAL_CHANNEL_BRANDING_DEFAULT` so branded virtual channels can publish the branded stream path directly in `/virtual-channels/live.m3u`.
+    - Surfaced the same env in the runtime snapshot so the deck/settings lane can inspect the publish posture.
+  Verification:
+    - `go test ./internal/tuner ./internal/webui ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - The branded-default mode is opt-in and only affects channels that actually carry branding metadata.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `cmd/iptv-tunerr/cmd_runtime_server.go`
+    - `docs/reference/virtual-channel-stations.md`
+
+- Date: 2026-03-22
+  Title: Probe actual virtual response bytes before filler cutover
+  Summary:
+    - Extended virtual recovery evaluation so it buffers a bounded startup sample from the real upstream response body and reconstructs the response afterward.
+    - Added ffmpeg byte-sampled `blackdetect` / `silencedetect` probing on those buffered bytes, producing reasons like `content-blackdetect-bytes`.
+    - Updated recovery docs/tests to distinguish URL-preflight recovery from sampled-response-body recovery.
+  Verification:
+    - `go test ./internal/tuner ./internal/webui ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - This is still startup-sampled detection, not continuous in-stream monitoring across long-running sessions.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+    - `docs/reference/virtual-channel-stations.md`
+
+- Date: 2026-03-22
+  Title: Add per-channel virtual publish mode overrides
+  Summary:
+    - Added `branding.stream_mode` (`plain`, `branded`, or auto/empty) to the virtual-channel rules schema.
+    - Published virtual stream URLs now respect the per-channel stream mode before falling back to the process-wide branding default env.
+    - Updated station docs/tests so the override is treated as part of the authoring contract, not a hidden implementation detail.
+  Verification:
+    - `go test ./internal/tuner ./internal/webui ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - This is a server/schema capability now; the deck still needs direct mutation UX for the new field.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/virtualchannels/virtualchannels.go`
+    - `internal/tuner/server.go`
+    - `docs/reference/virtual-channel-stations.md`
+
+- Date: 2026-03-22
+  Title: Add virtual station report surface
+  Summary:
+    - Added `GET /virtual-channels/report.json` with per-station publish mode, published stream URL, resolved-now slot, branded/slate URLs, and recent recovery history.
+    - Wired the deck Programming lane to consume that report for virtual-station posture cards/context instead of only stitching schedule and recovery payloads together.
+    - Added tuner/web UI coverage so the endpoint and deck wiring are now part of the tested surface.
+  Verification:
+    - `go test ./internal/tuner ./internal/webui ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - This is still read-only operator visibility; station mutation UX remains follow-on work.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/webui/deck.js`
+    - `docs/reference/virtual-channel-stations.md`
+
+- Date: 2026-03-22
+  Title: Add deck controls for per-station publish mode
+  Summary:
+    - Added Programming-lane controls to force `plain`, force `branded`, or reset `auto` for virtual station publish mode.
+    - Changed virtual channel branding mutation handling so partial branding updates merge into the existing branding object instead of replacing it.
+    - Added regression coverage so a stream-mode-only update does not drop existing logo metadata.
+  Verification:
+    - `go test ./internal/tuner ./internal/webui ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - This only covers `stream_mode` today; broader deck-side branding editors remain follow-on work.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/deck.js`
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+
+- Date: 2026-03-22
+  Title: Persist runtime tuning knobs through the deck state file
+  Summary:
+    - Extended the existing `IPTV_TUNERR_WEBUI_STATE_FILE` settings payload to persist `shared_relay_replay_bytes` and `virtual_channel_recovery_live_stall_sec`.
+    - Replayed those persisted values back into the tuner on web UI startup through the existing localhost operator actions.
+    - Kept the deck Settings lane aligned so it saves both the persistent setting values and the live runtime action updates together.
+  Verification:
+    - `go test ./internal/webui -run 'Test(PersistStateExcludesTelemetryAndAuthSecret|LoadStateRestoresRuntimeSettings|ApplyPersistedRuntimeAction)$' -v`
+    - `node -c internal/webui/deck.js`
+    - `go test ./internal/tuner ./internal/webui ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - Persistence only happens when `IPTV_TUNERR_WEBUI_STATE_FILE` is configured; otherwise the knobs remain process-local.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/webui/webui_test.go`
+    - `internal/webui/deck.js`
+    - `docs/reference/cli-and-env-reference.md`
+
+- Date: 2026-03-22
+  Title: Add live operator control for virtual live-stall recovery
+  Summary:
+    - Added localhost-only `POST /ops/actions/virtual-channel-live-stall` so the live-stall watchdog can be updated at runtime for new virtual-channel sessions.
+    - Exposed that action and current seconds in `/ops/actions/status.json`.
+    - Wired the deck Settings lane to edit and save `virtual_channel_recovery_live_stall_sec` alongside shared replay bytes.
+  Verification:
+    - `node -c internal/webui/deck.js`
+    - `go test ./internal/tuner ./internal/webui ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - Like shared replay bytes, this is a live process knob that applies to new sessions, not persisted config.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+    - `internal/webui/deck.js`
+    - `docs/reference/cli-and-env-reference.md`
+
+- Date: 2026-03-22
+  Title: Add bounded live-session fallback recovery for virtual channels
+  Summary:
+    - Wrapped filler-enabled virtual stream bodies in a recoverable relay so the plain/branded virtual playback paths can perform one midstream cutover to filler when the active upstream stalls or hard-errors after startup.
+    - Added `IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_LIVE_STALL_SEC` and surfaced it in `/debug/runtime.json` plus the deck Settings lane.
+    - Added a regression proving a live-stalling upstream can switch to filler in the same session and record `live-stall-timeout` in the recovery report.
+  Verification:
+    - `node -c internal/webui/deck.js`
+    - `go test ./internal/tuner ./internal/webui ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - The runtime is still bounded to one live-session cutover, not repeated decoded-media health analysis.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+    - `cmd/iptv-tunerr/cmd_runtime_server.go`
+    - `internal/webui/deck.js`
+
+- Date: 2026-03-22
+  Title: Add merge-safe virtual recovery controls to the deck
+  Summary:
+    - Added merge-safe `recovery` mutation handling plus `recovery_clear` so partial station recovery edits no longer wipe existing filler entries.
+    - Extended `/virtual-channels/report.json` with `recovery_mode`, `black_screen_seconds`, and fallback-entry counts for station cards.
+    - Added deck controls for `Disable Recovery`, `Enable Filler`, and `Black Sec` editing on virtual-station cards.
+  Verification:
+    - `node -c internal/webui/deck.js`
+    - `go test ./internal/tuner ./internal/webui ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - This is still startup-window recovery control, not true continuous midstream cutover.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+    - `internal/webui/deck.js`
+    - `docs/reference/virtual-channel-stations.md`
+
+- Date: 2026-03-22
+  Title: Extend deck branding edits and add recovery warmup control
+  Summary:
+    - Extended the deck’s virtual-station cards to edit `logo_url`, `bug_text`, and `banner_text` in addition to `stream_mode`.
+    - Added `branding_clear` handling so empty deck submissions can clear specific branding fields without wiping the rest of the branding object.
+    - Added `IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_WARMUP_SEC` so startup response-byte monitoring can run longer than the per-channel black-screen timeout when desired.
+  Verification:
+    - `go test ./internal/tuner ./internal/webui ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - Recovery is still startup/warmup scoped, not a continuous midstream cutover engine.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/deck.js`
+    - `internal/tuner/server.go`
+    - `docs/reference/cli-and-env-reference.md`
+
+- Date: 2026-03-22
+  Title: Finish first-pass deck branding controls
+  Summary:
+    - Extended the deck’s virtual-station cards to edit `bug_image_url`, `bug_position`, and `theme_color`, completing the first-pass branding field set.
+    - Extended the virtual station report rows so the deck can populate those editors from current server-side values.
+    - Surfaced `virtual_channel_branding_default` and `virtual_channel_recovery_warmup_sec` in the Settings lane via the existing runtime snapshot.
+  Verification:
+    - `node -c internal/webui/deck.js`
+    - `go test ./internal/tuner ./internal/webui ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - This closes the obvious first-step station-branding UI gap; the next meaningful work is runtime behavior, not more controls.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/deck.js`
+    - `internal/tuner/server.go`
+    - `docs/reference/virtual-channel-stations.md`
+
+- Date: 2026-03-22
+  Title: Deepen station-ops recovery and branded playback
+  Summary:
+    - Added in-memory virtual recovery event tracking plus `GET /virtual-channels/recovery-report.json` so filler cutovers and content-probe recoveries are inspectable.
+    - Extended per-channel virtual detail reports to include recent recovery history rather than only static metadata and schedule views.
+    - Upgraded `/virtual-channels/branded-stream/<id>.ts` to share the same fallback/content-probe logic as the plain stream path and to support a first corner-image overlay lane via `branding.bug_image_url` or `branding.logo_url`.
+  Verification:
+    - `go test ./internal/tuner ./internal/virtualchannels ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - Recovery detection is still preflight/startup-oriented, not continuous in-stream decoded-media analysis.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `docs/reference/virtual-channel-stations.md`
+    - `docs/epics/EPIC-station-ops.md`
+
+- Date: 2026-03-22
+  Title: Add Keycloak identity migration diff/apply
+  Summary:
+    - Added `internal/keycloak` with the first live IdP admin integration for users, groups, and membership.
+    - Extended the identity migration lane so the provider-agnostic OIDC plan can now be diffed against and applied to a real Keycloak realm.
+    - Added CLI commands `identity-migration-keycloak-diff` and `identity-migration-keycloak-apply`, and updated docs/current-task state to reflect that Keycloak is now the first supported IdP backend.
+  Verification:
+    - `go test ./internal/keycloak ./internal/migrationident ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - Current Keycloak scope is intentionally limited to user/group creation and membership. Credentials and required actions remain future work.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/keycloak/keycloak.go`
+    - `cmd/iptv-tunerr/cmd_identity_migration.go`
+
+- Date: 2026-03-22
+  Title: Add provider-agnostic OIDC migration planning
+  Summary:
+    - Added `BuildOIDCPlan` to `internal/migrationident` so the same Plex user bundle can now emit stable OIDC subject hints, usernames, display names, email hints, and Tunerr-owned migration group claims.
+    - Added the CLI command `identity-migration-oidc-plan` so that OIDC planning is a first-class built-in feature, not an external script or ad hoc export.
+    - Updated docs and current-task state to position this as the neutral foundation for future Authentik/Keycloak/Caddy-backed integration rather than a provider-specific apply path.
+  Verification:
+    - `go test ./internal/migrationident ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - This slice is intentionally export-only. It does not talk to a live IdP yet.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/migrationident/bundle.go`
+    - `cmd/iptv-tunerr/cmd_identity_migration.go`
+
+- Date: 2026-03-22
+  Title: Add identity activation-readiness reporting
+  Summary:
+    - Extended the Emby/Jellyfin helper layer to classify destination users as activation-pending when they still have no configured password or auto-login path.
+    - Extended identity diff/apply/audit so `activation_pending_users` is reported separately from `missing_users` and `policy_update_users`, which makes overlap cutover reports distinguish “account exists” from “user can actually sign in.”
+    - Updated docs and current-task state so the identity migration lane now explicitly covers additive policy parity plus activation-readiness reporting, while still leaving real password/invite/OIDC provisioning as future work.
+  Verification:
+    - `go test ./internal/emby ./internal/migrationident ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - Activation readiness is intentionally heuristic and local-user oriented: no configured password or auto-login path means “pending” unless the account is disabled.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/emby/users.go`
+    - `internal/migrationident/bundle.go`
+
+- Date: 2026-03-22
+  Title: Add additive identity policy parity for Emby/Jellyfin cutover
+  Summary:
+    - Extended `internal/emby` with full user fetch plus `/Users/{id}/Policy` update support so Tunerr can preserve and update destination user policy safely instead of hand-building partial replacement payloads.
+    - Extended `internal/migrationident` plans/diffs/applies/audits so Plex share signals now drive additive destination policy sync for Live TV access, sync/download access, all-library access, and remote access for shared users.
+    - Updated the identity audit/reporting contract so operators can distinguish `missing_users`, `policy_update_users`, and truly manual follow-up cases instead of treating every share/tuner entitlement as manual cleanup.
+    - Updated migration docs and current-task state to reflect that identity migration is no longer local-user bootstrap only.
+  Verification:
+    - `go test ./internal/emby ./internal/migrationident ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - This is intentionally additive-only parity. It still does not infer folder-specific grants, invite activation state, or OIDC/Caddy identity lifecycle.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/emby/users.go`
+    - `internal/migrationident/bundle.go`
+
+- Date: 2026-03-22
+  Title: Add first-class Plex-user identity migration commands
+  Summary:
+    - Added `internal/plex` user export plus `internal/emby` destination user list/create helpers.
+    - Added `internal/migrationident` and new CLI commands (`plex-user-bundle-build`, `identity-migration-convert`, `identity-migration-diff`, `identity-migration-apply`, `identity-migration-rollout`, `identity-migration-rollout-diff`) so Tunerr can build, diff, and apply overlap-friendly Emby/Jellyfin account bootstrap plans from Plex users.
+    - Added `identity-migration-audit` plus compact summary output so the same identity bundle can now answer readiness/follow-up questions per target instead of only raw create/reuse counts.
+    - Exposed that identity audit in the dedicated deck at `/deck/identity-migration-audit.json` so account-cutover readiness is visible from the running process too.
+    - Updated migration docs and backlogged the broader “general-purpose library janitor” direction in `memory-bank/opportunities.md` and `docs/explanations/project-backlog.md`.
+  Verification:
+    - `go test ./internal/plex ./internal/emby ./internal/migrationident ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - This slice intentionally does not clone passwords, invites, OIDC identities, or library-permission parity; it is local-user bootstrap only.
+  Opportunities filed:
+    - `memory-bank/opportunities.md` — `Grow Tunerr into a full general-purpose library janitor`
+  Links:
+    - `internal/migrationident/bundle.go`
+    - `cmd/iptv-tunerr/cmd_identity_migration.go`
+    - `docs/emby-jellyfin-support.md`
+
+- Date: 2026-03-22
   Title: Add experimental AAC variant of the TV-safe transcode profile
   Summary:
     - Added a new built-in profile `plexsafeaac` in `internal/tuner/gateway_profiles.go` so the high-quality TV-safe lane can be A/B tested with AAC audio instead of MP3.
@@ -6567,6 +7394,76 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - `cmd/iptv-tunerr/cmd_live_tv_bundle.go`
     - `docs/reference/cli-and-env-reference.md`
 - Date: 2026-03-22
+  Title: Expose migration audit workflow in the dedicated deck
+  Summary:
+    - Added `/deck/migration-audit.json` in `internal/webui`, backed by `IPTV_TUNERR_MIGRATION_BUNDLE_FILE` plus the configured Emby/Jellyfin targets.
+    - The deck Operations lane now includes a Migration workflow card and endpoint wiring so overlap-readiness and lagging-library signals are available from the running appliance, not only the CLI.
+    - Reused the same audit formatter from `internal/livetvbundle` so the CLI summary and deck workflow stay aligned.
+  Verification:
+    - `go test ./internal/webui ./cmd/iptv-tunerr ./internal/livetvbundle ./internal/tuner`
+    - `./scripts/verify`
+  Notes:
+    - This is intentionally read-only; migration apply still lives in the CLI lane.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/webui/deck.js`
+    - `internal/livetvbundle/report.go`
+    - `docs/emby-jellyfin-support.md`
+- Date: 2026-03-22
+  Title: Add missing-title detail to the human-readable migration summary
+  Summary:
+    - Extended `migration-rollout-audit -summary` so title-lagging reused libraries now print bounded `title_missing[...]` lines with missing source sample titles.
+    - This keeps the summary compact but makes it materially more actionable for library-sync triage.
+    - The change is presentation-only and reuses the existing title-sample parity logic from the audit JSON.
+  Verification:
+    - `go test ./cmd/iptv-tunerr ./internal/livetvbundle`
+    - `./scripts/verify`
+  Notes:
+    - The summary intentionally caps both the number of libraries and titles shown to stay operator-readable.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/cmd_live_tv_bundle.go`
+    - `cmd/iptv-tunerr/cmd_live_tv_bundle_test.go`
+    - `docs/reference/cli-and-env-reference.md`
+- Date: 2026-03-22
+  Title: Add a human-readable migration rollout summary
+  Summary:
+    - Extended `iptv-tunerr migration-rollout-audit` with a `-summary` mode that renders the existing audit as a compact text report instead of raw JSON.
+    - The summary includes overall verdict plus per-target status, reason, indexed Live TV channel count, and the main missing/lagging library signals.
+    - This keeps the machine-readable audit intact while giving operators a first-class sync/readiness report without external shell or `jq` shaping.
+  Verification:
+    - `go test ./cmd/iptv-tunerr ./internal/livetvbundle`
+    - `./scripts/verify`
+  Notes:
+    - `-summary` reuses the exact same audit logic; it is only an alternate presentation layer.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/cmd_live_tv_bundle.go`
+    - `cmd/iptv-tunerr/cmd_live_tv_bundle_test.go`
+    - `docs/reference/cli-and-env-reference.md`
+- Date: 2026-03-22
+  Title: Add title-sample parity hints to the migration audit
+  Summary:
+    - Extended the neutral migration bundle to carry a bounded sample of Plex library item titles alongside source item counts.
+    - Added destination-side title sampling for reused Emby/Jellyfin libraries and surfaced per-library `source_titles`, `existing_titles`, `missing_titles`, and `title_parity_status` in library diffs.
+    - Rolled that up into the combined migration audit as `title_synced_libraries` / `title_lagging_libraries` so reused libraries can be flagged as still missing specific source sample titles even when they already exist on the target.
+  Verification:
+    - `go test ./internal/plex ./internal/emby ./internal/livetvbundle ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - This is intentionally bounded sample parity, not full metadata-equivalence or watched-state comparison.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/plex/library.go`
+    - `internal/emby/library.go`
+    - `internal/livetvbundle/bundle.go`
+    - `docs/emby-jellyfin-support.md`
+- Date: 2026-03-22
   Title: Add readiness verdicts to the combined migration audit
   Summary:
     - Extended the combined migration audit to compute `ready_to_apply` at both the overall and per-target level.
@@ -6634,3 +7531,222 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - `internal/livetvbundle/bundle.go`
     - `internal/livetvbundle/bundle_test.go`
     - `docs/reference/cli-and-env-reference.md`
+- Date: 2026-03-22
+  Title: Start the free Station Ops lane with virtual-channel station metadata
+  Summary:
+    - Added a new `STN-*` epic for the fully free station-operations lane, covering branded synthetic stations, filler recovery, richer scheduling, and multi-backend rollout.
+    - Extended `internal/virtualchannels` so channels now support station metadata (`description`, branding fields, and recovery/fallback policy) instead of only entry loops.
+    - Wired the first visible publish surface changes now: virtual M3U exports `tvg-logo`, synthetic virtual XMLTV exports `<icon>`, and detail/rules responses round-trip the new metadata.
+  Verification:
+    - `go test ./internal/virtualchannels ./internal/tuner ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - This is foundation only. Runtime black-screen detection, filler insertion, and overlay rendering are still future `STN-*` stories.
+  Opportunities filed:
+    - none
+  Links:
+    - `docs/epics/EPIC-station-ops.md`
+    - `docs/reference/virtual-channel-stations.md`
+    - `internal/virtualchannels/virtualchannels.go`
+    - `internal/tuner/server.go`
+- Date: 2026-03-22
+  Title: Add first authoring APIs for station metadata and virtual schedules
+  Summary:
+    - Extended the existing virtual-channel APIs so operators can update station metadata and schedule entries without replacing the whole rules file.
+    - `POST /virtual-channels/channel-detail.json` now updates station metadata for an existing channel, and `POST /virtual-channels/schedule.json` now supports basic authoring helpers such as `append_movies`, `append_episodes`, and `remove_entries`.
+    - Updated the station-ops epic/reference docs so this lane is documented as a real API foundation rather than metadata-only scaffolding.
+  Verification:
+    - `go test ./internal/virtualchannels ./internal/tuner ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - These helpers still operate on entry lists, not true daypart/time-slot templates yet.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+    - `docs/reference/virtual-channel-stations.md`
+    - `docs/epics/EPIC-station-ops.md`
+- Date: 2026-03-22
+  Title: Add daily-slot scheduling to Station Ops virtual channels
+  Summary:
+    - Extended virtual-channel rules with daily `slots[]` so channels can define UTC `HH:MM` slot starts, durations, labels, and scheduled entries.
+    - Updated preview/current-slot/schedule logic to prefer those explicit slots when present instead of only replaying the older looping entry order.
+    - Expanded the schedule mutation API with `append_slot`, `replace_slots`, and `remove_slots`, giving the station lane its first real daypart/time-placement substrate.
+  Verification:
+    - `go test ./internal/virtualchannels ./internal/tuner ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - Slot scheduling is daily UTC only for now; richer template-based authoring and timezone/day-of-week semantics are still future work.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/virtualchannels/virtualchannels.go`
+    - `internal/virtualchannels/virtualchannels_test.go`
+    - `internal/tuner/server.go`
+    - `docs/reference/virtual-channel-stations.md`
+- Date: 2026-03-22
+  Title: Add a daypart filler helper to Station Ops scheduling
+  Summary:
+    - Extended `POST /virtual-channels/schedule.json` with `fill_daypart`, which expands a start/end window plus movies/episodes/entries into explicit daily slots.
+    - That gives the station lane its first real “fill mornings / fill prime time” helper instead of only manual slot edits or raw loop-entry mutations.
+    - Updated the station reference and epic docs so the API surface and roadmap reflect the new daypart builder.
+  Verification:
+    - `go test ./internal/virtualchannels ./internal/tuner ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - The daypart helper is still content-list driven; it does not yet auto-pull from saved collections/seasons/categories.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+    - `docs/reference/virtual-channel-stations.md`
+- Date: 2026-03-22
+  Title: Add collection-aware daypart fillers and first runtime filler fallback
+  Summary:
+    - Extended `POST /virtual-channels/schedule.json` with `fill_movie_category` and `fill_series`, so dayparts can now be auto-built from indexed movie categories or series episode pools instead of only manual lists.
+    - Upgraded virtual-channel playback so `recovery.mode=filler` is now executed in one real runtime path: missing-source or failed upstream requests can fall back to configured filler entries.
+    - Updated the station reference and epic/task docs so the repo reflects that recovery is no longer metadata-only for virtual channels.
+  Verification:
+    - `go test ./internal/virtualchannels ./internal/tuner ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - Runtime recovery currently triggers on missing/failed upstreams, not actual black-frame/media-content analysis yet.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+    - `docs/reference/virtual-channel-stations.md`
+- Date: 2026-03-22
+  Title: Harden virtual-channel filler fallback against obviously bad upstream payloads
+  Summary:
+    - Added a first dead-air/bad-response guard to the virtual-channel playback path: HTML/text/JSON responses and empty first-read payloads now trigger filler fallback instead of being proxied as fake media.
+    - Kept the existing filler execution path for missing-source and failed-upstream cases, so virtual-channel recovery now covers a broader class of obvious playback failures.
+    - Updated the station reference/epic/current-task notes to reflect that the runtime recovery path is no longer limited to missing URLs or transport errors.
+  Verification:
+    - `go test ./internal/virtualchannels ./internal/tuner ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - This is still heuristic response validation, not true black-frame media-content analysis.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+    - `docs/reference/virtual-channel-stations.md`
+- Date: 2026-03-22
+  Title: Make black_screen_seconds a real startup dead-air guard for virtual playback
+  Summary:
+    - Extended the virtual-channel recovery guard so `recovery.black_screen_seconds` now acts as a startup-byte timeout when headers arrive but no usable media bytes show up.
+    - That means virtual playback can now switch to configured filler not just on missing URLs, request failures, or obviously bad non-media bodies, but also on stalled startup responses.
+    - Updated the station reference/epic/current-task notes so the repo documents the first real runtime meaning of `black_screen_seconds`.
+  Verification:
+    - `go test ./internal/virtualchannels ./internal/tuner ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - This is still a startup dead-air timeout, not true decoded-video black-frame analysis.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+    - `docs/reference/virtual-channel-stations.md`
+- Date: 2026-03-22
+  Title: Add OIDC IdP audit reporting and deck workflow
+  Summary:
+    - Added `AuditOIDCPlanTargets` plus `FormatOIDCAuditSummary` so the neutral OIDC plan can now be audited across Keycloak and/or Authentik with operator-readable status instead of only raw diff/apply output.
+    - Added the CLI command `identity-migration-oidc-audit` with JSON and `-summary` output, mirroring the existing media-server migration audit shape.
+    - Exposed the same IdP readiness report in the deck at `/deck/oidc-migration-audit.json` and wired the workflow catalog to show it next to the existing migration and identity-cutover lanes.
+    - Tightened Keycloak activation-pending detection so existing enabled users are not falsely reported as onboarding-pending just because they already exist.
+  Verification:
+    - `go test ./internal/migrationident ./internal/webui ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - Current OIDC audit is still provisioning-focused; it does not claim full downstream SSO-policy parity.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/migrationident/bundle.go`
+    - `cmd/iptv-tunerr/cmd_identity_migration.go`
+    - `internal/webui/webui.go`
+    - `internal/webui/deck.js`
+- Date: 2026-03-22
+  Title: Add Authentik OIDC migration backend and IdP-side bootstrap metadata
+  Summary:
+    - Added `internal/authentik` as the second built-in IdP backend on top of the neutral OIDC identity plan, covering user listing/creation, group listing/creation, membership add, password bootstrap, and recovery-email onboarding.
+    - Extended `internal/migrationident` plus `cmd_identity_migration.go` with `identity-migration-authentik-diff` and `identity-migration-authentik-apply`, and kept the same provider-agnostic OIDC plan contract used by Keycloak.
+    - Stamped stable Tunerr migration metadata onto newly created Keycloak and Authentik users so later cutover/audit work can trace subject hints, Plex ids/uuid, and group hints from the IdP side too.
+  Verification:
+    - `go test ./internal/authentik ./internal/keycloak ./internal/migrationident ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+  Notes:
+    - Current IdP scope is still intentionally migration-safe rather than full provider-policy sync: create missing users/groups, add membership, and optional bootstrap/onboarding mail.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/authentik/authentik.go`
+    - `internal/authentik/authentik_test.go`
+    - `internal/migrationident/bundle.go`
+    - `cmd/iptv-tunerr/cmd_identity_migration.go`
+- Date: 2026-03-22
+  Title: Add ffmpeg-backed content probes and rendered station slates to Station Ops
+  Summary:
+    - Added an ffmpeg-backed content probe on the virtual playback path that can trigger filler fallback when sampled content looks black (`blackdetect`) or silent (`silencedetect`) from the start.
+    - Wired that probe into the existing virtual recovery lane, so filler cutover now has a first true content-aware path in addition to transport/startup heuristics.
+    - Added `/virtual-channels/slate/<id>.svg`, a rendered station-slate surface driven by branding metadata (`logo_url`, bug text/position, banner text, theme color), so the branding lane now has a first real rendered output.
+  Verification:
+    - `go test ./internal/virtualchannels ./internal/tuner ./cmd/iptv-tunerr`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - The content-aware path is still preflight/probe based, not decoded in-stream frame/audio analysis.
+    - Slate rendering is real output, but not yet live-video compositing over the stream itself.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+    - `docs/reference/virtual-channel-stations.md`
+    - `docs/epics/EPIC-station-ops.md`
+- Date: 2026-03-22
+  Title: Audit and improve operator deck affordances and accessibility
+  Summary:
+    - Added skip-to-content, labeled search/raw-endpoint controls, stronger focus-visible states, `aria-live` status/feedback, and explicit pressed-state / section-visibility semantics across the dedicated deck.
+    - Reworked the shared deck modal to use real dialog semantics with focus restoration/trapping, then replaced virtual-station branding/recovery `window.prompt` edits with an in-deck modal editor.
+    - Updated `README.md` and `docs/features.md` so the operator-plane docs now describe the deck accessibility/modal behavior instead of leaving it implicit in code.
+  Verification:
+    - `node -c internal/webui/deck.js`
+    - `go test ./internal/webui ./cmd/iptv-tunerr ./internal/tuner ./internal/virtualchannels`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - This pass focused on the dedicated deck/operator surface, not the older `/ui/` shell.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/webui/index.html`
+    - `internal/webui/deck.css`
+    - `internal/webui/deck.js`
+    - `internal/webui/webui_test.go`
+    - `README.md`
+    - `docs/features.md`
+- Date: 2026-03-22
+  Title: Reframe legacy `/ui/` as a compatibility shell
+  Summary:
+    - Audited the old tuner-port UI and confirmed it is limited to `/ui/`, `/ui/guide/`, and `/ui/guide-preview.json` rather than a second full operator plane.
+    - Updated the served legacy HTML so it explicitly tells operators the dedicated Control Deck is primary and links back to it using the configured web UI port.
+    - Updated docs so `/ui/` is now described as compatibility/read-only surface instead of a first-class operator UI.
+  Verification:
+    - `go test ./internal/webui ./cmd/iptv-tunerr ./internal/tuner ./internal/virtualchannels`
+    - `go build -o ./iptv-tunerr ./cmd/iptv-tunerr`
+  Notes:
+    - This keeps `/ui/` available for lightweight/read-only use while making the product posture explicit.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/operator_ui.go`
+    - `internal/tuner/static/ui/index.html`
+    - `internal/tuner/static/ui/guide.html`
+    - `internal/tuner/server_test.go`
+    - `README.md`
+    - `docs/features.md`

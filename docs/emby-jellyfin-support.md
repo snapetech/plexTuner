@@ -17,6 +17,11 @@ That Live TV lane now also has dry-run validation: `live-tv-bundle-diff` can com
 registration plan against a live target, and `live-tv-bundle-rollout-diff` can do the same across
 both Emby and Jellyfin from the same neutral bundle before anything is applied.
 
+Jellyfin has one important API difference here: current `10.11.x` builds do not expose read-side
+`GET /LiveTv/TunerHosts` or `GET /LiveTv/ListingProviders`, but they do expose the same state under
+`GET /System/Configuration/livetv`. Tunerr now uses that Jellyfin configuration endpoint for exact
+Live TV diffing instead of failing closed or guessing.
+
 For overlap migrations, `iptv-tunerr live-tv-bundle-rollout` can build or apply both Emby and
 Jellyfin targets from the same neutral bundle in one pass, so the non-Plex side can be pre-rolled
 together while Plex remains online.
@@ -50,14 +55,130 @@ helps distinguish "library definition exists" from "library already has media un
 overlap migration. When the destination server exposes a recognizable library refresh task, the
 same audit also surfaces best-effort scan status and progress so you can tell whether a just-applied
 library rollout is still being ingested. The neutral bundle now also carries source Plex library
-item counts when they can be read, and the audit compares those against reused destination-library
-counts so it can tell you which reused libraries are already at parity and which are still lagging
-the Plex source.
+item counts and a bounded sample of source item titles when they can be read. The audit compares
+those against reused destination-library counts and sampled titles so it can tell you which reused
+libraries are already count-synced, which ones still lag the Plex source, and which reused targets
+are still missing specific source sample titles. When you need something quicker than the raw JSON,
+the same command also supports `-summary` to emit one compact human-readable rollout report with
+status, reasons, indexed Live TV counts, the main lagging/missing library signals per target, and
+bounded per-library missing-title hints for reused libraries that are still sample-lagging.
+
+That same overlap report is now available in the dedicated deck too. When the running process has
+`IPTV_TUNERR_MIGRATION_BUNDLE_FILE` set, the deck exposes `/deck/migration-audit.json` and a
+Migration workflow card in the Operations lane. That lets operators inspect overlap readiness and
+lagging-library signals from the running appliance instead of bouncing out to a separate CLI shell.
 
 Generated Tunerr-side catch-up libraries can also ride in the same artifact now:
 `live-tv-bundle-attach-catchup` can import a saved catch-up publish manifest into the migration
 bundle, and the existing library migration commands will treat those generated movie libraries like
 any other shared-path library definition.
+
+The same builder/diff/apply model now starts to cover user cutover too. `plex-user-bundle-build`
+exports Plex users plus any visible server-share tuner hints from plex.tv into a neutral bundle,
+`identity-migration-convert` turns that into Emby/Jellyfin local-user plans, and
+`identity-migration-diff` / `identity-migration-apply` compare or create those destination users.
+That lane now also carries the first safe additive permission sync it can infer from Plex share
+state:
+- `AllowTuners` -> destination Live TV access
+- `AllowSync` -> destination download/sync-transcode access
+- `AllLibraries` -> destination all-library access
+- shared Plex users -> destination remote-access enablement
+
+It intentionally does not guess folder-by-folder library grants or per-user SSO state.
+For coordinated overlap work, `identity-migration-rollout` and `identity-migration-rollout-diff`
+can do the same across both Emby and Jellyfin from one Plex-derived identity bundle.
+
+That same Plex-user bundle can now also be turned into a provider-agnostic OIDC plan with
+`identity-migration-oidc-plan`. It produces a neutral contract:
+- subject hints derived from Plex UUID or id
+- preferred usernames and display names
+- email hints
+- stable Tunerr group claims such as `tunerr:live-tv`, `tunerr:sync`, `tunerr:plex-shared`
+
+That gives provider-specific integration one consistent bundle format to consume and keeps the
+cutover logic out of one-off shell scripts.
+
+The first live IdP backends now exist too. Both the Keycloak and Authentik commands consume that
+OIDC plan and reconcile it against a real IdP:
+- `identity-migration-keycloak-diff`
+- `identity-migration-keycloak-apply`
+- `identity-migration-authentik-diff`
+- `identity-migration-authentik-apply`
+
+Current provider scope is intentionally narrow and migration-safe:
+- create missing users by preferred username
+- create missing Tunerr-owned migration groups
+- add missing group membership from the OIDC plan
+- update Tunerr-owned migration metadata on existing users when display name, email hint, or Tunerr attributes drift
+- optionally set a bootstrap password
+- optionally trigger staged onboarding mail (`execute-actions-email` in Keycloak, recovery email in Authentik)
+- stamp stable Tunerr migration metadata on newly created IdP-side users
+
+It still does not attempt arbitrary provider policy mapping, full attribute parity for pre-existing
+users, or OIDC client-by-client authorization policy sync.
+
+For Keycloak, Tunerr can now also mint a fresh admin token from username/password credentials at
+runtime instead of depending on a pre-minted short-lived bearer token. That makes the live audit and
+apply path much more stable in real clusters where static admin tokens expire quickly.
+
+That IdP lane now also has a dry-run audit via `identity-migration-oidc-audit`. It can compare
+the saved OIDC plan against one or both configured IdP targets and report:
+- missing IdP users
+- missing Tunerr migration groups
+- users that still need group membership
+- existing users that still need Tunerr-owned metadata updates
+- whether each IdP target is already converged or still ready-to-apply
+
+Like the media-server identity audit lane, it also supports a compact summary mode. The running
+deck can expose the same OIDC migration workflow when `IPTV_TUNERR_IDENTITY_OIDC_PLAN_FILE` plus
+the relevant Keycloak/Authentik envs are configured, and it can now run the saved OIDC apply path
+directly from the deck against those configured IdP targets. That deck-side apply path now also
+accepts the same provider-specific onboarding knobs as the CLI:
+- Keycloak bootstrap password
+- Keycloak temporary-password toggle
+- Keycloak `execute-actions-email` actions plus optional client/redirect/lifespan hints
+- Authentik bootstrap password
+- Authentik recovery-email delivery
+The same workflow summary now also includes a short recent OIDC apply history from deck activity,
+so operators can see when the last few IdP pushes happened, which provider knobs were used, and
+what each push actually changed per target (created users, created groups, added membership,
+metadata updates, activation-pending users) without leaving the workflow surface. Failed deck-side
+OIDC apply attempts now land in that same structured history too, with validation/provider phase
+and error context instead of disappearing into one-off transient error responses. The deck now also
+lets operators filter that recent history to `all`, `success`, or `failed` runs and uses simple
+success/failure badges so the status is visible without parsing each line manually. Those same
+filters and badges now appear inside the OIDC workflow modal too, so operators can drill into the
+recent IdP run history without bouncing back to the summary card first. The modal history also now
+breaks out per-target result rows, so partial runs make it obvious which IdP target was applied
+and which target was never reached before the failure stopped the workflow.
+
+`identity-migration-audit` now sits on top of that same bundle and target set. It combines the
+per-target diff results with the Plex-side managed/share/tuner hints so operators can answer:
+- which Plex users still need destination accounts
+- which existing destination accounts still need additive policy updates
+- which destination accounts still are not activation-ready yet
+- which migrated users still need manual permission, invite, or SSO follow-up
+- whether a target is blocked, ready to apply, or already converged on the account-existence side
+
+Like the library/live-TV audit lane, it also supports a compact summary mode so the migration state
+can be triaged without hand-reading raw JSON.
+
+That same identity audit is now exposed in the dedicated deck too. When the running process has
+`IPTV_TUNERR_IDENTITY_MIGRATION_BUNDLE_FILE` set, the deck exposes
+`/deck/identity-migration-audit.json` and an Identity Migration workflow card alongside the
+existing overlap-migration workflow.
+
+This identity slice is intentionally conservative. It migrates:
+- destination local-account creation/reuse by derived username
+- additive destination policy grants that can be inferred cleanly from Plex share state
+- Plex home/managed/share/tuner hints as planning metadata
+
+It does not yet attempt direct vendor-to-vendor conversion of:
+- passwords or login secrets
+- provider-specific OIDC / SSO / Caddy-backed apply flows beyond the current Keycloak/Authentik user/group slice
+- folder-by-folder library-permission parity
+- actually setting passwords or completing invite/activation flows
+- Plex watch-state or metadata ownership
 
 This is still intentionally not a raw metadata-database converter. It migrates:
 - Live TV tuner and guide configuration

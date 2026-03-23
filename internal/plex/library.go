@@ -21,14 +21,14 @@ type LibrarySection struct {
 }
 
 type libraryItemsMediaContainer struct {
-	TotalSize int `xml:"totalSize,attr"`
-	Size      int `xml:"size,attr"`
+	TotalSize int                `xml:"totalSize,attr"`
+	Size      int                `xml:"size,attr"`
 	Videos    []libraryItemTitle `xml:"Video"`
 	Dirs      []libraryItemTitle `xml:"Directory"`
 }
 
 type libraryItemTitle struct {
-	Title    string `xml:"title,attr"`
+	Title     string `xml:"title,attr"`
 	TitleSort string `xml:"titleSort,attr"`
 }
 

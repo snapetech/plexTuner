@@ -48,6 +48,7 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[reference/plex-client-compatibility-matrix.md](reference/plex-client-compatibility-matrix.md)** | Tier-1 Plex Live TV clients, **`CLIENT_ADAPT`** classes, automated + manual validation (**HR-003**). |
 | **[reference/lineup-epg-hygiene.md](reference/lineup-epg-hygiene.md)** | Built-in lineup/EPG hygiene defaults: dedupe, strip hosts, guide policy, stable catalog order (**HR-005** / **HR-006**). |
 | **[reference/transcode-profiles.md](reference/transcode-profiles.md)** | Gateway ffmpeg profile names, HDHR-style aliases, `?profile=`, `?mux=fmp4` / `?mux=hls` / `?mux=dash`. |
+| **[reference/virtual-channel-stations.md](reference/virtual-channel-stations.md)** | Virtual-channel station operations: branding, publish modes, recovery/filler runtime, report surfaces, and example JSON. |
 | **[explanations/architecture.md](explanations/architecture.md)** | Layers, ASCII + Mermaid flow, package map, CLI split (**`cmd_registry`**). |
 | **[explanations/project-backlog.md](explanations/project-backlog.md)** | **Open work index:** links epics, **`memory-bank/opportunities.md`**, **`known_issues`**, **`docs-gaps`**, features limits — single entry point for “what’s left.” |
 | **[explanations/media-server-integration-modes.md](explanations/media-server-integration-modes.md)** | Where the common tuner story ends and Plex-heavy ops begin. |
@@ -59,6 +60,7 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[epics/EPIC-lineup-parity.md](epics/EPIC-lineup-parity.md)** | Optional **Lineup-app-style** track: real HDHomeRun client, web dashboard, SQLite EPG, HLS/fMP4 profiles ([inspiration](https://github.com/am385/lineup)). |
 | **[epics/EPIC-operator-completion.md](epics/EPIC-operator-completion.md)** | Umbrella completion lane for all non-admin, non-Postgres follow-through across LP/PM/LH/PAR/ACC/HR/INT/REC/VODX. |
 | **[epics/EPIC-programming-manager.md](epics/EPIC-programming-manager.md)** | Category-driven lineup curation, backup groups, quick-add flows, and operator preview UX. |
+| **[epics/EPIC-station-ops.md](epics/EPIC-station-ops.md)** | Free station-operations roadmap: branded virtual channels, filler recovery, scheduling, and multi-backend rollout. |
 | **[epics/EPIC-lineup-harvest.md](epics/EPIC-lineup-harvest.md)** | Harvest Plex local-market lineups and bridge them into Programming Manager. |
 | **[epics/EPIC-feature-parity.md](epics/EPIC-feature-parity.md)** | Broader ecosystem parity roadmap: downstream outputs, operator workflows, users, and publishing. |
 | **product/** · **stories/** | [PRD template](product/PRD-template.md), [STORY template](stories/STORY-template.md). |

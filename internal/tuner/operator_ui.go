@@ -75,6 +75,34 @@ func buildGuidePreviewMeta(s *Server, gp GuidePreview, rowLimit int) string {
 	return b.String()
 }
 
+func operatorDeckURL(r *http.Request) string {
+	if os.Getenv("IPTV_TUNERR_WEBUI_DISABLED") == "1" {
+		return ""
+	}
+	port := strings.TrimSpace(os.Getenv("IPTV_TUNERR_WEBUI_PORT"))
+	if port == "" {
+		port = "48879"
+	}
+	scheme := "http"
+	if r != nil && r.TLS != nil {
+		scheme = "https"
+	}
+	host := "127.0.0.1"
+	if r != nil {
+		if reqHost := strings.TrimSpace(r.Host); reqHost != "" {
+			if parsedHost, _, err := net.SplitHostPort(reqHost); err == nil {
+				host = parsedHost
+			} else {
+				host = reqHost
+			}
+		}
+	}
+	if strings.TrimSpace(host) == "" {
+		host = "127.0.0.1"
+	}
+	return fmt.Sprintf("%s://%s:%s/", scheme, host, port)
+}
+
 func buildGuidePreviewTable(gp GuidePreview) string {
 	if !gp.SourceReady {
 		return `<p><em>Guide cache is empty — wait for the next EPG refresh.</em></p>`
@@ -154,9 +182,15 @@ func (s *Server) serveOperatorGuidePreviewPage() http.Handler {
 		}
 		meta := buildGuidePreviewMeta(s, gp, limit)
 		table := buildGuidePreviewTable(gp)
+		deckURL := operatorDeckURL(r)
+		deckNotice := `<p><strong>Compatibility UI:</strong> this guide preview remains available on the tuner port, but the dedicated Control Deck is now the primary operator surface.</p>`
+		if deckURL != "" {
+			deckNotice = `<p><strong>Compatibility UI:</strong> this guide preview remains available on the tuner port, but the dedicated <a href="` + html.EscapeString(deckURL) + `">Control Deck</a> is now the primary operator surface.</p>`
+		}
 		body := string(b)
 		body = strings.Replace(body, "{{META}}", meta, 1)
 		body = strings.Replace(body, "{{TABLE}}", table, 1)
+		body = strings.Replace(body, "{{DECK_NOTICE}}", deckNotice, 1)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(body))
 	})
@@ -213,7 +247,13 @@ func (s *Server) serveOperatorUI() http.Handler {
 		if ver == "" {
 			ver = "dev"
 		}
+		deckURL := operatorDeckURL(r)
+		deckNotice := `<p><strong>Compatibility UI:</strong> the dedicated Control Deck is the primary operator surface now; this tuner-port shell is kept for lightweight read-only access.</p>`
+		if deckURL != "" {
+			deckNotice = `<p><strong>Compatibility UI:</strong> the dedicated <a href="` + html.EscapeString(deckURL) + `">Control Deck</a> is the primary operator surface now; this tuner-port shell is kept for lightweight read-only access.</p>`
+		}
 		body := strings.Replace(string(b), "{{VERSION}}", html.EscapeString(ver), 1)
+		body = strings.Replace(body, "{{DECK_NOTICE}}", deckNotice, 1)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(body))
 	})

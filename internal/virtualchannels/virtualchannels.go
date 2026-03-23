@@ -21,13 +21,33 @@ type Ruleset struct {
 }
 
 type Channel struct {
-	ID           string  `json:"id"`
-	Name         string  `json:"name"`
-	GuideNumber  string  `json:"guide_number,omitempty"`
-	GroupTitle   string  `json:"group_title,omitempty"`
-	Enabled      bool    `json:"enabled"`
-	LoopDailyUTC bool    `json:"loop_daily_utc"`
-	Entries      []Entry `json:"entries,omitempty"`
+	ID           string         `json:"id"`
+	Name         string         `json:"name"`
+	GuideNumber  string         `json:"guide_number,omitempty"`
+	GroupTitle   string         `json:"group_title,omitempty"`
+	Description  string         `json:"description,omitempty"`
+	Enabled      bool           `json:"enabled"`
+	LoopDailyUTC bool           `json:"loop_daily_utc"`
+	Branding     Branding       `json:"branding,omitempty"`
+	Recovery     RecoveryPolicy `json:"recovery,omitempty"`
+	Slots        []Slot         `json:"slots,omitempty"`
+	Entries      []Entry        `json:"entries,omitempty"`
+}
+
+type Branding struct {
+	LogoURL     string `json:"logo_url,omitempty"`
+	BugText     string `json:"bug_text,omitempty"`
+	BugImageURL string `json:"bug_image_url,omitempty"`
+	BugPosition string `json:"bug_position,omitempty"` // bottom-right | bottom-left | top-right | top-left
+	BannerText  string `json:"banner_text,omitempty"`
+	ThemeColor  string `json:"theme_color,omitempty"`
+	StreamMode  string `json:"stream_mode,omitempty"` // auto | plain | branded
+}
+
+type RecoveryPolicy struct {
+	Mode               string  `json:"mode,omitempty"` // none | filler
+	BlackScreenSeconds int     `json:"black_screen_seconds,omitempty"`
+	FallbackEntries    []Entry `json:"fallback_entries,omitempty"`
 }
 
 type Entry struct {
@@ -37,6 +57,13 @@ type Entry struct {
 	EpisodeID    string `json:"episode_id,omitempty"`
 	DurationMins int    `json:"duration_mins,omitempty"`
 	Title        string `json:"title,omitempty"`
+}
+
+type Slot struct {
+	StartHHMM    string `json:"start_hhmm"` // 24h UTC daily slot start
+	DurationMins int    `json:"duration_mins,omitempty"`
+	Label        string `json:"label,omitempty"`
+	Entry        Entry  `json:"entry"`
 }
 
 type PreviewSlot struct {
@@ -142,24 +169,12 @@ func NormalizeRuleset(set Ruleset) Ruleset {
 		if ch.GuideNumber == "" {
 			ch.GuideNumber = ch.ID
 		}
-		entries := make([]Entry, 0, len(ch.Entries))
-		for _, entry := range ch.Entries {
-			entry.Type = strings.ToLower(strings.TrimSpace(entry.Type))
-			switch entry.Type {
-			case "movie", "episode":
-			default:
-				continue
-			}
-			if entry.DurationMins <= 0 {
-				entry.DurationMins = 30
-			}
-			entry.MovieID = strings.TrimSpace(entry.MovieID)
-			entry.SeriesID = strings.TrimSpace(entry.SeriesID)
-			entry.EpisodeID = strings.TrimSpace(entry.EpisodeID)
-			entry.Title = strings.TrimSpace(entry.Title)
-			entries = append(entries, entry)
-		}
-		ch.Entries = entries
+		ch.Description = strings.TrimSpace(ch.Description)
+		ch.Branding = normalizeBranding(ch.Branding)
+		ch.Recovery = normalizeRecoveryPolicy(ch.Recovery)
+		ch.Slots = normalizeSlots(ch.Slots)
+		ch.Entries = normalizeEntries(ch.Entries)
+		ch.Recovery.FallbackEntries = normalizeEntries(ch.Recovery.FallbackEntries)
 		out = append(out, ch)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -171,6 +186,106 @@ func NormalizeRuleset(set Ruleset) Ruleset {
 	set.Channels = out
 	set.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	return set
+}
+
+func normalizeEntries(in []Entry) []Entry {
+	entries := make([]Entry, 0, len(in))
+	for _, entry := range in {
+		entry.Type = strings.ToLower(strings.TrimSpace(entry.Type))
+		switch entry.Type {
+		case "movie", "episode":
+		default:
+			continue
+		}
+		if entry.DurationMins <= 0 {
+			entry.DurationMins = 30
+		}
+		entry.MovieID = strings.TrimSpace(entry.MovieID)
+		entry.SeriesID = strings.TrimSpace(entry.SeriesID)
+		entry.EpisodeID = strings.TrimSpace(entry.EpisodeID)
+		entry.Title = strings.TrimSpace(entry.Title)
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
+func normalizeBranding(in Branding) Branding {
+	in.LogoURL = strings.TrimSpace(in.LogoURL)
+	in.BugText = strings.TrimSpace(in.BugText)
+	in.BugImageURL = strings.TrimSpace(in.BugImageURL)
+	in.BannerText = strings.TrimSpace(in.BannerText)
+	in.ThemeColor = strings.TrimSpace(in.ThemeColor)
+	switch strings.ToLower(strings.TrimSpace(in.StreamMode)) {
+	case "", "auto":
+		in.StreamMode = ""
+	case "plain", "branded":
+		in.StreamMode = strings.ToLower(strings.TrimSpace(in.StreamMode))
+	default:
+		in.StreamMode = ""
+	}
+	switch strings.ToLower(strings.TrimSpace(in.BugPosition)) {
+	case "", "bottom-right":
+		in.BugPosition = "bottom-right"
+	case "bottom-left", "top-right", "top-left":
+		in.BugPosition = strings.ToLower(strings.TrimSpace(in.BugPosition))
+	default:
+		in.BugPosition = "bottom-right"
+	}
+	return in
+}
+
+func normalizeRecoveryPolicy(in RecoveryPolicy) RecoveryPolicy {
+	switch strings.ToLower(strings.TrimSpace(in.Mode)) {
+	case "", "none":
+		in.Mode = ""
+	case "filler":
+		in.Mode = "filler"
+	default:
+		in.Mode = ""
+	}
+	if in.BlackScreenSeconds <= 0 {
+		in.BlackScreenSeconds = 2
+	}
+	return in
+}
+
+func normalizeSlots(in []Slot) []Slot {
+	out := make([]Slot, 0, len(in))
+	for _, slot := range in {
+		slot.StartHHMM = normalizeSlotStartHHMM(slot.StartHHMM)
+		if slot.StartHHMM == "" {
+			continue
+		}
+		if slot.DurationMins <= 0 {
+			slot.DurationMins = 30
+		}
+		slot.Label = strings.TrimSpace(slot.Label)
+		entries := normalizeEntries([]Entry{slot.Entry})
+		if len(entries) != 1 {
+			continue
+		}
+		slot.Entry = entries[0]
+		out = append(out, slot)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].StartHHMM == out[j].StartHHMM {
+			return entryID(out[i].Entry) < entryID(out[j].Entry)
+		}
+		return out[i].StartHHMM < out[j].StartHHMM
+	})
+	return out
+}
+
+func normalizeSlotStartHHMM(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	parsed, err := time.Parse("15:04", raw)
+	if err != nil {
+		return ""
+	}
+	return parsed.Format("15:04")
 }
 
 func BuildPreview(set Ruleset, movies []catalog.Movie, series []catalog.Series, now time.Time, perChannel int) PreviewReport {
@@ -185,7 +300,9 @@ func BuildPreview(set Ruleset, movies []catalog.Movie, series []catalog.Series, 
 	start := now.UTC().Truncate(time.Minute)
 	for _, ch := range set.Channels {
 		if !ch.Enabled || len(ch.Entries) == 0 {
-			continue
+			if len(ch.Slots) == 0 {
+				continue
+			}
 		}
 		slots := previewSlotsForChannel(ch, movies, series, start, perChannel)
 		report.Slots = append(report.Slots, slots...)
@@ -200,8 +317,14 @@ func ResolveCurrentSlot(set Ruleset, channelID string, movies []catalog.Movie, s
 		return ResolvedSlot{}, false
 	}
 	for _, ch := range set.Channels {
-		if !ch.Enabled || strings.TrimSpace(ch.ID) != channelID || len(ch.Entries) == 0 {
+		if !ch.Enabled || strings.TrimSpace(ch.ID) != channelID || (len(ch.Entries) == 0 && len(ch.Slots) == 0) {
 			continue
+		}
+		if len(ch.Slots) > 0 {
+			if slot, ok := resolveCurrentSlotFromSlots(ch, movies, series, now); ok {
+				return slot, true
+			}
+			return ResolvedSlot{}, false
 		}
 		dayStart := time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC)
 		totalMinutes := 0
@@ -265,7 +388,11 @@ func BuildSchedule(set Ruleset, movies []catalog.Movie, series []catalog.Series,
 		Channels:    len(set.Channels),
 	}
 	for _, ch := range set.Channels {
-		if !ch.Enabled || len(ch.Entries) == 0 {
+		if !ch.Enabled || (len(ch.Entries) == 0 && len(ch.Slots) == 0) {
+			continue
+		}
+		if len(ch.Slots) > 0 {
+			report.Slots = append(report.Slots, buildScheduleFromSlots(ch, movies, series, start, end)...)
 			continue
 		}
 		dayStart := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.UTC)
@@ -301,6 +428,9 @@ func BuildSchedule(set Ruleset, movies []catalog.Movie, series []catalog.Series,
 }
 
 func previewSlotsForChannel(ch Channel, movies []catalog.Movie, series []catalog.Series, start time.Time, perChannel int) []PreviewSlot {
+	if len(ch.Slots) > 0 {
+		return previewSlotsFromSlots(ch, movies, series, start, perChannel)
+	}
 	cursor := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.UTC)
 	out := make([]PreviewSlot, 0, perChannel)
 	for i := 0; i < perChannel; i++ {
@@ -323,6 +453,97 @@ func previewSlotsForChannel(ch Channel, movies []catalog.Movie, series []catalog
 		cursor = cursor.Add(time.Duration(duration) * time.Minute)
 	}
 	return out
+}
+
+func previewSlotsFromSlots(ch Channel, movies []catalog.Movie, series []catalog.Series, start time.Time, perChannel int) []PreviewSlot {
+	if perChannel <= 0 || len(ch.Slots) == 0 {
+		return nil
+	}
+	out := make([]PreviewSlot, 0, perChannel)
+	day := time.Date(start.UTC().Year(), start.UTC().Month(), start.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	for len(out) < perChannel {
+		for _, slot := range ch.Slots {
+			slotStart, ok := slotStartTime(day, slot)
+			if !ok {
+				continue
+			}
+			if slotStart.Before(start.UTC()) {
+				continue
+			}
+			out = append(out, slotToPreviewSlot(ch, slot, slotStart, movies, series))
+			if len(out) >= perChannel {
+				break
+			}
+		}
+		day = day.Add(24 * time.Hour)
+	}
+	return out
+}
+
+func resolveCurrentSlotFromSlots(ch Channel, movies []catalog.Movie, series []catalog.Series, now time.Time) (ResolvedSlot, bool) {
+	day := time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	for _, candidateDay := range []time.Time{day, day.Add(-24 * time.Hour)} {
+		for _, slot := range ch.Slots {
+			slotStart, ok := slotStartTime(candidateDay, slot)
+			if !ok {
+				continue
+			}
+			slotEnd := slotStart.Add(time.Duration(slot.DurationMins) * time.Minute)
+			if !now.UTC().Before(slotStart) && now.UTC().Before(slotEnd) {
+				ps := slotToPreviewSlot(ch, slot, slotStart, movies, series)
+				return ResolvedSlot{PreviewSlot: ps, SourceURL: resolveEntryURL(slot.Entry, movies, series)}, true
+			}
+		}
+	}
+	return ResolvedSlot{}, false
+}
+
+func buildScheduleFromSlots(ch Channel, movies []catalog.Movie, series []catalog.Series, start, end time.Time) []PreviewSlot {
+	if len(ch.Slots) == 0 {
+		return nil
+	}
+	out := []PreviewSlot{}
+	day := time.Date(start.UTC().Year(), start.UTC().Month(), start.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	for !day.After(end) {
+		for _, slot := range ch.Slots {
+			slotStart, ok := slotStartTime(day, slot)
+			if !ok {
+				continue
+			}
+			slotEnd := slotStart.Add(time.Duration(slot.DurationMins) * time.Minute)
+			if slotEnd.After(start.UTC()) && slotStart.Before(end.UTC()) {
+				out = append(out, slotToPreviewSlot(ch, slot, slotStart, movies, series))
+			}
+		}
+		day = day.Add(24 * time.Hour)
+	}
+	return out
+}
+
+func slotStartTime(day time.Time, slot Slot) (time.Time, bool) {
+	parsed, err := time.Parse("15:04", strings.TrimSpace(slot.StartHHMM))
+	if err != nil {
+		return time.Time{}, false
+	}
+	return time.Date(day.Year(), day.Month(), day.Day(), parsed.Hour(), parsed.Minute(), 0, 0, time.UTC), true
+}
+
+func slotToPreviewSlot(ch Channel, slot Slot, start time.Time, movies []catalog.Movie, series []catalog.Series) PreviewSlot {
+	resolved := resolveEntryName(slot.Entry, movies, series)
+	if strings.TrimSpace(slot.Label) != "" {
+		resolved = strings.TrimSpace(slot.Label)
+	}
+	return PreviewSlot{
+		ChannelID:    ch.ID,
+		ChannelName:  ch.Name,
+		GuideNumber:  ch.GuideNumber,
+		StartsAtUTC:  start.UTC().Format(time.RFC3339),
+		EndsAtUTC:    start.UTC().Add(time.Duration(slot.DurationMins) * time.Minute).Format(time.RFC3339),
+		EntryType:    slot.Entry.Type,
+		EntryID:      entryID(slot.Entry),
+		ResolvedName: resolved,
+		DurationMins: slot.DurationMins,
+	}
 }
 
 func entryID(entry Entry) string {

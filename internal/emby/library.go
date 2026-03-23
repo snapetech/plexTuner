@@ -15,7 +15,7 @@ type LibraryCreateSpec struct {
 	CollectionType  string // "movies" or "tvshows"
 	Path            string
 	Refresh         bool
-	SourceItemCount int // optional migration hint; ignored by create/apply
+	SourceItemCount int      // optional migration hint; ignored by create/apply
 	SourceTitles    []string // optional migration hint; ignored by create/apply
 }
 
