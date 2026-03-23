@@ -125,7 +125,7 @@ fi
     printf '_Source: `docs/CHANGELOG.md` `Unreleased` section at tag time._\n\n'
   else
     if [[ -z "$COMMITS" ]]; then
-      printf '- No recorded changes found for `%s`.\n\n' "$TAG"
+      printf '%s\n\n' "- No recorded changes found for \`$TAG\`."
     else
       while IFS=$'\t' read -r sha subject; do
         highlight="$(subject_highlight "$subject")"
@@ -139,7 +139,7 @@ fi
 
   printf '## Included Commits\n\n'
   if [[ -z "$COMMITS" ]]; then
-    printf '- No commits found for `%s`.\n' "$TAG"
+    printf '%s\n' "- No commits found for \`$TAG\`."
   else
     while IFS=$'\t' read -r sha subject; do
       short_sha="${sha:0:7}"
