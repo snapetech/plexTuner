@@ -78,3 +78,33 @@ jobs:
             dist/*.tar.gz
             dist/*.zip
             dist/SHA256SUMS.txt
+
+  announce-discord:
+    name: Announce Release to Discord
+    needs: [release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post Discord announcement
+        env:
+          DISCORD_RELEASE_WEBHOOK: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
+          RELEASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$DISCORD_RELEASE_WEBHOOK" ]; then
+            echo "DISCORD_RELEASE_WEBHOOK is not configured; skipping Discord announcement."
+            exit 0
+          fi
+
+          payload=$(cat <<EOF
+          {
+            "content": "📡 **Tunerr release published**\nVersion: \`${VERSION}\`\nRelease: ${RELEASE_URL}"
+          }
+          EOF
+          )
+
+          curl --fail --silent --show-error \
+            -H "Content-Type: application/json" \
+            -d "$payload" \
+            "$DISCORD_RELEASE_WEBHOOK"
