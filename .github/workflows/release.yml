@@ -108,3 +108,34 @@ jobs:
             -H "Content-Type: application/json" \
             -d "$payload" \
             "$DISCORD_RELEASE_WEBHOOK"
+
+      - name: Post Matrix announcement
+        env:
+          MATRIX_RELEASE_ACCESS_TOKEN: ${{ secrets.TIMEWAYS_MATRIX_RELEASE_TOKEN }}
+          MATRIX_BASE_URL: https://matrix.timeways.net
+          RELEASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$MATRIX_RELEASE_ACCESS_TOKEN" ]; then
+            echo "TIMEWAYS_MATRIX_RELEASE_TOKEN is not configured; skipping Matrix announcement."
+            exit 0
+          fi
+
+          payload=$(cat <<EOF
+          {
+            "msgtype": "m.text",
+            "body": "📡 Tunerr release published\nVersion: ${VERSION}\nRelease: ${RELEASE_URL}"
+          }
+          EOF
+          )
+
+          txn_id="iptvtunerr-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          curl --fail --silent --show-error \
+            -X PUT \
+            -H "Authorization: Bearer ${MATRIX_RELEASE_ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$payload" \
+            "${MATRIX_BASE_URL}/_matrix/client/r0/rooms/%21feVqoCPCPPaCQmTCEE%3Atimeways.net/send/m.room.message/${txn_id}"
