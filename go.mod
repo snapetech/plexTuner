@@ -6,7 +6,7 @@ require (
 	github.com/andybalholm/brotli v1.2.0
 	github.com/hanwen/go-fuse/v2 v2.9.0
 	github.com/prometheus/client_golang v1.23.2
-	golang.org/x/net v0.52.0
+	golang.org/x/net v0.53.0
 	golang.org/x/time v0.15.0
 	modernc.org/sqlite v1.46.1
 )
@@ -27,7 +27,7 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
-	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
 	google.golang.org/protobuf v1.36.8 // indirect
 	modernc.org/libc v1.67.6 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
