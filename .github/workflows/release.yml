@@ -153,12 +153,14 @@ jobs:
 
           if [ -n "$previous_event_id" ]; then
             redact_txn="redact-${MATRIX_PROJECT_KEY}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-            curl --fail --silent --show-error \
+            if ! curl --fail --silent --show-error \
               -X POST \
               -H "Authorization: Bearer ${MATRIX_RELEASE_ACCESS_TOKEN}" \
               -H "Content-Type: application/json" \
               -d '{"reason":"Superseded by newer release announcement"}' \
-              "${MATRIX_BASE_URL}/_matrix/client/r0/rooms/%21feVqoCPCPPaCQmTCEE%3Atimeways.net/redact/${previous_event_id}/${redact_txn}"
+              "${MATRIX_BASE_URL}/_matrix/client/r0/rooms/%21feVqoCPCPPaCQmTCEE%3Atimeways.net/redact/${previous_event_id}/${redact_txn}"; then
+              echo "Matrix release-announcement redact failed; continuing without failing the release workflow."
+            fi
           fi
 
           payload="$(jq -cn \
@@ -174,9 +176,11 @@ jobs:
 
           txn_id="${MATRIX_PROJECT_KEY}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
-          curl --fail --silent --show-error \
+          if ! curl --fail --silent --show-error \
             -X PUT \
             -H "Authorization: Bearer ${MATRIX_RELEASE_ACCESS_TOKEN}" \
             -H "Content-Type: application/json" \
             -d "$payload" \
-            "${MATRIX_BASE_URL}/_matrix/client/r0/rooms/%21feVqoCPCPPaCQmTCEE%3Atimeways.net/send/m.room.message/${txn_id}"
+            "${MATRIX_BASE_URL}/_matrix/client/r0/rooms/%21feVqoCPCPPaCQmTCEE%3Atimeways.net/send/m.room.message/${txn_id}"; then
+            echo "Matrix release announcement failed; continuing without failing the release workflow."
+          fi
