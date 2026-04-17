@@ -34,8 +34,8 @@ func TestXMLTV_serve(t *testing.T) {
 	var tv struct {
 		Source   string `xml:"source-info-name,attr"`
 		Channels []struct {
-			ID      string `xml:"id,attr"`
-			Display string `xml:"display-name"`
+			ID       string   `xml:"id,attr"`
+			Displays []string `xml:"display-name"`
 		} `xml:"channel"`
 		Programmes []struct {
 			Channel string `xml:"channel,attr"`
@@ -49,7 +49,7 @@ func TestXMLTV_serve(t *testing.T) {
 	if tv.Source != "IPTV Tunerr (guide loading placeholder)" {
 		t.Fatalf("source=%q", tv.Source)
 	}
-	if len(tv.Channels) != 1 || tv.Channels[0].ID != "1" || tv.Channels[0].Display != "Ch1" {
+	if len(tv.Channels) != 1 || tv.Channels[0].ID != "1" || !containsString(tv.Channels[0].Displays, "Ch1") {
 		t.Errorf("channels: %+v", tv.Channels)
 	}
 	if len(tv.Programmes) != 1 || tv.Programmes[0].Title != "Ch1 (guide loading)" {
@@ -211,8 +211,8 @@ func TestXMLTV_epgPruneUnlinked(t *testing.T) {
 	dec := xml.NewDecoder(w.Body)
 	var tv struct {
 		Channels []struct {
-			ID      string `xml:"id,attr"`
-			Display string `xml:"display-name"`
+			ID       string   `xml:"id,attr"`
+			Displays []string `xml:"display-name"`
 		} `xml:"channel"`
 	}
 	if err := dec.Decode(&tv); err != nil {
@@ -221,11 +221,11 @@ func TestXMLTV_epgPruneUnlinked(t *testing.T) {
 	if len(tv.Channels) != 2 {
 		t.Fatalf("EpgPruneUnlinked should include only 2 channels with TVGID; got %d", len(tv.Channels))
 	}
-	ids := make(map[string]string)
+	ids := make(map[string][]string)
 	for _, ch := range tv.Channels {
-		ids[ch.ID] = ch.Display
+		ids[ch.ID] = ch.Displays
 	}
-	if ids["1"] != "With TVG" || ids["3"] != "With TVG 2" {
+	if !containsString(ids["1"], "With TVG") || !containsString(ids["3"], "With TVG 2") {
 		t.Errorf("channels: %+v", tv.Channels)
 	}
 }
@@ -250,8 +250,8 @@ func TestXMLTV_forceLineupMatchOverridesPrune(t *testing.T) {
 	dec := xml.NewDecoder(w.Body)
 	var tv struct {
 		Channels []struct {
-			ID      string `xml:"id,attr"`
-			Display string `xml:"display-name"`
+			ID       string   `xml:"id,attr"`
+			Displays []string `xml:"display-name"`
 		} `xml:"channel"`
 	}
 	if err := dec.Decode(&tv); err != nil {
@@ -260,11 +260,11 @@ func TestXMLTV_forceLineupMatchOverridesPrune(t *testing.T) {
 	if len(tv.Channels) != 3 {
 		t.Fatalf("force lineup match should include all 3 channels; got %d", len(tv.Channels))
 	}
-	ids := make(map[string]string)
+	ids := make(map[string][]string)
 	for _, ch := range tv.Channels {
-		ids[ch.ID] = ch.Display
+		ids[ch.ID] = ch.Displays
 	}
-	if ids["1"] != "With TVG" || ids["2"] != "No TVG" || ids["3"] != "With TVG 2" {
+	if !containsString(ids["1"], "With TVG") || !containsString(ids["2"], "No TVG") || !containsString(ids["3"], "With TVG 2") {
 		t.Errorf("channels: %+v", tv.Channels)
 	}
 }
@@ -449,8 +449,8 @@ func TestXMLTV_externalSourceRemap(t *testing.T) {
 
 	var tv struct {
 		Channels []struct {
-			ID      string `xml:"id,attr"`
-			Display string `xml:"display-name"`
+			ID       string   `xml:"id,attr"`
+			Displays []string `xml:"display-name"`
 		} `xml:"channel"`
 		Programmes []struct {
 			Channel string `xml:"channel,attr"`
@@ -463,7 +463,7 @@ func TestXMLTV_externalSourceRemap(t *testing.T) {
 	if len(tv.Channels) != 2 {
 		t.Fatalf("channels len = %d, want 2", len(tv.Channels))
 	}
-	if tv.Channels[0].ID != "101" || tv.Channels[0].Display != "BBC ONE HD" {
+	if tv.Channels[0].ID != "101" || !containsString(tv.Channels[0].Displays, "BBC ONE HD") {
 		t.Fatalf("first remapped channel wrong: %+v", tv.Channels[0])
 	}
 	if len(tv.Programmes) != 2 {
@@ -567,8 +567,8 @@ func TestXMLTV_buildMergedEPG_UsesRealProgrammeBlocksNotPlaceholder(t *testing.T
 
 	var tv struct {
 		Channels []struct {
-			ID      string `xml:"id,attr"`
-			Display string `xml:"display-name"`
+			ID       string   `xml:"id,attr"`
+			Displays []string `xml:"display-name"`
 		} `xml:"channel"`
 		Programmes []struct {
 			Channel string `xml:"channel,attr"`
@@ -640,4 +640,63 @@ func TestXMLTV_buildMergedEPG_HDHRGuideURL(t *testing.T) {
 	if !strings.Contains(body, `channel="12"`) {
 		t.Fatalf("expected remap to guide number 12: %s", body)
 	}
+}
+
+func TestXMLTV_servePlaceholder_plexSafeIDs(t *testing.T) {
+	x := &XMLTV{
+		PlexSafeIDs: true,
+		Channels:    []catalog.LiveChannel{{ChannelID: "stream-1", DNAID: "dna:test channel", GuideNumber: "101", GuideName: "Ch1"}},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/guide.xml", nil)
+	w := httptest.NewRecorder()
+	x.ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("code: %d", w.Code)
+	}
+	var tv struct {
+		Channels []struct {
+			ID string `xml:"id,attr"`
+		} `xml:"channel"`
+		Programmes []struct {
+			Channel string `xml:"channel,attr"`
+		} `xml:"programme"`
+	}
+	if err := xml.Unmarshal(w.Body.Bytes(), &tv); err != nil {
+		t.Fatal(err)
+	}
+	if got := tv.Channels[0].ID; got != "c2t" {
+		t.Fatalf("channel id=%q want c2t", got)
+	}
+	if got := tv.Programmes[0].Channel; got != "c2t" {
+		t.Fatalf("programme channel=%q want c2t", got)
+	}
+}
+
+func TestBuildCatchupCapsulePreview_matchesPlexSafeXMLTVIDs(t *testing.T) {
+	now := time.Date(2026, 3, 20, 12, 0, 0, 0, time.UTC)
+	rep, err := BuildCatchupCapsulePreview([]catalog.LiveChannel{{ChannelID: "alpha", DNAID: "dna:alpha", GuideNumber: "101", GuideName: "Alpha East"}}, []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="c2t"><display-name>Alpha East</display-name></channel>
+  <programme start="20260320113000 +0000" stop="20260320123000 +0000" channel="c2t">
+    <title>Capsule</title>
+  </programme>
+</tv>`), now, time.Hour, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Capsules) != 1 {
+		t.Fatalf("capsules=%d want 1", len(rep.Capsules))
+	}
+	if rep.Capsules[0].ChannelID != "alpha" || rep.Capsules[0].GuideNumber != "101" {
+		t.Fatalf("capsule=%+v", rep.Capsules[0])
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

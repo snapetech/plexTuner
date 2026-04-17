@@ -107,6 +107,9 @@ type Config struct {
 	SmoketestCacheTTL  time.Duration // how long a probe result is considered fresh (default 4h)
 	// XMLTV cache: cache the external XMLTV feed to avoid hammering the upstream on every /guide.xml request.
 	XMLTVCacheTTL time.Duration // 0 = use default 10m
+	// XMLTVPlexSafeIDs rewrites emitted XMLTV channel ids away from raw guide numbers so Plex's
+	// XMLTV importer can avoid collisions with existing provider/global channel ids.
+	XMLTVPlexSafeIDs bool
 	// Web UI: dedicated dashboard listener on a separate port that proxies the tuner API.
 	WebUIEnabled       bool
 	WebUIPort          int
@@ -227,6 +230,7 @@ func Load() *Config {
 		SmoketestCacheFile:          os.Getenv("IPTV_TUNERR_SMOKETEST_CACHE_FILE"),
 		SmoketestCacheTTL:           getEnvDuration("IPTV_TUNERR_SMOKETEST_CACHE_TTL", 4*time.Hour),
 		XMLTVCacheTTL:               getEnvDuration("IPTV_TUNERR_XMLTV_CACHE_TTL", 10*time.Minute),
+		XMLTVPlexSafeIDs:            getEnvBool("IPTV_TUNERR_XMLTV_PLEX_SAFE_IDS", false),
 		WebUIEnabled:                !getEnvBool("IPTV_TUNERR_WEBUI_DISABLED", false),
 		WebUIPort:                   getEnvInt("IPTV_TUNERR_WEBUI_PORT", 48879),
 		WebUIAllowLAN:               getEnvBool("IPTV_TUNERR_WEBUI_ALLOW_LAN", getEnvBool("IPTV_TUNERR_UI_ALLOW_LAN", false)),

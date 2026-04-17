@@ -24,6 +24,27 @@ It exists to encourage quality gains without derailing the current task.
 
 ## Entries
 
+- Date: 2026-04-13
+  Category: other
+  Title: Split the product surface into simple user, operator, and lab lanes
+  Context: User-provided audit plus reviewed repo snapshot found that Tunerr currently behaves like three products welded together: end-user IPTV bridge, operator/diagnostics plane, and lab/migration toolbox. This pass fixed the first-run gap with `setup-doctor` and `.env.minimal.example`, but the default docs/help/deck surface still carries too much advanced context for ordinary first-run users.
+  Why it matters: New users should reach a narrow golden path quickly; today the advanced migration/oracle/fleet/operator surfaces still dominate the repo mental model even when they are not needed.
+  Evidence: Audit notes in `~/Downloads/IPTVTunerr_audit_and_cleanup.md`; repo observations called out there include `64` CLI commands with `38` in `Lab/ops`, `139` env vars in config, and `42` deck/report surfaces.
+  Suggested fix: Treat this as a productization epic: define explicit personas and defaults, keep simple onboarding/help/deck views narrow, and demote advanced operator/lab workflows behind clearer docs/help groupings or feature-gated views rather than exposing everything equally on first contact.
+  Risk/Scope: high | fits current scope? no
+  User decision needed?: yes
+  If yes: 1) Docs/help/deck surfacing split only (Recommended), 2) hard feature-gating inside one binary, 3) separate advanced/admin distribution lane. If no answer: keep the new onboarding path as the default and leave this as backlog.
+
+- Date: 2026-04-13
+  Category: maintainability
+  Title: Continue breaking up `internal/tuner/server.go` and `internal/webui/webui.go`
+  Context: The same audit flagged the remaining monolith files as a long-term fragility source even when behavior is correct. This pass deliberately did not touch them because the requested merge was onboarding-focused.
+  Why it matters: Large route/controller files raise merge risk, hide product boundaries, and make later simplification or UX cleanup harder.
+  Evidence: Audit notes cite `internal/tuner/server.go` (~7.7k LOC in the reviewed snapshot) and `internal/webui/webui.go` (~1.7k LOC) as the main hotspots; repo map already points at both as dense route/action surfaces.
+  Suggested fix: Split by route/workflow ownership: for tuner server, group report endpoints, safe actions, diagnostics, and compatibility UI separately; for web UI, split auth/session, proxy transport, workflow handlers, and persistence/state helpers into dedicated files.
+  Risk/Scope: med | fits current scope? no
+  User decision needed?: no
+
 - Date: 2026-03-22
   Category: other
   Title: Grow Tunerr into a full general-purpose library janitor

@@ -14,13 +14,13 @@
     <div class="brand">
       <div class="eyebrow">Port [[.Port]] · v[[.Version]]</div>
       <h1>Control Deck</h1>
-      <p>Operator surface for guide health, routing, intelligence, recordings, and runtime state.</p>
+      <p>Start with setup readiness and connection URLs, then move into guide health, routing, and advanced tools only if needed.</p>
     </div>
 
     <nav class="nav" id="mode-nav" aria-label="Deck modes">
       <button type="button" data-mode="overview" class="active" aria-controls="section-overview" aria-pressed="true">
         <strong>Overview</strong>
-        <span>Front page, major signals, quick routes.</span>
+        <span>Readiness, connection URLs, and quick routes.</span>
       </button>
       <button type="button" data-mode="guide" aria-controls="section-guide" aria-pressed="false">
         <strong>Guide</strong>
@@ -30,17 +30,17 @@
         <strong>Routing</strong>
         <span>Provider behavior, fallback evidence, HDHR surfaces.</span>
       </button>
-      <button type="button" data-mode="ops" aria-controls="section-ops" aria-pressed="false">
-        <strong>Operations</strong>
-        <span>Autopilot, recorder, media-server hooks, ghosts.</span>
+      <button type="button" data-mode="ops" data-advanced-nav="true" aria-controls="section-ops" aria-pressed="false">
+        <strong>Advanced Ops</strong>
+        <span>Recorder, autopilot, media-server hooks, ghosts.</span>
       </button>
       <button type="button" data-mode="programming" aria-controls="section-programming" aria-pressed="false">
-        <strong>Programming</strong>
-        <span>Category curation, manual lineup shaping, backups.</span>
+        <strong>Lineup</strong>
+        <span>Category curation, ordering, backups, virtual channels.</span>
       </button>
       <button type="button" data-mode="settings" aria-controls="section-settings" aria-pressed="false">
         <strong>Settings</strong>
-        <span>Effective runtime config, endpoint index, raw JSON.</span>
+        <span>Runtime config, advanced surfaces, raw JSON.</span>
       </button>
     </nav>
 
@@ -55,7 +55,7 @@
       </div>
       <div class="mini-card">
         <strong>Quick Doors</strong>
-        <p><a href="/api/ui/" target="_blank" rel="noreferrer">Legacy UI</a> · <a href="/api/guide.xml" target="_blank" rel="noreferrer">Guide XML</a> · <a href="/api/live.m3u" target="_blank" rel="noreferrer">Live M3U</a></p>
+        <p><a href="/deck/setup-doctor.json" target="_blank" rel="noreferrer">Setup Doctor</a> · <a href="/api/guide.xml" target="_blank" rel="noreferrer">Guide XML</a> · <a href="/api/live.m3u" target="_blank" rel="noreferrer">Live M3U</a> · <a href="/api/ui/" target="_blank" rel="noreferrer">Legacy UI</a></p>
       </div>
     </div>
   </aside>
@@ -91,13 +91,14 @@
         <div class="eyebrow">IPTV Tunerr Control Deck · dedicated listener on `0xBEEF`</div>
         <div class="hero-grid">
           <div>
-            <h2>Not a debug panel. A control plane.</h2>
+            <h2>Start with readiness, not the lab surface.</h2>
             <p>
-              This deck is structured like an operator cockpit: overview first, then dedicated lanes for guide integrity,
-              stream routing, operational automation, and settings. The goal is quick diagnosis without burying the user
-              in undifferentiated JSON.
+              This deck should answer four things first: is the source configured, is the base URL sane, are guide and
+              tuner URLs reachable, and what should you connect in Plex, Emby, or Jellyfin. Advanced operator and lab
+              surfaces are still here, but they are not the default path.
             </p>
             <div class="hero-links">
+              <a class="pill" href="/deck/setup-doctor.json" target="_blank" rel="noreferrer">Setup Doctor JSON</a>
               <a class="pill" href="/api/discover.json" target="_blank" rel="noreferrer">HDHR Discover</a>
               <a class="pill" href="/api/provider/profile.json" target="_blank" rel="noreferrer">Provider Profile</a>
               <a class="pill" href="/api/debug/stream-attempts.json?limit=20" target="_blank" rel="noreferrer">Stream Attempts</a>
@@ -121,7 +122,7 @@
               <div class="panel-head">
                 <div>
                   <h3>Decision Board</h3>
-                  <p>Immediate operator questions this deck answers.</p>
+                  <p>Immediate setup and health questions this deck answers.</p>
                 </div>
               </div>
               <div class="stack" id="decision-board"></div>
@@ -146,8 +147,8 @@
           <article class="panel">
             <div class="panel-head">
               <div>
-                <h3 id="section-overview-title">Executive Overview</h3>
-                <p>The “is this box actually healthy?” layer.</p>
+                <h3 id="section-overview-title">Readiness Overview</h3>
+                <p>The shortest path from first run to a connectable tuner.</p>
               </div>
             </div>
             <div class="story-grid" id="overview-stories"></div>
@@ -157,7 +158,7 @@
             <div class="panel-head">
               <div>
                 <h3>Hot Trail</h3>
-                <p>Recent evidence and live pressure points.</p>
+                <p>Recent evidence, next steps, and live pressure points.</p>
               </div>
             </div>
             <div class="timeline" id="overview-timeline"></div>
@@ -168,7 +169,7 @@
           <div class="panel-head">
             <div>
               <h3>Fast Lanes</h3>
-              <p>Jump directly to the surface you need without hunting.</p>
+              <p>Common paths first, advanced lanes after that.</p>
             </div>
           </div>
           <div class="route-grid" id="fast-lanes"></div>

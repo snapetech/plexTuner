@@ -3,6 +3,7 @@ const endpoints = {
   deckTelemetry: "/deck/telemetry.json",
   deckActivity: "/deck/activity.json",
   deckSettings: "/deck/settings.json",
+  setupDoctor: "/deck/setup-doctor.json",
   runtime: "/api/debug/runtime.json",
   health: "/api/healthz",
   guideHealth: "/api/guide/health.json",
@@ -48,6 +49,7 @@ const endpointCatalog = {
   deckTelemetry: { title: "Deck Telemetry", category: "Deck Memory", summary: "Read-only deck telemetry endpoint; browser trend memory stays local to the current operator session." },
   deckActivity: { title: "Deck Activity", category: "Deck Memory", summary: "Server-derived operator activity trail for the dedicated deck." },
   deckSettings: { title: "Deck Settings", category: "Deck Control", summary: "Runtime-backed deck posture and editable refresh cadence for the dedicated deck." },
+  setupDoctor: { title: "Setup Doctor", category: "First Run", summary: "First-run readiness contract: source config, public base URL, deck access, and exact next steps." },
   runtime: { title: "Runtime Snapshot", category: "Runtime", summary: "Effective config and capability snapshot for the running tuner." },
   health: { title: "Health", category: "Runtime", summary: "Basic liveness and loaded-channel count." },
   guideHealth: { title: "Guide Health", category: "Guide", summary: "Guide quality, placeholder count, and stale-channel pressure." },
@@ -163,12 +165,12 @@ const actionDefinitions = {
 };
 
 const modeTitles = {
-  overview: ["Overview", "Live State"],
+  overview: ["Overview", "Setup + Health"],
   guide: ["Guide", "Integrity"],
   routing: ["Routing", "Decision Trail"],
-  ops: ["Operations", "Automation"],
-  programming: ["Programming", "Lineup Curation"],
-  settings: ["Settings", "Runtime Snapshot"]
+  ops: ["Advanced Ops", "Automation"],
+  programming: ["Lineup", "Curation"],
+  settings: ["Settings", "Runtime + Advanced"]
 };
 
 const state = {
@@ -177,6 +179,7 @@ const state = {
   oidcApplyHistoryFilter: "all",
   payloads: {},
   selectedRaw: "runtime",
+  showAdvancedSurfaces: false,
   modalView: { kind: "raw", key: "runtime" },
   modalForm: null,
   lastFocusedElement: null,
@@ -828,6 +831,8 @@ function renderDeckSettingsPanel(settings) {
   const refreshValue = Number(settings?.default_refresh_sec ?? state.refreshRateSec ?? 30);
   const runtimeReplayBytes = state.payloads.runtime?.body?.tuner?.shared_relay_replay_bytes ?? "";
   const runtimeVirtualLiveStall = state.payloads.runtime?.body?.tuner?.virtual_channel_recovery_live_stall_sec ?? "";
+  const visibleCount = visibleEndpointKeys().length;
+  const totalCount = Object.keys(endpoints).length;
   deckSettingsForm.innerHTML = `
     <div class="deck-settings-grid">
       <label>
@@ -848,12 +853,16 @@ function renderDeckSettingsPanel(settings) {
         Virtual Live Stall Sec
         <input id="deck-settings-virtual-live-stall-sec" type="number" min="0" step="1" value="${esc(runtimeVirtualLiveStall)}" placeholder="5" />
       </label>
+      <label>
+        Show Advanced Surfaces
+        <input id="deck-settings-show-advanced" type="checkbox"${state.showAdvancedSurfaces ? " checked" : ""} />
+      </label>
     </div>
     <div class="deck-settings-actions">
       <button id="deck-settings-save" type="button">Save Deck Preferences</button>
     </div>
     <div class="deck-settings-note">
-      Session TTL: ${esc(pretty(settings?.effective_session_ttl_minutes))} minutes. Login rate limit: ${esc(pretty(settings?.login_failure_limit))} failures per ${esc(pretty(settings?.login_failure_window_minutes))} minutes. Authentication is configured from startup env only. Shared replay bytes apply to new shared live sessions only. Virtual live stall seconds apply to new virtual-channel sessions only. ${settings?.state_persisted ? "Deck preferences persist across restarts." : "Without a web UI state file, deck preferences last only until this process restarts."}
+      Session TTL: ${esc(pretty(settings?.effective_session_ttl_minutes))} minutes. Login rate limit: ${esc(pretty(settings?.login_failure_limit))} failures per ${esc(pretty(settings?.login_failure_window_minutes))} minutes. Authentication is configured from startup env only. Shared replay bytes apply to new shared live sessions only. Virtual live stall seconds apply to new virtual-channel sessions only. Raw endpoint index currently shows ${esc(pretty(visibleCount))} of ${esc(pretty(totalCount))} surfaces. ${settings?.state_persisted ? "Deck preferences persist across restarts." : "Without a web UI state file, deck preferences last only until this process restarts."}
     </div>
   `;
 }
@@ -984,6 +993,7 @@ function loadPersistedState() {
       if (prefs.mode && modeTitles[prefs.mode]) state.mode = prefs.mode;
       if (Number.isFinite(Number(prefs.refreshRateSec))) state.refreshRateSec = Number(prefs.refreshRateSec);
       if (prefs.selectedRaw && endpoints[prefs.selectedRaw]) state.selectedRaw = prefs.selectedRaw;
+      state.showAdvancedSurfaces = !!prefs.showAdvancedSurfaces;
       if (["all", "success", "failed"].includes(String(prefs.oidcApplyHistoryFilter || ""))) state.oidcApplyHistoryFilter = String(prefs.oidcApplyHistoryFilter);
       if (prefs.programmingSelectedChannelId) state.programmingSelectedChannelId = String(prefs.programmingSelectedChannelId);
       if (prefs.programmingSelectedCategoryId) state.programmingSelectedCategoryId = String(prefs.programmingSelectedCategoryId);
@@ -1002,6 +1012,7 @@ function persistPrefs() {
       mode: state.mode,
       refreshRateSec: state.refreshRateSec,
       selectedRaw: state.selectedRaw,
+      showAdvancedSurfaces: state.showAdvancedSurfaces,
       oidcApplyHistoryFilter: state.oidcApplyHistoryFilter,
       programmingSelectedChannelId: state.programmingSelectedChannelId,
       programmingSelectedCategoryId: state.programmingSelectedCategoryId,
@@ -1383,6 +1394,12 @@ function renderWorkflowModal(workflowKey) {
 
 function renderActionDock(operatorStatus, guideWorkflow, streamWorkflow, opsWorkflow) {
   const refreshStatus = operatorStatus.guide_refresh?.status || {};
+  const advancedOpsAction = state.showAdvancedSurfaces
+    ? `${createWorkflowButton("opsWorkflow", "Open Ops Workflow")}`
+    : `<button class="tiny" type="button" data-mode-jump="settings">Enable Advanced Surfaces</button>`;
+  const advancedWorkflowAction = (workflowKey, label = "Open Workflow") => state.showAdvancedSurfaces
+    ? `${createWorkflowButton(workflowKey, label)}`
+    : `<button class="tiny" type="button" data-mode-jump="settings">Enable Advanced Surfaces</button>`;
   const banner = state.actionFeedback
     ? `<div class="action-banner ${actionKind(state.actionFeedback)}" role="status" aria-live="polite" tabindex="-1"><strong>${esc(state.actionFeedback.action)}</strong><div>${esc(state.actionFeedback.message)}</div><div class="meta">${esc(formatWhen(state.actionFeedback.at))}${state.actionFeedback.detail ? ` · detail: ${esc(pretty(state.actionFeedback.detail))}` : ""}</div></div>`
     : "";
@@ -1413,10 +1430,10 @@ function renderActionDock(operatorStatus, guideWorkflow, streamWorkflow, opsWork
       <article class="action-panel">
         <h3>Automation Memory</h3>
         <p>Autopilot memory is useful when it is helping and dangerous when it is stale. Reset it deliberately, not casually.</p>
-        <div class="meta">${operatorStatus.autopilot_reset?.available ? "Autopilot actions are available." : "Autopilot state is not configured in this process."}</div>
+        <div class="meta">${state.showAdvancedSurfaces ? (operatorStatus.autopilot_reset?.available ? "Autopilot actions are available." : "Autopilot state is not configured in this process.") : "Automation recovery actions are hidden from the default deck path."}</div>
         <div class="action-row">
-          ${createWorkflowButton("opsWorkflow", "Open Ops Workflow")}
-          ${createActionButton("autopilot_reset")}
+          ${advancedOpsAction}
+          ${state.showAdvancedSurfaces ? createActionButton("autopilot_reset") : ""}
           <button class="tiny" type="button" data-inspect="autopilot">Inspect Autopilot</button>
           <button class="tiny" type="button" data-inspect="operatorActionsStatus">Inspect Action Status</button>
         </div>
@@ -1424,11 +1441,11 @@ function renderActionDock(operatorStatus, guideWorkflow, streamWorkflow, opsWork
       <article class="action-panel">
         <h3>Ghost Hunter</h3>
         <p>Use visible-stop first for stale sessions. Hidden-grab recovery stays guarded and split into dry-run vs restart on purpose.</p>
-        <div class="meta">${opsWorkflow.summary?.ghost?.recommended_action ? esc(pretty(opsWorkflow.summary.ghost.recommended_action)) : "Ghost Hunter guidance is available from the ops workflow."}</div>
+        <div class="meta">${state.showAdvancedSurfaces ? (opsWorkflow.summary?.ghost?.recommended_action ? esc(pretty(opsWorkflow.summary.ghost.recommended_action)) : "Ghost Hunter guidance is available from the ops workflow.") : "Ghost recovery helpers are hidden from the default deck path."}</div>
         <div class="action-row">
-          ${createActionButton("ghost_visible_stop")}
-          ${createActionButton("ghost_hidden_recover_dry_run", "Hidden Recovery Dry-Run")}
-          ${createActionButton("ghost_hidden_recover_restart", "Hidden Recovery Restart")}
+          ${state.showAdvancedSurfaces ? createActionButton("ghost_visible_stop") : advancedOpsAction}
+          ${state.showAdvancedSurfaces ? createActionButton("ghost_hidden_recover_dry_run", "Hidden Recovery Dry-Run") : ""}
+          ${state.showAdvancedSurfaces ? createActionButton("ghost_hidden_recover_restart", "Hidden Recovery Restart") : ""}
         </div>
       </article>
     </div>
@@ -1436,6 +1453,9 @@ function renderActionDock(operatorStatus, guideWorkflow, streamWorkflow, opsWork
 }
 
 function applyMode(mode) {
+  if (mode === "ops" && !state.showAdvancedSurfaces) {
+    mode = "settings";
+  }
   state.mode = mode;
   document.querySelectorAll("#mode-nav button").forEach((button) => {
     const active = button.dataset.mode === mode;
@@ -1453,10 +1473,42 @@ function applyMode(mode) {
   persistPrefs();
 }
 
+function syncAdvancedNavigation() {
+  document.querySelectorAll("#mode-nav [data-advanced-nav]").forEach((button) => {
+    const visible = state.showAdvancedSurfaces;
+    button.hidden = !visible;
+    button.setAttribute("aria-hidden", visible ? "false" : "true");
+  });
+  const opsSection = document.getElementById("section-ops");
+  if (opsSection) {
+    opsSection.hidden = !state.showAdvancedSurfaces;
+  }
+  if (!state.showAdvancedSurfaces && state.mode === "ops") {
+    state.mode = "settings";
+  }
+}
+
+const advancedEndpointCategories = new Set(["Deck Memory", "Deck Control", "Intelligence", "Operations", "Workflows"]);
+
+function isAdvancedEndpoint(key) {
+  const meta = endpointDetails(key);
+  return advancedEndpointCategories.has(meta.category);
+}
+
+function visibleEndpointKeys() {
+  const keys = Object.keys(endpoints);
+  if (state.showAdvancedSurfaces) return keys;
+  return keys.filter((key) => !isAdvancedEndpoint(key));
+}
+
 function fillRawSelectors() {
   rawSelect.innerHTML = "";
   const groups = {};
-  Object.keys(endpoints).forEach((key) => {
+  const keys = visibleEndpointKeys();
+  if (!keys.includes(state.selectedRaw)) {
+    state.selectedRaw = keys.includes("runtime") ? "runtime" : (keys[0] || "runtime");
+  }
+  keys.forEach((key) => {
     const meta = endpointDetails(key);
     const opt = document.createElement("option");
     opt.value = key;
@@ -1637,6 +1689,8 @@ function renderDeck() {
   const identityMigrationWorkflow = state.payloads.identityMigrationWorkflow?.body || {};
   const oidcMigrationWorkflow = state.payloads.oidcMigrationWorkflow?.body || {};
   const opsWorkflow = state.payloads.opsWorkflow?.body || {};
+  const setupDoctorPayload = state.payloads.setupDoctor?.body || {};
+  const setupDoctor = setupDoctorPayload.report || {};
   const deckSettings = state.payloads.deckSettings?.body || state.deckSettings || {};
   const activity = normalizeArray(state.payloads.deckActivity?.body?.entries).length
     ? normalizeArray(state.payloads.deckActivity?.body?.entries)
@@ -1646,13 +1700,16 @@ function renderDeck() {
     const val = `${item.reason || item.result || item.status || ""}`.toLowerCase();
     return val && val !== "ok";
   });
+  const setupDoctorChecks = normalizeArray(setupDoctor.checks);
+  const setupDoctorFails = setupDoctorChecks.filter((item) => item?.level === "fail");
+  const setupDoctorWarns = setupDoctorChecks.filter((item) => item?.level === "warn");
 
   setHealth(health.ok, health.ok ? "Healthy" : `HTTP ${health.status}`);
   renderFilters();
 
   postureCopy.textContent = health.ok
-    ? `Main listener ${runtime.listen_address || "unknown"} is answering and the deck can see live runtime state.`
-    : "The deck is loaded, but the tuner target is degraded or still starting.";
+    ? `Main listener ${runtime.listen_address || "unknown"} is answering. Use Setup Doctor below to confirm the exact tuner, guide, and deck URLs before connecting a media server.`
+    : "The deck is loaded, but the tuner target is degraded or still starting. Start with Setup Doctor and the base URL checks before troubleshooting deeper.";
 
   sessionKV.innerHTML = [
     ["Tuner base", runtime.base_url || bootData.tunerBase || "n/a"],
@@ -1667,7 +1724,7 @@ function renderDeck() {
   heroMeta.innerHTML = [
     `<div class="meta-pill"><strong>Active mode</strong><span>${esc(modeTitles[state.mode][0])}</span></div>`,
     `<div class="meta-pill"><strong>Refresh cadence</strong><span>${state.refreshRateSec > 0 ? `${state.refreshRateSec}s auto` : "manual only"}</span></div>`,
-    `<div class="meta-pill"><strong>Payload posture</strong><span>${health.ok ? "live deck with reachable tuner" : "deck up, tuner degraded"}</span></div>`,
+    `<div class="meta-pill"><strong>Payload posture</strong><span>${health.ok ? "connectable deck with reachable tuner" : "deck up, tuner degraded"}</span></div>`,
     `<div class="meta-pill"><strong>Deck memory</strong><span>${runtime.webui?.memory_persisted ? `persisted at ${pretty(runtime.webui?.state_file)}` : "process-only shared memory"}</span></div>`
   ].join("");
 
@@ -1675,6 +1732,7 @@ function renderDeck() {
   if (!health.ok) incidents.push(`Tuner health endpoint is returning HTTP ${health.status}.`);
   if ((guideHealth.summary?.stale_channels || 0) > 0) incidents.push(`${guideHealth.summary.stale_channels} guide channels are stale.`);
   if ((guideHealth.summary?.placeholder_only_channels || 0) > 0) incidents.push(`${guideHealth.summary.placeholder_only_channels} guide channels are placeholder-only.`);
+  if (setupDoctorFails.length > 0) incidents.push(`${setupDoctorFails.length} first-run setup check(s) are failing.`);
   if ((recorder.summary?.failed_count || 0) > 0) incidents.push(`${recorder.summary.failed_count} recorder items are failed.`);
   if (failedAttempts.length > 0) incidents.push(`${failedAttempts.length} recent stream attempts are non-OK.`);
   remediationHints.filter((h) => h && h.severity === "warn").slice(0, 4).forEach((h) => {
@@ -1684,6 +1742,7 @@ function renderDeck() {
 
   const watchItems = [];
   watchItems.push(`Provider entry count: ${pretty(runtime.provider?.entry_count || runtime.provider?.base_urls?.length || 0)}.`);
+  watchItems.push(`Setup doctor: ${setupDoctor.summary || "no setup summary loaded yet"}.`);
   watchItems.push(`Block Cloudflare providers: ${pretty(runtime.provider?.block_cf_providers)}.`);
   watchItems.push(`Web UI LAN access: ${pretty(runtime.webui?.allow_lan)}.`);
   watchItems.push(`EPG SQLite incremental upsert: ${pretty(runtime.guide?.epg_sqlite_incremental_upsert)}.`);
@@ -1711,6 +1770,7 @@ function renderDeck() {
 
   const wins = [];
   if (health.ok) wins.push("Deck can reach the tuner through the dedicated proxy origin.");
+  if (setupDoctor.ready) wins.push("First-run setup contract is currently green.");
   if ((guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes || 0) > 0) wins.push("Guide payload contains real programme coverage.");
   if ((channelReport.summary?.channels_with_backup_streams || 0) > 0) wins.push("Channel catalog includes backup-capable streams.");
   if (runtime.generated_at) wins.push("Runtime snapshot is available for settings auditing.");
@@ -1757,13 +1817,20 @@ function renderDeck() {
     createTrendCard("Ops Trend", `${clampPercent(metrics.opsPercent)}%`, trendSamples.map((item) => ({ value: item.opsPercent || item.ops_percent })), metrics.opsRisk > 0 ? "Recovery pressure is rising inside shared deck memory." : "Recovery pressure is flat or absent.")
   ].join("");
 
+  const advancedOpsAction = state.showAdvancedSurfaces
+    ? `${createWorkflowButton("opsWorkflow", "Open Advanced Ops")}`
+    : `<button class="tiny" type="button" data-mode-jump="settings">Enable Advanced Surfaces</button>`;
+  const advancedCardTitle = (label) => state.showAdvancedSurfaces ? label : `Advanced: ${label}`;
+
   decisionBoard.innerHTML = filterCards([
+    createCard("Am I actually ready to connect Plex, Emby, or Jellyfin?", setupDoctor.summary || "Setup doctor payload is unavailable.", `${pretty(setupDoctorFails.length)} fail · ${pretty(setupDoctorWarns.length)} warn · mode ${pretty(setupDoctor.mode || "easy")}`, setupDoctor.ready ? "tone-good" : "tone-warn", "setupDoctor", `<button class="tiny" type="button" data-inspect="setupDoctor">Inspect Setup</button>`),
     createCard("Is the guide believable?", `${pretty(guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes)} channels have programme data; ${pretty(guideHealth.summary?.placeholder_only_channels)} are placeholder-only.`, "", (guideHealth.summary?.placeholder_only_channels || 0) > 0 ? "tone-warn" : "tone-good", "guideHealth", `${createWorkflowButton("guideWorkflow", "Guide Playbook")}${createActionButton("guide_refresh", "Refresh Now")}`),
     createCard("Are streams falling back?", `${attempts.length} recent attempts tracked; ${attempts.slice(0, 2).map((item) => item.reason || item.result || item.status || "unknown").join(" | ") || "no recent evidence"}`, "", failedAttempts.length > 0 ? "tone-warn" : "tone-good", "attempts", `${createWorkflowButton("streamWorkflow", "Investigate")}${createActionButton("stream_attempts_clear", "Clear History")}`),
     createCard("Any provider remediation hints?", remediationHints.length
       ? remediationHints.slice(0, 4).map((h) => `${h.severity || "info"} · ${h.code}: ${h.message || ""}`).join(" · ")
       : "No advisory hints from current provider counters (see /api/provider/profile.json).", "", remediationHints.some((h) => h && h.severity === "warn") ? "tone-warn" : "", "provider", `<button class="tiny" type="button" data-open-path="/api/provider/profile.json" data-open-title="/provider/profile.json">Open JSON</button>`),
-    createCard("Is recording alive?", recorder.summary ? `${pretty(recorder.summary.active_count)} active, ${pretty(recorder.summary.failed_count)} failed, ${pretty(recorder.summary.completed_count)} completed.` : pretty(recorder.error || "No recorder state file configured"), "", (recorder.summary?.failed_count || 0) > 0 ? "tone-warn" : "", "recorder", `${createWorkflowButton("opsWorkflow", "Ops Recovery")}`),
+    createCard("Can I connect with the URLs shown here?", `Tuner ${pretty(setupDoctor.BaseURL || setupDoctor.base_url || bootData.tunerBase || "n/a")} · guide ${pretty(setupDoctor.GuideURL || setupDoctor.guide_url || "n/a")} · deck ${pretty(setupDoctor.DeckURL || setupDoctor.deck_url || "n/a")}.`, "", setupDoctor.ready ? "tone-good" : "tone-warn", "setupDoctor", `<button class="tiny" type="button" data-inspect="setupDoctor">Show URLs</button>`),
+    createCard("Is recording alive?", recorder.summary ? `${pretty(recorder.summary.active_count)} active, ${pretty(recorder.summary.failed_count)} failed, ${pretty(recorder.summary.completed_count)} completed.` : pretty(recorder.error || "No recorder state file configured"), state.showAdvancedSurfaces ? "Advanced lane: recorder and recovery posture." : "Advanced recorder and recovery surfaces are currently hidden from the main deck path.", (recorder.summary?.failed_count || 0) > 0 ? "tone-warn" : "", "recorder", advancedOpsAction),
     createCard("What config am I really running?", `Read-only snapshot exposed at /api/debug/runtime.json and summarized in the Settings lane.`, "", "", "runtime", `<button class="tiny" type="button" data-inspect="operatorActionsStatus">Action Status</button>`)
   ]).join("");
 
@@ -1775,14 +1842,15 @@ function renderDeck() {
   ]).join("");
 
   overviewStories.innerHTML = filterCards([
+    createCard("First-run posture", setupDoctor.summary || "Setup doctor payload is unavailable.", `${pretty(setupDoctor.BaseURL || setupDoctor.base_url || "no tuner URL")} · deck ${pretty(setupDoctor.DeckURL || setupDoctor.deck_url || "n/a")} · fail ${pretty(setupDoctorFails.length)} · warn ${pretty(setupDoctorWarns.length)}`, setupDoctor.ready ? "tone-good" : "tone-warn", "setupDoctor"),
     createCard("Guide posture", `${pretty(guideHealth.summary?.channels_with_real_programmes || guideHealth.summary?.channels_with_programmes)} real programme channels, ${pretty(guideHealth.summary?.stale_channels)} stale, ${pretty(guideHealth.summary?.placeholder_only_channels)} placeholder-only.`, "Guide confidence from /guide/health.json", (guideHealth.summary?.stale_channels || 0) > 0 ? "tone-warn" : "tone-good", "guideHealth"),
     createCard("Provider posture", providerSummary ? esc(JSON.stringify(providerSummary)) : esc(pretty(providerLoadErr || "Profile unavailable")), "Runtime provider behavior from /provider/profile.json", "", "provider"),
     createCard("Channel posture", channelReport.summary ? `${pretty(channelReport.summary.total_channels)} total, ${pretty(channelReport.summary.epg_linked_channels)} linked, ${pretty(channelReport.summary.channels_with_backup_streams)} backup-capable.` : pretty(channelReport.error), "Channel intelligence summary", "", "channelReport"),
-    createCard("Ops posture", recorder.summary ? `${pretty(recorder.summary.active_count)} active recordings with automation memory and publishing state available.` : pretty(recorder.error || "No recorder state"), "Recorder + automation surface", "", "recorder")
+    createCard("Advanced posture", recorder.summary ? `${pretty(recorder.summary.active_count)} active recordings with automation memory and publishing state available.` : pretty(recorder.error || "No recorder state"), "Recorder, automation, and recovery surfaces live deeper in the deck.", "", "recorder")
   ]).join("");
 
   overviewTimeline.innerHTML = filterCards([
-    createTimeline("Operator activity", activity.slice(0, 2).map((item) => `${item.title}: ${item.message || item.kind || "event"}`).join(" | ") || "No operator activity recorded yet."),
+    createTimeline("Recent activity", activity.slice(0, 2).map((item) => `${item.title}: ${item.message || item.kind || "event"}`).join(" | ") || "No shared deck activity recorded yet."),
     createTimeline("Latest runtime snapshot", esc(runtime.generated_at || "unknown")),
     createTimeline("Guide highlights", normalizeArray(guideHighlights.current).slice(0, 2).map((item) => `${item.channel_name || item.channel_id}: ${item.title}`).join(" | ") || "No live highlights"),
     createTimeline("Catch-up pressure", normalizeArray(capsules.capsules || capsules.items).slice(0, 2).map((item) => `${item.channel_name || item.channel_id}: ${item.title}`).join(" | ") || pretty(capsules.error || "No capsules")),
@@ -1790,11 +1858,14 @@ function renderDeck() {
   ]).join("");
 
   fastLanes.innerHTML = filterCards([
+    createCard("First-run lane", "Setup readiness, exact tuner and guide URLs, and the next safe steps for connecting Plex, Emby, or Jellyfin.", `<button class="tiny" type="button" data-inspect="setupDoctor">Open Setup Doctor</button>`),
     createCard("Guide lane", "Guide health, doctor, highlights, capsules, and SQLite horizon in one place.", `<button class="tiny" type="button" data-mode-jump="guide">Open Guide</button>`),
     createCard("Routing lane", "Fallback evidence, provider posture, attempt trail, and mux behavior.", `<button class="tiny" type="button" data-mode-jump="routing">Open Routing</button>`),
-    createCard("Operations lane", "Recorder status, autopilot memory, Plex ghost state, and media hooks.", `<button class="tiny" type="button" data-mode-jump="ops">Open Ops</button>`),
-    createCard("Programming lane", "Category-first curation, manual ordering, and exact backup grouping for the exposed lineup.", `<button class="tiny" type="button" data-mode-jump="programming">Open Programming</button>`),
-    createCard("Settings lane", "Effective runtime config, endpoint index, and raw payload drill-down.", `<button class="tiny" type="button" data-mode-jump="settings">Open Settings</button>`)
+    createCard("Lineup lane", "Category-first curation, manual ordering, exact backup grouping, and virtual-channel context for the exposed lineup.", `<button class="tiny" type="button" data-mode-jump="programming">Open Lineup</button>`),
+    state.showAdvancedSurfaces
+      ? createCard("Advanced ops lane", "Recorder status, autopilot memory, Plex ghost state, and recovery workflows.", `<button class="tiny" type="button" data-mode-jump="ops">Open Advanced Ops</button>`)
+      : createCard("Advanced ops lane", "Recorder, autopilot, ghost, and recovery tools are still available, but they stay off the default path until you enable advanced surfaces.", `<button class="tiny" type="button" data-mode-jump="settings">Open Settings</button>`),
+    createCard("Settings lane", "Effective runtime config first, then the advanced surface index and raw payload drill-down.", `<button class="tiny" type="button" data-mode-jump="settings">Open Settings</button>`)
   ]).join("");
 
   guideList.innerHTML = filterCards([
@@ -1825,34 +1896,34 @@ function renderDeck() {
     createCard("Shared live sessions", normalizeArray(sharedRelays.relays).length
       ? normalizeArray(sharedRelays.relays).slice(0, 4).map((item) => `${item.channel_id || "channel"} · ${item.shared_upstream || "shared"} · subs=${pretty(item.subscriber_count)}`).join(" | ")
       : (sharedRelays.count === 0 ? "No shared live sessions are active right now." : pretty(sharedRelays.error || "Shared relay report unavailable")), `count=${pretty(sharedRelays.count || 0)}`, "", "sharedRelays"),
-    createCard("Attempt volume", `${attempts.length} recent attempts in buffer. Top host pressure: ${attempts.slice(0, 3).map((item) => item.upstream_url_host || item.upstream_host || "unknown").join(", ") || "none"}`, "", failedAttempts.length > 0 ? "tone-warn" : "", "attempts", `${createWorkflowButton("streamWorkflow", "Failure Workflow")}${createWorkflowButton("diagnosticsWorkflow", "Capture Workflow")}${createActionButton("stream_attempts_clear")}`),
+    createCard("Attempt volume", `${attempts.length} recent attempts in buffer. Top host pressure: ${attempts.slice(0, 3).map((item) => item.upstream_url_host || item.upstream_host || "unknown").join(", ") || "none"}`, "", failedAttempts.length > 0 ? "tone-warn" : "", "attempts", `${createWorkflowButton("streamWorkflow", "Failure Workflow")}${state.showAdvancedSurfaces ? createWorkflowButton("diagnosticsWorkflow", "Capture Workflow") : `<button class="tiny" type="button" data-mode-jump="settings">Enable Advanced Surfaces</button>`}${createActionButton("stream_attempts_clear")}`),
     createCard("Fallback evidence", attempts.slice(0, 4).map((item) => `${item.channel_name || item.channel_id || "channel"} -> ${item.reason || item.result || item.status || "unknown"}`).join(" | ") || "No fallback evidence", "", "", "attempts", `<button class="tiny" type="button" data-inspect="streamWorkflow">Workflow Payload</button>`),
-    createCard("Diagnostics capture", diagnosticsWorkflow.summary?.suggested_bad_channel_id || diagnosticsWorkflow.summary?.suggested_good_channel_id
+    createCard(advancedCardTitle("Diagnostics capture"), diagnosticsWorkflow.summary?.suggested_bad_channel_id || diagnosticsWorkflow.summary?.suggested_good_channel_id
       ? `good=${pretty(diagnosticsWorkflow.summary?.suggested_good_channel_id)} · bad=${pretty(diagnosticsWorkflow.summary?.suggested_bad_channel_id)}`
-      : "No good/bad channel suggestion yet from recent attempts.", "", "", "diagnosticsWorkflow", `${createWorkflowButton("diagnosticsWorkflow", "Open Diagnostics")}${createActionButton("channel_diff_run")}${createActionButton("stream_compare_run")}${createActionButton("evidence_intake_start")}`),
-    createCard("Latest diagnostics", diagnosticRuns.length
+      : "No good/bad channel suggestion yet from recent attempts.", "", "", "diagnosticsWorkflow", state.showAdvancedSurfaces ? `${createWorkflowButton("diagnosticsWorkflow", "Open Diagnostics")}${createActionButton("channel_diff_run")}${createActionButton("stream_compare_run")}${createActionButton("evidence_intake_start")}` : `<button class="tiny" type="button" data-mode-jump="settings">Enable Advanced Surfaces</button>`),
+    createCard(advancedCardTitle("Latest diagnostics"), diagnosticRuns.length
       ? diagnosticRuns.map((run) => diagnosticsRunSummary(run)).filter(Boolean).join(" || ")
-      : "No recent channel-diff, stream-compare, multi-stream, or evidence bundle runs detected under .diag.", "", "", "diagnosticsWorkflow", `<button class="tiny" type="button" data-inspect="diagnosticsWorkflow">Workflow Payload</button>`),
-    createCard("Migration overlap", migrationWorkflow.summary?.configured
+      : "No recent channel-diff, stream-compare, multi-stream, or evidence bundle runs detected under .diag.", "", "", "diagnosticsWorkflow", state.showAdvancedSurfaces ? `<button class="tiny" type="button" data-inspect="diagnosticsWorkflow">Workflow Payload</button>` : `<button class="tiny" type="button" data-mode-jump="settings">Enable Advanced Surfaces</button>`),
+    createCard(advancedCardTitle("Migration overlap"), migrationWorkflow.summary?.configured
       ? `${pretty(migrationWorkflow.summary?.overall_status)} · ready ${pretty(migrationWorkflow.summary?.ready_target_count)}/${pretty(migrationWorkflow.summary?.target_count)} targets`
-      : pretty(migrationWorkflow.summary?.error || "Migration workflow is not configured on this process."), "", (migrationWorkflow.summary?.overall_status === "blocked_conflicts" ? "tone-warn" : migrationWorkflow.summary?.ready_to_apply ? "tone-good" : ""), "migrationWorkflow", `${createWorkflowButton("migrationWorkflow", "Open Migration Workflow")}<button class="tiny" type="button" data-inspect="migrationWorkflow">Workflow Payload</button>`),
-    createCard("Migration targets", normalizeArray(migrationWorkflow.summary?.targets).length
+      : pretty(migrationWorkflow.summary?.error || "Migration workflow is not configured on this process."), "", (migrationWorkflow.summary?.overall_status === "blocked_conflicts" ? "tone-warn" : migrationWorkflow.summary?.ready_to_apply ? "tone-good" : ""), "migrationWorkflow", state.showAdvancedSurfaces ? `${createWorkflowButton("migrationWorkflow", "Open Migration Workflow")}<button class="tiny" type="button" data-inspect="migrationWorkflow">Workflow Payload</button>` : `<button class="tiny" type="button" data-mode-jump="settings">Enable Advanced Surfaces</button>`),
+    createCard(advancedCardTitle("Migration targets"), normalizeArray(migrationWorkflow.summary?.targets).length
       ? normalizeArray(migrationWorkflow.summary.targets).map((item) => migrationTargetSummary(item)).filter(Boolean).join(" | ")
       : "No migration target summary available yet.", "", "", "migrationWorkflow"),
-    createCard("Identity cutover", identityMigrationWorkflow.summary?.configured
+    createCard(advancedCardTitle("Identity cutover"), identityMigrationWorkflow.summary?.configured
       ? `${pretty(identityMigrationWorkflow.summary?.overall_status)} · ready ${pretty(identityMigrationWorkflow.summary?.ready_target_count)}/${pretty(identityMigrationWorkflow.summary?.target_count)} targets`
-      : pretty(identityMigrationWorkflow.summary?.error || "Identity migration workflow is not configured on this process."), "", (identityMigrationWorkflow.summary?.overall_status === "blocked_conflicts" ? "tone-warn" : identityMigrationWorkflow.summary?.ready_to_apply ? "tone-good" : ""), "identityMigrationWorkflow", `${createWorkflowButton("identityMigrationWorkflow", "Open Identity Workflow")}<button class="tiny" type="button" data-inspect="identityMigrationWorkflow">Workflow Payload</button>`),
-    createCard("Identity targets", normalizeArray(identityMigrationWorkflow.summary?.targets).length
+      : pretty(identityMigrationWorkflow.summary?.error || "Identity migration workflow is not configured on this process."), "", (identityMigrationWorkflow.summary?.overall_status === "blocked_conflicts" ? "tone-warn" : identityMigrationWorkflow.summary?.ready_to_apply ? "tone-good" : ""), "identityMigrationWorkflow", state.showAdvancedSurfaces ? `${createWorkflowButton("identityMigrationWorkflow", "Open Identity Workflow")}<button class="tiny" type="button" data-inspect="identityMigrationWorkflow">Workflow Payload</button>` : `<button class="tiny" type="button" data-mode-jump="settings">Enable Advanced Surfaces</button>`),
+    createCard(advancedCardTitle("Identity targets"), normalizeArray(identityMigrationWorkflow.summary?.targets).length
       ? normalizeArray(identityMigrationWorkflow.summary.targets).map((item) => identityMigrationTargetSummary(item)).filter(Boolean).join(" | ")
       : "No identity target summary available yet.", "", "", "identityMigrationWorkflow"),
-    createCard("OIDC cutover", oidcMigrationWorkflow.summary?.configured
+    createCard(advancedCardTitle("OIDC cutover"), oidcMigrationWorkflow.summary?.configured
       ? `${pretty(oidcMigrationWorkflow.summary?.overall_status)} · ready ${pretty(oidcMigrationWorkflow.summary?.ready_target_count)}/${pretty(oidcMigrationWorkflow.summary?.target_count)} targets`
-      : pretty(oidcMigrationWorkflow.summary?.error || "OIDC migration workflow is not configured on this process."), "", (oidcMigrationWorkflow.summary?.ready_to_apply ? "tone-good" : ""), "oidcMigrationWorkflow", `${createWorkflowButton("oidcMigrationWorkflow", "Open OIDC Workflow")}${createActionButton("oidc_migration_apply")}<button class="tiny" type="button" data-inspect="oidcMigrationWorkflow">Workflow Payload</button>`),
-    createCard("OIDC targets", normalizeArray(oidcMigrationWorkflow.summary?.targets).length
+      : pretty(oidcMigrationWorkflow.summary?.error || "OIDC migration workflow is not configured on this process."), "", (oidcMigrationWorkflow.summary?.ready_to_apply ? "tone-good" : ""), "oidcMigrationWorkflow", state.showAdvancedSurfaces ? `${createWorkflowButton("oidcMigrationWorkflow", "Open OIDC Workflow")}${createActionButton("oidc_migration_apply")}<button class="tiny" type="button" data-inspect="oidcMigrationWorkflow">Workflow Payload</button>` : `<button class="tiny" type="button" data-mode-jump="settings">Enable Advanced Surfaces</button>`),
+    createCard(advancedCardTitle("OIDC targets"), normalizeArray(oidcMigrationWorkflow.summary?.targets).length
       ? normalizeArray(oidcMigrationWorkflow.summary.targets).map((item) => oidcMigrationTargetSummary(item)).filter(Boolean).join(" | ")
       : "No OIDC target summary available yet.", "", "", "oidcMigrationWorkflow"),
-    createCard("OIDC last apply", oidcMigrationLastApplySummary(oidcMigrationWorkflow.summary?.last_apply) || "No OIDC apply has been recorded in deck activity yet.", "", "", "oidcMigrationWorkflow"),
-    createCard("OIDC recent applies", oidcMigrationApplyHistorySummary(oidcMigrationWorkflow.summary?.recent_applies) || "No recent OIDC apply history matches the current filter.", `filter=${state.oidcApplyHistoryFilter}`, "", "oidcMigrationWorkflow", oidcApplyHistoryActions(oidcMigrationWorkflow.summary?.recent_applies)),
+    createCard(advancedCardTitle("OIDC last apply"), oidcMigrationLastApplySummary(oidcMigrationWorkflow.summary?.last_apply) || "No OIDC apply has been recorded in deck activity yet.", state.showAdvancedSurfaces ? "" : "Visible as an advanced summary only; enable advanced surfaces to work with the full OIDC workflow.", "", "oidcMigrationWorkflow"),
+    createCard(advancedCardTitle("OIDC recent applies"), oidcMigrationApplyHistorySummary(oidcMigrationWorkflow.summary?.recent_applies) || "No recent OIDC apply history matches the current filter.", state.showAdvancedSurfaces ? `filter=${state.oidcApplyHistoryFilter}` : "Visible as an advanced summary only; enable advanced surfaces to inspect apply details.", "", "oidcMigrationWorkflow", oidcApplyHistoryActions(oidcMigrationWorkflow.summary?.recent_applies)),
     createCard("HDHR contract", "discover.json, lineup.json, lineup_status.json, device.xml, and guide.xml still live on the tuner and are proxied here under /api.", "", "", "runtime"),
     createCard("Mux choices", "Native TS/fMP4/HLS surfaces exist; the deck is a supervisor over those capabilities, not a stream path itself.", "", "", "provider")
   ]).join("");
@@ -1932,7 +2003,7 @@ function renderDeck() {
        <button class="tiny" type="button" data-inspect="programmingRecipe">Inspect Recipe</button>`),
     createCard("Preview impact", `${pretty(programmingPreviewPayload.raw_channels)} raw channels -> ${pretty(programmingPreviewPayload.curated_channels)} curated channels. ${pretty(programmingInventory.length)} categories inventoried and ${pretty(backupGroups.length)} exact backup groups detected.`, "", "", "programmingPreview",
       `<button class="tiny" type="button" data-inspect="programmingPreview">Inspect Preview</button>`),
-    createCard("Plex lineup request", harvestRequestPayload.configured
+    createCard(advancedCardTitle("Plex lineup request"), harvestRequestPayload.configured
       ? `${pretty(harvestRequestPayload.target_count)} oracle target(s) configured · wait ${pretty(harvestRequestPayload.wait_seconds)}s · reload=${pretty(harvestRequestPayload.reload_guide)}`
       : "No Plex lineup harvest request targets are configured yet.",
       normalizeArray(harvestRequestPayload.targets).length
@@ -1940,12 +2011,12 @@ function renderDeck() {
         : "",
       harvestRequestPayload.configured ? "tone-good" : "tone-warn",
       "programmingHarvestRequest",
-      `${createActionButton("programming_harvest_request", "Request From Plex")}${createWorkflowButton("programmingHarvestWorkflow", "Harvest Workflow")}`),
-    createCard("Harvested lineup candidates", harvestLineups.length
+      `${state.showAdvancedSurfaces ? createActionButton("programming_harvest_request", "Request From Plex") : `<button class="tiny" type="button" data-mode-jump="settings">Enable Advanced Surfaces</button>`}${state.showAdvancedSurfaces ? createWorkflowButton("programmingHarvestWorkflow", "Harvest Workflow") : ``}`),
+    createCard(advancedCardTitle("Harvested lineup candidates"), harvestLineups.length
       ? harvestLineups.slice(0, 6).map((row) => `${row.lineup_title} (${row.best_channelmap_rows || 0})`).join(" | ")
       : "No persisted Plex lineup harvest report configured yet.", "", "", "programmingHarvest",
       `${harvestLineups[0] ? programmingHarvestButtons(harvestLineups[0]) : ""} <button class="tiny" type="button" data-inspect="programmingHarvest">Inspect Harvest</button>`),
-    createCard("Harvest assists", harvestAssists.length
+    createCard(advancedCardTitle("Harvest assists"), harvestAssists.length
       ? harvestAssists.slice(0, 4).map((row) => `${row.lineup_title}: ${row.recommendation_reason || `${row.matched_channels} matched`}`).join(" | ")
       : "No ranked harvest assists available yet.", "", "", "programmingHarvestAssist",
       `${harvestAssists[0] ? programmingHarvestAssistButtons(harvestAssists[0]) : ""} <button class="tiny" type="button" data-inspect="programmingHarvestAssist">Inspect Assists</button>`),
@@ -2082,6 +2153,16 @@ function renderDeck() {
   ].join("");
 
   settingsList.innerHTML = filterCards([
+    createSettingsCard("First-run contract", "The same setup-doctor readiness contract exposed by the CLI for basic onboarding.", [
+      ["Ready", setupDoctor.ready],
+      ["Mode", setupDoctor.mode],
+      ["Base URL", setupDoctor.base_url],
+      ["Guide URL", setupDoctor.guide_url],
+      ["Deck URL", setupDoctor.deck_url],
+      ["Provider hosts", setupDoctor.provider_hosts],
+      ["Fail checks", setupDoctorFails.length],
+      ["Warn checks", setupDoctorWarns.length]
+    ], "setupDoctor"),
     createSettingsCard("Deck security posture", "Dedicated web UI auth, session, and persistence posture.", [
       ["Enabled", runtime.webui?.enabled],
       ["Port", runtime.webui?.port],
@@ -2132,7 +2213,7 @@ function renderDeck() {
       ["Free source mode", runtime.provider?.free_source_mode],
       ["Free source count", runtime.provider?.free_source_count]
     ], "runtime"),
-    createSettingsCard("Programming Manager", "Saved recipe file, category inventory, ordering mode, and backup collapse posture.", [
+    createSettingsCard("Lineup Manager", "Saved recipe file, category inventory, ordering mode, and backup collapse posture for the channels users actually see.", [
       ["Recipe file", programmingPreviewPayload.recipe_file || programmingRecipePayload.recipe_file],
       ["Recipe writable", programmingPreviewPayload.recipe_writable ?? programmingRecipePayload.recipe_writable],
       ["Harvest file", harvestPayload.harvest_file || programmingPreviewPayload.harvest_file],
@@ -2148,7 +2229,7 @@ function renderDeck() {
       ["Collapse exact backups", programmingRecipe.collapse_exact_backups],
       ["Raw channels", programmingPreviewPayload.raw_channels],
       ["Curated channels", programmingPreviewPayload.curated_channels]
-    ], "programmingRecipe", `<button class="tiny" type="button" data-mode-jump="programming">Open Programming</button>`),
+    ], "programmingRecipe", `<button class="tiny" type="button" data-mode-jump="programming">Open Lineup</button>`),
     createSettingsCard("HDHR + media hooks", "Discovery/network mode plus downstream media-server hooks.", [
       ["HDHR network mode", runtime.hdhr?.network_mode],
       ["Device ID", runtime.hdhr?.device_id],
@@ -2160,7 +2241,7 @@ function renderDeck() {
       ["Emby host configured", runtime.media_servers?.emby_host_configured],
       ["Jellyfin host configured", runtime.media_servers?.jellyfin_host_configured]
     ], "runtime"),
-    createSettingsCard("Control surface atlas", "Actions, workflows, raw surfaces, and legacy operator lanes still exposed through the deck.", [
+    state.showAdvancedSurfaces ? createSettingsCard("Advanced surface index", "Actions, workflows, raw surfaces, and legacy operator lanes that still exist for advanced troubleshooting.", [
       ["Raw endpoints", Object.keys(endpoints).length],
       ["Available actions", Object.values(operatorStatus).filter((item) => item?.available).length],
       ["Guide workflow", endpoints.guideWorkflow],
@@ -2173,7 +2254,11 @@ function renderDeck() {
       ["Ops workflow", endpoints.opsWorkflow],
       ["Legacy UI", runtime.webui?.legacy_ui],
       ["Legacy LAN policy", runtime.webui?.legacy_lan]
-    ], "operatorActionsStatus", `${createWorkflowButton("guideWorkflow", "Guide Playbook")}${createWorkflowButton("streamWorkflow", "Stream Playbook")}${createWorkflowButton("diagnosticsWorkflow", "Diagnostics")}${createWorkflowButton("programmingHarvestWorkflow", "Harvest")}${createWorkflowButton("migrationWorkflow", "Migration")}${createWorkflowButton("identityMigrationWorkflow", "Identity")}${createWorkflowButton("oidcMigrationWorkflow", "OIDC")}${createWorkflowButton("opsWorkflow", "Ops Playbook")}`)
+    ], "operatorActionsStatus", `${createWorkflowButton("guideWorkflow", "Guide Playbook")}${createWorkflowButton("streamWorkflow", "Stream Playbook")}${createWorkflowButton("diagnosticsWorkflow", "Diagnostics")}${createWorkflowButton("programmingHarvestWorkflow", "Harvest")}${createWorkflowButton("migrationWorkflow", "Migration")}${createWorkflowButton("identityMigrationWorkflow", "Identity")}${createWorkflowButton("oidcMigrationWorkflow", "OIDC")}${createWorkflowButton("opsWorkflow", "Advanced Ops")}`) : createSettingsCard("Advanced surfaces hidden", "Workflow-heavy operator surfaces and the full raw endpoint atlas stay off the default path until you enable them in Deck Preferences.", [
+      ["Visible raw endpoints", `${visibleEndpointKeys().length} of ${Object.keys(endpoints).length}`],
+      ["Advanced surfaces", "hidden by default"],
+      ["How to enable", "Deck Preferences -> Show Advanced Surfaces"]
+    ], "runtime")
   ]).join("");
 
   state.deckSettings = deckSettings;
@@ -2239,6 +2324,7 @@ async function postVirtualChannelDetail(payload, successAction) {
 }
 
 async function renderRaw() {
+  fillRawSelectors();
   const key = rawSelect.value || state.selectedRaw;
   state.selectedRaw = key;
   persistPrefs();
@@ -2299,7 +2385,6 @@ async function reloadDeck() {
   await syncDeckTelemetry(deriveMetrics(state.payloads));
   renderDeck();
   await syncProgrammingPlayer();
-  rawSelect.value = state.selectedRaw;
   await renderRaw();
 }
 
@@ -2356,7 +2441,11 @@ async function saveDeckSettings() {
   const refreshEl = document.getElementById("deck-settings-refresh");
   const replayEl = document.getElementById("deck-settings-shared-replay-bytes");
   const virtualLiveStallEl = document.getElementById("deck-settings-virtual-live-stall-sec");
+  const showAdvancedEl = document.getElementById("deck-settings-show-advanced");
   if (!refreshEl) return;
+  state.showAdvancedSurfaces = !!showAdvancedEl?.checked;
+  syncAdvancedNavigation();
+  persistPrefs();
   const payload = {
     default_refresh_sec: Number(refreshEl.value || 0)
   };
@@ -2481,6 +2570,7 @@ async function refreshModal() {
 function bindUI() {
   loadPersistedState();
   fillRawSelectors();
+  syncAdvancedNavigation();
   refreshRate.value = String(state.refreshRateSec);
   document.querySelectorAll("#mode-nav button").forEach((button) => {
     button.addEventListener("click", () => applyMode(button.dataset.mode));
@@ -2489,10 +2579,14 @@ function bindUI() {
     const inspect = event.target.closest("[data-inspect]");
     if (inspect) {
       state.selectedRaw = inspect.getAttribute("data-inspect");
-      rawSelect.value = state.selectedRaw;
-      state.modalView = { kind: "raw", key: state.selectedRaw };
-      renderRaw();
-      openModal();
+      if (!state.showAdvancedSurfaces && isAdvancedEndpoint(state.selectedRaw)) {
+        openAdHocPayload(endpoints[state.selectedRaw], `Endpoint Viewer · ${state.selectedRaw}`, endpoints[state.selectedRaw] || state.selectedRaw);
+      } else {
+        rawSelect.value = state.selectedRaw;
+        state.modalView = { kind: "raw", key: state.selectedRaw };
+        renderRaw();
+        openModal();
+      }
       return;
     }
     const action = event.target.closest("[data-action]");
@@ -2529,7 +2623,12 @@ function bindUI() {
     }
     const jump = event.target.closest("[data-mode-jump]");
     if (jump) {
-      applyMode(jump.getAttribute("data-mode-jump"));
+      const mode = jump.getAttribute("data-mode-jump");
+      if (mode === "ops" && !state.showAdvancedSurfaces) {
+        applyMode("settings");
+      } else {
+        applyMode(mode);
+      }
       return;
     }
     const oidcApplyFilter = event.target.closest("[data-oidc-apply-filter]");
@@ -2782,6 +2881,7 @@ function bindUI() {
 async function boot() {
   bindUI();
   applyMode(state.mode);
+  syncAdvancedNavigation();
   persistPrefs();
   scheduleRefresh();
   await reloadDeck();

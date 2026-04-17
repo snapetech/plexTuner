@@ -28,19 +28,29 @@ import (
 
 func normalizeTopLevelCommand(arg string) string {
 	switch strings.TrimSpace(strings.ToLower(arg)) {
-	case "help", "-h", "--help":
+	case "help", "-h", "--help", "--all-commands", "help-all":
 		return ""
 	default:
 		return arg
 	}
 }
 
-func usageText(prog string, commands []commandSpec, version string, sections []string) string {
+func usageText(prog string, commands []commandSpec, version string, sections []string, showAll bool) string {
 	var out bytes.Buffer
 	fmt.Fprintf(&out, "iptv-tunerr %s — live TV streaming + XMLTV guide for Plex, Emby, Jellyfin\n\n", version)
 	fmt.Fprintf(&out, "Streaming: HDHomeRun-compatible tuner endpoints backed by M3U/Xtream with optional transcode.\n")
 	fmt.Fprintf(&out, "Guide/EPG: /guide.xml — provider XMLTV + external XMLTV + placeholder fallback, with deterministic TVGID repair during catalog build.\n\n")
 	fmt.Fprintf(&out, "Usage: %s <command> [flags]\n\n", prog)
+	fmt.Fprintln(&out, "First run:")
+	fmt.Fprintln(&out, "  cp .env.minimal.example .env")
+	fmt.Fprintln(&out, "  # edit .env")
+	fmt.Fprintln(&out, "  iptv-tunerr setup-doctor")
+	fmt.Fprintln(&out, "  iptv-tunerr probe")
+	fmt.Fprintln(&out, "  iptv-tunerr run -mode=easy")
+	fmt.Fprintln(&out)
+	if !showAll {
+		fmt.Fprintf(&out, "Advanced lab/operator commands are hidden by default. Run `%s --all-commands` to list the full surface.\n\n", prog)
+	}
 	for _, section := range sections {
 		first := true
 		for _, cmd := range commands {
@@ -58,6 +68,16 @@ func usageText(prog string, commands []commandSpec, version string, sections []s
 		}
 	}
 	return out.String()
+}
+
+func showAllCommands(args []string) bool {
+	for _, arg := range args[1:] {
+		switch strings.TrimSpace(strings.ToLower(arg)) {
+		case "--all-commands", "help-all":
+			return true
+		}
+	}
+	return false
 }
 
 func topLevelUsageRequested(args []string) bool {
@@ -81,7 +101,12 @@ func main() {
 	commandByName := commandIndex(commands)
 
 	if topLevelUsageRequested(os.Args) {
-		fmt.Fprint(os.Stderr, usageText(os.Args[0], commands, Version, defaultCommandSections))
+		showAll := showAllCommands(os.Args)
+		sections := defaultCommandSections
+		if showAll {
+			sections = allCommandSections
+		}
+		fmt.Fprint(os.Stderr, usageText(os.Args[0], commands, Version, sections, showAll))
 		if len(os.Args) < 2 {
 			os.Exit(1)
 		}

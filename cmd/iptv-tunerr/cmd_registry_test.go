@@ -8,7 +8,7 @@ func TestAllCommandsUniqueAndSectioned(t *testing.T) {
 		t.Fatal("expected commands")
 	}
 	allowedSections := map[string]bool{}
-	for _, section := range defaultCommandSections {
+	for _, section := range allCommandSections {
 		allowedSections[section] = true
 	}
 	seen := map[string]bool{}

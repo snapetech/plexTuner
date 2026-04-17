@@ -404,3 +404,48 @@ func TestMergeChannelProgrammes_HDHRGapFillAfterProvider(t *testing.T) {
 		t.Fatalf("want second programme from HDHR, got %+v", out)
 	}
 }
+
+func TestXMLTV_buildMergedEPG_plexSafeIDs(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
+	providerXML := `<?xml version="1.0" encoding="utf-8"?>
+<tv>
+  <channel id="foxnews.us"><display-name>FOX News Channel</display-name></channel>
+  <programme start="20260318080000 +0000" stop="20260318090000 +0000" channel="foxnews.us">
+    <title>Fox and Friends</title>
+  </programme>
+</tv>`
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(providerXML))
+	}))
+	defer provider.Close()
+
+	x := &XMLTV{
+		PlexSafeIDs:        true,
+		Channels:           []catalog.LiveChannel{{ChannelID: "fox-east", DNAID: "dna:fox-east", GuideNumber: "42", GuideName: "FOX News Channel US", TVGID: "foxnews.us", EPGLinked: true}},
+		ProviderBaseURL:    provider.URL,
+		ProviderUser:       "u",
+		ProviderPass:       "p",
+		ProviderEPGEnabled: true,
+		ProviderEPGTimeout: 5 * time.Second,
+	}
+	x.refresh()
+
+	var tv struct {
+		Channels []struct {
+			ID string `xml:"id,attr"`
+		} `xml:"channel"`
+		Programmes []struct {
+			Channel string `xml:"channel,attr"`
+		} `xml:"programme"`
+	}
+	if err := xml.Unmarshal(x.cachedXML, &tv); err != nil {
+		t.Fatal(err)
+	}
+	if len(tv.Channels) != 1 || tv.Channels[0].ID != "c16" {
+		t.Fatalf("channels=%+v", tv.Channels)
+	}
+	if len(tv.Programmes) != 1 || tv.Programmes[0].Channel != "c16" {
+		t.Fatalf("programmes=%+v", tv.Programmes)
+	}
+}

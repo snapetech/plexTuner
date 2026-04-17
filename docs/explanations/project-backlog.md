@@ -69,9 +69,10 @@ The opportunities file is authoritative for **dated entries** (including **Statu
 - **Guide-health:** optional deeper wiring of scores into more paths (policy already shipped — see opportunities).
 - **Catch-up:** programme-bound / “true replay” vs near-live launcher; category libraries / scans (large scope).
 - **Migration / janitor:** identity-cutover/OIDC follow-through and the larger “Tunerr as a general-purpose library janitor” direction remain future backlog themes; see `memory-bank/opportunities.md`.
+- **Product surface:** first-run onboarding is now narrower (`setup-doctor`, `.env.minimal.example`, readiness-first deck copy/lane ordering, advanced raw/workflow deck surfaces hidden by default), but deeper persona splitting between simple user, operator, and lab surfaces remains open; see `memory-bank/opportunities.md`.
 - **Plex / k8s adjacent:** split-pipeline instrumentation, postvalidate tuning, external scripts — often **sibling repo**; read each entry’s **Context**.
 - **Gateway / WebSafe:** ffmpeg DNS vs k8s service names, IDR-aware startup, TS debug — see opportunities.
-- **Maintainability:** e.g. dedupe **`hdhomerun`** env helpers vs **`internal/config`** (refactor).
+- **Maintainability:** e.g. dedupe **`hdhomerun`** env helpers vs **`internal/config`** (refactor), and continue splitting dense route/controller files like **`internal/tuner/server.go`** and **`internal/webui/webui.go`**.
 - **Build / release:** multi-arch Docker images (`buildx`); placeholder credentials in sample manifests (security).
 
 **Closed or superseded** items remain in opportunities for history — read the **Status:** field (e.g. probe, Plex connect doc, gateway split, healthz/readyz, XMLTV cache storm, smoketest cache).

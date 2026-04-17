@@ -12,6 +12,8 @@ Reference for primary commands, key flags, and commonly used environment variabl
 This is focused on practical operation/testing. For tester bundles and supervisor-specific lab knobs, also see:
 - [testing-and-supervisor-config](testing-and-supervisor-config.md)
 
+Top-level help defaults to the smaller end-user path (`Core`, `Guide/EPG`, `VOD`). Use `iptv-tunerr --all-commands` to list the full `Lab/ops` surface.
+
 Deck OIDC workflow note:
 - when `IPTV_TUNERR_IDENTITY_OIDC_PLAN_FILE` and the relevant Keycloak/Authentik envs are set, the
   deck exposes `/deck/oidc-migration-audit.json` plus an OIDC workflow surface that includes recent
@@ -58,6 +60,37 @@ Common flags:
 Use for:
 - split workflows (external indexing)
 - local endpoint tests
+
+## `iptv-tunerr setup-doctor`
+
+Validate first-run configuration and print the next safe steps for a new install. This is the operator-facing "am I actually ready to start" command.
+
+The dedicated Control Deck exposes the same report at `/deck/setup-doctor.json`.
+
+Typical flow:
+
+```bash
+cp .env.minimal.example .env
+# edit .env
+iptv-tunerr setup-doctor
+iptv-tunerr probe
+iptv-tunerr run -mode=easy
+```
+
+What it checks:
+- whether a real IPTV source is configured (`IPTV_TUNERR_M3U_URL` or provider URL plus credentials)
+- whether `IPTV_TUNERR_BASE_URL` is set and looks reachable
+- whether the chosen first-run mode matches the usual Plex wizard lane
+- whether the catalog path and deck auth choices are sensible
+
+Flags:
+- `-json` - emit machine-readable output
+- `-mode easy|full` - shape the first-run advice for the simple or advanced path
+- `-base-url URL` - override `IPTV_TUNERR_BASE_URL` for this check only
+
+Exit status:
+- exits `0` when there are no failing checks
+- exits `1` when at least one required first-run check fails
 
 ## `iptv-tunerr index`
 

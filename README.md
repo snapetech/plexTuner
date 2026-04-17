@@ -81,6 +81,7 @@ The current limits are deliberate: Tunerr does not clone Plex passwords, it does
 ## Contents
 
 - [Quick Start](#quick-start)
+- [Fastest First Run](#fastest-first-run)
 - [Getting Your Binary](#getting-your-binary)
 - [Core Capabilities](#core-capabilities)
 - [Channel Intelligence](#channel-intelligence)
@@ -105,6 +106,29 @@ The current limits are deliberate: Tunerr does not clone Plex passwords, it does
 
 ## Quick Start
 
+### Fastest First Run
+
+For a normal first install, do **not** start in the giant `.env.example`. Use the smaller first-run template and the config doctor path:
+
+```bash
+cp .env.minimal.example .env
+# edit .env
+iptv-tunerr setup-doctor
+iptv-tunerr probe
+iptv-tunerr run -mode=easy
+```
+
+What that gives you:
+- the smallest working config surface
+- an explicit ready vs not-ready answer before you waste time debugging Plex, Emby, or Jellyfin
+- exact tuner, guide, and deck URLs once config is sane
+
+The dedicated deck also exposes the same first-run contract at `/deck/setup-doctor.json`, so the UI and CLI now agree on setup posture.
+
+Use `-mode=easy` for a normal Plex wizard-style first run. Move to `-mode=full` only when you intentionally want the larger headless, zero-touch, or fleet-style flow.
+
+Top-level help now stays on the narrower user path by default. Run `iptv-tunerr --all-commands` when you want the full lab/operator command surface.
+
 ### Build
 
 ```bash
@@ -114,10 +138,23 @@ go build -o iptv-tunerr ./cmd/iptv-tunerr
 ### Minimum Configuration
 
 ```bash
+cp .env.minimal.example .env
+# then edit .env
+```
+
+Or, if you want the raw minimum keys directly:
+
+```bash
 IPTV_TUNERR_PROVIDER_URL=https://your-provider.com
 IPTV_TUNERR_PROVIDER_USER=username
 IPTV_TUNERR_PROVIDER_PASS=password
 IPTV_TUNERR_BASE_URL=http://<this-host>:5004
+```
+
+Validate before starting:
+
+```bash
+iptv-tunerr setup-doctor
 ```
 
 ### Run
@@ -127,6 +164,12 @@ IPTV_TUNERR_BASE_URL=http://<this-host>:5004
 ```
 
 This fetches the catalog, checks provider health, and starts the tuner server on `:5004`.
+
+For the shortest first-run path, use:
+
+```bash
+./iptv-tunerr run -mode=easy
+```
 
 ### Connect to your media server
 
@@ -149,7 +192,7 @@ Three ways to add IPTV Tunerr to Plex, Emby, or Jellyfin — pick the one that f
 > Then: Dashboard → Live TV → + (guide) → XMLTV
 > Guide URL: `http://<this-host>:5004/guide.xml`
 
-Dedicated web UI: `http://127.0.0.1:48879/` by default (`0xBEEF`) with integrated health, guide, channel, recorder, provider, shared-live-session, debug, and runtime-settings views. It opens on a dedicated login page and creates a cookie-backed deck session; if `IPTV_TUNERR_WEBUI_PASS` is unset, Tunerr now generates a one-time startup password instead of falling back to `admin/admin`. Direct HTTP Basic auth still works for scripts. It stays localhost-only unless `IPTV_TUNERR_WEBUI_ALLOW_LAN=1`, optional `IPTV_TUNERR_WEBUI_STATE_FILE` persists server-derived operator activity plus non-secret deck preferences across web UI restarts, and the deck now includes safe operator actions/workflows, grouped raw-endpoint indexing, session-bound CSRF protection for state-changing controls, accessible keyboard/focus/modal behavior, plus built-in migration, identity-cutover, and OIDC/IdP workflow views when the matching saved bundle/plan files are configured.
+Dedicated web UI: `http://127.0.0.1:48879/` by default (`0xBEEF`) with integrated setup-readiness, health, guide, channel, recorder, provider, shared-live-session, debug, and runtime-settings views. It opens on a dedicated login page and creates a cookie-backed deck session; if `IPTV_TUNERR_WEBUI_PASS` is unset, Tunerr now generates a one-time startup password instead of falling back to `admin/admin`. Direct HTTP Basic auth still works for scripts. It stays localhost-only unless `IPTV_TUNERR_WEBUI_ALLOW_LAN=1`, optional `IPTV_TUNERR_WEBUI_STATE_FILE` persists server-derived operator activity plus non-secret deck preferences across web UI restarts, and the deck now leads with the first-run setup lane before exposing the advanced operator/workflow surface. The raw endpoint atlas and the `Advanced Ops` navigation lane are hidden by default until enabled in Deck Preferences, and diagnostics/migration/recovery workflows now point simple-path users back to Settings instead of launching the full operator surface directly, leaving guide and stream repair as the only first-class workflow lanes in the default path and routing the last diagnostics/harvest direct actions back through Settings in simple mode and labeling advanced summary cards more explicitly as advanced hints. Session-bound CSRF protection, accessible keyboard/focus/modal behavior, plus built-in migration, identity-cutover, and OIDC/IdP workflow views remain available when the matching saved bundle/plan files are configured.
 
 Legacy `/ui/` shell: still available on the tuner port for lightweight read-only access and compatibility, but it is no longer the primary operator plane. The served `/ui/` and `/ui/guide/` pages now explicitly point operators back to the dedicated Control Deck.
 

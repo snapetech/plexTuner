@@ -2,8 +2,10 @@ package tuner
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -38,6 +40,7 @@ type XMLTV struct {
 	SourceTimeout       time.Duration
 	Client              *http.Client
 	CacheTTL            time.Duration // 0 = use default 10m
+	PlexSafeIDs         bool          // when true, /guide.xml emits stable Plex-safe channel ids instead of raw guide numbers
 
 	// Provider EPG: if set and ProviderEPGEnabled, fetches xmltv.php for the richest guide data.
 	ProviderBaseURL    string
@@ -237,6 +240,64 @@ func (x *XMLTV) filteredChannels() []catalog.LiveChannel {
 	return filtered
 }
 
+func sanitizeXMLTVIDPart(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(raw))
+	lastDash := false
+	for _, r := range raw {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
+			b.WriteRune(r)
+			lastDash = false
+		default:
+			if !lastDash {
+				b.WriteByte('-')
+				lastDash = true
+			}
+		}
+	}
+	out := strings.Trim(b.String(), "-.")
+	if out == "" {
+		return ""
+	}
+	return out
+}
+
+func xmltvChannelIDForChannel(ch catalog.LiveChannel, plexSafe bool) string {
+	if !plexSafe {
+		if id := strings.TrimSpace(ch.GuideNumber); id != "" {
+			return id
+		}
+		return strings.TrimSpace(ch.ChannelID)
+	}
+	if id := strings.TrimSpace(ch.ChannelID); strings.HasPrefix(id, "virtual.") {
+		return id
+	}
+	if guideNumber := strings.TrimSpace(ch.GuideNumber); guideNumber != "" {
+		if n, err := strconv.ParseInt(guideNumber, 10, 64); err == nil && n >= 0 {
+			return "c" + strings.ToLower(strconv.FormatInt(n, 36))
+		}
+		if part := sanitizeXMLTVIDPart(guideNumber); part != "" {
+			return "c" + part
+		}
+	}
+	for _, candidate := range []string{strings.TrimSpace(ch.DNAID), strings.TrimSpace(ch.ChannelID), strings.TrimSpace(ch.TVGID)} {
+		if part := sanitizeXMLTVIDPart(candidate); part != "" {
+			sum := sha1.Sum([]byte(part))
+			return fmt.Sprintf("i.%x", sum[:4])
+		}
+	}
+	return ""
+}
+
+func (x *XMLTV) channelIDForChannel(ch catalog.LiveChannel) string {
+	return xmltvChannelIDForChannel(ch, x != nil && x.PlexSafeIDs)
+}
+
 func (x *XMLTV) servePlaceholderXMLTV(w http.ResponseWriter, channels []catalog.LiveChannel) {
 	now := time.Now()
 	start := now.Add(-24 * time.Hour).Format("20060102150405")
@@ -247,19 +308,20 @@ func (x *XMLTV) servePlaceholderXMLTV(w http.ResponseWriter, channels []catalog.
 		Source:  "IPTV Tunerr (guide loading placeholder)",
 	}
 	for _, c := range channels {
+		channelID := x.channelIDForChannel(c)
+		if channelID == "" {
+			continue
+		}
 		title := strings.TrimSpace(c.GuideName)
 		if title == "" {
 			title = "Channel"
 		}
 		title += " (guide loading)"
-		tv.Channels = append(tv.Channels, xmlChannel{
-			ID:      c.GuideNumber,
-			Display: c.GuideName,
-		})
+		tv.Channels = append(tv.Channels, buildXMLChannel(channelID, c.GuideName, c.GuideNumber, nil))
 		tv.Programmes = append(tv.Programmes, xmlProgramme{
 			Start:   start,
 			Stop:    stop,
-			Channel: c.GuideNumber,
+			Channel: channelID,
 			Title:   xmlValue{Value: title},
 			Desc:    xmlValue{Value: "Temporary placeholder while IPTV Tunerr finishes building the full guide."},
 		})
@@ -281,6 +343,7 @@ func writeRemappedXMLTVWithPolicy(dst io.Writer, src io.Reader, channels []catal
 		GuideNumber string
 		GuideName   string
 		TVGID       string
+		XMLID       string
 	}
 	byTVGID := make(map[string]channelRef, len(channels))
 	ordered := make([]channelRef, 0, len(channels))
@@ -293,8 +356,9 @@ func writeRemappedXMLTVWithPolicy(dst io.Writer, src io.Reader, channels []catal
 			GuideNumber: strings.TrimSpace(c.GuideNumber),
 			GuideName:   strings.TrimSpace(c.GuideName),
 			TVGID:       tvgID,
+			XMLID:       xmltvChannelIDForChannel(c, false),
 		}
-		if ref.GuideNumber == "" {
+		if ref.GuideNumber == "" || ref.XMLID == "" {
 			continue
 		}
 		if _, exists := byTVGID[tvgID]; exists {
@@ -341,7 +405,7 @@ func writeRemappedXMLTVWithPolicy(dst io.Writer, src io.Reader, channels []catal
 				return err
 			}
 			for _, c := range ordered {
-				node := xmlChannel{ID: c.GuideNumber, Display: c.GuideName}
+				node := buildXMLChannel(c.XMLID, c.GuideName, c.GuideNumber, nil)
 				if err := enc.EncodeElement(node, xml.StartElement{Name: xml.Name{Local: "channel"}}); err != nil {
 					return err
 				}
@@ -372,7 +436,7 @@ func writeRemappedXMLTVWithPolicy(dst io.Writer, src io.Reader, channels []catal
 							continue
 						}
 						node.XMLName = xml.Name{Local: "programme"}
-						node.Attrs = setXMLAttr(node.Attrs, "channel", ref.GuideNumber)
+						node.Attrs = setXMLAttr(node.Attrs, "channel", ref.XMLID)
 						normalizeProgrammeText(&node, ref.GuideName, policy)
 						if err := enc.EncodeElement(node, xml.StartElement{Name: xml.Name{Local: "programme"}}); err != nil {
 							return err
@@ -446,9 +510,32 @@ type xmlTVRoot struct {
 }
 
 type xmlChannel struct {
-	ID      string    `xml:"id,attr"`
-	Display string    `xml:"display-name"`
-	Icons   []xmlIcon `xml:"icon,omitempty"`
+	ID           string     `xml:"id,attr"`
+	DisplayNames []xmlValue `xml:"display-name"`
+	Icons        []xmlIcon  `xml:"icon,omitempty"`
+}
+
+func xmlChannelPrimaryDisplay(ch xmlChannel) string {
+	for _, display := range ch.DisplayNames {
+		if value := strings.TrimSpace(display.Value); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func buildXMLChannel(id, displayName, guideNumber string, icons []xmlIcon) xmlChannel {
+	displays := make([]xmlValue, 0, 2)
+	if name := strings.TrimSpace(displayName); name != "" {
+		displays = append(displays, xmlValue{Value: name})
+	}
+	if num := strings.TrimSpace(guideNumber); num != "" && num != strings.TrimSpace(displayName) {
+		displays = append(displays, xmlValue{Value: num})
+	}
+	if len(displays) == 0 {
+		displays = append(displays, xmlValue{Value: strings.TrimSpace(id)})
+	}
+	return xmlChannel{ID: id, DisplayNames: displays, Icons: icons}
 }
 
 type xmlProgramme struct {
@@ -595,7 +682,7 @@ func (x *XMLTV) GuideHighlights(now time.Time, soonWindow time.Duration, limit i
 	}
 	channelNames := map[string]string{}
 	for _, ch := range tv.Channels {
-		channelNames[strings.TrimSpace(ch.ID)] = strings.TrimSpace(ch.Display)
+		channelNames[strings.TrimSpace(ch.ID)] = xmlChannelPrimaryDisplay(ch)
 	}
 	var current []GuideHighlight
 	var soon []GuideHighlight
@@ -674,7 +761,7 @@ func (x *XMLTV) GuidePreview(limit int) (GuidePreview, error) {
 
 	channelNames := map[string]string{}
 	for _, ch := range tv.Channels {
-		channelNames[strings.TrimSpace(ch.ID)] = strings.TrimSpace(ch.Display)
+		channelNames[strings.TrimSpace(ch.ID)] = xmlChannelPrimaryDisplay(ch)
 	}
 
 	type keyed struct {
@@ -746,7 +833,7 @@ func (x *XMLTV) GuideLineupMatchReport(limit int) (GuideLineupMatchReport, error
 	idCounts := map[string]int{}
 	for _, ch := range tv.Channels {
 		id := strings.TrimSpace(ch.ID)
-		name := strings.TrimSpace(ch.Display)
+		name := xmlChannelPrimaryDisplay(ch)
 		if id != "" {
 			idCounts[id]++
 		}
@@ -898,17 +985,19 @@ func BuildCatchupCapsulePreview(channels []catalog.LiveChannel, data []byte, now
 	if err := xml.Unmarshal(data, &tv); err != nil {
 		return out, err
 	}
-	byChannel := make(map[string][]catalog.LiveChannel, len(channels))
+	byChannel := make(map[string][]catalog.LiveChannel, len(channels)*2)
 	for _, ch := range channels {
 		guideNumber := strings.TrimSpace(ch.GuideNumber)
-		if guideNumber == "" {
-			continue
+		if guideNumber != "" {
+			byChannel[guideNumber] = append(byChannel[guideNumber], ch)
 		}
-		byChannel[guideNumber] = append(byChannel[guideNumber], ch)
+		if xmlID := xmltvChannelIDForChannel(ch, true); xmlID != "" {
+			byChannel[xmlID] = append(byChannel[xmlID], ch)
+		}
 	}
 	channelNames := map[string]string{}
 	for _, ch := range tv.Channels {
-		channelNames[strings.TrimSpace(ch.ID)] = strings.TrimSpace(ch.Display)
+		channelNames[strings.TrimSpace(ch.ID)] = xmlChannelPrimaryDisplay(ch)
 	}
 	var capsules []CatchupCapsule
 	windowEnd := now.Add(horizon)

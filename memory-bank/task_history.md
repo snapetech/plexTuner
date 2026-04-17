@@ -22,6 +22,358 @@ Append-only. One entry per completed task.
 
 ## Entries
 
+- Date: 2026-04-17
+  Title: Label advanced summary cards explicitly in simple mode
+  Summary:
+    - Updated `internal/webui/deck.js` so diagnostics, migration, OIDC, and harvest summary cards now read more explicitly as advanced cards when advanced surfaces are disabled instead of blending into the simple-path journey.
+    - Kept the `demoted` policy intact: the cards still exist as discoverability hints, but their titles and supporting copy now make it clearer that they belong to the advanced lane.
+    - Left guide and stream repair cards unchanged as the intentionally first-class workflow surfaces for the default path.
+  Verification:
+    - `go test ./internal/webui ./internal/tuner ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+    - `N/A`
+    - `N/A`
+  Notes:
+    - This is a labeling/emphasis cleanup, not a behavior change to the advanced gating itself.
+    - The remaining choice is still whether some of these advanced summary cards should stay as hints or disappear entirely in simple mode.
+  Opportunities filed:
+    - none; existing product-surface/persona backlog remains the umbrella follow-up.
+  Links:
+    - `internal/webui/deck.js`
+    - `memory-bank/current_task.md`
+    - `README.md`
+
+- Date: 2026-04-17
+  Title: Gate the last direct advanced actions out of simple mode
+  Summary:
+    - Updated `internal/webui/deck.js` so the diagnostics-history card no longer opens workflow payloads directly in simple mode and the Plex-harvest card no longer exposes a direct request action before advanced surfaces are enabled.
+    - Kept those features visible as hints, but made the default affordance point users back to `Settings` so the `demoted` policy is consistent instead of leaving a few one-click advanced escapes behind.
+    - Left guide and stream repair untouched as the intended first-class workflow lanes in the simple path.
+  Verification:
+    - `go test ./internal/webui ./internal/tuner ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+    - `N/A`
+    - `N/A`
+  Notes:
+    - This is a consistency cleanup, not a product-direction change; it closes the remaining direct-action leaks in the existing `demoted` model.
+    - The next remaining product question is still whether advanced summary cards should remain visible at all in simple mode.
+  Opportunities filed:
+    - none; existing product-surface/persona backlog remains the umbrella follow-up.
+  Links:
+    - `internal/webui/deck.js`
+    - `memory-bank/current_task.md`
+    - `README.md`
+
+- Date: 2026-04-17
+  Title: Demote advanced workflow actions from the default deck path
+  Summary:
+    - Updated `internal/webui/deck.js` so diagnostics, migration/identity/OIDC cutover, Ghost Hunter recovery, Autopilot reset, and programming-harvest workflow actions no longer present direct advanced workflow buttons from the main default journey.
+    - Kept the summary cards visible, but changed their default affordance to point users back to `Settings` to enable advanced surfaces before using those deeper operator workflows.
+    - Left guide and stream investigation as first-class workflow surfaces, so the simple path still has a usable health-and-repair lane without the broader lab/operator deck.
+  Verification:
+    - `go test ./internal/webui ./internal/tuner ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+    - `N/A`
+    - `N/A`
+  Notes:
+    - This pass narrows workflow discoverability, not functionality; advanced workflows are still available after opt-in.
+    - The next remaining persona question is whether these summary cards should also be hidden entirely in simple mode instead of only demoted.
+  Opportunities filed:
+    - none; existing product-surface/persona backlog remains the umbrella follow-up.
+  Links:
+    - `internal/webui/deck.js`
+    - `memory-bank/current_task.md`
+    - `README.md`
+
+- Date: 2026-04-17
+  Title: Demote advanced workflow actions from the default deck path
+  Summary:
+    - Updated `internal/webui/deck.js` so diagnostics, migration/identity/OIDC cutover, Ghost Hunter recovery, Autopilot reset, and harvest workflow actions no longer present direct advanced workflow buttons from the main default journey.
+    - Kept the summary cards visible, but changed their default affordance to point users back to `Settings` to enable advanced surfaces before using those deeper operator workflows.
+    - Left guide and stream investigation as first-class workflow surfaces, so the simple path still has a usable health-and-repair lane without the broader lab/operator deck.
+  Verification:
+    - `go test ./internal/webui ./internal/tuner ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+    - `N/A`
+    - `N/A`
+  Notes:
+    - This pass narrows workflow discoverability, not functionality; advanced workflows are still available after opt-in.
+    - The next remaining persona question is whether these summary cards should also be hidden entirely in simple mode instead of only demoted.
+  Opportunities filed:
+    - none; existing product-surface/persona backlog remains the umbrella follow-up.
+  Links:
+    - `internal/webui/deck.js`
+    - `memory-bank/current_task.md`
+    - `README.md`
+
+- Date: 2026-04-17
+  Title: Gate the advanced ops lane out of the default deck navigation
+  Summary:
+    - Marked the `ops` lane as advanced in `internal/webui/index.html` and updated `internal/webui/deck.js` so the nav button and section are hidden unless `Show Advanced Surfaces` is enabled.
+    - Made `ops` mode jumps fall back to `settings` when advanced surfaces are hidden, and adjusted overview/fast-lane actions so the default path no longer points users into a hidden advanced lane.
+    - Extended `internal/webui/webui_test.go` so the advanced-nav marker and `ops`-mode gating logic are covered by regression tests.
+  Verification:
+    - `go test ./internal/webui ./internal/tuner ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+    - `N/A`
+    - `N/A`
+  Notes:
+    - This still preserves the advanced deck surface for explicit opt-in; it is a stronger default-lane boundary, not a feature removal.
+    - The remaining persona split work is now mostly a product decision about whether the advanced workflows should remain in the same shipped deck bundle at all.
+  Opportunities filed:
+    - none; existing product-surface/persona backlog remains the umbrella follow-up.
+  Links:
+    - `internal/webui/index.html`
+    - `internal/webui/deck.js`
+    - `internal/webui/webui_test.go`
+
+- Date: 2026-04-15
+  Title: Hide advanced deck surfaces by default
+  Summary:
+    - Updated `internal/webui/deck.js` so the raw endpoint atlas now defaults to a narrower first-run/runtime/guide/routing/programming subset instead of listing the full operator/workflow surface immediately.
+    - Added a persisted `Show Advanced Surfaces` deck preference, plus a hidden-default settings card that explains how to opt into the advanced raw/workflow surface.
+    - Added regression coverage in `internal/webui/webui_test.go` and synced the README to match the new default deck posture.
+  Verification:
+    - `go test ./internal/webui ./internal/tuner ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+    - `N/A`
+    - `N/A`
+  Notes:
+    - Advanced surfaces still exist and can still be opened directly; this pass narrows the default discoverability path rather than removing operator functionality.
+    - The remaining audit work is less about copy now and more about deciding whether advanced workflows belong in the same shipped deck at all.
+  Opportunities filed:
+    - none; existing product-surface/persona backlog remains the umbrella follow-up.
+  Links:
+    - `internal/webui/deck.js`
+    - `internal/webui/webui_test.go`
+    - `README.md`
+
+- Date: 2026-04-14
+  Title: Make the dedicated deck readiness-first instead of operator-first
+  Summary:
+    - Updated `internal/webui/index.html` and `internal/webui/deck.js` so the deck now leads with setup readiness, exact connection URLs, and common first-run paths instead of introducing itself as a control-plane-first operator cockpit.
+    - Renamed or reframed the advanced lanes and settings copy so recorder/recovery/workflow surfaces are still available but clearly demoted behind the basic setup, guide, and routing journey.
+    - Synced the repo state/docs with that persona cleanup by updating `README.md`, `docs/explanations/project-backlog.md`, and the memory-bank task records.
+  Verification:
+    - `go test ./internal/webui ./internal/tuner ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+    - `N/A`
+    - `N/A`
+  Notes:
+    - This is intentionally a product-surface/copy pass; it does not remove any advanced endpoint or workflow surface yet.
+    - The deeper remaining persona work is structural: deciding what should be hidden, bundled, or moved out of the default shipped product surface beyond copy and lane ordering.
+  Opportunities filed:
+    - none; the existing product-surface/persona backlog remains the umbrella follow-up.
+  Links:
+    - `internal/webui/index.html`
+    - `internal/webui/deck.js`
+    - `README.md`
+    - `docs/explanations/project-backlog.md`
+
+- Date: 2026-04-14
+  Title: Split diagnostics and recorder endpoints out of `server.go`
+  Summary:
+    - Moved the diagnostics harness helpers, recorder/rules/history endpoints, HLS mux demo helpers, mux segment decode action, and `device.xml` handler out of `internal/tuner/server.go` into the new `internal/tuner/server_diagnostics_recordings.go`.
+    - Kept route wiring and behavior unchanged while isolating the operator diagnostics/recordings tail from the remaining runtime/bootstrap and lineup-shaping core.
+    - Reduced `internal/tuner/server.go` to `2176` lines, with the tuner server now broken across six focused files instead of one large route-heavy monolith.
+  Verification:
+    - `gofmt -w internal/tuner/server.go internal/tuner/server_diagnostics_recordings.go`
+    - `go test ./internal/tuner ./internal/webui ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+    - `N/A`
+  Notes:
+    - The only fallout was stale `encoding/base64`, `os/exec`, and `safeurl` imports left behind in `server.go`; removing them restored the build immediately.
+    - At this point the obvious route clusters are gone; any further `server.go` split should be justified by clarity/review value, not just line-count pressure.
+  Opportunities filed:
+    - none; the existing 2026-04-13 monolith-breakup opportunity remains the umbrella backlog item.
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_diagnostics_recordings.go`
+    - `internal/tuner/server_virtual_channel_streams.go`
+    - `internal/tuner/server_virtual_channels.go`
+    - `internal/tuner/server_programming.go`
+    - `internal/tuner/server_operator_workflows.go`
+    - `internal/tuner/server_status_reports.go`
+
+- Date: 2026-04-14
+  Title: Split virtual-channel stream and recovery transport out of `server.go`
+  Summary:
+    - Moved the virtual-channel slate endpoint, branded/plain stream handlers, live recovery relay, recovery-state persistence, and branding/render helpers out of `internal/tuner/server.go` into the new `internal/tuner/server_virtual_channel_streams.go`.
+    - Kept route wiring and behavior unchanged while isolating the virtual playback transport/recovery layer from the operator-facing virtual-channel management/reporting layer already in `server_virtual_channels.go`.
+    - Reduced `internal/tuner/server.go` to `2890` lines, with the tuner monolith now split across `server_status_reports.go`, `server_operator_workflows.go`, `server_programming.go`, `server_virtual_channels.go`, and `server_virtual_channel_streams.go`.
+  Verification:
+    - `gofmt -w internal/tuner/server.go internal/tuner/server_virtual_channel_streams.go`
+    - `go test ./internal/tuner ./internal/webui ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+    - `N/A`
+  Notes:
+    - The only fallout was stale `bytes`, `errors`, and `html` imports left behind in `server.go`; removing them restored the build immediately.
+    - The obvious remaining cleanup work is no longer the virtual-channel stack; any further `server.go` breakup should target the non-virtual runtime/diagnostic helpers and only if it stays reviewable.
+  Opportunities filed:
+    - none; the existing 2026-04-13 monolith-breakup opportunity remains the umbrella backlog item.
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_virtual_channel_streams.go`
+    - `internal/tuner/server_virtual_channels.go`
+    - `internal/tuner/server_programming.go`
+    - `internal/tuner/server_operator_workflows.go`
+    - `internal/tuner/server_status_reports.go`
+
+- Date: 2026-04-13
+  Title: Split virtual-channel management handlers out of `server.go`
+  Summary:
+    - Moved the virtual-channel rules, preview, schedule, detail, report, guide, and M3U handlers plus their mutation helpers out of `internal/tuner/server.go` into the new `internal/tuner/server_virtual_channels.go`.
+    - Kept route wiring and behavior unchanged while separating the operator-facing virtual-channel management/reporting surface from the remaining branded-stream and recovery transport logic.
+    - Reduced `internal/tuner/server.go` to `4015` lines, with `server_status_reports.go`, `server_operator_workflows.go`, `server_programming.go`, and `server_virtual_channels.go` now covering the main extracted handler groups.
+  Verification:
+    - `gofmt -w internal/tuner/server.go internal/tuner/server_virtual_channels.go`
+    - `go test ./internal/tuner ./internal/webui ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+    - `N/A`
+  Notes:
+    - The only fallout was one stale `encoding/xml` import left behind in `server.go`; removing it restored the build immediately.
+    - The most obvious remaining `server.go` split seam is now the virtual-channel branded-stream/recovery transport block.
+  Opportunities filed:
+    - none; the existing 2026-04-13 monolith-breakup opportunity remains the umbrella backlog item.
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_virtual_channels.go`
+    - `internal/tuner/server_programming.go`
+    - `internal/tuner/server_operator_workflows.go`
+    - `internal/tuner/server_status_reports.go`
+
+- Date: 2026-04-13
+  Title: Split programming-manager handlers out of `server.go`
+  Summary:
+    - Moved the `/programming/*` handlers, harvest/import report types, and related programming-manager helper logic out of `internal/tuner/server.go` into the new `internal/tuner/server_programming.go`.
+    - Kept route wiring and behavior unchanged while isolating the programming-manager surface from the remaining runtime bootstrap, lineup, and virtual-channel code.
+    - Reduced `internal/tuner/server.go` to `4709` lines, with `server_status_reports.go`, `server_operator_workflows.go`, and `server_programming.go` now covering the main extracted handler groups.
+  Verification:
+    - `gofmt -w internal/tuner/server.go internal/tuner/server_programming.go`
+    - `go test ./internal/tuner ./internal/webui ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+    - `N/A`
+  Notes:
+    - The first compile failure after the move was only report-struct type drift; aligning the copied fields to the real `internal/programming` package types restored the build.
+    - The most obvious remaining `server.go` split seam is now the virtual-channel/runtime block.
+  Opportunities filed:
+    - none; the existing 2026-04-13 monolith-breakup opportunity remains the umbrella backlog item.
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_programming.go`
+    - `internal/tuner/server_operator_workflows.go`
+    - `internal/tuner/server_status_reports.go`
+
+- Date: 2026-04-13
+  Title: Split operator workflows and actions out of `server.go`
+  Summary:
+    - Moved the operator workflow/report handlers, safe operator action handlers, and programming-harvest request plumbing out of `internal/tuner/server.go` into the new `internal/tuner/server_operator_workflows.go`.
+    - Kept route wiring and behavior unchanged while isolating the operator control-plane layer from the remaining server bootstrap, lineup, programming, and virtual-channel runtime code.
+    - Reduced `internal/tuner/server.go` to `5908` lines, with the earlier `server_status_reports.go` and this new file now covering the main non-core handler groups already peeled off.
+  Verification:
+    - `gofmt -w internal/tuner/server.go internal/tuner/server_operator_workflows.go`
+    - `go test ./internal/tuner ./internal/webui ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+    - `N/A`
+  Notes:
+    - The only fallout was one stale `net/url` import left behind in `server.go`; removing it restored the build immediately.
+    - The most obvious remaining `server.go` split seams are now the programming-manager endpoints and the virtual-channel/runtime helpers.
+  Opportunities filed:
+    - none; the existing 2026-04-13 monolith-breakup opportunity remains the umbrella backlog item.
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_operator_workflows.go`
+    - `internal/tuner/server_status_reports.go`
+
+- Date: 2026-04-13
+  Title: Split `webui.go` auth and migration workflow handlers
+  Summary:
+    - Moved deck auth/session/security helpers out of `internal/webui/webui.go` into the new `internal/webui/webui_auth.go`.
+    - Moved migration, identity-migration, and OIDC workflow/report handlers plus their summary helpers into `internal/webui/webui_migration.go`.
+    - Kept route behavior unchanged while reducing `internal/webui/webui.go` to the listener, proxy/index/assets, settings/state, and runtime replay responsibilities.
+  Verification:
+    - `gofmt -w internal/webui/webui.go internal/webui/webui_auth.go internal/webui/webui_migration.go`
+    - `go test ./internal/webui ./cmd/iptv-tunerr ./internal/tuner`
+    - `./scripts/verify`
+    - `N/A`
+  Notes:
+    - The only fallout after the migration split was stale imports left behind in `webui.go`; removing the unused packages restored the build immediately.
+    - `internal/webui/webui.go` is now down to `670` lines, with the remaining obvious split seams being proxy/assets/index vs state/persistence helpers if more decomposition is needed.
+  Opportunities filed:
+    - none; the existing 2026-04-13 monolith-breakup opportunity remains the umbrella backlog item.
+  Links:
+    - `internal/webui/webui.go`
+    - `internal/webui/webui_auth.go`
+    - `internal/webui/webui_migration.go`
+
+- Date: 2026-04-13
+  Title: Split tuner health and report handlers out of `server.go`
+  Summary:
+    - Moved the health/readiness handlers plus the read-only operator/report endpoints up through `/ops/actions/status.json` out of `internal/tuner/server.go` into the new `internal/tuner/server_status_reports.go`.
+    - Kept route behavior and handler wiring unchanged; this is a code-ownership/maintainability split, not a product-behavior change.
+    - Left the larger workflow/action/programming/virtual-channel handler blocks in place for later passes so this split stayed reviewable and low-risk.
+  Verification:
+    - `gofmt -w internal/tuner/server.go internal/tuner/server_status_reports.go`
+    - `go test ./internal/tuner ./internal/webui ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+    - `N/A`
+  Notes:
+    - The only fallout was a stale `channeldna` import left behind in `server.go`; removing it restored the build immediately.
+    - This is the first concrete code split against the audit’s monolithic-file concern on the tuner side; more handler groups still remain in `server.go`.
+  Opportunities filed:
+    - none; the existing 2026-04-13 monolith-breakup opportunity remains the umbrella backlog item.
+  Links:
+    - `internal/tuner/server_status_reports.go`
+    - `internal/tuner/server.go`
+
+- Date: 2026-04-13
+  Title: Reuse setup doctor across CLI and deck; narrow default help
+  Summary:
+    - Extracted the first-run readiness logic into `internal/setupdoctor` so the same contract now powers the CLI command and the dedicated deck.
+    - Added `/deck/setup-doctor.json`, surfaced setup readiness in the deck overview/settings lanes, and adjusted deck copy so the UI starts with setup posture before deeper operator surfaces.
+    - Changed top-level help to hide `Lab/ops` by default and require `iptv-tunerr --all-commands` for the full advanced command list.
+    - Started the `internal/webui/webui.go` breakup by moving the setup-doctor handler into `internal/webui/webui_setup.go`.
+  Verification:
+    - `gofmt -w internal/setupdoctor/setupdoctor.go internal/setupdoctor/setupdoctor_test.go cmd/iptv-tunerr/cmd_setup_doctor.go cmd/iptv-tunerr/cmd_registry.go cmd/iptv-tunerr/main.go cmd/iptv-tunerr/main_test.go internal/webui/webui.go internal/webui/webui_setup.go internal/webui/webui_test.go cmd/iptv-tunerr/cmd_registry_test.go`
+    - `go test ./internal/setupdoctor ./cmd/iptv-tunerr ./internal/webui`
+    - `./scripts/verify`
+    - `N/A`
+  Notes:
+    - The only regression during this pass was a command-registry test that treated default help sections as the full section universe; it was updated to validate against `allCommandSections`.
+    - I did not attempt a broader `internal/tuner/server.go` carve-out in the same pass because the product-surface changes were already shipped and verified, and forcing a large handler move into the same turn would add avoidable merge risk.
+  Opportunities filed:
+    - none; existing 2026-04-13 opportunities for persona splitting and larger monolith breakup remain the active backlog.
+  Links:
+    - `internal/setupdoctor/setupdoctor.go`
+    - `internal/setupdoctor/setupdoctor_test.go`
+    - `internal/webui/webui_setup.go`
+    - `internal/webui/deck.js`
+    - `cmd/iptv-tunerr/main.go`
+
+- Date: 2026-04-13
+  Title: Merge reviewed onboarding cleanup and first-run doctor
+  Summary:
+    - Added a new `iptv-tunerr setup-doctor` core command that validates first-run source/base URL posture, flags local-only or placeholder choices, prints exact tuner/guide/deck URLs, supports `-json`, and exits non-zero on real setup blockers.
+    - Added `.env.minimal.example` so new users have a narrow first-run template instead of starting in the full expert `.env.example`.
+    - Updated top-level CLI help plus onboarding docs in `README.md`, `.env.example`, and `docs/reference/cli-and-env-reference.md` so the default path is now `copy minimal env -> setup-doctor -> probe -> run -mode=easy`.
+    - Merged only the reviewed onboarding slice from `~/Downloads/iptvtunerr-main-reviewed.zip` and `~/Downloads/IPTVTunerr_audit_and_cleanup.md`; deeper persona-splitting and monolith-file cleanup were filed to backlog instead of being folded into this patch.
+  Verification:
+    - `gofmt -w cmd/iptv-tunerr/cmd_setup_doctor.go cmd/iptv-tunerr/cmd_setup_doctor_test.go cmd/iptv-tunerr/cmd_registry.go cmd/iptv-tunerr/main.go cmd/iptv-tunerr/main_test.go`
+    - `go test ./cmd/iptv-tunerr -run 'Test(BuildSetupDoctorReportReady|BuildSetupDoctorReportNotReadyWithoutSourceOrBaseURL|BuildSetupDoctorReportWarnsOnLocalhostBaseURL|BuildSetupDoctorReportBaseURLOverrideDrivesDeckURL|HostLooksLocalOnly|UsageTextIncludesCommands)$'`
+    - `./scripts/verify`
+    - `N/A`
+  Notes:
+    - `origin/main` was already current, so no pull/rebase was needed before merging the reviewed changes.
+    - The reviewed zip lagged unrelated repo work, so it was treated as a patch source instead of a tree replacement.
+  Opportunities filed:
+    - `memory-bank/opportunities.md` entries for persona/product-surface splitting and continued `server.go` / `webui.go` breakup.
+  Links:
+    - `cmd/iptv-tunerr/cmd_setup_doctor.go`
+    - `cmd/iptv-tunerr/cmd_setup_doctor_test.go`
+    - `.env.minimal.example`
+    - `README.md`
+    - `docs/reference/cli-and-env-reference.md`
+
 - Date: 2026-03-22
   Title: Correct Jellyfin migration convergence semantics
   Summary:
@@ -7787,3 +8139,71 @@ kubectl rollout restart deployment/iptvtunerr-supervisor deployment/iptvtunerr-o
     - `LICENSE-COMMERCIAL.md`
     - `README.md`
     - `docs/CHANGELOG.md`
+
+## 2026-04-17 - Deploy IPTV Tunerr into k3s plex namespace
+
+- Added sibling k3s manifests `plex/iptvtunerr-deployment.yaml` and `plex/iptvtunerr-service.yaml` for a fresh in-cluster Tunerr rollout pinned to `kspld0`.
+- Updated `../k3s/plex/README.md` with the exact build/import/secret/apply/verify flow and updated `../k3s/docs/DOCS-AUDIT.md` so the `plex` namespace documentation now includes `iptvtunerr`.
+- Built `localhost/iptvtunerr:cluster`, imported it onto `kspld0`, created `secret/iptvtunerr-env` from the local `.env` plus deck credentials, and applied the new service/deployment.
+- Tightened the cluster deployment to `IPTV_TUNERR_LIVE_ONLY=true` after the first rollout showed `readyz` was being blocked behind unnecessary VOD/series indexing for the Plex HDHomeRun bridge use case.
+- Verified the live service through port-forward: `discover.json` returned the cluster BaseURL, `lineup_status.json` reported `LineupReady=true`, `readyz` reported `479` channels and `status=ready`, `lineup.json` returned `479` rows, `guide.xml` served real XMLTV, and authenticated `deck/setup-doctor.json` reported the same cluster URLs.
+- Could not complete a real Plex DVR proof because the configured Plex target from `.env` refused TCP connections and the in-cluster `deployment/plex` remains scaled to `0`.
+
+Verification
+- `./scripts/verify`
+- `docker build -t localhost/iptvtunerr:cluster .`
+- `docker save localhost/iptvtunerr:cluster | ssh kspld0 'sudo k3s ctr images import -'`
+- `KUBECONFIG=$HOME/.kube/config kubectl -n plex rollout status deploy/iptvtunerr --timeout=5m`
+- service checks via port-forward for `/discover.json`, `/lineup_status.json`, `/readyz`, `/lineup.json`, `/guide.xml`, `/deck/setup-doctor.json`
+
+## 2026-04-17 - Bring Plex standby up and register the new Tunerr DVR
+
+- Scaled `deployment/plex-standby` to `1` on `kspld0`, which restored PMS on `http://192.168.50.148:32400` and matched the Plex URL already stored in `.env`.
+- Tightened the Tunerr cluster deployment further for real Plex registration: stable device identity (`IPTV_TUNERR_DEVICE_ID=iptvtunerr01`, `IPTV_TUNERR_FRIENDLY_NAME=IPTV Tunerr`), `IPTV_TUNERR_LINEUP_RECIPE=guide_first`, and explicit provider pinning to provider entry `2` (`line.dambora.xyz`) via secret-key overrides so XMLTV fetches stop failing against the broken primary provider host.
+- Registered the new Tunerr service into PMS: device key `751`, DVR `752`, lineup title `IPTV+Tunerr`. Ran DVR repair/reload to build Plex channel mappings and enable channels.
+- Deleted the 7 stale dead Tunerr/oracle DVR rows (`730,733,736,739,742,745,749`) and their dead devices, leaving only the new live Tunerr device/DVR in PMS.
+- Verified PMS is actively consuming the deployed Tunerr service: Tunerr logs show `PlexMediaServer/1.43.1.10611` fetching `discover.json`, `lineup_status.json`, `lineup.json`, and repeated `guide.xml` from the cluster service URL.
+- Remaining gap after the deploy fix: DVR `752` now holds `463` enabled mappings, but Plex's provider-layer endpoint `/tv.plex.providers.epg.xmltv:752/lineups/dvr/channels` still exposes only `63` rows, so the unresolved portion is now on the Plex provider/UI side rather than the cluster or Tunerr registration path.
+
+Verification
+- `kubectl -n plex scale deploy/plex-standby --replicas=1`
+- `curl http://192.168.50.148:32400/identity`
+- Tunerr registration via repo internal Plex API helper (device `751`, DVR `752`)
+- `go run ./cmd/iptv-tunerr plex-dvr-repair -plex-url http://192.168.50.148:32400 -dvr-key 752`
+- PMS inventory checks for `/media/grabbers/devices`, `/livetv/dvrs`, `/tv.plex.providers.epg.xmltv:752/lineups/dvr/channels`
+
+## 2026-04-17 - Harden cluster XMLTV stability and retry Plex provider import
+
+- Added `IPTV_TUNERR_PROVIDER_EPG_DISK_CACHE=/var/cache/iptvtunerr/provider-epg.xml` to the live cluster deployment and sibling `../k3s/plex/iptvtunerr-deployment.yaml` so transient upstream `xmltv.php` `404` responses no longer downgrade the served guide to placeholder-only on refresh.
+- Confirmed the upstream instability directly in live logs: the same deployment alternated between successful provider fetches (`373` channels with programmes, ~9 MB guide) and `epg fetch HTTP 404 Not Found`, which had been collapsing `/guide.xml` back to ~120 KB placeholder output until the disk cache was enabled.
+- Added explicit numeric guide-number display names to emitted XMLTV `<channel>` elements in `internal/tuner/xmltv.go` / `internal/tuner/epg_pipeline.go` (and supporting Xtream / virtual-channel emitters) so Plex no longer uses the namespaced XMLTV id as the channel `vcn`; provider rows now show numeric VCNs again.
+- Rebuilt/imported the cluster image, redeployed `iptvtunerr`, and patched the live Deployment with a temporary `node.kubernetes.io/disk-pressure` toleration after `kspld0` repeatedly re-tainted during rollout and evicted replacement pods. Also pruned node images/logs enough to get the rollout through again.
+- Verified the new live guide shape via port-forward: `/guide.xml` is ~9.0 MB, contains `463` channels / `26390` programmes, and now includes a second `<display-name>` carrying the numeric guide number (example: `CA| ZEE TV CANADA` + `16054`).
+- Re-ran Plex reload/repair for DVR `755`; PMS still reports `463` valid channelmap rows and `463` enabled mappings, but `/tv.plex.providers.epg.xmltv:755/lineups/dvr/channels` remains capped at `63` rows even against the stabilized guide.
+
+Verification
+- `go test ./internal/tuner -run 'Test(XMLTV_servePlaceholder_plexSafeIDs|XMLTV_buildMergedEPG_plexSafeIDs|BuildCatchupCapsulePreview_matchesPlexSafeXMLTVIDs)$'`
+- `go build -o /tmp/iptvtunerr-test ./cmd/iptv-tunerr`
+- `docker build -t localhost/iptvtunerr:cluster .`
+- `docker save localhost/iptvtunerr:cluster | ssh kspld0 'sudo k3s ctr images import -'`
+- `KUBECONFIG=$HOME/.kube/config kubectl -n plex rollout status deployment/iptvtunerr --timeout=180s`
+- live checks via `kubectl port-forward svc/iptvtunerr 5008:5004` and PMS provider endpoints for DVR `755`
+
+Notes
+- The remaining blocker is now specifically Plex's XMLTV provider only materializing `63` rows from a `463`-channel guide, not cluster reachability, lineup activation, or guide freshness.
+
+## 2026-04-17 - Restore full Plex provider import for cluster IPTV Tunerr
+- Verified the latest cluster `iptvtunerr` rollout on `kspld0` was healthy and re-ran `plex-dvr-repair` against standby DVR `755`.
+- Confirmed the root cause of the old `63`-row provider cap: PMS accepted the DVR-level enabled set but only surfaced the final batch at the XMLTV provider layer, and then rejected oversized full-activation URLs until XMLTV channel IDs were shortened further.
+- Updated the app path so XMLTV channel IDs stay very short (`c` + base36 guide numbers where possible) and `ActivateChannelsAPI` sends a single full channel-map PUT; live repair then succeeded with `url_len=30571` and `status=200`.
+- End-to-end validation after the repair:
+  - `/livetv/dvrs/755` shows `463` enabled `ChannelMapping` rows
+  - `/tv.plex.providers.epg.xmltv:755/lineups/dvr/channels` returns `463` rows
+  - `/tv.plex.providers.epg.xmltv:755/hubs/discover` is populated again
+- Updated cluster and repo docs to record the new steady-state and the Plex activation constraint.
+- Verification:
+  - `go test ./internal/plex -run 'TestActivateChannelsAPI'`
+  - `go test ./internal/tuner -run 'Test(XMLTV_servePlaceholder_plexSafeIDs|XMLTV_buildMergedEPG_plexSafeIDs|BuildCatchupCapsulePreview_matchesPlexSafeXMLTVIDs)$'`
+  - `go run ./cmd/iptv-tunerr plex-dvr-repair -plex-url http://192.168.50.148:32400 -token ... -dvr-key 755`
+  - live PMS provider checks for DVR `755` (`463` rows, discover populated)
+

@@ -1240,9 +1240,13 @@ func TestUsageTextIncludesCommands(t *testing.T) {
 	text := usageText("iptv-tunerr", []commandSpec{
 		{Name: "run", Section: "Core", Summary: "Run the server"},
 		{Name: "guide-health", Section: "Guide/EPG", Summary: "Guide health"},
-	}, "test", []string{"Core", "Guide/EPG"})
+	}, "test", []string{"Core", "Guide/EPG"}, false)
 	for _, want := range []string{
 		"Usage: iptv-tunerr <command> [flags]",
+		"First run:",
+		"cp .env.minimal.example .env",
+		"iptv-tunerr setup-doctor",
+		"Advanced lab/operator commands are hidden by default.",
 		"Core:",
 		"run",
 		"Guide/EPG:",
@@ -1254,6 +1258,19 @@ func TestUsageTextIncludesCommands(t *testing.T) {
 	}
 }
 
+func TestUsageTextAllCommandsIncludesLabOps(t *testing.T) {
+	text := usageText("iptv-tunerr", []commandSpec{
+		{Name: "run", Section: "Core", Summary: "Run the server"},
+		{Name: "oracle", Section: "Lab/ops", Summary: "Lab work"},
+	}, "test", []string{"Core", "Lab/ops"}, true)
+	if !strings.Contains(text, "Lab/ops:") {
+		t.Fatalf("usage text missing Lab/ops section:\n%s", text)
+	}
+	if strings.Contains(text, "hidden by default") {
+		t.Fatalf("all-commands usage should not print hidden-surface notice:\n%s", text)
+	}
+}
+
 func TestTopLevelUsageRequested(t *testing.T) {
 	tests := []struct {
 		args []string
@@ -1262,6 +1279,7 @@ func TestTopLevelUsageRequested(t *testing.T) {
 		{args: []string{"iptv-tunerr"}, want: true},
 		{args: []string{"iptv-tunerr", "help"}, want: true},
 		{args: []string{"iptv-tunerr", "--help"}, want: true},
+		{args: []string{"iptv-tunerr", "--all-commands"}, want: true},
 		{args: []string{"iptv-tunerr", "run"}, want: false},
 	}
 	for _, tt := range tests {

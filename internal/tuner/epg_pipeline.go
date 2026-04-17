@@ -893,6 +893,7 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 		GuideNumber string
 		GuideName   string
 		TVGID       string
+		XMLID       string
 	}
 	byTVGID := make(map[string]channelRef, len(channels))
 	orderedRefs := make([]channelRef, 0, len(channels))
@@ -907,6 +908,10 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 			GuideNumber: guideNum,
 			GuideName:   strings.TrimSpace(ch.GuideName),
 			TVGID:       tvgID,
+			XMLID:       x.channelIDForChannel(ch),
+		}
+		if ref.XMLID == "" {
+			continue
 		}
 		if tvgID == "" {
 			// Channel has no TVGID: emit placeholder programme only.
@@ -938,7 +943,7 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 
 	// Write <channel> elements.
 	for _, ref := range orderedRefs {
-		ch := xmlChannel{ID: ref.GuideNumber, Display: ref.GuideName}
+		ch := buildXMLChannel(ref.XMLID, ref.GuideName, ref.GuideNumber, nil)
 		if err := enc.EncodeElement(ch, xml.StartElement{Name: xml.Name{Local: "channel"}}); err != nil {
 			return nil, fmt.Errorf("encode channel: %w", err)
 		}
@@ -961,7 +966,7 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 				Attrs: []xml.Attr{
 					{Name: xml.Name{Local: "start"}, Value: startStr},
 					{Name: xml.Name{Local: "stop"}, Value: stopStr},
-					{Name: xml.Name{Local: "channel"}, Value: ref.GuideNumber},
+					{Name: xml.Name{Local: "channel"}, Value: ref.XMLID},
 				},
 				InnerXML: "<title>" + xmlEscapeText(ref.GuideName) + "</title>",
 			}}
@@ -975,7 +980,7 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 			normalizeProgrammeText(&node, ref.GuideName, policy)
 			// Remap channel attribute to local guide number.
 			node.XMLName = xml.Name{Local: "programme"}
-			node.Attrs = setXMLAttr(node.Attrs, "channel", ref.GuideNumber)
+			node.Attrs = setXMLAttr(node.Attrs, "channel", ref.XMLID)
 			if err := enc.EncodeElement(node, xml.StartElement{Name: xml.Name{Local: "programme"}}); err != nil {
 				return nil, fmt.Errorf("encode programme: %w", err)
 			}

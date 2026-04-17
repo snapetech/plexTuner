@@ -544,7 +544,7 @@ func (s *Server) xtreamXMLTV(principal xtreamPrincipal, horizon time.Duration) (
 		if name == "" {
 			name = "Channel " + firstNonEmptyString(ch.GuideNumber, ch.ChannelID)
 		}
-		tv.Channels = append(tv.Channels, xmlChannel{ID: id, Display: name})
+		tv.Channels = append(tv.Channels, buildXMLChannel(id, name, ch.GuideNumber, nil))
 		if channelID := strings.TrimSpace(ch.ChannelID); channelID != "" {
 			channelIDs[channelID] = append(channelIDs[channelID], id)
 		}

@@ -16,6 +16,18 @@
 
 ## Cluster / Plex
 
+- **Resolved 2026-04-17: Plex XMLTV provider no longer collapses to the last batch / 63 visible rows on the cluster DVR path:**
+  - Symptom before the fix: DVR `755` could hold `463` enabled mappings while `/tv.plex.providers.epg.xmltv:755/lineups/dvr/channels` surfaced only `63` provider rows.
+  - Root cause: our old activation path split mapping pairs across multiple PUTs, while PMS effectively retained only the last batch at the provider layer; after switching to a single full PUT, PMS still rejected oversized activation URLs until XMLTV `channelKey` values were shortened sharply.
+  - What works: serve short Plex-safe XMLTV IDs (`c` + base36 guide number when available), keep the full enabled set and full mapping set in one activation request, and preserve the real guide with `IPTV_TUNERR_PROVIDER_EPG_DISK_CACHE` so Plex does not import a placeholder window during upstream XMLTV flaps.
+  - Verified live: `plex-dvr-repair` now reports `url_len=30571` and `status=200`, DVR `755` shows `463` enabled mappings, `/tv.plex.providers.epg.xmltv:755/lineups/dvr/channels` returns `463` rows, and `/tv.plex.providers.epg.xmltv:755/hubs/discover` is populated again.
+
+- **Intermittent provider XMLTV `404` responses can collapse the served guide back to placeholder-only unless provider disk cache is enabled:** reconfirmed on 2026-04-17 on the cluster `iptvtunerr` deployment targeting `line.dambora.xyz`.
+  - Symptom: `/guide.xml` flips from an ~9 MB real guide (`463` channels / ~26k programmes) back to a ~120 KB placeholder guide (`463` long-span placeholder programmes) on a normal 10-minute refresh boundary.
+  - Evidence: Tunerr logs showed alternating `xmltv: provider XMLTV fetched: 373 channels with programmes` and `xmltv: provider XMLTV fetch failed (epg fetch HTTP 404 Not Found); continuing without provider EPG`, followed by `xmltv: EPG cache updated (120673 bytes, expires in 10m0s)`.
+  - What works: set `IPTV_TUNERR_PROVIDER_EPG_DISK_CACHE` so `fetchProviderXMLTVConditional(...)` reuses the last good provider XMLTV body on non-200 responses instead of downgrading the merged guide during transient upstream failures.
+  - Impact: without disk cache, Plex can re-import a placeholder-only guide during one bad refresh window and get stuck on a partial provider state even though later refreshes recover.
+
 - **Station Ops recovery/overlay runtime is now real but still not full continuous media analysis:** updated 2026-03-22 after adding virtual recovery reports, ffmpeg black/silence preflight, the first branded stream image/text overlays, and repeated live fallback-chain cutover.
   - Current behavior:
     - virtual playback can switch to filler on missing source, failed upstream request, obviously bad non-media response, stalled startup, or ffmpeg `blackdetect` / `silencedetect` results from a short preflight probe
@@ -53,6 +65,7 @@
   - The DVR row still had `475` enabled IDs, but only `3` of those overlapped the current valid mapping set. In other words, PMS had a stale enabled set bound to an older lineup generation.
   - Replaying `PUT /media/grabbers/devices/722/channelmap` with the current valid mapping set and then `POST /livetv/dvrs/723/reloadGuide` fixed the provider layer immediately: `/tv.plex.providers.epg.xmltv:723/lineups/dvr/channels` now returns `size="80"` and `.../hubs/discover` returns real content.
   - Impact: if Plex clients report a fully blank injected/provider tab, do not trust raw Tunerr `guide.xml` alone; inspect the PMS provider endpoint and compare the current valid channelmap IDs to the DVR's enabled IDs. New repo repair path: `iptv-tunerr plex-dvr-repair -plex-url http://127.0.0.1:32400 -dvr-key 723` (token optional on localhost).
+  - 2026-04-17 follow-on: the current cluster DVR `755` is no longer blank, but PMS still only exposes `63` XMLTV provider rows even with `463` valid channelmap rows, a stable ~9 MB guide, Plex-safe XMLTV ids, and explicit numeric channel-number display names. That narrower cap now looks like a Plex XMLTV-provider content-shape limit rather than a raw channelmap drift issue.
 
 - **The recreated host-local Plex DVR now tunes real video channels, but radio-only channels still fail later in PMS recorder startup and the enabled mapping count appears to collapse after activation:** Updated on 2026-03-22 after exposing Tunerr's `/auto/` route on the local `http://127.0.0.1:5005` helper and replaying manual PMS tune requests on DVR `723`. Evidence:
   - Before the fix, PMS would synthesize `/auto/v<guide-number>` during tune and fail on the unmounted path.

@@ -710,3 +710,23 @@
 - `internal/tuner/server_xtream.go`
 - `internal/tuner/xmltv.go`
 - `internal/tuner/server.go`
+
+### Loop: Plex channel-map repair looks correct at the DVR layer but the XMLTV provider only shows the last batch
+
+**Symptom**
+- Plex DVR detail shows hundreds of enabled `ChannelMapping` rows, but `/tv.plex.providers.epg.xmltv:<dvr>/lineups/dvr/channels` exposes only the final batch-sized tail (for example `63` rows) instead of the full lineup.
+
+**Why it's tricky**
+- `/livetv/dvrs/<id>` makes the repair look successful because the enabled set is large and persistent.
+- PMS provider state is stricter than the DVR row: split activation writes can behave like replacement at the provider layer, and a truly full rewrite can still fail if the activation URL grows too large.
+
+**What works**
+- Do not trust batched `channelMapping[...]` writes for a large XMLTV lineup when validating the provider layer.
+- Keep the activation request one-shot with the full enabled set and the full mapping set.
+- Shorten XMLTV `channelKey` values aggressively (`c` + base36 guide number when possible) so the full activation URL stays under PMS's practical limit.
+- Verify success at the provider endpoint itself, not only at `/livetv/dvrs/<id>`.
+
+**Where it's documented**
+- `internal/plex/dvr.go`
+- `internal/tuner/xmltv.go`
+- `memory-bank/current_task.md` (2026-04-17 cluster Plex resolution)

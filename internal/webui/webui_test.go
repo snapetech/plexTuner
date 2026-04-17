@@ -153,6 +153,9 @@ func TestIndexAndLoginLazilyInitializeTemplates(t *testing.T) {
 	if !strings.Contains(w.Body.String(), `role="dialog"`) || !strings.Contains(w.Body.String(), `aria-modal="true"`) {
 		t.Fatalf("index missing accessible modal semantics")
 	}
+	if !strings.Contains(w.Body.String(), "data-advanced-nav") {
+		t.Fatalf("index missing advanced nav marker")
+	}
 
 	req = httptest.NewRequest(http.MethodGet, "/login", nil)
 	w = httptest.NewRecorder()
@@ -219,6 +222,21 @@ func TestDeckJSIncludesSharedReplaySetting(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "/deck/oidc-migration-audit.json") {
 		t.Fatalf("deck.js missing OIDC migration workflow endpoint")
 	}
+	if !strings.Contains(w.Body.String(), "/deck/setup-doctor.json") {
+		t.Fatalf("deck.js missing setup doctor endpoint")
+	}
+	if !strings.Contains(w.Body.String(), "First-run contract") {
+		t.Fatalf("deck.js missing setup doctor settings card")
+	}
+	if !strings.Contains(w.Body.String(), "Show Advanced Surfaces") {
+		t.Fatalf("deck.js missing advanced surface visibility toggle")
+	}
+	if !strings.Contains(w.Body.String(), "Advanced surfaces hidden") {
+		t.Fatalf("deck.js missing hidden advanced surface default card")
+	}
+	if !strings.Contains(w.Body.String(), `mode === "ops" && !state.showAdvancedSurfaces`) {
+		t.Fatalf("deck.js missing advanced ops gate")
+	}
 	if !strings.Contains(w.Body.String(), "/api/debug/shared-relays.json") {
 		t.Fatalf("deck.js missing shared relay report endpoint")
 	}
@@ -275,6 +293,46 @@ func TestDeckJSIncludesSharedReplaySetting(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), `aria-pressed`) {
 		t.Fatalf("deck.js missing nav pressed-state updates")
+	}
+}
+
+func TestSetupDoctorEndpoint(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL", "http://provider.example")
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER", "demo")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS", "secret")
+	t.Setenv("IPTV_TUNERR_BASE_URL", "http://192.168.1.10:5004")
+	t.Setenv("IPTV_TUNERR_WEBUI_PORT", "48879")
+
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodGet, "/deck/setup-doctor.json", nil)
+	w := httptest.NewRecorder()
+	s.setupDoctor(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var payload struct {
+		Configured bool `json:"configured"`
+		Report     struct {
+			Ready    bool   `json:"ready"`
+			Summary  string `json:"summary"`
+			BaseURL  string `json:"base_url"`
+			GuideURL string `json:"guide_url"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !payload.Configured || !payload.Report.Ready {
+		t.Fatalf("payload=%+v", payload)
+	}
+	if payload.Report.BaseURL != "http://192.168.1.10:5004" {
+		t.Fatalf("base_url=%q", payload.Report.BaseURL)
+	}
+	if payload.Report.GuideURL != "http://192.168.1.10:5004/guide.xml" {
+		t.Fatalf("guide_url=%q", payload.Report.GuideURL)
+	}
+	if !strings.Contains(payload.Report.Summary, "Ready") {
+		t.Fatalf("summary=%q", payload.Report.Summary)
 	}
 }
 

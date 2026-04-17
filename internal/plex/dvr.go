@@ -373,13 +373,13 @@ func GetChannelMap(plexHost, token, deviceUUID string, lineupIDs []string) ([]Ch
 	return channels, nil
 }
 
-// activateChannelsBatch sends a single PUT for one batch of channels using URL query params.
-// Plex treats channelsEnabled as the authoritative enabled-set for the device, so when we
-// split mappings across multiple requests we must keep the full enabled list on every batch.
-func activateChannelsBatch(cfg PlexAPIConfig, deviceKey string, enabled []string, batch []ChannelMapping, client *http.Client) error {
-	parts := make([]string, 0, len(batch)*2+1)
+// activateChannelsRequest sends a single PUT with the full channel mapping set using URL query params.
+// Plex treats each channelmap PUT as a full replacement, so batching the mapping pairs silently
+// truncates the provider-visible channel set down to the final batch.
+func activateChannelsRequest(cfg PlexAPIConfig, deviceKey string, enabled []string, channels []ChannelMapping, client *http.Client) error {
+	parts := make([]string, 0, len(channels)*2+1)
 
-	for _, ch := range batch {
+	for _, ch := range channels {
 		parts = append(parts, fmt.Sprintf("channelMappingByKey[%s]=%s", ch.DeviceIdentifier, url.QueryEscape(ch.ChannelKey)))
 		parts = append(parts, fmt.Sprintf("channelMapping[%s]=%s", ch.DeviceIdentifier, url.QueryEscape(ch.LineupIdentifier)))
 	}
@@ -388,7 +388,7 @@ func activateChannelsBatch(cfg PlexAPIConfig, deviceKey string, enabled []string
 	activateURL := fmt.Sprintf("http://%s/media/grabbers/devices/%s/channelmap?X-Plex-Token=%s&%s",
 		cfg.PlexHost, deviceKey, cfg.PlexToken, qs)
 
-	fmt.Printf("[PLEX-REG] Activating batch: url_len=%d channels=%d\n", len(activateURL), len(batch))
+	fmt.Printf("[PLEX-REG] Activating channelmap: url_len=%d channels=%d\n", len(activateURL), len(channels))
 
 	req, err := http.NewRequest("PUT", activateURL, nil)
 	if err != nil {
@@ -411,29 +411,21 @@ func activateChannelsBatch(cfg PlexAPIConfig, deviceKey string, enabled []string
 	return nil
 }
 
-// ActivateChannelsAPI enables channels on a Plex DVR device by sending PUT requests with
-// URL query params. Large lineups are chunked into batches of 100 to stay under URL limits.
+// ActivateChannelsAPI enables channels on a Plex DVR device by sending one PUT request with
+// the full enabled set and full channel mapping set. Plex treats the request as authoritative
+// replacement state, so splitting the mapping pairs across multiple requests loses earlier rows.
 func ActivateChannelsAPI(cfg PlexAPIConfig, deviceKey string, channels []ChannelMapping) (int, error) {
 	if len(channels) == 0 {
 		return 0, fmt.Errorf("no channels to activate")
 	}
 
-	const batchSize = 100
 	client := httpclient.WithTimeout(60 * time.Second)
 	enabled := make([]string, 0, len(channels))
 	for _, ch := range channels {
 		enabled = append(enabled, ch.DeviceIdentifier)
 	}
-
-	for i := 0; i < len(channels); i += batchSize {
-		end := i + batchSize
-		if end > len(channels) {
-			end = len(channels)
-		}
-		batch := channels[i:end]
-		if err := activateChannelsBatch(cfg, deviceKey, enabled, batch, client); err != nil {
-			return i, fmt.Errorf("batch %d-%d: %w", i, end-1, err)
-		}
+	if err := activateChannelsRequest(cfg, deviceKey, enabled, channels, client); err != nil {
+		return 0, err
 	}
 	fmt.Printf("[PLEX-REG] Activated all %d channels\n", len(channels))
 	return len(channels), nil

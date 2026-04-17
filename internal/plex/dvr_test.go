@@ -159,8 +159,8 @@ func TestActivateChannelsAPI_keepsFullEnabledSetAcrossBatches(t *testing.T) {
 	if n != len(channels) {
 		t.Fatalf("activated=%d want %d", n, len(channels))
 	}
-	if len(seen) != 3 {
-		t.Fatalf("batches=%d want 3", len(seen))
+	if len(seen) != 1 {
+		t.Fatalf("requests=%d want 1", len(seen))
 	}
 
 	wantEnabled := make([]string, 0, len(channels))
@@ -169,12 +169,10 @@ func TestActivateChannelsAPI_keepsFullEnabledSetAcrossBatches(t *testing.T) {
 	}
 	sort.Strings(wantEnabled)
 
-	for i, req := range seen {
-		if strings.Join(req.enabled, ",") != strings.Join(wantEnabled, ",") {
-			t.Fatalf("batch %d enabled set mismatch: got %d ids want %d", i, len(req.enabled), len(wantEnabled))
-		}
+	if strings.Join(seen[0].enabled, ",") != strings.Join(wantEnabled, ",") {
+		t.Fatalf("enabled set mismatch: got %d ids want %d", len(seen[0].enabled), len(wantEnabled))
 	}
-	if len(seen[0].keys) != 100 || len(seen[1].keys) != 100 || len(seen[2].keys) != 5 {
-		t.Fatalf("unexpected batch key counts: %+v", []int{len(seen[0].keys), len(seen[1].keys), len(seen[2].keys)})
+	if len(seen[0].keys) != len(channels) {
+		t.Fatalf("mapping key count=%d want %d", len(seen[0].keys), len(channels))
 	}
 }

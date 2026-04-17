@@ -13,6 +13,23 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+- *(none)*
+
+## [v0.1.40] — 2026-04-17
+
+### Product / onboarding
+- **Setup-doctor onboarding path:** added a dedicated `iptv-tunerr setup-doctor` command, shared setup-doctor runtime/report logic, a minimal `.env.minimal.example`, and updated top-level help plus docs so first-run users are steered through `setup-doctor`, `probe`, and `run -mode=easy` instead of the full operator surface.
+- **Default deck path is now readiness-first:** the dedicated deck now starts with setup posture, exact tuner/guide/deck URLs, and the shortest path to connecting Plex/Emby/Jellyfin. Advanced workflow and raw-surface lanes remain available, but they are demoted behind explicit advanced-mode preferences instead of defining the first-run experience.
+
+### Runtime / structure
+- **Large server/web UI slices were broken up without changing behavior:** setup/auth/migration handlers are now separated out of the old `internal/webui/webui.go` monolith, and major tuner route clusters now live in focused files for status/reporting, operator workflows, programming, virtual channels, virtual playback/recovery, and diagnostics/recordings instead of accumulating in one `server.go` block.
+- **Shared setup-doctor contract across CLI and deck:** the deck now exposes `/deck/setup-doctor.json` and reuses the same setup readiness contract as the CLI, so first-run guidance is consistent between command line and web UI.
+
+### Plex / XMLTV
+- **Cluster Plex import is fixed for full-size lineups:** Plex DVR/channel repair now sends one full channel-map activation request instead of split mapping batches, and XMLTV channel IDs are shortened aggressively enough for PMS to accept the full request on a real 463-channel lineup.
+- **Guide stability improved for real provider flaps:** provider XMLTV disk-cache support prevents intermittent upstream `xmltv.php` failures from collapsing the served guide back to placeholder-only during normal refresh windows.
+- **XMLTV channel identity is more Plex-friendly:** guide output now includes numeric guide-number display names alongside channel titles, which makes the imported provider lineup materially cleaner in Plex.
+
 ### Fixed
 
 - **Live migration compatibility on real cluster targets**: Jellyfin Live TV rollout audit no longer fails closed on `10.11.x` just because Jellyfin omits read-side `GET /LiveTv/TunerHosts` and `GET /LiveTv/ListingProviders`; Tunerr now reads exact tuner/listing parity from Jellyfin's `GET /System/Configuration/livetv` endpoint instead. The Keycloak OIDC audit/apply lane also no longer has to rely on a short-lived static bearer token when admin username/password credentials are available, because Tunerr can now mint a fresh `admin-cli` token for the run.
