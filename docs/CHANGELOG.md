@@ -15,6 +15,11 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 - *(none)*
 
+## [v0.1.41] — 2026-04-17
+
+### CI / security scanning
+- **Gitleaks false-positive cleanup:** reworded a token-shaped phrase in `memory-bank/current_task.md` that triggered the `generic-api-key` rule in GitHub Actions after `v0.1.40`. No runtime behavior changed; this release only clears the secret-scan failure and restores a green post-release workflow path.
+
 ## [v0.1.40] — 2026-04-17
 
 ### Product / onboarding
