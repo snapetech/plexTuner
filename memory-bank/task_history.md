@@ -8207,3 +8207,12 @@ Notes
   - `go run ./cmd/iptv-tunerr plex-dvr-repair -plex-url http://192.168.50.148:32400 -token ... -dvr-key 755`
   - live PMS provider checks for DVR `755` (`463` rows, discover populated)
 
+## 2026-04-17 - Fix Gitleaks false positive after v0.1.40 push
+- Investigated the failed GitHub Actions Gitleaks run for commit `d934408` instead of guessing locally.
+- Confirmed the finding was `generic-api-key` on `memory-bank/current_task.md:24`, caused by token-shaped phrasing in a structural note (`diagnostics/operator shell glue`), not by a real committed secret.
+- Reworded the note to `the remaining diagnostic and operator glue code`, pushed follow-up commit `051d192`, and confirmed the new Gitleaks workflow run `24591118368` completed successfully.
+- Verification:
+  - `gh run view 24591035491 --log` to identify the exact file/rule/line
+  - `gh run list` / follow-up workflow watch for commit `051d192`
+
+
