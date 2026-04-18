@@ -273,8 +273,7 @@ func CreateDVRViaAPI(cfg PlexAPIConfig, deviceInfo *DeviceInfo) (dvrKey int, dvr
 				continue
 			}
 			matched = true
-			// Compare: does the registered lineup URL contain our desired guide URL?
-			if strings.Contains(d.LineupURL, desiredGuideURL) {
+			if dvrGuideMatches(d, desiredGuideURL) {
 				fmt.Printf("[PLEX-REG] DVR already registered with matching guide URL (key=%d) — reusing\n", d.Key)
 				return d.Key, d.UUID, []string{d.LineupURL}, nil
 			}
@@ -708,6 +707,11 @@ func FullRegisterPlex(baseURL, plexHost, plexToken, friendlyName, deviceID strin
 
 	fmt.Printf("[PLEX-REG] === Starting Plex API registration ===\n")
 	fmt.Printf("[PLEX-REG] BaseURL=%s Host=%s Token=%s\n", baseURL, plexHost, tokenPreview)
+
+	fmt.Printf("[PLEX-REG] Step 0: Reconcile stale Tunerr-owned Plex rows...\n")
+	if err := ReconcileTunerrRegistrations(cfg); err != nil {
+		return "", 0, fmt.Errorf("reconcile stale registrations: %w", err)
+	}
 
 	fmt.Printf("[PLEX-REG] Step 1: Register HDHR device...\n")
 	deviceInfo, err := RegisterTunerViaAPI(cfg)
