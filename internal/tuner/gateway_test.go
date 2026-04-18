@@ -2161,28 +2161,35 @@ func TestIsUpstreamConcurrencyLimit_509(t *testing.T) {
 	}
 }
 
-func TestGateway_shouldPreferGoRelayForHLSRemux(t *testing.T) {
+func TestGateway_shouldPreferGoRelayForHLS(t *testing.T) {
 	g := &Gateway{TunerCount: 4, learnedUpstreamLimit: 2}
-	if !g.shouldPreferGoRelayForHLSRemux("http://provider.example/live/1.m3u8") {
+	if !g.shouldPreferGoRelayForHLS("http://provider.example/live/1.m3u8", false) {
 		t.Fatal("expected learned lower upstream limit to prefer go relay")
 	}
 
 	t.Setenv("IPTV_TUNERR_HLS_RELAY_PREFER_GO_ON_PROVIDER_PRESSURE", "false")
-	if g.shouldPreferGoRelayForHLSRemux("http://provider.example/live/1.m3u8") {
+	if g.shouldPreferGoRelayForHLS("http://provider.example/live/1.m3u8", false) {
 		t.Fatal("expected provider-pressure preference to be disable-able")
 	}
 
 	t.Setenv("IPTV_TUNERR_HLS_RELAY_PREFER_GO", "true")
-	if !g.shouldPreferGoRelayForHLSRemux("http://provider.example/live/1.m3u8") {
+	if !g.shouldPreferGoRelayForHLS("http://provider.example/live/1.m3u8", false) {
 		t.Fatal("expected explicit go-relay preference override")
+	}
+	if !g.shouldPreferGoRelayForHLS("http://provider.example/live/1.m3u8", true) {
+		t.Fatal("expected explicit go-relay preference override to apply to transcode HLS too")
+	}
+	t.Setenv("IPTV_TUNERR_HLS_RELAY_PREFER_GO", "false")
+	if g.shouldPreferGoRelayForHLS("http://provider.example/live/1.m3u8", true) {
+		t.Fatal("expected provider-pressure heuristics to remain remux-only when transcode is requested")
 	}
 }
 
-func TestGateway_shouldPreferGoRelayForHLSRemux_hostPenalty(t *testing.T) {
+func TestGateway_shouldPreferGoRelayForHLS_hostPenalty(t *testing.T) {
 	t.Run("penalized_host", func(t *testing.T) {
 		g := &Gateway{TunerCount: 4}
 		g.noteUpstreamFailure("http://provider.example/live/1.m3u8", 0, "ffmpeg_hls_failed")
-		if !g.shouldPreferGoRelayForHLSRemux("http://provider.example/live/2.m3u8") {
+		if !g.shouldPreferGoRelayForHLS("http://provider.example/live/2.m3u8", false) {
 			t.Fatal("expected host penalty to prefer go relay")
 		}
 	})
@@ -2190,7 +2197,7 @@ func TestGateway_shouldPreferGoRelayForHLSRemux_hostPenalty(t *testing.T) {
 		t.Setenv("IPTV_TUNERR_PROVIDER_AUTOTUNE", "false")
 		g := &Gateway{TunerCount: 4}
 		g.noteUpstreamFailure("http://provider.example/live/1.m3u8", 0, "ffmpeg_hls_failed")
-		if g.shouldPreferGoRelayForHLSRemux("http://provider.example/live/2.m3u8") {
+		if g.shouldPreferGoRelayForHLS("http://provider.example/live/2.m3u8", false) {
 			t.Fatal("expected no host-penalty go-relay when autotune is off")
 		}
 	})
@@ -2198,11 +2205,11 @@ func TestGateway_shouldPreferGoRelayForHLSRemux_hostPenalty(t *testing.T) {
 		g := &Gateway{TunerCount: 4}
 		g.noteHLSRemuxFailure("http://provider.example/live/1.m3u8")
 		g.noteUpstreamSuccess("http://provider.example/live/1.m3u8")
-		if !g.shouldPreferGoRelayForHLSRemux("http://provider.example/live/2.m3u8") {
+		if !g.shouldPreferGoRelayForHLS("http://provider.example/live/2.m3u8", false) {
 			t.Fatal("expected remux-specific penalty to survive generic playlist success")
 		}
 		g.noteHLSRemuxSuccess("http://provider.example/live/1.m3u8")
-		if g.shouldPreferGoRelayForHLSRemux("http://provider.example/live/2.m3u8") {
+		if g.shouldPreferGoRelayForHLS("http://provider.example/live/2.m3u8", false) {
 			t.Fatal("expected remux-specific penalty to clear after remux success")
 		}
 	})

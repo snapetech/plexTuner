@@ -16,6 +16,12 @@
 
 ## Cluster / Plex
 
+- **Plex standby can still show spinning Live TV even after Tunerr has corrected audio metadata and PMS has started a recorder/transcode session:** updated 2026-04-17 after re-testing DVR `755` against the cluster deployment.
+  - Symptom now: the old `sample rate not set` failure is gone, PMS reports normalized `h264` + `mp3` streamDetail from Tunerr and can log `Started session successfully`, but the visible client can still spin and the rolling-sub recorder later dies with `Client stopped playback` or `Recorder: No more consumers, stopping`, followed by `Recording failed. Please check your tuner or antenna.`
+  - Evidence: `c1` on 2026-04-17 21:05 started PMS session `4791f659-4ceb-43ae-9757-2e46bc96fbd5`, served many `index.m3u8` responses, then the client stopped playback; `c4` on 2026-04-17 21:06 started PMS session `3b83fd24-2600-4c6f-be42-4ec71f80fb00`, generated ~600 transcode segments, then PMS ended the recorder because there were no remaining consumers.
+  - What this means: the remaining fault is no longer first-order tuner reachability, XMLTV import, or raw AAC metadata; it is the client-to-PMS playback handoff after the recorder/session is already alive.
+  - What works so far: keep `IPTV_TUNERR_CLIENT_ADAPT=true` plus the internal-fetcher `copyvideomp3` lane, then debug with fresh client-correlated PMS logs instead of re-litigating the old ingest fix.
+
 - **Plex standby now localizes visible channel order correctly only because guide numbers are resequenced to match the curated lineup order:** confirmed on 2026-04-17 after the cluster `iptvtunerr` deployment switched to `locals_first` + `na_en`/`ca_west` plus `IPTV_TUNERR_GUIDE_NUMBER_RESEQUENCE=true`.
   - Symptom before the fix: even after the tuner lineup started with Canadian locals, Plex `/tv.plex.providers.epg.xmltv:755/lineups/dvr/channels` still showed the old Arabic / BEIN block first because PMS sorted by `vcn`, not by the raw tuner list order.
   - What works: on Plex-facing easy-mode deployments, resequence guide numbers after lineup shaping so the curated order becomes channel numbers `1..N`; then replay DVR channel-map activation.

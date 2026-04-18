@@ -233,17 +233,20 @@ func (g *Gateway) noteHLSPlaylistFailure(playlistURL string) {
 	g.lastHLSPlaylistURL = safeurl.RedactURL(playlistURL)
 }
 
-// shouldPreferGoRelayForHLSRemux decides whether to skip ffmpeg remux and use the Go HLS relay
-// for non-transcode HLS. True when IPTV_TUNERR_HLS_RELAY_PREFER_GO is set; else when
-// IPTV_TUNERR_HLS_RELAY_PREFER_GO_ON_PROVIDER_PRESSURE is true and any of: concurrency
-// signals (learned cap below configured, concurrencyHits), or hostPenalty for streamURL's
-// authority (requires IPTV_TUNERR_PROVIDER_AUTOTUNE so noteUpstreamFailure populates penalties).
-func (g *Gateway) shouldPreferGoRelayForHLSRemux(streamURL string) bool {
+// shouldPreferGoRelayForHLS decides whether to skip direct ffmpeg HLS input and use the Go HLS
+// relay path instead. An explicit IPTV_TUNERR_HLS_RELAY_PREFER_GO=true override applies to both
+// remux and transcode requests. Provider-pressure heuristics remain remux-only because they are
+// based on remux-specific host penalties and should not silently force transcoding onto the Go
+// relay path unless the operator asked for it explicitly.
+func (g *Gateway) shouldPreferGoRelayForHLS(streamURL string, transcode bool) bool {
 	if g == nil {
 		return false
 	}
 	if getenvBool("IPTV_TUNERR_HLS_RELAY_PREFER_GO", false) {
 		return true
+	}
+	if transcode {
+		return false
 	}
 	if !getenvBool("IPTV_TUNERR_HLS_RELAY_PREFER_GO_ON_PROVIDER_PRESSURE", true) {
 		return false
