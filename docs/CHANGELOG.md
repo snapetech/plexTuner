@@ -13,6 +13,10 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+- *(none)*
+
+## [v0.1.42] — 2026-04-17
+
 ### Plex / cluster playback
 - **Full standby lineup restore:** the XMLTV merge path no longer collapses distinct exposed lineup rows that share the same upstream `TVGID`, so Plex standby can import the full curated `479`-channel provider view instead of dropping duplicate-guide rows during XMLTV/channelmap reconciliation.
 - **Safer HLS ingest defaults for real ffmpeg builds:** the tuner now treats HLS `http_persistent` and `live_start_index` as opt-in compatibility flags, which avoids cluster ffmpeg startup failures on builds that do not support those options.
