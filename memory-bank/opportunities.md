@@ -450,3 +450,9 @@ It exists to encourage quality gains without derailing the current task.
     - multi-user / entitlement scope model
     - virtual channels from owned media
     - richer active-stream analytics/control surfaces
+## Optional Plex provider programme source
+
+- Date: 2026-04-18
+- Opportunity: Plex provider harvest currently helps with lineup discovery/channel mapping, but IPTV Tunerr does not ingest Plex provider programme schedules as a normal `/guide.xml` source.
+- Why it matters: for sports/event channels where the IPTV provider XMLTV and Xtream short EPG are sparse, Plex's provider EPG catalog may have richer listings if a suitable lineup is known.
+- Suggested approach: add a separate, explicit EPG source that fetches Plex provider programme windows with country/postal/lineup metadata and merges it after provider/external data but before placeholders. Keep it opt-in because it depends on Plex provider APIs and geography.

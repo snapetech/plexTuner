@@ -444,10 +444,10 @@
   - Remaining limitation: after activation succeeds, PMS can still fail live tune later with `The device does not tune the required channel`, which appears to be a deeper device/channel-identity mismatch inside Plex's scheduler rather than a simple dead-URI problem.
 
 - Some provider HLS playlists still stall or return `509` mid-stream. Current mitigation now retries the same primary URL after progress and avoids downgrading the request into a generic 502 if bytes already flowed, but truly bad providers can still end a session once all bounded recovery paths are exhausted.
-## Sparse upstream EPG for event/alternate sports channels
+## Sports EPG health can look empty if Plex-safe XMLTV IDs are not used consistently
 
 - Date: 2026-04-18
-- Symptom: the sports DVR can show real channels with only one programme block even though `/guide.xml` has no zero-programme channels.
-- Current proof: after the primary/sports split, sports serves 106 channels and 3,631 programme rows; 26 sports/event/alternate rows have exactly one programme block. General serves 479 channels and 25,154 programme rows; 61 rows have exactly one programme block.
-- Root cause: upstream provider XMLTV sparsity for alternate/event/regional sports feeds, not a Tunerr channelmap failure.
-- Workaround: keep the channels playable, but treat low-density EPG as provider data quality unless a specific channel has zero programmes or wrong `tvg-id`.
+- Symptom: the sports DVR raw `/guide.xml` can contain programme rows, but `/guide/health.json` reports every channel as `unlinked` / `no_programme`.
+- Root cause: prior guide-health analysis keyed programme stats by visible guide number, while `IPTV_TUNERR_XMLTV_PLEX_SAFE_IDS=true` emits XMLTV channel IDs like `c7qh`.
+- Fix: guide health must use the same XMLTV ID resolver as `/guide.xml`; this is now implemented in the current task.
+- Remaining boundary: if a provider returns only one real event row for a channel, enable `IPTV_TUNERR_PROVIDER_SHORT_EPG_FALLBACK=true` so short EPG can gap-fill that sparse schedule. Full Plex-provider programme ingestion is still a separate future source, not part of Plex lineup harvest today.

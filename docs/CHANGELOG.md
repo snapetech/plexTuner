@@ -13,6 +13,10 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+### Guide / EPG
+- **Guide health now understands Plex-safe XMLTV IDs:** `/guide/health.json` and cached guide policy state now evaluate the actual emitted XMLTV channel IDs when `IPTV_TUNERR_XMLTV_PLEX_SAFE_IDS=true`, instead of incorrectly looking up guide numbers and marking valid Plex-safe guides as unlinked.
+- **Provider short EPG can now fill sparse channels:** `IPTV_TUNERR_PROVIDER_SHORT_EPG_FALLBACK=true` now uses `player_api.php?action=get_short_epg` for channels whose merged provider/external/HDHR guide has fewer than `IPTV_TUNERR_PROVIDER_SHORT_EPG_MIN_PROGRAMMES` real rows, not only when provider `xmltv.php` is completely unavailable.
+
 ### Plex / multi-DVR lineup split
 - **Primary and sports DVR lineups no longer overlap:** added `IPTV_TUNERR_LINEUP_EXCLUDE_RECIPE` so a primary/general DVR can exclude the exact rows owned by a recipe-specific DVR such as `sports_na` before final shaping and Plex-cap logic.
 - **Surgical lineup excludes are now available:** added `IPTV_TUNERR_LINEUP_EXCLUDE_CHANNEL_IDS` for exact `channel_id`, guide number, or `tvg-id` removals before lineup recipe/shaping/cap logic.

@@ -116,6 +116,14 @@ func providerShortEPGLimit() int {
 	return getenvInt("IPTV_TUNERR_PROVIDER_SHORT_EPG_LIMIT", 6)
 }
 
+func providerShortEPGMinProgrammes() int {
+	n := getenvInt("IPTV_TUNERR_PROVIDER_SHORT_EPG_MIN_PROGRAMMES", 2)
+	if n < 1 {
+		return 1
+	}
+	return n
+}
+
 func providerShortEPGConcurrency() int {
 	n := getenvInt("IPTV_TUNERR_PROVIDER_SHORT_EPG_CONCURRENCY", 8)
 	if n < 1 {
@@ -285,8 +293,17 @@ func (x *XMLTV) fetchProviderShortEPGFallback(ctx context.Context, channels []ca
 
 	out := &parsedEPG{programmes: map[string]*channelEPG{}}
 	var okCount int
+	attempted := 0
+	emptyCount := 0
+	errorCount := 0
 	for res := range results {
+		attempted++
+		if res.err != nil {
+			errorCount++
+			continue
+		}
 		if len(res.nodes) == 0 {
+			emptyCount++
 			continue
 		}
 		cepg := &channelEPG{nodes: make([]xmlRawNode, 0, len(res.nodes)), windows: make([]timeWindow, 0, len(res.nodes))}
@@ -306,7 +323,7 @@ func (x *XMLTV) fetchProviderShortEPGFallback(ctx context.Context, channels []ca
 		okCount++
 	}
 	if okCount == 0 {
-		return nil, fmt.Errorf("no short epg listings available")
+		return nil, fmt.Errorf("no short epg listings available (attempted=%d empty=%d errors=%d)", attempted, emptyCount, errorCount)
 	}
 	return out, nil
 }
@@ -719,8 +736,9 @@ func placeholderProgrammeNodes(tvgID, channelName string) []xmlRawNode {
 //  1. Provider programmes (if any)
 //  2. External programmes that gap-fill provider (or all external when provider empty)
 //  3. HDHR device programmes (optional) that gap-fill remaining holes vs the union of (1)+(2)
-//  4. Single placeholder programme spanning -24h to +7d when (1)–(3) all empty
-func mergeChannelProgrammes(tvgID string, provEPG, extEPG, hdhrEPG *parsedEPG, channelName string) []xmlRawNode {
+//  4. Provider short-EPG programmes (optional) that gap-fill remaining holes
+//  5. Single placeholder programme spanning -24h to +7d when (1)–(4) all empty
+func mergeChannelProgrammes(tvgID string, provEPG, extEPG, hdhrEPG, shortEPG *parsedEPG, channelName string) []xmlRawNode {
 	var provNodes []xmlRawNode
 	var provWindows []timeWindow
 	if provEPG != nil {
@@ -748,17 +766,38 @@ func mergeChannelProgrammes(tvgID string, provEPG, extEPG, hdhrEPG *parsedEPG, c
 		}
 	}
 
+	var shortNodes []xmlRawNode
+	var shortWindows []timeWindow
+	if shortEPG != nil {
+		if cepg, ok := shortEPG.programmes[tvgID]; ok {
+			shortNodes = cepg.nodes
+			shortWindows = cepg.windows
+		}
+	}
+
 	hasProvider := len(provNodes) > 0
 	hasExternal := len(extNodes) > 0
 	hasHDHR := len(hdhrNodes) > 0
+	hasShort := len(shortNodes) > 0
 
-	if !hasProvider && !hasExternal && !hasHDHR {
+	if !hasProvider && !hasExternal && !hasHDHR && !hasShort {
 		return placeholderProgrammeNodes(tvgID, channelName)
 	}
 
-	// Hardware-only path: no provider and no external data for this tvg-id.
-	if !hasProvider && !hasExternal && hasHDHR {
-		return hdhrNodes
+	// Hardware/short-only path: no provider and no external data for this tvg-id.
+	if !hasProvider && !hasExternal && (hasHDHR || hasShort) {
+		out := append([]xmlRawNode{}, hdhrNodes...)
+		if hasShort {
+			baseWins := programmeNodesToWindows(out)
+			sort.Slice(baseWins, func(i, j int) bool { return baseWins[i].start.Before(baseWins[j].start) })
+			for i := range shortNodes {
+				if i >= len(shortWindows) || windowsOverlap(shortWindows[i], baseWins) {
+					continue
+				}
+				out = append(out, shortNodes[i])
+			}
+		}
+		return out
 	}
 
 	var baseNodes []xmlRawNode
@@ -782,7 +821,7 @@ func mergeChannelProgrammes(tvgID string, provEPG, extEPG, hdhrEPG *parsedEPG, c
 		baseNodes = merged
 	}
 
-	if !hasHDHR {
+	if !hasHDHR && !hasShort {
 		return baseNodes
 	}
 
@@ -801,6 +840,70 @@ func mergeChannelProgrammes(tvgID string, provEPG, extEPG, hdhrEPG *parsedEPG, c
 		}
 		if !windowsOverlap(w, baseWins) {
 			out = append(out, hdhrNodes[i])
+			baseWins = append(baseWins, w)
+		}
+	}
+	for i := range shortNodes {
+		var w timeWindow
+		if i < len(shortWindows) {
+			w = shortWindows[i]
+		} else {
+			continue
+		}
+		if !windowsOverlap(w, baseWins) {
+			out = append(out, shortNodes[i])
+			baseWins = append(baseWins, w)
+		}
+	}
+	return out
+}
+
+func rawProgrammeLooksLikePlaceholder(node xmlRawNode, channelName string) bool {
+	var p xmlProgramme
+	raw, err := xml.Marshal(node)
+	if err != nil {
+		return false
+	}
+	if err := xml.Unmarshal(raw, &p); err != nil {
+		return false
+	}
+	title := strings.TrimSpace(p.Title.Value)
+	if title == "" || !strings.EqualFold(title, strings.TrimSpace(channelName)) {
+		return false
+	}
+	if strings.TrimSpace(p.SubTitle.Value) != "" || strings.TrimSpace(p.Desc.Value) != "" {
+		return false
+	}
+	for _, cat := range p.Categories {
+		if strings.TrimSpace(cat.Value) != "" {
+			return false
+		}
+	}
+	return true
+}
+
+func realProgrammeNodeCount(nodes []xmlRawNode, channelName string) int {
+	count := 0
+	for _, node := range nodes {
+		if !rawProgrammeLooksLikePlaceholder(node, channelName) {
+			count++
+		}
+	}
+	return count
+}
+
+func channelsNeedingShortEPG(channels []catalog.LiveChannel, provEPG, extEPG, hdhrEPG *parsedEPG, minReal int) []catalog.LiveChannel {
+	if minReal < 1 {
+		minReal = 1
+	}
+	out := make([]catalog.LiveChannel, 0)
+	for _, ch := range channels {
+		if strings.TrimSpace(ch.TVGID) == "" || strings.TrimSpace(ch.ChannelID) == "" {
+			continue
+		}
+		nodes := mergeChannelProgrammes(strings.TrimSpace(ch.TVGID), provEPG, extEPG, hdhrEPG, nil, strings.TrimSpace(ch.GuideName))
+		if realProgrammeNodeCount(nodes, strings.TrimSpace(ch.GuideName)) < minReal {
+			out = append(out, ch)
 		}
 	}
 	return out
@@ -855,18 +958,6 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 			log.Printf("xmltv: provider XMLTV fetched: %d channels with programmes", len(provEPG.programmes))
 		}
 	}
-	if provEPG == nil && providerShortEPGEnabled() && baseURL != "" && user != "" {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(providerShortEPGConcurrency()+1)*providerShortEPGTimeout())
-		defer cancel()
-		shortEPG, err := x.fetchProviderShortEPGFallback(ctx, channels, allowedTVGIDs)
-		if err != nil {
-			log.Printf("xmltv: provider short EPG fallback failed (%v); continuing without provider EPG", err)
-		} else {
-			provEPG = shortEPG
-			log.Printf("xmltv: provider short EPG fallback fetched: %d channels with programmes", len(provEPG.programmes))
-		}
-	}
-
 	var hdhrEPG *parsedEPG
 	hdhrURL := strings.TrimSpace(x.HDHRGuideURL)
 	if hdhrURL != "" {
@@ -883,6 +974,28 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 			hdhrEPG = nil
 		} else {
 			log.Printf("xmltv: HDHR guide.xml fetched: %d channels with programmes", len(hdhrEPG.programmes))
+		}
+	}
+
+	var shortEPG *parsedEPG
+	if providerShortEPGEnabled() && baseURL != "" && user != "" {
+		candidates := channelsNeedingShortEPG(channels, provEPG, extEPG, hdhrEPG, providerShortEPGMinProgrammes())
+		if len(candidates) > 0 {
+			workers := providerShortEPGConcurrency()
+			if workers < 1 {
+				workers = 1
+			}
+			waves := (len(candidates) + workers - 1) / workers
+			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(waves+1)*providerShortEPGTimeout())
+			defer cancel()
+			var err error
+			shortEPG, err = x.fetchProviderShortEPGFallback(ctx, candidates, allowedTVGIDs)
+			if err != nil {
+				log.Printf("xmltv: provider short EPG gap-fill failed (%v); continuing without short EPG", err)
+				shortEPG = nil
+			} else {
+				log.Printf("xmltv: provider short EPG gap-fill fetched: %d channels with programmes (candidates=%d min_programmes=%d)", len(shortEPG.programmes), len(candidates), providerShortEPGMinProgrammes())
+			}
 		}
 	}
 
@@ -962,7 +1075,7 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 				InnerXML: "<title>" + xmlEscapeText(ref.GuideName) + "</title>",
 			}}
 		} else {
-			nodes = mergeChannelProgrammes(tvgID, provEPG, extEPG, hdhrEPG, ref.GuideName)
+			nodes = mergeChannelProgrammes(tvgID, provEPG, extEPG, hdhrEPG, shortEPG, ref.GuideName)
 		}
 
 		for i := range nodes {
@@ -1047,7 +1160,7 @@ func (x *XMLTV) runRefresh(trigger string) {
 		ttl = 10 * time.Minute
 	}
 
-	gh, ghErr := buildGuideHealthForChannels(channels, data, time.Now())
+	gh, ghErr := x.buildGuideHealthForChannels(channels, data, time.Now())
 	if ghErr != nil {
 		log.Printf("xmltv: guide-health cache refresh failed: %v", ghErr)
 	}

@@ -82,7 +82,13 @@ type guideStats struct {
 	hasLast    bool
 }
 
+type ChannelXMLIDFunc func(catalog.LiveChannel) string
+
 func Build(live []catalog.LiveChannel, mergedGuide []byte, matchRep *epglink.Report, now time.Time) (Report, error) {
+	return BuildWithChannelXMLID(live, mergedGuide, matchRep, now, nil)
+}
+
+func BuildWithChannelXMLID(live []catalog.LiveChannel, mergedGuide []byte, matchRep *epglink.Report, now time.Time, channelXMLID ChannelXMLIDFunc) (Report, error) {
 	out := Report{
 		GeneratedAt: now.UTC().Format(time.RFC3339),
 		SourceReady: len(mergedGuide) > 0,
@@ -129,7 +135,13 @@ func Build(live []catalog.LiveChannel, mergedGuide []byte, matchRep *epglink.Rep
 			row.MatchMethod = string(match.Method)
 			row.MatchReason = match.Reason
 		}
-		if gs, ok := statsByGuideNumber[strings.TrimSpace(ch.GuideNumber)]; ok {
+		statsKey := strings.TrimSpace(ch.GuideNumber)
+		if channelXMLID != nil {
+			if id := strings.TrimSpace(channelXMLID(ch)); id != "" {
+				statsKey = id
+			}
+		}
+		if gs, ok := statsByGuideNumber[statsKey]; ok {
 			row.ProgrammeCount = gs.count
 			row.RealProgrammeCount = gs.realCount
 			row.HasProgrammes = gs.count > 0

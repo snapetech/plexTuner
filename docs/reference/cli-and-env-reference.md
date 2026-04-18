@@ -1994,7 +1994,8 @@ Fetches EPG directly from your IPTV provider using existing credentials. No sepa
 - `IPTV_TUNERR_PROVIDER_EPG_INCREMENTAL` (`false`) — when `true`, apply token rendering on `IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX` from SQLite horizon (`GlobalMaxStopUnix`)
 - `IPTV_TUNERR_PROVIDER_EPG_LOOKAHEAD_HOURS` (`72`) — window end offset for incremental suffix token rendering
 - `IPTV_TUNERR_PROVIDER_EPG_BACKFILL_HOURS` (`6`) — start offset before known max stop for incremental suffix token rendering
-- `IPTV_TUNERR_PROVIDER_SHORT_EPG_FALLBACK` (`false`) — when `true`, and provider `xmltv.php` is unavailable, try `player_api.php?action=get_short_epg` against the channel stream host (or provider base URL) and synthesize real programme blocks for any channels that return short-EPG rows
+- `IPTV_TUNERR_PROVIDER_SHORT_EPG_FALLBACK` (`false`) — when `true`, use `player_api.php?action=get_short_epg` against the channel stream host (or provider base URL) to synthesize real programme blocks for channels whose merged provider/external/HDHR guide has fewer than `IPTV_TUNERR_PROVIDER_SHORT_EPG_MIN_PROGRAMMES` real rows, and also when provider `xmltv.php` is unavailable
+- `IPTV_TUNERR_PROVIDER_SHORT_EPG_MIN_PROGRAMMES` (`2`) — minimum real programme rows per channel before short-EPG gap-fill is skipped
 - `IPTV_TUNERR_PROVIDER_SHORT_EPG_LIMIT` (`6`) — max short-EPG rows requested per channel when the fallback is enabled
 - `IPTV_TUNERR_PROVIDER_SHORT_EPG_CONCURRENCY` (`8`) — concurrent short-EPG requests during fallback guide refresh
 - `IPTV_TUNERR_PROVIDER_SHORT_EPG_TIMEOUT` (`5s`) — per-request timeout for short-EPG fallback calls

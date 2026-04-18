@@ -23,6 +23,7 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/hdhomerun"
 	"github.com/snapetech/iptvtunerr/internal/indexer"
 	"github.com/snapetech/iptvtunerr/internal/provider"
+	"github.com/snapetech/iptvtunerr/internal/safeurl"
 	"github.com/snapetech/iptvtunerr/internal/tuner"
 )
 
@@ -1076,6 +1077,6 @@ func applyRuntimeEPGRepairs(cfg *config.Config, live []catalog.LiveChannel, prov
 			}
 		}
 		log.Printf("EPG repair via %s: matched=%d/%d repaired=%d applied=%d already-linked=%d ref=%s",
-			src.name, rep.Matched, rep.TotalChannels, apply.Repaired, apply.Applied, apply.AlreadyLinked, src.ref)
+			src.name, rep.Matched, rep.TotalChannels, apply.Repaired, apply.Applied, apply.AlreadyLinked, safeurl.RedactURL(src.ref))
 	}
 }

@@ -28,7 +28,7 @@ func (x *XMLTV) GuideHealth(now time.Time, aliasesRef string) (guidehealth.Repor
 	if err != nil {
 		return guidehealth.Report{}, err
 	}
-	return guidehealth.Build(x.Channels, data, matchRep, now)
+	return guidehealth.BuildWithChannelXMLID(x.Channels, data, matchRep, now, x.channelIDForChannel)
 }
 
 func (x *XMLTV) EPGDoctor(now time.Time, aliasesRef string) (epgdoctor.Report, error) {
@@ -39,7 +39,7 @@ func (x *XMLTV) EPGDoctor(now time.Time, aliasesRef string) (epgdoctor.Report, e
 	if err != nil {
 		return epgdoctor.Report{}, err
 	}
-	gh, err := guidehealth.Build(x.Channels, data, matchRep, now)
+	gh, err := guidehealth.BuildWithChannelXMLID(x.Channels, data, matchRep, now, x.channelIDForChannel)
 	if err != nil {
 		return epgdoctor.Report{}, err
 	}

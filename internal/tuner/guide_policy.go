@@ -307,6 +307,10 @@ func buildGuideHealthForChannels(live []catalog.LiveChannel, guideXML []byte, no
 	return guidehealth.Build(live, guideXML, nil, now)
 }
 
+func (x *XMLTV) buildGuideHealthForChannels(live []catalog.LiveChannel, guideXML []byte, now time.Time) (guidehealth.Report, error) {
+	return guidehealth.BuildWithChannelXMLID(live, guideXML, nil, now, x.channelIDForChannel)
+}
+
 func BuildGuideHealthForPolicy(live []catalog.LiveChannel, guideXML []byte, now time.Time) (guidehealth.Report, error) {
 	return buildGuideHealthForChannels(live, guideXML, now)
 }

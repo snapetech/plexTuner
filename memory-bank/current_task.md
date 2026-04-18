@@ -19,6 +19,8 @@
 
 # Current task
 
+**Latest (2026-04-18):** **Guide health and short-EPG backfill are being corrected after the sports guide audit:** the earlier sparse-EPG interpretation was incomplete because `guide/health.json` did not understand Plex-safe XMLTV IDs. The fix now makes guide health use the same emitted XMLTV IDs as `/guide.xml`, and expands `IPTV_TUNERR_PROVIDER_SHORT_EPG_FALLBACK=true` so provider `player_api.php?action=get_short_epg` can fill channels with fewer than `IPTV_TUNERR_PROVIDER_SHORT_EPG_MIN_PROGRAMMES` real programme rows even when provider XMLTV fetched successfully.
+
 **Latest (2026-04-18):** **Primary and sports Plex DVR lineups are now distinct instead of duplicating sports rows:** `IPTV_TUNERR_LINEUP_EXCLUDE_RECIPE=sports_na` now runs in the actual live `UpdateChannels` and curated-rebuild paths, not only in the test helper, so the primary `locals_first` lineup removes the same rows owned by the sports DVR before the Plex cap is filled. Added docs for `IPTV_TUNERR_LINEUP_EXCLUDE_RECIPE` and `IPTV_TUNERR_LINEUP_EXCLUDE_CHANNEL_IDS`, fixed Plex DVR repair logs so URLs redact query tokens, and redeployed both cluster Tunerr instances. Live proof on 2026-04-18: primary tuner `479` channels, sports tuner `106` channels, stream-ID overlap `0`; Plex provider rows now match (`757=479`, `760=106`) after sports DVR repair. Remaining guide-quality boundary: neither guide has zero-programme channels, but sports still has `26` event/alternate channels with only one programme block because the upstream XMLTV is sparse for those rows.
 
 <!-- Update at session start and when focus changes. -->

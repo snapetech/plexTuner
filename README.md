@@ -278,7 +278,8 @@ Three guide sources, merged automatically in priority order — highest wins per
 
 1. **Provider EPG** (`xmltv.php`) — fetched directly from your Xtream provider using existing credentials. Real programme schedule data, no third-party EPG required. On by default when provider credentials are set.
 2. **External XMLTV** — set `IPTV_TUNERR_XMLTV_URL` to fetch an upstream guide; filtered to your channels, remapped to local guide numbers. Gap-fills provider for time windows the provider EPG doesn't cover.
-3. **Built-in placeholder** — always available, zero config. Fallback for channels with no data from either source above.
+3. **Provider short EPG** — optional `IPTV_TUNERR_PROVIDER_SHORT_EPG_FALLBACK=true` calls `player_api.php?action=get_short_epg` for channels whose merged guide is still empty or sparse.
+4. **Built-in placeholder** — always available, zero config. Fallback for channels with no data from the real sources above.
 
 Guide cache is pre-warmed at startup, so the first guide request is not cold. Until the first real merged guide is ready, `/guide.xml` now returns `503 Service Unavailable` with a visible placeholder XMLTV body plus `Retry-After: 5` and `X-IptvTunerr-Guide-State: loading`, which keeps clients from caching provisional startup data as a real guide. If a later fetch fails, stale data is served instead of blanking the guide. Language and script normalization can also clean up multilingual feeds (`IPTV_TUNERR_XMLTV_PREFER_LANGS`, `IPTV_TUNERR_XMLTV_PREFER_LATIN`).
 

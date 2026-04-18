@@ -291,7 +291,7 @@ func TestMergeChannelProgrammes_HDHRHardwareOnly(t *testing.T) {
 			},
 		},
 	}}
-	out := mergeChannelProgrammes(tvg, nil, nil, hdhr, "Local 5")
+	out := mergeChannelProgrammes(tvg, nil, nil, hdhr, nil, "Local 5")
 	if len(out) != 1 {
 		t.Fatalf("len=%d want 1", len(out))
 	}
@@ -344,7 +344,7 @@ func TestMergeChannelProgrammes_HDHRSkippedWhenOverlapsProvider(t *testing.T) {
 			}()},
 		},
 	}}
-	out := mergeChannelProgrammes(tvg, prov, nil, hdhr, "Ch")
+	out := mergeChannelProgrammes(tvg, prov, nil, hdhr, nil, "Ch")
 	if len(out) != 1 {
 		t.Fatalf("len=%d want 1 (HDHR overlaps provider)", len(out))
 	}
@@ -396,7 +396,7 @@ func TestMergeChannelProgrammes_HDHRGapFillAfterProvider(t *testing.T) {
 			}()},
 		},
 	}}
-	out := mergeChannelProgrammes(tvg, prov, nil, hdhr, "Ch")
+	out := mergeChannelProgrammes(tvg, prov, nil, hdhr, nil, "Ch")
 	if len(out) != 2 {
 		t.Fatalf("len=%d want 2", len(out))
 	}
@@ -447,5 +447,69 @@ func TestXMLTV_buildMergedEPG_plexSafeIDs(t *testing.T) {
 	}
 	if len(tv.Programmes) != 1 || tv.Programmes[0].Channel != "c16" {
 		t.Fatalf("programmes=%+v", tv.Programmes)
+	}
+	if x.cachedGuideHealth == nil || len(x.cachedGuideHealth.Channels) != 1 {
+		t.Fatalf("cached guide health missing: %+v", x.cachedGuideHealth)
+	}
+	if got := x.cachedGuideHealth.Channels[0].Status; got != "good" && got != "healthy" {
+		t.Fatalf("guide health status=%q want good/healthy: %+v", got, x.cachedGuideHealth.Channels[0])
+	}
+}
+
+func TestXMLTV_buildMergedEPG_shortEPGGapFillsSparseProvider(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PROVIDER_SHORT_EPG_FALLBACK", "true")
+	t.Setenv("IPTV_TUNERR_PROVIDER_SHORT_EPG_MIN_PROGRAMMES", "2")
+	t.Setenv("IPTV_TUNERR_PROVIDER_SHORT_EPG_LIMIT", "3")
+	t.Setenv("IPTV_TUNERR_PROVIDER_SHORT_EPG_TIMEOUT", "2s")
+	t.Setenv("IPTV_TUNERR_PROVIDER_SHORT_EPG_CONCURRENCY", "1")
+	providerXML := `<?xml version="1.0" encoding="utf-8"?>
+<tv>
+  <programme start="20300101080000 +0000" stop="20300101090000 +0000" channel="sports.1"><title>Provider Game</title></programme>
+</tv>`
+	var shortHits int
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/xmltv.php":
+			w.Header().Set("Content-Type", "application/xml")
+			_, _ = w.Write([]byte(providerXML))
+		case "/player_api.php":
+			shortHits++
+			if got := r.URL.Query().Get("action"); got != "get_short_epg" {
+				t.Fatalf("action=%q", got)
+			}
+			_, _ = w.Write([]byte(`{"epg_listings":[{"title":"U2hvcnQgR2FtZSAx","description":"Rmlyc3Q=","start_timestamp":"1893488400","stop_timestamp":"1893492000","stream_id":"100"},{"title":"U2hvcnQgR2FtZSAy","description":"U2Vjb25k","start_timestamp":"1893492000","stop_timestamp":"1893495600","stream_id":"100"}]}`))
+		default:
+			t.Fatalf("path=%s", r.URL.Path)
+		}
+	}))
+	defer provider.Close()
+
+	x := &XMLTV{
+		Channels:           []catalog.LiveChannel{{ChannelID: "100", GuideNumber: "100", GuideName: "Sports 1", TVGID: "sports.1", StreamURL: provider.URL + "/live/u/p/100.ts", EPGLinked: true}},
+		ProviderBaseURL:    provider.URL,
+		ProviderUser:       "u",
+		ProviderPass:       "p",
+		ProviderEPGEnabled: true,
+		ProviderEPGTimeout: 5 * time.Second,
+		Client:             provider.Client(),
+	}
+	x.refresh()
+	if shortHits != 1 {
+		t.Fatalf("short epg hits=%d want 1", shortHits)
+	}
+	var tv struct {
+		Programmes []struct {
+			Title string `xml:"title"`
+		} `xml:"programme"`
+	}
+	if err := xml.Unmarshal(x.cachedXML, &tv); err != nil {
+		t.Fatal(err)
+	}
+	if len(tv.Programmes) != 3 {
+		t.Fatalf("programmes=%d want 3 xml=%s", len(tv.Programmes), string(x.cachedXML))
+	}
+	joined := string(x.cachedXML)
+	if !strings.Contains(joined, "Provider Game") || !strings.Contains(joined, "Short Game 1") || !strings.Contains(joined, "Short Game 2") {
+		t.Fatalf("short EPG did not gap fill provider guide: %s", joined)
 	}
 }
