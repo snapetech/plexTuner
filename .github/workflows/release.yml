@@ -104,10 +104,12 @@ jobs:
           EOF
           )
 
-          curl --fail --silent --show-error \
+          if ! curl --fail --silent --show-error \
             -H "Content-Type: application/json" \
             -d "$payload" \
-            "$DISCORD_RELEASE_WEBHOOK"
+            "$DISCORD_RELEASE_WEBHOOK"; then
+            echo "Discord release announcement failed; continuing without failing the release workflow."
+          fi
 
       - name: Post Matrix announcement
         env:

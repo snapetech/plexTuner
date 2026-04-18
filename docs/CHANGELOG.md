@@ -15,6 +15,11 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 - *(none)*
 
+## [v0.1.46] — 2026-04-18
+
+### Build / release
+- **Discord release announce is now non-fatal:** the release workflow now treats a bad or deleted `DISCORD_RELEASE_WEBHOOK` the same way it already treats Matrix announcement failures, logging a warning and continuing without marking a successful release red.
+
 ## [v0.1.45] — 2026-04-18
 
 ### Build / release
