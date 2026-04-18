@@ -92,7 +92,6 @@ func sharedRelayContentType(outputMux string) string {
 	return "video/mp2t"
 }
 
-
 func sharedRelayAttachIdleTimeout() time.Duration {
 	ms := getenvInt("IPTV_TUNERR_SHARED_RELAY_ATTACH_IDLE_TIMEOUT_MS", 3000)
 	if ms <= 0 {

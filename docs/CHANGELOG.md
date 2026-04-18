@@ -15,6 +15,11 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 - *(none)*
 
+## [v0.1.45] — 2026-04-18
+
+### Build / release
+- **Release verify follow-up:** fixed `gofmt -s` drift in `internal/tuner/gateway_shared_relay.go` so the stability release can pass the GitHub Actions `CI` and `Release` verification jobs. No runtime behavior changed beyond the already-landed `v0.1.44` stream fixes.
+
 ## [v0.1.44] — 2026-04-18
 
 ### Plex / deployment stability
