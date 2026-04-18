@@ -39,7 +39,7 @@ cp .env.example .env   # edit with your provider and base URL
 ./iptv-tunerr run -addr :5004
 ```
 
-Optional: `-refresh=6h` to re-index on a schedule; **`-register-plex=/path/to/Plex`** to write DVR/guide URLs and sync the full lineup (no wizard, no 480 cap). Stop Plex first. **Zero-touch:** `PLEX_DATA_DIR=/path/to/Plex ./scripts/iptvtunerr-local-test.sh zero-touch` then start Plex.
+Optional: `-refresh=6h` to re-index on a schedule; **`-register-plex=api`** with `PLEX_HOST` + `PLEX_TOKEN` for normal zero-touch registration. Legacy DB-path registration still exists for local-Plex edge cases, but it is no longer the default recommendation.
 
 **Or run in steps:**
 

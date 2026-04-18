@@ -15,6 +15,17 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 - *(none)*
 
+## [v0.1.43] — 2026-04-17
+
+### Plex / multi-DVR onboarding
+- **API-first zero-touch Plex registration is now the default documented path:** top-level help, `setup-doctor`, the Plex connection guide, and deployment docs now steer new users toward `PLEX_HOST` + `PLEX_TOKEN` with `run -mode=full -register-plex=api` instead of leading with the older DB-path registration flow.
+- **Full-mode setup doctor now checks Plex API readiness:** `setup-doctor` now reports whether `IPTV_TUNERR_PMS_URL` / `PLEX_HOST` and `IPTV_TUNERR_PMS_TOKEN` / `PLEX_TOKEN` are present when users choose `-mode=full`, and it prints the exact zero-touch next step when they are.
+- **Official two-DVR pattern is now shipped:** the repo now includes `k8s/iptvtunerr-supervisor-general-sports.example.json`, which documents the validated `general` + `sports_na` supervisor pattern with distinct device IDs, base URLs, and guide-number offset handling.
+
+### Lineup shaping
+- **New `sports_na` recipe:** lineup and registration shaping now support a stricter North America sports-first recipe that keeps Canadian and US sports brands/leagues while rejecting obvious international sports-only noise that would otherwise pollute a second sports DVR.
+- **Docs/reference updated for `sports_na`:** the README, features reference, CLI/env reference, and Plex setup docs now treat `sports_na` as a first-class built-in recipe rather than leaving `sports_now` as the only documented sports path.
+
 ## [v0.1.42] — 2026-04-17
 
 ### Plex / cluster playback

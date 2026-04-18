@@ -30,7 +30,7 @@ func registerRunPlex(ctx context.Context, cfg *config.Config, live []catalog.Liv
 	if registerPlex == "" || mode == "easy" {
 		_, _ = os.Stderr.WriteString("\n--- Plex one-time setup ---\n")
 		_, _ = os.Stderr.WriteString("Easy (wizard): -mode=easy -> lineup capped at 479; add tuner in Plex, pick suggested guide (e.g. Rogers West).\n")
-		_, _ = os.Stderr.WriteString("Full (zero-touch): -mode=full -register-plex=/path/to/Plex -> max feeds, no wizard.\n")
+		_, _ = os.Stderr.WriteString("Full (zero-touch): set PLEX_HOST + PLEX_TOKEN, then run -mode=full -register-plex=api -> no wizard, reuses existing DVRs automatically.\n")
 		_, _ = os.Stderr.WriteString("  Device / Base URL: " + baseURL + "   Guide: " + guideURLForBase(baseURL) + "\n")
 		_, _ = os.Stderr.WriteString("---\n\n")
 		return false
@@ -173,7 +173,7 @@ func applyRegistrationRecipe(live []catalog.LiveChannel, recipe string) []catalo
 	switch recipe {
 	case "", "off", "none":
 		return live
-	case "sports_now", "kids_safe", "locals_first":
+	case "sports_now", "sports_na", "kids_safe", "locals_first":
 		out := tuner.ApplyNamedLineupRecipe(live, recipe)
 		log.Printf("Registration recipe applied: recipe=%s kept=%d/%d", recipe, len(out), len(live))
 		return out

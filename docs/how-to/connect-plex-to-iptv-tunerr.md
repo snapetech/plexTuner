@@ -16,7 +16,7 @@ See also: [plex-dvr-lifecycle-and-api](../reference/plex-dvr-lifecycle-and-api.m
 | Path | Best when | You handle |
 |------|-----------|------------|
 | **A. Plex UI wizard** | One household Plex, normal setup | Click through Live TV & DVR; map channels to guide |
-| **B. `iptv-tunerr run -register-plex`** | You want Tunerr to call Plex’s registration API after startup | Same Plex requirements as API path; see flags in [CLI reference](../reference/cli-and-env-reference.md) |
+| **B. `iptv-tunerr run -mode=full -register-plex=api`** | You want Tunerr to create or reuse the Plex DVR automatically after startup | Needs Plex API URL/token; see flags in [CLI reference](../reference/cli-and-env-reference.md) |
 | **C. Scripted / API-only** | Many DVRs, automation, category fleets | Programmatic DVR create + EPG + channelmap (see lifecycle doc) |
 
 All paths need: **Tunerr reachable from Plex**, **catalog + guide** in good enough shape for Plex to match channels to EPG.
@@ -46,11 +46,12 @@ Use your real base URL for `$TUNERR` (same idea as [interpreting-probe-results](
 
 **480-channel limit:** Plex’s wizard is built around a bounded channel count. If your catalog is larger, use Tunerr’s lineup hygiene / recipes ([lineup-epg-hygiene](../reference/lineup-epg-hygiene.md), `IPTV_TUNERR_GUIDE_POLICY`, registration recipes) *before* wizard, or use path B/C for programmatic fleets.
 
-## Path B — `-register-plex` on `run`
+## Path B — `-mode=full -register-plex=api` on `run`
 
-`iptv-tunerr run … -register-plex` asks Tunerr to register with Plex using configured Plex URL/token (see [CLI reference](../reference/cli-and-env-reference.md)). It is a **convenience** for the injected DVR style, not a substitute for:
+`iptv-tunerr run -mode=full -register-plex=api` is now the recommended zero-touch Plex path. Tunerr uses the configured Plex URL/token to create or reuse the DVR automatically (see [CLI reference](../reference/cli-and-env-reference.md)). It is a convenience layer over the same Plex APIs, not a substitute for:
 
 - Plex having a valid **token** and reaching Tunerr
+- a stable per-instance `IPTV_TUNERR_DEVICE_ID` / `IPTV_TUNERR_BASE_URL` / `IPTV_TUNERR_FRIENDLY_NAME` when you run more than one DVR
 - **Channelmap / EPG association** if your Plex version still needs a follow-up in the UI or API
 
 If registration succeeds but the guide is empty, see **Troubleshooting** below and the lifecycle doc’s “guide refresh / channelmap” section.

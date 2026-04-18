@@ -103,3 +103,30 @@ func TestHostLooksLocalOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildFullModeReportsPlexAPIReadiness(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PMS_URL", "http://plex.example:32400")
+	t.Setenv("IPTV_TUNERR_PMS_TOKEN", "secret")
+	cfg := &config.Config{
+		ProviderBaseURL: "http://provider.example",
+		ProviderUser:    "demo",
+		ProviderPass:    "secret",
+		BaseURL:         "http://192.168.1.10:5004",
+		CatalogPath:     "/var/lib/iptvtunerr/catalog.json",
+		WebUIPort:       48879,
+	}
+	report := Build(cfg, "full", "")
+	found := false
+	for _, check := range report.Checks {
+		if check.Code == "plex_api" && check.Level == "pass" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected plex_api pass check, got %#v", report.Checks)
+	}
+	joined := strings.Join(report.NextSteps, "\n")
+	if !strings.Contains(joined, "-register-plex=api") {
+		t.Fatalf("expected zero-touch next step, got %q", joined)
+	}
+}

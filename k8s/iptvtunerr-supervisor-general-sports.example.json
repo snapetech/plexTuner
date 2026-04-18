@@ -1,0 +1,36 @@
+{
+  "restart": true,
+  "restartDelay": "2s",
+  "failFast": false,
+  "instances": [
+    {
+      "name": "general",
+      "args": ["run", "-mode=full", "-register-plex=api", "-addr=:5004"],
+      "env": {
+        "IPTV_TUNERR_BASE_URL": "http://iptvtunerr.plex.svc:5004",
+        "IPTV_TUNERR_DEVICE_ID": "iptvtunerr01",
+        "IPTV_TUNERR_FRIENDLY_NAME": "IPTV Tunerr",
+        "IPTV_TUNERR_LINEUP_RECIPE": "locals_first",
+        "IPTV_TUNERR_LINEUP_SHAPE": "na_en",
+        "IPTV_TUNERR_LINEUP_REGION_PROFILE": "ca_west",
+        "PLEX_HOST": "http://plex:32400",
+        "PLEX_TOKEN": "YOUR_OWNER_PLEX_TOKEN"
+      }
+    },
+    {
+      "name": "sports",
+      "args": ["run", "-mode=full", "-register-plex=api", "-addr=:5101"],
+      "env": {
+        "IPTV_TUNERR_BASE_URL": "http://iptvtunerr-sports.plex.svc:5004",
+        "IPTV_TUNERR_DEVICE_ID": "iptvtunerr-sports01",
+        "IPTV_TUNERR_FRIENDLY_NAME": "IPTV Tunerr Sports",
+        "IPTV_TUNERR_LINEUP_RECIPE": "sports_na",
+        "IPTV_TUNERR_LINEUP_SHAPE": "na_en",
+        "IPTV_TUNERR_LINEUP_REGION_PROFILE": "ca_west",
+        "IPTV_TUNERR_GUIDE_NUMBER_OFFSET": "10000",
+        "PLEX_HOST": "http://plex:32400",
+        "PLEX_TOKEN": "YOUR_OWNER_PLEX_TOKEN"
+      }
+    }
+  ]
+}

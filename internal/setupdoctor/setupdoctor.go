@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -151,6 +152,21 @@ func Build(cfg *config.Config, mode, baseURLOverride string) Report {
 		})
 	}
 
+	plexHost := strings.TrimSpace(firstNonEmptyEnv("IPTV_TUNERR_PMS_URL", "PLEX_HOST"))
+	plexToken := strings.TrimSpace(firstNonEmptyEnv("IPTV_TUNERR_PMS_TOKEN", "PLEX_TOKEN"))
+	if mode == "full" {
+		switch {
+		case plexHost == "" && plexToken == "":
+			report.Checks = append(report.Checks, Issue{Level: "warn", Code: "plex_api", Message: "Plex API zero-touch registration is not configured.", Hint: "Set IPTV_TUNERR_PMS_URL or PLEX_HOST plus IPTV_TUNERR_PMS_TOKEN or PLEX_TOKEN, then use -register-plex=api for automatic DVR creation/reuse."})
+		case plexHost == "":
+			report.Checks = append(report.Checks, Issue{Level: "warn", Code: "plex_api", Message: "Plex token is set, but Plex host is missing.", Hint: "Set IPTV_TUNERR_PMS_URL or PLEX_HOST so Tunerr can call Plex automatically."})
+		case plexToken == "":
+			report.Checks = append(report.Checks, Issue{Level: "warn", Code: "plex_api", Message: "Plex host is set, but Plex token is missing.", Hint: "Set IPTV_TUNERR_PMS_TOKEN or PLEX_TOKEN so Tunerr can create or reuse the DVR automatically."})
+		default:
+			report.Checks = append(report.Checks, Issue{Level: "pass", Code: "plex_api", Message: "Plex API zero-touch registration looks configured."})
+		}
+	}
+
 	if cfg.LineupMaxChannels > 480 && mode == "easy" {
 		report.Checks = append(report.Checks, Issue{
 			Level:   "warn",
@@ -222,6 +238,13 @@ func Build(cfg *config.Config, mode, baseURLOverride string) Report {
 				"Use the XMLTV guide URL: "+report.GuideURL,
 			)
 		}
+		if mode == "full" {
+			if plexHost != "" && plexToken != "" {
+				report.NextSteps = append(report.NextSteps, "Run zero-touch Plex registration: iptv-tunerr run -mode=full -register-plex=api")
+			} else {
+				report.NextSteps = append(report.NextSteps, "Set PLEX_HOST and PLEX_TOKEN (or IPTV_TUNERR_PMS_URL and IPTV_TUNERR_PMS_TOKEN) before using -register-plex=api.")
+			}
+		}
 		if report.DeckURL != "" {
 			report.NextSteps = append(report.NextSteps, "Open the Control Deck: "+report.DeckURL)
 		}
@@ -283,4 +306,27 @@ func deckURL(baseURL string, cfg *config.Config) string {
 		}
 	}
 	return fmt.Sprintf("http://127.0.0.1:%d/", port)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func firstNonEmptyEnv(keys ...string) string {
+	for _, key := range keys {
+		if v := strings.TrimSpace(getenv(key)); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func getenv(key string) string {
+	return strings.TrimSpace(os.Getenv(key))
 }

@@ -5304,6 +5304,28 @@ func TestApplyLineupPreCapFilters_lineupRecipeResilient(t *testing.T) {
 	}
 }
 
+func TestApplyLineupPreCapFilters_lineupRecipeSportsNA(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_LINEUP_DROP_MUSIC", "")
+	t.Setenv("IPTV_TUNERR_LINEUP_EXCLUDE_REGEX", "")
+	t.Setenv("IPTV_TUNERR_LINEUP_RECIPE", "sports_na")
+	t.Setenv("IPTV_TUNERR_LINEUP_REGION_PROFILE", "ca_west")
+	in := []catalog.LiveChannel{
+		{ChannelID: "1", GuideName: "TSN 1", TVGID: "tsn1.ca", StreamURL: "http://a/1"},
+		{ChannelID: "2", GuideName: "FOX Sports 1", TVGID: "fs1.us", StreamURL: "http://a/2"},
+		{ChannelID: "3", GuideName: "beIN SPORTS MENA 1", TVGID: "bein1.ar", StreamURL: "http://a/3"},
+		{ChannelID: "4", GuideName: "Sky Sports Main Event", TVGID: "skysports.uk", StreamURL: "http://a/4"},
+		{ChannelID: "5", GuideName: "FOX News", TVGID: "foxnews.us", StreamURL: "http://a/5"},
+	}
+	out := applyLineupPreCapFilters(in)
+	if len(out) != 2 {
+		t.Fatalf("len=%d want 2", len(out))
+	}
+	got := []string{out[0].ChannelID, out[1].ChannelID}
+	if !((got[0] == "1" && got[1] == "2") || (got[0] == "2" && got[1] == "1")) {
+		t.Fatalf("unexpected sports_na result: %+v", out)
+	}
+}
+
 func TestApplyLineupPreCapFilters_lineupRecipeSportsNow(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_LINEUP_DROP_MUSIC", "")
 	t.Setenv("IPTV_TUNERR_LINEUP_EXCLUDE_REGEX", "")

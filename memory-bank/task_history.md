@@ -8259,3 +8259,53 @@ Notes
   - `docker save localhost/iptvtunerr:cluster | ssh kspld0 'sudo k3s ctr images import -'`
   - `KUBECONFIG=$HOME/.kube/config kubectl -n plex rollout status deployment/iptvtunerr --timeout=240s`
   - live `Lavf/60.16.100` fetch from inside `plex-standby`
+- 2026-04-17: Fixed Plex standby duplicate blank `plexKube` Live TV source publication by pinning PMS `PreferredNetworkInterface=enp17s0` (live via `/:/prefs`, persisted in `../k3s/plex/deployment-kspld0.yaml`). Verified plex.tv resources collapsed from six connection URIs to two (canonical LAN + WAN) while PMS still served one DVR `757` and `479` guide channels.
+
+- Date: 2026-04-17
+  Title: Add and deploy the second `sports_na` Plex DVR
+  Summary:
+    - Added a strict `sports_na` lineup recipe in `internal/tuner/server.go` and allowed runtime Plex registration to use it via `cmd/iptv-tunerr/cmd_runtime_register.go`.
+    - Added focused regression coverage in `internal/tuner/server_test.go` so North American sports channels are kept while obvious non-sports and non-NA sports rows are dropped.
+    - Rebuilt the cluster image, restarted `iptvtunerr-sports`, verified it now serves a `109`-channel sports-first lineup at `http://iptvtunerr-sports.plex.svc:5004`, and registered it into Plex standby as device `759` / DVR `760` / provider `tv.plex.providers.epg.xmltv:760`.
+  Verification:
+    - `go test ./internal/tuner -run 'TestApplyLineupPreCapFilters_lineupRecipe(SportsNow|SportsNA|KidsSafe|LocalsFirst)$'`
+    - `go test ./cmd/iptv-tunerr -run 'Test.*'`
+    - `./scripts/verify`
+    - `go build -o /tmp/iptvtunerr-test ./cmd/iptv-tunerr`
+  Notes:
+    - The live sports lineup is intentionally capped by the recipe itself rather than the generic 479-channel easy cap; current live count is `109`.
+    - PMS now shows two clean DVRs: primary `757` (`IPTV+Tunerr`) and sports `760` (`IPTV+Tunerr+Sports`).
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/server_test.go`
+    - `cmd/iptv-tunerr/cmd_runtime_register.go`
+    - `../k3s/plex/iptvtunerr-sports-deployment.yaml`
+    - `../k3s/plex/iptvtunerr-sports-service.yaml`
+
+- Date: 2026-04-17
+  Title: Make API-first zero-touch and multi-DVR the official onboarding path
+  Summary:
+    - Updated CLI/help text so new users are steered toward `PLEX_HOST` + `PLEX_TOKEN` with `run -mode=full -register-plex=api` instead of the old DB-path-first Plex wording.
+    - Extended `internal/setupdoctor` so full mode now reports whether Plex API zero-touch registration is configured and includes the exact `-register-plex=api` next step when it is.
+    - Updated high-signal docs/reference to include `sports_na`, the API-first Plex path, and a shipped `k8s/iptvtunerr-supervisor-general-sports.example.json` example for the validated `general + sports` two-DVR pattern.
+  Verification:
+    - `go test ./internal/setupdoctor ./cmd/iptv-tunerr -run 'Test(UsageTextIncludesCommands|UsageTextAllCommandsIncludesLabOps|BuildFullModeReportsPlexAPIReadiness|BuildReady|BuildNotReadyWithoutSourceOrBaseURL|BuildWarnsOnLocalhostBaseURL|BuildBaseURLOverrideDrivesDeckURL|HostLooksLocalOnly)$'`
+    - `go test ./internal/tuner -run 'TestApplyLineupPreCapFilters_lineupRecipe(SportsNow|SportsNA|KidsSafe|LocalsFirst)$'`
+    - `./scripts/verify`
+    - `N/A`
+  Notes:
+    - This pass is mostly product-surface cleanup: it aligns the docs/help with the runtime behavior already proven live in cluster and Plex.
+    - Legacy DB-path registration still exists, but it is now documented as the edge-case path instead of the default recommendation.
+  Opportunities filed:
+    - none
+  Links:
+    - `cmd/iptv-tunerr/main.go`
+    - `cmd/iptv-tunerr/cmd_core.go`
+    - `cmd/iptv-tunerr/cmd_runtime_register.go`
+    - `internal/setupdoctor/setupdoctor.go`
+    - `README.md`
+    - `docs/how-to/connect-plex-to-iptv-tunerr.md`
+    - `docs/reference/cli-and-env-reference.md`
+    - `k8s/iptvtunerr-supervisor-general-sports.example.json`

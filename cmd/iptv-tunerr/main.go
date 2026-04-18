@@ -47,6 +47,11 @@ func usageText(prog string, commands []commandSpec, version string, sections []s
 	fmt.Fprintln(&out, "  iptv-tunerr setup-doctor")
 	fmt.Fprintln(&out, "  iptv-tunerr probe")
 	fmt.Fprintln(&out, "  iptv-tunerr run -mode=easy")
+	fmt.Fprintln(&out, "")
+	fmt.Fprintln(&out, "Zero-touch Plex:")
+	fmt.Fprintln(&out, "  export PLEX_HOST=http://<plex-host>:32400")
+	fmt.Fprintln(&out, "  export PLEX_TOKEN=<owner-token>")
+	fmt.Fprintln(&out, "  iptv-tunerr run -mode=full -register-plex=api")
 	fmt.Fprintln(&out)
 	if !showAll {
 		fmt.Fprintf(&out, "Advanced lab/operator commands are hidden by default. Run `%s --all-commands` to list the full surface.\n\n", prog)

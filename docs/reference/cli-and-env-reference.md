@@ -38,7 +38,7 @@ Common flags:
 - `-mode` (`easy` or `full`)
 - `-skip-index`
 - `-skip-health`
-- `-register-plex`
+- `-register-plex` (`api` for zero-touch Plex API registration, or a Plex data path for legacy DB-assisted registration)
 - `-register-only`
 
 Use for:
@@ -81,6 +81,7 @@ What it checks:
 - whether a real IPTV source is configured (`IPTV_TUNERR_M3U_URL` or provider URL plus credentials)
 - whether `IPTV_TUNERR_BASE_URL` is set and looks reachable
 - whether the chosen first-run mode matches the usual Plex wizard lane
+- whether Plex API zero-touch registration is configured when you choose `-mode=full`
 - whether the catalog path and deck auth choices are sensible
 
 Flags:

@@ -198,17 +198,29 @@ Legacy `/ui/` shell: still available on the tuner port for lightweight read-only
 
 **Programmatic (all servers, headless):**
 ```bash
-# Plex
-./iptv-tunerr run -register-plex
+# Plex zero-touch (recommended)
+export PLEX_HOST=http://<plex-host>:32400
+export PLEX_TOKEN=<owner-token>
+./iptv-tunerr run -mode=full -register-plex=api
 
 # Emby
-./iptv-tunerr run -register-emby -emby-state-file /var/lib/tunerr/emby-reg.json
+./iptv-tunerr run -mode=full -register-emby -emby-state-file /var/lib/tunerr/emby-reg.json
 
 # Jellyfin
-./iptv-tunerr run -register-jellyfin -jellyfin-state-file /var/lib/tunerr/jf-reg.json
+./iptv-tunerr run -mode=full -register-jellyfin -jellyfin-state-file /var/lib/tunerr/jf-reg.json
 ```
 
 Full connection guide: [Setup Paths](#setup-paths)
+
+### Automatic Two-DVR Pattern (`general` + `sports_na`)
+
+The clean repeatable Plex pattern is now:
+- one primary DVR for your normal lineup (`run -mode=full -register-plex=api`)
+- one second DVR with `IPTV_TUNERR_LINEUP_RECIPE=sports_na`
+- distinct `IPTV_TUNERR_BASE_URL`, `IPTV_TUNERR_DEVICE_ID`, and `IPTV_TUNERR_FRIENDLY_NAME` per instance
+- optional `IPTV_TUNERR_GUIDE_NUMBER_OFFSET` on the second DVR so guide numbers do not overlap
+
+A shipped example supervisor config for this exact pattern lives at `k8s/iptvtunerr-supervisor-general-sports.example.json`.
 For Docker, systemd, and bare-metal: [`docs/how-to/deployment.md`](docs/how-to/deployment.md)
 
 ---
@@ -637,12 +649,13 @@ IPTV_TUNERR_LINEUP_RECIPE=balanced         # rank by combined score
 IPTV_TUNERR_LINEUP_RECIPE=guide_first      # rank by guide confidence first
 IPTV_TUNERR_LINEUP_RECIPE=resilient        # rank by backup-stream resilience first
 IPTV_TUNERR_LINEUP_RECIPE=sports_now       # keep sports-heavy channels only
+IPTV_TUNERR_LINEUP_RECIPE=sports_na        # keep North America sports-first channels only
 IPTV_TUNERR_LINEUP_RECIPE=kids_safe        # keep kid/family-safe channels only
 IPTV_TUNERR_LINEUP_RECIPE=locals_first     # bubble likely local/regional channels to the top
 IPTV_TUNERR_DNA_POLICY=prefer_best         # collapse duplicate dna_id variants to the strongest candidate
 IPTV_TUNERR_GUIDE_POLICY=healthy           # keep only channels with real programme blocks once guide cache is ready
 IPTV_TUNERR_REGISTER_RECIPE=healthy        # use channel-intelligence scoring to prune/reorder channels before Plex/Emby/Jellyfin registration
-# or: sports_now | kids_safe | locals_first
+# or: sports_now | sports_na | kids_safe | locals_first
 ```
 
 For durable server-side curation beyond the built-in lineup recipes, set `IPTV_TUNERR_PROGRAMMING_RECIPE_FILE=/path/to/programming.json`. Tunerr will then expose `/programming/categories.json`, `/programming/channels.json`, `/programming/order.json`, `/programming/backups.json`, `/programming/harvest.json`, `/programming/harvest-import.json`, `/programming/recipe.json`, and `/programming/preview.json`, apply category/channel overrides before the final lineup is exposed to Plex, support `order_mode: "recommended"` for a server-side Local/News/Sports/etc. ordering, optionally collapse exact same-channel siblings into one visible row with merged backup stream URLs via `collapse_exact_backups: true`, and turn a saved Plex lineup-harvest report (`IPTV_TUNERR_PLEX_LINEUP_HARVEST_FILE`) into a previewable/applyable recipe import with reported match strategies, including a local-broadcast stem fallback when exact market strings differ.

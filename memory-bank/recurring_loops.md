@@ -44,6 +44,27 @@
 
 ### Loop: GitHub Release pages keep showing vague auto-notes instead of actual IPTV Tunerr changes
 
+
+### Loop: Blank duplicate `plexKube` Live TV sources are blamed on DVR churn when the real problem is Plex advertising every host-network interface
+
+**Symptom**
+- Fresh Plex Web/Desktop sessions show many blank `plexKube` Live TV sources or guide tabs, often matching the number of local interfaces on the Plex host.
+- `/livetv/dvrs` and `/media/providers` still show only one real DVR/provider, so it looks like the clients are inventing ghosts.
+
+**Why it's tricky**
+- Tunerr DVR churn can create stale provider IDs, so it is easy to over-focus on registration/reconcile logic even after PMS canonical state is clean.
+- The actual duplicate count can come from `plex.tv/api/resources` publishing the same PMS instance multiple times via different connection URIs (`docker0`, `cni0`, `flannel`, Wi-Fi, LAN, WAN). Some Plex clients then surface those as repeated Live TV sources even in fresh sessions.
+
+**What works**
+- Check `https://plex.tv/api/resources` for the PMS `clientIdentifier` and count its `<Connection>` entries before touching Tunerr again.
+- If one PMS instance is publishing multiple host-network interfaces, set PMS `PreferredNetworkInterface` to the canonical LAN NIC and restart Plex.
+- On the standby k3s deployment this is persisted as `PLEX_PREFERENCE_6=PreferredNetworkInterface=enp17s0`. After restart, verify plex.tv resources collapse to the intended LAN+WAN pair.
+
+**Where it's documented**
+- `../k3s/plex/deployment-kspld0.yaml`
+- `../k3s/plex/README.md`
+- `memory-bank/current_task.md`
+
 ### Loop: Plex standby gets bytes from Tunerr but PMS still fails with `sample rate not set`
 
 **Symptom**

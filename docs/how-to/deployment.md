@@ -48,9 +48,8 @@ cp .env.example .env   # edit with your provider and base URL
 ```
 
 Optional for Plex:
-- `-register-plex=/path/to/Plex` writes DVR/guide URLs and syncs the full lineup (no wizard, no 480 cap)
-- stop Plex first
-- **Zero-touch:** `PLEX_DATA_DIR=/path/to/Plex ./scripts/iptvtunerr-local-test.sh zero-touch` then start Plex
+- `-register-plex=api` with `PLEX_HOST` + `PLEX_TOKEN` is the normal zero-touch path
+- DB-path registration remains available only for legacy local-Plex setups where Plex is stopped intentionally
 
 For Emby/Jellyfin registration, see [Emby and Jellyfin Support](../emby-jellyfin-support.md).
 

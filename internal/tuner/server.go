@@ -697,6 +697,15 @@ func ApplyNamedLineupRecipe(live []catalog.LiveChannel, recipe string) []catalog
 		if len(filtered) > 0 {
 			rows = filtered
 		}
+	case "sports_na":
+		for _, row := range rows {
+			if lineupRecipeNorthAmericanSportsScore(row.ch) > 0 {
+				filtered = append(filtered, row)
+			}
+		}
+		if len(filtered) > 0 {
+			rows = filtered
+		}
 	case "kids_safe":
 		for _, row := range rows {
 			if lineupRecipeKidsSafe(row.ch) {
@@ -745,6 +754,16 @@ func ApplyNamedLineupRecipe(live []catalog.LiveChannel, recipe string) []catalog
 				return rows[i].score > rows[j].score
 			}
 			return left > right
+		case "sports_na":
+			left := lineupRecipeNorthAmericanSportsScore(rows[i].ch)
+			right := lineupRecipeNorthAmericanSportsScore(rows[j].ch)
+			if left == right {
+				if rows[i].score == rows[j].score {
+					return rows[i].idx < rows[j].idx
+				}
+				return rows[i].score > rows[j].score
+			}
+			return left > right
 		default: // balanced, high_confidence
 			if rows[i].score == rows[j].score {
 				return rows[i].idx < rows[j].idx
@@ -772,6 +791,48 @@ func lineupRecipeSportsLike(ch catalog.LiveChannel) bool {
 		}
 	}
 	return false
+}
+
+func lineupRecipeNorthAmericanSportsScore(ch catalog.LiveChannel) int {
+	if !lineupRecipeSportsLike(ch) {
+		return 0
+	}
+	s := lineupRecipeSearchText(ch)
+	score := 0
+	tvgid := strings.ToLower(strings.TrimSpace(ch.TVGID))
+	switch {
+	case strings.HasSuffix(tvgid, ".ca"):
+		score += 140
+	case strings.HasSuffix(tvgid, ".us"):
+		score += 120
+	default:
+		if scoreLineupChannelForShape("na_en", strings.ToLower(strings.TrimSpace(os.Getenv("IPTV_TUNERR_LINEUP_REGION_PROFILE"))), ch) < 40 {
+			return 0
+		}
+		score += 40
+	}
+	for _, term := range []string{
+		" tsn", " sportsnet", " sn ", " espn", " espnews", " espnu", " sec network", " acc network",
+		" nfl network", " mlb network", " nba tv", " nhl network", " golf channel", " tennis channel",
+		" fox sports", " fs1", " fs2", " cbs sports", " nbc sports", " tnt sports", " bein sports us",
+		" sportsman", " outd", " willow", " fubo sports", " msg ", " masn", " sny", " yes network",
+		" root sports", " sportsnet one", " sportsnet 360", " sportsnet world", " sportsnet east", " sportsnet west",
+		" sportsnet ontario", " sportsnet pacific",
+	} {
+		if strings.Contains(s, term) {
+			score += 40
+		}
+	}
+	for _, blocked := range []string{
+		" arab", " bein sports mena", " bein sports fr", " bein sport fr", " supersport", " sky sport it",
+		" sky sports uk", " eurosport", " astro", " viaplay", " premier sports", " tigo sports", " fox deportes",
+		" tudn", " univision deportes",
+	} {
+		if strings.Contains(s, blocked) {
+			return 0
+		}
+	}
+	return score
 }
 
 func lineupRecipeKidsSafe(ch catalog.LiveChannel) bool {
