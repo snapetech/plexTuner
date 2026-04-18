@@ -1852,6 +1852,41 @@ func TestGateway_sharedRelaySessionLateSubscriberGetsReplay(t *testing.T) {
 	}
 }
 
+func TestGateway_attachSharedRelaySessionSkipsIdleZeroReplaySession(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_SHARED_RELAY_ATTACH_IDLE_TIMEOUT_MS", "50")
+	g := &Gateway{}
+	sess := g.createSharedRelaySession("ch1", "r000001")
+	if sess == nil {
+		t.Fatal("expected shared relay session")
+	}
+	sess.mu.Lock()
+	sess.StartedAt = time.Now().Add(-time.Second)
+	sess.mu.Unlock()
+	reader, ok := g.attachSharedRelaySession(sharedHLSGoRelayKey("ch1"), "r000002")
+	if ok {
+		if reader != nil {
+			_ = reader.Close()
+		}
+		t.Fatal("expected idle zero-replay shared relay attach to be skipped")
+	}
+	g.closeSharedRelaySession(sharedHLSGoRelayKey("ch1"), sess)
+}
+
+func TestGateway_attachSharedRelaySessionAllowsRecentZeroReplaySession(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_SHARED_RELAY_ATTACH_IDLE_TIMEOUT_MS", "1000")
+	g := &Gateway{}
+	sess := g.createSharedRelaySession("ch1", "r000001")
+	if sess == nil {
+		t.Fatal("expected shared relay session")
+	}
+	reader, ok := g.attachSharedRelaySession(sharedHLSGoRelayKey("ch1"), "r000002")
+	if !ok || reader == nil {
+		t.Fatal("expected recent zero-replay shared relay attach")
+	}
+	_ = reader.Close()
+	g.closeSharedRelaySession(sharedHLSGoRelayKey("ch1"), sess)
+}
+
 func TestGateway_tryServeSharedRelay(t *testing.T) {
 	g := &Gateway{}
 	sess := g.createSharedRelaySession("ch1", "r000001")
@@ -3907,6 +3942,7 @@ exec sleep 30
 	t.Setenv("IPTV_TUNERR_FFMPEG_PATH", ffmpegPath)
 	t.Setenv("IPTV_TUNERR_FFMPEG_HLS_FIRST_BYTES_TIMEOUT_MS", "100")
 	t.Setenv("IPTV_TUNERR_FFMPEG_DISABLED", "0")
+	t.Setenv("IPTV_TUNERR_UPSTREAM_RETRY_LIMIT", "0")
 
 	g := &Gateway{
 		Channels: []catalog.LiveChannel{{
@@ -3933,6 +3969,281 @@ exec sleep 30
 	}
 	if elapsed > 2*time.Second {
 		t.Fatalf("expected quick fallback, got elapsed=%s", elapsed)
+	}
+}
+
+func TestGateway_stream_hlsStallAfterProgressFallsBackToBackup(t *testing.T) {
+	prevTimeout := hlsRelayNoProgressTimeout
+	prevRefreshSleep := hlsRelayRefreshSleep
+	hlsRelayNoProgressTimeout = 50 * time.Millisecond
+	hlsRelayRefreshSleep = func([]byte) {}
+	t.Cleanup(func() {
+		hlsRelayNoProgressTimeout = prevTimeout
+		hlsRelayRefreshSleep = prevRefreshSleep
+	})
+
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/playlist.m3u8":
+			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+			_, _ = io.WriteString(w, `#EXTM3U
+#EXT-X-TARGETDURATION:1
+#EXTINF:1,
+seg.ts
+`)
+		case "/seg.ts":
+			w.Header().Set("Content-Type", "video/mp2t")
+			_, _ = w.Write([]byte("PRIMARY-SEGMENT"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer primary.Close()
+
+	backup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("BACKUP-STREAM"))
+	}))
+	defer backup.Close()
+
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{{
+			ChannelID:   "1",
+			GuideNumber: "101",
+			GuideName:   "Ch1",
+			TVGID:       "tvg.1",
+			StreamURLs:  []string{primary.URL + "/playlist.m3u8", backup.URL},
+		}},
+		TunerCount:    2,
+		DisableFFmpeg: true,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/stream/1", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "PRIMARY-SEGMENT") {
+		t.Fatalf("body=%q want primary segment bytes before failover", body)
+	}
+	if !strings.Contains(body, "BACKUP-STREAM") {
+		t.Fatalf("body=%q want backup bytes after HLS stall failover", body)
+	}
+}
+
+func TestGateway_stream_hlsStallAfterProgressRetriesSameUpstream(t *testing.T) {
+	prevTimeout := hlsRelayNoProgressTimeout
+	prevRefreshSleep := hlsRelayRefreshSleep
+	hlsRelayNoProgressTimeout = 50 * time.Millisecond
+	hlsRelayRefreshSleep = func([]byte) {}
+	t.Cleanup(func() {
+		hlsRelayNoProgressTimeout = prevTimeout
+		hlsRelayRefreshSleep = prevRefreshSleep
+	})
+	t.Setenv("IPTV_TUNERR_UPSTREAM_RETRY_LIMIT", "1")
+
+	var playlistHits atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/playlist.m3u8":
+			hit := playlistHits.Add(1)
+			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+			if hit == 1 {
+				_, _ = io.WriteString(w, `#EXTM3U
+#EXT-X-TARGETDURATION:1
+#EXTINF:1,
+seg-a.ts
+`)
+				return
+			}
+			_, _ = io.WriteString(w, `#EXTM3U
+#EXT-X-TARGETDURATION:1
+#EXTINF:1,
+seg-b.ts
+`)
+		case "/seg-a.ts":
+			w.Header().Set("Content-Type", "video/mp2t")
+			_, _ = w.Write([]byte("SEG-A"))
+		case "/seg-b.ts":
+			w.Header().Set("Content-Type", "video/mp2t")
+			_, _ = w.Write([]byte("SEG-B"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{{
+			ChannelID:   "1",
+			GuideNumber: "101",
+			GuideName:   "Ch1",
+			TVGID:       "tvg.1",
+			StreamURL:   upstream.URL + "/playlist.m3u8",
+		}},
+		TunerCount:    2,
+		DisableFFmpeg: true,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/stream/1", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "SEG-A") || !strings.Contains(body, "SEG-B") {
+		t.Fatalf("body=%q want bytes from both same-upstream attempts", body)
+	}
+	if got := playlistHits.Load(); got < 2 {
+		t.Fatalf("playlist hits=%d want retry on same upstream", got)
+	}
+}
+
+func TestGateway_stream_hlsStallAfterProgressDoesNotDowngradeToAllUpstreamsFailedAfterDeadBackup(t *testing.T) {
+	prevTimeout := hlsRelayNoProgressTimeout
+	prevRefreshSleep := hlsRelayRefreshSleep
+	hlsRelayNoProgressTimeout = 50 * time.Millisecond
+	hlsRelayRefreshSleep = func([]byte) {}
+	t.Cleanup(func() {
+		hlsRelayNoProgressTimeout = prevTimeout
+		hlsRelayRefreshSleep = prevRefreshSleep
+	})
+	t.Setenv("IPTV_TUNERR_UPSTREAM_RETRY_LIMIT", "1")
+
+	var playlistHits atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/playlist.m3u8":
+			hit := playlistHits.Add(1)
+			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+			if hit == 1 {
+				_, _ = io.WriteString(w, `#EXTM3U
+#EXT-X-TARGETDURATION:1
+#EXTINF:1,
+seg-a.ts
+`)
+				return
+			}
+			_, _ = io.WriteString(w, `#EXTM3U
+#EXT-X-TARGETDURATION:1
+#EXTINF:1,
+seg-b.ts
+`)
+		case "/seg-a.ts":
+			w.Header().Set("Content-Type", "video/mp2t")
+			_, _ = w.Write([]byte("SEG-A"))
+		case "/seg-b.ts":
+			w.Header().Set("Content-Type", "video/mp2t")
+			_, _ = w.Write([]byte("SEG-B"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{{
+			ChannelID:   "1",
+			GuideNumber: "101",
+			GuideName:   "Ch1",
+			TVGID:       "tvg.1",
+			StreamURLs:  []string{upstream.URL + "/playlist.m3u8", "http://does-not-resolve.invalid/backup.m3u8"},
+		}},
+		TunerCount:    2,
+		DisableFFmpeg: true,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/stream/1", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "SEG-A") || !strings.Contains(body, "SEG-B") {
+		t.Fatalf("body=%q want streamed segment bytes from primary retries", body)
+	}
+	if len(g.recentAttempts) != 1 {
+		t.Fatalf("recentAttempts=%d want 1", len(g.recentAttempts))
+	}
+	if got := g.recentAttempts[0].FinalStatus; got != "stream_ended_after_progress" {
+		t.Fatalf("final status=%q want stream_ended_after_progress", got)
+	}
+}
+
+func TestGateway_stream_hlsStallAfterProgressRetriesPrimaryBeforeDeadBackup(t *testing.T) {
+	prevTimeout := hlsRelayNoProgressTimeout
+	prevRefreshSleep := hlsRelayRefreshSleep
+	hlsRelayNoProgressTimeout = 50 * time.Millisecond
+	hlsRelayRefreshSleep = func([]byte) {}
+	t.Cleanup(func() {
+		hlsRelayNoProgressTimeout = prevTimeout
+		hlsRelayRefreshSleep = prevRefreshSleep
+	})
+	t.Setenv("IPTV_TUNERR_UPSTREAM_RETRY_LIMIT", "1")
+
+	var playlistHits atomic.Int32
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/playlist.m3u8":
+			hit := playlistHits.Add(1)
+			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+			if hit == 1 {
+				_, _ = io.WriteString(w, `#EXTM3U
+#EXT-X-TARGETDURATION:1
+#EXTINF:1,
+seg-a.ts
+`)
+				return
+			}
+			_, _ = io.WriteString(w, `#EXTM3U
+#EXT-X-TARGETDURATION:1
+#EXTINF:1,
+seg-b.ts
+`)
+		case "/seg-a.ts":
+			w.Header().Set("Content-Type", "video/mp2t")
+			_, _ = w.Write([]byte("SEG-A"))
+		case "/seg-b.ts":
+			w.Header().Set("Content-Type", "video/mp2t")
+			_, _ = w.Write([]byte("SEG-B"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer primary.Close()
+
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{{
+			ChannelID:   "1",
+			GuideNumber: "101",
+			GuideName:   "Ch1",
+			TVGID:       "tvg.1",
+			StreamURLs:  []string{primary.URL + "/playlist.m3u8", "http://does-not-resolve.invalid/backup.m3u8"},
+		}},
+		TunerCount:    2,
+		DisableFFmpeg: true,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/stream/1", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "SEG-A") || !strings.Contains(body, "SEG-B") {
+		t.Fatalf("body=%q want bytes from both recovered primary attempts", body)
+	}
+	if hits := playlistHits.Load(); hits < 2 {
+		t.Fatalf("playlist hits=%d want >=2", hits)
 	}
 }
 

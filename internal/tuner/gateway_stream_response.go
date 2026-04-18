@@ -318,6 +318,9 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 	); err != nil {
 		attempt.markUpstreamError(attemptIdx, "hls_go_failed", err)
 		log.Printf("gateway: channel=%q id=%s hls-relay failed: %v", channel.GuideName, channelID, err)
+		if errors.Is(err, errHLSRelayEndedAfterProgress) {
+			return "hls_go_stalled_after_progress", "hls_go_stalled_after_progress", effectiveURL, false
+		}
 		return "", "", "", false
 	}
 	g.rememberAutopilotDecision(channel, clientClass, transcode, effectiveProfileName(g, channel, channelID, forcedProfile), adaptReason, streamURL)

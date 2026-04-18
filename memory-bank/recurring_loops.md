@@ -794,3 +794,23 @@
 - `internal/tuner/gateway_ffmpeg_options.go`
 - `../k3s/plex/iptvtunerr-deployment.yaml`
 
+### Loop: "There is only one Plex server running" is assumed from k3s state while the old bare-metal PMS is still alive on kspls0
+
+**Symptom**
+- `/livetv/dvrs` on the active PMS looks sane, but clients still show repeated blank `plexKube` Live TV tabs or old connection targets.
+- `plex.tv/api/resources` keeps publishing old LAN addresses like `192.168.50.85` / `192.168.50.248` even after the k3s `plex-standby` deployment is healthy.
+
+**Why it's tricky**
+- Looking only at Kubernetes objects is misleading: `deployment/plex` can be scaled to zero while the original host-level `plexmediaserver.service` on `kspls0` is still running.
+- If both the bare-metal PMS and the standby PMS share the same config / machine identifier, Plex cloud will publish multiple connections for what looks like one server, and clients can rebuild phantom Live TV sources from that combined graph.
+
+**What works**
+- Verify the old host directly: `ssh kspls0 'systemctl is-active plexmediaserver; ss -ltnp | grep 32400'`.
+- If bare-metal PMS is still up, stop/disable/mask it on `kspls0`, then restart `plex-standby` and re-check `https://plex.tv/api/resources`.
+- Only trust the duplicate-source triage once `.85` / `.248` are dead on the wire and plex.tv has collapsed back to the intended LAN+WAN pair.
+
+**Where it's documented**
+- `../k3s/plex/README.md`
+- `memory-bank/current_task.md`
+
+- Shared relay late-join trap: a client can join an existing shared relay at the wrong moment and get `HTTP 200` with zero bytes even though the producer is still alive. What works: track replay/idle state per relay and skip attaching to zero-replay relays that have gone idle, forcing a fresh upstream path instead. Also log attach accept/skip decisions and zero-byte joins explicitly so this class is visible from logs alone.

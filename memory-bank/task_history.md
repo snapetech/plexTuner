@@ -1,3 +1,17 @@
+## 2026-04-18 - HLS stalled-primary recovery before dead backup
+
+- Extended `hls_go_stalled_after_progress` recovery so a proven-good upstream gets a bounded same-URL retry even when alternates exist, instead of only when the row has a single URL.
+- Added `TestGateway_stream_hlsStallAfterProgressRetriesPrimaryBeforeDeadBackup` and reran the focused tuner regressions plus full `./scripts/verify`.
+- Rebuilt/imported `localhost/iptvtunerr:cluster`, rolled `deployment/iptvtunerr` and `deployment/iptvtunerr-sports`, and live-tested the original failing main-DVR path.
+- Verified `CA| CTV COMEDY CHANNEL HD` now restarts the primary after a post-progress HLS stall and continues streaming instead of ending at the first dead-backup transition.
+
+## 2026-04-18 - Plex duplicate blank source root cause and cleanup
+
+- Found the real cause of the repeated blank `plexKube` Live TV sources: bare-metal `plexmediaserver.service` was still running on `kspls0` on `192.168.50.85` and `192.168.50.248`, sharing the same Plex machine/client identifier as the active k3s standby instance on `kspld0`.
+- Stopped, disabled, and masked `plexmediaserver.service` on `kspls0`, then restarted `deployment/plex-standby`.
+- Verified the stale LAN endpoints are dead on the wire and `plex.tv/api/resources` now advertises only the canonical standby LAN+WAN pair (`192.168.50.148:32400`, `24.109.206.134:55555`).
+- Updated the recurring-loop notes so future investigations do not stop at Kubernetes state when duplicate Plex sources reappear.
+
 # Task History
 
 Append-only. One entry per completed task.
@@ -8309,3 +8323,11 @@ Notes
     - `docs/how-to/connect-plex-to-iptv-tunerr.md`
     - `docs/reference/cli-and-env-reference.md`
     - `k8s/iptvtunerr-supervisor-general-sports.example.json`
+
+- 2026-04-18: Fixed HLS mid-stream failover for backup-capable channels by turning `ended no-new-segments` into a retryable upstream failure and preserving historical success semantics for last-upstream end-of-stream. Added `TestGateway_stream_hlsStallAfterProgressFallsBackToBackup`, ran `./scripts/verify`, rebuilt/imported `localhost/iptvtunerr:cluster`, and rolled `deployment/iptvtunerr`. Live validation: `/stream/177396` held a 50s in-cluster sample; `/stream/176800` still ends around 37s because that lineup row has no backup upstream.
+
+- 2026-04-18: Added bounded same-upstream restart for `hls_go_stalled_after_progress` when no alternate upstreams remain, keeping direct multi-upstream failover behavior unchanged. Added `TestGateway_stream_hlsStallAfterProgressRetriesSameUpstream`, reran `./scripts/verify`, rebuilt/imported `localhost/iptvtunerr:cluster`, and rolled `deployment/iptvtunerr`. Live validation: `/stream/176800` (`CA| CBC EAST HD`) held for a full 70s in-cluster sample and returned 41,244,380 bytes instead of dropping around 37s.
+
+- 2026-04-18: Hardened stream termination after HLS progress so dead alternates no longer downgrade long-lived sessions into `all_upstreams_failed`/502. Added `TestGateway_stream_hlsStallAfterProgressDoesNotDowngradeToAllUpstreamsFailedAfterDeadBackup`, rebuilt cluster image, redeployed both Tunerr deployments, and live-verified `/stream/176815` for 133s / 83.3MB with final HTTP 200.
+
+- 2026-04-18: Hardened shared-relay attach behavior so stale zero-replay relays are skipped instead of serving hollow `200/0-byte` joins. Added relay idle/replay observability, revalidated `internal/tuner`, redeployed both Tunerr deployments, and confirmed healthy direct sports playback after rollout.

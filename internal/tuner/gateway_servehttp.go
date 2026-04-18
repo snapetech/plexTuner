@@ -231,6 +231,12 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if streamHandled {
 		return
 	}
+	if responseAlreadyStarted(w) {
+		finalStatus = "stream_ended_after_progress"
+		finalErr = errors.New("upstreams exhausted after response started")
+		log.Printf("gateway: req=%s channel=%q id=%s upstreams exhausted after response started; not emitting fallback http error", reqID, channel.GuideName, channelID)
+		return
+	}
 	if providerAccountLimited {
 		finalStatus = "provider_accounts_in_use"
 		finalErr = errors.New("all provider accounts in use")

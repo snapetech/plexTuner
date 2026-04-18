@@ -21,11 +21,13 @@ type sharedRelaySession struct {
 	ContentType    string
 	StartedAt      time.Time
 
-	mu          sync.Mutex
-	subscribers map[string]*io.PipeWriter
-	replay      [][]byte
-	replayBytes int
-	closed      bool
+	mu           sync.Mutex
+	subscribers  map[string]*io.PipeWriter
+	replay       [][]byte
+	replayBytes  int
+	totalBytes   int64
+	lastFanoutAt time.Time
+	closed       bool
 }
 
 type SharedRelayState struct {
@@ -36,6 +38,9 @@ type SharedRelayState struct {
 	StartedAt       string `json:"started_at"`
 	DurationMS      int64  `json:"duration_ms"`
 	SubscriberCount int    `json:"subscriber_count"`
+	ReplayBytes     int    `json:"replay_bytes"`
+	TotalBytes      int64  `json:"total_bytes"`
+	IdleMS          int64  `json:"idle_ms"`
 }
 
 type SharedRelayReport struct {
@@ -85,6 +90,21 @@ func sharedRelayContentType(outputMux string) string {
 		return "video/mp4"
 	}
 	return "video/mp2t"
+}
+
+
+func sharedRelayAttachIdleTimeout() time.Duration {
+	ms := getenvInt("IPTV_TUNERR_SHARED_RELAY_ATTACH_IDLE_TIMEOUT_MS", 3000)
+	if ms <= 0 {
+		return 0
+	}
+	if ms < 100 {
+		ms = 100
+	}
+	if ms > 30000 {
+		ms = 30000
+	}
+	return time.Duration(ms) * time.Millisecond
 }
 
 func sharedRelayReplayBytes() int {
@@ -147,12 +167,16 @@ func (g *Gateway) attachSharedRelaySession(relayKey, reqID string) (io.ReadClose
 		return nil, false
 	}
 	reader, writer := io.Pipe()
-	replay, ok := sess.addSubscriber(reqID, writer)
+	replay, ok, replayBytes, idleFor, age := sess.addSubscriber(reqID, writer)
 	if !ok {
 		_ = reader.Close()
 		_ = writer.Close()
+		log.Printf("gateway: req=%s channel=%q id=%s shared-hls-relay attach-skipped relay=%q replay_bytes=%d idle=%s age=%s",
+			reqID, sess.ChannelID, sess.ChannelID, sess.SharedUpstream, replayBytes, idleFor.Round(time.Millisecond), age.Round(time.Millisecond))
 		return nil, false
 	}
+	log.Printf("gateway: req=%s channel=%q id=%s shared-hls-relay attach-ok relay=%q replay_bytes=%d idle=%s age=%s",
+		reqID, sess.ChannelID, sess.ChannelID, sess.SharedUpstream, replayBytes, idleFor.Round(time.Millisecond), age.Round(time.Millisecond))
 	if len(replay) == 0 {
 		return reader, true
 	}
@@ -229,8 +253,12 @@ func (g *Gateway) SharedRelayReport() SharedRelayReport {
 }
 
 func logSharedRelayJoin(reqID, channelName, channelID string, bytes int64, dur time.Duration) {
-	log.Printf("gateway: req=%s channel=%q id=%s shared-hls-relay client-done bytes=%d dur=%s",
-		reqID, channelName, channelID, bytes, dur.Round(time.Millisecond))
+	state := "ok"
+	if bytes == 0 {
+		state = "zero_bytes"
+	}
+	log.Printf("gateway: req=%s channel=%q id=%s shared-hls-relay client-done bytes=%d dur=%s state=%s",
+		reqID, channelName, channelID, bytes, dur.Round(time.Millisecond), state)
 }
 
 func (s *sharedRelaySession) isClosed() bool {
@@ -239,22 +267,47 @@ func (s *sharedRelaySession) isClosed() bool {
 	return s.closed
 }
 
-func (s *sharedRelaySession) addSubscriber(reqID string, writer *io.PipeWriter) ([]byte, bool) {
+func (s *sharedRelaySession) addSubscriber(reqID string, writer *io.PipeWriter) ([]byte, bool, int, time.Duration, time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return nil, false
+		return nil, false, 0, 0, 0
+	}
+	now := time.Now()
+	attachBase := s.StartedAt
+	if !s.lastFanoutAt.IsZero() {
+		attachBase = s.lastFanoutAt
+	}
+	idleFor := time.Duration(0)
+	if !attachBase.IsZero() {
+		idleFor = now.Sub(attachBase)
+	}
+	age := time.Duration(0)
+	if !s.StartedAt.IsZero() {
+		age = now.Sub(s.StartedAt)
+	}
+	replay := s.replaySnapshotLocked()
+	replayBytes := len(replay)
+	idleTimeout := sharedRelayAttachIdleTimeout()
+	if replayBytes == 0 && idleTimeout > 0 && idleFor > idleTimeout {
+		return nil, false, replayBytes, idleFor, age
 	}
 	if s.subscribers == nil {
 		s.subscribers = map[string]*io.PipeWriter{}
 	}
 	s.subscribers[reqID] = writer
-	return s.replaySnapshotLocked(), true
+	return replay, true, replayBytes, idleFor, age
 }
 
 func (s *sharedRelaySession) snapshot() SharedRelayState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	idle := time.Duration(0)
+	if !s.lastFanoutAt.IsZero() {
+		idle = time.Since(s.lastFanoutAt)
+	} else if !s.StartedAt.IsZero() {
+		idle = time.Since(s.StartedAt)
+	}
 	return SharedRelayState{
 		ChannelID:       s.ChannelID,
 		SharedUpstream:  s.SharedUpstream,
@@ -263,6 +316,9 @@ func (s *sharedRelaySession) snapshot() SharedRelayState {
 		StartedAt:       s.StartedAt.Format(time.RFC3339),
 		DurationMS:      time.Since(s.StartedAt).Milliseconds(),
 		SubscriberCount: len(s.subscribers),
+		ReplayBytes:     s.replayBytes,
+		TotalBytes:      s.totalBytes,
+		IdleMS:          idle.Milliseconds(),
 	}
 }
 
@@ -284,6 +340,10 @@ func (s *sharedRelaySession) close() {
 func (s *sharedRelaySession) fanout(chunk []byte) {
 	s.mu.Lock()
 	s.storeReplayLocked(chunk)
+	if len(chunk) > 0 {
+		s.totalBytes += int64(len(chunk))
+		s.lastFanoutAt = time.Now()
+	}
 	if s.closed || len(s.subscribers) == 0 {
 		s.mu.Unlock()
 		return

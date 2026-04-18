@@ -32,6 +32,7 @@ func (g *Gateway) walkStreamUpstreams(
 	upstreamConcurrencyLimited = false
 	providerAccountLimited = false
 	attemptedAnyUpstream := false
+	sawProgressBeforeFailure := false
 	urls = g.filterQuarantinedUpstreams(urls)
 	// Try primary then backups until one works, with bounded retries on
 	// upstream concurrency-limit responses before switching URLs.
@@ -138,12 +139,36 @@ func (g *Gateway) walkStreamUpstreams(
 				}
 				return finalStatus, finalMode, finalEffectiveURL, leasedAccountKey, upstreamConcurrencyLimited, providerAccountLimited, true
 			}
+			if finalStatus == "hls_go_stalled_after_progress" {
+				sawProgressBeforeFailure = true
+				if attemptIdxRetry < retryLimit {
+					backoff := upstreamStreamRetryDelay(attemptIdxRetry+1, 0, 0)
+					log.Printf("gateway: channel=%q id=%s upstream[%d/%d] hls stalled after progress; retrying same URL retry=%d/%d backoff=%s",
+						channel.GuideName, channelID, i+1, len(urls), attemptIdxRetry+1, retryLimit, backoff)
+					if err := sleepWithContext(r.Context(), backoff); err != nil {
+						if leaseHeld {
+							g.releaseProviderAccountLease(lease.Key)
+						}
+						return "", "", "", "", false, false, false
+					}
+					continue
+				}
+				if len(urls) == 1 || i == len(urls)-1 {
+					if leaseHeld {
+						leasedAccountKey = lease.Key
+					}
+					return "ok", "hls_go", finalEffectiveURL, leasedAccountKey, upstreamConcurrencyLimited, providerAccountLimited, true
+				}
+			}
 
 			if leaseHeld {
 				g.releaseProviderAccountLease(lease.Key)
 			}
 			break
 		}
+	}
+	if sawProgressBeforeFailure {
+		return "stream_ended_after_progress", "hls_go", finalEffectiveURL, leasedAccountKey, upstreamConcurrencyLimited, providerAccountLimited, true
 	}
 	if !attemptedAnyUpstream && providerAccountLimited {
 		return "", "", "", "", upstreamConcurrencyLimited, true, false

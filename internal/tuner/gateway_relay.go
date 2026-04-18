@@ -18,6 +18,7 @@ import (
 )
 
 var hlsRelayNoProgressTimeout = 12 * time.Second
+var errHLSRelayEndedAfterProgress = errors.New("hls relay stalled after progress (no new segments)")
 var hlsRelayRefreshSleep = sleepHLSRefresh
 
 func ffmpegHLSFirstBytesTimeout() time.Duration {
@@ -819,7 +820,7 @@ func (g *Gateway) relayHLSAsTS(
 				}
 				log.Printf("gateway:%s channel=%q id=%s %s ended no-new-segments segs=%d bytes=%d dur=%s",
 					reqField, channelName, channelID, relayLogLabel, sentSegments, sentBytes, time.Since(start).Round(time.Millisecond))
-				return nil
+				return errHLSRelayEndedAfterProgress
 			}
 			hlsRelayRefreshSleep(currentPlaylist)
 		}

@@ -15,6 +15,16 @@
   - Residual limitation: a static `IPTV_TUNERR_KEYCLOAK_TOKEN` can still go stale quickly in that realm, so release docs and operator setup should prefer credentials over a pasted bearer token.
 
 ## Cluster / Plex
+- **Backup-listed HLS channels can still fail long after startup if the provider's alternate URL is dead, but the live cluster now retries the proven-good primary before giving up:** updated 2026-04-18 after the main-DVR recovery patch landed on `iptvtunerr`.
+  - Root cause of the remaining `502` class: some rows expose multiple `StreamURLs`, but only the primary was actually viable; after several minutes the provider playlist could stall (`509` / no-new-segments), and the old recovery logic would abandon the working primary for a dead alternate (for example DNS failure), ending the session.
+  - What works now: when a stream has already made progress and later stalls, Tunerr does one bounded same-URL recovery attempt even if alternates exist. That preserves the existing backup walk but no longer treats a dead alternate as more trustworthy than the upstream that had already been feeding bytes.
+  - Live proof after rollout: `CA| CTV COMEDY CHANNEL HD` (`/stream/176815`) previously ended around 4m with `all 2 upstream(s) failed`; now the same path logs `hls stalled after progress; retrying same URL`, restarts the primary, and continues writing bytes.
+
+- **Single-upstream HLS stalls are improved but still bounded by provider behavior:** updated 2026-04-18 after the same-URL restart patch landed on cluster `iptvtunerr`.
+  - What is fixed: multi-upstream rows still fail over to backup URLs on `ended no-new-segments`, and rows with no remaining alternates now get a bounded same-URL restart before Tunerr gives up.
+  - Live proof after rollout: `CA| CBC EAST HD` (`/stream/176800`) held a direct in-cluster sample for the full 70s window (`41,244,380` bytes) instead of dropping around ~37s as it did before the restart patch.
+  - Remaining limitation: this is not a guarantee against all provider-side HLS stalls; if the upstream keeps returning a dead playlist across the bounded restart window, playback can still end once retries are exhausted.
+
 
 - **Plex standby playback startup is now materially improved on the cluster path, but a fresh real Plex client attempt is still required to prove the visible spinner is gone:** updated 2026-04-17 after the HLS go-relay preference fix.
   - Root cause of the lingering startup delay: even with `IPTV_TUNERR_HLS_RELAY_PREFER_GO=true`, transcode HLS requests still went through direct ffmpeg HLS input first, so PMS internal `Lavf` fetchers could sit at `HTTP 200` with `0` bytes for ~12s.
@@ -432,3 +442,5 @@
   - Root cause in live capture: at least one row from Plex's `channelmap` response contained only `deviceIdentifier` and no `channelKey` or `lineupIdentifier`.
   - Fix (repo, 2026-03-22): `internal/plex.GetChannelMap` now skips incomplete rows before activation; regression test added.
   - Remaining limitation: after activation succeeds, PMS can still fail live tune later with `The device does not tune the required channel`, which appears to be a deeper device/channel-identity mismatch inside Plex's scheduler rather than a simple dead-URI problem.
+
+- Some provider HLS playlists still stall or return `509` mid-stream. Current mitigation now retries the same primary URL after progress and avoids downgrading the request into a generic 502 if bytes already flowed, but truly bad providers can still end a session once all bounded recovery paths are exhausted.

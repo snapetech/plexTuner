@@ -15,6 +15,20 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 - *(none)*
 
+## [v0.1.44] — 2026-04-18
+
+### Plex / deployment stability
+- **Phantom `plexKube` source root cause fixed:** duplicate blank Live TV sources were traced to an old bare-metal Plex Media Server still publishing the same server identity alongside `plex-standby`. The deployment/runbook now treats disabling and masking that host service as required when `plex-standby` is the active server.
+- **Tunerr Plex registration now reconciles stale same-lineage DVRs before creating new ones:** repeated API registrations stop churning duplicate Tunerr-owned DVR/device rows in Plex and instead reuse the canonical current DVR when the device/base-url lineage already matches.
+
+### Streaming / recovery
+- **HLS stall recovery is materially stronger:** when a playlist stalls after real progress, Tunerr now retries the same primary upstream in a bounded way before falling through to alternates, which keeps long-running channels alive through transient provider `509` / no-new-segment windows.
+- **Post-progress streams no longer downgrade into generic `502` failures:** requests that already delivered bytes are now recorded as `stream_ended_after_progress` instead of being misclassified as `all_upstreams_failed` once all fallback paths are exhausted.
+- **Shared relay joins are safer and more observable:** late attaches now skip stale zero-replay shared relays instead of returning hollow `200/0-byte` sessions, and shared-relay logging/state now records replay bytes, idle time, and zero-byte joins explicitly.
+
+### Observability
+- **Live logs carry better recovery detail:** stream logs now make same-upstream retries, shared-relay attach accepts/skips, zero-byte shared joins, and post-progress termination more explicit so operators can diagnose real client-facing hiccups without waiting on user reports.
+
 ## [v0.1.43] — 2026-04-17
 
 ### Plex / multi-DVR onboarding
