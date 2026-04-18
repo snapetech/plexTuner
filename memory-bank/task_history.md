@@ -36,6 +36,29 @@ Append-only. One entry per completed task.
 
 ## Entries
 
+
+- Date: 2026-04-18
+  Title: Split primary and sports Plex DVR lineups without overlap
+  Summary:
+    - Added durable lineup exclusion support with `IPTV_TUNERR_LINEUP_EXCLUDE_RECIPE` and exact-ID excludes with `IPTV_TUNERR_LINEUP_EXCLUDE_CHANNEL_IDS`.
+    - Wired recipe exclusion into the live `UpdateChannels` and curated rebuild paths so the deployed primary DVR excludes sports before applying `locals_first` and the sports DVR owns `sports_na`.
+    - Redacted Plex token-bearing query strings from DVR repair/reload logs.
+    - Updated README, CLI/env reference, k3s Plex docs, known issues, and recurring-loop notes for the two-DVR split and sparse upstream sports EPG boundary.
+  Verification:
+    - `go test ./internal/tuner -run 'TestApplyLineupPreCapFilters_(excludeRecipeSportsNA|excludeChannelIDs|lineupRecipeSportsNA|lineupRecipeLocalsFirst)$|TestUpdateChannels'`
+    - `go test ./internal/plex ./internal/tuner`
+    - `./scripts/verify`
+    - Cluster rollout of `deployment/iptvtunerr` and `deployment/iptvtunerr-sports`; live lineups primary=479, sports=106, overlap=0; Plex provider rows `757=479`, `760=106`.
+  Notes:
+    - Sports guide has no zero-programme channels, but 26 event/alternate rows have exactly one programme block due to upstream XMLTV sparsity.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/plex/dvr.go`
+    - `docs/reference/cli-and-env-reference.md`
+    - `../k3s/plex/README.md`
+
 - Date: 2026-04-17
   Title: Label advanced summary cards explicitly in simple mode
   Summary:

@@ -814,3 +814,20 @@
 - `memory-bank/current_task.md`
 
 - Shared relay late-join trap: a client can join an existing shared relay at the wrong moment and get `HTTP 200` with zero bytes even though the producer is still alive. What works: track replay/idle state per relay and skip attaching to zero-replay relays that have gone idle, forcing a fresh upstream path instead. Also log attach accept/skip decisions and zero-byte joins explicitly so this class is visible from logs alone.
+### Loop: Lineup-shaping fixes pass helper tests but miss the live `UpdateChannels` path
+
+**Symptom**
+- A new lineup filter passes `applyLineupPreCapFilters` tests, but the deployed tuner still serves the old lineup shape and Plex appears to duplicate DVR content.
+
+**Why it's tricky**
+- The runtime path applies base filters, guide/DNA policy, programming recipe, lineup recipe, wizard shape, shard, resequence, cap, and offset directly inside `Server.UpdateChannels` and `rebuildCuratedChannelsFromRaw`.
+- `applyLineupPreCapFilters` is heavily tested but is not the only live shaping path, so adding a filter there alone is insufficient.
+
+**What works**
+- Wire any pre-cap lineup filter into both `UpdateChannels` and `rebuildCuratedChannelsFromRaw`, or refactor those paths to share one runtime shaping helper.
+- Verify with live startup logs, not just tests. For the primary+sports split, the primary log must show `IPTV_TUNERR_LINEUP_EXCLUDE_RECIPE=sports_na` before `recipe=locals_first`, and the two live `lineup.json` files must have stream-ID overlap `0`.
+
+**Where it's documented**
+- `internal/tuner/server.go`
+- `docs/reference/cli-and-env-reference.md`
+- `../k3s/plex/README.md`

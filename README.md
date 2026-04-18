@@ -217,6 +217,7 @@ Full connection guide: [Setup Paths](#setup-paths)
 The clean repeatable Plex pattern is now:
 - one primary DVR for your normal lineup (`run -mode=full -register-plex=api`)
 - one second DVR with `IPTV_TUNERR_LINEUP_RECIPE=sports_na`
+- `IPTV_TUNERR_LINEUP_EXCLUDE_RECIPE=sports_na` on the primary DVR so sports do not refill the normal lineup cap
 - distinct `IPTV_TUNERR_BASE_URL`, `IPTV_TUNERR_DEVICE_ID`, and `IPTV_TUNERR_FRIENDLY_NAME` per instance
 - optional `IPTV_TUNERR_GUIDE_NUMBER_OFFSET` on the second DVR so guide numbers do not overlap
 
@@ -652,6 +653,8 @@ IPTV_TUNERR_LINEUP_RECIPE=sports_now       # keep sports-heavy channels only
 IPTV_TUNERR_LINEUP_RECIPE=sports_na        # keep North America sports-first channels only
 IPTV_TUNERR_LINEUP_RECIPE=kids_safe        # keep kid/family-safe channels only
 IPTV_TUNERR_LINEUP_RECIPE=locals_first     # bubble likely local/regional channels to the top
+IPTV_TUNERR_LINEUP_EXCLUDE_RECIPE=sports_na # remove a built-in recipe from this lineup before applying the normal recipe
+IPTV_TUNERR_LINEUP_EXCLUDE_CHANNEL_IDS=123,456 # remove exact channel_id/guide_number/tvg_id values before shaping
 IPTV_TUNERR_DNA_POLICY=prefer_best         # collapse duplicate dna_id variants to the strongest candidate
 IPTV_TUNERR_GUIDE_POLICY=healthy           # keep only channels with real programme blocks once guide cache is ready
 IPTV_TUNERR_REGISTER_RECIPE=healthy        # use channel-intelligence scoring to prune/reorder channels before Plex/Emby/Jellyfin registration
@@ -1282,6 +1285,8 @@ Full reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-a
 | `IPTV_TUNERR_TUNER_COUNT` | Max concurrent streams |
 | `IPTV_TUNERR_LINEUP_MAX_CHANNELS` | Max channels in lineup (default 480, Plex wizard cap) |
 | `IPTV_TUNERR_GUIDE_NUMBER_OFFSET` | Channel number offset (prevents multi-DVR collisions) |
+| `IPTV_TUNERR_LINEUP_EXCLUDE_RECIPE` | Remove a named recipe such as `sports_na` before final lineup shaping, useful for primary+sports DVR splits |
+| `IPTV_TUNERR_LINEUP_EXCLUDE_CHANNEL_IDS` | Comma/space-separated exact channel IDs, guide numbers, or `tvg-id`s to remove before final lineup shaping |
 | `IPTV_TUNERR_LINEUP_SKIP` / `IPTV_TUNERR_LINEUP_TAKE` | Slice lineup for overflow DVR shards |
 | `IPTV_TUNERR_LIVE_EPG_ONLY` | Only include channels with a `tvg-id` |
 

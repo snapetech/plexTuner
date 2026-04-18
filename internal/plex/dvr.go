@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
+	"github.com/snapetech/iptvtunerr/internal/safeurl"
 
 	_ "modernc.org/sqlite"
 )
@@ -296,7 +297,7 @@ func ReloadGuideAPI(plexHost, token string, dvrKey int) error {
 	reloadURL := fmt.Sprintf("http://%s/livetv/dvrs/%d/reloadGuide?X-Plex-Token=%s",
 		plexHost, dvrKey, token)
 
-	fmt.Printf("[PLEX-REG] Reloading guide: url=%s\n", reloadURL)
+	fmt.Printf("[PLEX-REG] Reloading guide: url=%s\n", safeurl.RedactQuery(reloadURL))
 
 	client := httpclient.WithTimeout(60 * time.Second)
 	resp, err := client.Post(reloadURL, "", nil)
@@ -339,7 +340,7 @@ func GetChannelMap(plexHost, token, deviceUUID string, lineupIDs []string) ([]Ch
 	chMapURL := fmt.Sprintf("http://%s/livetv/epg/channelmap?device=%s&lineup=%s&X-Plex-Token=%s",
 		plexHost, url.QueryEscape(deviceUUID), url.QueryEscape(lineupIDs[0]), token)
 
-	fmt.Printf("[PLEX-REG] Getting channel map: url=%s\n", chMapURL)
+	fmt.Printf("[PLEX-REG] Getting channel map: url=%s\n", safeurl.RedactQuery(chMapURL))
 
 	client := httpclient.WithTimeout(30 * time.Second)
 	resp, err := client.Get(chMapURL)

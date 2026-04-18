@@ -444,3 +444,10 @@
   - Remaining limitation: after activation succeeds, PMS can still fail live tune later with `The device does not tune the required channel`, which appears to be a deeper device/channel-identity mismatch inside Plex's scheduler rather than a simple dead-URI problem.
 
 - Some provider HLS playlists still stall or return `509` mid-stream. Current mitigation now retries the same primary URL after progress and avoids downgrading the request into a generic 502 if bytes already flowed, but truly bad providers can still end a session once all bounded recovery paths are exhausted.
+## Sparse upstream EPG for event/alternate sports channels
+
+- Date: 2026-04-18
+- Symptom: the sports DVR can show real channels with only one programme block even though `/guide.xml` has no zero-programme channels.
+- Current proof: after the primary/sports split, sports serves 106 channels and 3,631 programme rows; 26 sports/event/alternate rows have exactly one programme block. General serves 479 channels and 25,154 programme rows; 61 rows have exactly one programme block.
+- Root cause: upstream provider XMLTV sparsity for alternate/event/regional sports feeds, not a Tunerr channelmap failure.
+- Workaround: keep the channels playable, but treat low-density EPG as provider data quality unless a specific channel has zero programmes or wrong `tvg-id`.

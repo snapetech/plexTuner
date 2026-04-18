@@ -1833,8 +1833,11 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
   - `guide_first` = rank by guide confidence before stream resilience
   - `resilient` = rank by backup-stream resilience before guide score
   - `sports_now` = keep sports-heavy channels only
+  - `sports_na` = keep North America sports-first channels only
   - `kids_safe` = keep kid/family channels while excluding obvious unsafe/adult/news matches
   - `locals_first` = bubble likely local/regional channels to the top using the same North-American lineup-shape heuristics
+- `IPTV_TUNERR_LINEUP_EXCLUDE_RECIPE` — remove channels selected by a built-in recipe before applying the final lineup recipe. Example: set the primary DVR to `IPTV_TUNERR_LINEUP_EXCLUDE_RECIPE=sports_na` and the second DVR to `IPTV_TUNERR_LINEUP_RECIPE=sports_na` so the two lineups do not overlap.
+- `IPTV_TUNERR_LINEUP_EXCLUDE_CHANNEL_IDS` — comma/space/newline separated exact `channel_id`, guide number, or `tvg-id` values to remove before lineup recipe/shaping/cap logic. Use this for surgical excludes; prefer `IPTV_TUNERR_LINEUP_EXCLUDE_RECIPE` for durable primary+sports splits.
 - `IPTV_TUNERR_DNA_POLICY` — optional duplicate-variant policy keyed by `dna_id`:
   - `off` = keep all variants
   - `prefer_best` = keep the strongest duplicate by combined channel-intelligence score
@@ -1852,6 +1855,7 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
   - `resilient` = prefer backup-stream resilience, then guide confidence
   - `healthy` = like `high_confidence`, but also drops poor-tier channels before Plex/Emby/Jellyfin registration
   - `sports_now` = register sports-heavy channels only
+  - `sports_na` = register North America sports-first channels only
   - `kids_safe` = register kid/family-safe channels only
   - `locals_first` = keep the full set, but bubble likely locals/regionals to the top
 

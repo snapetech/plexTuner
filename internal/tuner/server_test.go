@@ -5270,6 +5270,52 @@ func TestApplyLineupPreCapFilters_dropMusicHeuristic(t *testing.T) {
 	}
 }
 
+func TestApplyLineupPreCapFilters_excludeRecipeSportsNA(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_LINEUP_DROP_MUSIC", "")
+	t.Setenv("IPTV_TUNERR_LINEUP_EXCLUDE_REGEX", "")
+	t.Setenv("IPTV_TUNERR_LINEUP_EXCLUDE_CHANNEL_IDS", "")
+	t.Setenv("IPTV_TUNERR_LINEUP_EXCLUDE_RECIPE", "sports_na")
+	t.Setenv("IPTV_TUNERR_LINEUP_RECIPE", "locals_first")
+	t.Setenv("IPTV_TUNERR_LINEUP_REGION_PROFILE", "ca_west")
+	in := []catalog.LiveChannel{
+		{ChannelID: "1", GuideName: "CTV Vancouver", TVGID: "ctvvancouver.ca", EPGLinked: true, StreamURL: "http://a/1"},
+		{ChannelID: "2", GuideName: "TSN 1", TVGID: "tsn1.ca", EPGLinked: true, StreamURL: "http://a/2"},
+		{ChannelID: "3", GuideName: "FOX Sports 1", TVGID: "fs1.us", EPGLinked: true, StreamURL: "http://a/3"},
+		{ChannelID: "4", GuideName: "CBC Vancouver", TVGID: "cbcvancouver.ca", EPGLinked: true, StreamURL: "http://a/4"},
+	}
+	out := applyLineupPreCapFilters(in)
+	if len(out) != 2 {
+		t.Fatalf("len=%d want 2", len(out))
+	}
+	got := map[string]bool{}
+	for _, ch := range out {
+		got[ch.ChannelID] = true
+	}
+	if !got["1"] || !got["4"] || got["2"] || got["3"] {
+		t.Fatalf("unexpected split result: %+v", out)
+	}
+}
+
+func TestApplyLineupPreCapFilters_excludeChannelIDs(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_LINEUP_DROP_MUSIC", "")
+	t.Setenv("IPTV_TUNERR_LINEUP_EXCLUDE_REGEX", "")
+	t.Setenv("IPTV_TUNERR_LINEUP_EXCLUDE_CHANNEL_IDS", "2, guide-3 tvg-4")
+	t.Setenv("IPTV_TUNERR_LINEUP_RECIPE", "off")
+	in := []catalog.LiveChannel{
+		{ChannelID: "1", GuideNumber: "guide-1", GuideName: "Keep", TVGID: "tvg-1"},
+		{ChannelID: "2", GuideNumber: "guide-2", GuideName: "Drop by channel id", TVGID: "tvg-2"},
+		{ChannelID: "3", GuideNumber: "guide-3", GuideName: "Drop by guide", TVGID: "tvg-3"},
+		{ChannelID: "4", GuideNumber: "guide-4", GuideName: "Drop by tvg", TVGID: "tvg-4"},
+	}
+	out := applyLineupPreCapFilters(in)
+	if len(out) != 1 {
+		t.Fatalf("len=%d want 1", len(out))
+	}
+	if out[0].ChannelID != "1" {
+		t.Fatalf("kept channel=%q want 1", out[0].ChannelID)
+	}
+}
+
 func TestApplyLineupPreCapFilters_lineupRecipeHighConfidence(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_LINEUP_DROP_MUSIC", "")
 	t.Setenv("IPTV_TUNERR_LINEUP_EXCLUDE_REGEX", "")

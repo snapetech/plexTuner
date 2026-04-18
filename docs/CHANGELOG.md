@@ -13,7 +13,10 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
-- *(none)*
+### Plex / multi-DVR lineup split
+- **Primary and sports DVR lineups no longer overlap:** added `IPTV_TUNERR_LINEUP_EXCLUDE_RECIPE` so a primary/general DVR can exclude the exact rows owned by a recipe-specific DVR such as `sports_na` before final shaping and Plex-cap logic.
+- **Surgical lineup excludes are now available:** added `IPTV_TUNERR_LINEUP_EXCLUDE_CHANNEL_IDS` for exact `channel_id`, guide number, or `tvg-id` removals before lineup recipe/shaping/cap logic.
+- **Plex DVR repair logs no longer print tokens:** DVR reload/channelmap logs now redact query strings before printing URLs.
 
 ## [v0.1.46] — 2026-04-18
 

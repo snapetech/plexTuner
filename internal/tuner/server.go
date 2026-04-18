@@ -279,6 +279,7 @@ func (s *Server) UpdateChannels(live []catalog.LiveChannel) {
 	live = applyDNAPolicy(live, os.Getenv("IPTV_TUNERR_DNA_POLICY"))
 	s.RawChannels = cloneLiveChannels(live)
 	live = s.applyProgrammingRecipe(live)
+	live = applyLineupExcludeRecipe(live)
 	live = applyLineupRecipe(live)
 	live = applyLineupWizardShape(live)
 	live = applyLineupShard(live)
@@ -472,6 +473,7 @@ func (s *Server) saveRecordingRules(set RecordingRuleset) (RecordingRuleset, err
 func (s *Server) rebuildCuratedChannelsFromRaw() {
 	live := cloneLiveChannels(s.RawChannels)
 	live = s.applyProgrammingRecipe(live)
+	live = applyLineupExcludeRecipe(live)
 	live = applyLineupRecipe(live)
 	live = applyLineupWizardShape(live)
 	live = applyLineupShard(live)
@@ -584,6 +586,42 @@ func applyGuideNumberOffset(live []catalog.LiveChannel, offset int) []catalog.Li
 	return out
 }
 
+func lineupExcludedChannelIDs() map[string]struct{} {
+	raw := strings.TrimSpace(os.Getenv("IPTV_TUNERR_LINEUP_EXCLUDE_CHANNEL_IDS"))
+	if raw == "" {
+		return nil
+	}
+	out := map[string]struct{}{}
+	for _, part := range strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == '\n' || r == '\r' || r == '\t' || r == ' '
+	}) {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out[part] = struct{}{}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func lineupChannelIDMatchesAny(ch catalog.LiveChannel, ids map[string]struct{}) bool {
+	if len(ids) == 0 {
+		return false
+	}
+	for _, candidate := range []string{ch.ChannelID, ch.GuideNumber, ch.TVGID} {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		if _, ok := ids[candidate]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 func applyLineupBaseFilters(live []catalog.LiveChannel) []catalog.LiveChannel {
 	if len(live) == 0 {
 		return live
@@ -601,6 +639,21 @@ func applyLineupBaseFilters(live []catalog.LiveChannel) []catalog.LiveChannel {
 		}
 		if dropped > 0 {
 			log.Printf("Lineup pre-cap filter: dropped %d music/radio channels by name heuristic (remaining %d)", dropped, len(filtered))
+			out = filtered
+		}
+	}
+	if excludedIDs := lineupExcludedChannelIDs(); len(excludedIDs) > 0 {
+		filtered := make([]catalog.LiveChannel, 0, len(out))
+		dropped := 0
+		for _, ch := range out {
+			if lineupChannelIDMatchesAny(ch, excludedIDs) {
+				dropped++
+				continue
+			}
+			filtered = append(filtered, ch)
+		}
+		if dropped > 0 {
+			log.Printf("Lineup pre-cap filter: dropped %d channels by IPTV_TUNERR_LINEUP_EXCLUDE_CHANNEL_IDS (remaining %d)", dropped, len(filtered))
 			out = filtered
 		}
 	}
@@ -641,8 +694,45 @@ func applyLineupBaseFilters(live []catalog.LiveChannel) []catalog.LiveChannel {
 	return out
 }
 
+func applyLineupExcludeRecipe(live []catalog.LiveChannel) []catalog.LiveChannel {
+	recipe := strings.ToLower(strings.TrimSpace(os.Getenv("IPTV_TUNERR_LINEUP_EXCLUDE_RECIPE")))
+	if recipe == "" || recipe == "off" || recipe == "none" || len(live) == 0 {
+		return live
+	}
+	switch recipe {
+	case "sports_now", "sports_na", "kids_safe":
+	default:
+		log.Printf("Lineup exclude recipe ignored: unknown recipe=%q", recipe)
+		return live
+	}
+	excludedRows := ApplyNamedLineupRecipe(live, recipe)
+	excluded := make(map[string]struct{}, len(excludedRows))
+	for _, ch := range excludedRows {
+		if id := strings.TrimSpace(ch.ChannelID); id != "" {
+			excluded[id] = struct{}{}
+		}
+	}
+	if len(excluded) == 0 {
+		return live
+	}
+	filtered := make([]catalog.LiveChannel, 0, len(live))
+	dropped := 0
+	for _, ch := range live {
+		if _, ok := excluded[strings.TrimSpace(ch.ChannelID)]; ok {
+			dropped++
+			continue
+		}
+		filtered = append(filtered, ch)
+	}
+	if dropped > 0 {
+		log.Printf("Lineup pre-cap filter: dropped %d channels by IPTV_TUNERR_LINEUP_EXCLUDE_RECIPE=%s (remaining %d)", dropped, recipe, len(filtered))
+	}
+	return filtered
+}
+
 func applyLineupPreCapFilters(live []catalog.LiveChannel) []catalog.LiveChannel {
 	out := applyLineupBaseFilters(live)
+	out = applyLineupExcludeRecipe(out)
 	out = applyLineupRecipe(out)
 	out = applyLineupWizardShape(out)
 	out = applyLineupShard(out)
