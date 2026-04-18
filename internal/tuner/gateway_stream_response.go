@@ -294,6 +294,8 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 		} else if transcode {
 			log.Printf("gateway: channel=%q id=%s ffmpeg unavailable transcode-requested=true err=%v (falling back to go relay; web clients may get incompatible audio/video codecs)", channel.GuideName, channelID, ffmpegErr)
 		}
+	} else if preferGoRelay {
+		log.Printf("gateway: channel=%q id=%s go relay preferred over direct ffmpeg hls input", channel.GuideName, channelID)
 	} else {
 		log.Printf("gateway: channel=%q id=%s ffmpeg disabled by config (using go relay)", channel.GuideName, channelID)
 	}

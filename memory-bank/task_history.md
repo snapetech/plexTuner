@@ -8244,3 +8244,18 @@ Notes
     - `internal/tuner/xmltv_test.go`
     - `../k3s/plex/iptvtunerr-deployment.yaml`
     - `../k3s/plex/README.md`
+
+## 2026-04-17 - Fix transcode HLS go-relay preference for Plex internal fetchers
+- Updated the tuner HLS decision path so explicit `IPTV_TUNERR_HLS_RELAY_PREFER_GO=true` applies to transcode HLS requests too; provider-pressure heuristics remain remux-only.
+- This lets Plex internal `Lavf` fetchers use the Go HLS relay plus `IPTV_TUNERR_HLS_RELAY_FFMPEG_STDIN_NORMALIZE=true` instead of stalling on direct ffmpeg HLS input startup.
+- Rebuilt the cluster image, imported it onto `kspld0`, removed the temporary `IPTV_TUNERR_FFMPEG_DISABLED` manifest workaround, and redeployed the normal cluster manifest with only the intended playback knobs.
+- Live validation from inside the Plex pod against `http://iptvtunerr.plex.svc:5004/stream/177396` now shows `http=200`, `time_starttransfer≈2.8s`, and ~64 MB downloaded in 20s. Tunerr logs show `hls-relay-ffmpeg-stdin-transcode first-bytes=5600 startup=2.164s` and `first-feed-bytes ... startup=3.33s` on the same request.
+- Updated the k3s runbook to record the live playback-critical knobs for the cluster deployment.
+- Verification:
+  - `go test ./internal/tuner -run 'TestGateway_shouldPreferGoRelayForHLS|TestGateway_shouldPreferGoRelayForHLS_hostPenalty'`
+  - `go test ./internal/tuner ./internal/webui ./cmd/iptv-tunerr`
+  - `./scripts/verify`
+  - `docker build -t localhost/iptvtunerr:cluster .`
+  - `docker save localhost/iptvtunerr:cluster | ssh kspld0 'sudo k3s ctr images import -'`
+  - `KUBECONFIG=$HOME/.kube/config kubectl -n plex rollout status deployment/iptvtunerr --timeout=240s`
+  - live `Lavf/60.16.100` fetch from inside `plex-standby`

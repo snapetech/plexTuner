@@ -16,6 +16,12 @@
 
 ## Cluster / Plex
 
+- **Plex standby playback startup is now materially improved on the cluster path, but a fresh real Plex client attempt is still required to prove the visible spinner is gone:** updated 2026-04-17 after the HLS go-relay preference fix.
+  - Root cause of the lingering startup delay: even with `IPTV_TUNERR_HLS_RELAY_PREFER_GO=true`, transcode HLS requests still went through direct ffmpeg HLS input first, so PMS internal `Lavf` fetchers could sit at `HTTP 200` with `0` bytes for ~12s.
+  - What works now: honor `IPTV_TUNERR_HLS_RELAY_PREFER_GO=true` for transcode HLS too, keep `IPTV_TUNERR_HLS_RELAY_FFMPEG_STDIN_NORMALIZE=true`, and leave the internal-fetcher profile on `plexsafehq`. This keeps the fast Go playlist/segment fetch path but still normalizes the Plex-facing output via ffmpeg stdin.
+  - Verified live on the rebuilt cluster deployment: `Lavf/60.16.100` against `http://iptvtunerr.plex.svc:5004/stream/177396` now gets first bytes in ~2.8s and pulls ~64 MB in 20s; Tunerr logs `hls-relay-ffmpeg-stdin-transcode first-bytes=5600 startup=2.164s` and `first-feed-bytes ... startup=3.33s`.
+  - Remaining limitation: this is strong service-layer proof, not yet a real signed-in Plex UI/client proof. If Plex still spins after this deployment, the next fault is more likely PMS/client session handling than tuner startup latency.
+
 - **Plex standby can still show spinning Live TV even after Tunerr has corrected audio metadata and PMS has started a recorder/transcode session:** updated 2026-04-17 after re-testing DVR `755` against the cluster deployment.
   - Symptom now: the old `sample rate not set` failure is gone, PMS reports normalized `h264` + `mp3` streamDetail from Tunerr and can log `Started session successfully`, but the visible client can still spin and the rolling-sub recorder later dies with `Client stopped playback` or `Recorder: No more consumers, stopping`, followed by `Recording failed. Please check your tuner or antenna.`
   - Evidence: `c1` on 2026-04-17 21:05 started PMS session `4791f659-4ceb-43ae-9757-2e46bc96fbd5`, served many `index.m3u8` responses, then the client stopped playback; `c4` on 2026-04-17 21:06 started PMS session `3b83fd24-2600-4c6f-be42-4ec71f80fb00`, generated ~600 transcode segments, then PMS ended the recorder because there were no remaining consumers.
