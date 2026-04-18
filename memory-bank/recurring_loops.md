@@ -44,6 +44,30 @@
 
 ### Loop: GitHub Release pages keep showing vague auto-notes instead of actual IPTV Tunerr changes
 
+### Loop: Plex standby gets bytes from Tunerr but PMS still fails with `sample rate not set`
+
+**Symptom**
+- Tunerr logs show `/stream/<id>` returning `200` with megabytes of data to `ua="Lavf/..."`, but Plex still reports `Failed to start session` / `Recording failed. Please check your tuner or antenna.`
+
+**Why it's tricky**
+- It looks like a tuner reachability issue at first because playback fails immediately.
+- The actual failure is inside PMS's recorder: when the raw relay path hands Plex malformed/underspecified AAC, PMS logs `sample rate not set` and aborts before segmenting any `media-%05d.ts` files.
+- This can reappear after lineup/cluster changes if the deployment loses `CLIENT_ADAPT` or the internal-fetcher profile override.
+
+**What works**
+- Check PMS logs first, not just Tunerr logs. If you see `sample rate not set` after a `Lavf` request, force the PMS internal-fetcher lane onto a normalized profile.
+- On the cluster bridge, keep:
+  - `IPTV_TUNERR_CLIENT_ADAPT=true`
+  - `IPTV_TUNERR_PLEX_INTERNAL_FETCHER_POLICY=websafe`
+  - `IPTV_TUNERR_PLEX_INTERNAL_FETCHER_PROFILE=copyvideomp3`
+- Verify Tunerr logs `adapt transcode=true profile="copyvideomp3" reason=ambiguous-internal-fetcher-websafe` for `Lavf` requests before blaming PMS again.
+
+**Where it's documented**
+- `../k3s/plex/iptvtunerr-deployment.yaml`
+- `memory-bank/known_issues.md`
+- `../k3s/plex/README.md`
+
+
 **Symptom**
 - Tagged releases get generic GitHub-generated notes or empty pages, and someone has to manually ask for a useful "what changed" summary afterward.
 
@@ -730,3 +754,22 @@
 - `internal/plex/dvr.go`
 - `internal/tuner/xmltv.go`
 - `memory-bank/current_task.md` (2026-04-17 cluster Plex resolution)
+
+### Loop: Plex still shows the wrong channels first even after Tunerr reorders the lineup
+
+**Symptom**
+- Tunerr `/lineup.json` starts with the desired local channels, but Plex `/tv.plex.providers.epg.xmltv:<dvr>/lineups/dvr/channels` still starts with stale international or junk channels.
+
+**Why it's tricky**
+- PMS provider views sort by `vcn` / guide number, not by the raw lineup row order alone.
+- Reordering without renumbering can make it look like the tuner fix failed even when Tunerr is serving the right prioritized lineup.
+
+**What works**
+- If visible Plex order matters, resequence guide numbers after lineup shaping (`IPTV_TUNERR_GUIDE_NUMBER_RESEQUENCE=true`) so the curated order becomes `1..N`, then replay DVR channel-map activation.
+- For this cluster/provider path, also force `IPTV_TUNERR_HLS_RELAY_PREFER_GO=true` and keep unsupported ffmpeg HLS flags (`http_persistent`, `live_start_index`) disabled, otherwise first-request playback falls back too slowly.
+
+**Where it's documented**
+- `internal/tuner/server.go`
+- `internal/tuner/gateway_ffmpeg_options.go`
+- `../k3s/plex/iptvtunerr-deployment.yaml`
+

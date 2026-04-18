@@ -888,14 +888,14 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 
 	policy := loadXMLTVTextPolicyFromEnv()
 
-	// Build channel map: tvgID -> channel (first occurrence wins).
+	// Build channel refs in exposed lineup order. Multiple lineup rows may share the same
+	// upstream TVGID; keep each one so guide.xml matches the visible lineup one-for-one.
 	type channelRef struct {
 		GuideNumber string
 		GuideName   string
 		TVGID       string
 		XMLID       string
 	}
-	byTVGID := make(map[string]channelRef, len(channels))
 	orderedRefs := make([]channelRef, 0, len(channels))
 	for _, ch := range channels {
 		tvgID := strings.TrimSpace(ch.TVGID)
@@ -913,15 +913,6 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 		if ref.XMLID == "" {
 			continue
 		}
-		if tvgID == "" {
-			// Channel has no TVGID: emit placeholder programme only.
-			orderedRefs = append(orderedRefs, ref)
-			continue
-		}
-		if _, exists := byTVGID[tvgID]; exists {
-			continue
-		}
-		byTVGID[tvgID] = ref
 		orderedRefs = append(orderedRefs, ref)
 	}
 

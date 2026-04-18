@@ -672,6 +672,69 @@ func TestXMLTV_servePlaceholder_plexSafeIDs(t *testing.T) {
 	}
 }
 
+func TestXMLTV_buildMergedEPG_duplicateTVGIDRowsStayDistinct(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
+	providerXML := `<?xml version="1.0" encoding="utf-8"?>
+<tv>
+  <channel id="alpha.us"><display-name>Alpha</display-name></channel>
+  <programme start="20260318080000 +0000" stop="20260318090000 +0000" channel="alpha.us">
+    <title>Show One</title>
+    <desc>Episode one.</desc>
+  </programme>
+</tv>`
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(providerXML))
+	}))
+	defer provider.Close()
+
+	x := &XMLTV{
+		Channels: []catalog.LiveChannel{
+			{ChannelID: "chan-1", GuideNumber: "1", GuideName: "Alpha East", TVGID: "alpha.us", EPGLinked: true},
+			{ChannelID: "chan-2", GuideNumber: "2", GuideName: "Alpha West", TVGID: "alpha.us", EPGLinked: true},
+		},
+		ProviderBaseURL:    provider.URL,
+		ProviderUser:       "u",
+		ProviderPass:       "p",
+		ProviderEPGEnabled: true,
+		ProviderEPGTimeout: 5 * time.Second,
+	}
+	x.refresh()
+
+	req := httptest.NewRequest(http.MethodGet, "/guide.xml", nil)
+	w := httptest.NewRecorder()
+	x.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code=%d", w.Code)
+	}
+
+	var tv struct {
+		Channels []struct {
+			ID       string   `xml:"id,attr"`
+			Displays []string `xml:"display-name"`
+		} `xml:"channel"`
+		Programmes []struct {
+			Channel string `xml:"channel,attr"`
+			Title   string `xml:"title"`
+		} `xml:"programme"`
+	}
+	if err := xml.Unmarshal(w.Body.Bytes(), &tv); err != nil {
+		t.Fatal(err)
+	}
+	if len(tv.Channels) != 2 {
+		t.Fatalf("channels=%d want 2 body=%s", len(tv.Channels), w.Body.String())
+	}
+	if len(tv.Programmes) != 2 {
+		t.Fatalf("programmes=%d want 2 body=%s", len(tv.Programmes), w.Body.String())
+	}
+	if tv.Programmes[0].Channel == tv.Programmes[1].Channel {
+		t.Fatalf("duplicate TVGID rows collapsed to one channel: %+v", tv.Programmes)
+	}
+	if tv.Programmes[0].Title == "" || tv.Programmes[1].Title == "" {
+		t.Fatalf("expected copied programme titles: %+v", tv.Programmes)
+	}
+}
+
 func TestBuildCatchupCapsulePreview_matchesPlexSafeXMLTVIDs(t *testing.T) {
 	now := time.Date(2026, 3, 20, 12, 0, 0, 0, time.UTC)
 	rep, err := BuildCatchupCapsulePreview([]catalog.LiveChannel{{ChannelID: "alpha", DNAID: "dna:alpha", GuideNumber: "101", GuideName: "Alpha East"}}, []byte(`<?xml version="1.0" encoding="UTF-8"?>

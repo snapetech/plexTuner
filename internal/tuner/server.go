@@ -282,6 +282,7 @@ func (s *Server) UpdateChannels(live []catalog.LiveChannel) {
 	live = applyLineupRecipe(live)
 	live = applyLineupWizardShape(live)
 	live = applyLineupShard(live)
+	live = applyGuideNumberResequence(live)
 	if s.LineupMaxChannels == NoLineupCap {
 		// Full lineup for programmatic sync; do not cap.
 	} else {
@@ -474,6 +475,7 @@ func (s *Server) rebuildCuratedChannelsFromRaw() {
 	live = applyLineupRecipe(live)
 	live = applyLineupWizardShape(live)
 	live = applyLineupShard(live)
+	live = applyGuideNumberResequence(live)
 	if s.LineupMaxChannels != NoLineupCap {
 		max := s.LineupMaxChannels
 		if max <= 0 {
@@ -538,6 +540,23 @@ func summarizeLineupIntegrity(live []catalog.LiveChannel) lineupIntegritySummary
 		}
 	}
 	return s
+}
+
+func applyGuideNumberResequence(live []catalog.LiveChannel) []catalog.LiveChannel {
+	if !envBool("IPTV_TUNERR_GUIDE_NUMBER_RESEQUENCE", false) || len(live) == 0 {
+		return live
+	}
+	start := envInt("IPTV_TUNERR_GUIDE_NUMBER_RESEQUENCE_START", 1)
+	if start < 1 {
+		start = 1
+	}
+	out := make([]catalog.LiveChannel, len(live))
+	copy(out, live)
+	for i := range out {
+		out[i].GuideNumber = strconv.Itoa(start + i)
+	}
+	log.Printf("Guide number resequence applied: start=%d changed=%d", start, len(out))
+	return out
 }
 
 func applyGuideNumberOffset(live []catalog.LiveChannel, offset int) []catalog.LiveChannel {
@@ -627,6 +646,7 @@ func applyLineupPreCapFilters(live []catalog.LiveChannel) []catalog.LiveChannel 
 	out = applyLineupRecipe(out)
 	out = applyLineupWizardShape(out)
 	out = applyLineupShard(out)
+	out = applyGuideNumberResequence(out)
 	return out
 }
 

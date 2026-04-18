@@ -1391,8 +1391,9 @@ Operational notes:
 - daemon publish-time registration reuses the same lane naming as `catchup-publish` (`<library-prefix> Sports`, `<library-prefix> Movies`, etc.)
 
 Relevant streaming env knobs for tricky HLS/CDN paths:
-- `IPTV_TUNERR_FFMPEG_HLS_HTTP_PERSISTENT` (`true|false`, default `true`) — ask ffmpeg/libavformat to reuse HTTP connections across HLS fetches
+- `IPTV_TUNERR_FFMPEG_HLS_HTTP_PERSISTENT` (`true|false`, default `false`) — ask ffmpeg/libavformat to reuse HTTP connections across HLS fetches; leave off on ffmpeg builds that do not support the option
 - `IPTV_TUNERR_FFMPEG_HLS_MULTIPLE_REQUESTS` (`true|false`, default `true`) — allow multiple HTTP requests on a persistent connection for HLS input
+- `IPTV_TUNERR_FFMPEG_HLS_LIVE_START_INDEX` (default `0`) — optional ffmpeg HLS live-edge offset; keep disabled on ffmpeg builds that do not support `-live_start_index`
 - `IPTV_TUNERR_HLS_PLAYLIST_RETRY_LIMIT` (default `2`) — extra retries for playlist refreshes that fail with a learned/concurrency-style upstream limit (`423`, `429`, `458`, `509`, or matching body text)
 - `IPTV_TUNERR_HLS_PLAYLIST_RETRY_BACKOFF_MS` (default `1000`) — base backoff for those retries; attempts use `1x`, `2x`, `4x`
 - `IPTV_TUNERR_UPSTREAM_RETRY_LIMIT` (default `2`) — extra retries on the same stream URL when response indicates upstream concurrency limits (`423`, `429`, `458`, `509`, or matching body text) before moving to backups
@@ -1823,6 +1824,8 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
 - `IPTV_TUNERR_TUNER_COUNT`
 - `IPTV_TUNERR_LINEUP_MAX_CHANNELS`
 - `IPTV_TUNERR_GUIDE_NUMBER_OFFSET`
+- `IPTV_TUNERR_GUIDE_NUMBER_RESEQUENCE`
+- `IPTV_TUNERR_GUIDE_NUMBER_RESEQUENCE_START`
 - `IPTV_TUNERR_LINEUP_RECIPE` — intelligence-driven lineup shaping:
   - `high_confidence` = keep only channels with strong guide-confidence signals
   - `balanced` = rank by combined guide + stream score
@@ -1854,6 +1857,10 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
 `IPTV_TUNERR_GUIDE_NUMBER_OFFSET`:
 - adds a per-instance channel/guide ID offset
 - useful for many DVRs in Plex to avoid guide cache collisions
+
+`IPTV_TUNERR_GUIDE_NUMBER_RESEQUENCE`:
+- when `true`, rewrites guide numbers to a simple ascending sequence after lineup shaping so downstream clients see the curated order as the visible channel-number order too
+- pair with `IPTV_TUNERR_GUIDE_NUMBER_RESEQUENCE_START` to choose the first number in that sequence (default `1`)
 
 ## Stream behavior
 

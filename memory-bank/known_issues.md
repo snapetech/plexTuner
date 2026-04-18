@@ -16,11 +16,21 @@
 
 ## Cluster / Plex
 
+- **Plex standby now localizes visible channel order correctly only because guide numbers are resequenced to match the curated lineup order:** confirmed on 2026-04-17 after the cluster `iptvtunerr` deployment switched to `locals_first` + `na_en`/`ca_west` plus `IPTV_TUNERR_GUIDE_NUMBER_RESEQUENCE=true`.
+  - Symptom before the fix: even after the tuner lineup started with Canadian locals, Plex `/tv.plex.providers.epg.xmltv:755/lineups/dvr/channels` still showed the old Arabic / BEIN block first because PMS sorted by `vcn`, not by the raw tuner list order.
+  - What works: on Plex-facing easy-mode deployments, resequence guide numbers after lineup shaping so the curated order becomes channel numbers `1..N`; then replay DVR channel-map activation.
+  - Status after the XMLTV duplicate-row fix: standby DVR `755` now exposes the full `479` provider rows again, so the earlier `382`/`97 skipped` gap is resolved.
+
 - **Resolved 2026-04-17: Plex XMLTV provider no longer collapses to the last batch / 63 visible rows on the cluster DVR path:**
   - Symptom before the fix: DVR `755` could hold `463` enabled mappings while `/tv.plex.providers.epg.xmltv:755/lineups/dvr/channels` surfaced only `63` provider rows.
   - Root cause: our old activation path split mapping pairs across multiple PUTs, while PMS effectively retained only the last batch at the provider layer; after switching to a single full PUT, PMS still rejected oversized activation URLs until XMLTV `channelKey` values were shortened sharply.
   - What works: serve short Plex-safe XMLTV IDs (`c` + base36 guide number when available), keep the full enabled set and full mapping set in one activation request, and preserve the real guide with `IPTV_TUNERR_PROVIDER_EPG_DISK_CACHE` so Plex does not import a placeholder window during upstream XMLTV flaps.
   - Verified live: `plex-dvr-repair` now reports `url_len=30571` and `status=200`, DVR `755` shows `463` enabled mappings, `/tv.plex.providers.epg.xmltv:755/lineups/dvr/channels` returns `463` rows, and `/tv.plex.providers.epg.xmltv:755/hubs/discover` is populated again.
+
+- **Plex standby playback can regress if the cluster deployment leaves PMS internal fetchers on the raw HLS relay path:** confirmed on 2026-04-17 while testing standby DVR `755`.
+  - Symptom before the fix: PMS `Lavf` recorder requests reached Tunerr and received bytes, but Plex then aborted with `sample rate not set` because its own recorder saw `codec=aac` with `sampleRate=0` / `channels=0` from the upstream relay path.
+  - What works: enable `IPTV_TUNERR_CLIENT_ADAPT=true` and force the PMS internal fetcher lane onto `copyvideomp3` (`IPTV_TUNERR_PLEX_INTERNAL_FETCHER_POLICY=websafe`, `IPTV_TUNERR_PLEX_INTERNAL_FETCHER_PROFILE=copyvideomp3`) so Tunerr normalizes audio before PMS tries to segment it.
+  - Verified live: `Lavf/60.16.100` requests now log `adapt transcode=true profile="copyvideomp3" reason=ambiguous-internal-fetcher-websafe`, plus `ffmpeg-transcode first-bytes` on `CA| CTV 2 VICTORIA HD`, instead of the earlier raw relay path.
 
 - **Intermittent provider XMLTV `404` responses can collapse the served guide back to placeholder-only unless provider disk cache is enabled:** reconfirmed on 2026-04-17 on the cluster `iptvtunerr` deployment targeting `line.dambora.xyz`.
   - Symptom: `/guide.xml` flips from an ~9 MB real guide (`463` channels / ~26k programmes) back to a ~120 KB placeholder guide (`463` long-span placeholder programmes) on a normal 10-minute refresh boundary.

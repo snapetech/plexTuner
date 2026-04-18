@@ -8216,3 +8216,31 @@ Notes
   - `gh run list` / follow-up workflow watch for commit `051d192`
 
 
+
+- 2026-04-17: Fixed the live Plex localization/playback regression for the cluster `iptvtunerr` deployment. Changed Tunerr so unsafe ffmpeg HLS input flags (`IPTV_TUNERR_FFMPEG_HLS_HTTP_PERSISTENT`, `IPTV_TUNERR_FFMPEG_HLS_LIVE_START_INDEX`) default off, added guide-number resequencing support for curated lineups, updated the sibling `../k3s/plex/iptvtunerr-deployment.yaml` to use `locals_first` + `na_en`/`ca_west`, resequence guide numbers from `1`, and prefer the Go HLS relay immediately, then redeployed and reactivated Plex standby DVR `755`. Verification: `go test ./internal/tuner -run 'Test(ApplyLineupPreCapFilters_lineupRecipeLocalsFirst|ApplyLineupPreCapFilters_shapeNAENReordersBeforeCap|ApplyLineupPreCapFilters_resequenceGuideNumbers|ApplyLineupPreCapFilters_resequenceGuideNumbersAfterLocalsFirst|FFmpegHLSHTTPPersistentEnabled_defaultOff|FFmpegHLSHTTPPersistentEnabled_explicitOn|FFmpegHLSLiveStartIndex_defaultOff|FFmpegHLSLiveStartIndex_explicitOverride)$'`, full `./scripts/verify`, live cluster rollout, direct stream check from `svc/iptvtunerr`, and Plex standby provider proof that `/tv.plex.providers.epg.xmltv:755/lineups/dvr/channels` now starts with Canadian locals (`1..21`) instead of the previous Arabic / BEIN block. Opportunity filed implicitly in known issues: standby DVR `755` currently exposes `382` valid provider rows after activation, with `97` skipped by Plex channelmap responses.
+
+- Date: 2026-04-17
+  Title: Restore full standby lineup and normalize Plex internal-fetcher playback
+  Summary:
+    - Fixed the XMLTV merge path so duplicate lineup rows that share a `TVGID` still emit distinct guide channels/programme mappings, which restored the full `479` provider rows on standby DVR `755` instead of Plex collapsing back to a partial provider view.
+    - Added safer ffmpeg HLS input defaults (`IPTV_TUNERR_FFMPEG_HLS_HTTP_PERSISTENT=false`, `IPTV_TUNERR_FFMPEG_HLS_LIVE_START_INDEX=0`) plus guide-number resequencing so the cluster lineup stays local-first and the curated order becomes Plex's visible `1..N` channel order.
+    - Updated the live cluster deployment to enable Plex client adaptation for PMS internal `Lavf` fetchers and force that lane onto `copyvideomp3`, so standby playback no longer relies on the raw relay path that produced `sampleRate=0` / `channels=0` in PMS.
+  Verification:
+    - `go test ./internal/tuner -run 'Test(XMLTV_buildMergedEPG_duplicateTVGIDRowsStayDistinct|XMLTV_buildMergedEPG_UsesRealProgrammeBlocksNotPlaceholder|BuildCatchupCapsulePreview_matchesPlexSafeXMLTVIDs|TestFFmpegHLSHTTPPersistentEnabled_defaultOff|TestFFmpegHLSHTTPPersistentEnabled_explicitOn|TestFFmpegHLSLiveStartIndex_defaultOff|TestFFmpegHLSLiveStartIndex_explicitOverride|TestApplyLineupPreCapFilters_resequenceGuideNumbers|TestApplyLineupPreCapFilters_resequenceGuideNumbersAfterLocalsFirst)$'`
+    - `./scripts/verify`
+    - `KUBECONFIG=$HOME/.kube/config kubectl -n plex rollout status deploy/iptvtunerr --timeout=180s`
+    - Live checks: `guide.xml` shows `479` channels, Plex provider endpoint shows `479` rows, and live `Lavf/60.16.100` requests now log `adapt transcode=true profile="copyvideomp3"`
+  Notes:
+    - PMS-side manual replays of `POST /livetv/dvrs/755/channels/c1/tune` are not a faithful substitute for a real signed-in client flow; direct replays returned `400` externally and `403` from anonymous loopback even though the original UI-driven request was `200`.
+    - The important runtime proof is the corrected ingest shape: the standby cluster bridge now transcodes the PMS internal-fetcher lane instead of handing Plex the raw AAC relay that previously caused `sample rate not set`.
+  Opportunities filed:
+    - none; remaining Plex client-path validation is operational follow-up, not a new product opportunity.
+  Links:
+    - `internal/tuner/epg_pipeline.go`
+    - `internal/tuner/gateway_ffmpeg_options.go`
+    - `internal/tuner/gateway_relay.go`
+    - `internal/tuner/gateway_hls_packager.go`
+    - `internal/tuner/server.go`
+    - `internal/tuner/xmltv_test.go`
+    - `../k3s/plex/iptvtunerr-deployment.yaml`
+    - `../k3s/plex/README.md`

@@ -5457,6 +5457,45 @@ func TestApplyLineupPreCapFilters_shapeNAENReordersBeforeCap(t *testing.T) {
 	}
 }
 
+func TestApplyLineupPreCapFilters_resequenceGuideNumbers(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_LINEUP_DROP_MUSIC", "false")
+	t.Setenv("IPTV_TUNERR_LINEUP_EXCLUDE_REGEX", "")
+	t.Setenv("IPTV_TUNERR_GUIDE_NUMBER_RESEQUENCE", "true")
+	t.Setenv("IPTV_TUNERR_GUIDE_NUMBER_RESEQUENCE_START", "1")
+	in := []catalog.LiveChannel{
+		{ChannelID: "2", GuideName: "Second", GuideNumber: "9002"},
+		{ChannelID: "1", GuideName: "First", GuideNumber: "9001"},
+	}
+	got := applyLineupPreCapFilters(in)
+	if len(got) != 2 {
+		t.Fatalf("len=%d want 2", len(got))
+	}
+	if got[0].GuideNumber != "1" || got[1].GuideNumber != "2" {
+		t.Fatalf("guide numbers=%q,%q want 1,2", got[0].GuideNumber, got[1].GuideNumber)
+	}
+}
+
+func TestApplyLineupPreCapFilters_resequenceGuideNumbersAfterLocalsFirst(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_LINEUP_DROP_MUSIC", "")
+	t.Setenv("IPTV_TUNERR_LINEUP_EXCLUDE_REGEX", "")
+	t.Setenv("IPTV_TUNERR_LINEUP_RECIPE", "locals_first")
+	t.Setenv("IPTV_TUNERR_LINEUP_REGION_PROFILE", "ca_west")
+	t.Setenv("IPTV_TUNERR_GUIDE_NUMBER_RESEQUENCE", "true")
+	t.Setenv("IPTV_TUNERR_GUIDE_NUMBER_RESEQUENCE_START", "100")
+	in := []catalog.LiveChannel{
+		{ChannelID: "1", GuideName: "Random Foreign", TVGID: "foreign.example", GuideNumber: "1800", StreamURL: "http://a/1"},
+		{ChannelID: "2", GuideName: "CTV Regina", TVGID: "ctvregina.ca", GuideNumber: "7", StreamURL: "http://a/2"},
+		{ChannelID: "3", GuideName: "CBC Winnipeg", TVGID: "cbcwinnipeg.ca", GuideNumber: "6", StreamURL: "http://a/3"},
+	}
+	got := applyLineupPreCapFilters(in)
+	if got[0].GuideNumber != "100" || got[1].GuideNumber != "101" || got[2].GuideNumber != "102" {
+		t.Fatalf("guide numbers=%q,%q,%q want 100,101,102", got[0].GuideNumber, got[1].GuideNumber, got[2].GuideNumber)
+	}
+	if got[0].ChannelID != "2" && got[0].ChannelID != "3" {
+		t.Fatalf("expected local channel first, got %+v", got[0])
+	}
+}
+
 func TestApplyLineupPreCapFilters_shardSkipTake(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_LINEUP_DROP_MUSIC", "false")
 	t.Setenv("IPTV_TUNERR_LINEUP_EXCLUDE_REGEX", "")

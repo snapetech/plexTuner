@@ -140,10 +140,10 @@ func (g *Gateway) relayHLSWithFFmpeg(
 	hlsAnalyzeDurationUs := getenvInt("IPTV_TUNERR_FFMPEG_HLS_ANALYZEDURATION_US", 5000000)
 	hlsProbeSize := getenvInt("IPTV_TUNERR_FFMPEG_HLS_PROBESIZE", 5000000)
 	hlsRWTimeoutUs := getenvInt("IPTV_TUNERR_FFMPEG_HLS_RW_TIMEOUT_US", 60000000)
-	hlsLiveStartIndex := getenvInt("IPTV_TUNERR_FFMPEG_HLS_LIVE_START_INDEX", -3)
+	hlsLiveStartIndex := ffmpegHLSLiveStartIndex()
 	hlsUseNoBuffer := getenvBool("IPTV_TUNERR_FFMPEG_HLS_NOBUFFER", false)
 	hlsReconnect := getenvBool("IPTV_TUNERR_FFMPEG_HLS_RECONNECT", false)
-	hlsHTTPPersistent := getenvBool("IPTV_TUNERR_FFMPEG_HLS_HTTP_PERSISTENT", true)
+	hlsHTTPPersistent := ffmpegHLSHTTPPersistentEnabled()
 	hlsMultipleRequests := getenvBool("IPTV_TUNERR_FFMPEG_HLS_MULTIPLE_REQUESTS", true)
 	if g.shouldAutoEnableHLSReconnect() {
 		hlsReconnect = true
