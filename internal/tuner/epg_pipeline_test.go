@@ -253,6 +253,60 @@ func TestFetchProviderShortEPGFallback(t *testing.T) {
 	}
 }
 
+func TestFetchProviderShortEPGFallback_UsesMatchingProviderIdentityCredentials(t *testing.T) {
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("primary short EPG should not be used for alternate-base channel")
+	}))
+	defer primary.Close()
+
+	secondary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/player_api.php" {
+			t.Fatalf("path=%s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("username"); got != "u2" {
+			t.Fatalf("username=%q want u2", got)
+		}
+		if got := r.URL.Query().Get("password"); got != "p2" {
+			t.Fatalf("password=%q want p2", got)
+		}
+		_, _ = w.Write([]byte(`{"epg_listings":[{"title":"QWx0IFNob3c=","description":"QWx0IERlc2M=","start_timestamp":"1893456000","stop_timestamp":"1893459600","channel_id":"sports.2","stream_id":"200"}]}`))
+	}))
+	defer secondary.Close()
+
+	x := &XMLTV{
+		ProviderBaseURL: primary.URL,
+		ProviderUser:    "u1",
+		ProviderPass:    "p1",
+		ProviderIdentities: []ProviderIdentity{{
+			BaseURL: secondary.URL,
+			User:    "u2",
+			Pass:    "p2",
+		}},
+		ProviderEPGEnabled: true,
+		ProviderEPGTimeout: 2 * time.Second,
+		Client:             secondary.Client(),
+	}
+	channels := []catalog.LiveChannel{{
+		ChannelID:   "200",
+		GuideName:   "Sports 2",
+		GuideNumber: "200",
+		TVGID:       "sports.2",
+		StreamURL:   secondary.URL + "/live/u2/p2/200.ts",
+		EPGLinked:   true,
+	}}
+	got, err := x.fetchProviderShortEPGFallback(context.Background(), channels, map[string]bool{"sports.2": true})
+	if err != nil {
+		t.Fatalf("fetchProviderShortEPGFallback: %v", err)
+	}
+	cepg := got.programmes["sports.2"]
+	if cepg == nil || len(cepg.nodes) != 1 {
+		t.Fatalf("unexpected programmes: %#v", got.programmes)
+	}
+	if !strings.Contains(cepg.nodes[0].InnerXML, "Alt Show") || !strings.Contains(cepg.nodes[0].InnerXML, "Alt Desc") {
+		t.Fatalf("unexpected node: %+v", cepg.nodes[0])
+	}
+}
+
 func TestRenderProviderEPGSuffix_tokens(t *testing.T) {
 	now := time.Date(2026, 3, 19, 12, 0, 0, 0, time.UTC)
 	toks := providerEPGSuffixWindowTokens(now, 0, 24, 6)

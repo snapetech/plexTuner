@@ -1,3 +1,11 @@
+## 2026-04-20 - Fix short-EPG fallback across provider identities
+
+- Investigated the live post-`baff8a0` sports guide gap on the cluster after confirming the newest GitHub push was deployed and Plex DVR mapping was healthy enough (`803` sports `88/88`, `806` primary `406/403` with the known Plex-side `dead` noise).
+- Found the fixable runtime bug in `internal/tuner/epg_pipeline.go`: provider XMLTV merged multiple provider identities, but short-EPG fallback still tried alternate base URLs using only the primary provider credentials, so channels whose short-EPG source lived behind a different provider identity could never gap-fill.
+- Changed short-EPG fallback to walk full provider identities, preferring identities that match the channel-derived base URL and using each identity’s own base URL, username, and password instead of borrowing the primary credentials.
+- Added `TestFetchProviderShortEPGFallback_UsesMatchingProviderIdentityCredentials` to pin the regression and keep alternate-base channels from silently falling back to the wrong credential set again.
+- Verification: `go test ./internal/tuner`, `./scripts/verify`
+
 ## 2026-04-19 - Reduce cluster deploy disruption for `main`
 
 - Moved automatic cluster deployment out of `.github/workflows/deploy-cluster.yml` `workflow_run` chaining and into a `Deploy Cluster` job inside `.github/workflows/ci.yml`, so the deploy now runs in the same CI pipeline after `verify` and `smoke`.

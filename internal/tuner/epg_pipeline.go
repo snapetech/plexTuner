@@ -234,31 +234,47 @@ func fetchShortEPGForChannel(ctx context.Context, client *http.Client, baseURL, 
 	return payload.EPGListings, nil
 }
 
-func (x *XMLTV) shortEPGBaseCandidates(ch catalog.LiveChannel, fallbackBase string) []string {
+func (x *XMLTV) shortEPGIdentityCandidates(ch catalog.LiveChannel, fallback ProviderIdentity) []ProviderIdentity {
+	providers := x.providerIdentities()
+	out := make([]ProviderIdentity, 0, len(providers)+2)
 	seen := map[string]struct{}{}
-	out := make([]string, 0, 4)
-	appendBase := func(raw string) {
-		raw = strings.TrimRight(strings.TrimSpace(raw), "/")
-		if raw == "" {
+	appendIdentity := func(id ProviderIdentity) {
+		id = normalizeProviderIdentity(id.BaseURL, id.User, id.Pass)
+		if id.BaseURL == "" || id.User == "" || id.Pass == "" {
 			return
 		}
-		if _, ok := seen[raw]; ok {
+		key := id.BaseURL + "\x00" + id.User + "\x00" + id.Pass
+		if _, ok := seen[key]; ok {
 			return
 		}
-		seen[raw] = struct{}{}
-		out = append(out, raw)
+		seen[key] = struct{}{}
+		out = append(out, id)
 	}
-	appendBase(shortEPGBaseForChannel(ch))
-	appendBase(fallbackBase)
-	for _, id := range x.providerIdentities() {
-		appendBase(id.BaseURL)
+
+	channelBase := strings.TrimRight(strings.TrimSpace(shortEPGBaseForChannel(ch)), "/")
+	if channelBase != "" {
+		matchedChannelBase := false
+		for _, id := range providers {
+			if normalizeProviderIdentity(id.BaseURL, id.User, id.Pass).BaseURL == channelBase {
+				appendIdentity(id)
+				matchedChannelBase = true
+			}
+		}
+		if !matchedChannelBase {
+			appendIdentity(ProviderIdentity{BaseURL: channelBase, User: fallback.User, Pass: fallback.Pass})
+		}
+	}
+
+	appendIdentity(fallback)
+	for _, id := range providers {
+		appendIdentity(id)
 	}
 	return out
 }
 
 func (x *XMLTV) fetchProviderShortEPGFallback(ctx context.Context, channels []catalog.LiveChannel, allowedTVGIDs map[string]bool) (*parsedEPG, error) {
-	baseURL, user, pass := x.providerIdentity()
-	if baseURL == "" || user == "" || pass == "" {
+	fallback := normalizeProviderIdentity(x.providerIdentity())
+	if fallback.BaseURL == "" || fallback.User == "" || fallback.Pass == "" {
 		return nil, fmt.Errorf("provider identity incomplete")
 	}
 	limit := providerShortEPGLimit()
@@ -287,8 +303,8 @@ func (x *XMLTV) fetchProviderShortEPGFallback(ctx context.Context, channels []ca
 				listings []shortEPGListing
 				err      error
 			)
-			for _, base := range x.shortEPGBaseCandidates(ch, baseURL) {
-				listings, err = fetchShortEPGForChannel(ctx, client, base, user, pass, strings.TrimSpace(ch.ChannelID), limit, timeout)
+			for _, id := range x.shortEPGIdentityCandidates(ch, fallback) {
+				listings, err = fetchShortEPGForChannel(ctx, client, id.BaseURL, id.User, id.Pass, strings.TrimSpace(ch.ChannelID), limit, timeout)
 				if err == nil || len(listings) > 0 {
 					break
 				}
@@ -1044,6 +1060,7 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 
 	// Fetch provider XMLTV if enabled and configured.
 	var provEPG *parsedEPG
+	providerIDs := x.providerIdentities()
 	baseURL, user, _ := x.providerIdentity()
 	if x.ProviderEPGEnabled && baseURL != "" && user != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), x.ProviderEPGTimeout+5*time.Second)
@@ -1081,7 +1098,7 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 	}
 
 	var shortEPG *parsedEPG
-	if providerShortEPGEnabled() && baseURL != "" && user != "" {
+	if providerShortEPGEnabled() && len(providerIDs) > 0 {
 		candidates := channelsNeedingShortEPG(channels, provEPG, extEPG, hdhrEPG, providerShortEPGMinProgrammes())
 		if len(candidates) > 0 {
 			workers := providerShortEPGConcurrency()
