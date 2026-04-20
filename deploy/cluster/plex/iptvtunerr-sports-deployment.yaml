@@ -81,6 +81,8 @@ spec:
               value: "10000"
             - name: IPTV_TUNERR_XMLTV_PLEX_SAFE_IDS
               value: "true"
+            - name: IPTV_TUNERR_GUIDE_POLICY
+              value: healthy
             - name: IPTV_TUNERR_PROVIDER_URL
               value: http://line.dambora.xyz
             - name: IPTV_TUNERR_PROVIDER_USER

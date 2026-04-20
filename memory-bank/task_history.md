@@ -1,3 +1,9 @@
+## 2026-04-20 - Prune placeholder-only sports guide rows in the cluster deploy
+
+- Revalidated the live sports guide after `b759ef3` deployed and found the runtime short-EPG credential fix shipped cleanly, but sports still exposed `106` lineup rows with only `80` real-programme rows and `26` `placeholder_only` rows because the sports deployment did not yet run the same healthy guide policy as primary.
+- Updated `deploy/cluster/plex/iptvtunerr-sports-deployment.yaml` to set `IPTV_TUNERR_GUIDE_POLICY=healthy`, so the cluster sports lineup should prune placeholder-only guide rows before Plex activation instead of exposing them as valid channels.
+- Verification: YAML parse of `deploy/cluster/plex/iptvtunerr-sports-deployment.yaml`, `./scripts/verify`
+
 ## 2026-04-20 - Fix short-EPG fallback across provider identities
 
 - Investigated the live post-`baff8a0` sports guide gap on the cluster after confirming the newest GitHub push was deployed and Plex DVR mapping was healthy enough (`803` sports `88/88`, `806` primary `406/403` with the known Plex-side `dead` noise).
