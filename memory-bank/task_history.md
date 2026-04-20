@@ -1,3 +1,14 @@
+## 2026-04-19 - Reduce cluster deploy disruption for `main`
+
+- Moved automatic cluster deployment out of `.github/workflows/deploy-cluster.yml` `workflow_run` chaining and into a `Deploy Cluster` job inside `.github/workflows/ci.yml`, so the deploy now runs in the same CI pipeline after `verify` and `smoke`.
+- Added cluster-relevant path filtering with `dorny/paths-filter`, so doc-only, memory-bank-only, and other non-runtime `main` pushes skip the cluster deploy instead of bouncing live pods.
+- Added `scripts/deploy-cluster.sh` as the shared deploy helper for both CI and manual deploys; it builds/imports a per-SHA image tag, applies the cluster manifests, updates both deployments to that tag, waits for rollout, and runs `/readyz` smoke checks.
+- Converted `.github/workflows/deploy-cluster.yml` into a manual `workflow_dispatch` lane only, with an optional `ref` input and the same shared deploy script, instead of a second automatic `workflow_run` trigger.
+- Added the same `iptvtunerr-cluster-deploy` concurrency guard to the new `CI` deploy job so manual deploys and `main` auto-deploys do not overlap on the live cluster.
+- Tightened the runtime EPG fallback repair so channels are only re-matched when their original `TVGID` still has zero programme coverage, preventing the new fallback pass from overriding a valid provider-first repair with a later external source.
+- Updated `k8s/README.md` and `memory-bank/current_task.md` to reflect the new deploy semantics and the removal of unconditional `rollout restart` churn.
+- Verification: `bash -n scripts/deploy-cluster.sh`, `python3 - <<'PY' ... yaml parse for .github/workflows/ci.yml and .github/workflows/deploy-cluster.yml ... PY`, `go test ./cmd/iptv-tunerr ./internal/tuner`, `./scripts/verify`
+
 ## 2026-04-19 - Fix sparse guide health and fail-fast provider-limit buffering
 
 - Investigated live primary/sports guide health and logs after the primary DVR still showed missing EPG and buffering. Primary `/guide/health.json` reported `479/479` with real programmes, but `73` primary rows had only one programme and direct `/guide.xml` showed channel-name placeholder blocks such as `CA| CTV VANCOUVER HD` spanning `2026-04-19T00:39:28Z` to `2026-04-27T00:39:28Z`.

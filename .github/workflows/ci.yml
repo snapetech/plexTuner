@@ -36,3 +36,51 @@ jobs:
 
       - name: Binary smoke
         run: bash ./scripts/ci-smoke.sh
+
+  deploy-cluster:
+    name: Deploy Cluster
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [verify, smoke]
+    runs-on: [self-hosted, iptvtunerr-deploy]
+    concurrency:
+      group: iptvtunerr-cluster-deploy
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Detect cluster-relevant changes
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            cluster:
+              - 'Dockerfile'
+              - 'cmd/**'
+              - 'deploy/cluster/plex/**'
+              - 'go.mod'
+              - 'go.sum'
+              - 'internal/**'
+              - 'vendor/**'
+
+      - name: Skip cluster deploy
+        if: steps.changes.outputs.cluster != 'true'
+        run: echo "No cluster-relevant changes; skipping cluster deploy."
+
+      - name: Resolve version
+        if: steps.changes.outputs.cluster == 'true'
+        id: version
+        run: |
+          HEAD_SHA="${GITHUB_SHA}"
+          SHORT_SHA="${HEAD_SHA:0:7}"
+          echo "short=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "version=dev-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy cluster
+        if: steps.changes.outputs.cluster == 'true'
+        env:
+          TARGET_SHA: ${{ github.sha }}
+          TARGET_SHORT_SHA: ${{ steps.version.outputs.short }}
+          TARGET_VERSION: ${{ steps.version.outputs.version }}
+        run: bash ./scripts/deploy-cluster.sh

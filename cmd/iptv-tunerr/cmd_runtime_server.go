@@ -39,6 +39,17 @@ func loadRuntimeCatalog(cfg *config.Config, path, providerBase, providerUser, pr
 }
 
 func newRuntimeServer(cfg *config.Config, addr, baseURL, deviceID, friendlyName string, lineupCap int, providerBase, providerUser, providerPass string) *tuner.Server {
+	providerIDs := make([]tuner.ProviderIdentity, 0, len(cfg.ProviderEntries()))
+	for _, entry := range cfg.ProviderEntries() {
+		if strings.TrimSpace(entry.BaseURL) == "" || strings.TrimSpace(entry.User) == "" || strings.TrimSpace(entry.Pass) == "" {
+			continue
+		}
+		providerIDs = append(providerIDs, tuner.ProviderIdentity{
+			BaseURL: entry.BaseURL,
+			User:    entry.User,
+			Pass:    entry.Pass,
+		})
+	}
 	if deviceID == "" {
 		deviceID = cfg.DeviceID
 	}
@@ -66,6 +77,7 @@ func newRuntimeServer(cfg *config.Config, addr, baseURL, deviceID, friendlyName 
 		EventHooksFile:             strings.TrimSpace(cfg.EventWebhooksFile),
 		ProviderUser:               providerUser,
 		ProviderPass:               providerPass,
+		ProviderIdentities:         providerIDs,
 		XtreamOutputUser:           strings.TrimSpace(os.Getenv("IPTV_TUNERR_XTREAM_USER")),
 		XtreamOutputPass:           strings.TrimSpace(os.Getenv("IPTV_TUNERR_XTREAM_PASS")),
 		XtreamUsersFile:            strings.TrimSpace(os.Getenv("IPTV_TUNERR_XTREAM_USERS_FILE")),

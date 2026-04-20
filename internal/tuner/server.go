@@ -98,6 +98,7 @@ type Server struct {
 	ProviderUser              string
 	ProviderPass              string
 	ProviderBaseURL           string
+	ProviderIdentities        []ProviderIdentity
 	XMLTVSourceURL            string
 	XMLTVTimeout              time.Duration
 	XMLTVCacheTTL             time.Duration // 0 = use default 10m
@@ -1815,6 +1816,7 @@ func (s *Server) Run(ctx context.Context) error {
 		ProviderBaseURL:            s.ProviderBaseURL,
 		ProviderUser:               s.ProviderUser,
 		ProviderPass:               s.ProviderPass,
+		ProviderIdentities:         append([]ProviderIdentity(nil), s.ProviderIdentities...),
 		ProviderEPGEnabled:         s.ProviderEPGEnabled,
 		ProviderEPGTimeout:         s.ProviderEPGTimeout,
 		ProviderEPGIncremental:     s.ProviderEPGIncremental,

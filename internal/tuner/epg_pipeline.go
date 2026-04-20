@@ -234,6 +234,28 @@ func fetchShortEPGForChannel(ctx context.Context, client *http.Client, baseURL, 
 	return payload.EPGListings, nil
 }
 
+func (x *XMLTV) shortEPGBaseCandidates(ch catalog.LiveChannel, fallbackBase string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, 4)
+	appendBase := func(raw string) {
+		raw = strings.TrimRight(strings.TrimSpace(raw), "/")
+		if raw == "" {
+			return
+		}
+		if _, ok := seen[raw]; ok {
+			return
+		}
+		seen[raw] = struct{}{}
+		out = append(out, raw)
+	}
+	appendBase(shortEPGBaseForChannel(ch))
+	appendBase(fallbackBase)
+	for _, id := range x.providerIdentities() {
+		appendBase(id.BaseURL)
+	}
+	return out
+}
+
 func (x *XMLTV) fetchProviderShortEPGFallback(ctx context.Context, channels []catalog.LiveChannel, allowedTVGIDs map[string]bool) (*parsedEPG, error) {
 	baseURL, user, pass := x.providerIdentity()
 	if baseURL == "" || user == "" || pass == "" {
@@ -261,12 +283,17 @@ func (x *XMLTV) fetchProviderShortEPGFallback(ctx context.Context, channels []ca
 			if tvgID == "" || (allowedTVGIDs != nil && !allowedTVGIDs[tvgID]) {
 				continue
 			}
-			base := shortEPGBaseForChannel(ch)
-			if base == "" {
-				base = baseURL
+			var (
+				listings []shortEPGListing
+				err      error
+			)
+			for _, base := range x.shortEPGBaseCandidates(ch, baseURL) {
+				listings, err = fetchShortEPGForChannel(ctx, client, base, user, pass, strings.TrimSpace(ch.ChannelID), limit, timeout)
+				if err == nil || len(listings) > 0 {
+					break
+				}
 			}
-			listings, err := fetchShortEPGForChannel(ctx, client, base, user, pass, strings.TrimSpace(ch.ChannelID), limit, timeout)
-			if err != nil {
+			if err != nil && len(listings) == 0 {
 				results <- result{tvgID: tvgID, err: err}
 				continue
 			}
@@ -661,8 +688,49 @@ func renderProviderEPGSuffix(template string, tokens map[string]string) string {
 	return out
 }
 
-// fetchProviderXMLTV fetches the provider's xmltv.php EPG feed.
-func (x *XMLTV) fetchProviderXMLTV(ctx context.Context, allowedTVGIDs map[string]bool) (*parsedEPG, error) {
+func mergeParsedEPG(base, extra *parsedEPG) *parsedEPG {
+	if base == nil {
+		return extra
+	}
+	if extra == nil {
+		return base
+	}
+	if base.programmes == nil {
+		base.programmes = map[string]*channelEPG{}
+	}
+	for tvgID, incoming := range extra.programmes {
+		if incoming == nil || len(incoming.nodes) == 0 {
+			continue
+		}
+		existing, ok := base.programmes[tvgID]
+		if !ok || existing == nil || len(existing.nodes) == 0 {
+			base.programmes[tvgID] = &channelEPG{
+				nodes:   append([]xmlRawNode(nil), incoming.nodes...),
+				windows: append([]timeWindow(nil), incoming.windows...),
+			}
+			continue
+		}
+		wins := append([]timeWindow(nil), existing.windows...)
+		sort.Slice(wins, func(i, j int) bool {
+			return wins[i].start.Before(wins[j].start)
+		})
+		for i, node := range incoming.nodes {
+			if i >= len(incoming.windows) {
+				continue
+			}
+			w := incoming.windows[i]
+			if windowsOverlap(w, wins) {
+				continue
+			}
+			existing.nodes = append(existing.nodes, node)
+			existing.windows = append(existing.windows, w)
+			wins = append(wins, w)
+		}
+	}
+	return base
+}
+
+func (x *XMLTV) fetchProviderXMLTVForIdentity(ctx context.Context, allowedTVGIDs map[string]bool, id ProviderIdentity, cachePath string) (*parsedEPG, error) {
 	suffix := x.ProviderEPGURLSuffix
 	if x.ProviderEPGIncremental && x.EpgStore != nil {
 		maxStop, err := x.EpgStore.GlobalMaxStopUnix()
@@ -673,17 +741,52 @@ func (x *XMLTV) fetchProviderXMLTV(ctx context.Context, allowedTVGIDs map[string
 			suffix = renderProviderEPGSuffix(suffix, toks)
 		}
 	}
-	baseURL, user, pass := x.providerIdentity()
-	rawURL := providerXMLTVEPGURL(baseURL, user, pass, suffix)
+	rawURL := providerXMLTVEPGURL(id.BaseURL, id.User, id.Pass, suffix)
 	timeout := x.ProviderEPGTimeout
 	if timeout <= 0 {
 		timeout = 90 * time.Second
 	}
-	cachePath := strings.TrimSpace(x.ProviderEPGDiskCachePath)
+	cachePath = strings.TrimSpace(cachePath)
 	if cachePath != "" {
 		return x.fetchProviderXMLTVConditional(ctx, rawURL, allowedTVGIDs, cachePath, timeout)
 	}
 	return fetchAndParseXMLTV(ctx, rawURL, timeout, x.Client, allowedTVGIDs)
+}
+
+// fetchProviderXMLTV fetches the provider's xmltv.php EPG feed.
+func (x *XMLTV) fetchProviderXMLTV(ctx context.Context, allowedTVGIDs map[string]bool) (*parsedEPG, error) {
+	ids := x.providerIdentities()
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("provider identity incomplete")
+	}
+	var (
+		merged   *parsedEPG
+		success  int
+		firstErr error
+	)
+	for i, id := range ids {
+		cachePath := ""
+		if i == 0 {
+			cachePath = x.ProviderEPGDiskCachePath
+		}
+		epg, err := x.fetchProviderXMLTVForIdentity(ctx, allowedTVGIDs, id, cachePath)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			log.Printf("xmltv: provider XMLTV source unavailable base=%s (%v)", id.BaseURL, err)
+			continue
+		}
+		merged = mergeParsedEPG(merged, epg)
+		success++
+	}
+	if success == 0 {
+		if firstErr == nil {
+			firstErr = fmt.Errorf("provider xmltv unavailable")
+		}
+		return nil, firstErr
+	}
+	return merged, nil
 }
 
 // windowsOverlap reports whether window w overlaps any window in the sorted slice wins.

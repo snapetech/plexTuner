@@ -66,12 +66,15 @@ func (x *XMLTV) buildMatchReport(aliasesRef string) (*epglink.Report, error) {
 	if ref := strings.TrimSpace(x.SourceURL); ref != "" {
 		allowedRefs = append(allowedRefs, ref)
 	}
-	providerRef := ""
+	providerRefs := make([]string, 0)
 	if x.ProviderEPGEnabled {
-		baseURL, user, pass := x.providerIdentity()
-		providerRef = guideinput.ProviderXMLTVURLWithSuffix(baseURL, user, pass, x.ProviderEPGURLSuffix)
-		if providerRef != "" {
-			allowedRefs = append(allowedRefs, providerRef)
+		for _, id := range x.providerIdentities() {
+			ref := guideinput.ProviderXMLTVURLWithSuffix(id.BaseURL, id.User, id.Pass, x.ProviderEPGURLSuffix)
+			if ref == "" {
+				continue
+			}
+			providerRefs = append(providerRefs, ref)
+			allowedRefs = append(allowedRefs, ref)
 		}
 	}
 	aliases, err := loadGuideHealthAliasesWithAllowed(aliasesRef, allowedRefs...)
@@ -84,7 +87,7 @@ func (x *XMLTV) buildMatchReport(aliasesRef string) (*epglink.Report, error) {
 	}
 	var sources []source
 	if x.ProviderEPGEnabled {
-		if ref := providerRef; ref != "" {
+		for _, ref := range providerRefs {
 			if chans, err := loadGuideHealthXMLTVChannelsWithAllowed(ref, allowedRefs...); err == nil && len(chans) > 0 {
 				sources = append(sources, source{ref: ref, ch: chans})
 			}

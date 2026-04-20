@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"encoding/xml"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -1033,9 +1035,48 @@ func loadProviderXMLTVChannelsForRepair(cfg *config.Config, ref string, allowedR
 	return cached, nil
 }
 
+func loadXMLTVProgrammeCountsWithAllowed(ref string, allowedRefs ...string) (map[string]int, error) {
+	data, err := guideinput.LoadGuideDataWithAllowed(ref, allowedRefs)
+	if err != nil {
+		return nil, err
+	}
+	counts := make(map[string]int)
+	dec := xml.NewDecoder(bytes.NewReader(data))
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			if err == io.EOF {
+				return counts, nil
+			}
+			return nil, err
+		}
+		se, ok := tok.(xml.StartElement)
+		if !ok || se.Name.Local != "programme" {
+			continue
+		}
+		channelID := ""
+		for _, attr := range se.Attr {
+			if attr.Name.Local == "channel" {
+				channelID = strings.TrimSpace(attr.Value)
+				break
+			}
+		}
+		if channelID != "" {
+			counts[channelID]++
+		}
+		if err := dec.Skip(); err != nil && err != io.EOF {
+			return nil, err
+		}
+	}
+}
+
 func applyRuntimeEPGRepairs(cfg *config.Config, live []catalog.LiveChannel, providerBase, providerUser, providerPass string) {
 	if cfg == nil || !cfg.XMLTVMatchEnable || len(live) == 0 {
 		return
+	}
+	originalTVGIDs := make(map[string]string, len(live))
+	for _, ch := range live {
+		originalTVGIDs[ch.ChannelID] = strings.TrimSpace(ch.TVGID)
 	}
 	allowedRefs := []string{}
 	if cfg.XMLTVAliases != "" {
@@ -1044,11 +1085,24 @@ func applyRuntimeEPGRepairs(cfg *config.Config, live []catalog.LiveChannel, prov
 	if ref := strings.TrimSpace(cfg.XMLTVURL); ref != "" {
 		allowedRefs = append(allowedRefs, ref)
 	}
-	providerRef := ""
+	providerRefs := make([]string, 0, len(cfg.ProviderEntries())+1)
 	if cfg.ProviderEPGEnabled {
-		providerRef = guideinput.ProviderXMLTVURLWithSuffix(providerBase, providerUser, providerPass, cfg.ProviderEPGURLSuffix)
-		if providerRef != "" {
-			allowedRefs = append(allowedRefs, providerRef)
+		seenProviderRefs := map[string]struct{}{}
+		appendProviderRef := func(base, user, pass string) {
+			ref := guideinput.ProviderXMLTVURLWithSuffix(base, user, pass, cfg.ProviderEPGURLSuffix)
+			if ref == "" {
+				return
+			}
+			if _, ok := seenProviderRefs[ref]; ok {
+				return
+			}
+			seenProviderRefs[ref] = struct{}{}
+			providerRefs = append(providerRefs, ref)
+			allowedRefs = append(allowedRefs, ref)
+		}
+		appendProviderRef(providerBase, providerUser, providerPass)
+		for _, entry := range cfg.ProviderEntries() {
+			appendProviderRef(entry.BaseURL, entry.User, entry.Pass)
 		}
 	}
 	aliases, err := loadAliasOverridesWithAllowed(cfg.XMLTVAliases, allowedRefs...)
@@ -1060,14 +1114,19 @@ func applyRuntimeEPGRepairs(cfg *config.Config, live []catalog.LiveChannel, prov
 		name     string
 		ref      string
 		channels []epglink.XMLTVChannel
+		counts   map[string]int
 	}
 	var sources []xmltvSource
 	if cfg.ProviderEPGEnabled {
-		if ref := providerRef; ref != "" {
+		for _, ref := range providerRefs {
 			if chans, err := loadProviderXMLTVChannelsForRepair(cfg, ref, allowedRefs); err != nil {
 				log.Printf("EPG repair provider source unavailable: %v", err)
 			} else if len(chans) > 0 {
-				sources = append(sources, xmltvSource{name: "provider", ref: ref, channels: chans})
+				counts, countErr := loadXMLTVProgrammeCountsWithAllowed(ref, allowedRefs...)
+				if countErr != nil {
+					log.Printf("EPG repair provider programme scan unavailable: %v", countErr)
+				}
+				sources = append(sources, xmltvSource{name: "provider", ref: ref, channels: chans, counts: counts})
 			}
 		}
 	}
@@ -1075,7 +1134,11 @@ func applyRuntimeEPGRepairs(cfg *config.Config, live []catalog.LiveChannel, prov
 		if chans, err := loadXMLTVChannelsWithAllowed(ref, allowedRefs...); err != nil {
 			log.Printf("EPG repair external source unavailable: %v", err)
 		} else if len(chans) > 0 {
-			sources = append(sources, xmltvSource{name: "external", ref: ref, channels: chans})
+			counts, countErr := loadXMLTVProgrammeCountsWithAllowed(ref, allowedRefs...)
+			if countErr != nil {
+				log.Printf("EPG repair external programme scan unavailable: %v", countErr)
+			}
+			sources = append(sources, xmltvSource{name: "external", ref: ref, channels: chans, counts: counts})
 		}
 	}
 	if len(sources) == 0 {
@@ -1095,6 +1158,37 @@ func applyRuntimeEPGRepairs(cfg *config.Config, live []catalog.LiveChannel, prov
 			}
 		}
 		log.Printf("EPG repair via %s: matched=%d/%d repaired=%d applied=%d already-linked=%d ref=%s",
+			src.name, rep.Matched, rep.TotalChannels, apply.Repaired, apply.Applied, apply.AlreadyLinked, safeurl.RedactURL(src.ref))
+	}
+
+	suspicious := make([]catalog.LiveChannel, 0)
+	for _, ch := range live {
+		current := strings.TrimSpace(ch.TVGID)
+		if current == "" {
+			continue
+		}
+		if current != originalTVGIDs[ch.ChannelID] {
+			continue
+		}
+		totalProgrammes := 0
+		for _, src := range sources {
+			totalProgrammes += src.counts[current]
+		}
+		if totalProgrammes == 0 {
+			ch.TVGID = ""
+			suspicious = append(suspicious, ch)
+		}
+	}
+	if len(suspicious) == 0 {
+		return
+	}
+	for _, src := range sources {
+		rep := epglink.MatchLiveChannels(suspicious, src.channels, aliases)
+		if rep.Matched == 0 {
+			continue
+		}
+		apply := epglink.ApplyDeterministicRepairs(live, rep)
+		log.Printf("EPG repair fallback via %s: matched=%d/%d repaired=%d applied=%d already-linked=%d ref=%s",
 			src.name, rep.Matched, rep.TotalChannels, apply.Repaired, apply.Applied, apply.AlreadyLinked, safeurl.RedactURL(src.ref))
 	}
 }

@@ -118,19 +118,42 @@ Important for HDHomeRun network mode in supervisor:
 ## Home cluster deploy pipeline
 
 This repo also carries the current `kspld0`/`plex` production manifests under
-`deploy/cluster/plex/`. The GitHub workflow
-`.github/workflows/deploy-cluster.yml` runs on a repo-scoped self-hosted runner
-with labels `self-hosted`, `iptvtunerr-deploy`, and `kspld0`.
+`deploy/cluster/plex/`. Automatic cluster deployment now runs as the
+`Deploy Cluster` job inside `.github/workflows/ci.yml` on the repo-scoped
+self-hosted runner with labels `self-hosted`, `iptvtunerr-deploy`, and
+`kspld0`.
 
-On successful `CI` completion for `main`, the runner:
+On `push` to `main`, after `verify` and `smoke` pass, the deploy job:
 
-- checks out the exact commit that passed CI
-- builds `localhost/iptvtunerr:cluster`
+- checks whether cluster-relevant files changed (`Dockerfile`, `cmd/`,
+  `internal/`, `deploy/cluster/plex/`, `go.mod`, `go.sum`, `vendor/`)
+- skips the cluster deploy entirely when the push only changes docs,
+  memory-bank files, or other non-runtime paths
+- checks out the exact `main` commit that passed CI
+- builds a unique image tag `localhost/iptvtunerr:cluster-<sha>`
 - imports that image into local k3s containerd
 - applies `deploy/cluster/plex/iptvtunerr-deployment.yaml` and
   `deploy/cluster/plex/iptvtunerr-sports-deployment.yaml`
-- restarts both Tunerr deployments and waits for rollout
+- updates both deployments to the per-SHA image and waits for rollout
 - runs a `/readyz` smoke check in both pods
+
+This removes the old unconditional `rollout restart` behavior, so repeated
+manual runs for the same SHA do not force an extra restart and doc-only `main`
+pushes no longer bounce the cluster.
+
+### Agent/operator quick rules
+
+- To deploy code/runtime changes from this repo, push the commit to `origin/main`
+  and watch the `CI` workflow.
+- Auto-deploy only runs for cluster-relevant paths:
+  `Dockerfile`, `cmd/**`, `internal/**`, `deploy/cluster/plex/**`, `go.mod`,
+  `go.sum`, and `vendor/**`.
+- Pushes that only touch docs, `memory-bank/**`, or other non-runtime files do
+  not auto-deploy.
+- The live cluster version can be checked with:
+  `sudo kubectl -n plex exec deployment/iptvtunerr -- /usr/local/bin/iptv-tunerr version`
+- Manual fallback exists if CI skip/branch choice is intentional:
+  `gh workflow run deploy-cluster.yml -f ref=<branch-or-sha> --repo snapetech/iptvtunerr`
 
 Those manifests also mount a shared hostPath lease directory on `kspld0`
 (`IPTV_TUNERR_PROVIDER_ACCOUNT_SHARED_LEASE_DIR=/var/lib/iptvtunerr/provider-account-leases`)
@@ -142,7 +165,7 @@ GitHub-hosted runner, so the cluster does not need to expose SSH or Kubernetes
 to the public internet.
 
 ```bash
-gh workflow run deploy-cluster.yml --repo snapetech/iptvtunerr --ref main
+gh workflow run deploy-cluster.yml --repo snapetech/iptvtunerr -f ref=main
 ```
 
 ```bash

@@ -516,3 +516,49 @@ func TestXMLTV_buildMergedEPG_shortEPGGapFillsSparseProvider(t *testing.T) {
 		t.Fatalf("short EPG did not gap fill provider guide: %s", joined)
 	}
 }
+
+func TestXMLTV_buildMergedEPG_usesAdditionalProviderIdentityForGuideGap(t *testing.T) {
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/xmltv.php" {
+			t.Fatalf("primary path=%s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="utf-8"?><tv></tv>`))
+	}))
+	defer primary.Close()
+
+	secondary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/xmltv.php" {
+			t.Fatalf("secondary path=%s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="utf-8"?>
+<tv>
+  <programme start="20300101080000 +0000" stop="20300101090000 +0000" channel="sports.1"><title>Secondary Guide</title></programme>
+</tv>`))
+	}))
+	defer secondary.Close()
+
+	x := &XMLTV{
+		Channels: []catalog.LiveChannel{{
+			ChannelID:   "100",
+			GuideNumber: "100",
+			GuideName:   "Sports 1",
+			TVGID:       "sports.1",
+			EPGLinked:   true,
+		}},
+		ProviderBaseURL: primary.URL,
+		ProviderUser:    "u1",
+		ProviderPass:    "p1",
+		ProviderIdentities: []ProviderIdentity{{
+			BaseURL: secondary.URL,
+			User:    "u2",
+			Pass:    "p2",
+		}},
+		ProviderEPGEnabled: true,
+		ProviderEPGTimeout: 5 * time.Second,
+		Client:             primary.Client(),
+	}
+	x.refresh()
+	if !strings.Contains(string(x.cachedXML), "Secondary Guide") {
+		t.Fatalf("merged xml missing secondary provider guide: %s", string(x.cachedXML))
+	}
+}

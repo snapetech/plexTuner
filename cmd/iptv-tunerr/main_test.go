@@ -1062,6 +1062,33 @@ func TestApplyRuntimeEPGRepairs_PrefersProviderBeforeExternal(t *testing.T) {
 	}
 }
 
+func TestApplyRuntimeEPGRepairs_RepairsExactTVGIDWhenSourceHasNoProgrammes(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
+	providerXMLTV := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<?xml version="1.0"?><tv>
+<channel id="nbcsportsboston.us"><display-name>NBC Sports Boston</display-name></channel>
+<channel id="nbcsportswashington.us"><display-name>NBC Sports Washington</display-name></channel>
+<programme channel="nbcsportswashington.us" start="20300101000000 +0000" stop="20300101010000 +0000"><title>Caps</title></programme>
+</tv>`))
+	}))
+	defer providerXMLTV.Close()
+
+	cfg := &config.Config{
+		ProviderEPGEnabled: true,
+		XMLTVMatchEnable:   true,
+	}
+	t.Setenv("IPTV_TUNERR_PROVIDER_URL", providerXMLTV.URL)
+	t.Setenv("IPTV_TUNERR_PROVIDER_USER", "u")
+	t.Setenv("IPTV_TUNERR_PROVIDER_PASS", "p")
+	live := []catalog.LiveChannel{
+		{ChannelID: "1", GuideName: "NBC Sports Washington", TVGID: "nbcsportsboston.us", EPGLinked: true},
+	}
+	applyRuntimeEPGRepairs(cfg, live, providerXMLTV.URL, "u", "p")
+	if got := live[0].TVGID; got != "nbcsportswashington.us" {
+		t.Fatalf("TVGID=%q want nbcsportswashington.us", got)
+	}
+}
+
 func TestChannelDNAStableAfterRuntimeEPGRepair(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
 	xmltv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

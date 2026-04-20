@@ -47,6 +47,7 @@ type XMLTV struct {
 	ProviderBaseURL    string
 	ProviderUser       string
 	ProviderPass       string
+	ProviderIdentities []ProviderIdentity
 	ProviderEPGEnabled bool
 	ProviderEPGTimeout time.Duration
 
@@ -103,6 +104,12 @@ type XMLTV struct {
 	lastRefreshDuration  time.Duration
 }
 
+type ProviderIdentity struct {
+	BaseURL string
+	User    string
+	Pass    string
+}
+
 func (x *XMLTV) providerIdentity() (string, string, string) {
 	if x == nil {
 		return "", "", ""
@@ -121,6 +128,41 @@ func (x *XMLTV) setProviderIdentity(baseURL, user, pass string) {
 	x.ProviderUser = user
 	x.ProviderPass = pass
 	x.providerConfigMu.Unlock()
+}
+
+func normalizeProviderIdentity(baseURL, user, pass string) ProviderIdentity {
+	return ProviderIdentity{
+		BaseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+		User:    strings.TrimSpace(user),
+		Pass:    strings.TrimSpace(pass),
+	}
+}
+
+func (x *XMLTV) providerIdentities() []ProviderIdentity {
+	if x == nil {
+		return nil
+	}
+	x.providerConfigMu.RLock()
+	defer x.providerConfigMu.RUnlock()
+	out := make([]ProviderIdentity, 0, len(x.ProviderIdentities)+1)
+	seen := make(map[string]struct{}, len(x.ProviderIdentities)+1)
+	appendIdentity := func(id ProviderIdentity) {
+		id = normalizeProviderIdentity(id.BaseURL, id.User, id.Pass)
+		if id.BaseURL == "" || id.User == "" || id.Pass == "" {
+			return
+		}
+		key := id.BaseURL + "\x00" + id.User + "\x00" + id.Pass
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		out = append(out, id)
+	}
+	appendIdentity(ProviderIdentity{BaseURL: x.ProviderBaseURL, User: x.ProviderUser, Pass: x.ProviderPass})
+	for _, id := range x.ProviderIdentities {
+		appendIdentity(id)
+	}
+	return out
 }
 
 type XMLTVRefreshStatus struct {

@@ -14,6 +14,14 @@ First place to look before editing. Keeps agents from thrashing.
 
 Normal push path from this checkout: `git push origin main`. Never `git push github` or `git push template` from this folder.
 
+## Main deploy path
+
+- Automatic cluster deploy for this repo now lives in **`.github/workflows/ci.yml`** as the `Deploy Cluster` job, not in a separate always-on `workflow_run` chain.
+- Rule of thumb: **push to `origin/main`** for runtime/cluster changes, then watch the **`CI`** workflow. If `verify` and `smoke` pass and the diff touched cluster-relevant paths, that same `CI` run deploys to the local `plex` namespace on `kspld0`.
+- Cluster-relevant auto-deploy paths are: `Dockerfile`, `cmd/**`, `internal/**`, `deploy/cluster/plex/**`, `go.mod`, `go.sum`, and `vendor/**`.
+- Docs-only and `memory-bank/**`-only pushes do **not** auto-deploy.
+- Manual fallback is **`.github/workflows/deploy-cluster.yml`** via `workflow_dispatch`; it accepts a `ref` input and uses `scripts/deploy-cluster.sh`.
+
 ## Main entrypoints
 
 | Path | Purpose |

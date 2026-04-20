@@ -1,11 +1,12 @@
 name: Deploy Cluster
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    branches: [main]
-    types: [completed]
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag, or SHA to deploy"
+        required: false
+        default: main
 
 concurrency:
   group: iptvtunerr-cluster-deploy
@@ -13,47 +14,26 @@ concurrency:
 
 jobs:
   deploy:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: [self-hosted, iptvtunerr-deploy]
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ inputs.ref || github.sha }}
 
       - name: Resolve version
         id: version
         run: |
-          HEAD_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          HEAD_SHA="$(git rev-parse HEAD)"
           SHORT_SHA="${HEAD_SHA:0:7}"
+          echo "sha=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
           echo "short=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
           echo "version=dev-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
-      - name: Build cluster image
-        run: |
-          docker build \
-            --build-arg VERSION="${{ steps.version.outputs.version }}" \
-            -t localhost/iptvtunerr:cluster \
-            -t "localhost/iptvtunerr:cluster-${{ steps.version.outputs.short }}" \
-            .
-
-      - name: Import image into k3s
-        run: docker save localhost/iptvtunerr:cluster | sudo k3s ctr -n k8s.io images import -
-
-      - name: Apply custom cluster manifests
-        run: |
-          sudo kubectl apply \
-            -f deploy/cluster/plex/iptvtunerr-deployment.yaml \
-            -f deploy/cluster/plex/iptvtunerr-sports-deployment.yaml
-
-      - name: Restart Tunerr deployments
-        run: |
-          sudo kubectl -n plex rollout restart deployment/iptvtunerr deployment/iptvtunerr-sports
-          sudo kubectl -n plex rollout status deployment/iptvtunerr --timeout=5m
-          sudo kubectl -n plex rollout status deployment/iptvtunerr-sports --timeout=5m
-
-      - name: Smoke check
-        run: |
-          sudo kubectl -n plex exec deployment/iptvtunerr -- wget -qO- http://127.0.0.1:5004/readyz
-          sudo kubectl -n plex exec deployment/iptvtunerr-sports -- wget -qO- http://127.0.0.1:5004/readyz
+      - name: Deploy cluster
+        env:
+          TARGET_SHA: ${{ steps.version.outputs.sha }}
+          TARGET_SHORT_SHA: ${{ steps.version.outputs.short }}
+          TARGET_VERSION: ${{ steps.version.outputs.version }}
+        run: bash ./scripts/deploy-cluster.sh
