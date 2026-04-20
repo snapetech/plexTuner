@@ -52,6 +52,13 @@
 
 Append-only. One entry per completed task.
 
+## 2026-04-19 - Validate shared account coordination against the intended pooled-credentials design
+
+- Confirmed live that the new shared provider-account lease fixes the cross-pod duplicate-booking path without needing separate credentials as the first answer.
+- Held primary `/stream/177396` and then requested sports `/stream/904205`; sports failed locally with `503`, `X-HDHomeRun-Error: 805`, and `All provider accounts in use`, and logs showed `reject provider-accounts-in-use limit=1`, proving the second pod did not touch upstream.
+- Re-checked the post-rollout logs and found no fresh `509`, shared-relay attach, or account-limit churn in the following 20-minute slice; the remaining gap is process-local shared-relay reuse plus stronger overlap instrumentation, not cross-pod account enforcement.
+- Verified GitHub automation state for `fb109bd`: `CI`, `Docker`, `Gitleaks`, and `CodeQL` completed successfully on `main`, and `Deploy Cluster` is now running from the workflow-run trigger.
+
 ## Entry template
 - Date: YYYY-MM-DD
   Title: <short>

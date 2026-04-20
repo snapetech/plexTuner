@@ -25,15 +25,25 @@ It exists to encourage quality gains without derailing the current task.
 ## Entries
 
 - Date: 2026-04-19
+  Category: operability
+  Title: Add cross-pod shared-relay observability and consider relay reuse beyond one process
+  Context: The new shared provider-account lease proves primary/sports no longer double-book the upstream account, but `tryServeSharedRelay()` still only attaches to an in-memory relay in one process. That means duplicate upstream pulls can still happen when overlapping viewers for the same channel land on different Tunerr pods, and the current logs/debug surfaces do not make those misses easy to quantify in production.
+  Why it matters: The user’s intended architecture is pooled credentials plus relay reuse, not “more credentials.” Without overlap metrics and cross-pod visibility, it is hard to prove whether any remaining provider `509` events are true single-session upstream instability or duplicate pulls that bypass local relay sharing.
+  Evidence: Live overlap validation on 2026-04-19 showed cross-pod provider-account lease enforcement works (`/stream/177396` on primary blocked `/stream/904205` on sports locally with `provider-accounts-in-use`), while `/debug/shared-relays.json` and relay attach logs remained process-local and idle outside that one pod.
+  Suggested fix: Add explicit counters/logging for relay attach-hit vs attach-miss vs non-shareable request shape, include provider-account lease owner/account in debug snapshots, and evaluate a bounded shared-relay coordination path for same-channel overlap across pods if the data shows it is worth the complexity.
+  Risk/Scope: med | fits current scope? no
+  User decision needed?: no
+
+- Date: 2026-04-19
   Category: reliability
   Title: Add a shared provider-account lease across Tunerr pods
   Context: Primary and sports cluster deployments currently run as separate pods but use the same provider credentials. Each process can enforce `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT=1` locally, but neither process sees the other's active stream lease.
+  Status: **Resolved 2026-04-19** — Tunerr now supports `IPTV_TUNERR_PROVIDER_ACCOUNT_SHARED_LEASE_DIR`, `..._TTL`, and `..._OWNER`, and the primary/sports cluster manifests mount the same hostPath lease directory on `kspld0`. Live overlap proof: primary holding `/stream/177396` caused sports `/stream/904205` to fail locally with `503` / `All provider accounts in use` rather than double-book upstream.
   Why it matters: The provider returns `509` when the shared account is over limit. That can still happen when one stream is active in primary and another starts in sports, even though both pods are individually capped.
   Evidence: Live logs on 2026-04-19 for `CA| CTV VANCOUVER HD` showed provider playlist `509` / learned provider-account limit while both deployments referenced `IPTV_TUNERR_PROVIDER_USER_2` and `IPTV_TUNERR_PROVIDER_PASS_2`. Provider-3 credentials in the secret did not authenticate during a non-secret-printing check.
-  Suggested fix: Add an optional shared lease backend for provider-account keys, likely Kubernetes Lease/ConfigMap with short TTL and owner identity, or move primary/sports onto distinct valid provider credentials if available.
-  Risk/Scope: med | fits current scope? no
-  User decision needed?: yes
-  If yes: 1) Kubernetes Lease backend (Recommended), 2) require separate credentials per DVR, 3) keep fail-fast retry limits only. If no answer: keep the local one-stream caps and fail-fast retry configuration.
+  Suggested fix: Shipped using a node-shared file lease backend for this cluster. Future hardening, if needed, is a Kubernetes Lease backend or stronger shared-relay observability rather than assuming per-DVR separate credentials.
+  Risk/Scope: med | fits current scope? yes
+  User decision needed?: no
 
 - Date: 2026-04-19
   Category: security
