@@ -114,6 +114,97 @@ func TestGetChannelMap_skipsIncompleteMappings(t *testing.T) {
 	}
 }
 
+func TestNormalizePlexHost(t *testing.T) {
+	tests := map[string]string{
+		"192.168.50.148:32400":        "192.168.50.148:32400",
+		"http://192.168.50.148:32400": "192.168.50.148:32400",
+		"https://plex.example:32400/": "plex.example:32400",
+		"plex.example:32400/path":     "plex.example:32400",
+	}
+	for in, want := range tests {
+		if got := normalizePlexHost(in); got != want {
+			t.Fatalf("normalizePlexHost(%q)=%q want %q", in, got, want)
+		}
+	}
+}
+
+func TestRegisterTunerViaAPI_synthesizesDeviceAfterGrabber404s(t *testing.T) {
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	host := strings.TrimPrefix(srv.URL, "http://")
+	dev, err := RegisterTunerViaAPI(PlexAPIConfig{
+		BaseURL:   "http://iptvtunerr-sports.plex.svc:5004",
+		PlexHost:  host,
+		PlexToken: "demo",
+		DeviceID:  "iptvtunerr-sports01",
+	})
+	if err != nil {
+		t.Fatalf("RegisterTunerViaAPI: %v", err)
+	}
+	if dev.UUID != "device://tv.plex.grabbers.hdhomerun/iptvtunerr-sports01" {
+		t.Fatalf("uuid=%q", dev.UUID)
+	}
+	if len(paths) != 3 {
+		t.Fatalf("paths=%v want all grabber fallbacks", paths)
+	}
+}
+
+func TestListDVRsAPI_includesDeviceStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<MediaContainer size="1">
+  <Dvr key="761" uuid="demo" lineupTitle="IPTV Tunerr Sports" lineup="lineup://tv.plex.providers.epg.xmltv/http%3A%2F%2Fiptvtunerr-sports.plex.svc%3A5004%2Fguide.xml#IPTV+Tunerr+Sports">
+    <Device key="760" uuid="device://tv.plex.grabbers.hdhomerun/iptvtunerr-sports01" uri="http://iptvtunerr-sports.plex.svc:5004" status="dead" state="enabled"/>
+  </Dvr>
+</MediaContainer>`))
+	}))
+	defer srv.Close()
+
+	dvrs, err := ListDVRsAPI(srv.URL, "demo")
+	if err != nil {
+		t.Fatalf("ListDVRsAPI: %v", err)
+	}
+	if len(dvrs) != 1 {
+		t.Fatalf("dvrs=%d want 1", len(dvrs))
+	}
+	if dvrs[0].DeviceStatus != "dead" || dvrs[0].DeviceState != "enabled" {
+		t.Fatalf("device status/state = %q/%q", dvrs[0].DeviceStatus, dvrs[0].DeviceState)
+	}
+	if !dvrDeviceLooksDead(dvrs[0]) {
+		t.Fatalf("expected dvr device to look dead")
+	}
+}
+
+func TestWatchdogExpectedChannelCountUsesCurrentTunerLineup(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/lineup.json" {
+			t.Fatalf("path=%s want /lineup.json", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`[{"GuideNumber":"1"},{"GuideNumber":"2"},{"GuideNumber":"3"}]`))
+	}))
+	defer srv.Close()
+
+	fallback := make([]ChannelInfo, 10)
+	if got := watchdogExpectedChannelCount(srv.URL, fallback); got != 3 {
+		t.Fatalf("expected count=%d want 3", got)
+	}
+}
+
+func TestDeadDVRNeedsReregistration(t *testing.T) {
+	dead := DVRInfo{DeviceStatus: "dead", DeviceState: "enabled"}
+	if deadDVRNeedsReregistration(dead, 95, 100) {
+		t.Fatal("healthy dead-marked dvr should not re-register")
+	}
+	if !deadDVRNeedsReregistration(dead, 50, 100) {
+		t.Fatal("under-activated dead-marked dvr should re-register")
+	}
+}
+
 func TestActivateChannelsAPI_keepsFullEnabledSetAcrossBatches(t *testing.T) {
 	type seenRequest struct {
 		enabled []string

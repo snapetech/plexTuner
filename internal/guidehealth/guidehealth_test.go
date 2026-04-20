@@ -23,6 +23,10 @@ func TestBuildClassifiesRealAndPlaceholderGuideCoverage(t *testing.T) {
     <title>Morning News</title>
     <desc>Top stories</desc>
   </programme>
+  <programme start="20260318130000 +0000" stop="20260318140000 +0000" channel="101">
+    <title>Midday News</title>
+    <desc>More stories</desc>
+  </programme>
   <programme start="20260317120000 +0000" stop="20260325120000 +0000" channel="102">
     <title>Mystery TV</title>
   </programme>
@@ -67,5 +71,57 @@ func TestBuildClassifiesRealAndPlaceholderGuideCoverage(t *testing.T) {
 	}
 	if byID["3"].MatchMethod != "" || byID["3"].Status != "unlinked" {
 		t.Fatalf("channel 3 should be unlinked: %+v", byID["3"])
+	}
+}
+
+func TestBuildPrefersNamedDisplayForPlaceholderDetection(t *testing.T) {
+	live := []catalog.LiveChannel{
+		{ChannelID: "1", GuideNumber: "11", GuideName: "CA| CTV VANCOUVER HD", TVGID: "CTVVancouver.ca", EPGLinked: true},
+	}
+	guide := []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="cb">
+    <display-name>CA| CTV VANCOUVER HD</display-name>
+    <display-name>11</display-name>
+  </channel>
+  <programme start="20260419003928 +0000" stop="20260427003928 +0000" channel="cb"><title>CA| CTV VANCOUVER HD</title></programme>
+</tv>`)
+
+	rep, err := BuildWithChannelXMLID(live, guide, nil, time.Date(2026, 4, 19, 0, 39, 28, 0, time.UTC), func(catalog.LiveChannel) string {
+		return "cb"
+	})
+	if err != nil {
+		t.Fatalf("BuildWithChannelXMLID: %v", err)
+	}
+	if rep.Summary.PlaceholderOnlyChannels != 1 || rep.Summary.ChannelsWithRealProgrammes != 0 {
+		t.Fatalf("summary should classify channel-name long block as placeholder-only: %+v", rep.Summary)
+	}
+	if got := rep.Channels[0].Status; got != "placeholder_only" {
+		t.Fatalf("status=%q want placeholder_only: %+v", got, rep.Channels[0])
+	}
+}
+
+func TestBuildClassifiesSparseRealProgrammeCoverage(t *testing.T) {
+	live := []catalog.LiveChannel{
+		{ChannelID: "1", GuideNumber: "101", GuideName: "Sparse Channel", TVGID: "sparse.tv", EPGLinked: true},
+	}
+	guide := []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="101"><display-name>Sparse Channel</display-name></channel>
+  <programme start="20260419120000 +0000" stop="20260419130000 +0000" channel="101">
+    <title>One Real Show</title>
+    <desc>A real listing, but not enough guide coverage.</desc>
+  </programme>
+</tv>`)
+
+	rep, err := Build(live, guide, nil, time.Date(2026, 4, 19, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if rep.Summary.SparseProgrammeChannels != 1 {
+		t.Fatalf("sparse channels=%d want 1", rep.Summary.SparseProgrammeChannels)
+	}
+	if got := rep.Channels[0].Status; got != "sparse" {
+		t.Fatalf("status=%q want sparse: %+v", got, rep.Channels[0])
 	}
 }

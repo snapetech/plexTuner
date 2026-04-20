@@ -191,6 +191,54 @@
 - `memory-bank/known_issues.md` (Trial DVR wrong-URI entry)
 - `<sibling-k3s-repo>/plex/scripts/plex-activate-dvr-lineups.py`
 
+### Loop: Standby Plex gets repaired, then `plex-db-sync` restores stale old-primary DVR state
+
+**Symptom**
+- Plex itself stays reachable locally and through plex.direct/WAN, and Tunerr pods are healthy, but users see Live TV offline/blank because `/livetv/dvrs` suddenly contains only old dead DVR rows.
+- The active Tunerr DVR IDs disappear after a scheduled sync window; in the 2026-04-18 incident, active DVRs `757`/`760` were replaced by dead rows `730,733,736,739,742,745,749`.
+
+**Why it's tricky**
+- The first checks all look healthy: `plex-standby` is `Ready`, `:32400/identity` returns `200`, plex.tv resources advertise the right LAN/WAN pair, and `iptvtunerr` `/healthz` returns `200`.
+- The destructive change is not a Kubernetes rollout; it is `plex-db-sync` copying old `kspls0` Plex DB files into `/var/lib/plex-standby-config` with `rsync --delete`.
+- The Tunerr deployments currently run `run -mode=easy`, so they do not auto-repair Plex registration after a DB rollback.
+
+**What works**
+- Check `/livetv/dvrs` before restarting healthy pods.
+- Suspend `cronjob/plex-db-sync` immediately if the standby is the live source of truth.
+- Re-register the two live services from their pods with a host-only Plex target, for example:
+  - primary: `PLEX_HOST=192.168.50.148:32400 iptv-tunerr run -mode=full -register-plex=api -register-only -skip-index -skip-health -catalog /catalog.json`
+  - sports: same command inside `deployment/iptvtunerr-sports`
+- Delete only stale dead DVR rows after the new primary/sports rows are alive and provider channel counts are correct.
+
+**Where it's documented**
+- `memory-bank/current_task.md`
+- `memory-bank/known_issues.md`
+- `../k3s/plex/plex-db-sync-cronjob.yaml`
+
+**2026-04-19 update**
+- The same user-visible failure can recur even with healthy Tunerr pods if they are running `run -mode=easy`; easy mode prints setup hints but does not run the Plex API registration/watchdog path.
+- The durable cluster posture is now `run -mode=full -register-plex=api` for both primary and sports, with a host-only `PLEX_HOST` override and an explicit `IPTV_TUNERR_LINEUP_MAX_CHANNELS=479` cap on primary.
+- When cleaning up a rollback, delete stale dead DVR rows and stale dead HDHR device rows. Verify both `/livetv/dvrs` and `/media/grabbers/devices`; the client source strip can stay wrong if dead device rows remain even after DVR rows are cleaned up.
+- The registration path and watchdog now detect Plex `dead`/disabled device status and recreate the DVR/device pair. If this loop returns, check whether Plex is returning a new status spelling that `dvrDeviceLooksDead` does not yet classify.
+
+### Loop: Plex DVR watchdog compares against stale pre-filter lineup size
+
+**Symptom**
+- Tunerr logs `dvr=<id> guide ok but only <healthy>/<original> channels activated ... activating now` every watchdog interval.
+- Plex repeatedly fetches `/guide.xml` and `/lineup.json` even though the exposed tuner lineup is healthy and already activated.
+
+**Why it's tricky**
+- Registration starts before deferred guide-health policy may be ready, so the registration channel list can be larger than the final exposed lineup.
+- Later guide policy can drop sparse/placeholder rows from `s.Channels`, but the watchdog used to keep the original static count forever.
+
+**What works**
+- Compare Plex enabled mappings against the current tuner `/lineup.json` count, not only the registration-time list.
+- If the tuner lineup fetch fails, then fall back to the static registration list.
+
+**Where it's documented**
+- `internal/plex/dvr.go`
+- `memory-bank/known_issues.md`
+
 ### Loop: Plex Web probe reuses hidden Live TV `CaptureBuffer` state, so tuner changes are not actually exercised
 
 **Symptom**

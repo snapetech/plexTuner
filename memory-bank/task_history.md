@@ -1,3 +1,39 @@
+## 2026-04-19 - Fix sparse guide health and fail-fast provider-limit buffering
+
+- Investigated live primary/sports guide health and logs after the primary DVR still showed missing EPG and buffering. Primary `/guide/health.json` reported `479/479` with real programmes, but `73` primary rows had only one programme and direct `/guide.xml` showed channel-name placeholder blocks such as `CA| CTV VANCOUVER HD` spanning `2026-04-19T00:39:28Z` to `2026-04-27T00:39:28Z`.
+- Fixed guide-health parsing so XMLTV channels with multiple `<display-name>` values prefer the non-numeric display name for placeholder detection, which prevents Plex-safe numeric display names from making channel-title placeholders look like real listings.
+- Added sparse guide classification (`status=sparse`, `sparse_programme_channels`) and made guide policy drop sparse rows under `healthy` / `strict`; updated guide/catch-up policy summaries and tests.
+- Persisted primary `IPTV_TUNERR_GUIDE_POLICY=healthy` in `../k3s/plex/iptvtunerr-deployment.yaml` so weak placeholder/sparse guide rows are suppressed from the primary DVR once the fixed guide-health cache is ready.
+- Investigated buffering logs: primary CTV playback hit provider playlist `509`, learned provider-account limit `1`, and stalled after progress. Both primary and sports deployments use the same provider account (`*_USER_2` / `*_PASS_2`), and provider-3 credentials did not authenticate in a non-secret-printing check. Persisted `IPTV_TUNERR_UPSTREAM_RETRY_LIMIT=0` and `IPTV_TUNERR_HLS_PLAYLIST_RETRY_LIMIT=0` in both deployments to reduce provider-limit buffering/backoff delay.
+- Fixed the deferred guide-policy path after live validation showed `IPTV_TUNERR_GUIDE_POLICY=healthy` was configured but initially deferred until guide health existed; the server now filters the exposed lineup in place once the guide-health cache becomes ready instead of refilling the cap from unknown raw catalog rows.
+- Verification: `./scripts/verify`, `git diff --check`, and k3s manifest diff check passed. Rebuilt/imported `localhost/iptvtunerr:cluster` into `kspld0` (`sha256:86a92846cfeb1d4a83b8b0ba38360f5bb25e8579a8e62dd0bb48c418845ad9e9`) and rolled `deployment/iptvtunerr` plus `deployment/iptvtunerr-sports`.
+- Live validation: primary logs show deferred guide policy then `dropped 74/479` placeholder-only rows, final primary lineup `405` channels with `405` real-programme channels, `0` sparse, `0` placeholder-only, `0` no-programme. Plex provider rows now report DVR `794=405` and sports DVR `797=106`. A Plex-shaped `Lavf/60.16.100` sample against `/stream/177396` returned HTTP `200`, first bytes in `2.89s`, and `63,963,240` bytes over the 20s client timeout with no provider `509` in recent primary logs.
+
+## 2026-04-18 - Cap deployed Tunerr provider concurrency and redeploy
+
+- Persisted `IPTV_TUNERR_TUNER_COUNT=1` and `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT=1` in sibling ops manifests `../k3s/plex/iptvtunerr-deployment.yaml` and `../k3s/plex/iptvtunerr-sports-deployment.yaml`.
+- Built a fresh `localhost/iptvtunerr:cluster` image and imported it into k3s containerd (`sha256:37bbb4fa5dc927b638e5b7c47917715919d5f17953b33d4a6fcf9fc86f0090c0`).
+- Applied both deployment manifests and rolled `deployment/iptvtunerr` plus `deployment/iptvtunerr-sports` successfully.
+- Verification: both pods Ready with zero restarts; runtime snapshots report `count=1` and `provider_account_max_concurrent=1`; provider profiles report `configured_tuner_limit=1`, `effective_tuner_limit=1`, `account_pool_limit=1`, and `account_pool_configured=true`; post-rollout sports stream logs show `inuse=1/1` and no provider `509` during the short watch window.
+- Note: PMS `/livetv/dvrs` still showed stale `tuners="2"` immediately after rollout; Tunerr is enforcing one locally, but Plex may need a later metadata refresh or DVR repair if the UI continues to assume two hardware tuners.
+
+## 2026-04-18 - Live deployed client-drop log triage
+
+- Checked live Kubernetes state for `plex` namespace: `iptvtunerr`, `iptvtunerr-sports`, and `plex-standby` were Ready; `plex-db-sync` is suspended, though it had run at `2026-04-19T02:00:29Z` before suspension.
+- Verified current Plex DVR state from PMS localhost: only active DVRs `752` (primary) and `755` (sports), both devices `alive`.
+- Root cause found in sports playback logs: overlapping Plex `Lavf/60.16.100` stream pulls for `CA| TSN 4 HD` hit provider playlist `509`; Tunerr learned `provider-account limit=1` while deployment/runtime still exposed `count=2`.
+- Filed known issue under Cluster / Plex with evidence and mitigation: cap live provider concurrency (`IPTV_TUNERR_TUNER_COUNT=1`, `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT=1`) and note the cross-pod lease limitation.
+- Verification: read-only live log/API inspection only; no deployment or code changes applied.
+
+## 2026-04-18 - Restore Plex Live TV after stale DB sync rollback
+
+- Suspended the live `plex-db-sync` CronJob after confirming it copied stale old-primary Plex DB files into the active standby at `2026-04-19T02:00Z`.
+- Re-registered the healthy primary and sports Tunerr services through Plex API registration from the running pods, using a process-local `PLEX_HOST=192.168.50.148:32400` override because the stored env value includes a URL scheme.
+- Restored active Plex DVRs as `752` (`479` activated channels) and `755` (`106` activated channels), then deleted stale dead DVR rows `730,733,736,739,742,745,749`.
+- Persisted the guard in sibling ops config by setting `spec.suspend: true` in `../k3s/plex/plex-db-sync-cronjob.yaml`.
+- Restored the missing `service/plex` in sibling ops config so existing Traefik `IngressRoute` objects for `plex.home` have a backend again.
+- Verification: Tunerr primary/sports `/healthz` 200; Plex `/livetv/dvrs` has only DVRs `752` and `755`, both device status `alive`; provider channel endpoints return `479` and `106`; both provider discover hubs return 200 with content; plex.direct WAN `/identity` returns 200; `https://plex.home/` returns Plex `401` instead of Traefik `404`.
+
 ## 2026-04-18 - HLS stalled-primary recovery before dead backup
 
 - Extended `hls_go_stalled_after_progress` recovery so a proven-good upstream gets a bounded same-URL retry even when alternates exist, instead of only when the row has a single URL.
@@ -36,6 +72,78 @@ Append-only. One entry per completed task.
 
 ## Entries
 
+- Date: 2026-04-19
+  Title: Stabilize deferred guide policy, soften false-dead DVR repair, and wire main-branch cluster deploy
+  Summary:
+    - Fixed the primary lineup/guide regression where deferred guide-policy kept filtering the already-filtered lineup, collapsing the exposed cable DVR from `479` down to `82` rows after startup.
+    - Added a stable pre-policy guide-health source lineup, rebuilt deferred policy from `RawChannels` only when guide health is ready, and changed the DVR watchdog so Plex `status="dead"` does not trigger re-registration when the enabled mapping set is still healthy.
+    - Added the repo-scoped cluster deploy workflow (`.github/workflows/deploy-cluster.yml`) and committed custom cluster manifests under `deploy/cluster/plex/` for the self-hosted `kspld0-iptvtunerr` runner.
+    - Rebuilt/imported `localhost/iptvtunerr:cluster`, rolled both live deployments, and verified primary settled at `406/406` while sports stayed `106/106`.
+  Verification:
+    - `go test ./internal/tuner ./internal/plex ./cmd/iptv-tunerr`
+    - `docker build --build-arg VERSION=dev-$(git rev-parse --short HEAD) -t localhost/iptvtunerr:cluster .`
+    - `docker save localhost/iptvtunerr:cluster | ssh kspld0 'sudo k3s ctr -n k8s.io images import -'`
+    - `sudo kubectl -n plex rollout restart deployment/iptvtunerr deployment/iptvtunerr-sports`
+    - `sudo kubectl -n plex rollout status deployment/iptvtunerr --timeout=180s`
+    - `sudo kubectl -n plex rollout status deployment/iptvtunerr-sports --timeout=180s`
+    - Live checks: primary logs `kept=406/479`, watchdog `enabled=406/406`, 4-minute in-pod `Lavf/60.16.100` stream sample on `/stream/177396`
+  Notes:
+    - `./scripts/verify` is still blocked by an unrelated pre-existing formatting issue in `internal/plexlabelproxy/rewrite_test.go`.
+    - Residual live risk remains upstream provider playlist `509`, including on long single-stream playback; the 4-minute sample stayed up but still logged one provider-limit learning event near the end.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `internal/tuner/xmltv.go`
+    - `internal/tuner/epg_pipeline.go`
+    - `internal/plex/dvr.go`
+    - `.github/workflows/deploy-cluster.yml`
+    - `deploy/cluster/plex/iptvtunerr-deployment.yaml`
+
+- Date: 2026-04-19
+  Title: Deduplicate and de-sport the primary cable DVR
+  Summary:
+    - Added `IPTV_TUNERR_LINEUP_DEDUPE=stable`, a pre-cap duplicate collapse that keeps the best representative for matching `tvg-id` or normalized channel names.
+    - Added `IPTV_TUNERR_LINEUP_DROP_SPORTS=true`, a primary/general-DVR sports/event filter that leaves recipe-specific sports DVRs untouched.
+    - Enabled both settings only on `../k3s/plex/iptvtunerr-deployment.yaml`; `iptvtunerr-sports` was not given either env.
+    - Fixed `applyLineupExcludeRecipe` so an exclude recipe that matches zero rows drops nothing instead of excluding the whole remaining lineup.
+    - Fixed runtime registration/watchdog channel expectations to use the exposed/capped lineup, preventing repeated `479/raw-catalog-size` under-activation repairs.
+  Verification:
+    - `go test -count=1 ./internal/tuner -run 'TestApplyLineupPreCapFilters_(dropSportsKeepsGeneralCable|dedupeStableIdentityKeepsBestRepresentative|dedupeOffLeavesDuplicates|excludeRecipeSportsNA|lineupRecipeSportsNA|lineupRecipeLocalsFirst)|TestUpdateChannels_shardThenCap'`
+    - `go test -count=1 ./internal/tuner ./internal/indexer ./internal/plex ./cmd/iptv-tunerr`
+    - `./scripts/verify`
+    - `git diff --check`
+    - `git -C ../k3s diff --check -- plex/iptvtunerr-deployment.yaml plex/iptvtunerr-sports-deployment.yaml`
+    - Rebuilt/imported `localhost/iptvtunerr:cluster` and rolled `deployment/iptvtunerr`.
+  Notes:
+    - Live validation: primary `479`, sports `106`, stream overlap `0`, exact-name overlap `0`, sports-like rows in primary `0`.
+    - Plex state after watchdog repair: DVR `785` primary alive with `479` enabled channels. Initially sports remained older DVR `770`, causing Plex clients to show sports first; fixed live by deleting/recreating only the sports DVR/device so final Plex order is primary DVR `785` first and sports DVR `788` second.
+    - Primary now contains more movie/factual/kids/general rows, but still has news/music because this pass did not implement the broader `cable_na` recipe.
+  Opportunities filed:
+    - none
+  Links:
+    - `internal/tuner/server.go`
+    - `cmd/iptv-tunerr/cmd_runtime.go`
+    - `../k3s/plex/iptvtunerr-deployment.yaml`
+
+- Date: 2026-04-19
+  Title: Redact player_api credentials and preview primary lineup shape
+  Summary:
+    - Changed player_api HTTP-status errors so logged URLs go through `safeurl.RedactURL` instead of exposing `username`/`password` query values.
+    - Added a regression test proving player_api errors do not include provider credentials or credential query keys.
+    - Ran a theory-only live lineup scan: primary has `479` rows, sports has `106`, stream/name overlap is `0`, and the catalog has enough North-American/general non-sports/news/music replacement inventory to justify a future `cable_na`/`general_na` recipe test.
+  Verification:
+    - `gofmt -w internal/indexer/player_api.go internal/indexer/player_api_test.go`
+    - `go test -count=1 ./internal/indexer ./internal/safeurl`
+    - Live read-only lineup/catalog classification through `kubectl exec` against `deployment/iptvtunerr` and `deployment/iptvtunerr-sports`
+  Notes:
+    - No lineup recipe or cluster config change was deployed in this pass; the lineup conclusion is theory/test guidance only.
+  Opportunities filed:
+    - Resolved 2026-04-19 provider credential redaction entry in `memory-bank/opportunities.md`.
+  Links:
+    - `internal/indexer/player_api.go`
+    - `internal/indexer/player_api_test.go`
+    - `memory-bank/current_task.md`
 
 - Date: 2026-04-18
   Title: Split primary and sports Plex DVR lineups without overlap
@@ -8356,3 +8464,7 @@ Notes
 - 2026-04-18: Hardened shared-relay attach behavior so stale zero-replay relays are skipped instead of serving hollow `200/0-byte` joins. Added relay idle/replay observability, revalidated `internal/tuner`, redeployed both Tunerr deployments, and confirmed healthy direct sports playback after rollout.
 
 - 2026-04-18: Fixed guide-health matching for Plex-safe XMLTV IDs and made provider short-EPG fallback fill sparse channels instead of only total provider XMLTV failures. Added redacted EPG-repair logging and short-EPG attempted/empty/error diagnostics. Updated docs/env examples and k3s Tunerr deployments to enable short-EPG gap fill by default for the cluster. Verification: `./scripts/verify`, `git diff --check`, k3s diff check, rebuilt/imported `localhost/iptvtunerr:cluster`, rolled `deployment/iptvtunerr` and `deployment/iptvtunerr-sports`. Live validation: primary lineup 479 unique streams, sports lineup 106 unique streams, both `/guide/health.json` reports all channels `good`; provider short EPG returned no extra listings for current sparse candidates.
+
+- 2026-04-19: Repaired cluster Plex Live TV after it regressed to dead stale sources instead of the intended primary + sports DVRs. Found `/livetv/dvrs` contained only dead stale rows `730,733,736,739,742,745,749`; re-registered primary and sports from the live Tunerr pods, deleted stale DVR/device rows, then cleaned/re-registered again after the rollout window so Plex marked both devices alive. Code changes: full registration mode now honors explicit `IPTV_TUNERR_LINEUP_MAX_CHANNELS`, Plex API registration normalizes `PLEX_HOST` with or without URL scheme, Plex registration logs no longer print token prefixes, and the watchdog now repairs Plex `dead`/disabled device rows by deleting/re-probing/recreating the DVR/device pair. Ops changes: `../k3s/plex/iptvtunerr-deployment.yaml` and `../k3s/plex/iptvtunerr-sports-deployment.yaml` now run `run -mode=full -register-plex=api` with host-only `PLEX_HOST=192.168.50.148:32400`; primary sets `IPTV_TUNERR_LINEUP_MAX_CHANNELS=479`. Verification: `go test -count=1 ./internal/plex ./cmd/iptv-tunerr`, rebuilt/imported `localhost/iptvtunerr:cluster`, rolled both deployments, then confirmed Plex has exactly DVR `773` (`479` enabled, alive) and DVR `770` (`106` enabled, alive), and provider channel endpoints report `479`/`106`. Full `./scripts/verify` passed through vet/tests/build but the final binary smoke poll failed once on local server startup; rerunning `bash ./scripts/ci-smoke.sh` passed.
+
+- 2026-04-19: Diagnosed ongoing stream-drop reports and fixed the primary DVR watchdog activation loop. Live app logs did not show a current tuner-side disconnect; a controlled in-pod `Lavf/60.16.100` sample on `/stream/177396` ran for 6 minutes, returned HTTP `200`, and delivered `921,147,360` bytes. The bug found in logs was Plex watchdog churn: after deferred guide policy filtered the primary lineup to ~402-406 rows, the watchdog still expected the original 479 registration rows and reactivated the Plex DVR every minute. `internal/plex/dvr.go` now reads current `/lineup.json` count before deciding whether Plex is under-activated; `internal/plex/dvr_test.go` covers that. Added `deploy/cluster/plex/` manifests and `.github/workflows/deploy-cluster.yml`, registered the repo-specific self-hosted runner `kspld0-iptvtunerr`, and documented the pipeline in `k8s/README.md`. Also set smoke tests to disable upstream retries so finite HLS fixtures do not spend minutes walking retry windows. Verification: `./scripts/verify`, `git diff --check`, Docker build/import to `kspld0`, rollout of `deployment/iptvtunerr` and `deployment/iptvtunerr-sports`, `/readyz` checks on both pods.

@@ -70,43 +70,44 @@ type Server struct {
 	DeviceID          string // HDHomeRun discover.json; set from IPTV_TUNERR_DEVICE_ID
 	FriendlyName      string // HDHomeRun discover.json; set from IPTV_TUNERR_FRIENDLY_NAME
 	// AppVersion is shown on /ui/ (optional; set from main.Version in cmd).
-	AppVersion               string
-	StreamBufferBytes        int    // 0 = no buffer; -1 = auto; e.g. 2097152 for 2 MiB
-	StreamTranscodeMode      string // "off" | "on" | "auto"
-	AutopilotStateFile       string // optional JSON file for remembered dna_id+client_class playback decisions
-	RecorderStateFile        string // optional JSON file written by catchup-daemon for recorder status/reporting
-	RecordingRulesFile       string // optional JSON file for durable recording rule configuration
-	Movies                   []catalog.Movie
-	Series                   []catalog.Series
-	Channels                 []catalog.LiveChannel
-	RawChannels              []catalog.LiveChannel
-	ProgrammingRecipeFile    string
-	ProgrammingRecipe        programming.Recipe
-	PlexLineupHarvestFile    string
-	PlexLineupHarvest        plexharvest.Report
-	VirtualChannelsFile      string
-	VirtualRecoveryStateFile string
-	VirtualChannels          virtualchannels.Ruleset
-	RecordingRules           RecordingRuleset
-	EventHooksFile           string
-	EventHooks               *eventhooks.Dispatcher
-	XtreamOutputUser         string
-	XtreamOutputPass         string
-	XtreamUsersFile          string
-	XtreamEntitlements       entitlements.Ruleset
-	ProviderUser             string
-	ProviderPass             string
-	ProviderBaseURL          string
-	XMLTVSourceURL           string
-	XMLTVTimeout             time.Duration
-	XMLTVCacheTTL            time.Duration // 0 = use default 10m
-	XMLTVPlexSafeIDs         bool          // when true, /guide.xml emits Plex-safe stable channel ids instead of raw guide numbers
-	EpgPruneUnlinked         bool          // when true, guide.xml and /live.m3u only include channels with tvg-id
-	EpgForceLineupMatch      bool          // when true, guide.xml keeps every lineup row even if prune-unlinked is enabled
-	FetchCFReject            bool          // abort HLS stream if segment redirected to CF abuse page (passed to Gateway)
-	ProviderEPGEnabled       bool
-	ProviderEPGTimeout       time.Duration
-	ProviderEPGCacheTTL      time.Duration
+	AppVersion                string
+	StreamBufferBytes         int    // 0 = no buffer; -1 = auto; e.g. 2097152 for 2 MiB
+	StreamTranscodeMode       string // "off" | "on" | "auto"
+	AutopilotStateFile        string // optional JSON file for remembered dna_id+client_class playback decisions
+	RecorderStateFile         string // optional JSON file written by catchup-daemon for recorder status/reporting
+	RecordingRulesFile        string // optional JSON file for durable recording rule configuration
+	Movies                    []catalog.Movie
+	Series                    []catalog.Series
+	Channels                  []catalog.LiveChannel
+	RawChannels               []catalog.LiveChannel
+	GuidePolicySourceChannels []catalog.LiveChannel
+	ProgrammingRecipeFile     string
+	ProgrammingRecipe         programming.Recipe
+	PlexLineupHarvestFile     string
+	PlexLineupHarvest         plexharvest.Report
+	VirtualChannelsFile       string
+	VirtualRecoveryStateFile  string
+	VirtualChannels           virtualchannels.Ruleset
+	RecordingRules            RecordingRuleset
+	EventHooksFile            string
+	EventHooks                *eventhooks.Dispatcher
+	XtreamOutputUser          string
+	XtreamOutputPass          string
+	XtreamUsersFile           string
+	XtreamEntitlements        entitlements.Ruleset
+	ProviderUser              string
+	ProviderPass              string
+	ProviderBaseURL           string
+	XMLTVSourceURL            string
+	XMLTVTimeout              time.Duration
+	XMLTVCacheTTL             time.Duration // 0 = use default 10m
+	XMLTVPlexSafeIDs          bool          // when true, /guide.xml emits Plex-safe stable channel ids instead of raw guide numbers
+	EpgPruneUnlinked          bool          // when true, guide.xml and /live.m3u only include channels with tvg-id
+	EpgForceLineupMatch       bool          // when true, guide.xml keeps every lineup row even if prune-unlinked is enabled
+	FetchCFReject             bool          // abort HLS stream if segment redirected to CF abuse page (passed to Gateway)
+	ProviderEPGEnabled        bool
+	ProviderEPGTimeout        time.Duration
+	ProviderEPGCacheTTL       time.Duration
 	// ProviderEPGDiskCachePath: optional on-disk cache + conditional GET for provider xmltv.php.
 	ProviderEPGDiskCachePath  string
 	ProviderEPGIncremental    bool
@@ -273,31 +274,11 @@ func (s *Server) UpdateProviderContext(baseURL, user, pass string, snapshot *Run
 // When LineupMaxChannels is NoLineupCap, no cap is applied (for programmatic lineup sync; see -register-plex).
 func (s *Server) UpdateChannels(live []catalog.LiveChannel) {
 	live = applyLineupBaseFilters(live)
-	if s.xmltv != nil {
-		live = s.xmltv.applyGuidePolicyToChannels(live, os.Getenv("IPTV_TUNERR_GUIDE_POLICY"))
-	}
 	live = applyDNAPolicy(live, os.Getenv("IPTV_TUNERR_DNA_POLICY"))
 	s.RawChannels = cloneLiveChannels(live)
-	live = s.applyProgrammingRecipe(live)
-	live = applyLineupExcludeRecipe(live)
-	live = applyLineupRecipe(live)
-	live = applyLineupWizardShape(live)
-	live = applyLineupShard(live)
-	live = applyGuideNumberResequence(live)
-	if s.LineupMaxChannels == NoLineupCap {
-		// Full lineup for programmatic sync; do not cap.
-	} else {
-		max := s.LineupMaxChannels
-		if max <= 0 {
-			max = PlexDVRMaxChannels
-		}
-		if len(live) > max {
-			log.Printf("Lineup capped at %d channels (Plex DVR limit; catalog has %d; excess stripped from end)", max, len(live))
-			live = live[:max]
-		}
-	}
-	live = applyGuideNumberOffset(live, s.GuideNumberOffset)
-	s.setExposedChannels(live)
+	source, exposed := s.curateChannelsFromRaw(live)
+	s.GuidePolicySourceChannels = cloneLiveChannels(source)
+	s.setExposedChannels(exposed)
 }
 
 func (s *Server) setExposedChannels(live []catalog.LiveChannel) {
@@ -315,6 +296,7 @@ func (s *Server) setExposedChannels(live []catalog.LiveChannel) {
 	}
 	if s.xmltv != nil {
 		s.xmltv.Channels = live
+		s.xmltv.GuideHealthChannels = cloneLiveChannels(s.GuidePolicySourceChannels)
 		s.xmltv.mu.Lock()
 		s.xmltv.cachedMatchReport = nil
 		s.xmltv.cachedMatchAliases = ""
@@ -356,6 +338,26 @@ func (s *Server) setExposedChannels(live []catalog.LiveChannel) {
 			"lineup_max_channels":     s.LineupMaxChannels,
 		})
 	}
+}
+
+func (s *Server) reapplyDeferredGuidePolicyAfterGuideHealthReady() {
+	if s == nil || s.xmltv == nil || normalizeGuidePolicy(os.Getenv("IPTV_TUNERR_GUIDE_POLICY")) == "off" {
+		return
+	}
+	if rep, ok := s.xmltv.cachedGuideHealthReport(); !ok || !rep.SourceReady {
+		return
+	}
+	live := cloneLiveChannels(s.RawChannels)
+	if len(live) == 0 {
+		return
+	}
+	source, filtered := s.curateChannelsFromRaw(live)
+	if len(filtered) == len(s.Channels) && len(source) == len(s.GuidePolicySourceChannels) {
+		return
+	}
+	log.Printf("Guide policy cache ready: rebuilding exposed lineup from raw channels; kept=%d/%d", len(filtered), len(source))
+	s.GuidePolicySourceChannels = cloneLiveChannels(source)
+	s.setExposedChannels(filtered)
 }
 
 func (s *Server) reloadProgrammingRecipe() programming.Recipe {
@@ -472,10 +474,17 @@ func (s *Server) saveRecordingRules(set RecordingRuleset) (RecordingRuleset, err
 
 func (s *Server) rebuildCuratedChannelsFromRaw() {
 	live := cloneLiveChannels(s.RawChannels)
+	source, exposed := s.curateChannelsFromRaw(live)
+	s.GuidePolicySourceChannels = cloneLiveChannels(source)
+	s.setExposedChannels(exposed)
+}
+
+func (s *Server) curateChannelsFromRaw(live []catalog.LiveChannel) ([]catalog.LiveChannel, []catalog.LiveChannel) {
 	live = s.applyProgrammingRecipe(live)
 	live = applyLineupExcludeRecipe(live)
 	live = applyLineupRecipe(live)
 	live = applyLineupWizardShape(live)
+	live = applyLineupDedupe(live)
 	live = applyLineupShard(live)
 	live = applyGuideNumberResequence(live)
 	if s.LineupMaxChannels != NoLineupCap {
@@ -488,7 +497,11 @@ func (s *Server) rebuildCuratedChannelsFromRaw() {
 		}
 	}
 	live = applyGuideNumberOffset(live, s.GuideNumberOffset)
-	s.setExposedChannels(live)
+	source := cloneLiveChannels(live)
+	if s.xmltv != nil {
+		live = s.xmltv.applyGuidePolicyToChannels(live, os.Getenv("IPTV_TUNERR_GUIDE_POLICY"))
+	}
+	return source, live
 }
 
 func cloneLiveChannels(live []catalog.LiveChannel) []catalog.LiveChannel {
@@ -642,6 +655,21 @@ func applyLineupBaseFilters(live []catalog.LiveChannel) []catalog.LiveChannel {
 			out = filtered
 		}
 	}
+	if envBool("IPTV_TUNERR_LINEUP_DROP_SPORTS", false) {
+		filtered := make([]catalog.LiveChannel, 0, len(out))
+		dropped := 0
+		for _, ch := range out {
+			if lineupLooksLikeSportsChannel(ch) {
+				dropped++
+				continue
+			}
+			filtered = append(filtered, ch)
+		}
+		if dropped > 0 {
+			log.Printf("Lineup pre-cap filter: dropped %d sports/event channels by name heuristic (remaining %d)", dropped, len(filtered))
+			out = filtered
+		}
+	}
 	if excludedIDs := lineupExcludedChannelIDs(); len(excludedIDs) > 0 {
 		filtered := make([]catalog.LiveChannel, 0, len(out))
 		dropped := 0
@@ -705,9 +733,11 @@ func applyLineupExcludeRecipe(live []catalog.LiveChannel) []catalog.LiveChannel 
 		log.Printf("Lineup exclude recipe ignored: unknown recipe=%q", recipe)
 		return live
 	}
-	excludedRows := ApplyNamedLineupRecipe(live, recipe)
-	excluded := make(map[string]struct{}, len(excludedRows))
-	for _, ch := range excludedRows {
+	excluded := make(map[string]struct{}, len(live))
+	for _, ch := range live {
+		if !lineupChannelMatchesExcludeRecipe(ch, recipe) {
+			continue
+		}
 		if id := strings.TrimSpace(ch.ChannelID); id != "" {
 			excluded[id] = struct{}{}
 		}
@@ -730,14 +760,167 @@ func applyLineupExcludeRecipe(live []catalog.LiveChannel) []catalog.LiveChannel 
 	return filtered
 }
 
+func lineupChannelMatchesExcludeRecipe(ch catalog.LiveChannel, recipe string) bool {
+	switch recipe {
+	case "sports_now":
+		return lineupRecipeSportsLike(ch)
+	case "sports_na":
+		return lineupRecipeNorthAmericanSportsScore(ch) > 0
+	case "kids_safe":
+		return lineupRecipeKidsSafe(ch)
+	default:
+		return false
+	}
+}
+
 func applyLineupPreCapFilters(live []catalog.LiveChannel) []catalog.LiveChannel {
 	out := applyLineupBaseFilters(live)
 	out = applyLineupExcludeRecipe(out)
 	out = applyLineupRecipe(out)
 	out = applyLineupWizardShape(out)
+	out = applyLineupDedupe(out)
 	out = applyLineupShard(out)
 	out = applyGuideNumberResequence(out)
 	return out
+}
+
+func applyLineupDedupe(live []catalog.LiveChannel) []catalog.LiveChannel {
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv("IPTV_TUNERR_LINEUP_DEDUPE")))
+	if mode == "" || mode == "off" || mode == "none" || mode == "false" || len(live) == 0 {
+		return live
+	}
+	switch mode {
+	case "stable", "identity", "strong", "true", "1":
+	default:
+		log.Printf("Lineup dedupe ignored: unknown mode=%q", mode)
+		return live
+	}
+
+	type selected struct {
+		ch        catalog.LiveChannel
+		firstIdx  int
+		bestScore int
+		dups      int
+	}
+	byKey := map[string]*selected{}
+
+	for i, ch := range live {
+		key := lineupDedupeKey(ch)
+		if key == "" {
+			key = "row:" + strconv.Itoa(i)
+		}
+		score := lineupDedupeScore(ch)
+		cur, ok := byKey[key]
+		if !ok {
+			byKey[key] = &selected{ch: ch, firstIdx: i, bestScore: score}
+			continue
+		}
+		cur.dups++
+		if score > cur.bestScore {
+			cur.ch = ch
+			cur.bestScore = score
+		}
+	}
+
+	if len(byKey) == 0 {
+		return live
+	}
+	rows := make([]selected, 0, len(byKey))
+	dropped := 0
+	for _, row := range byKey {
+		rows = append(rows, *row)
+		dropped += row.dups
+	}
+	if dropped == 0 {
+		return live
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		return rows[i].firstIdx < rows[j].firstIdx
+	})
+	out := make([]catalog.LiveChannel, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, row.ch)
+	}
+	log.Printf("Lineup pre-cap dedupe: mode=%s dropped=%d kept=%d/%d", mode, dropped, len(out), len(live))
+	return out
+}
+
+func lineupDedupeKey(ch catalog.LiveChannel) string {
+	if tvgid := strings.ToLower(strings.TrimSpace(ch.TVGID)); tvgid != "" {
+		return "tvg:" + tvgid
+	}
+	if name := normalizedLineupDedupeName(ch.GuideName); name != "" {
+		return "name:" + name
+	}
+	if dna := strings.ToLower(strings.TrimSpace(ch.DNAID)); dna != "" {
+		return "dna:" + dna
+	}
+	return ""
+}
+
+func normalizedLineupDedupeName(name string) string {
+	s := strings.ToLower(strings.TrimSpace(name))
+	if s == "" {
+		return ""
+	}
+	if idx := strings.Index(s, "|"); idx >= 0 && idx+1 < len(s) {
+		s = strings.TrimSpace(s[idx+1:])
+	}
+	s = strings.NewReplacer(
+		"ᴴᴰ", " hd ",
+		"ᴿᴬᵂ", " raw ",
+		"(", " ",
+		")", " ",
+		"[", " ",
+		"]", " ",
+		"-", " ",
+		"_", " ",
+		"/", " ",
+		"+", " ",
+	).Replace(s)
+	tokens := strings.Fields(s)
+	filtered := tokens[:0]
+	for _, tok := range tokens {
+		switch tok {
+		case "hd", "fhd", "uhd", "4k", "raw", "backup", "bk", "hevc", "h265", "h.265", "h264", "h.264":
+			continue
+		default:
+			filtered = append(filtered, tok)
+		}
+	}
+	if len(filtered) == 0 {
+		return ""
+	}
+	return strings.Join(filtered, " ")
+}
+
+func lineupDedupeScore(ch catalog.LiveChannel) int {
+	score := channelreport.Score(ch)
+	if ch.EPGLinked {
+		score += 80
+	}
+	if strings.TrimSpace(ch.TVGID) != "" {
+		score += 50
+	}
+	if strings.TrimSpace(ch.DNAID) != "" {
+		score += 10
+	}
+	if len(ch.StreamURLs) > 1 {
+		score += 5 * len(ch.StreamURLs)
+	}
+	name := strings.ToLower(strings.TrimSpace(ch.GuideName))
+	switch {
+	case strings.Contains(name, " fhd"):
+		score += 8
+	case strings.Contains(name, " hd"):
+		score += 5
+	}
+	for _, n := range []string{" raw", " backup", " bk", " sd"} {
+		if strings.Contains(name, n) {
+			score -= 15
+		}
+	}
+	return score
 }
 
 func applyLineupRecipe(live []catalog.LiveChannel) []catalog.LiveChannel {
@@ -881,6 +1064,27 @@ func lineupRecipeSportsLike(ch catalog.LiveChannel) bool {
 		}
 	}
 	return false
+}
+
+func lineupLooksLikeSportsChannel(ch catalog.LiveChannel) bool {
+	if lineupRecipeSportsLike(ch) || lineupRecipeNorthAmericanSportsScore(ch) > 0 {
+		return true
+	}
+	s := lineupRecipeSearchText(ch)
+	for _, term := range []string{
+		" sport ", " sports", " fanduel", " msg ", " yes network", " acc network", " big ten network",
+		" stadium", " sportsman", " outdoor channel", " wwe", " pokergo", " fuel tv", " tvg network",
+		" flo", "flohockey", "flobaseball", "milb", "hockey", "volleyball", " whl ", " tigres",
+		" blades", " raiders", " calgary wranglers", " manitoba moose", " vancouver whitecaps",
+		" washington spirit", " soccer", " rugby", " lacrosse", " wrestling", " redzone", " team white",
+		" team black", " academy ", " canucks", " oilers", " flames", " jets", "fc|",
+	} {
+		if strings.Contains(s, term) {
+			return true
+		}
+	}
+	name := strings.ToLower(strings.TrimSpace(ch.GuideName))
+	return strings.HasPrefix(name, "nhl team|") || strings.HasPrefix(name, "mls ")
 }
 
 func lineupRecipeNorthAmericanSportsScore(ch catalog.LiveChannel) int {
@@ -1487,6 +1691,18 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	gateway.accountLimitStore = loadAccountLimitStore(accountLimitPath, providerAccountLimitTTL())
 	gateway.restoreProviderAccountLearnedLimits(gateway.accountLimitStore.snapshot())
+	gateway.sharedAccountLeases = newProviderSharedLeaseManager(
+		configuredProviderAccountSharedLeaseDir(),
+		strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_ACCOUNT_SHARED_LEASE_OWNER")),
+		configuredProviderAccountSharedLeaseTTL(),
+	)
+	if gateway.sharedAccountLeases != nil {
+		log.Printf("Gateway shared provider-account leases enabled: dir=%q ttl=%s owner=%q",
+			gateway.sharedAccountLeases.dir,
+			gateway.sharedAccountLeases.ttl,
+			gateway.sharedAccountLeases.owner,
+		)
+	}
 	// Per-host UA override: IPTV_TUNERR_HOST_UA=host1:vlc,host2:lavf
 	// Lets operators pin a known-good UA per provider without waiting for cycling.
 	if hostUARaw := strings.TrimSpace(os.Getenv("IPTV_TUNERR_HOST_UA")); hostUARaw != "" {
@@ -1614,6 +1830,7 @@ func (s *Server) Run(ctx context.Context) error {
 		HDHRGuideURL:               s.HDHRGuideURL,
 		HDHRGuideTimeout:           s.HDHRGuideTimeout,
 	}
+	xmltv.OnGuideHealthReady = s.reapplyDeferredGuidePolicyAfterGuideHealthReady
 	s.xmltv = xmltv
 	xmltv.StartRefresh(ctx)
 	m3uServe := &M3UServe{BaseURL: s.BaseURL, Channels: s.Channels, EpgPruneUnlinked: s.EpgPruneUnlinked}

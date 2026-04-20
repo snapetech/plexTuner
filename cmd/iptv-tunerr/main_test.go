@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -61,6 +62,24 @@ func TestFetchCatalog_MergesMultipleDirectM3UURLs(t *testing.T) {
 	}
 	if got["foxnews.us"] == "" || got["cnn.us"] == "" {
 		t.Fatalf("missing merged channels: %+v", res.Live)
+	}
+}
+
+func TestRedactProviderCredentialError(t *testing.T) {
+	err := redactProviderCredentialError(
+		fmt.Errorf(`Get "http://provider.example/get.php?username=user123&password=pass456&type=m3u_plus": timeout`),
+		"user123",
+		"pass456",
+	)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	got := err.Error()
+	if strings.Contains(got, "user123") || strings.Contains(got, "pass456") {
+		t.Fatalf("error leaked credentials: %q", got)
+	}
+	if !strings.Contains(got, "redacted") {
+		t.Fatalf("error missing redaction marker: %q", got)
 	}
 }
 

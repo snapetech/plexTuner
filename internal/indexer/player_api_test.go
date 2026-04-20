@@ -91,6 +91,20 @@ func TestIsPlayerAPIErrorStatus(t *testing.T) {
 	}
 }
 
+func TestPlayerAPIErrorRedactsCredentials(t *testing.T) {
+	err := (&apiError{
+		url:    "https://provider.example/player_api.php?username=secret-user&password=secret-pass&action=get_live_streams",
+		status: 403,
+	}).Error()
+
+	if strings.Contains(err, "secret-user") || strings.Contains(err, "secret-pass") || strings.Contains(err, "username=") || strings.Contains(err, "password=") {
+		t.Fatalf("apiError leaked credentials: %s", err)
+	}
+	if !strings.Contains(err, "player_api: 403 https://provider.example/player_api.php") {
+		t.Fatalf("apiError=%q, want redacted player_api URL", err)
+	}
+}
+
 func TestNormalizeAPIBase(t *testing.T) {
 	if got := normalizeAPIBase(" http://example.test/ "); got != "http://example.test" {
 		t.Fatalf("normalizeAPIBase=%q", got)

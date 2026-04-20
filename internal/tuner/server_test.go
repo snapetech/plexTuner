@@ -4903,6 +4903,77 @@ func TestServer_UpdateChannelsGuidePolicy(t *testing.T) {
 	}
 }
 
+func TestServer_reapplyDeferredGuidePolicyAfterGuideHealthReady(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_GUIDE_POLICY", "healthy")
+	live := []catalog.LiveChannel{
+		{ChannelID: "1", GuideNumber: "101", GuideName: "Healthy", TVGID: "healthy.tv"},
+		{ChannelID: "2", GuideNumber: "102", GuideName: "Placeholder", TVGID: "placeholder.tv"},
+	}
+	s := &Server{
+		RawChannels:       cloneLiveChannels(live),
+		Channels:          cloneLiveChannels(live),
+		LineupMaxChannels: NoLineupCap,
+		xmltv: &XMLTV{
+			Channels: cloneLiveChannels(live),
+			cachedGuideHealth: &guidehealth.Report{
+				SourceReady: true,
+				Channels: []guidehealth.ChannelHealth{
+					{ChannelID: "1", HasProgrammes: true, HasRealProgrammes: true, RealProgrammeCount: 2},
+					{ChannelID: "2", HasProgrammes: true, PlaceholderOnly: true},
+				},
+			},
+		},
+	}
+
+	s.reapplyDeferredGuidePolicyAfterGuideHealthReady()
+
+	if len(s.Channels) != 1 || s.Channels[0].ChannelID != "1" {
+		t.Fatalf("channels=%+v want only healthy channel", s.Channels)
+	}
+	if len(s.GuidePolicySourceChannels) != 2 {
+		t.Fatalf("guide policy source channels=%d want 2", len(s.GuidePolicySourceChannels))
+	}
+	if len(s.xmltv.GuideHealthChannels) != 2 {
+		t.Fatalf("xmltv guide health channels=%d want 2", len(s.xmltv.GuideHealthChannels))
+	}
+}
+
+func TestServer_reapplyDeferredGuidePolicyDoesNotCumulativelyShrink(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_GUIDE_POLICY", "healthy")
+	live := []catalog.LiveChannel{
+		{ChannelID: "1", GuideNumber: "101", GuideName: "Healthy One", TVGID: "healthy.one"},
+		{ChannelID: "2", GuideNumber: "102", GuideName: "Healthy Two", TVGID: "healthy.two"},
+		{ChannelID: "3", GuideNumber: "103", GuideName: "Placeholder", TVGID: "placeholder.tv"},
+	}
+	s := &Server{
+		RawChannels:       cloneLiveChannels(live),
+		Channels:          cloneLiveChannels(live),
+		LineupMaxChannels: NoLineupCap,
+		xmltv: &XMLTV{
+			Channels: cloneLiveChannels(live),
+			cachedGuideHealth: &guidehealth.Report{
+				SourceReady: true,
+				Channels: []guidehealth.ChannelHealth{
+					{ChannelID: "1", HasProgrammes: true, HasRealProgrammes: true, RealProgrammeCount: 2},
+					{ChannelID: "2", HasProgrammes: true, HasRealProgrammes: true, RealProgrammeCount: 2},
+					{ChannelID: "3", HasProgrammes: true, PlaceholderOnly: true},
+				},
+			},
+		},
+	}
+
+	s.reapplyDeferredGuidePolicyAfterGuideHealthReady()
+	first := cloneLiveChannels(s.Channels)
+	s.reapplyDeferredGuidePolicyAfterGuideHealthReady()
+
+	if len(first) != 2 || len(s.Channels) != 2 {
+		t.Fatalf("first=%d second=%d want stable 2", len(first), len(s.Channels))
+	}
+	if s.Channels[0].ChannelID != "1" || s.Channels[1].ChannelID != "2" {
+		t.Fatalf("channels=%+v want healthy channels only", s.Channels)
+	}
+}
+
 func TestServer_guidePolicyReport(t *testing.T) {
 	s := &Server{
 		xmltv: &XMLTV{
@@ -5057,13 +5128,19 @@ func TestServer_catchupCapsulesGuidePolicy(t *testing.T) {
 	now := time.Now().UTC()
 	start := now.Add(10 * time.Minute).Format("20060102150405 +0000")
 	stop := now.Add(70 * time.Minute).Format("20060102150405 +0000")
+	laterStart := now.Add(130 * time.Minute).Format("20060102150405 +0000")
+	laterStop := now.Add(190 * time.Minute).Format("20060102150405 +0000")
 	xml := []byte(`<?xml version="1.0" encoding="UTF-8"?>
 <tv>
   <channel id="101"><display-name>Sports Net</display-name></channel>
   <channel id="202"><display-name>Mystery TV</display-name></channel>
-  <programme start="` + start + `" stop="` + stop + `" channel="101">
+	<programme start="` + start + `" stop="` + stop + `" channel="101">
     <title>Team A vs Team B</title>
     <desc>Live game</desc>
+  </programme>
+  <programme start="` + laterStart + `" stop="` + laterStop + `" channel="101">
+    <title>Post Game</title>
+    <desc>Highlights and analysis</desc>
   </programme>
   <programme start="` + start + `" stop="` + stop + `" channel="202">
     <title>Mystery TV</title>
@@ -5427,6 +5504,77 @@ func TestApplyLineupPreCapFilters_lineupRecipeLocalsFirst(t *testing.T) {
 	}
 	if out[1].ChannelID != "2" && out[1].ChannelID != "3" {
 		t.Fatalf("expected local channel second, got %+v", out[1])
+	}
+}
+
+func TestApplyLineupPreCapFilters_dedupeStableIdentityKeepsBestRepresentative(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_LINEUP_DROP_MUSIC", "")
+	t.Setenv("IPTV_TUNERR_LINEUP_EXCLUDE_REGEX", "")
+	t.Setenv("IPTV_TUNERR_LINEUP_DEDUPE", "stable")
+	in := []catalog.LiveChannel{
+		{ChannelID: "a", GuideName: "US| TNT HD", TVGID: "tnt.us", StreamURL: "http://a/1"},
+		{ChannelID: "b", GuideName: "US| TNT FHD", TVGID: "tnt.us", EPGLinked: true, StreamURL: "http://a/2", StreamURLs: []string{"http://a/2", "http://b/2"}},
+		{ChannelID: "c", GuideName: "US| PRIME ORIGINAL 1 ᴴᴰ", StreamURL: "http://a/3"},
+		{ChannelID: "d", GuideName: "US| PRIME ORIGINAL 1 RAW", StreamURL: "http://a/4"},
+		{ChannelID: "e", GuideName: "CA| CTV Regina HD", TVGID: "ctvregina.ca", StreamURL: "http://a/5"},
+		{ChannelID: "f", GuideName: "CA| CTV Winnipeg HD", TVGID: "ctvwinnipeg.ca", StreamURL: "http://a/6"},
+	}
+	out := applyLineupPreCapFilters(in)
+	if len(out) != 4 {
+		t.Fatalf("len=%d want 4: %+v", len(out), out)
+	}
+	got := map[string]bool{}
+	for _, ch := range out {
+		got[ch.ChannelID] = true
+	}
+	if !got["b"] || got["a"] {
+		t.Fatalf("dedupe did not keep best TVGID representative: %+v", out)
+	}
+	if !got["c"] || got["d"] {
+		t.Fatalf("dedupe did not collapse normalized-name duplicate: %+v", out)
+	}
+	if !got["e"] || !got["f"] {
+		t.Fatalf("dedupe collapsed distinct local TVGIDs: %+v", out)
+	}
+}
+
+func TestApplyLineupPreCapFilters_dedupeOffLeavesDuplicates(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_LINEUP_DROP_MUSIC", "")
+	t.Setenv("IPTV_TUNERR_LINEUP_EXCLUDE_REGEX", "")
+	t.Setenv("IPTV_TUNERR_LINEUP_DEDUPE", "off")
+	in := []catalog.LiveChannel{
+		{ChannelID: "a", GuideName: "US| TNT HD", TVGID: "tnt.us", StreamURL: "http://a/1"},
+		{ChannelID: "b", GuideName: "US| TNT FHD", TVGID: "tnt.us", StreamURL: "http://a/2"},
+	}
+	out := applyLineupPreCapFilters(in)
+	if len(out) != 2 {
+		t.Fatalf("len=%d want 2: %+v", len(out), out)
+	}
+}
+
+func TestApplyLineupPreCapFilters_dropSportsKeepsGeneralCable(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_LINEUP_DROP_MUSIC", "")
+	t.Setenv("IPTV_TUNERR_LINEUP_EXCLUDE_REGEX", "")
+	t.Setenv("IPTV_TUNERR_LINEUP_DROP_SPORTS", "true")
+	t.Setenv("IPTV_TUNERR_LINEUP_EXCLUDE_RECIPE", "sports_na")
+	in := []catalog.LiveChannel{
+		{ChannelID: "1", GuideName: "US| FX HD", TVGID: "fx.us", StreamURL: "http://a/1"},
+		{ChannelID: "2", GuideName: "US| FANDUEL DETROIT", StreamURL: "http://a/2"},
+		{ChannelID: "3", GuideName: "GO| SPORTSMAN CHANNEL", StreamURL: "http://a/3"},
+		{ChannelID: "4", GuideName: "US| HBO FAMILY HD", TVGID: "hbofamily.us", StreamURL: "http://a/4"},
+		{ChannelID: "5", GuideName: "NHL TEAM| WINNIPEG JETS", StreamURL: "http://a/5"},
+		{ChannelID: "6", GuideName: "US| MSG PLUS HD", StreamURL: "http://a/6"},
+		{ChannelID: "7", GuideName: "(FLSP 996) | flohockey: 2026 Calgary Team White vs South Team Black", StreamURL: "http://a/7"},
+		{ChannelID: "8", GuideName: "Spokane Indians vs Vancouver Canadians @ Apr 19 4:05 PM :Milb  52", StreamURL: "http://a/8"},
+		{ChannelID: "9", GuideName: "US (Flo 775) | [Hockey|2025 Cowichan Valley Capitals vs Victoria Grizzlies Away]", StreamURL: "http://a/9"},
+		{ChannelID: "10", GuideName: "WHL 02 : Saskatoon Blades @ Prince Albert Raiders", StreamURL: "http://a/10"},
+	}
+	out := applyLineupPreCapFilters(in)
+	if len(out) != 2 {
+		t.Fatalf("len=%d want 2: %+v", len(out), out)
+	}
+	if out[0].ChannelID != "1" || out[1].ChannelID != "4" {
+		t.Fatalf("unexpected sports-drop result: %+v", out)
 	}
 }
 

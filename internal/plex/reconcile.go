@@ -15,6 +15,7 @@ type reconcilePlan struct {
 }
 
 func ReconcileTunerrRegistrations(cfg PlexAPIConfig) error {
+	cfg.PlexHost = normalizePlexHost(cfg.PlexHost)
 	devices, err := ListDevicesAPI(cfg.PlexHost, cfg.PlexToken)
 	if err != nil {
 		return fmt.Errorf("list devices for reconcile: %w", err)

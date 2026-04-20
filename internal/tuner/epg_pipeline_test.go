@@ -413,6 +413,9 @@ func TestXMLTV_buildMergedEPG_plexSafeIDs(t *testing.T) {
   <programme start="20260318080000 +0000" stop="20260318090000 +0000" channel="foxnews.us">
     <title>Fox and Friends</title>
   </programme>
+  <programme start="20260318090000 +0000" stop="20260318100000 +0000" channel="foxnews.us">
+    <title>America's Newsroom</title>
+  </programme>
 </tv>`
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")
@@ -445,7 +448,7 @@ func TestXMLTV_buildMergedEPG_plexSafeIDs(t *testing.T) {
 	if len(tv.Channels) != 1 || tv.Channels[0].ID != "c16" {
 		t.Fatalf("channels=%+v", tv.Channels)
 	}
-	if len(tv.Programmes) != 1 || tv.Programmes[0].Channel != "c16" {
+	if len(tv.Programmes) != 2 || tv.Programmes[0].Channel != "c16" || tv.Programmes[1].Channel != "c16" {
 		t.Fatalf("programmes=%+v", tv.Programmes)
 	}
 	if x.cachedGuideHealth == nil || len(x.cachedGuideHealth.Channels) != 1 {

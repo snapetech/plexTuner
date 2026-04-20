@@ -5,6 +5,7 @@ package plex
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -41,16 +42,34 @@ type DeviceInfo struct {
 	URI  string
 }
 
+func normalizePlexHost(plexHost string) string {
+	plexHost = strings.TrimSpace(plexHost)
+	if plexHost == "" {
+		return ""
+	}
+	if u, err := url.Parse(plexHost); err == nil && u.Host != "" {
+		return u.Host
+	}
+	plexHost = strings.TrimRight(plexHost, "/")
+	if slash := strings.IndexByte(plexHost, '/'); slash >= 0 {
+		plexHost = plexHost[:slash]
+	}
+	return plexHost
+}
+
 type DVRInfo struct {
-	Key         int
-	UUID        string
-	LineupTitle string
-	LineupURL   string   // Dvr.lineup attr value, e.g. "lineup://tv.plex.providers.epg.xmltv/http://host/guide.xml#name"
-	DeviceKey   string   // numeric key of the first Device child (e.g. "179"); used for device lookups
-	DeviceUUIDs []string // UUIDs of Device children, e.g. ["device://tv.plex.grabbers.hdhomerun/newsus"]
+	Key          int
+	UUID         string
+	LineupTitle  string
+	LineupURL    string   // Dvr.lineup attr value, e.g. "lineup://tv.plex.providers.epg.xmltv/http://host/guide.xml#name"
+	DeviceKey    string   // numeric key of the first Device child (e.g. "179"); used for device lookups
+	DeviceStatus string   // status of the first Device child, e.g. alive/dead
+	DeviceState  string   // state of the first Device child, e.g. enabled/disabled
+	DeviceUUIDs  []string // UUIDs of Device children, e.g. ["device://tv.plex.grabbers.hdhomerun/newsus"]
 }
 
 func RegisterTunerViaAPI(cfg PlexAPIConfig) (*DeviceInfo, error) {
+	cfg.PlexHost = normalizePlexHost(cfg.PlexHost)
 	baseURL := cfg.BaseURL
 	if !strings.HasPrefix(baseURL, "http") {
 		baseURL = "http://" + baseURL
@@ -77,7 +96,7 @@ func RegisterTunerViaAPI(cfg PlexAPIConfig) (*DeviceInfo, error) {
 		"/media/grabbers/devices/discover",                   // may ignore uri=; kept for compat
 		"/media/grabbers/devices",
 	}
-	for i, p := range devicePaths {
+	for _, p := range devicePaths {
 		deviceURL := fmt.Sprintf("http://%s%s?uri=%s", cfg.PlexHost, p, url.QueryEscape(deviceURI))
 		req, err := http.NewRequest("POST", deviceURL, nil)
 		if err != nil {
@@ -94,7 +113,7 @@ func RegisterTunerViaAPI(cfg PlexAPIConfig) (*DeviceInfo, error) {
 		resp.Body.Close()
 		fmt.Printf("[PLEX-REG] Register device response (%s): status=%d body_len=%d\n", p, resp.StatusCode, len(body))
 
-		if resp.StatusCode == 404 && i < len(devicePaths)-1 {
+		if resp.StatusCode == 404 {
 			fmt.Printf("[PLEX-REG] endpoint %s returned 404; trying next\n", p)
 			continue
 		}
@@ -175,6 +194,8 @@ type DeviceWithMap struct {
 	URI             string          `xml:"uri,attr"`
 	Name            string          `xml:"name,attr"`
 	DeviceID        string          `xml:"deviceId,attr"`
+	Status          string          `xml:"status,attr"`
+	State           string          `xml:"state,attr"`
 	ChannelMappings []DVRChannelMap `xml:"ChannelMapping"`
 }
 
@@ -195,6 +216,7 @@ type Lineup struct {
 // guide URL (stale registration), it is deleted and recreated. This makes the function
 // idempotent across restarts and safe across BaseURL changes.
 func CreateDVRViaAPI(cfg PlexAPIConfig, deviceInfo *DeviceInfo) (dvrKey int, dvrUUID string, lineupIDs []string, err error) {
+	cfg.PlexHost = normalizePlexHost(cfg.PlexHost)
 	desiredGuideURL := guideURLForBase(cfg.BaseURL)
 	xmltvEncoded := url.QueryEscape(desiredGuideURL)
 	lineup := fmt.Sprintf("lineup://tv.plex.providers.epg.xmltv/%s#%s", xmltvEncoded, url.QueryEscape(cfg.FriendlyName))
@@ -294,6 +316,7 @@ func CreateDVRViaAPI(cfg PlexAPIConfig, deviceInfo *DeviceInfo) (dvrKey int, dvr
 }
 
 func ReloadGuideAPI(plexHost, token string, dvrKey int) error {
+	plexHost = normalizePlexHost(plexHost)
 	reloadURL := fmt.Sprintf("http://%s/livetv/dvrs/%d/reloadGuide?X-Plex-Token=%s",
 		plexHost, dvrKey, token)
 
@@ -333,6 +356,7 @@ type DVRRepairResult struct {
 }
 
 func GetChannelMap(plexHost, token, deviceUUID string, lineupIDs []string) ([]ChannelMapping, error) {
+	plexHost = normalizePlexHost(plexHost)
 	if len(lineupIDs) == 0 {
 		return nil, fmt.Errorf("no lineup IDs provided")
 	}
@@ -415,6 +439,7 @@ func activateChannelsRequest(cfg PlexAPIConfig, deviceKey string, enabled []stri
 // the full enabled set and full channel mapping set. Plex treats the request as authoritative
 // replacement state, so splitting the mapping pairs across multiple requests loses earlier rows.
 func ActivateChannelsAPI(cfg PlexAPIConfig, deviceKey string, channels []ChannelMapping) (int, error) {
+	cfg.PlexHost = normalizePlexHost(cfg.PlexHost)
 	if len(channels) == 0 {
 		return 0, fmt.Errorf("no channels to activate")
 	}
@@ -492,6 +517,7 @@ func RepairDVRChannelActivation(plexBaseURL, token string, dvrKey int, reloadGui
 }
 
 func enabledChannelCount(plexHost, token string, dvrKey int) (int, error) {
+	plexHost = normalizePlexHost(plexHost)
 	u := fmt.Sprintf("http://%s/livetv/dvrs/%d", plexHost, dvrKey)
 	req, err := http.NewRequest(http.MethodGet, u, nil)
 	if err != nil {
@@ -526,6 +552,7 @@ func enabledChannelCount(plexHost, token string, dvrKey int) (int, error) {
 }
 
 func ListDVRsAPI(plexHost, token string) ([]DVRInfo, error) {
+	plexHost = normalizePlexHost(plexHost)
 	u := fmt.Sprintf("http://%s/livetv/dvrs", plexHost)
 	req, err := http.NewRequest(http.MethodGet, u, nil)
 	if err != nil {
@@ -555,25 +582,32 @@ func ListDVRsAPI(plexHost, token string) ([]DVRInfo, error) {
 		}
 		uuids := make([]string, 0, len(d.Devices))
 		devKey := ""
+		deviceStatus := ""
+		deviceState := ""
 		for _, dev := range d.Devices {
 			uuids = append(uuids, strings.TrimSpace(dev.UUID))
 			if devKey == "" {
 				devKey = strings.TrimSpace(dev.Key)
+				deviceStatus = strings.TrimSpace(dev.Status)
+				deviceState = strings.TrimSpace(dev.State)
 			}
 		}
 		out = append(out, DVRInfo{
-			Key:         k,
-			UUID:        strings.TrimSpace(d.UUID),
-			LineupTitle: title,
-			LineupURL:   strings.TrimSpace(d.Lineup),
-			DeviceKey:   devKey,
-			DeviceUUIDs: uuids,
+			Key:          k,
+			UUID:         strings.TrimSpace(d.UUID),
+			LineupTitle:  title,
+			LineupURL:    strings.TrimSpace(d.Lineup),
+			DeviceKey:    devKey,
+			DeviceStatus: deviceStatus,
+			DeviceState:  deviceState,
+			DeviceUUIDs:  uuids,
 		})
 	}
 	return out, nil
 }
 
 func ListDevicesAPI(plexHost, token string) ([]Device, error) {
+	plexHost = normalizePlexHost(plexHost)
 	paths := []string{
 		"/media/grabbers/devices",
 		"/media/grabbers/tv.plex.grabbers.hdhomerun/devices",
@@ -619,6 +653,7 @@ func ListDevicesAPI(plexHost, token string) ([]Device, error) {
 }
 
 func DeleteDVRAPI(plexHost, token string, dvrKey int) error {
+	plexHost = normalizePlexHost(plexHost)
 	u := fmt.Sprintf("http://%s/livetv/dvrs/%d", plexHost, dvrKey)
 	req, err := http.NewRequest(http.MethodDelete, u, nil)
 	if err != nil {
@@ -639,6 +674,7 @@ func DeleteDVRAPI(plexHost, token string, dvrKey int) error {
 }
 
 func DeleteDeviceAPI(plexHost, token, deviceKey string) error {
+	plexHost = normalizePlexHost(plexHost)
 	paths := []string{
 		fmt.Sprintf("/media/grabbers/devices/%s", url.PathEscape(deviceKey)),
 		fmt.Sprintf("/media/grabbers/tv.plex.grabbers.hdhomerun/devices/%s", url.PathEscape(deviceKey)),
@@ -693,6 +729,7 @@ type ChannelInfo struct {
 // The device UUID is stable across restarts and can be used by DVRWatchdog to identify
 // this instance's DVR in the Plex device list.
 func FullRegisterPlex(baseURL, plexHost, plexToken, friendlyName, deviceID string, channels []ChannelInfo) (deviceUUID string, dvrKey int, err error) {
+	plexHost = normalizePlexHost(plexHost)
 	cfg := PlexAPIConfig{
 		BaseURL:      baseURL,
 		PlexHost:     plexHost,
@@ -701,13 +738,8 @@ func FullRegisterPlex(baseURL, plexHost, plexToken, friendlyName, deviceID strin
 		DeviceID:     deviceID,
 	}
 
-	tokenPreview := plexToken
-	if len(tokenPreview) > 8 {
-		tokenPreview = tokenPreview[:8] + "..."
-	}
-
 	fmt.Printf("[PLEX-REG] === Starting Plex API registration ===\n")
-	fmt.Printf("[PLEX-REG] BaseURL=%s Host=%s Token=%s\n", baseURL, plexHost, tokenPreview)
+	fmt.Printf("[PLEX-REG] BaseURL=%s Host=%s TokenPresent=%v\n", baseURL, plexHost, plexToken != "")
 
 	fmt.Printf("[PLEX-REG] Step 0: Reconcile stale Tunerr-owned Plex rows...\n")
 	if err := ReconcileTunerrRegistrations(cfg); err != nil {
@@ -779,6 +811,7 @@ func FullRegisterPlex(baseURL, plexHost, plexToken, friendlyName, deviceID strin
 // dvrEnabledChannelCount fetches the DVR XML for the given DVR key and returns the number
 // of ChannelMapping entries with enabled="1". Returns 0 on any error (treated as "unknown").
 func dvrEnabledChannelCount(plexHost, token string, dvrKey int) int {
+	plexHost = normalizePlexHost(plexHost)
 	u := fmt.Sprintf("http://%s/livetv/dvrs/%d?X-Plex-Token=%s", plexHost, dvrKey, token)
 	client := httpclient.WithTimeout(15 * time.Second)
 	resp, err := client.Get(u)
@@ -804,6 +837,52 @@ func dvrEnabledChannelCount(plexHost, token string, dvrKey int) int {
 		}
 	}
 	return count
+}
+
+func tunerLineupCount(baseURL string) (int, error) {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		return 0, fmt.Errorf("base URL is empty")
+	}
+	u := baseURL + "/lineup.json"
+	client := httpclient.WithTimeout(10 * time.Second)
+	resp, err := client.Get(u)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("lineup status %d", resp.StatusCode)
+	}
+	var rows []json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
+		return 0, err
+	}
+	return len(rows), nil
+}
+
+func watchdogExpectedChannelCount(baseURL string, fallback []ChannelInfo) int {
+	if n, err := tunerLineupCount(baseURL); err == nil && n > 0 {
+		return n
+	}
+	return len(fallback)
+}
+
+func dvrDeviceLooksDead(d DVRInfo) bool {
+	status := strings.ToLower(strings.TrimSpace(d.DeviceStatus))
+	state := strings.ToLower(strings.TrimSpace(d.DeviceState))
+	return status == "dead" || state == "dead" || state == "disabled"
+}
+
+func deadDVRNeedsReregistration(d DVRInfo, enabledCount, expectedCount int) bool {
+	if !dvrDeviceLooksDead(d) {
+		return false
+	}
+	if expectedCount <= 0 {
+		return true
+	}
+	threshold := int(float64(expectedCount) * 0.9)
+	return enabledCount < threshold
 }
 
 // DVRWatchdog periodically verifies that this tuner's DVR registration is present and
@@ -872,13 +951,21 @@ func DVRWatchdog(ctx context.Context, cfg PlexAPIConfig, deviceUUID, guideURL st
 						d.Key, d.LineupURL, guideURL))
 					return
 				}
-
 				// Guide URL is correct. Check channel activation: fetch the DVR XML and
 				// count enabled ChannelMappings. If fewer than 90% of expected channels are
 				// active (including the 0-channel case), activate now. This catches both the
 				// "guide not indexed yet" case and partial activation from a racing re-reg.
 				enabledCount := dvrEnabledChannelCount(cfg.PlexHost, cfg.PlexToken, d.Key)
-				expectedCount := len(channels)
+				expectedCount := watchdogExpectedChannelCount(cfg.BaseURL, channels)
+				if deadDVRNeedsReregistration(d, enabledCount, expectedCount) {
+					reregister(fmt.Sprintf("dvr=%d device=%s status=%q state=%q enabled=%d/%d",
+						d.Key, d.DeviceKey, d.DeviceStatus, d.DeviceState, enabledCount, expectedCount))
+					return
+				}
+				if dvrDeviceLooksDead(d) {
+					log.Printf("[dvr-watchdog] dvr=%d device=%s status=%q state=%q but enabled=%d/%d; leaving registration in place",
+						d.Key, d.DeviceKey, d.DeviceStatus, d.DeviceState, enabledCount, expectedCount)
+				}
 				threshold := int(float64(expectedCount) * 0.9)
 				if expectedCount > 0 && enabledCount < threshold {
 					log.Printf("[dvr-watchdog] dvr=%d guide ok but only %d/%d channels activated (threshold=%d) — activating now",

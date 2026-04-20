@@ -28,7 +28,7 @@ func (g *Gateway) walkStreamUpstreams(
 	forcedProfile, adaptReason, clientClass string,
 	requestMux string,
 	inUseNow, limit int,
-) (finalStatus, finalMode, finalEffectiveURL, leasedAccountKey string, upstreamConcurrencyLimited, providerAccountLimited, ok bool) {
+) (finalStatus, finalMode, finalEffectiveURL string, leasedAccount heldProviderAccountLease, upstreamConcurrencyLimited, providerAccountLimited, ok bool) {
 	upstreamConcurrencyLimited = false
 	providerAccountLimited = false
 	attemptedAnyUpstream := false
@@ -38,7 +38,7 @@ func (g *Gateway) walkStreamUpstreams(
 	// upstream concurrency-limit responses before switching URLs.
 	// Reject non-http(s) URLs to prevent SSRF (e.g. file:// or provider-supplied internal URLs).
 	for i, streamURL := range urls {
-		lease, leaseHeld, leaseAllowed := g.tryAcquireProviderAccountLease(channel, streamURL)
+		_, heldLease, leaseHeld, leaseAllowed := g.tryAcquireProviderAccountLease(channel, streamURL)
 		if !leaseAllowed {
 			attemptIdx := attempt.addUpstream(i+1, streamURL, nil, false, false, false, false)
 			attempt.markUpstreamError(attemptIdx, "provider_account_limited", errors.New("provider account concurrency limit"))
@@ -49,7 +49,7 @@ func (g *Gateway) walkStreamUpstreams(
 			attemptIdx := attempt.addUpstream(i+1, streamURL, nil, false, false, false, false)
 			attempt.markUpstreamError(attemptIdx, "rejected_scheme", errors.New("invalid stream URL scheme"))
 			if leaseHeld {
-				g.releaseProviderAccountLease(lease.Key)
+				g.releaseProviderAccountLease(heldLease)
 			}
 			if i == 0 {
 				log.Printf("gateway: channel %s: invalid stream URL scheme (rejected)", channel.GuideName)
@@ -62,7 +62,7 @@ func (g *Gateway) walkStreamUpstreams(
 			attemptIdx := attempt.addUpstream(i+1, streamURL, nil, false, false, false, false)
 			attempt.markUpstreamError(attemptIdx, "request_build_error", err)
 			if leaseHeld {
-				g.releaseProviderAccountLease(lease.Key)
+				g.releaseProviderAccountLease(heldLease)
 			}
 			continue
 		}
@@ -84,7 +84,7 @@ func (g *Gateway) walkStreamUpstreams(
 				attempt.markUpstreamError(attemptIdx, "request_error", err)
 				g.noteUpstreamFailure(streamURL, 0, "request_error")
 				if leaseHeld {
-					g.releaseProviderAccountLease(lease.Key)
+					g.releaseProviderAccountLease(heldLease)
 				}
 				log.Printf("gateway: channel=%q id=%s upstream[%d/%d] error url=%s err=%v",
 					channel.GuideName, channelID, i+1, len(urls), safeurl.RedactURL(streamURL), err)
@@ -110,9 +110,9 @@ func (g *Gateway) walkStreamUpstreams(
 								channel.GuideName, channelID, i+1, len(urls), resp.StatusCode, attemptIdxRetry+1, retryLimit, backoff, sanitizeUpstreamPreviewForLog(preview))
 							if err := sleepWithContext(r.Context(), backoff); err != nil {
 								if leaseHeld {
-									g.releaseProviderAccountLease(lease.Key)
+									g.releaseProviderAccountLease(heldLease)
 								}
-								return "", "", "", "", false, false, false
+								return "", "", "", heldProviderAccountLease{}, false, false, false
 							}
 							continue
 						}
@@ -120,7 +120,7 @@ func (g *Gateway) walkStreamUpstreams(
 				}
 				if !proceed {
 					if leaseHeld {
-						g.releaseProviderAccountLease(lease.Key)
+						g.releaseProviderAccountLease(heldLease)
 					}
 					break
 				}
@@ -135,9 +135,9 @@ func (g *Gateway) walkStreamUpstreams(
 			)
 			if ok {
 				if leaseHeld {
-					leasedAccountKey = lease.Key
+					leasedAccount = heldLease
 				}
-				return finalStatus, finalMode, finalEffectiveURL, leasedAccountKey, upstreamConcurrencyLimited, providerAccountLimited, true
+				return finalStatus, finalMode, finalEffectiveURL, leasedAccount, upstreamConcurrencyLimited, providerAccountLimited, true
 			}
 			if finalStatus == "hls_go_stalled_after_progress" {
 				sawProgressBeforeFailure = true
@@ -147,33 +147,33 @@ func (g *Gateway) walkStreamUpstreams(
 						channel.GuideName, channelID, i+1, len(urls), attemptIdxRetry+1, retryLimit, backoff)
 					if err := sleepWithContext(r.Context(), backoff); err != nil {
 						if leaseHeld {
-							g.releaseProviderAccountLease(lease.Key)
+							g.releaseProviderAccountLease(heldLease)
 						}
-						return "", "", "", "", false, false, false
+						return "", "", "", heldProviderAccountLease{}, false, false, false
 					}
 					continue
 				}
 				if len(urls) == 1 || i == len(urls)-1 {
 					if leaseHeld {
-						leasedAccountKey = lease.Key
+						leasedAccount = heldLease
 					}
-					return "ok", "hls_go", finalEffectiveURL, leasedAccountKey, upstreamConcurrencyLimited, providerAccountLimited, true
+					return "ok", "hls_go", finalEffectiveURL, leasedAccount, upstreamConcurrencyLimited, providerAccountLimited, true
 				}
 			}
 
 			if leaseHeld {
-				g.releaseProviderAccountLease(lease.Key)
+				g.releaseProviderAccountLease(heldLease)
 			}
 			break
 		}
 	}
 	if sawProgressBeforeFailure {
-		return "stream_ended_after_progress", "hls_go", finalEffectiveURL, leasedAccountKey, upstreamConcurrencyLimited, providerAccountLimited, true
+		return "stream_ended_after_progress", "hls_go", finalEffectiveURL, leasedAccount, upstreamConcurrencyLimited, providerAccountLimited, true
 	}
 	if !attemptedAnyUpstream && providerAccountLimited {
-		return "", "", "", "", upstreamConcurrencyLimited, true, false
+		return "", "", "", heldProviderAccountLease{}, upstreamConcurrencyLimited, true, false
 	}
-	return "", "", "", "", upstreamConcurrencyLimited, false, false
+	return "", "", "", heldProviderAccountLease{}, upstreamConcurrencyLimited, false, false
 }
 
 func (g *Gateway) filterQuarantinedUpstreams(urls []string) []string {

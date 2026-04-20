@@ -758,7 +758,7 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 				err := logCatalogPhase("fallback get.php parse "+base, func() error {
 					var err error
 					movies, series, live, err = catalogFromGetPHP(e.BaseURL, e.User, e.Pass)
-					return err
+					return redactProviderCredentialError(err, e.User, e.Pass)
 				})
 				fallbackErr = err
 				lockoutTracker.noteGetPHP(providerKey(e), fallbackErr)
@@ -883,6 +883,24 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 	}
 
 	return res, nil
+}
+
+func redactProviderCredentialError(err error, user, pass string) error {
+	if err == nil {
+		return nil
+	}
+	text := err.Error()
+	repl := []string{}
+	if strings.TrimSpace(user) != "" {
+		repl = append(repl, user, "redacted")
+	}
+	if strings.TrimSpace(pass) != "" {
+		repl = append(repl, pass, "redacted")
+	}
+	if len(repl) > 0 {
+		text = strings.NewReplacer(repl...).Replace(text)
+	}
+	return fmt.Errorf("%s", text)
 }
 
 func configuredDirectM3UURLs(cfg *config.Config) []string {

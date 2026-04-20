@@ -142,6 +142,9 @@ func handleRun(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendl
 	case "full", "":
 		if registerPlex != "" {
 			lineupCap = tuner.NoLineupCap
+			if _, ok := os.LookupEnv("IPTV_TUNERR_LINEUP_MAX_CHANNELS"); ok {
+				lineupCap = cfg.LineupMaxChannels
+			}
 		}
 	default:
 		log.Printf("Unknown -mode=%q; use easy or full", mode)
@@ -235,7 +238,7 @@ func handleRun(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendl
 	srv.ProviderPass = firstNonEmpty(runProviderPass, cfg.ProviderPass)
 	srv.SetRuntimeSnapshot(buildRuntimeSnapshot(cfg, addr, baseURL, deviceID, friendlyName, lineupCap, srv.ProviderBaseURL, srv.ProviderUser))
 	srv.UpdateChannels(live)
-	registrationLive := applyRegistrationRecipe(live, registerRecipe)
+	registrationLive := applyRegistrationRecipe(append([]catalog.LiveChannel(nil), srv.Channels...), registerRecipe)
 
 	credentials := effectiveProviderUser != "" && effectiveProviderPass != ""
 	if credentials {

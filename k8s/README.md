@@ -115,6 +115,36 @@ Important for HDHomeRun network mode in supervisor:
 
 ## Deploy and verify (generic)
 
+## Home cluster deploy pipeline
+
+This repo also carries the current `kspld0`/`plex` production manifests under
+`deploy/cluster/plex/`. The GitHub workflow
+`.github/workflows/deploy-cluster.yml` runs on a repo-scoped self-hosted runner
+with labels `self-hosted`, `iptvtunerr-deploy`, and `kspld0`.
+
+On successful `CI` completion for `main`, the runner:
+
+- checks out the exact commit that passed CI
+- builds `localhost/iptvtunerr:cluster`
+- imports that image into local k3s containerd
+- applies `deploy/cluster/plex/iptvtunerr-deployment.yaml` and
+  `deploy/cluster/plex/iptvtunerr-sports-deployment.yaml`
+- restarts both Tunerr deployments and waits for rollout
+- runs a `/readyz` smoke check in both pods
+
+Those manifests also mount a shared hostPath lease directory on `kspld0`
+(`IPTV_TUNERR_PROVIDER_ACCOUNT_SHARED_LEASE_DIR=/var/lib/iptvtunerr/provider-account-leases`)
+so the primary and sports pods enforce one combined upstream-account pool
+instead of each allowing its own local slot.
+
+The workflow uses node-local Docker/k3s access instead of SSH from a
+GitHub-hosted runner, so the cluster does not need to expose SSH or Kubernetes
+to the public internet.
+
+```bash
+gh workflow run deploy-cluster.yml --repo snapetech/iptvtunerr --ref main
+```
+
 ```bash
 ./k8s/standup-and-verify.sh
 # With static build: ./k8s/standup-and-verify.sh --static

@@ -3,18 +3,23 @@ set -euo pipefail
 
 # Deploy or remove the Plex /media/providers label rewrite proxy in k8s.
 #
-# This installs a small Python proxy service in front of Plex for the /media/providers
-# path only, rewriting Live TV provider labels per DVR (using /livetv/dvrs lineup titles).
+# This installs `iptv-tunerr plex-label-proxy` as a small Deployment in front of
+# Plex. It rewrites Live TV provider labels per DVR (sourced from /livetv/dvrs
+# lineupTitle) so multi-DVR setups render distinct source tabs across all Plex
+# clients (TV/native + Plex Web via -spoof-identity).
 #
 # Actions:
-#   apply    - create/update ConfigMap+Deployment+Service and patch Ingress path
+#   apply    - create/update Deployment+Service and patch Ingress path
 #   remove   - remove Ingress path override and proxy resources
 #
-# Assumptions:
+# Defaults assume:
 # - Namespace `plex`
 # - Ingress name `plex`
 # - Plex token secret `plex-token` with key `token`
 # - PMS service name `plex` on port 32400
+# - iptv-tunerr image already loaded into the cluster as `iptv-tunerr:latest`
+#
+# Override any of the variables below via environment.
 
 ACTION="${1:-apply}"
 NAMESPACE="${NAMESPACE:-plex}"
@@ -23,13 +28,22 @@ PROXY_DEPLOY="${PROXY_DEPLOY:-plex-label-proxy}"
 PROXY_SVC="${PROXY_SVC:-plex-label-proxy}"
 PROXY_PORT="${PROXY_PORT:-33240}"
 PLEX_UPSTREAM_URL="${PLEX_UPSTREAM_URL:-http://plex.${NAMESPACE}.svc:32400}"
-SCRIPT_PATH="${SCRIPT_PATH:-$(pwd)/scripts/plex-media-providers-label-proxy.py}"
 TOKEN_SECRET_NAME="${TOKEN_SECRET_NAME:-plex-token}"
 TOKEN_SECRET_KEY="${TOKEN_SECRET_KEY:-token}"
+PROXY_IMAGE="${PROXY_IMAGE:-iptv-tunerr:latest}"
+PROXY_IMAGE_PULL_POLICY="${PROXY_IMAGE_PULL_POLICY:-IfNotPresent}"
+STRIP_PREFIX="${STRIP_PREFIX:-iptvtunerr-}"
+REFRESH_SECONDS="${REFRESH_SECONDS:-30}"
+SPOOF_IDENTITY="${SPOOF_IDENTITY:-true}"
 
-if [[ ! -f "$SCRIPT_PATH" ]]; then
-  echo "script not found: $SCRIPT_PATH" >&2
-  exit 1
+# Plex Web (4.156.x) sources its source-tab labels from the server-level
+# friendlyName, so without spoof-identity the rewrite is invisible there.
+# Default it ON; set SPOOF_IDENTITY=false to opt out (TV/native clients only).
+# Note: identity-spoof is best-effort — see runbook for limits (browsers strip
+# fragments from Referer, so per-tab identity rewrite is rarely possible).
+SPOOF_ARG_LINE=""
+if [[ "$SPOOF_IDENTITY" == "true" ]]; then
+  SPOOF_ARG_LINE='          - "-spoof-identity"'
 fi
 
 require_kubectl() {
@@ -40,10 +54,6 @@ require_kubectl() {
 }
 
 apply_proxy() {
-  kubectl -n "$NAMESPACE" create configmap plex-media-providers-label-proxy-script \
-    --from-file=plex-media-providers-label-proxy.py="$SCRIPT_PATH" \
-    --dry-run=client -o yaml | kubectl apply -f -
-
   cat <<YAML | kubectl -n "$NAMESPACE" apply -f -
 apiVersion: apps/v1
 kind: Deployment
@@ -61,17 +71,18 @@ spec:
     spec:
       containers:
       - name: proxy
-        image: python:3.11-alpine
-        command: ["sh","-lc"]
+        image: ${PROXY_IMAGE}
+        imagePullPolicy: ${PROXY_IMAGE_PULL_POLICY}
+        command: ["iptv-tunerr"]
         args:
-          - |
-            python /opt/proxy/plex-media-providers-label-proxy.py \
-              --listen 0.0.0.0:${PROXY_PORT} \
-              --upstream ${PLEX_UPSTREAM_URL} \
-              --token "\$PLEX_TOKEN" \
-              --log-level INFO
+          - "plex-label-proxy"
+          - "-listen=0.0.0.0:${PROXY_PORT}"
+          - "-upstream=${PLEX_UPSTREAM_URL}"
+          - "-strip-prefix=${STRIP_PREFIX}"
+          - "-refresh-seconds=${REFRESH_SECONDS}"
+${SPOOF_ARG_LINE}
         env:
-        - name: PLEX_TOKEN
+        - name: IPTV_TUNERR_PMS_TOKEN
           valueFrom:
             secretKeyRef:
               name: ${TOKEN_SECRET_NAME}
@@ -79,10 +90,6 @@ spec:
         ports:
         - containerPort: ${PROXY_PORT}
           name: http
-        volumeMounts:
-        - name: script
-          mountPath: /opt/proxy
-          readOnly: true
         readinessProbe:
           httpGet:
             path: /identity
@@ -95,11 +102,13 @@ spec:
             port: ${PROXY_PORT}
           initialDelaySeconds: 10
           periodSeconds: 10
-      volumes:
-      - name: script
-        configMap:
-          name: plex-media-providers-label-proxy-script
-          defaultMode: 0555
+        resources:
+          requests:
+            cpu: "10m"
+            memory: "32Mi"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
 ---
 apiVersion: v1
 kind: Service
@@ -130,30 +139,50 @@ YAML
     ]"
   fi
 
+  # When -spoof-identity is enabled, also route / and /identity through the
+  # proxy so the root MediaContainer friendlyName is rewritten for Plex Web.
+  if [[ "$SPOOF_IDENTITY" == "true" ]]; then
+    for extra_path in "/identity" "/"; do
+      pt="Exact"
+      if kubectl -n "$NAMESPACE" get ingress "$INGRESS_NAME" -o jsonpath='{range .spec.rules[0].http.paths[*]}{.path}{"\n"}{end}' | grep -qx "$extra_path"; then
+        echo "Ingress path ${extra_path} already present; leaving as-is (verify backend points at ${PROXY_SVC})"
+      else
+        echo "Adding ${extra_path} ingress route -> ${PROXY_SVC}:${PROXY_PORT}"
+        kubectl -n "$NAMESPACE" patch ingress "$INGRESS_NAME" --type='json' -p="[
+          {\"op\":\"add\",\"path\":\"/spec/rules/0/http/paths/0\",\"value\":{\"path\":\"${extra_path}\",\"pathType\":\"${pt}\",\"backend\":{\"service\":{\"name\":\"${PROXY_SVC}\",\"port\":{\"number\":${PROXY_PORT}}}}}}
+        ]"
+      fi
+    done
+  fi
+
   echo
   echo "Ingress path order:"
   kubectl -n "$NAMESPACE" get ingress "$INGRESS_NAME" -o jsonpath='{range .spec.rules[0].http.paths[*]}{.path}{" -> "}{.backend.service.name}{":"}{.backend.service.port.number}{"\n"}{end}'
 }
 
 remove_proxy() {
-  # Remove /media/providers path if it routes to the proxy.
-  mapfile -t paths < <(kubectl -n "$NAMESPACE" get ingress "$INGRESS_NAME" -o jsonpath='{range .spec.rules[0].http.paths[*]}{.path}{"\n"}{end}')
-  idx=-1
-  for i in "${!paths[@]}"; do
-    if [[ "${paths[$i]}" == "/media/providers" ]]; then
-      idx="$i"
+  # Remove any ingress path routing to the proxy service.
+  while true; do
+    mapfile -t entries < <(kubectl -n "$NAMESPACE" get ingress "$INGRESS_NAME" -o jsonpath='{range .spec.rules[0].http.paths[*]}{.path}{"|"}{.backend.service.name}{"\n"}{end}')
+    idx=-1
+    for i in "${!entries[@]}"; do
+      path="${entries[$i]%%|*}"
+      svc="${entries[$i]##*|}"
+      if [[ "$svc" == "$PROXY_SVC" ]]; then
+        echo "Removing ingress path ${path} (index $i)"
+        kubectl -n "$NAMESPACE" patch ingress "$INGRESS_NAME" --type='json' -p="[ {\"op\":\"remove\",\"path\":\"/spec/rules/0/http/paths/${i}\"} ]"
+        idx="$i"
+        break
+      fi
+    done
+    if [[ "$idx" == "-1" ]]; then
       break
     fi
   done
-  if [[ "$idx" != "-1" ]]; then
-    echo "Removing ingress path /media/providers (index $idx)"
-    kubectl -n "$NAMESPACE" patch ingress "$INGRESS_NAME" --type='json' -p="[ {\"op\":\"remove\",\"path\":\"/spec/rules/0/http/paths/${idx}\"} ]"
-  else
-    echo "Ingress path /media/providers not present"
-  fi
 
   kubectl -n "$NAMESPACE" delete deploy "$PROXY_DEPLOY" --ignore-not-found
   kubectl -n "$NAMESPACE" delete svc "$PROXY_SVC" --ignore-not-found
+  # Legacy ConfigMap from the previous Python-based deploy; tolerate absence.
   kubectl -n "$NAMESPACE" delete configmap plex-media-providers-label-proxy-script --ignore-not-found
 }
 
@@ -167,4 +196,3 @@ case "$ACTION" in
     exit 2
     ;;
 esac
-

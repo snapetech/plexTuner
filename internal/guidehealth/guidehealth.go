@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/xml"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +25,7 @@ type Summary struct {
 	UnmatchedChannels          int            `json:"unmatched_channels"`
 	ChannelsWithProgrammes     int            `json:"channels_with_programmes"`
 	ChannelsWithRealProgrammes int            `json:"channels_with_real_programmes"`
+	SparseProgrammeChannels    int            `json:"sparse_programme_channels"`
 	PlaceholderOnlyChannels    int            `json:"placeholder_only_channels"`
 	NoProgrammeChannels        int            `json:"no_programme_channels"`
 	MatchMethods               map[string]int `json:"match_methods,omitempty"`
@@ -38,6 +40,7 @@ type ChannelHealth struct {
 	EPGLinked          bool     `json:"epg_linked"`
 	ProgrammeCount     int      `json:"programme_count"`
 	RealProgrammeCount int      `json:"real_programme_count"`
+	SparseProgrammes   bool     `json:"sparse_programmes"`
 	PlaceholderOnly    bool     `json:"placeholder_only"`
 	HasProgrammes      bool     `json:"has_programmes"`
 	HasRealProgrammes  bool     `json:"has_real_programmes"`
@@ -55,8 +58,8 @@ type xmlTVRoot struct {
 }
 
 type xmlChannel struct {
-	ID      string `xml:"id,attr"`
-	Display string `xml:"display-name"`
+	ID       string     `xml:"id,attr"`
+	Displays []xmlValue `xml:"display-name"`
 }
 
 type xmlProgramme struct {
@@ -83,6 +86,8 @@ type guideStats struct {
 }
 
 type ChannelXMLIDFunc func(catalog.LiveChannel) string
+
+const sparseProgrammeThreshold = 2
 
 func Build(live []catalog.LiveChannel, mergedGuide []byte, matchRep *epglink.Report, now time.Time) (Report, error) {
 	return BuildWithChannelXMLID(live, mergedGuide, matchRep, now, nil)
@@ -146,6 +151,7 @@ func BuildWithChannelXMLID(live []catalog.LiveChannel, mergedGuide []byte, match
 			row.RealProgrammeCount = gs.realCount
 			row.HasProgrammes = gs.count > 0
 			row.HasRealProgrammes = gs.realCount > 0
+			row.SparseProgrammes = gs.realCount > 0 && gs.realCount < sparseProgrammeThreshold
 			row.PlaceholderOnly = gs.count > 0 && gs.realCount == 0
 			if gs.hasFirst {
 				row.FirstStart = gs.firstStart.UTC().Format(time.RFC3339)
@@ -160,6 +166,9 @@ func BuildWithChannelXMLID(live []catalog.LiveChannel, mergedGuide []byte, match
 		}
 		if row.HasRealProgrammes {
 			out.Summary.ChannelsWithRealProgrammes++
+		}
+		if row.SparseProgrammes {
+			out.Summary.SparseProgrammeChannels++
 		}
 		if row.PlaceholderOnly {
 			out.Summary.PlaceholderOnlyChannels++
@@ -208,7 +217,7 @@ func analyseGuideBytes(data []byte) (map[string]guideStats, error) {
 	}
 	channelNames := map[string]string{}
 	for _, ch := range tv.Channels {
-		channelNames[strings.TrimSpace(ch.ID)] = strings.TrimSpace(ch.Display)
+		channelNames[strings.TrimSpace(ch.ID)] = preferredXMLChannelDisplayName(ch.Displays)
 	}
 	out := map[string]guideStats{}
 	for _, p := range tv.Programmes {
@@ -236,6 +245,24 @@ func analyseGuideBytes(data []byte) (map[string]guideStats, error) {
 	return out, nil
 }
 
+func preferredXMLChannelDisplayName(displays []xmlValue) string {
+	fallback := ""
+	for _, display := range displays {
+		v := strings.TrimSpace(display.Value)
+		if v == "" {
+			continue
+		}
+		if fallback == "" {
+			fallback = v
+		}
+		if _, err := strconv.Atoi(v); err == nil {
+			continue
+		}
+		return v
+	}
+	return fallback
+}
+
 func looksLikePlaceholder(channelName string, p xmlProgramme) bool {
 	title := strings.TrimSpace(p.Title.Value)
 	if title == "" {
@@ -257,6 +284,9 @@ func looksLikePlaceholder(channelName string, p xmlProgramme) bool {
 
 func applyStatusAndActions(row *ChannelHealth) {
 	switch {
+	case row.SparseProgrammes:
+		row.Status = "sparse"
+		row.Actions = appendUnique(row.Actions, "Channel only has sparse real guide rows; check provider XMLTV or short-EPG coverage before publishing to Plex")
 	case row.HasRealProgrammes && row.MatchMethod != "":
 		row.Status = "healthy"
 	case row.HasRealProgrammes:
@@ -298,12 +328,14 @@ func statusRank(s string) int {
 		return 1
 	case "placeholder_only":
 		return 2
-	case "good":
+	case "sparse":
 		return 3
-	case "healthy":
+	case "good":
 		return 4
-	default:
+	case "healthy":
 		return 5
+	default:
+		return 6
 	}
 }
 

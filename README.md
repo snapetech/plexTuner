@@ -292,6 +292,7 @@ match). Optional alias overrides come from `IPTV_TUNERR_XMLTV_ALIASES`.
 
 `guide-health` is the operator-facing answer to the tester complaint of "I only get channel names, not what's on." It checks the actual merged guide output and tells you, per channel:
 - whether it has real programme rows with start/stop blocks
+- whether real coverage is sparse enough to look like "Unknown airing" in clients
 - whether it only has placeholder channel-name guide rows
 - whether it has no guide rows at all
 - whether the XMLTV match came from exact ID, alias override, name repair, or nowhere
@@ -338,7 +339,7 @@ IPTV_TUNERR_PROVIDER_PASS_2=pass2
 ```
 Each numbered provider is independently probed. The best host indexes the catalog; all provider hosts become stream URL fallbacks per channel. Channels with duplicate `tvg-id` values across providers are deduplicated — one entry in the lineup with all matching stream URLs ranked and available for failover.
 
-When a deduplicated channel has several distinct provider-account credential sets behind it, the gateway now spreads active streams across those accounts instead of always retrying the first ranked URL. Use `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT` if one credential set should allow more than one active viewer. If one specific credential set starts returning upstream concurrency-limit responses, Tunerr now learns a tighter cap for that account and exposes it on `/provider/profile.json`.
+When a deduplicated channel has several distinct provider-account credential sets behind it, the gateway now spreads active streams across those accounts instead of always retrying the first ranked URL. Use `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT` if one credential set should allow more than one active viewer. If one specific credential set starts returning upstream concurrency-limit responses, Tunerr now learns a tighter cap for that account and exposes it on `/provider/profile.json`. If separate Tunerr pods/processes share the same upstream account, point them at the same `IPTV_TUNERR_PROVIDER_ACCOUNT_SHARED_LEASE_DIR` so they enforce one shared pool instead of one local pool per process.
 
 For duplicate viewers on the exact same channel, Tunerr can also reuse one live session instead of burning another provider fetch. Today that works in three concrete lanes:
 - the native `hls_go` shared relay for same-channel duplicate consumers
@@ -655,9 +656,11 @@ IPTV_TUNERR_LINEUP_RECIPE=sports_na        # keep North America sports-first cha
 IPTV_TUNERR_LINEUP_RECIPE=kids_safe        # keep kid/family-safe channels only
 IPTV_TUNERR_LINEUP_RECIPE=locals_first     # bubble likely local/regional channels to the top
 IPTV_TUNERR_LINEUP_EXCLUDE_RECIPE=sports_na # remove a built-in recipe from this lineup before applying the normal recipe
+IPTV_TUNERR_LINEUP_DROP_SPORTS=true        # remove sports/event-like rows from a general/cable DVR before cap
+IPTV_TUNERR_LINEUP_DEDUPE=stable           # collapse strong duplicate channel identities before cap/shard logic
 IPTV_TUNERR_LINEUP_EXCLUDE_CHANNEL_IDS=123,456 # remove exact channel_id/guide_number/tvg_id values before shaping
 IPTV_TUNERR_DNA_POLICY=prefer_best         # collapse duplicate dna_id variants to the strongest candidate
-IPTV_TUNERR_GUIDE_POLICY=healthy           # keep only channels with real programme blocks once guide cache is ready
+IPTV_TUNERR_GUIDE_POLICY=healthy           # keep only channels with non-sparse real programme blocks once guide cache is ready
 IPTV_TUNERR_REGISTER_RECIPE=healthy        # use channel-intelligence scoring to prune/reorder channels before Plex/Emby/Jellyfin registration
 # or: sports_now | sports_na | kids_safe | locals_first
 ```
@@ -1287,6 +1290,8 @@ Full reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-a
 | `IPTV_TUNERR_LINEUP_MAX_CHANNELS` | Max channels in lineup (default 480, Plex wizard cap) |
 | `IPTV_TUNERR_GUIDE_NUMBER_OFFSET` | Channel number offset (prevents multi-DVR collisions) |
 | `IPTV_TUNERR_LINEUP_EXCLUDE_RECIPE` | Remove a named recipe such as `sports_na` before final lineup shaping, useful for primary+sports DVR splits |
+| `IPTV_TUNERR_LINEUP_DROP_SPORTS` | Optional sports/event-like row filter for general/cable DVRs; leave unset on sports-specific DVRs |
+| `IPTV_TUNERR_LINEUP_DEDUPE` | Optional pre-cap strong duplicate collapse (`stable`/`identity`/`strong`/`true`); keeps the best representative for matching `tvg-id` or normalized channel names |
 | `IPTV_TUNERR_LINEUP_EXCLUDE_CHANNEL_IDS` | Comma/space-separated exact channel IDs, guide numbers, or `tvg-id`s to remove before final lineup shaping |
 | `IPTV_TUNERR_LINEUP_SKIP` / `IPTV_TUNERR_LINEUP_TAKE` | Slice lineup for overflow DVR shards |
 | `IPTV_TUNERR_LIVE_EPG_ONLY` | Only include channels with a `tvg-id` |

@@ -76,7 +76,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	var finalStatus, finalMode, finalEffectiveURL string
 	var finalErr error
-	var leasedAccountKey string
+	var leasedAccount heldProviderAccountLease
 	urls := streamURLsForChannel(channel)
 	if len(urls) == 0 {
 		log.Printf("gateway: req=%s channel=%q id=%s no-stream-url", reqID, channel.GuideName, channelID)
@@ -117,8 +117,8 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	attempt := newStreamAttemptBuilder(reqID, r, channelID, channel.GuideName, len(urls))
 	defer func() {
-		if leasedAccountKey != "" {
-			g.releaseProviderAccountLease(leasedAccountKey)
+		if leasedAccount.Key != "" {
+			g.releaseProviderAccountLease(leasedAccount)
 		}
 		g.appendStreamAttempt(attempt.finish(finalStatus, finalMode, finalErr, finalEffectiveURL))
 		if g.EventHooks != nil && finalStatus != "" {
@@ -223,7 +223,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	var providerAccountLimited bool
-	finalStatus, finalMode, finalEffectiveURL, leasedAccountKey, upstreamConcurrencyLimited, providerAccountLimited, streamHandled := g.walkStreamUpstreams(
+	finalStatus, finalMode, finalEffectiveURL, leasedAccount, upstreamConcurrencyLimited, providerAccountLimited, streamHandled := g.walkStreamUpstreams(
 		w, r, channel, channelID, reqID, start, urls, attempt,
 		hasTranscodeOverride, forceTranscode, forcedProfile, adaptReason, clientClass,
 		requestMux, inUseNow, limit,

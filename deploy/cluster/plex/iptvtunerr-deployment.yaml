@@ -1,0 +1,165 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iptvtunerr
+  namespace: plex
+  labels:
+    app: iptvtunerr
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: iptvtunerr
+  template:
+    metadata:
+      labels:
+        app: iptvtunerr
+        service: plex
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: kspld0
+      tolerations:
+        - key: node.kubernetes.io/disk-pressure
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: iptvtunerr
+          image: localhost/iptvtunerr:cluster
+          imagePullPolicy: Never
+          args:
+            - run
+            - -mode=full
+            - -register-plex=api
+            - -register-plex-interval=1m
+            - -addr
+            - :5004
+          envFrom:
+            - secretRef:
+                name: iptvtunerr-env
+          env:
+            - name: IPTV_TUNERR_BASE_URL
+              value: http://iptvtunerr.plex.svc:5004
+            - name: IPTV_TUNERR_DEVICE_ID
+              value: iptvtunerr01
+            - name: IPTV_TUNERR_FRIENDLY_NAME
+              value: IPTV Tunerr
+            - name: IPTV_TUNERR_WEBUI_ALLOW_LAN
+              value: "true"
+            - name: IPTV_TUNERR_WEBUI_PORT
+              value: "48879"
+            - name: IPTV_TUNERR_LIVE_ONLY
+              value: "true"
+            - name: IPTV_TUNERR_TUNER_COUNT
+              value: "1"
+            - name: IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT
+              value: "1"
+            - name: IPTV_TUNERR_PROVIDER_ACCOUNT_SHARED_LEASE_DIR
+              value: /var/lib/iptvtunerr/provider-account-leases
+            - name: IPTV_TUNERR_PROVIDER_ACCOUNT_SHARED_LEASE_TTL
+              value: 6h
+            - name: IPTV_TUNERR_PROVIDER_ACCOUNT_SHARED_LEASE_OWNER
+              value: iptvtunerr-primary
+            - name: IPTV_TUNERR_UPSTREAM_RETRY_LIMIT
+              value: "0"
+            - name: IPTV_TUNERR_HLS_PLAYLIST_RETRY_LIMIT
+              value: "0"
+            - name: PLEX_HOST
+              value: 192.168.50.148:32400
+            - name: IPTV_TUNERR_LINEUP_MAX_CHANNELS
+              value: "479"
+            - name: IPTV_TUNERR_LINEUP_RECIPE
+              value: locals_first
+            - name: IPTV_TUNERR_LINEUP_EXCLUDE_RECIPE
+              value: sports_na
+            - name: IPTV_TUNERR_LINEUP_DROP_SPORTS
+              value: "true"
+            - name: IPTV_TUNERR_LINEUP_DEDUPE
+              value: stable
+            - name: IPTV_TUNERR_LINEUP_SHAPE
+              value: na_en
+            - name: IPTV_TUNERR_LINEUP_REGION_PROFILE
+              value: ca_west
+            - name: IPTV_TUNERR_GUIDE_NUMBER_RESEQUENCE
+              value: "true"
+            - name: IPTV_TUNERR_GUIDE_NUMBER_RESEQUENCE_START
+              value: "1"
+            - name: IPTV_TUNERR_XMLTV_PLEX_SAFE_IDS
+              value: "true"
+            - name: IPTV_TUNERR_GUIDE_POLICY
+              value: healthy
+            - name: IPTV_TUNERR_PROVIDER_URL
+              value: http://line.dambora.xyz
+            - name: IPTV_TUNERR_PROVIDER_USER
+              valueFrom:
+                secretKeyRef:
+                  name: iptvtunerr-env
+                  key: IPTV_TUNERR_PROVIDER_USER_2
+            - name: IPTV_TUNERR_PROVIDER_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: iptvtunerr-env
+                  key: IPTV_TUNERR_PROVIDER_PASS_2
+            - name: IPTV_TUNERR_PROVIDER_SHORT_EPG_FALLBACK
+              value: "true"
+            - name: IPTV_TUNERR_PROVIDER_SHORT_EPG_MIN_PROGRAMMES
+              value: "2"
+            - name: IPTV_TUNERR_PROVIDER_SHORT_EPG_LIMIT
+              value: "6"
+            - name: IPTV_TUNERR_PROVIDER_EPG_DISK_CACHE
+              value: /var/cache/iptvtunerr/provider-epg.xml
+            - name: IPTV_TUNERR_FFMPEG_HLS_HTTP_PERSISTENT
+              value: "false"
+            - name: IPTV_TUNERR_FFMPEG_HLS_LIVE_START_INDEX
+              value: "0"
+            - name: IPTV_TUNERR_HLS_RELAY_PREFER_GO
+              value: "true"
+            - name: IPTV_TUNERR_CLIENT_ADAPT
+              value: "true"
+            - name: IPTV_TUNERR_PLEX_INTERNAL_FETCHER_POLICY
+              value: websafe
+            - name: IPTV_TUNERR_PLEX_INTERNAL_FETCHER_PROFILE
+              value: plexsafehq
+            - name: IPTV_TUNERR_PLEX_WEB_CLIENT_PROFILE
+              value: copyvideomp3
+            - name: IPTV_TUNERR_HLS_RELAY_FFMPEG_STDIN_NORMALIZE
+              value: "true"
+          ports:
+            - name: tuner
+              containerPort: 5004
+            - name: deck
+              containerPort: 48879
+          volumeMounts:
+            - name: provider-account-leases
+              mountPath: /var/lib/iptvtunerr/provider-account-leases
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          startupProbe:
+            httpGet:
+              path: /discover.json
+              port: tuner
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: tuner
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /discover.json
+              port: tuner
+            periodSeconds: 30
+            failureThreshold: 6
+      volumes:
+        - name: provider-account-leases
+          hostPath:
+            path: /var/lib/iptvtunerr/provider-account-leases
+            type: DirectoryOrCreate

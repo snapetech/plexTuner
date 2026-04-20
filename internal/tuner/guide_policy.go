@@ -15,10 +15,12 @@ type GuidePolicySummary struct {
 	Deferred                bool   `json:"deferred,omitempty"`
 	TotalChannels           int    `json:"total_channels"`
 	HealthyChannels         int    `json:"healthy_channels"`
+	SparseProgrammeChannels int    `json:"sparse_programme_channels"`
 	PlaceholderOnlyChannels int    `json:"placeholder_only_channels"`
 	NoProgrammeChannels     int    `json:"no_programme_channels"`
 	KeptChannels            int    `json:"kept_channels"`
 	DroppedChannels         int    `json:"dropped_channels"`
+	DroppedSparseProgrammes int    `json:"dropped_sparse_programmes"`
 	DroppedPlaceholderOnly  int    `json:"dropped_placeholder_only"`
 	DroppedNoProgramme      int    `json:"dropped_no_programme"`
 	DroppedMissingTVGID     int    `json:"dropped_missing_tvg_id,omitempty"`
@@ -31,6 +33,7 @@ type GuidePolicyDecision struct {
 	TVGID             string `json:"tvg_id,omitempty"`
 	Status            string `json:"status"`
 	HasRealProgrammes bool   `json:"has_real_programmes"`
+	SparseProgrammes  bool   `json:"sparse_programmes"`
 	PlaceholderOnly   bool   `json:"placeholder_only"`
 	Keep              bool   `json:"keep"`
 	DropReason        string `json:"drop_reason,omitempty"`
@@ -72,6 +75,9 @@ func (x *XMLTV) cachedGuideHealthReport() (guidehealth.Report, bool) {
 func guidePolicyDropReason(row guidehealth.ChannelHealth, policy string) string {
 	switch normalizeGuidePolicy(policy) {
 	case "healthy":
+		if row.SparseProgrammes {
+			return "sparse_programmes"
+		}
 		if !row.HasRealProgrammes {
 			if row.PlaceholderOnly {
 				return "placeholder_only"
@@ -79,6 +85,9 @@ func guidePolicyDropReason(row guidehealth.ChannelHealth, policy string) string 
 			return "no_programme"
 		}
 	case "strict":
+		if row.SparseProgrammes {
+			return "sparse_programmes"
+		}
 		if !row.HasRealProgrammes {
 			if row.PlaceholderOnly {
 				return "placeholder_only"
@@ -123,9 +132,13 @@ func buildGuidePolicyReport(live []catalog.LiveChannel, rep guidehealth.Report, 
 		if ok {
 			decision.Status = row.Status
 			decision.HasRealProgrammes = row.HasRealProgrammes
+			decision.SparseProgrammes = row.SparseProgrammes
 			decision.PlaceholderOnly = row.PlaceholderOnly
-			if row.HasRealProgrammes {
+			if row.HasRealProgrammes && !row.SparseProgrammes {
 				out.Summary.HealthyChannels++
+			}
+			if row.SparseProgrammes {
+				out.Summary.SparseProgrammeChannels++
 			}
 			if row.PlaceholderOnly {
 				out.Summary.PlaceholderOnlyChannels++
@@ -138,6 +151,8 @@ func buildGuidePolicyReport(live []catalog.LiveChannel, rep guidehealth.Report, 
 				decision.DropReason = reason
 				out.Summary.DroppedChannels++
 				switch reason {
+				case "sparse_programmes":
+					out.Summary.DroppedSparseProgrammes++
 				case "placeholder_only":
 					out.Summary.DroppedPlaceholderOnly++
 				case "no_programme":
@@ -200,11 +215,12 @@ func (x *XMLTV) applyGuidePolicyToChannels(live []catalog.LiveChannel, policy st
 	filtered, dropped := filterChannelsByGuidePolicy(live, rep, policy)
 	if dropped > 0 || report.Summary.DroppedMissingTVGID > 0 {
 		log.Printf(
-			"Guide policy applied: policy=%s kept=%d/%d dropped=%d placeholder_only=%d no_programme=%d missing_tvg_id=%d",
+			"Guide policy applied: policy=%s kept=%d/%d dropped=%d sparse=%d placeholder_only=%d no_programme=%d missing_tvg_id=%d",
 			policy,
 			len(filtered),
 			len(live),
 			report.Summary.DroppedChannels,
+			report.Summary.DroppedSparseProgrammes,
 			report.Summary.DroppedPlaceholderOnly,
 			report.Summary.DroppedNoProgramme,
 			report.Summary.DroppedMissingTVGID,
@@ -265,8 +281,11 @@ func FilterCatchupCapsulesByGuidePolicy(rep CatchupCapsulePreview, health guideh
 	for _, row := range health.Channels {
 		byChannelID[row.ChannelID] = row
 		byGuideNumber[row.GuideNumber] = row
-		if row.HasRealProgrammes {
+		if row.HasRealProgrammes && !row.SparseProgrammes {
 			summary.HealthyChannels++
+		}
+		if row.SparseProgrammes {
+			summary.SparseProgrammeChannels++
 		}
 		if row.PlaceholderOnly {
 			summary.PlaceholderOnlyChannels++
@@ -286,6 +305,8 @@ func FilterCatchupCapsulesByGuidePolicy(rep CatchupCapsulePreview, health guideh
 			if reason := guidePolicyDropReason(row, policy); reason != "" {
 				summary.DroppedChannels++
 				switch reason {
+				case "sparse_programmes":
+					summary.DroppedSparseProgrammes++
 				case "placeholder_only":
 					summary.DroppedPlaceholderOnly++
 				case "no_programme":

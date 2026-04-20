@@ -86,6 +86,7 @@ type Gateway struct {
 	sharedRelays               map[string]*sharedRelaySession
 	accountLeaseMu             sync.Mutex
 	accountLeases              map[string]int
+	sharedAccountLeases        *providerSharedLeaseManager
 	accountLimitStore          *accountLimitStore
 	providerStateMu            sync.Mutex
 	learnedAccountLimits       map[string]int

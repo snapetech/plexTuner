@@ -2136,6 +2136,33 @@ func TestGateway_stream_successReleasesProviderAccountLease(t *testing.T) {
 	}
 }
 
+func TestGateway_sharedProviderAccountLeaseBlocksSecondGateway(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT", "1")
+	sharedDir := t.TempDir()
+	mgrA := newProviderSharedLeaseManager(sharedDir, "pod-a", time.Hour)
+	mgrB := newProviderSharedLeaseManager(sharedDir, "pod-b", time.Hour)
+	ch := &catalog.LiveChannel{
+		StreamURLs:  []string{"http://provider.example/live/u1/p1/1001.m3u8"},
+		StreamAuths: []catalog.StreamAuth{{Prefix: "http://provider.example/live/u1/p1/", User: "u1", Pass: "p1"}},
+	}
+	gA := &Gateway{ProviderUser: "u1", ProviderPass: "p1", sharedAccountLeases: mgrA}
+	gB := &Gateway{ProviderUser: "u1", ProviderPass: "p1", sharedAccountLeases: mgrB}
+
+	identityA, leaseA, heldA, okA := gA.tryAcquireProviderAccountLease(ch, ch.StreamURLs[0])
+	if !heldA || !okA {
+		t.Fatalf("first acquire held=%v ok=%v identity=%#v", heldA, okA, identityA)
+	}
+	defer gA.releaseProviderAccountLease(leaseA)
+
+	identityB, _, heldB, okB := gB.tryAcquireProviderAccountLease(ch, ch.StreamURLs[0])
+	if !heldB || okB {
+		t.Fatalf("second acquire held=%v ok=%v identity=%#v", heldB, okB, identityB)
+	}
+	if got := gB.providerAccountLeaseCount(identityB.Key); got != 1 {
+		t.Fatalf("shared lease count=%d want 1", got)
+	}
+}
+
 func TestGateway_stream_learnsProviderAccountLimit(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_UPSTREAM_RETRY_LIMIT", "0")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

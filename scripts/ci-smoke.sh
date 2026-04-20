@@ -89,6 +89,11 @@ PY
 
 PIDS=()
 
+# The smoke fixtures intentionally use tiny finite HLS playlists. Production
+# retry settings make sense for real providers, but they turn these fixtures into
+# multi-minute waits after the first bytes are proven.
+export IPTV_TUNERR_UPSTREAM_RETRY_LIMIT="${IPTV_TUNERR_UPSTREAM_RETRY_LIMIT:-0}"
+
 cat >"$TMP_DIR/catalog-full.json" <<'JSON'
 {
   "movies": [

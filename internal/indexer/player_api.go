@@ -16,6 +16,7 @@ import (
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
+	"github.com/snapetech/iptvtunerr/internal/safeurl"
 )
 
 const indexerDefaultUserAgent = "IptvTunerr/1.0"
@@ -695,7 +696,7 @@ type apiError struct {
 }
 
 func (e *apiError) Error() string {
-	return "player_api: " + strconv.Itoa(e.status) + " " + e.url
+	return "player_api: " + strconv.Itoa(e.status) + " " + safeurl.RedactURL(e.url)
 }
 
 // IsPlayerAPIErrorStatus reports whether err is a player_api HTTP error and matches status.

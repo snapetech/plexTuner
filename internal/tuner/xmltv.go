@@ -32,8 +32,9 @@ import (
 // The merged result is cached for CacheTTL (default 10m) and refreshed by StartRefresh in the
 // background. ServeHTTP reads from the cache; the pipeline runs asynchronously.
 type XMLTV struct {
-	Channels         []catalog.LiveChannel
-	EpgPruneUnlinked bool // when true, only include channels with TVGID set
+	Channels            []catalog.LiveChannel
+	GuideHealthChannels []catalog.LiveChannel
+	EpgPruneUnlinked    bool // when true, only include channels with TVGID set
 	// EpgForceLineupMatch keeps every lineup channel represented in guide.xml even when prune-unlinked is enabled.
 	EpgForceLineupMatch bool
 	SourceURL           string
@@ -88,6 +89,8 @@ type XMLTV struct {
 	cachedCapsulePreview *CatchupCapsulePreview
 	cachedCapsuleHorizon time.Duration
 	cachedCapsuleExp     time.Time
+
+	OnGuideHealthReady func()
 
 	refreshStateMu       sync.Mutex
 	refreshInFlight      bool
@@ -221,7 +224,18 @@ func (x *XMLTV) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (x *XMLTV) filteredChannels() []catalog.LiveChannel {
-	channels := x.Channels
+	return x.filteredChannelSet(x.Channels)
+}
+
+func (x *XMLTV) filteredGuideHealthChannels() []catalog.LiveChannel {
+	channels := x.GuideHealthChannels
+	if len(channels) == 0 {
+		channels = x.Channels
+	}
+	return x.filteredChannelSet(channels)
+}
+
+func (x *XMLTV) filteredChannelSet(channels []catalog.LiveChannel) []catalog.LiveChannel {
 	if channels == nil {
 		channels = []catalog.LiveChannel{}
 	}

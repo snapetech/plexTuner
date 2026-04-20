@@ -24,6 +24,38 @@ It exists to encourage quality gains without derailing the current task.
 
 ## Entries
 
+- Date: 2026-04-19
+  Category: reliability
+  Title: Add a shared provider-account lease across Tunerr pods
+  Context: Primary and sports cluster deployments currently run as separate pods but use the same provider credentials. Each process can enforce `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT=1` locally, but neither process sees the other's active stream lease.
+  Why it matters: The provider returns `509` when the shared account is over limit. That can still happen when one stream is active in primary and another starts in sports, even though both pods are individually capped.
+  Evidence: Live logs on 2026-04-19 for `CA| CTV VANCOUVER HD` showed provider playlist `509` / learned provider-account limit while both deployments referenced `IPTV_TUNERR_PROVIDER_USER_2` and `IPTV_TUNERR_PROVIDER_PASS_2`. Provider-3 credentials in the secret did not authenticate during a non-secret-printing check.
+  Suggested fix: Add an optional shared lease backend for provider-account keys, likely Kubernetes Lease/ConfigMap with short TTL and owner identity, or move primary/sports onto distinct valid provider credentials if available.
+  Risk/Scope: med | fits current scope? no
+  User decision needed?: yes
+  If yes: 1) Kubernetes Lease backend (Recommended), 2) require separate credentials per DVR, 3) keep fail-fast retry limits only. If no answer: keep the local one-stream caps and fail-fast retry configuration.
+
+- Date: 2026-04-19
+  Category: security
+  Title: Redact provider credentials from player_api error logs
+  Context: During cluster sports registration/restart logs, a provider `player_api.php` failure line included the query URL with username/password values.
+  Status: **Resolved 2026-04-19** — `apiError.Error()` now formats URLs through `safeurl.RedactURL`, and `TestPlayerAPIErrorRedactsCredentials` covers `username`/`password` query redaction.
+  Why it matters: Provider credentials should not appear in pod logs, even transiently, because logs are routinely copied into diagnostics and history.
+  Evidence: `indexer: player_api resolveStreamBaseURL failed ... player_api.php?username=...&password=...` appeared in `deployment/iptvtunerr-sports` logs during the 2026-04-19 repair.
+  Suggested fix: Shipped by routing player_api error URL formatting through the existing safe URL redaction helper.
+  Risk/Scope: low | fits current scope? no
+  User decision needed?: no
+
+- Date: 2026-04-18
+  Category: operability
+  Title: Run cluster Tunerr deployments in API registration/watchdog mode (resolved 2026-04-19)
+  Context: During the Plex Live TV outage recovery, the primary and sports Tunerr pods were healthy but running `run -mode=easy`, so they did not automatically recreate Plex DVR rows after `plex-db-sync` rolled the standby DB back to stale state.
+  Why it matters: If Plex DB state is lost or overwritten again, healthy Tunerr services should be able to self-heal their DVR/device/channelmap registration instead of requiring manual `kubectl exec` register-only commands.
+  Evidence: Manual recovery required `PLEX_HOST=192.168.50.148:32400 iptv-tunerr run -mode=full -register-plex=api -register-only -skip-index -skip-health -catalog /catalog.json` in both `deployment/iptvtunerr` and `deployment/iptvtunerr-sports`.
+  Suggested fix: Resolved by updating `../k3s/plex/iptvtunerr-deployment.yaml` and `../k3s/plex/iptvtunerr-sports-deployment.yaml` to run `run -mode=full -register-plex=api` with host-only `PLEX_HOST=192.168.50.148:32400`; primary also sets `IPTV_TUNERR_LINEUP_MAX_CHANNELS=479` so full registration mode does not publish the whole provider catalog.
+  Risk/Scope: med | fits current scope? yes
+  User decision needed?: no
+
 - Date: 2026-04-13
   Category: other
   Title: Split the product surface into simple user, operator, and lab lanes

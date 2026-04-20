@@ -18,6 +18,11 @@ type providerAccountLease struct {
 	InUse int    `json:"in_use"`
 }
 
+type heldProviderAccountLease struct {
+	Key    string
+	Shared *providerSharedLeaseHandle
+}
+
 func configuredProviderAccountLimit() int {
 	if _, ok := os.LookupEnv("IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT"); !ok {
 		return 0
@@ -204,48 +209,75 @@ func (g *Gateway) providerAccountLeaseCount(key string) int {
 	if g == nil || strings.TrimSpace(key) == "" {
 		return 0
 	}
+	if g.sharedAccountLeases != nil {
+		return g.sharedAccountLeases.count(key)
+	}
 	g.accountLeaseMu.Lock()
 	defer g.accountLeaseMu.Unlock()
 	return g.accountLeases[key]
 }
 
-func (g *Gateway) tryAcquireProviderAccountLease(ch *catalog.LiveChannel, rawURL string) (providerAccountLease, bool, bool) {
+func (g *Gateway) tryAcquireProviderAccountLease(ch *catalog.LiveChannel, rawURL string) (providerAccountLease, heldProviderAccountLease, bool, bool) {
 	identity, ok := providerAccountIdentityForURL(g, ch, rawURL)
 	if !ok || identity.Key == "" {
-		return providerAccountLease{}, false, false
+		return providerAccountLease{}, heldProviderAccountLease{}, false, false
 	}
 	limit := g.effectiveProviderAccountLimitForKey(ch, identity.Key)
 	if limit <= 0 {
-		return identity, false, true
+		return identity, heldProviderAccountLease{}, false, true
 	}
 	g.accountLeaseMu.Lock()
-	defer g.accountLeaseMu.Unlock()
 	if g.accountLeases == nil {
 		g.accountLeases = map[string]int{}
 	}
 	inUse := g.accountLeases[identity.Key]
 	identity.InUse = inUse
 	if inUse >= limit {
-		return identity, true, false
+		g.accountLeaseMu.Unlock()
+		return identity, heldProviderAccountLease{}, true, false
 	}
 	g.accountLeases[identity.Key] = inUse + 1
-	identity.InUse = inUse + 1
-	return identity, true, true
+	localInUse := inUse + 1
+	g.accountLeaseMu.Unlock()
+
+	held := heldProviderAccountLease{Key: identity.Key}
+	if g.sharedAccountLeases != nil {
+		sharedHeld, sharedInUse, acquired, err := g.sharedAccountLeases.acquire(providerAccountLease{
+			Key:   identity.Key,
+			Label: identity.Label,
+			Host:  identity.Host,
+		}, limit)
+		if err != nil || !acquired {
+			g.releaseProviderAccountLease(held)
+			if sharedInUse > 0 {
+				identity.InUse = sharedInUse
+			}
+			return identity, heldProviderAccountLease{}, true, false
+		}
+		held.Shared = sharedHeld
+		identity.InUse = sharedInUse
+		return identity, held, true, true
+	}
+	identity.InUse = localInUse
+	return identity, held, true, true
 }
 
-func (g *Gateway) releaseProviderAccountLease(key string) {
-	if g == nil || strings.TrimSpace(key) == "" {
+func (g *Gateway) releaseProviderAccountLease(lease heldProviderAccountLease) {
+	if g == nil || strings.TrimSpace(lease.Key) == "" {
 		return
+	}
+	if g.sharedAccountLeases != nil && lease.Shared != nil && strings.TrimSpace(lease.Shared.Path) != "" {
+		g.sharedAccountLeases.release(lease.Shared)
 	}
 	g.accountLeaseMu.Lock()
 	defer g.accountLeaseMu.Unlock()
 	if g.accountLeases == nil {
 		return
 	}
-	if n := g.accountLeases[key]; n > 1 {
-		g.accountLeases[key] = n - 1
+	if n := g.accountLeases[lease.Key]; n > 1 {
+		g.accountLeases[lease.Key] = n - 1
 	} else {
-		delete(g.accountLeases, key)
+		delete(g.accountLeases, lease.Key)
 	}
 }
 
@@ -306,6 +338,16 @@ func (g *Gateway) providerAccountPoolExhausted(ch *catalog.LiveChannel, urls []s
 func (g *Gateway) providerAccountLeases() []providerAccountLease {
 	if g == nil {
 		return nil
+	}
+	if g.sharedAccountLeases != nil {
+		out := g.sharedAccountLeases.snapshot()
+		sort.Slice(out, func(i, j int) bool {
+			if out[i].InUse == out[j].InUse {
+				return out[i].Label < out[j].Label
+			}
+			return out[i].InUse > out[j].InUse
+		})
+		return out
 	}
 	g.accountLeaseMu.Lock()
 	defer g.accountLeaseMu.Unlock()

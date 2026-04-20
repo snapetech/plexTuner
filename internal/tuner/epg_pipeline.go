@@ -1160,7 +1160,11 @@ func (x *XMLTV) runRefresh(trigger string) {
 		ttl = 10 * time.Minute
 	}
 
-	gh, ghErr := x.buildGuideHealthForChannels(channels, data, time.Now())
+	guideHealthChannels := x.filteredGuideHealthChannels()
+	if len(guideHealthChannels) == 0 {
+		guideHealthChannels = channels
+	}
+	gh, ghErr := x.buildGuideHealthForChannels(guideHealthChannels, data, time.Now())
 	if ghErr != nil {
 		log.Printf("xmltv: guide-health cache refresh failed: %v", ghErr)
 	}
@@ -1175,6 +1179,9 @@ func (x *XMLTV) runRefresh(trigger string) {
 	x.mu.Unlock()
 
 	log.Printf("xmltv: EPG cache updated (%d bytes, expires in %v)", len(data), ttl)
+	if ghErr == nil && x.OnGuideHealthReady != nil {
+		x.OnGuideHealthReady()
+	}
 
 	if x.EpgStore != nil {
 		var n int
