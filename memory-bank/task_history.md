@@ -78,6 +78,7 @@ Append-only. One entry per completed task.
     - Fixed the primary lineup/guide regression where deferred guide-policy kept filtering the already-filtered lineup, collapsing the exposed cable DVR from `479` down to `82` rows after startup.
     - Added a stable pre-policy guide-health source lineup, rebuilt deferred policy from `RawChannels` only when guide health is ready, and changed the DVR watchdog so Plex `status="dead"` does not trigger re-registration when the enabled mapping set is still healthy.
     - Added the repo-scoped cluster deploy workflow (`.github/workflows/deploy-cluster.yml`) and committed custom cluster manifests under `deploy/cluster/plex/` for the self-hosted `kspld0-iptvtunerr` runner.
+    - Added filesystem-backed shared provider-account leases with heartbeat renewal, mounted the shared lease directory into both live deployments, and verified cross-pod tunes now reject locally instead of double-booking the same upstream account.
     - Rebuilt/imported `localhost/iptvtunerr:cluster`, rolled both live deployments, and verified primary settled at `406/406` while sports stayed `106/106`.
   Verification:
     - `go test ./internal/tuner ./internal/plex ./cmd/iptv-tunerr`
@@ -86,7 +87,7 @@ Append-only. One entry per completed task.
     - `sudo kubectl -n plex rollout restart deployment/iptvtunerr deployment/iptvtunerr-sports`
     - `sudo kubectl -n plex rollout status deployment/iptvtunerr --timeout=180s`
     - `sudo kubectl -n plex rollout status deployment/iptvtunerr-sports --timeout=180s`
-    - Live checks: primary logs `kept=406/479`, watchdog `enabled=406/406`, 4-minute in-pod `Lavf/60.16.100` stream sample on `/stream/177396`
+    - Live checks: primary logs `kept=406/479`, watchdog `enabled=406/406`, 4-minute in-pod `Lavf/60.16.100` stream sample on `/stream/177396`, shared-lease overlap probe returning sports `503 All provider accounts in use` while primary held the account
   Notes:
     - `./scripts/verify` is still blocked by an unrelated pre-existing formatting issue in `internal/plexlabelproxy/rewrite_test.go`.
     - Residual live risk remains upstream provider playlist `509`, including on long single-stream playback; the 4-minute sample stayed up but still logged one provider-limit learning event near the end.
