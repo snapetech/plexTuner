@@ -52,7 +52,7 @@ jobs:
 
       - name: Detect cluster-relevant changes
         id: changes
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             cluster:
