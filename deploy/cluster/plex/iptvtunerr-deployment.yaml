@@ -58,7 +58,7 @@ spec:
             - name: IPTV_TUNERR_PROVIDER_ACCOUNT_SHARED_LEASE_DIR
               value: /var/lib/iptvtunerr/provider-account-leases
             - name: IPTV_TUNERR_PROVIDER_ACCOUNT_SHARED_LEASE_TTL
-              value: 6h
+              value: 2m
             - name: IPTV_TUNERR_PROVIDER_ACCOUNT_SHARED_LEASE_OWNER
               value: iptvtunerr-primary
             - name: IPTV_TUNERR_UPSTREAM_RETRY_LIMIT

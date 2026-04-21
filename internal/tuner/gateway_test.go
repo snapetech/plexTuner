@@ -1995,6 +1995,45 @@ func TestGateway_attachSharedRelaySessionAllowsRecentZeroReplaySession(t *testin
 	g.closeSharedRelaySession(sharedHLSGoRelayKey("ch1"), sess)
 }
 
+func TestConfiguredProviderAccountSharedLeaseTTLDefaultIsShort(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PROVIDER_ACCOUNT_SHARED_LEASE_TTL", "")
+	if got := configuredProviderAccountSharedLeaseTTL(); got != 2*time.Minute {
+		t.Fatalf("default shared lease ttl = %s, want 2m", got)
+	}
+}
+
+func TestProviderSharedLeaseSnapshotRemovesExpiredFiles(t *testing.T) {
+	dir := t.TempDir()
+	mgr := newProviderSharedLeaseManager(dir, "pod-a", time.Minute)
+	identity := providerAccountLease{
+		Key:   "provider.example|u|p|http://provider.example/live/u/p/",
+		Label: "provider.example/u",
+		Host:  "provider.example",
+	}
+	lease, _, acquired, err := mgr.acquire(identity, 2)
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	if !acquired || lease == nil {
+		t.Fatalf("acquired=%v lease=%#v", acquired, lease)
+	}
+	lease.stopOnce.Do(func() {
+		if lease.stopCh != nil {
+			close(lease.stopCh)
+		}
+	})
+	old := time.Now().Add(-2 * time.Minute)
+	if err := os.Chtimes(lease.Path, old, old); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+	if got := mgr.snapshot(); len(got) != 0 {
+		t.Fatalf("snapshot=%#v, want expired lease ignored", got)
+	}
+	if _, err := os.Stat(lease.Path); !os.IsNotExist(err) {
+		t.Fatalf("expired lease file still exists err=%v", err)
+	}
+}
+
 func TestGateway_tryServeSharedRelay(t *testing.T) {
 	g := &Gateway{}
 	sess := g.createSharedRelaySession("ch1", "r000001")

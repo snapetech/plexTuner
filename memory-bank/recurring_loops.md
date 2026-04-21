@@ -9,6 +9,29 @@
   4. Where it's documented (if applicable)
 -->
 
+### Loop: Sports stream freezes after Plex retries same channel and provider-account leases look over capacity
+
+**Symptom**
+- A sports stream starts, delivers bytes, then freezes or restarts around playlist refresh time.
+- Logs show upstream `509` on HLS playlist refresh, `hls relay stalled after progress`, or repeated same-channel `/stream/<id>` requests.
+- `/provider/profile.json` may show `account_leases` greater than `/debug/active-streams.json` active sessions.
+
+**Why it's tricky**
+- The tuner may have many valid feed URLs and a high auto `TunerCount`, but the provider can still enforce a lower per-account/session limit on the generated HLS playlist hosts.
+- Shared lease files survive process restarts until TTL expiry; a long TTL makes dead files look like real concurrent streams.
+- Empty shared relay sessions are worse than no sharing: Plex sees a possible same-channel attach, cannot get replay bytes, then opens another upstream session that can trigger provider `509`.
+
+**What works**
+- Keep shared provider-account lease TTL short (`IPTV_TUNERR_PROVIDER_ACCOUNT_SHARED_LEASE_TTL=2m`) and rely on heartbeat for long-running healthy streams.
+- On live incidents, compare `/debug/active-streams.json` to `/provider/profile.json`; if leases exceed active streams, stale lease files are likely involved.
+- Do not create same-channel shared relay sessions for paths that do not actually fan out bytes to subscribers.
+- Validate with a timed `Lavf/60.16.100` sample of the frozen channel and confirm no new `509`/stall logs and no leftover leases after disconnect.
+
+**Where it's documented**
+- `internal/tuner/gateway_shared_leases.go`
+- `internal/tuner/gateway_stream_response.go`
+- `deploy/cluster/plex/iptvtunerr-sports-deployment.yaml`
+
 ## Loop protocol
 - If you attempt the same approach twice and it still fails, STOP.
 - Collect evidence (errors, logs, repro steps).

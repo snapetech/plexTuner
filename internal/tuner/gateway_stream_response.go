@@ -319,6 +319,10 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 	} else {
 		log.Printf("gateway: channel=%q id=%s ffmpeg disabled by config (using go relay)", channel.GuideName, channelID)
 	}
+	var sharedSession *sharedRelaySession
+	if !transcode {
+		sharedSession = g.createSharedRelaySession(channelID, gatewayReqIDFromContext(r.Context()))
+	}
 	if err := g.relayHLSAsTS(
 		w,
 		r,
@@ -333,7 +337,7 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 		transcode,
 		forcedProfile,
 		bufferSize,
-		g.createSharedRelaySession(channelID, gatewayReqIDFromContext(r.Context())),
+		sharedSession,
 		responseAlreadyStarted(w),
 	); err != nil {
 		attempt.markUpstreamError(attemptIdx, "hls_go_failed", err)

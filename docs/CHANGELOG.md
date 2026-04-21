@@ -13,6 +13,10 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+### Streaming / provider leases
+- **Provider-account shared leases now expire quickly enough for live recovery:** reduced the shared provider-account lease TTL from hours to minutes so stale lease files from completed or restarted streams stop blocking sports playback.
+- **Transcoded HLS no longer advertises an empty shared relay:** the Go HLS relay now only creates same-channel shared relay sessions when bytes are actually fanned out to subscribers, preventing Plex retries from seeing an unusable zero-replay relay and opening a competing upstream session.
+
 ## [v0.1.52] — 2026-04-21
 
 ### Build / release

@@ -40,7 +40,7 @@ func configuredProviderAccountSharedLeaseDir() string {
 func configuredProviderAccountSharedLeaseTTL() time.Duration {
 	raw := strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_ACCOUNT_SHARED_LEASE_TTL"))
 	if raw == "" {
-		return 6 * time.Hour
+		return 2 * time.Minute
 	}
 	d, err := time.ParseDuration(raw)
 	if err != nil || d <= 0 {
@@ -184,6 +184,7 @@ func (m *providerSharedLeaseManager) snapshot() []providerAccountLease {
 			continue
 		}
 		if m.ttl > 0 && time.Since(info.ModTime()) > m.ttl {
+			_ = os.Remove(path)
 			continue
 		}
 		data, err := os.ReadFile(path)
