@@ -13,6 +13,11 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.52] — 2026-04-21
+
+### Build / release
+- **GitHub Release publishing now uses the Node 24 release action:** upgraded `softprops/action-gh-release` from `v2` to `v3` in both the tag release workflow and tester-bundle release asset upload path, removing the GitHub Actions Node 20 deprecation warning seen on `v0.1.51`.
+
 ## [v0.1.51] — 2026-04-21
 
 ### Sports DVR / live feed health
