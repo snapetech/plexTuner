@@ -13,6 +13,12 @@ type smoketestEntry struct {
 	At   time.Time `json:"at"`
 }
 
+// NewSmoketestCacheEntry returns a cache entry for callers that update a
+// SmoketestCache without exposing the entry representation.
+func NewSmoketestCacheEntry(pass bool, at time.Time) smoketestEntry {
+	return smoketestEntry{Pass: pass, At: at}
+}
+
 // SmoketestCache maps stream URL → probe result. Used to skip re-probing recently-tested channels.
 type SmoketestCache map[string]smoketestEntry
 

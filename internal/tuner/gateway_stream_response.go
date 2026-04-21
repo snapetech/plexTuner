@@ -116,10 +116,22 @@ func (g *Gateway) relaySuccessfulStreamUpstream(
 	inUseNow, limit, upstreamIdx, upstreamTotal int,
 ) (finalStatus, finalMode, finalEffectiveURL string, ok bool) {
 	if resp.ContentLength == 0 {
+		if isHLSResponse(resp, streamURL) {
+			resp.Body.Close()
+			if fallbackURL, ok := hlsTSFallbackURL(streamURL); ok {
+				if status, mode, effective, fallbackOK := g.tryInvalidHLSMPEGTSFallback(
+					w, r, channel, channelID, streamURL, fallbackURL, start, attempt, client, adaptReason, clientClass,
+				); fallbackOK {
+					return status, mode, effective, true
+				}
+			}
+		}
 		g.noteUpstreamFailure(streamURL, resp.StatusCode, "empty_body")
 		log.Printf("gateway: channel=%q id=%s upstream[%d/%d] empty-body url=%s ct=%q",
 			channel.GuideName, channelID, upstreamIdx, upstreamTotal, safeurl.RedactURL(streamURL), resp.Header.Get("Content-Type"))
-		resp.Body.Close()
+		if resp.Body != nil {
+			resp.Body.Close()
+		}
 		return "", "", "", false
 	}
 	g.noteUpstreamSuccess(streamURL)
@@ -206,6 +218,13 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 	firstSeg := firstHLSMediaLine(body)
 	attempt.markPlaylist(attemptIdx, hlsPlaylistLooksUsable(body) && firstSeg != "", len(body), firstSeg)
 	if !hlsPlaylistLooksUsable(body) || firstSeg == "" {
+		if fallbackURL, ok := hlsTSFallbackURL(streamURL); ok {
+			if status, mode, effective, fallbackOK := g.tryInvalidHLSMPEGTSFallback(
+				w, r, channel, channelID, streamURL, fallbackURL, start, attempt, client, adaptReason, clientClass,
+			); fallbackOK {
+				return status, mode, effective, true
+			}
+		}
 		attempt.markUpstreamError(attemptIdx, "invalid_hls_playlist", nil)
 		g.noteUpstreamFailure(streamURL, resp.StatusCode, "invalid_hls_playlist")
 		log.Printf("gateway: channel=%q id=%s invalid-hls-playlist url=%s ct=%q bytes=%d",
@@ -327,6 +346,71 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 	return "ok", "hls_go", effectiveURL, true
 }
 
+func hlsTSFallbackURL(streamURL string) (string, bool) {
+	cut := len(streamURL)
+	if idx := strings.IndexAny(streamURL, "?#"); idx >= 0 {
+		cut = idx
+	}
+	if !strings.HasSuffix(strings.ToLower(streamURL[:cut]), ".m3u8") {
+		return "", false
+	}
+	return streamURL[:cut-len(".m3u8")] + ".ts" + streamURL[cut:], true
+}
+
+func (g *Gateway) tryInvalidHLSMPEGTSFallback(
+	w http.ResponseWriter,
+	r *http.Request,
+	channel *catalog.LiveChannel,
+	channelID, originalURL, fallbackURL string,
+	start time.Time,
+	attempt *streamAttemptBuilder,
+	client *http.Client,
+	adaptReason, clientClass string,
+) (finalStatus, finalMode, finalEffectiveURL string, ok bool) {
+	if responseAlreadyStarted(w) {
+		return "", "", "", false
+	}
+	req, err := g.newUpstreamRequest(r.Context(), r, fallbackURL)
+	if err != nil {
+		fallbackIdx := attempt.addUpstream(0, fallbackURL, nil, false, false, false, false)
+		attempt.markUpstreamError(fallbackIdx, "ts_fallback_request_build_error", err)
+		return "", "", "", false
+	}
+	authApplied := req.Header.Get("Authorization") != ""
+	cookiesForwarded := req.Header.Get("Cookie") != ""
+	hostOverride := strings.TrimSpace(req.Host) != ""
+	userAgentOverride := strings.TrimSpace(req.Header.Get("User-Agent")) != "" && strings.TrimSpace(req.Header.Get("User-Agent")) != "IptvTunerr/1.0"
+	fallbackIdx := attempt.addUpstream(0, fallbackURL, requestHeaderSummary(req), authApplied, cookiesForwarded, hostOverride, userAgentOverride)
+	resp, err := client.Do(req)
+	if err != nil {
+		attempt.markUpstreamError(fallbackIdx, "ts_fallback_request_error", err)
+		g.noteUpstreamFailure(fallbackURL, 0, "ts_fallback_request_error")
+		return "", "", "", false
+	}
+	effectiveURL := streamEffectiveURL(fallbackURL, resp)
+	attempt.markUpstreamResponse(fallbackIdx, resp.StatusCode, resp.Header.Get("Content-Type"), effectiveURL)
+	if resp.StatusCode != http.StatusOK {
+		preview := readUpstreamErrorPreview(resp)
+		attempt.markUpstreamError(fallbackIdx, "ts_fallback_http_status", errors.New(sanitizeUpstreamPreviewForLog(preview)))
+		g.noteUpstreamFailure(fallbackURL, resp.StatusCode, "ts_fallback_http_status")
+		return "", "", "", false
+	}
+	ct := strings.ToLower(resp.Header.Get("Content-Type"))
+	looksLikeHTML := strings.Contains(ct, "text/html") || strings.Contains(ct, "application/xhtml")
+	if looksLikeHTML || (!strings.Contains(ct, "video/mp2t") && !strings.HasSuffix(strings.ToLower(effectiveURL), ".ts") && !strings.HasSuffix(strings.ToLower(fallbackURL), ".ts")) {
+		resp.Body.Close()
+		attempt.markUpstreamError(fallbackIdx, "ts_fallback_not_mpegts", nil)
+		g.noteUpstreamFailure(fallbackURL, resp.StatusCode, "ts_fallback_not_mpegts")
+		return "", "", "", false
+	}
+	log.Printf("gateway: channel=%q id=%s invalid HLS playlist on %s; retrying MPEG-TS fallback %s",
+		channel.GuideName, channelID, safeurl.RedactURL(originalURL), safeurl.RedactURL(fallbackURL))
+	if ct := strings.TrimSpace(resp.Header.Get("Content-Type")); ct != "" {
+		w.Header().Set("Content-Type", ct)
+	}
+	return g.relaySuccessfulRawUpstream(w, r, channel, channelID, fallbackURL, effectiveURL, start, adaptReason, clientClass, attempt, fallbackIdx, resp)
+}
+
 func (g *Gateway) relaySuccessfulRawUpstream(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -342,13 +426,39 @@ func (g *Gateway) relaySuccessfulRawUpstream(
 	ct := resp.Header.Get("Content-Type")
 	isMPEGTS := strings.Contains(ct, "video/mp2t") ||
 		strings.HasSuffix(strings.ToLower(streamURL), ".ts")
-	if isMPEGTS {
+	if isMPEGTS && !g.DisableFFmpeg && !shouldBypassFFmpegForRawMPEGTS(channel, streamURL) {
 		if ffmpegPath, ffmpegErr := resolveFFmpegPath(); ffmpegErr == nil {
 			if g.relayRawTSWithFFmpeg(w, r, ffmpegPath, resp.Body, channel.GuideName, channelID, resp.StatusCode, start, bufferSize) {
 				return "", "", "", true
 			}
 			log.Printf("gateway: channel=%q id=%s ffmpeg-ts-norm failed to launch; falling back to raw proxy", channel.GuideName, channelID)
 		}
+	}
+	if shouldBypassFFmpegForRawMPEGTS(channel, streamURL) {
+		first := make([]byte, 32*1024)
+		firstN, readErr := resp.Body.Read(first)
+		if firstN == 0 {
+			resp.Body.Close()
+			if readErr == nil {
+				readErr = io.EOF
+			}
+			attempt.markUpstreamError(attemptIdx, "raw_empty_body", readErr)
+			g.noteUpstreamFailure(streamURL, resp.StatusCode, "raw_empty_body")
+			log.Printf("gateway: channel=%q id=%s raw-empty-body url=%s ct=%q dur=%s err=%v",
+				channel.GuideName, channelID, safeurl.RedactURL(streamURL), ct, time.Since(start).Round(time.Millisecond), readErr)
+			return "", "", "", false
+		}
+		w.WriteHeader(resp.StatusCode)
+		sw, flush := streamWriter(w, bufferSize)
+		n, _ := sw.Write(first[:firstN])
+		copied, _ := io.Copy(sw, resp.Body)
+		resp.Body.Close()
+		flush()
+		total := int64(n) + copied
+		attempt.setBytesWritten(attemptIdx, total)
+		g.rememberAutopilotDecision(channel, clientClass, false, "", adaptReason, streamURL)
+		log.Printf("gateway: channel=%q id=%s proxied bytes=%d dur=%s", channel.GuideName, channelID, total, time.Since(start).Round(time.Millisecond))
+		return "ok", "raw_proxy", effectiveURL, true
 	}
 	w.WriteHeader(resp.StatusCode)
 	sw, flush := streamWriter(w, bufferSize)
@@ -359,4 +469,25 @@ func (g *Gateway) relaySuccessfulRawUpstream(
 	g.rememberAutopilotDecision(channel, clientClass, false, "", adaptReason, streamURL)
 	log.Printf("gateway: channel=%q id=%s proxied bytes=%d dur=%s", channel.GuideName, channelID, n, time.Since(start).Round(time.Millisecond))
 	return "ok", "raw_proxy", effectiveURL, true
+}
+
+func shouldBypassFFmpegForRawMPEGTS(channel *catalog.LiveChannel, streamURL string) bool {
+	if channel == nil {
+		return false
+	}
+	s := strings.ToLower(strings.TrimSpace(channel.GuideName) + " " + strings.TrimSpace(channel.GroupTitle) + " " + strings.TrimSpace(channel.SourceTag))
+	return strings.Contains(s, "peacock") && streamURLHasPathSuffix(streamURL, ".ts")
+}
+
+func shouldOmitAuthorizationForRawMPEGTS(channel *catalog.LiveChannel, streamURL string) bool {
+	return shouldBypassFFmpegForRawMPEGTS(channel, streamURL)
+}
+
+func streamURLHasPathSuffix(streamURL, suffix string) bool {
+	streamURL = strings.TrimSpace(streamURL)
+	cut := len(streamURL)
+	if idx := strings.IndexAny(streamURL, "?#"); idx >= 0 {
+		cut = idx
+	}
+	return strings.HasSuffix(strings.ToLower(streamURL[:cut]), strings.ToLower(suffix))
 }

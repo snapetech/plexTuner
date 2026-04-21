@@ -536,7 +536,7 @@ func (g *Gateway) ProviderBehaviorProfile() ProviderBehaviorProfile {
 	g.providerStateMu.Unlock()
 	accountLeases := g.providerAccountLeases()
 	accountLearnedLimits := g.providerAccountLearnedLimits()
-	accountPoolLimit := configuredProviderAccountLimit()
+	accountPoolLimit := g.configuredOrDerivedProviderAccountLimit()
 
 	prof := ProviderBehaviorProfile{
 		ConfiguredTunerLimit:  configured,

@@ -460,6 +460,15 @@ func TestStreamTranscodeMode(t *testing.T) {
 	}
 }
 
+func TestTunerCountAuto(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("IPTV_TUNERR_TUNER_COUNT", "auto")
+	c := Load()
+	if c.TunerCount != -1 {
+		t.Fatalf("TunerCount=%d want -1 for auto", c.TunerCount)
+	}
+}
+
 func TestHDHRConfig(t *testing.T) {
 	os.Clearenv()
 	c := Load()

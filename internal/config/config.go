@@ -191,7 +191,7 @@ func Load() *Config {
 		CacheDir:                    getEnv("IPTV_TUNERR_CACHE", "/var/cache/iptvtunerr"),
 		CatalogPath:                 getEnv("IPTV_TUNERR_CATALOG", "./catalog.json"),
 		VODFSAllowOther:             getEnvBool("IPTV_TUNERR_VODFS_ALLOW_OTHER", false),
-		TunerCount:                  getEnvInt("IPTV_TUNERR_TUNER_COUNT", 2),
+		TunerCount:                  getEnvIntOrAuto("IPTV_TUNERR_TUNER_COUNT", 2),
 		LineupMaxChannels:           getEnvInt("IPTV_TUNERR_LINEUP_MAX_CHANNELS", 480),
 		GuideNumberOffset:           getEnvInt("IPTV_TUNERR_GUIDE_NUMBER_OFFSET", 0),
 		BaseURL:                     os.Getenv("IPTV_TUNERR_BASE_URL"),
@@ -271,7 +271,7 @@ func Load() *Config {
 	if c.EpgSQLiteRetainPastHours < 0 {
 		c.EpgSQLiteRetainPastHours = 0
 	}
-	if c.TunerCount <= 0 {
+	if c.TunerCount == 0 || c.TunerCount < -1 {
 		c.TunerCount = 2
 	}
 	if c.SmoketestConcurrency <= 0 {

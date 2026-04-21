@@ -52,9 +52,9 @@ spec:
             - name: IPTV_TUNERR_LIVE_ONLY
               value: "true"
             - name: IPTV_TUNERR_TUNER_COUNT
-              value: "1"
+              value: auto
             - name: IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT
-              value: "1"
+              value: auto
             - name: IPTV_TUNERR_PROVIDER_ACCOUNT_SHARED_LEASE_DIR
               value: /var/lib/iptvtunerr/provider-account-leases
             - name: IPTV_TUNERR_PROVIDER_ACCOUNT_SHARED_LEASE_TTL
@@ -62,9 +62,13 @@ spec:
             - name: IPTV_TUNERR_PROVIDER_ACCOUNT_SHARED_LEASE_OWNER
               value: iptvtunerr-sports
             - name: IPTV_TUNERR_UPSTREAM_RETRY_LIMIT
-              value: "0"
+              value: "2"
+            - name: IPTV_TUNERR_UPSTREAM_RETRY_BACKOFF_MS
+              value: "1000"
             - name: IPTV_TUNERR_HLS_PLAYLIST_RETRY_LIMIT
-              value: "0"
+              value: "2"
+            - name: IPTV_TUNERR_HLS_PLAYLIST_RETRY_BACKOFF_MS
+              value: "1000"
             - name: PLEX_HOST
               value: 192.168.50.148:32400
             - name: IPTV_TUNERR_LINEUP_RECIPE
@@ -82,7 +86,35 @@ spec:
             - name: IPTV_TUNERR_XMLTV_PLEX_SAFE_IDS
               value: "true"
             - name: IPTV_TUNERR_GUIDE_POLICY
-              value: healthy
+              value: "off"
+            - name: IPTV_TUNERR_LINEUP_PROBE_ENABLED
+              value: "true"
+            - name: IPTV_TUNERR_LINEUP_PROBE_TIMEOUT
+              value: 3s
+            - name: IPTV_TUNERR_LINEUP_PROBE_CONCURRENCY
+              value: "4"
+            - name: IPTV_TUNERR_LINEUP_PROBE_MAX_DURATION
+              value: 60s
+            - name: IPTV_TUNERR_LINEUP_PROBE_CACHE_FILE
+              value: /var/cache/iptvtunerr/sports-lineup-probe.json
+            - name: IPTV_TUNERR_LINEUP_PROBE_CACHE_TTL
+              value: 10m
+            - name: IPTV_TUNERR_LINEUP_VISUAL_PROBE
+              value: event
+            - name: IPTV_TUNERR_LINEUP_VISUAL_PROBE_SAMPLE
+              value: 4s
+            - name: IPTV_TUNERR_LINEUP_VISUAL_PROBE_TIMEOUT
+              value: 9s
+            - name: IPTV_TUNERR_LINEUP_VISUAL_PROBE_CONCURRENCY
+              value: "1"
+            - name: IPTV_TUNERR_LINEUP_VISUAL_PROBE_MAX_FEEDS
+              value: "12"
+            - name: IPTV_TUNERR_LINEUP_VISUAL_PROBE_MAX_DURATION
+              value: 45s
+            - name: IPTV_TUNERR_LINEUP_VISUAL_PROBE_CACHE_FILE
+              value: /var/cache/iptvtunerr/sports-lineup-probe.visual.json
+            - name: IPTV_TUNERR_LINEUP_VISUAL_PROBE_CACHE_TTL
+              value: 30m
             - name: IPTV_TUNERR_PROVIDER_URL
               value: http://line.dambora.xyz
             - name: IPTV_TUNERR_PROVIDER_USER

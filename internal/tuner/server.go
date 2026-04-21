@@ -284,6 +284,12 @@ func (s *Server) UpdateChannels(live []catalog.LiveChannel) {
 
 func (s *Server) setExposedChannels(live []catalog.LiveChannel) {
 	summary := summarizeLineupIntegrity(live)
+	if tunerCountAutoConfigured() {
+		s.TunerCount = lineupFeedCapacity(live)
+		if s.TunerCount < 1 {
+			s.TunerCount = 1
+		}
+	}
 	s.Channels = live
 	s.healthMu.Lock()
 	s.healthChannels = len(live)
@@ -291,9 +297,11 @@ func (s *Server) setExposedChannels(live []catalog.LiveChannel) {
 	s.healthMu.Unlock()
 	if s.hdhr != nil {
 		s.hdhr.Channels = live
+		s.hdhr.TunerCount = s.TunerCount
 	}
 	if s.gateway != nil {
 		s.gateway.Channels = live
+		s.gateway.TunerCount = s.TunerCount
 	}
 	if s.xmltv != nil {
 		s.xmltv.Channels = live
@@ -339,6 +347,28 @@ func (s *Server) setExposedChannels(live []catalog.LiveChannel) {
 			"lineup_max_channels":     s.LineupMaxChannels,
 		})
 	}
+}
+
+func tunerCountAutoConfigured() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("IPTV_TUNERR_TUNER_COUNT")), "auto")
+}
+
+func lineupFeedCapacity(live []catalog.LiveChannel) int {
+	seen := map[string]struct{}{}
+	for _, ch := range live {
+		urls := ch.StreamURLs
+		if len(urls) == 0 && strings.TrimSpace(ch.StreamURL) != "" {
+			urls = []string{ch.StreamURL}
+		}
+		for _, raw := range urls {
+			u := strings.TrimSpace(raw)
+			if u == "" {
+				continue
+			}
+			seen[u] = struct{}{}
+		}
+	}
+	return len(seen)
 }
 
 func (s *Server) reapplyDeferredGuidePolicyAfterGuideHealthReady() {
@@ -498,6 +528,7 @@ func (s *Server) curateChannelsFromRaw(live []catalog.LiveChannel) ([]catalog.Li
 		}
 	}
 	live = applyGuideNumberOffset(live, s.GuideNumberOffset)
+	live = applyLineupProbeFilter(live)
 	source := cloneLiveChannels(live)
 	if s.xmltv != nil {
 		live = s.xmltv.applyGuidePolicyToChannels(live, os.Getenv("IPTV_TUNERR_GUIDE_POLICY"))
@@ -1047,11 +1078,51 @@ func ApplyNamedLineupRecipe(live []catalog.LiveChannel, recipe string) []catalog
 	})
 
 	out := make([]catalog.LiveChannel, 0, len(rows))
+	carriageByNetwork := map[string]int{}
 	for _, row := range rows {
-		out = append(out, row.ch)
+		ch := row.ch
+		if recipe == "sports_na" {
+			if network := lineupRecipeNorthAmericanSportsCarriageNetwork(ch); network != "" {
+				if carriageByNetwork[network] >= 12 {
+					continue
+				}
+				carriageByNetwork[network]++
+			}
+			ch = normalizeSportsNAEventStreamURL(ch)
+		}
+		out = append(out, ch)
 	}
 	log.Printf("Lineup recipe applied: recipe=%s kept=%d/%d", recipe, len(out), len(live))
 	return out
+}
+
+func normalizeSportsNAEventStreamURL(ch catalog.LiveChannel) catalog.LiveChannel {
+	s := lineupRecipeSearchText(ch)
+	if !strings.Contains(s, "peacock") {
+		return ch
+	}
+	if fallback, ok := hlsTSFallbackURL(ch.StreamURL); ok {
+		ch.StreamURL = fallback
+	}
+	if len(ch.StreamURLs) > 0 {
+		out := make([]string, 0, len(ch.StreamURLs))
+		seen := map[string]bool{}
+		for _, raw := range ch.StreamURLs {
+			u := strings.TrimSpace(raw)
+			if fallback, ok := hlsTSFallbackURL(u); ok {
+				u = fallback
+			}
+			if u == "" || seen[u] {
+				continue
+			}
+			seen[u] = true
+			out = append(out, u)
+		}
+		ch.StreamURLs = out
+	} else if strings.TrimSpace(ch.StreamURL) != "" {
+		ch.StreamURLs = []string{ch.StreamURL}
+	}
+	return ch
 }
 
 func lineupRecipeSportsLike(ch catalog.LiveChannel) bool {
@@ -1089,10 +1160,21 @@ func lineupLooksLikeSportsChannel(ch catalog.LiveChannel) bool {
 }
 
 func lineupRecipeNorthAmericanSportsScore(ch catalog.LiveChannel) int {
-	if !lineupRecipeSportsLike(ch) {
+	eventScore := lineupRecipeNorthAmericanSportsEventScore(ch)
+	carriageScore := lineupRecipeNorthAmericanSportsCarriageScore(ch)
+	if !lineupRecipeSportsLike(ch) && eventScore == 0 && carriageScore == 0 {
 		return 0
 	}
 	s := lineupRecipeSearchText(ch)
+	if eventScore == 0 {
+		for _, blocked := range []string{
+			" team|", " sportsnet ppv", " ppv",
+		} {
+			if strings.Contains(s, blocked) {
+				return 0
+			}
+		}
+	}
 	score := 0
 	tvgid := strings.ToLower(strings.TrimSpace(ch.TVGID))
 	switch {
@@ -1101,10 +1183,18 @@ func lineupRecipeNorthAmericanSportsScore(ch catalog.LiveChannel) int {
 	case strings.HasSuffix(tvgid, ".us"):
 		score += 120
 	default:
-		if scoreLineupChannelForShape("na_en", strings.ToLower(strings.TrimSpace(os.Getenv("IPTV_TUNERR_LINEUP_REGION_PROFILE"))), ch) < 40 {
+		if eventScore > 0 {
+			score += eventScore
+		} else if carriageScore > 0 {
+			score += carriageScore
+		} else if scoreLineupChannelForShape("na_en", strings.ToLower(strings.TrimSpace(os.Getenv("IPTV_TUNERR_LINEUP_REGION_PROFILE"))), ch) < 40 {
 			return 0
+		} else {
+			score += 40
 		}
-		score += 40
+	}
+	if tvgid != "" || eventScore > 0 {
+		score += carriageScore
 	}
 	for _, term := range []string{
 		" tsn", " sportsnet", " sn ", " espn", " espnews", " espnu", " sec network", " acc network",
@@ -1128,6 +1218,138 @@ func lineupRecipeNorthAmericanSportsScore(ch catalog.LiveChannel) int {
 		}
 	}
 	return score
+}
+
+func lineupRecipeNorthAmericanSportsCarriageScore(ch catalog.LiveChannel) int {
+	switch lineupRecipeNorthAmericanSportsCarriageNetwork(ch) {
+	case "abc", "nbc":
+		return 95
+	default:
+		return 0
+	}
+}
+
+func lineupRecipeNorthAmericanSportsCarriageNetwork(ch catalog.LiveChannel) string {
+	if !ch.EPGLinked {
+		return ""
+	}
+	s := lineupRecipeSearchText(ch)
+	for _, blocked := range []string{
+		" abc news", " nbc news", " msnbc", " cnbc",
+	} {
+		if strings.Contains(s, blocked) {
+			return ""
+		}
+	}
+	naSource := strings.Contains(s, " us|") || strings.Contains(s, " ca|") ||
+		strings.HasSuffix(strings.ToLower(strings.TrimSpace(ch.TVGID)), ".us") ||
+		strings.HasSuffix(strings.ToLower(strings.TrimSpace(ch.TVGID)), ".ca")
+	if !naSource {
+		return ""
+	}
+	switch {
+	case strings.Contains(s, " abc "):
+		return "abc"
+	case strings.Contains(s, " nbc ") && !strings.Contains(s, " nbc sports"):
+		return "nbc"
+	default:
+		return ""
+	}
+}
+
+func lineupRecipeNorthAmericanSportsEventScore(ch catalog.LiveChannel) int {
+	s := lineupRecipeSearchText(ch)
+	if strings.Contains(s, " no event streaming ") || strings.Contains(s, "#####") || strings.Contains(s, " ended |") || strings.Contains(s, " nfhs ") {
+		return 0
+	}
+	naSource := false
+	for _, term := range []string{
+		" us|", " us (", " us:", " ca|", " ca (", " ca:", " tsn+", " peacock ",
+	} {
+		if strings.Contains(s, term) {
+			naSource = true
+			break
+		}
+	}
+	if !naSource {
+		return 0
+	}
+	nbaContext := strings.Contains(s, " nba") || strings.Contains(s, " wnba") || strings.Contains(s, " basketball")
+	eventStyle := strings.Contains(s, " vs ") || strings.Contains(s, " vs. ") || strings.Contains(s, " @ ") || strings.Contains(s, " game ")
+	matchup := false
+	if eventStyle {
+		for _, term := range []string{
+			"raptors", "cavaliers", "nuggets", "timberwolves", "knicks", "hawks", "lakers", "rockets",
+			"celtics", "76ers", "sixers", "thunder", "suns", "pistons", "bucks", "pacers", "grizzlies",
+			"warriors", "clippers", "mavericks", "spurs", "pelicans", "kings", "trail blazers", "jazz",
+			"hornets", "wizards", "nets", "bulls", "heat", "magic",
+		} {
+			if strings.Contains(s, term) {
+				matchup = true
+				break
+			}
+		}
+	}
+	if !nbaContext && !matchup {
+		return 0
+	}
+	if eventTime, ok := lineupRecipeSportsEventTime(ch); ok {
+		now := timeNow().UTC()
+		if eventTime.After(now.Add(lineupRecipeSportsEventFutureWindow())) || eventTime.Before(now.Add(-lineupRecipeSportsEventPastWindow())) {
+			return 0
+		}
+	}
+	score := 105
+	if strings.Contains(s, " nba pass ppv") || strings.Contains(s, " league pass") {
+		score += 35
+	}
+	if strings.Contains(s, " tsn+") || strings.Contains(s, "peacock") {
+		score += 25
+	}
+	if eventStyle {
+		score += 20
+	}
+	if strings.Contains(s, " next |") {
+		score += 10
+	}
+	return score
+}
+
+var lineupRecipeSportsEventTimeRE = regexp.MustCompile(`\((\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\)`)
+
+func lineupRecipeSportsEventTime(ch catalog.LiveChannel) (time.Time, bool) {
+	text := strings.TrimSpace(ch.GuideName)
+	m := lineupRecipeSportsEventTimeRE.FindStringSubmatch(text)
+	if len(m) != 2 {
+		return time.Time{}, false
+	}
+	t, err := time.ParseInLocation("2006-01-02 15:04:05", m[1], time.UTC)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t.UTC(), true
+}
+
+func lineupRecipeSportsEventFutureWindow() time.Duration {
+	return lineupRecipeSportsEventWindowFromEnv("IPTV_TUNERR_SPORTS_EVENT_FUTURE_WINDOW", 4*time.Hour)
+}
+
+func lineupRecipeSportsEventPastWindow() time.Duration {
+	return lineupRecipeSportsEventWindowFromEnv("IPTV_TUNERR_SPORTS_EVENT_PAST_WINDOW", 150*time.Minute)
+}
+
+func lineupRecipeSportsEventWindowFromEnv(name string, fallback time.Duration) time.Duration {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback
+	}
+	if d, err := time.ParseDuration(raw); err == nil && d >= 0 {
+		return d
+	}
+	if hours, err := strconv.ParseFloat(raw, 64); err == nil && hours >= 0 {
+		return time.Duration(hours * float64(time.Hour))
+	}
+	return 4 * time.Hour
 }
 
 func lineupRecipeKidsSafe(ch catalog.LiveChannel) bool {

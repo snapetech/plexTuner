@@ -13,6 +13,16 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.49] — 2026-04-21
+
+### Sports DVR / live feed health
+- **Sports lineups now probe feeds before Plex sees them:** the sports DVR can run a runtime lineup probe before `lineup.json` / `guide.xml` are exposed, pruning bad individual stream URLs and dropping channels only when no feed survives. The fast probe rejects failed HTTP/HLS responses, zero-byte direct streams, and obvious provider placeholders such as `black.ts` / `blank.ts`.
+- **Visual black-screen probing is available for event feeds:** `IPTV_TUNERR_LINEUP_VISUAL_PROBE=event` runs a bounded ffmpeg `blackdetect` pass after the fast probe for high-risk sports/event rows, catching visually black/slate streams that still return valid MPEG-TS bytes.
+- **Sports capacity now follows valid surviving feeds:** `IPTV_TUNERR_TUNER_COUNT=auto` and `IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT=auto` derive capacity from unique surviving feed URLs after lineup probing, so Plex sees multi-stream capacity based on real available feeds instead of a static clamp.
+- **`sports_na` now includes current NBA/event and broadcast carriage rows more safely:** NBA/WNBA event feeds, TSN+, NBA Pass PPV, and capped ABC/NBC carriage rows are included while far-future/stale events, generic PPV/team slates, NFHS/ENDED rows, and news-only ABC/NBC rows are kept out.
+- **Peacock event handling now fails cleanly when upstream is empty:** Peacock `.m3u8` rows are normalized to `.ts`, raw Peacock MPEG-TS bypasses ffmpeg, extra Basic auth is omitted for Peacock `.ts`, and zero-byte Peacock bodies fail before Plex receives a committed `200`.
+- **Cluster sports deployment enables the bounded probes:** the live sports deployment uses fast probe concurrency `4` with a `60s` cap and event visual probing with a `4s` sample, `9s` timeout, concurrency `1`, and `45s` cap. Live validation showed the visual pass catching additional black/slate event rows with a manageable cold-start delay.
+
 ### Guide / EPG
 - **Guide health now understands Plex-safe XMLTV IDs:** `/guide/health.json` and cached guide policy state now evaluate the actual emitted XMLTV channel IDs when `IPTV_TUNERR_XMLTV_PLEX_SAFE_IDS=true`, instead of incorrectly looking up guide numbers and marking valid Plex-safe guides as unlinked.
 - **Provider short EPG can now fill sparse channels:** `IPTV_TUNERR_PROVIDER_SHORT_EPG_FALLBACK=true` now uses `player_api.php?action=get_short_epg` for channels whose merged provider/external/HDHR guide has fewer than `IPTV_TUNERR_PROVIDER_SHORT_EPG_MIN_PROGRAMMES` real rows, not only when provider `xmltv.php` is completely unavailable.

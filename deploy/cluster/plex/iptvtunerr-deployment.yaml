@@ -52,9 +52,9 @@ spec:
             - name: IPTV_TUNERR_LIVE_ONLY
               value: "true"
             - name: IPTV_TUNERR_TUNER_COUNT
-              value: "1"
+              value: "2"
             - name: IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT
-              value: "1"
+              value: "2"
             - name: IPTV_TUNERR_PROVIDER_ACCOUNT_SHARED_LEASE_DIR
               value: /var/lib/iptvtunerr/provider-account-leases
             - name: IPTV_TUNERR_PROVIDER_ACCOUNT_SHARED_LEASE_TTL
@@ -62,9 +62,13 @@ spec:
             - name: IPTV_TUNERR_PROVIDER_ACCOUNT_SHARED_LEASE_OWNER
               value: iptvtunerr-primary
             - name: IPTV_TUNERR_UPSTREAM_RETRY_LIMIT
-              value: "0"
+              value: "2"
+            - name: IPTV_TUNERR_UPSTREAM_RETRY_BACKOFF_MS
+              value: "1000"
             - name: IPTV_TUNERR_HLS_PLAYLIST_RETRY_LIMIT
-              value: "0"
+              value: "2"
+            - name: IPTV_TUNERR_HLS_PLAYLIST_RETRY_BACKOFF_MS
+              value: "1000"
             - name: PLEX_HOST
               value: 192.168.50.148:32400
             - name: IPTV_TUNERR_LINEUP_MAX_CHANNELS

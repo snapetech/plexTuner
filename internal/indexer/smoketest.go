@@ -3,6 +3,7 @@ package indexer
 import (
 	"bufio"
 	"context"
+	"io"
 	"math/rand"
 	"net/http"
 	"strings"
@@ -108,7 +109,7 @@ func FilterLiveBySmoketestWithCache(live []catalog.LiveChannel, cache SmoketestC
 				return
 			}
 			defer func() { <-sem }()
-			pass := probeStream(ctx, primary, client, timeout)
+			pass := ProbeStream(ctx, primary, client, timeout)
 			mu.Lock()
 			cache[primary] = smoketestEntry{Pass: pass, At: time.Now()}
 			if pass {
@@ -130,8 +131,129 @@ func FilterLiveBySmoketestWithCache(live []catalog.LiveChannel, cache SmoketestC
 	return result
 }
 
-// probeStream returns true if the URL responds; uses Range for non-HLS (first 4K only), playlist GET for HLS.
-func probeStream(ctx context.Context, streamURL string, client *http.Client, timeout time.Duration) bool {
+// FilterLiveByFeedSmoketestWithCache probes every stream URL on each channel,
+// prunes failing feed URLs, and keeps a channel when at least one feed passes.
+// Unprobed URLs are kept if the global duration cap is reached before they run.
+func FilterLiveByFeedSmoketestWithCache(live []catalog.LiveChannel, cache SmoketestCache, cacheTTL time.Duration, client *http.Client, timeout time.Duration, concurrency int, maxFeeds int, maxDuration time.Duration) []catalog.LiveChannel {
+	if len(live) == 0 {
+		return live
+	}
+	if cache == nil {
+		cache = make(SmoketestCache)
+	}
+	if client == nil {
+		client = httpclient.WithTimeout(timeout)
+	}
+	if concurrency <= 0 {
+		concurrency = 10
+	}
+	if timeout <= 0 {
+		timeout = 8 * time.Second
+	}
+	if maxDuration <= 0 {
+		maxDuration = 5 * time.Minute
+	}
+
+	seen := make(map[string]struct{})
+	var urls []string
+	for _, ch := range live {
+		for _, raw := range liveChannelStreamURLs(ch) {
+			u := strings.TrimSpace(raw)
+			if u == "" || !safeurl.IsHTTPOrHTTPS(u) {
+				continue
+			}
+			if _, ok := seen[u]; ok {
+				continue
+			}
+			seen[u] = struct{}{}
+			urls = append(urls, u)
+		}
+	}
+	if maxFeeds > 0 && len(urls) > maxFeeds {
+		urls = urls[:maxFeeds]
+	}
+
+	type probeResult struct {
+		pass  bool
+		known bool
+	}
+	results := make(map[string]probeResult, len(urls))
+	var needProbe []string
+	for _, u := range urls {
+		if cacheTTL > 0 {
+			if pass, fresh := cache.IsFresh(u, cacheTTL); fresh {
+				results[u] = probeResult{pass: pass, known: true}
+				continue
+			}
+		}
+		needProbe = append(needProbe, u)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), maxDuration)
+	defer cancel()
+
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	for _, u := range needProbe {
+		streamURL := u
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			defer func() { <-sem }()
+			pass := ProbeStream(ctx, streamURL, client, timeout)
+			mu.Lock()
+			cache[streamURL] = smoketestEntry{Pass: pass, At: time.Now()}
+			results[streamURL] = probeResult{pass: pass, known: true}
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+
+	out := make([]catalog.LiveChannel, 0, len(live))
+	for _, ch := range live {
+		original := liveChannelStreamURLs(ch)
+		var kept []string
+		for _, raw := range original {
+			u := strings.TrimSpace(raw)
+			if u == "" || !safeurl.IsHTTPOrHTTPS(u) {
+				continue
+			}
+			r, ok := results[u]
+			if !ok || !r.known || r.pass {
+				kept = append(kept, u)
+			}
+		}
+		if len(kept) == 0 {
+			continue
+		}
+		next := ch
+		next.StreamURL = kept[0]
+		next.StreamURLs = kept
+		out = append(out, next)
+	}
+	return out
+}
+
+func liveChannelStreamURLs(ch catalog.LiveChannel) []string {
+	if len(ch.StreamURLs) > 0 {
+		return ch.StreamURLs
+	}
+	if strings.TrimSpace(ch.StreamURL) != "" {
+		return []string{ch.StreamURL}
+	}
+	return nil
+}
+
+// ProbeStream returns true if the URL responds with a plausible stream or HLS
+// playlist. It rejects empty direct streams and obvious provider black/slate
+// redirect targets such as /video/black.ts.
+func ProbeStream(ctx context.Context, streamURL string, client *http.Client, timeout time.Duration) bool {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, streamURL, nil)
 	if err != nil {
 		return false
@@ -155,6 +277,9 @@ func probeStream(ctx context.Context, streamURL string, client *http.Client, tim
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
 		return false
 	}
+	if isObviousPlaceholderStreamURL(resp.Request.URL.String()) {
+		return false
+	}
 	ct := strings.ToLower(resp.Header.Get("Content-Type"))
 	if strings.Contains(ct, "mpegurl") || strings.Contains(ct, "m3u8") || isHLS {
 		// HLS: read first few KB and check for #EXTM3U or #EXTINF
@@ -162,6 +287,9 @@ func probeStream(ctx context.Context, streamURL string, client *http.Client, tim
 		sc.Buffer(nil, 64*1024)
 		for sc.Scan() {
 			line := strings.TrimSpace(sc.Text())
+			if isObviousPlaceholderStreamURL(line) {
+				return false
+			}
 			if line == "#EXTM3U" || strings.HasPrefix(line, "#EXTINF") {
 				return true
 			}
@@ -171,6 +299,20 @@ func probeStream(ctx context.Context, streamURL string, client *http.Client, tim
 		}
 		return false
 	}
-	// Non-HLS: 200/206 is enough (we only requested first 4K)
-	return true
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if err != nil {
+		return false
+	}
+	return len(body) > 0
+}
+
+func isObviousPlaceholderStreamURL(raw string) bool {
+	u := strings.ToLower(strings.TrimSpace(raw))
+	if u == "" {
+		return false
+	}
+	return strings.Contains(u, "/black.ts") ||
+		strings.HasSuffix(u, "black.ts") ||
+		strings.Contains(u, "/blank.ts") ||
+		strings.HasSuffix(u, "blank.ts")
 }

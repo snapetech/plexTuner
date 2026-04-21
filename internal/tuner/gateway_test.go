@@ -1169,6 +1169,114 @@ func TestGateway_stream_invalidHLSPlaylistFallsBackToBackup(t *testing.T) {
 	}
 }
 
+func TestGateway_stream_invalidHLSPlaylistFallsBackToTSVariant(t *testing.T) {
+	var tsHits atomic.Int32
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/live/event.m3u8":
+			w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+			w.WriteHeader(http.StatusOK)
+		case "/live/event.ts":
+			tsHits.Add(1)
+			w.Header().Set("Content-Type", "video/mp2t")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("fallback-ts"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer up.Close()
+
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "1", GuideName: "Peacock Event", StreamURL: up.URL + "/live/event.m3u8?token=keep"},
+		},
+		TunerCount:    2,
+		DisableFFmpeg: true,
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code: %d body=%q", w.Code, w.Body.String())
+	}
+	if got := w.Body.String(); got != "fallback-ts" {
+		t.Fatalf("body: %q", got)
+	}
+	if got := tsHits.Load(); got != 1 {
+		t.Fatalf("ts hits=%d want 1", got)
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "video/mp2t") {
+		t.Fatalf("content-type=%q", ct)
+	}
+}
+
+func TestGateway_stream_peacockTSZeroBytesFailsBeforeResponse(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/mp2t")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer up.Close()
+
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "1", GuideName: "US (Peacock 031) | Game 3: Pistons vs. Magic", StreamURL: up.URL + "/live/event.ts"},
+		},
+		TunerCount:    2,
+		DisableFFmpeg: false,
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0", nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("code=%d body=%q", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "All upstreams failed") {
+		t.Fatalf("body=%q", w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "video/mp2t") {
+		t.Fatalf("unexpected committed stream body: %q", w.Body.String())
+	}
+}
+
+func TestHLSTSFallbackURL(t *testing.T) {
+	got, ok := hlsTSFallbackURL("http://provider.example/live/u/p/1910860.m3u8?token=abc#frag")
+	if !ok {
+		t.Fatal("expected fallback URL")
+	}
+	want := "http://provider.example/live/u/p/1910860.ts?token=abc#frag"
+	if got != want {
+		t.Fatalf("fallback=%q want %q", got, want)
+	}
+	if got, ok := hlsTSFallbackURL("http://provider.example/live/u/p/1910860.ts"); ok || got != "" {
+		t.Fatalf("unexpected fallback=%q ok=%t", got, ok)
+	}
+}
+
+func TestShouldBypassFFmpegForRawMPEGTS_Peacock(t *testing.T) {
+	ch := &catalog.LiveChannel{GuideName: "US (Peacock 017) | Game 2: Rockets vs. Lakers"}
+	if !shouldBypassFFmpegForRawMPEGTS(ch, "http://provider.example/live/u/p/1910860.ts?token=abc") {
+		t.Fatal("expected Peacock TS to bypass ffmpeg")
+	}
+	if shouldBypassFFmpegForRawMPEGTS(ch, "http://provider.example/live/u/p/1910860.m3u8") {
+		t.Fatal("did not expect Peacock HLS to bypass ffmpeg")
+	}
+	if shouldBypassFFmpegForRawMPEGTS(&catalog.LiveChannel{GuideName: "US| ESPN HD"}, "http://provider.example/live/u/p/1.ts") {
+		t.Fatal("did not expect non-Peacock TS to bypass ffmpeg")
+	}
+}
+
+func TestGateway_applyUpstreamRequestHeaders_omitsAuthForPeacockTS(t *testing.T) {
+	ch := &catalog.LiveChannel{GuideName: "US (Peacock 017) | Game 2: Rockets vs. Lakers"}
+	g := &Gateway{ProviderUser: "u1", ProviderPass: "p1"}
+	req := httptest.NewRequest(http.MethodGet, "http://provider.example/live/u1/p1/1910860.ts", nil)
+	req = req.WithContext(context.WithValue(req.Context(), gatewayChannelKey{}, ch))
+	g.applyUpstreamRequestHeaders(req, nil)
+	if got := req.Header.Get("Authorization"); got != "" {
+		t.Fatalf("Authorization=%q want empty", got)
+	}
+}
+
 func TestGateway_stream_prefersAutopilotRememberedURL(t *testing.T) {
 	hits := []string{}
 	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2433,6 +2541,24 @@ func TestGateway_learnsUpstreamConcurrencyLimitAndRejectsLocally(t *testing.T) {
 	}
 	if hits != 1 {
 		t.Fatalf("upstream hits=%d want=1", hits)
+	}
+}
+
+func TestGateway_providerAccountLimitAutoUsesLineupFeedCapacity(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT", "auto")
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "1", GuideName: "Ch1", StreamURL: "http://example.test/live/u/p/1.m3u8", StreamURLs: []string{"http://example.test/live/u/p/1.m3u8", "http://backup.test/live/u/p/1.m3u8"}},
+			{GuideNumber: "2", GuideName: "Ch2", StreamURL: "http://example.test/live/u/p/2.m3u8", StreamURLs: []string{"http://example.test/live/u/p/2.m3u8"}},
+		},
+		TunerCount: 3,
+	}
+	prof := g.ProviderBehaviorProfile()
+	if prof.AccountPoolLimit != 3 {
+		t.Fatalf("account_pool_limit=%d want 3", prof.AccountPoolLimit)
+	}
+	if !prof.AccountPoolConfigured {
+		t.Fatal("expected account pool to be configured")
 	}
 }
 

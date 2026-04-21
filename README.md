@@ -1294,6 +1294,11 @@ Full reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-a
 | `IPTV_TUNERR_LINEUP_DEDUPE` | Optional pre-cap strong duplicate collapse (`stable`/`identity`/`strong`/`true`); keeps the best representative for matching `tvg-id` or normalized channel names |
 | `IPTV_TUNERR_LINEUP_EXCLUDE_CHANNEL_IDS` | Comma/space-separated exact channel IDs, guide numbers, or `tvg-id`s to remove before final lineup shaping |
 | `IPTV_TUNERR_LINEUP_SKIP` / `IPTV_TUNERR_LINEUP_TAKE` | Slice lineup for overflow DVR shards |
+| `IPTV_TUNERR_LINEUP_PROBE_ENABLED` | Probe the final exposed lineup before serving `lineup.json`/`guide.xml`; prunes failing feed URLs and drops channels with no valid feeds |
+| `IPTV_TUNERR_LINEUP_PROBE_TIMEOUT` / `IPTV_TUNERR_LINEUP_PROBE_CONCURRENCY` / `IPTV_TUNERR_LINEUP_PROBE_MAX_DURATION` | Runtime lineup probe controls; defaults are `3s`, `2`, and `2m` |
+| `IPTV_TUNERR_LINEUP_PROBE_CACHE_FILE` / `IPTV_TUNERR_LINEUP_PROBE_CACHE_TTL` | Optional runtime lineup probe cache; default TTL is `10m` |
+| `IPTV_TUNERR_LINEUP_VISUAL_PROBE` | Optional ffmpeg black-frame probe after the fast lineup probe; `event` checks high-risk sports/event feeds, `all` checks every exposed feed |
+| `IPTV_TUNERR_LINEUP_VISUAL_PROBE_SAMPLE` / `IPTV_TUNERR_LINEUP_VISUAL_PROBE_CONCURRENCY` / `IPTV_TUNERR_LINEUP_VISUAL_PROBE_MAX_FEEDS` / `IPTV_TUNERR_LINEUP_VISUAL_PROBE_MAX_DURATION` | Visual probe controls; defaults are `4s`, `1`, `12`, and `90s` |
 | `IPTV_TUNERR_LIVE_EPG_ONLY` | Only include channels with a `tvg-id` |
 
 ### Streaming

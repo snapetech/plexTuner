@@ -300,6 +300,9 @@ func (g *Gateway) applyUpstreamRequestHeaders(req *http.Request, incoming *http.
 	if authUser != "" || authPass != "" {
 		req.SetBasicAuth(authUser, authPass)
 	}
+	if shouldOmitAuthorizationForRawMPEGTS(gatewayChannelFromContext(req.Context()), req.URL.String()) {
+		req.Header.Del("Authorization")
+	}
 	if host, ok := g.customHeaderValue("Host"); ok {
 		req.Host = host
 	}

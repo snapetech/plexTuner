@@ -5427,25 +5427,179 @@ func TestApplyLineupPreCapFilters_lineupRecipeResilient(t *testing.T) {
 	}
 }
 
+func TestServer_UpdateChannels_autoTunerCountUsesUniqueStreamURLs(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_TUNER_COUNT", "auto")
+	s := &Server{TunerCount: -1}
+	s.UpdateChannels([]catalog.LiveChannel{
+		{ChannelID: "1", GuideName: "One", GuideNumber: "1", StreamURL: "http://a/1", StreamURLs: []string{"http://a/1", "http://b/1"}},
+		{ChannelID: "2", GuideName: "Two", GuideNumber: "2", StreamURL: "http://a/2", StreamURLs: []string{"http://a/2", "http://a/1"}},
+	})
+	if s.TunerCount != 3 {
+		t.Fatalf("TunerCount=%d want 3", s.TunerCount)
+	}
+}
+
+func TestServer_UpdateChannels_lineupProbePrunesInvalidFeedBeforeCapacity(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_TUNER_COUNT", "auto")
+	t.Setenv("IPTV_TUNERR_LINEUP_PROBE_ENABLED", "true")
+	t.Setenv("IPTV_TUNERR_LINEUP_PROBE_TIMEOUT", "1s")
+	t.Setenv("IPTV_TUNERR_LINEUP_PROBE_MAX_DURATION", "5s")
+	t.Setenv("IPTV_TUNERR_LINEUP_PROBE_CACHE_FILE", "")
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/good.ts":
+			w.Header().Set("Content-Type", "video/mp2t")
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write([]byte{0x47, 0x40, 0x00, 0x10})
+		case "/black.ts":
+			w.Header().Set("Content-Type", "video/mp2t")
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write([]byte{0x47, 0x40, 0x00, 0x10})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	s := &Server{TunerCount: -1}
+	s.UpdateChannels([]catalog.LiveChannel{{
+		ChannelID:   "1",
+		GuideNumber: "1",
+		GuideName:   "Sports Event",
+		StreamURL:   upstream.URL + "/black.ts",
+		StreamURLs:  []string{upstream.URL + "/black.ts", upstream.URL + "/good.ts"},
+	}})
+
+	if len(s.Channels) != 1 {
+		t.Fatalf("channels=%d want 1", len(s.Channels))
+	}
+	if s.Channels[0].StreamURL != upstream.URL+"/good.ts" {
+		t.Fatalf("StreamURL=%q want good feed", s.Channels[0].StreamURL)
+	}
+	if s.TunerCount != 1 {
+		t.Fatalf("TunerCount=%d want 1 after invalid feed pruned", s.TunerCount)
+	}
+}
+
+func TestServer_UpdateChannels_visualProbePrunesSlateFeed(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_TUNER_COUNT", "auto")
+	t.Setenv("IPTV_TUNERR_LINEUP_PROBE_ENABLED", "true")
+	t.Setenv("IPTV_TUNERR_LINEUP_PROBE_TIMEOUT", "1s")
+	t.Setenv("IPTV_TUNERR_LINEUP_PROBE_MAX_DURATION", "5s")
+	t.Setenv("IPTV_TUNERR_LINEUP_PROBE_CACHE_FILE", "")
+	t.Setenv("IPTV_TUNERR_LINEUP_VISUAL_PROBE", "all")
+	t.Setenv("IPTV_TUNERR_LINEUP_VISUAL_PROBE_SAMPLE", "2s")
+	t.Setenv("IPTV_TUNERR_LINEUP_VISUAL_PROBE_TIMEOUT", "3s")
+	t.Setenv("IPTV_TUNERR_LINEUP_VISUAL_PROBE_MAX_DURATION", "5s")
+	t.Setenv("IPTV_TUNERR_LINEUP_VISUAL_PROBE_CACHE_FILE", "")
+
+	ffmpegPath := filepath.Join(t.TempDir(), "fake-ffmpeg.sh")
+	if err := os.WriteFile(ffmpegPath, []byte(`#!/bin/sh
+case "$*" in
+  *slate.ts*) echo "black_start:0 black_end:2 black_duration:2" >&2 ;;
+  *) echo "frame=1" >&2 ;;
+esac
+exit 0
+`), 0o755); err != nil {
+		t.Fatalf("write fake ffmpeg: %v", err)
+	}
+	t.Setenv("IPTV_TUNERR_FFMPEG_PATH", ffmpegPath)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/mp2t")
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write([]byte{0x47, 0x40, 0x00, 0x10})
+	}))
+	defer upstream.Close()
+
+	s := &Server{TunerCount: -1}
+	s.UpdateChannels([]catalog.LiveChannel{{
+		ChannelID:   "1",
+		GuideNumber: "1",
+		GuideName:   "Sports Event",
+		StreamURL:   upstream.URL + "/slate.ts",
+		StreamURLs:  []string{upstream.URL + "/slate.ts", upstream.URL + "/good.ts"},
+	}})
+
+	if len(s.Channels) != 1 {
+		t.Fatalf("channels=%d want 1", len(s.Channels))
+	}
+	if s.Channels[0].StreamURL != upstream.URL+"/good.ts" {
+		t.Fatalf("StreamURL=%q want good feed", s.Channels[0].StreamURL)
+	}
+	if s.TunerCount != 1 {
+		t.Fatalf("TunerCount=%d want 1 after visual prune", s.TunerCount)
+	}
+}
+
+func TestVisualProbeDetectedBlackRequiresLongInitialBlack(t *testing.T) {
+	if !visualProbeDetectedBlack("black_start:0 black_end:3.9 black_duration:3.9", 4*time.Second) {
+		t.Fatal("expected long initial black to be detected")
+	}
+	if visualProbeDetectedBlack("black_start:0 black_end:0.25 black_duration:0.25", 4*time.Second) {
+		t.Fatal("short initial black should not fail visual probe")
+	}
+}
+
 func TestApplyLineupPreCapFilters_lineupRecipeSportsNA(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_LINEUP_DROP_MUSIC", "")
 	t.Setenv("IPTV_TUNERR_LINEUP_EXCLUDE_REGEX", "")
 	t.Setenv("IPTV_TUNERR_LINEUP_RECIPE", "sports_na")
 	t.Setenv("IPTV_TUNERR_LINEUP_REGION_PROFILE", "ca_west")
+	origNow := timeNow
+	timeNow = func() time.Time { return time.Date(2026, 4, 20, 20, 0, 0, 0, time.UTC) }
+	defer func() { timeNow = origNow }()
 	in := []catalog.LiveChannel{
 		{ChannelID: "1", GuideName: "TSN 1", TVGID: "tsn1.ca", StreamURL: "http://a/1"},
 		{ChannelID: "2", GuideName: "FOX Sports 1", TVGID: "fs1.us", StreamURL: "http://a/2"},
 		{ChannelID: "3", GuideName: "beIN SPORTS MENA 1", TVGID: "bein1.ar", StreamURL: "http://a/3"},
 		{ChannelID: "4", GuideName: "Sky Sports Main Event", TVGID: "skysports.uk", StreamURL: "http://a/4"},
 		{ChannelID: "5", GuideName: "FOX News", TVGID: "foxnews.us", StreamURL: "http://a/5"},
+		{ChannelID: "6", GuideName: "CA (TSN+ 063) | NBA Playoffs: Timberwolves vs. Nuggets _ Game 2 (2026-04-20 22:30:10)", StreamURL: "http://a/6"},
+		{ChannelID: "7", GuideName: "NEXT | CLE - CAVALIERS VS TOR - RAPTORS | Mon 20 Apr 18:00 EDT (US) | 8K EXCLUSIVE | US: NBA PASS PPV 1", StreamURL: "http://a/7"},
+		{ChannelID: "8", GuideName: "- NO EVENT STREAMING - | 8K EXCLUSIVE | US: NBA PASS PPV 20", StreamURL: "http://a/8"},
+		{ChannelID: "9", GuideName: "NEXT | CLE - CAVALIERS VS TOR - RAPTORS | Mon 20 Apr 20:00 -02 (BR) | 8K EXCLUSIVE | BR: NBA PASS PPV 1", StreamURL: "http://a/9"},
+		{ChannelID: "10", GuideName: "US (Peacock 010) | Game 2: Timberwolves vs. Nuggets (2026-04-20 22:30:05)", StreamURL: "http://a/live/10.m3u8", StreamURLs: []string{"http://a/live/10.m3u8"}},
+		{ChannelID: "11", GuideName: "US| ABC 25 WEST PALM BEACH FL (WPBF)", StreamURL: "http://a/11", EPGLinked: true},
+		{ChannelID: "12", GuideName: "US| NBC 4 TUCSON AZ (KVOA)", StreamURL: "http://a/12", EPGLinked: true},
+		{ChannelID: "13", GuideName: "GO| ABC NEWS LIVE", StreamURL: "http://a/13", EPGLinked: true},
+		{ChannelID: "14", GuideName: "US| MSNBC HD", StreamURL: "http://a/14", EPGLinked: true},
+		{ChannelID: "15", GuideName: "US (Peacock 031) | Game 3: Pistons vs. Magic (2026-04-25 12:00:00)", StreamURL: "http://a/live/15.m3u8"},
+		{ChannelID: "16", GuideName: "NHL TEAM| EDMONTON OILERS", StreamURL: "http://a/16"},
+		{ChannelID: "17", GuideName: "CA| SPORTSNET PPV", StreamURL: "http://a/17"},
+		{ChannelID: "18", GuideName: "US (Peacock 003) | Game 2: Raptors vs. Cavaliers (2026-04-20 16:00:05)", StreamURL: "http://a/live/18.m3u8"},
+		{ChannelID: "19", GuideName: "LIVE | FOWLER GRIZZLIES VS. LA JUNTA | Mon 20 Apr 20:30 EDT (US) | 8K EXCLUSIVE | US: NFHS PPV 83", StreamURL: "http://a/19"},
+		{ChannelID: "20", GuideName: "ENDED | PROUT VS. SOUTH KINGSTOWN | Mon 20 Apr 11:00 EDT (US) | 8K EXCLUSIVE | US: NFHS PPV 9", StreamURL: "http://a/20"},
 	}
 	out := applyLineupPreCapFilters(in)
-	if len(out) != 2 {
-		t.Fatalf("len=%d want 2", len(out))
+	if len(out) != 7 {
+		t.Fatalf("len=%d want 7: %+v", len(out), out)
 	}
-	got := []string{out[0].ChannelID, out[1].ChannelID}
-	if !((got[0] == "1" && got[1] == "2") || (got[0] == "2" && got[1] == "1")) {
+	got := map[string]bool{}
+	for _, ch := range out {
+		got[ch.ChannelID] = true
+	}
+	for _, id := range []string{"1", "2", "6", "7", "10", "11", "12"} {
+		if !got[id] {
+			t.Fatalf("missing sports_na channel %s in %+v", id, out)
+		}
+	}
+	if got["8"] || got["9"] || got["13"] || got["14"] || got["16"] || got["17"] || got["18"] || got["19"] || got["20"] {
 		t.Fatalf("unexpected sports_na result: %+v", out)
+	}
+	if got["15"] {
+		t.Fatalf("far-future event should not be exposed as tunable: %+v", out)
+	}
+	for _, ch := range out {
+		if ch.ChannelID == "10" {
+			if ch.StreamURL != "http://a/live/10.ts" {
+				t.Fatalf("peacock stream url=%q want ts fallback", ch.StreamURL)
+			}
+			if len(ch.StreamURLs) != 1 || ch.StreamURLs[0] != "http://a/live/10.ts" {
+				t.Fatalf("peacock stream urls=%v want ts fallback", ch.StreamURLs)
+			}
+		}
 	}
 }
 

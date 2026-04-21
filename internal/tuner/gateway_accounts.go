@@ -27,11 +27,18 @@ func configuredProviderAccountLimit() int {
 	if _, ok := os.LookupEnv("IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT"); !ok {
 		return 0
 	}
+	if providerAccountLimitAutoConfigured() {
+		return 0
+	}
 	n := getenvInt("IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT", 0)
 	if n < 0 {
 		n = 0
 	}
 	return n
+}
+
+func providerAccountLimitAutoConfigured() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT")), "auto")
 }
 
 func providerAccountIdentityForURL(g *Gateway, ch *catalog.LiveChannel, rawURL string) (providerAccountLease, bool) {
@@ -118,6 +125,12 @@ func (g *Gateway) effectiveProviderAccountLimit(ch *catalog.LiveChannel) int {
 }
 
 func (g *Gateway) defaultProviderAccountLimit(ch *catalog.LiveChannel) int {
+	if providerAccountLimitAutoConfigured() {
+		if n := lineupFeedCapacity(g.Channels); n > 0 {
+			return n
+		}
+		return 1
+	}
 	if limit := configuredProviderAccountLimit(); limit > 0 {
 		return limit
 	}
@@ -136,6 +149,13 @@ func (g *Gateway) defaultProviderAccountLimit(ch *catalog.LiveChannel) int {
 		return 1
 	}
 	return 0
+}
+
+func (g *Gateway) configuredOrDerivedProviderAccountLimit() int {
+	if providerAccountLimitAutoConfigured() {
+		return g.defaultProviderAccountLimit(nil)
+	}
+	return configuredProviderAccountLimit()
 }
 
 func (g *Gateway) learnedProviderAccountLimit(key string) int {

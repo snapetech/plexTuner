@@ -1,6 +1,7 @@
 package indexer
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -107,6 +108,7 @@ func TestFilterLiveBySmoketestWithCache_skipsCache(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&calls, 1)
 		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte{0x47, 0x40, 0x00, 0x10})
 	}))
 	defer srv.Close()
 
@@ -134,6 +136,7 @@ func TestFilterLiveBySmoketestWithCache_probsOnCacheMiss(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&calls, 1)
 		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte{0x47, 0x40, 0x00, 0x10})
 	}))
 	defer srv.Close()
 
@@ -156,5 +159,74 @@ func TestFilterLiveBySmoketestWithCache_probsOnCacheMiss(t *testing.T) {
 	// Cache should be populated after probing.
 	if _, ok := cache[streamURL]; !ok {
 		t.Error("expected cache to be updated after probe")
+	}
+}
+
+func TestProbeStream_rejectsBlackTSRedirect(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/stream/1":
+			http.Redirect(w, r, "/video/black.ts", http.StatusFound)
+		case "/video/black.ts":
+			w.Header().Set("Content-Type", "video/mp2t")
+			w.Header().Set("Content-Range", "bytes 0-3/4")
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write([]byte{0x47, 0x40, 0x00, 0x10})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	if ProbeStream(context.Background(), srv.URL+"/stream/1", srv.Client(), time.Second) {
+		t.Fatal("ProbeStream accepted black.ts redirect")
+	}
+}
+
+func TestProbeStream_rejectsEmptyDirectBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/mp2t")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	if ProbeStream(context.Background(), srv.URL+"/stream/1", srv.Client(), time.Second) {
+		t.Fatal("ProbeStream accepted empty direct stream")
+	}
+}
+
+func TestFilterLiveByFeedSmoketestWithCache_prunesBadFeeds(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/good.ts":
+			w.Header().Set("Content-Type", "video/mp2t")
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write([]byte{0x47, 0x40, 0x00, 0x10})
+		case "/black.ts":
+			w.Header().Set("Content-Type", "video/mp2t")
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write([]byte{0x47, 0x40, 0x00, 0x10})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	live := []catalog.LiveChannel{{
+		ChannelID:  "1",
+		GuideName:  "Event",
+		StreamURL:  srv.URL + "/black.ts",
+		StreamURLs: []string{srv.URL + "/black.ts", srv.URL + "/good.ts"},
+	}}
+
+	result := FilterLiveByFeedSmoketestWithCache(live, make(SmoketestCache), time.Minute, srv.Client(), time.Second, 2, 0, time.Minute)
+	if len(result) != 1 {
+		t.Fatalf("result len = %d, want 1", len(result))
+	}
+	if result[0].StreamURL != srv.URL+"/good.ts" {
+		t.Fatalf("StreamURL = %q, want good feed", result[0].StreamURL)
+	}
+	if len(result[0].StreamURLs) != 1 || result[0].StreamURLs[0] != srv.URL+"/good.ts" {
+		t.Fatalf("StreamURLs = %#v, want only good feed", result[0].StreamURLs)
 	}
 }
