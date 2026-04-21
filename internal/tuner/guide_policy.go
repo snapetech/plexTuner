@@ -50,6 +50,8 @@ func normalizeGuidePolicy(v string) string {
 	switch v {
 	case "", "off", "none":
 		return "off"
+	case "placeholder", "placeholders", "drop_placeholders", "drop-placeholder", "drop-placeholders":
+		return "placeholder"
 	case "healthy", "good", "real":
 		return "healthy"
 	case "strict":
@@ -74,6 +76,10 @@ func (x *XMLTV) cachedGuideHealthReport() (guidehealth.Report, bool) {
 
 func guidePolicyDropReason(row guidehealth.ChannelHealth, policy string) string {
 	switch normalizeGuidePolicy(policy) {
+	case "placeholder":
+		if row.PlaceholderOnly {
+			return "placeholder_only"
+		}
 	case "healthy":
 		if row.SparseProgrammes {
 			return "sparse_programmes"

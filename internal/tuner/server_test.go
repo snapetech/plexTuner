@@ -4903,6 +4903,34 @@ func TestServer_UpdateChannelsGuidePolicy(t *testing.T) {
 	}
 }
 
+func TestServer_UpdateChannelsGuidePolicyDropPlaceholdersKeepsUnlinked(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_GUIDE_POLICY", "drop_placeholders")
+	s := &Server{
+		xmltv: &XMLTV{
+			cachedGuideHealth: &guidehealth.Report{
+				SourceReady: true,
+				Channels: []guidehealth.ChannelHealth{
+					{ChannelID: "1", HasRealProgrammes: true, TVGID: "news.one"},
+					{ChannelID: "2", HasRealProgrammes: false, TVGID: "mystery.tv", PlaceholderOnly: true},
+					{ChannelID: "3", HasProgrammes: false, HasRealProgrammes: false, TVGID: "event.tv"},
+				},
+			},
+		},
+		LineupMaxChannels: NoLineupCap,
+	}
+	s.UpdateChannels([]catalog.LiveChannel{
+		{ChannelID: "1", GuideNumber: "101", GuideName: "News One", TVGID: "news.one"},
+		{ChannelID: "2", GuideNumber: "102", GuideName: "Mystery TV", TVGID: "mystery.tv"},
+		{ChannelID: "3", GuideNumber: "103", GuideName: "Event TV", TVGID: "event.tv"},
+	})
+	if len(s.Channels) != 2 {
+		t.Fatalf("channels=%d want 2", len(s.Channels))
+	}
+	if s.Channels[0].ChannelID != "1" || s.Channels[1].ChannelID != "3" {
+		t.Fatalf("kept channels=%+v want healthy plus unlinked/no-programme", s.Channels)
+	}
+}
+
 func TestServer_reapplyDeferredGuidePolicyAfterGuideHealthReady(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_GUIDE_POLICY", "healthy")
 	live := []catalog.LiveChannel{
@@ -4971,6 +4999,42 @@ func TestServer_reapplyDeferredGuidePolicyDoesNotCumulativelyShrink(t *testing.T
 	}
 	if s.Channels[0].ChannelID != "1" || s.Channels[1].ChannelID != "2" {
 		t.Fatalf("channels=%+v want healthy channels only", s.Channels)
+	}
+}
+
+func TestServer_reapplyDropPlaceholdersDoesNotReexpandFromFilteredGuide(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_GUIDE_POLICY", "drop_placeholders")
+	live := []catalog.LiveChannel{
+		{ChannelID: "1", GuideNumber: "101", GuideName: "Healthy One", TVGID: "healthy.one"},
+		{ChannelID: "2", GuideNumber: "102", GuideName: "Healthy Two", TVGID: "healthy.two"},
+		{ChannelID: "3", GuideNumber: "103", GuideName: "Placeholder", TVGID: "placeholder.tv"},
+	}
+	s := &Server{
+		RawChannels:       cloneLiveChannels(live),
+		Channels:          cloneLiveChannels(live[:2]),
+		LineupMaxChannels: NoLineupCap,
+		xmltv: &XMLTV{
+			Channels: cloneLiveChannels(live[:2]),
+			cachedGuideHealth: &guidehealth.Report{
+				SourceReady: true,
+				Summary: guidehealth.Summary{
+					PlaceholderOnlyChannels: 0,
+				},
+				Channels: []guidehealth.ChannelHealth{
+					{ChannelID: "1", HasProgrammes: true, HasRealProgrammes: true, RealProgrammeCount: 2},
+					{ChannelID: "2", HasProgrammes: true, HasRealProgrammes: true, RealProgrammeCount: 2},
+				},
+			},
+		},
+	}
+
+	s.reapplyDeferredGuidePolicyAfterGuideHealthReady()
+
+	if len(s.Channels) != 2 {
+		t.Fatalf("channels=%d want stable filtered 2", len(s.Channels))
+	}
+	if s.Channels[0].ChannelID != "1" || s.Channels[1].ChannelID != "2" {
+		t.Fatalf("channels=%+v want existing filtered channels", s.Channels)
 	}
 }
 

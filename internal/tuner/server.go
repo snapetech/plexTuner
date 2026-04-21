@@ -372,10 +372,15 @@ func lineupFeedCapacity(live []catalog.LiveChannel) int {
 }
 
 func (s *Server) reapplyDeferredGuidePolicyAfterGuideHealthReady() {
-	if s == nil || s.xmltv == nil || normalizeGuidePolicy(os.Getenv("IPTV_TUNERR_GUIDE_POLICY")) == "off" {
+	if s == nil || s.xmltv == nil {
 		return
 	}
-	if rep, ok := s.xmltv.cachedGuideHealthReport(); !ok || !rep.SourceReady {
+	policy := normalizeGuidePolicy(os.Getenv("IPTV_TUNERR_GUIDE_POLICY"))
+	if policy == "off" {
+		return
+	}
+	rep, ok := s.xmltv.cachedGuideHealthReport()
+	if !ok || !rep.SourceReady {
 		return
 	}
 	live := cloneLiveChannels(s.RawChannels)
@@ -383,6 +388,9 @@ func (s *Server) reapplyDeferredGuidePolicyAfterGuideHealthReady() {
 		return
 	}
 	source, filtered := s.curateChannelsFromRaw(live)
+	if policy == "placeholder" && rep.Summary.PlaceholderOnlyChannels == 0 && len(s.Channels) < len(filtered) {
+		return
+	}
 	if len(filtered) == len(s.Channels) && len(source) == len(s.GuidePolicySourceChannels) {
 		return
 	}

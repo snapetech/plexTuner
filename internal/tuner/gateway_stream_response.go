@@ -216,8 +216,9 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 	}
 	body = rewriteHLSPlaylist(body, effectiveURL)
 	firstSeg := firstHLSMediaLine(body)
-	attempt.markPlaylist(attemptIdx, hlsPlaylistLooksUsable(body) && firstSeg != "", len(body), firstSeg)
-	if !hlsPlaylistLooksUsable(body) || firstSeg == "" {
+	usablePlaylist := hlsPlaylistLooksUsable(body) && firstSeg != "" && !hlsPlaylistHasPlaceholderMedia(body)
+	attempt.markPlaylist(attemptIdx, usablePlaylist, len(body), firstSeg)
+	if !usablePlaylist {
 		if fallbackURL, ok := hlsTSFallbackURL(streamURL); ok {
 			if status, mode, effective, fallbackOK := g.tryInvalidHLSMPEGTSFallback(
 				w, r, channel, channelID, streamURL, fallbackURL, start, attempt, client, adaptReason, clientClass,

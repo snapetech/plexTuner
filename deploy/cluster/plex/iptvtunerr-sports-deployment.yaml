@@ -86,7 +86,7 @@ spec:
             - name: IPTV_TUNERR_XMLTV_PLEX_SAFE_IDS
               value: "true"
             - name: IPTV_TUNERR_GUIDE_POLICY
-              value: "off"
+              value: drop_placeholders
             - name: IPTV_TUNERR_LINEUP_PROBE_ENABLED
               value: "true"
             - name: IPTV_TUNERR_LINEUP_PROBE_TIMEOUT
@@ -96,7 +96,7 @@ spec:
             - name: IPTV_TUNERR_LINEUP_PROBE_MAX_DURATION
               value: 60s
             - name: IPTV_TUNERR_LINEUP_PROBE_CACHE_FILE
-              value: /var/cache/iptvtunerr/sports-lineup-probe.json
+              value: /var/cache/iptvtunerr/sports-lineup-probe-v2.json
             - name: IPTV_TUNERR_LINEUP_PROBE_CACHE_TTL
               value: 10m
             - name: IPTV_TUNERR_LINEUP_VISUAL_PROBE
@@ -112,7 +112,7 @@ spec:
             - name: IPTV_TUNERR_LINEUP_VISUAL_PROBE_MAX_DURATION
               value: 45s
             - name: IPTV_TUNERR_LINEUP_VISUAL_PROBE_CACHE_FILE
-              value: /var/cache/iptvtunerr/sports-lineup-probe.visual.json
+              value: /var/cache/iptvtunerr/sports-lineup-probe-v2.visual.json
             - name: IPTV_TUNERR_LINEUP_VISUAL_PROBE_CACHE_TTL
               value: 30m
             - name: IPTV_TUNERR_PROVIDER_URL

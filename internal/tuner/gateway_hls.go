@@ -879,6 +879,26 @@ func hlsPlaylistLooksUsable(body []byte) bool {
 	return len(hlsMediaLines(body)) > 0
 }
 
+func hlsPlaylistHasPlaceholderMedia(body []byte) bool {
+	for _, line := range hlsMediaLines(body) {
+		if hlsMediaLineLooksPlaceholder(line) {
+			return true
+		}
+	}
+	return false
+}
+
+func hlsMediaLineLooksPlaceholder(raw string) bool {
+	u := strings.ToLower(strings.TrimSpace(raw))
+	if u == "" {
+		return false
+	}
+	return strings.Contains(u, "/black.ts") ||
+		strings.HasSuffix(u, "black.ts") ||
+		strings.Contains(u, "/blank.ts") ||
+		strings.HasSuffix(u, "blank.ts")
+}
+
 func hlsMediaLines(body []byte) []string {
 	var out []string
 	for _, raw := range splitHLSLines(body) {

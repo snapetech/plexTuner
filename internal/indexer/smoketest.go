@@ -282,22 +282,25 @@ func ProbeStream(ctx context.Context, streamURL string, client *http.Client, tim
 	}
 	ct := strings.ToLower(resp.Header.Get("Content-Type"))
 	if strings.Contains(ct, "mpegurl") || strings.Contains(ct, "m3u8") || isHLS {
-		// HLS: read first few KB and check for #EXTM3U or #EXTINF
+		// HLS: scan the playlist before accepting it. Some provider slate
+		// playlists start with #EXTM3U and later point every segment at black.ts.
 		sc := bufio.NewScanner(resp.Body)
 		sc.Buffer(nil, 64*1024)
+		usable := false
 		for sc.Scan() {
 			line := strings.TrimSpace(sc.Text())
 			if isObviousPlaceholderStreamURL(line) {
 				return false
 			}
 			if line == "#EXTM3U" || strings.HasPrefix(line, "#EXTINF") {
-				return true
+				usable = true
+				continue
 			}
 			if line != "" && !strings.HasPrefix(line, "#") {
-				return true
+				usable = true
 			}
 		}
-		return false
+		return usable
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if err != nil {

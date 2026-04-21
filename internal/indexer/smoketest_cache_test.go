@@ -183,6 +183,18 @@ func TestProbeStream_rejectsBlackTSRedirect(t *testing.T) {
 	}
 }
 
+func TestProbeStream_rejectsHLSBlackTSMediaLine(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-mpegurl")
+		_, _ = w.Write([]byte("#EXTM3U\n#EXTINF:4,\nhttp://example.test/video/black.ts\n"))
+	}))
+	defer srv.Close()
+
+	if ProbeStream(context.Background(), srv.URL+"/stream/1.m3u8", srv.Client(), time.Second) {
+		t.Fatal("ProbeStream accepted HLS playlist pointing at black.ts")
+	}
+}
+
 func TestProbeStream_rejectsEmptyDirectBody(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "video/mp2t")
