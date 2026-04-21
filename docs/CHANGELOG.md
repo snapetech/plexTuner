@@ -13,6 +13,19 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.51] — 2026-04-21
+
+### Sports DVR / live feed health
+- **Sports feed probing now rejects HLS slate playlists correctly:** the fast lineup probe now scans the HLS playlist before accepting it, so playlists that advertise `#EXTM3U` / `#EXTINF` but point media segments at provider placeholders such as `black.ts` / `blank.ts` are pruned before Plex sees them.
+- **The live gateway now blocks placeholder HLS media at tune time:** even if a stale cache or future provider change lets a bad row through, Tunerr rejects HLS playlists whose media lines point at known placeholder segments instead of relaying black video to Plex.
+
+### Guide / EPG
+- **Sports placeholder guide rows are pruned without collapsing event coverage:** added `IPTV_TUNERR_GUIDE_POLICY=drop_placeholders`, which removes channels that only have synthetic placeholder programme rows while keeping unlinked or no-programme event rows available for sports use cases.
+- **Deferred guide-policy reapply no longer re-expands placeholder rows:** sports guide pruning now stays stable after guide-health recomputes from the filtered guide, avoiding the earlier oscillation between filtered and unfiltered lineups.
+
+### Cluster
+- **Sports deployment uses fresh probe caches and placeholder-only guide pruning:** the cluster sports manifest now uses the `drop_placeholders` policy and `sports-lineup-probe-v2` cache files so old bad probe-pass results are not reused.
+
 ## [v0.1.50] — 2026-04-21
 
 ### Sports DVR / live feed health
