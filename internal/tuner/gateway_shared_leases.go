@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -85,7 +84,7 @@ func (m *providerSharedLeaseManager) acquire(identity providerAccountLease, limi
 		return nil, 0, false, err
 	}
 	defer func() {
-		_ = syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+		_ = unlockProviderSharedLeaseFile(lockFile)
 		_ = lockFile.Close()
 	}()
 	if err := m.cleanupExpiredLocked(identity.Key); err != nil {
@@ -137,7 +136,7 @@ func (m *providerSharedLeaseManager) release(handle *providerSharedLeaseHandle) 
 		return
 	}
 	defer func() {
-		_ = syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+		_ = unlockProviderSharedLeaseFile(lockFile)
 		_ = lockFile.Close()
 	}()
 	_ = os.Remove(handle.Path)
@@ -152,7 +151,7 @@ func (m *providerSharedLeaseManager) count(key string) int {
 		return 0
 	}
 	defer func() {
-		_ = syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+		_ = unlockProviderSharedLeaseFile(lockFile)
 		_ = lockFile.Close()
 	}()
 	_ = m.cleanupExpiredLocked(key)
@@ -244,7 +243,7 @@ func (m *providerSharedLeaseManager) lockFile(key string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	if err := lockProviderSharedLeaseFile(f); err != nil {
 		_ = f.Close()
 		return nil, err
 	}

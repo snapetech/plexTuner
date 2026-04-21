@@ -13,7 +13,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
-## [v0.1.49] — 2026-04-21
+## [v0.1.50] — 2026-04-21
 
 ### Sports DVR / live feed health
 - **Sports lineups now probe feeds before Plex sees them:** the sports DVR can run a runtime lineup probe before `lineup.json` / `guide.xml` are exposed, pruning bad individual stream URLs and dropping channels only when no feed survives. The fast probe rejects failed HTTP/HLS responses, zero-byte direct streams, and obvious provider placeholders such as `black.ts` / `blank.ts`.
@@ -31,6 +31,9 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Primary and sports DVR lineups no longer overlap:** added `IPTV_TUNERR_LINEUP_EXCLUDE_RECIPE` so a primary/general DVR can exclude the exact rows owned by a recipe-specific DVR such as `sports_na` before final shaping and Plex-cap logic.
 - **Surgical lineup excludes are now available:** added `IPTV_TUNERR_LINEUP_EXCLUDE_CHANNEL_IDS` for exact `channel_id`, guide number, or `tvg-id` removals before lineup recipe/shaping/cap logic.
 - **Plex DVR repair logs no longer print tokens:** DVR reload/channelmap logs now redact query strings before printing URLs.
+
+### Build / release
+- **Release binaries build on Windows again:** provider-account shared lease locking now uses platform-specific helpers, keeping Unix `flock` behavior for cluster deployments while allowing Windows release artifacts to compile.
 
 ## [v0.1.46] — 2026-04-18
 
