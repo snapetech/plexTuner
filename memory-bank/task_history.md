@@ -8,6 +8,7 @@
 - Live after-tests: `.diag/multi-stream/20260420-230316` sustained `8/8` mixed sports streams for 480s despite `72` provider `509` signals and no stream-attempt upstream errors; `.diag/multi-stream/20260420-231204` sustained four parallel `904206` pulls for 360s.
 - Verification: focused relay tests, `go test -count=1 ./internal/tuner`, full `./scripts/verify`, live rollout smoke, mixed 8-stream 480s harness, and same-channel 4-stream `904206` 360s harness.
 - Release: pushed commits `7dee9b8` (runtime fix) and `f619376` (release docs), tagged `v0.1.54`, and confirmed the GitHub Release exists with binaries and `SHA256SUMS.txt`. Main branch CI/Docker/Gitleaks/CodeQL are green for `f619376`; tag Docker is green; release run `24705738952` completed successfully.
+- Cluster release deployment follow-up: rebuilt from the `v0.1.54` tag with `TARGET_VERSION=v0.1.54` and image `localhost/iptvtunerr:v0.1.54`, imported it into k3s, and rolled both `deployment/iptvtunerr` and `deployment/iptvtunerr-sports`. Verification: both deployments report image `localhost/iptvtunerr:v0.1.54`, ready/available `1/1`, binary `iptv-tunerr version` returns `v0.1.54`, primary `/readyz` reports `389` channels, and sports `/readyz` reports `71` channels with `/discover.json` `TunerCount=84` after feed/visual probing.
 
 ## 2026-04-21 - Add and measure sports visual black probing
 
