@@ -595,6 +595,7 @@ func (g *Gateway) relayHLSAsTS(
 	r *http.Request,
 	client *http.Client,
 	playlistURL string,
+	sourcePlaylistURL string,
 	initialPlaylist []byte,
 	channelName string,
 	channelID string,
@@ -630,6 +631,7 @@ func (g *Gateway) relayHLSAsTS(
 	headerSent := responseStarted
 	firstRelayBytesLogged := false
 	currentPlaylistURL := playlistURL
+	sourcePlaylistURL = strings.TrimSpace(sourcePlaylistURL)
 	currentPlaylist := initialPlaylist
 	relayLogLabel := "hls-relay"
 
@@ -832,6 +834,19 @@ func (g *Gateway) relayHLSAsTS(
 			}
 			if r.Context().Err() != nil {
 				return nil
+			}
+			if sourcePlaylistURL != "" && sourcePlaylistURL != currentPlaylistURL {
+				failedPlaylistURL := currentPlaylistURL
+				if rebased, rebasedURL, rebaseErr := g.fetchAndRewritePlaylistWithContext(r, client, sourcePlaylistURL, ""); rebaseErr == nil {
+					currentPlaylist = rebased
+					currentPlaylistURL = rebasedURL
+					log.Printf("gateway:%s channel=%q id=%s playlist refresh failed url=%s err=%v; rebased via source=%s effective=%s",
+						reqField, channelName, channelID, safeurl.RedactURL(failedPlaylistURL), err, safeurl.RedactURL(sourcePlaylistURL), safeurl.RedactURL(rebasedURL))
+					continue
+				} else {
+					log.Printf("gateway:%s channel=%q id=%s playlist rebase failed source=%s err=%v after refresh err=%v",
+						reqField, channelName, channelID, safeurl.RedactURL(sourcePlaylistURL), rebaseErr, err)
+				}
 			}
 			if time.Since(lastProgress) > hlsRelayNoProgressTimeout {
 				g.noteHLSPlaylistFailure(currentPlaylistURL)

@@ -328,6 +328,7 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 		r,
 		client,
 		effectiveURL,
+		streamURL,
 		body,
 		channel.GuideName,
 		channelID,

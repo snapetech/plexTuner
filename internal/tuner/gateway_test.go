@@ -4613,7 +4613,7 @@ func TestGateway_relayHLSAsTS_survivesPlaylistConcurrencyRetry(t *testing.T) {
 	rec := httptest.NewRecorder()
 	done := make(chan error, 1)
 	go func() {
-		done <- g.relayHLSAsTS(rec, req, srv.Client(), effectiveURL, initial, "Ch1", "1", "101", "tvg.1", time.Now(), false, "", 0, nil, false)
+		done <- g.relayHLSAsTS(rec, req, srv.Client(), effectiveURL, effectiveURL, initial, "Ch1", "1", "101", "tvg.1", time.Now(), false, "", 0, nil, false)
 	}()
 
 	select {
@@ -4636,6 +4636,86 @@ func TestGateway_relayHLSAsTS_survivesPlaylistConcurrencyRetry(t *testing.T) {
 	}
 	if n := playlistHits.Load(); n < 3 {
 		t.Fatalf("playlistHits=%d want at least 3 (initial + retry path)", n)
+	}
+}
+
+func TestGateway_relayHLSAsTS_rebasesSourcePlaylistAfterGeneratedPlaylistExpires(t *testing.T) {
+	prevRefreshSleep := hlsRelayRefreshSleep
+	hlsRelayRefreshSleep = func([]byte) {}
+	defer func() {
+		hlsRelayRefreshSleep = prevRefreshSleep
+	}()
+
+	var sourceHits atomic.Int32
+	var cdn1Hits atomic.Int32
+	seg2Fetched := make(chan struct{})
+	var seg2Once sync.Once
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/source.m3u8":
+			sourceHits.Add(1)
+			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+			_, _ = w.Write([]byte("#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\n" + srv.URL + "/seg2.ts\n"))
+		case "/cdn1/live.m3u8":
+			h := cdn1Hits.Add(1)
+			if h >= 2 {
+				http.Error(w, "expired", http.StatusProxyAuthRequired)
+				return
+			}
+			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+			_, _ = w.Write([]byte("#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\n" + srv.URL + "/seg1.ts\n"))
+		case "/cdn2/live.m3u8":
+			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+			_, _ = w.Write([]byte("#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\n" + srv.URL + "/seg2.ts\n"))
+		case "/seg1.ts":
+			w.Header().Set("Content-Type", "video/mp2t")
+			_, _ = w.Write([]byte("segment-one"))
+		case "/seg2.ts":
+			w.Header().Set("Content-Type", "video/mp2t")
+			_, _ = w.Write([]byte("segment-two"))
+			seg2Once.Do(func() { close(seg2Fetched) })
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	g := &Gateway{TunerCount: 4}
+	baseReq := httptest.NewRequest(http.MethodGet, "http://local/stream/1", nil)
+	initial, effectiveURL, err := g.fetchAndRewritePlaylist(baseReq, srv.Client(), srv.URL+"/cdn1/live.m3u8")
+	if err != nil {
+		t.Fatalf("initial playlist fetch: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(baseReq.Context())
+	defer cancel()
+	req := baseReq.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	done := make(chan error, 1)
+	go func() {
+		done <- g.relayHLSAsTS(rec, req, srv.Client(), effectiveURL, srv.URL+"/source.m3u8", initial, "Ch1", "1", "101", "tvg.1", time.Now(), false, "", 0, nil, false)
+	}()
+
+	select {
+	case <-seg2Fetched:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timeout waiting for segment from rebased playlist (sourceHits=%d cdn1Hits=%d)", sourceHits.Load(), cdn1Hits.Load())
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(rec.Body.String(), "segment-two") && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("relayHLSAsTS: %v", err)
+	}
+	if sourceHits.Load() < 1 {
+		t.Fatalf("sourceHits=%d want rebase fetch", sourceHits.Load())
+	}
+	if body := rec.Body.String(); !strings.Contains(body, "segment-one") || !strings.Contains(body, "segment-two") {
+		t.Fatalf("relay body missing expected segments: %q", body)
 	}
 }
 

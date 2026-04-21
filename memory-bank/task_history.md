@@ -1,3 +1,13 @@
+## 2026-04-21 - Fix generated HLS playlist expiry during long sports streams
+
+- Reproduced the user-reported sports stream death with the live multi-stream harness before changing code: `.diag/multi-stream/20260420-224839` pulled 8 sports channels for a 480s target and saw `6/8` premature HTTP `200` exits, including `904206` after 156s. Live logs showed provider-generated CDN playlist refreshes returning `509` / `407`, followed by `hls relay stalled after progress`.
+- Changed the Go HLS relay so a failed generated playlist refresh after playback has started rebases through the original provider `.m3u8` and continues with the fresh generated playlist instead of waiting for no-progress timeout and restarting the whole upstream.
+- Added regression coverage for generated-playlist expiry (`TestGateway_relayHLSAsTS_rebasesSourcePlaylistAfterGeneratedPlaylistExpires`) and kept the existing playlist-concurrency retry coverage green.
+- Improved `scripts/multi-stream-harness.sh` for long live soaks with `CURL_USER_AGENT` and `DISCARD_BODY=true`, so Plex-shaped parallel runs can measure downloaded bytes without writing GBs of TS bodies to `.diag/`.
+- Live rollout: built/imported `localhost/iptvtunerr:cluster-hls-rebase` and rolled both cluster Tunerr deployments. Sports `/readyz` reports `dev-hls-rebase` runtime and the deployment is available.
+- Live after-tests: `.diag/multi-stream/20260420-230316` sustained `8/8` mixed sports streams for 480s despite `72` provider `509` signals and no stream-attempt upstream errors; `.diag/multi-stream/20260420-231204` sustained four parallel `904206` pulls for 360s.
+- Verification so far: focused relay tests, `go test -count=1 ./internal/tuner`, live rollout smoke, and two live long-run harnesses. Full `./scripts/verify` remains the final local gate before committing/release.
+
 ## 2026-04-21 - Add and measure sports visual black probing
 
 - Added optional runtime visual probing with `IPTV_TUNERR_LINEUP_VISUAL_PROBE=event|all|off`, implemented via ffmpeg `blackdetect` after the fast feed probe.

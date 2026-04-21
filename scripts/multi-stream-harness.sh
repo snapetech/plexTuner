@@ -33,6 +33,8 @@ START_STAGGER_SECS="${START_STAGGER_SECS:-2}"
 READ_TIMEOUT_SECS="${READ_TIMEOUT_SECS:-0}"
 POLL_SECS="${POLL_SECS:-3}"
 ATTEMPTS_LIMIT="${ATTEMPTS_LIMIT:-25}"
+CURL_USER_AGENT="${CURL_USER_AGENT:-}"
+DISCARD_BODY="${DISCARD_BODY:-false}"
 PMS_URL="${PMS_URL:-${IPTV_TUNERR_PMS_URL:-}}"
 PMS_TOKEN="${PMS_TOKEN:-${IPTV_TUNERR_PMS_TOKEN:-${PLEX_TOKEN:-}}}"
 
@@ -143,13 +145,20 @@ run_channel_pull() {
   local dir="$OUT_DIR/channel-$idx"
   mkdir -p "$dir"
   local body="$dir/body.ts"
+  local output_path="$body"
+  if [[ "$DISCARD_BODY" == "1" || "$DISCARD_BODY" == "true" ]]; then
+    output_path="/dev/null"
+  fi
   local headers="$dir/headers.txt"
   local meta="$dir/meta.json"
   local start_ts end_ts exit_code
   start_ts="$(date -Is)"
   exit_code=0
   local -a args
-  args=(-D "$headers" --silent --show-error --location --output "$body")
+  args=(-D "$headers" --silent --show-error --location --output "$output_path")
+  if [[ -n "$CURL_USER_AGENT" ]]; then
+    args+=(-A "$CURL_USER_AGENT")
+  fi
   if [[ "$READ_TIMEOUT_SECS" != "0" ]]; then
     args+=(--max-time "$READ_TIMEOUT_SECS")
   else
@@ -160,15 +169,16 @@ run_channel_pull() {
     curl "${args[@]}" --write-out 'http_code=%{http_code}\nsize_download=%{size_download}\ntime_total=%{time_total}\nurl_effective=%{url_effective}\n' "$url"
   } >"$dir/curl.meta.raw" 2>"$dir/curl.stderr" || exit_code=$?
   end_ts="$(date -Is)"
-  python3 - "$label" "$url" "$start_ts" "$end_ts" "$exit_code" "$body" "$dir/curl.meta.raw" "$meta" <<'PY'
+  python3 - "$label" "$url" "$start_ts" "$end_ts" "$exit_code" "$body" "$dir/curl.meta.raw" "$meta" "$DISCARD_BODY" <<'PY'
 import json, os, sys
-label, url, started_at, ended_at, exit_code, body_path, raw_path, out_path = sys.argv[1:]
+label, url, started_at, ended_at, exit_code, body_path, raw_path, out_path, discard_body = sys.argv[1:]
 payload = {
     "label": label,
     "url": url,
     "started_at": started_at,
     "ended_at": ended_at,
     "exit_code": int(exit_code),
+    "discard_body": discard_body.lower() in {"1", "true", "yes"},
     "bytes_written": os.path.getsize(body_path) if os.path.exists(body_path) else 0,
 }
 if os.path.exists(raw_path):
@@ -190,6 +200,8 @@ if os.path.exists(raw_path):
                     payload[k] = v
             else:
                 payload[k] = v
+if payload["discard_body"] and "size_download" in payload:
+    payload["bytes_written"] = payload["size_download"]
 with open(out_path, "w", encoding="utf-8") as fh:
     json.dump(payload, fh, indent=2, sort_keys=True)
     fh.write("\n")
@@ -205,6 +217,8 @@ write_summary() {
     echo "Run Seconds: $RUN_SECONDS"
     echo "Start Stagger Seconds: $START_STAGGER_SECS"
     echo "Poll Seconds: $POLL_SECS"
+    echo "Curl User Agent: ${CURL_USER_AGENT:-<default>}"
+    echo "Discard Body: $DISCARD_BODY"
     echo
     echo "Artifacts:"
     echo "  per-channel: $OUT_DIR/channel-*"

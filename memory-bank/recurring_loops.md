@@ -25,6 +25,7 @@
 - Keep shared provider-account lease TTL short (`IPTV_TUNERR_PROVIDER_ACCOUNT_SHARED_LEASE_TTL=2m`) and rely on heartbeat for long-running healthy streams.
 - On live incidents, compare `/debug/active-streams.json` to `/provider/profile.json`; if leases exceed active streams, stale lease files are likely involved.
 - Do not create same-channel shared relay sessions for paths that do not actually fan out bytes to subscribers.
+- If active streams match leases but generated HLS playlist URLs return `407` / `509` after playback has begun, rebase through the original provider `.m3u8` inside the relay. Restarting the whole upstream only after the no-progress timeout leaves Plex with avoidable stalls.
 - Validate with a timed `Lavf/60.16.100` sample of the frozen channel and confirm no new `509`/stall logs and no leftover leases after disconnect.
 
 **Where it's documented**

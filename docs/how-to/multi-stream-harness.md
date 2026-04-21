@@ -30,6 +30,17 @@ START_STAGGER_SECS=3 \
 ./scripts/multi-stream-harness.sh
 ```
 
+For longer live soaks, avoid filling `.diag/` with MPEG-TS bodies and match Plex's internal fetcher shape:
+
+```bash
+TUNERR_BASE_URL='http://127.0.0.1:5004' \
+CHANNEL_IDS='904206,904205,904207,177344' \
+RUN_SECONDS=480 \
+CURL_USER_AGENT='Lavf/60.16.100' \
+DISCARD_BODY=true \
+./scripts/multi-stream-harness.sh
+```
+
 Output lands under **`.diag/multi-stream/<run-id>/`**. Print **`summary.txt`**, then synthesize a verdict:
 
 ```bash
@@ -40,7 +51,7 @@ python3 scripts/multi-stream-harness-report.py --dir .diag/multi-stream/<run-id>
 
 ## Full detail
 
-Artifact layout, **`CHANNEL_URLS_FILE`**, tuning **`POLL_SECS`**, **`ATTEMPTS_LIMIT`**, **`PMS_URL`** / **`PMS_TOKEN`**, and how to read **`report.txt`** / **`report.json`**: [Runbook §10 — Two-stream collapse](../runbooks/iptvtunerr-troubleshooting.md#10-two-stream-collapse--second-stream-kills-the-first).
+Artifact layout, **`CHANNEL_URLS_FILE`**, tuning **`POLL_SECS`**, **`ATTEMPTS_LIMIT`**, **`CURL_USER_AGENT`**, **`DISCARD_BODY`**, **`PMS_URL`** / **`PMS_TOKEN`**, and how to read **`report.txt`** / **`report.json`**: [Runbook §10 — Two-stream collapse](../runbooks/iptvtunerr-troubleshooting.md#10-two-stream-collapse--second-stream-kills-the-first).
 
 ## Related harnesses
 
