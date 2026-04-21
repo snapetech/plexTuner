@@ -13,6 +13,8 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.54] — 2026-04-21
+
 ### Streaming / HLS recovery
 - **Long sports streams now recover generated HLS playlist expiry in-session:** when a provider-generated CDN playlist starts returning `407` / `509` after playback has already begun, the Go HLS relay now rebases by fetching the original provider `.m3u8` again and continues with the fresh generated playlist instead of waiting for a no-progress stall and restarting the whole upstream.
 - **Multi-stream soak testing is safer for long runs:** the multi-stream harness now supports `CURL_USER_AGENT` for Plex-shaped pulls and `DISCARD_BODY=true` so long parallel tests record downloaded byte counts without writing gigabytes of transport stream bodies to disk.

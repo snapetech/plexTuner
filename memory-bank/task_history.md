@@ -6,7 +6,7 @@
 - Improved `scripts/multi-stream-harness.sh` for long live soaks with `CURL_USER_AGENT` and `DISCARD_BODY=true`, so Plex-shaped parallel runs can measure downloaded bytes without writing GBs of TS bodies to `.diag/`.
 - Live rollout: built/imported `localhost/iptvtunerr:cluster-hls-rebase` and rolled both cluster Tunerr deployments. Sports `/readyz` reports `dev-hls-rebase` runtime and the deployment is available.
 - Live after-tests: `.diag/multi-stream/20260420-230316` sustained `8/8` mixed sports streams for 480s despite `72` provider `509` signals and no stream-attempt upstream errors; `.diag/multi-stream/20260420-231204` sustained four parallel `904206` pulls for 360s.
-- Verification so far: focused relay tests, `go test -count=1 ./internal/tuner`, live rollout smoke, and two live long-run harnesses. Full `./scripts/verify` remains the final local gate before committing/release.
+- Verification: focused relay tests, `go test -count=1 ./internal/tuner`, full `./scripts/verify`, live rollout smoke, mixed 8-stream 480s harness, and same-channel 4-stream `904206` 360s harness.
 
 ## 2026-04-21 - Add and measure sports visual black probing
 
