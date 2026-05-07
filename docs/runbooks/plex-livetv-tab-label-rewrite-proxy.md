@@ -189,10 +189,42 @@ intact for TV/native clients.
 
 ## Legacy Python script
 
-The original prototype lives at `scripts/plex-media-providers-label-proxy.py`
-and is retained for environments that cannot run the iptv-tunerr image. It is
-**not** maintained: it lacks identity spoofing, has no test coverage, and
-requires a separate `python:3.11-alpine` container. Prefer the Go subcommand.
+The Python implementation lives at
+`scripts/plex-media-providers-label-proxy.py` and is retained for environments
+that cannot run the iptv-tunerr image. It now supports the same two core proxy
+jobs as the Go subcommand:
+
+- rewrite `/media/providers` and provider-scoped Live TV XML labels using DVR
+  lineup titles
+- optionally run `--elevate-live-tv`, which replaces `X-Plex-Token` with the
+  owner token only for the hardened Live TV read/probe allowlist and rewrites
+  XML `allowTuners` hints from `0` to `1`
+
+Example:
+
+```bash
+IPTV_TUNERR_PMS_OWNER_TOKEN=owner-token \
+  scripts/plex-media-providers-label-proxy.py \
+    --listen 127.0.0.1:33240 \
+    --upstream http://127.0.0.1:32400 \
+    --token owner-token \
+    --elevate-live-tv \
+    --refresh-seconds 30
+```
+
+Security behavior matches the Go proxy's hardened model:
+
+- only `GET`, `HEAD`, and `OPTIONS` requests are eligible for owner-token
+  elevation
+- arbitrary query params that merely mention `/livetv/` do not elevate
+- mutating methods such as `POST`, `PUT`, `PATCH`, and `DELETE` keep the user's
+  original token
+- both query-string and header `X-Plex-Token` are replaced when elevation
+  applies
+
+The Go subcommand remains the preferred production path because it is covered by
+normal Go regression tests and packaged release binaries. The Python script is a
+functional standalone fallback for manual/container deployments.
 
 See also
 --------

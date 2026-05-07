@@ -213,6 +213,7 @@ binary, use nginx with the njs module and adapt these examples:
 
 - [`docs/examples/plex-live-tv-elevate.nginx.conf.example`](../examples/plex-live-tv-elevate.nginx.conf.example)
 - [`docs/examples/plex-live-tv-elevate.njs`](../examples/plex-live-tv-elevate.njs)
+- [`scripts/plex-media-providers-label-proxy.py`](../../scripts/plex-media-providers-label-proxy.py) if you prefer a standalone Python proxy process
 
 The njs example mirrors the hardened Tunerr allowlist and rewrites both the
 `X-Plex-Token` query parameter and request header only for eligible Live TV

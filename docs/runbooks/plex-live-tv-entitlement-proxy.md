@@ -101,6 +101,7 @@ The repo includes a minimal nginx+njs starting point:
 
 - [`docs/examples/plex-live-tv-elevate.nginx.conf.example`](../examples/plex-live-tv-elevate.nginx.conf.example)
 - [`docs/examples/plex-live-tv-elevate.njs`](../examples/plex-live-tv-elevate.njs)
+- [`scripts/plex-media-providers-label-proxy.py`](../../scripts/plex-media-providers-label-proxy.py), a standalone Python proxy that also implements the same hardened Live TV owner-token allowlist
 
 That example is intentionally not a generic "any query mentioning Live TV"
 proxy. It mirrors the hardened Tunerr allowlist and rewrites both query and
