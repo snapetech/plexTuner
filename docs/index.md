@@ -28,6 +28,7 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[how-to/reverse-engineer-plex-livetv-access.md](how-to/reverse-engineer-plex-livetv-access.md)** | Prove where Live TV is inserted, mine undocumented PMS endpoints from logs, and test plex.tv tuner-access gating. |
 | **[runbooks/plex-live-tv-entitlement-proxy.md](runbooks/plex-live-tv-entitlement-proxy.md)** | Put `plex-label-proxy -elevate-live-tv` in front of PMS so non-Home users keep their own library sessions while Live TV uses owner tuner entitlement. |
 | **[reference/plex-live-tv-proxy-frontends.md](reference/plex-live-tv-proxy-frontends.md)** | Cloudflare Tunnel, VPN, Caddy, Traefik, and nginx frontend patterns for the Plex Live TV entitlement proxy. |
+| **[examples/plex-live-tv-elevate.nginx.conf.example](examples/plex-live-tv-elevate.nginx.conf.example)** | Manual nginx+njs example for owner-token Live TV elevation without running the Tunerr proxy binary. |
 | **[reference/vpn-access-patterns.md](reference/vpn-access-patterns.md)** | Tailscale, WireGuard, OpenVPN, Gluetun, NAT-PMP/static-forward, and fail-closed routing patterns for Tunerr and Plex Live TV proxy access. |
 | **[how-to/package-test-builds.md](how-to/package-test-builds.md)** | Build cross-platform test bundles for testers (Linux/macOS/Windows). |
 | **[how-to/tester-handoff-checklist.md](how-to/tester-handoff-checklist.md)** | Tester handoff checklist (bundle contents, platform expectations, bug report capture). |

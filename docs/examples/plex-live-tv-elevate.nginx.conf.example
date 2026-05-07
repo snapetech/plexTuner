@@ -1,0 +1,68 @@
+# Example manual Plex Live TV entitlement proxy using nginx + njs.
+#
+# This is for operators who want the same owner-token elevation pattern without
+# running `iptv-tunerr plex-label-proxy`. It intentionally mirrors Tunerr's
+# hardened allowlist:
+#   - only GET/HEAD/OPTIONS are eligible
+#   - explicit Live TV/provider paths are eligible
+#   - transcode/playQueue helper requests are eligible only when path/uri points
+#     at a Live TV session/provider
+#   - arbitrary bait query params do not elevate
+#
+# Requirements:
+#   - nginx built with ngx_http_js_module
+#   - ngx_http_sub_module for the optional allowTuners response rewrite
+#   - njs script from docs/examples/plex-live-tv-elevate.njs copied to:
+#       /etc/nginx/plex-live-tv-elevate.njs
+#   - PLEX_OWNER_TOKEN exported to nginx workers through the `env` directive
+#
+# Keep this frontend private or behind TLS/VPN/Cloudflare Tunnel. Proxied users
+# do not receive the raw owner token, but this proxy is still a limited
+# owner-token deputy for allowlisted Live TV reads.
+
+load_module modules/ngx_http_js_module.so;
+
+env PLEX_OWNER_TOKEN;
+
+http {
+    js_import plex from /etc/nginx/plex-live-tv-elevate.njs;
+    js_set $plex_effective_args plex.effectiveArgs;
+    js_set $plex_effective_token plex.effectiveToken;
+
+    upstream plex_origin {
+        server 127.0.0.1:32400;
+    }
+
+    server {
+        listen 443 ssl http2;
+        server_name media.example.com;
+
+        ssl_certificate     /etc/nginx/tls/media.example.com.crt;
+        ssl_certificate_key /etc/nginx/tls/media.example.com.key;
+
+        location / {
+            proxy_http_version 1.1;
+            proxy_set_header Host 127.0.0.1:32400;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header Connection "";
+
+            # PMS accepts X-Plex-Token in either query string or header. The
+            # njs helper replaces the query token on elevated requests and this
+            # header keeps PMS behavior consistent for clients that supplied the
+            # token only as a header.
+            proxy_set_header X-Plex-Token $plex_effective_token;
+
+            # Disable upstream compression so sub_filter can rewrite the small
+            # XML allowTuners hints that Plex Web uses to reveal Live TV UI.
+            proxy_set_header Accept-Encoding "";
+            sub_filter_types application/xml text/xml text/plain;
+            sub_filter_once off;
+            sub_filter 'allowTuners="0"' 'allowTuners="1"';
+            sub_filter '<Setting id="allowTuners" value="0"' '<Setting id="allowTuners" value="1"';
+
+            proxy_pass http://plex_origin$uri?$plex_effective_args;
+        }
+    }
+}

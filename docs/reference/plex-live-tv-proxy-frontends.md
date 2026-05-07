@@ -184,6 +184,9 @@ the proxy port (`33240`) while keeping the public service port stable if needed.
 
 ## nginx
 
+The plain nginx block below is a TLS frontend for `iptv-tunerr
+plex-label-proxy`, not a standalone owner-token elevation implementation:
+
 ```nginx
 server {
     listen 443 ssl http2;
@@ -204,6 +207,16 @@ server {
     }
 }
 ```
+
+If you want nginx itself to perform the owner-token elevation without the Tunerr
+binary, use nginx with the njs module and adapt these examples:
+
+- [`docs/examples/plex-live-tv-elevate.nginx.conf.example`](../examples/plex-live-tv-elevate.nginx.conf.example)
+- [`docs/examples/plex-live-tv-elevate.njs`](../examples/plex-live-tv-elevate.njs)
+
+The njs example mirrors the hardened Tunerr allowlist and rewrites both the
+`X-Plex-Token` query parameter and request header only for eligible Live TV
+reads.
 
 ## Firewall Guidance
 

@@ -64,6 +64,55 @@ The implementation lives in:
 - `internal/plexlabelproxy/proxy.go` - reverse proxy and response rewrite hooks
 - `cmd/iptv-tunerr/cmd_plex_label_proxy.go` - CLI wiring and env fallback
 
+## Manual Implementation Without Tunerr
+
+You can reproduce the same pattern with another reverse proxy if you do not
+want to run `iptv-tunerr plex-label-proxy`. The required behavior is:
+
+1. Keep PMS behind a proxy URL that clients use as their Plex Custom server
+   access URL.
+2. For every request, preserve the user's inbound Plex token by default.
+3. Replace `X-Plex-Token` with the PMS owner token only when all of these are
+   true:
+   - method is `GET`, `HEAD`, or `OPTIONS`
+   - path is one of the allowlisted Live TV paths above, or the request is a
+     transcode/playQueue helper whose `path`/`uri` parameter points at Live TV
+4. Replace both token locations when elevating:
+   - query string parameter `X-Plex-Token`
+   - request header `X-Plex-Token`
+5. Do not elevate ordinary library/account paths, even if an arbitrary query
+   parameter contains text like `/livetv/`.
+6. Do not elevate mutating methods (`POST`, `PUT`, `PATCH`, `DELETE`).
+7. Optionally rewrite small XML entitlement hints from `allowTuners="0"` to
+   `allowTuners="1"` so Plex Web reveals the Live TV entry point.
+
+Manual implementation checklist:
+
+```text
+incoming user request
+  -> classify method + path + specific helper param
+  -> if eligible, replace query/header token with owner token
+  -> otherwise preserve user's original token
+  -> proxy to PMS
+  -> optionally rewrite XML allowTuners hints
+```
+
+The repo includes a minimal nginx+njs starting point:
+
+- [`docs/examples/plex-live-tv-elevate.nginx.conf.example`](../examples/plex-live-tv-elevate.nginx.conf.example)
+- [`docs/examples/plex-live-tv-elevate.njs`](../examples/plex-live-tv-elevate.njs)
+
+That example is intentionally not a generic "any query mentioning Live TV"
+proxy. It mirrors the hardened Tunerr allowlist and rewrites both query and
+header token locations when elevation applies. Treat it as an example to review
+and adapt for your own frontend, not as a drop-in package manager install.
+
+Caddy, Traefik, and stock nginx without scripting are fine TLS/front-door
+layers, but they usually cannot safely rebuild `X-Plex-Token` query parameters
+based on request classification by themselves. Put the Tunerr proxy, nginx+njs,
+OpenResty/Lua, HAProxy/Lua, Envoy/Lua, or a small purpose-built service behind
+those frontends when you need token elevation.
+
 ## Run The Proxy
 
 Use the PMS owner token. On Linux installs, the owner token is often available

@@ -13,6 +13,9 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+### Docs / examples
+- **Manual Plex Live TV proxy implementation guidance:** added a Tunerr-free implementation checklist plus nginx+njs examples that mirror the hardened owner-token elevation allowlist and rewrite both query-string and header token locations for eligible Live TV reads.
+
 ## [v0.1.56] — 2026-05-07
 
 ### Security / Plex proxy hardening

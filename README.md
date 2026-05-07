@@ -1476,6 +1476,10 @@ USER_TOKEN=optional-real-non-home-user-token \
 The detailed systemd, Cloudflare Tunnel, direct HTTPS frontend, firewall,
 validation, and rollback procedure is in
 [`docs/runbooks/plex-live-tv-entitlement-proxy.md`](docs/runbooks/plex-live-tv-entitlement-proxy.md).
+If you want to reproduce the same behavior without running the Tunerr proxy,
+the runbook includes a manual implementation checklist plus nginx+njs examples:
+[`docs/examples/plex-live-tv-elevate.nginx.conf.example`](docs/examples/plex-live-tv-elevate.nginx.conf.example)
+and [`docs/examples/plex-live-tv-elevate.njs`](docs/examples/plex-live-tv-elevate.njs).
 For Cloudflare-free remote access, see
 [`docs/reference/vpn-access-patterns.md`](docs/reference/vpn-access-patterns.md)
 for Tailscale, WireGuard, OpenVPN, Gluetun, NAT-PMP/static-forward, and
