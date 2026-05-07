@@ -263,11 +263,24 @@ func TestIsLiveTVRequest(t *testing.T) {
 		"/livetv/dvrs":                          true,
 		"/tv.plex.providers.epg.xmltv:767/grid": true,
 		"/video/:/transcode/universal/start.m3u8?path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8": true,
+		"/playQueues?uri=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8":                              true,
+		"/library/sections?bait=%2Flivetv%2Fdvr":                                               false,
+		"/library/sections?path=%2Flivetv%2Fdvr":                                               false,
+		"/media/grabbers/tv.plex.grabbers.hdhomerun/devices":                                   false,
 	}
 	for target, want := range cases {
 		req := httptest.NewRequest(http.MethodGet, target, nil)
 		if got := IsLiveTVRequest(req); got != want {
 			t.Fatalf("target=%q got=%v want=%v", target, got, want)
+		}
+	}
+}
+
+func TestIsLiveTVRequest_BlocksMutatingMethods(t *testing.T) {
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		req := httptest.NewRequest(method, "/livetv/dvrs?X-Plex-Token=user-token", nil)
+		if IsLiveTVRequest(req) {
+			t.Fatalf("%s /livetv/dvrs must not be owner-token elevated", method)
 		}
 	}
 }
@@ -290,6 +303,14 @@ func TestApplyLiveTVTokenElevation(t *testing.T) {
 	}
 	if got := library.URL.Query().Get("X-Plex-Token"); got != "user-token" {
 		t.Fatalf("library token got %q", got)
+	}
+
+	bait := httptest.NewRequest(http.MethodGet, "/library/sections?X-Plex-Token=user-token&bait=%2Flivetv%2Fdvr", nil)
+	if ApplyLiveTVTokenElevation(bait, "owner-token") {
+		t.Fatal("bait query on library request must not be elevated")
+	}
+	if got := bait.URL.Query().Get("X-Plex-Token"); got != "user-token" {
+		t.Fatalf("bait library token got %q", got)
 	}
 }
 

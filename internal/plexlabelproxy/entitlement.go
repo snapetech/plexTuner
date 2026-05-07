@@ -3,6 +3,7 @@ package plexlabelproxy
 import (
 	"bytes"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -31,33 +32,55 @@ func IsLiveTVRequest(req *http.Request) bool {
 	if req == nil || req.URL == nil {
 		return false
 	}
+	if !liveTVElevationMethod(req.Method) {
+		return false
+	}
 	path := req.URL.EscapedPath()
 	switch {
 	case path == "/media/providers":
 		return true
 	case path == "/media/grabbers/devices":
 		return true
-	case strings.HasPrefix(path, "/media/grabbers/"):
-		return true
 	case strings.HasPrefix(path, "/livetv/"):
 		return true
 	case strings.HasPrefix(path, "/tv.plex.providers.epg.xmltv:"):
 		return true
+	case strings.HasPrefix(path, "/video/:/transcode/"):
+		return queryParamIsLiveTVPath(req.URL.Query(), "path")
+	case strings.HasPrefix(path, "/playQueues"):
+		return queryParamIsLiveTVPath(req.URL.Query(), "uri") ||
+			queryParamIsLiveTVPath(req.URL.Query(), "path")
 	}
-	for key, vals := range req.URL.Query() {
-		if liveTVText(key) {
-			return true
-		}
-		for _, v := range vals {
-			if liveTVText(v) {
-				return true
-			}
-		}
-	}
-	if liveTVText(req.Header.Get("Referer")) {
-		return true
+	if path == "/" || path == "/identity" {
+		// Plex Web can request root identity while navigating the Live TV SPA.
+		// Elevating this only changes small XML entitlement hints and keeps the
+		// working client-visible Live TV entry point without making arbitrary
+		// query text a privilege-escalation trigger.
+		return refererIsLiveTV(req.Header.Get("Referer"))
 	}
 	return false
+}
+
+func liveTVElevationMethod(method string) bool {
+	switch strings.ToUpper(strings.TrimSpace(method)) {
+	case "", http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	default:
+		return false
+	}
+}
+
+func queryParamIsLiveTVPath(q url.Values, name string) bool {
+	for _, v := range q[name] {
+		if liveTVText(v) {
+			return true
+		}
+	}
+	return false
+}
+
+func refererIsLiveTV(ref string) bool {
+	return liveTVText(ref)
 }
 
 func liveTVText(s string) bool {

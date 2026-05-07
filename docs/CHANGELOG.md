@@ -13,6 +13,11 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.56] — 2026-05-07
+
+### Security / Plex proxy hardening
+- **Live TV owner-token elevation is now narrower:** `plex-label-proxy -elevate-live-tv` still elevates the working Live TV, provider, transcode, and play-queue read paths, but no longer treats arbitrary query-string mentions of `/livetv/` as sufficient for owner-token injection and no longer elevates mutating methods such as `POST`, `PUT`, `PATCH`, or `DELETE`.
+
 ## [v0.1.55] — 2026-05-07
 
 ### Plex / Live TV access

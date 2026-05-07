@@ -32,17 +32,30 @@ library watched state and resume state stay tied to the user's own token.
 
 ## Request Classification
 
-The token is elevated for:
+The owner token is elevated only for safe read/probe methods (`GET`, `HEAD`,
+and `OPTIONS`) on known Live TV surfaces:
 
 - `/livetv/*`
 - `/media/providers`
 - `/media/grabbers/devices`
-- `/media/grabbers/*`
 - `/tv.plex.providers.epg.xmltv:*`
-- transcode or player helper requests whose query string or `Referer` contains
-  `/livetv/` or `tv.plex.providers.epg.xmltv:*`
+- transcode helper requests under `/video/:/transcode/*` whose `path` query
+  parameter is a Live TV session/provider path
+- play queue helper requests under `/playQueues` whose `uri` or `path` query
+  parameter is a Live TV session/provider path
+- root identity requests (`/` or `/identity`) only when the `Referer` is already
+  a Live TV page
 
-Everything else keeps the inbound client token.
+Everything else keeps the inbound client token. In particular, arbitrary query
+parameters that merely mention `/livetv/` do not trigger elevation, and
+mutating methods such as `POST`, `PUT`, `PATCH`, and `DELETE` are not elevated
+even on Live TV paths.
+
+Security boundary: this mode should still be treated as granting proxied users
+owner-backed Live TV access. The raw owner token is not returned to clients by
+the proxy, but the proxy can act as a limited owner-token deputy for the
+allowlisted Live TV reads above. Expose it only to users who should be allowed
+to use the server owner's tuners.
 
 The implementation lives in:
 
