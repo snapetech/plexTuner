@@ -197,8 +197,8 @@ func TestWatchdogExpectedChannelCountUsesCurrentTunerLineup(t *testing.T) {
 
 func TestDeadDVRNeedsReregistration(t *testing.T) {
 	dead := DVRInfo{DeviceStatus: "dead", DeviceState: "enabled"}
-	if deadDVRNeedsReregistration(dead, 95, 100) {
-		t.Fatal("healthy dead-marked dvr should not re-register")
+	if !deadDVRNeedsReregistration(dead, 95, 100) {
+		t.Fatal("dead-marked dvr should re-register even when channel mappings exist")
 	}
 	if !deadDVRNeedsReregistration(dead, 50, 100) {
 		t.Fatal("under-activated dead-marked dvr should re-register")

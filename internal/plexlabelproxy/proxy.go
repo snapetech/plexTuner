@@ -29,6 +29,18 @@ type Config struct {
 	// It is NOT injected into proxied client requests (clients carry their own).
 	Token string
 
+	// OwnerToken is injected only for Live TV request paths when
+	// ElevateLiveTV is enabled. This lets shared users browse normal libraries
+	// with their own Plex tokens while Live TV requests run under the server
+	// owner's tuner entitlement.
+	OwnerToken string
+
+	// ElevateLiveTV enables the unsupported Live TV token-elevation mode.
+	// When enabled, only requests classified by IsLiveTVRequest are rewritten
+	// to use OwnerToken, and XML responses have allowTuners="0" rewritten to
+	// allowTuners="1" as a UI hint for proxied clients.
+	ElevateLiveTV bool
+
 	// Labels supplies the LiveTV identifier -> tab label map. Refreshed lazily.
 	Labels LabelSource
 
@@ -129,6 +141,9 @@ func New(cfg Config) (*Proxy, error) {
 		// clients use an IP+token connection where Host is irrelevant; this is
 		// the safer default for behind-ingress deployments).
 		req.Host = u.Host
+		if p.cfg.ElevateLiveTV {
+			p.elevateLiveTVRequest(req)
+		}
 	}
 	p.reverseProxy = rp
 	return p, nil
@@ -147,7 +162,7 @@ func (p *Proxy) modifyResponse(resp *http.Response) error {
 		return nil
 	}
 	scope := classifyResponse(resp.Request.URL.Path, resp.Header.Get("Content-Type"))
-	if scope == scopeNone {
+	if scope == scopeNone && !p.shouldRewriteTunerEntitlement(resp) {
 		// Warn (once per process per path) when a path we'd normally rewrite
 		// came back as something other than XML — typically JSON. Plex Web
 		// XHRs may negotiate JSON; we can't currently rewrite JSON.
@@ -174,9 +189,12 @@ func (p *Proxy) modifyResponse(resp *http.Response) error {
 	}
 
 	rewritten := body
+	if p.shouldRewriteTunerEntitlement(resp) {
+		rewritten = RewriteTunerEntitlementFlags(rewritten)
+	}
 	switch scope {
 	case scopeMediaProviders:
-		out, rerr := rewriteMediaProvidersXML(body, labels)
+		out, rerr := rewriteMediaProvidersXML(rewritten, labels)
 		if rerr != nil {
 			p.logger.Printf("plexlabelproxy: rewrite /media/providers failed: %v", rerr)
 		} else {
@@ -203,7 +221,7 @@ func (p *Proxy) modifyResponse(resp *http.Response) error {
 		}
 	case scopeRootIdentity:
 		if !p.cfg.SpoofIdentity {
-			return restoreBody(resp, body, encoding)
+			return restoreBody(resp, rewritten, encoding)
 		}
 		// Attempt to derive the per-request label from a Referer pointing at
 		// a provider-scoped path; otherwise leave upstream value alone.
@@ -217,6 +235,20 @@ func (p *Proxy) modifyResponse(resp *http.Response) error {
 	}
 
 	return restoreBody(resp, rewritten, encoding)
+}
+
+func (p *Proxy) elevateLiveTVRequest(req *http.Request) {
+	if ApplyLiveTVTokenElevation(req, p.cfg.OwnerToken) {
+		p.logger.Printf("plexlabelproxy: elevated Live TV request %s", req.URL.Path)
+	}
+}
+
+func (p *Proxy) shouldRewriteTunerEntitlement(resp *http.Response) bool {
+	if !p.cfg.ElevateLiveTV {
+		return false
+	}
+	ct := strings.ToLower(resp.Header.Get("Content-Type"))
+	return strings.Contains(ct, "xml") || ct == ""
 }
 
 // labelFromReferer parses the Referer header and returns the label for the

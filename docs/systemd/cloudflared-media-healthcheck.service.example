@@ -1,0 +1,13 @@
+[Unit]
+Description=Health check Cloudflare Tunnel for Plex Live TV proxy frontend
+After=network-online.target cloudflared-media.service plex-live-tv-proxy.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=METRICS_URL=http://127.0.0.1:49312/metrics
+Environment=MIN_CONNECTIONS=2
+Environment=ORIGIN_URL=http://127.0.0.1:33240/identity
+Environment=PUBLIC_URL=https://media.example.com/identity
+Environment=ACCEPT_CODES=200 401 403
+ExecStart=/usr/local/sbin/check-cloudflared-media.sh

@@ -189,6 +189,110 @@ func TestJoinLabels_DeterministicOrder(t *testing.T) {
 	}
 }
 
+func TestProxy_ElevatesOnlyLiveTVRequests(t *testing.T) {
+	type seen struct {
+		path        string
+		queryToken  string
+		headerToken string
+	}
+	var requests []seen
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, seen{
+			path:        r.URL.Path,
+			queryToken:  r.URL.Query().Get("X-Plex-Token"),
+			headerToken: r.Header.Get("X-Plex-Token"),
+		})
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer allowTuners="0"/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{Upstream: up.URL, Token: "label-token", OwnerToken: "owner-token", ElevateLiveTV: true})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	for _, target := range []string{
+		"/library/sections?X-Plex-Token=user-token",
+		"/livetv/dvrs?X-Plex-Token=user-token",
+		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
+	} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		proxy.ServeHTTP(rec, req)
+	}
+
+	if len(requests) != 3 {
+		t.Fatalf("requests=%d", len(requests))
+	}
+	if requests[0].queryToken != "user-token" || requests[0].headerToken == "owner-token" {
+		t.Fatalf("library request should keep user token, got %+v", requests[0])
+	}
+	if requests[1].queryToken != "owner-token" || requests[1].headerToken != "owner-token" {
+		t.Fatalf("livetv request should elevate token, got %+v", requests[1])
+	}
+	if requests[2].queryToken != "owner-token" || requests[2].headerToken != "owner-token" {
+		t.Fatalf("transcode request for livetv session should elevate token, got %+v", requests[2])
+	}
+}
+
+func TestProxy_RewritesAllowTunersWhenElevationEnabled(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer allowTuners="0"><Directory title="Library"/></MediaContainer>`))
+	}))
+	defer up.Close()
+	proxy, err := New(Config{Upstream: up.URL, Token: "label-token", OwnerToken: "owner-token", ElevateLiveTV: true})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/?X-Plex-Token=user-token", nil)
+	proxy.ServeHTTP(rec, req)
+
+	if !strings.Contains(rec.Body.String(), `allowTuners="1"`) {
+		t.Fatalf("expected allowTuners rewrite, got %s", rec.Body.String())
+	}
+}
+
+func TestIsLiveTVRequest(t *testing.T) {
+	cases := map[string]bool{
+		"/library/sections":                     false,
+		"/media/providers":                      true,
+		"/livetv/dvrs":                          true,
+		"/tv.plex.providers.epg.xmltv:767/grid": true,
+		"/video/:/transcode/universal/start.m3u8?path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8": true,
+	}
+	for target, want := range cases {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		if got := IsLiveTVRequest(req); got != want {
+			t.Fatalf("target=%q got=%v want=%v", target, got, want)
+		}
+	}
+}
+
+func TestApplyLiveTVTokenElevation(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/livetv/dvrs?X-Plex-Token=user-token", nil)
+	if !ApplyLiveTVTokenElevation(req, "owner-token") {
+		t.Fatal("expected Live TV request to be elevated")
+	}
+	if got := req.URL.Query().Get("X-Plex-Token"); got != "owner-token" {
+		t.Fatalf("query token got %q", got)
+	}
+	if got := req.Header.Get("X-Plex-Token"); got != "owner-token" {
+		t.Fatalf("header token got %q", got)
+	}
+
+	library := httptest.NewRequest(http.MethodGet, "/library/sections?X-Plex-Token=user-token", nil)
+	if ApplyLiveTVTokenElevation(library, "owner-token") {
+		t.Fatal("library request must not be elevated")
+	}
+	if got := library.URL.Query().Get("X-Plex-Token"); got != "user-token" {
+		t.Fatalf("library token got %q", got)
+	}
+}
+
 func TestNew_RequiresUpstream(t *testing.T) {
 	if _, err := New(Config{}); err == nil {
 		t.Fatal("expected error on empty Upstream")

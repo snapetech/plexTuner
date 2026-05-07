@@ -97,6 +97,7 @@ The current limits are deliberate: Tunerr does not clone Plex passwords, it does
 - [CLI Commands](#cli-commands)
 - [Key Environment Variables](#key-environment-variables)
 - [Platform Support](#platform-support)
+- [Plex Live TV Entitlement Proxy](#plex-live-tv-entitlement-proxy)
 - [Repo Layout](#repo-layout)
 - [Security Notes](#security-notes)
 - [Documentation](#documentation)
@@ -1245,6 +1246,7 @@ Full K8s guide: [`k8s/README.md`](k8s/README.md)
 | `epg-doctor` | Run the combined EPG diagnosis workflow in one report |
 | `channel-dna-report` | Group channels by stable cross-provider `dna_id` identity |
 | `ghost-hunter` | Observe Plex Live TV sessions and classify stale/hidden-grab cases |
+| `plex-label-proxy` | Reverse-proxy PMS for Live TV provider labels and optional non-Home Live TV entitlement elevation |
 | `hdhr-scan` | Discover physical HDHomeRun tuners on LAN (UDP) or fetch discover/lineup via HTTP |
 | `plex-lineup-harvest` | Probe Plex lineup matching across tuner cap/shape variants and summarize discovered lineup titles |
 | `catchup-capsules` | Export near-live capsule candidates from guide XMLTV |
@@ -1409,6 +1411,88 @@ Platform requirements: [`docs/how-to/platform-requirements.md`](docs/how-to/plat
 
 ---
 
+## Plex Live TV Entitlement Proxy
+
+`iptv-tunerr plex-label-proxy` can sit in front of Plex Media Server when Plex
+clients need one stable PMS URL but you need to fix Live TV behavior on the
+wire.
+
+It has two modes:
+
+- default mode rewrites Live TV provider labels so multiple DVRs do not all
+  appear as the same Plex server name
+- `-elevate-live-tv` additionally replaces the Plex token only for Live TV
+  requests with the PMS owner token
+
+The entitlement mode is for the Plex sharing gap where non-Home users can
+browse shared libraries but Plex hides Live TV. Normal library paths still use
+the user's token, so watched/resume state for movies and shows remains theirs.
+Live TV/DVR paths borrow the owner token so the client can see and use tuners.
+
+Quick local test:
+
+```bash
+iptv-tunerr plex-label-proxy \
+  -listen 127.0.0.1:33240 \
+  -upstream http://127.0.0.1:32400 \
+  -elevate-live-tv \
+  -refresh-seconds 30
+```
+
+Use `IPTV_TUNERR_PMS_TOKEN` and, when different, `IPTV_TUNERR_PMS_OWNER_TOKEN`
+in a root-only env file for the PMS owner token. Do not pass the owner token on
+the command line for permanent services.
+
+Production shape:
+
+```text
+Plex clients
+  -> https://media.example.com
+  -> VPN, Cloudflare Tunnel, or HTTPS frontend on TCP 443
+  -> http://127.0.0.1:33240  (plex-label-proxy)
+  -> http://127.0.0.1:32400  (PMS)
+```
+
+For entitlement mode, make the proxy the only path to PMS:
+
+- keep `plex-label-proxy` bound to `127.0.0.1:33240` by default
+- set Plex **Custom server access URLs** to your HTTPS frontend, for example
+  `https://media.example.com:443`
+- use a VPN frontend, named Cloudflare Tunnel, or normal reverse proxy on TCP
+  `443`
+- block direct public inbound `32400` and `33240` only after clients are using
+  the HTTPS proxy URL
+- validate with a Plex account that is not in Plex Home
+
+The repeatable validation helper is:
+
+```bash
+PROXY_URL=https://media.example.com \
+OWNER_TOKEN=owner-token \
+USER_TOKEN=optional-real-non-home-user-token \
+  docs/scripts/validate-plex-live-tv-proxy.sh
+```
+
+The detailed systemd, Cloudflare Tunnel, direct HTTPS frontend, firewall,
+validation, and rollback procedure is in
+[`docs/runbooks/plex-live-tv-entitlement-proxy.md`](docs/runbooks/plex-live-tv-entitlement-proxy.md).
+For Cloudflare-free remote access, see
+[`docs/reference/vpn-access-patterns.md`](docs/reference/vpn-access-patterns.md)
+for Tailscale, WireGuard, OpenVPN, Gluetun, NAT-PMP/static-forward, and
+fail-closed routing patterns.
+The Cloudflare Tunnel templates include an automatic health timer that checks
+cloudflared HA connections, the local proxy origin, and the public HTTPS URL;
+it restarts `cloudflared-media.service`, and restarts `plex-live-tv-proxy.service`
+first when the local origin is unhealthy.
+
+Do not DNAT Plex's secure `*.plex.direct:32400` traffic into the HTTP proxy.
+That breaks Plex Web secure connections. Use an HTTPS frontend such as VPN,
+Caddy, Traefik, nginx, or Cloudflare Tunnel and advertise that URL to Plex.
+Frontend examples are in
+[`docs/reference/plex-live-tv-proxy-frontends.md`](docs/reference/plex-live-tv-proxy-frontends.md).
+
+---
+
 ## Repo Layout
 
 ```
@@ -1456,6 +1540,9 @@ docs/                 Reference, how-to guides, runbooks
 - [`docs/reference/plex-client-compatibility-matrix.md`](docs/reference/plex-client-compatibility-matrix.md) — Tier-1 clients, **HR-002** / **HR-003**
 - [`docs/reference/lineup-epg-hygiene.md`](docs/reference/lineup-epg-hygiene.md) — Dedupe, strip hosts, **HR-005** / **HR-006**
 - [`docs/reference/plex-dvr-lifecycle-and-api.md`](docs/reference/plex-dvr-lifecycle-and-api.md) — Plex DVR lifecycle, HDHR wizard, injection API
+- [`docs/runbooks/plex-live-tv-entitlement-proxy.md`](docs/runbooks/plex-live-tv-entitlement-proxy.md) — Run `plex-label-proxy -elevate-live-tv` as the only PMS front door for non-Home Live TV access
+- [`docs/reference/plex-live-tv-proxy-frontends.md`](docs/reference/plex-live-tv-proxy-frontends.md) — Cloudflare Tunnel, VPN, Caddy, Traefik, and nginx frontend examples for the Plex proxy
+- [`docs/reference/vpn-access-patterns.md`](docs/reference/vpn-access-patterns.md) — Tailscale, WireGuard, OpenVPN, Gluetun, NAT-PMP/static-forward, and fail-closed routing patterns
 - [`docs/reference/testing-and-supervisor-config.md`](docs/reference/testing-and-supervisor-config.md) — Supervisor, offsets, overflow shards
 - [`docs/reference/epg-linking-pipeline.md`](docs/reference/epg-linking-pipeline.md) — EPG match strategy
 - [`docs/potential_fixes.md`](docs/potential_fixes.md) — WebSafe / startup-gate context (**HR-001** pointers)
@@ -1478,6 +1565,7 @@ docs/                 Reference, how-to guides, runbooks
 **Runbooks**
 - [`docs/runbooks/iptvtunerr-troubleshooting.md`](docs/runbooks/iptvtunerr-troubleshooting.md) — **`/healthz`**, **`/readyz`**, harnesses, **HR-***
 - [`docs/runbooks/plex-hidden-live-grab-recovery.md`](docs/runbooks/plex-hidden-live-grab-recovery.md)
+- [`docs/runbooks/plex-live-tv-entitlement-proxy.md`](docs/runbooks/plex-live-tv-entitlement-proxy.md)
 - [`docs/runbooks/plex-in-cluster.md`](docs/runbooks/plex-in-cluster.md)
 - [`k8s/README.md`](k8s/README.md) — Cluster deploy, verify **`curl`** snippets
 

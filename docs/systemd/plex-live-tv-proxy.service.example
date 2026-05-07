@@ -1,0 +1,31 @@
+[Unit]
+Description=Plex Live TV entitlement proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/iptvtunerr
+EnvironmentFile=/etc/iptvtunerr/plex-live-tv-proxy.env
+ExecStart=/opt/iptvtunerr/iptv-tunerr-proxy plex-label-proxy -listen ${IPTV_TUNERR_PLEX_LABEL_PROXY_LISTEN} -upstream ${IPTV_TUNERR_PMS_URL} -elevate-live-tv -refresh-seconds 30
+Restart=always
+RestartSec=5
+TimeoutStartSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=plex-live-tv-proxy
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+StateDirectory=iptvtunerr
+ReadWritePaths=/var/lib/iptvtunerr
+CapabilityBoundingSet=
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

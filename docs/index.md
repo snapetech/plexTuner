@@ -26,6 +26,9 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[how-to/plex-lineup-harvest.md](how-to/plex-lineup-harvest.md)** | Probe Plex lineup variants, capture harvest bundles, and feed Programming Manager import/assist flows. |
 | **[how-to/plex-ops-patterns.md](how-to/plex-ops-patterns.md)** | Advanced Plex-only operating patterns: zero-touch, category DVR fleets, injected DVRs. |
 | **[how-to/reverse-engineer-plex-livetv-access.md](how-to/reverse-engineer-plex-livetv-access.md)** | Prove where Live TV is inserted, mine undocumented PMS endpoints from logs, and test plex.tv tuner-access gating. |
+| **[runbooks/plex-live-tv-entitlement-proxy.md](runbooks/plex-live-tv-entitlement-proxy.md)** | Put `plex-label-proxy -elevate-live-tv` in front of PMS so non-Home users keep their own library sessions while Live TV uses owner tuner entitlement. |
+| **[reference/plex-live-tv-proxy-frontends.md](reference/plex-live-tv-proxy-frontends.md)** | Cloudflare Tunnel, VPN, Caddy, Traefik, and nginx frontend patterns for the Plex Live TV entitlement proxy. |
+| **[reference/vpn-access-patterns.md](reference/vpn-access-patterns.md)** | Tailscale, WireGuard, OpenVPN, Gluetun, NAT-PMP/static-forward, and fail-closed routing patterns for Tunerr and Plex Live TV proxy access. |
 | **[how-to/package-test-builds.md](how-to/package-test-builds.md)** | Build cross-platform test bundles for testers (Linux/macOS/Windows). |
 | **[how-to/tester-handoff-checklist.md](how-to/tester-handoff-checklist.md)** | Tester handoff checklist (bundle contents, platform expectations, bug report capture). |
 | **[how-to/tester-release-notes-draft.md](how-to/tester-release-notes-draft.md)** | Draft tester-facing release notes for current validation builds. |

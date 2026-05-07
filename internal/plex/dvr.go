@@ -66,6 +66,7 @@ type DVRInfo struct {
 	DeviceStatus string   // status of the first Device child, e.g. alive/dead
 	DeviceState  string   // state of the first Device child, e.g. enabled/disabled
 	DeviceUUIDs  []string // UUIDs of Device children, e.g. ["device://tv.plex.grabbers.hdhomerun/newsus"]
+	DeviceURIs   []string // URIs of Device children, e.g. ["http://iptvtunerr.plex.svc:5004"]
 }
 
 func RegisterTunerViaAPI(cfg PlexAPIConfig) (*DeviceInfo, error) {
@@ -297,6 +298,14 @@ func CreateDVRViaAPI(cfg PlexAPIConfig, deviceInfo *DeviceInfo) (dvrKey int, dvr
 			}
 			matched = true
 			if dvrGuideMatches(d, desiredGuideURL) {
+				if dvrDeviceLooksDead(d) {
+					fmt.Printf("[PLEX-REG] DVR already registered with matching guide URL but device is not alive (key=%d status=%q state=%q) — deleting stale DVR\n",
+						d.Key, d.DeviceStatus, d.DeviceState)
+					if dErr := DeleteDVRAPI(cfg.PlexHost, cfg.PlexToken, d.Key); dErr != nil {
+						return 0, "", nil, fmt.Errorf("delete dead DVR %d: %w", d.Key, dErr)
+					}
+					break
+				}
 				fmt.Printf("[PLEX-REG] DVR already registered with matching guide URL (key=%d) — reusing\n", d.Key)
 				return d.Key, d.UUID, []string{d.LineupURL}, nil
 			}
@@ -581,11 +590,13 @@ func ListDVRsAPI(plexHost, token string) ([]DVRInfo, error) {
 			title = strings.TrimSpace(d.Title)
 		}
 		uuids := make([]string, 0, len(d.Devices))
+		uris := make([]string, 0, len(d.Devices))
 		devKey := ""
 		deviceStatus := ""
 		deviceState := ""
 		for _, dev := range d.Devices {
 			uuids = append(uuids, strings.TrimSpace(dev.UUID))
+			uris = append(uris, strings.TrimSpace(dev.URI))
 			if devKey == "" {
 				devKey = strings.TrimSpace(dev.Key)
 				deviceStatus = strings.TrimSpace(dev.Status)
@@ -601,6 +612,7 @@ func ListDVRsAPI(plexHost, token string) ([]DVRInfo, error) {
 			DeviceStatus: deviceStatus,
 			DeviceState:  deviceState,
 			DeviceUUIDs:  uuids,
+			DeviceURIs:   uris,
 		})
 	}
 	return out, nil
@@ -875,14 +887,7 @@ func dvrDeviceLooksDead(d DVRInfo) bool {
 }
 
 func deadDVRNeedsReregistration(d DVRInfo, enabledCount, expectedCount int) bool {
-	if !dvrDeviceLooksDead(d) {
-		return false
-	}
-	if expectedCount <= 0 {
-		return true
-	}
-	threshold := int(float64(expectedCount) * 0.9)
-	return enabledCount < threshold
+	return dvrDeviceLooksDead(d)
 }
 
 // DVRWatchdog periodically verifies that this tuner's DVR registration is present and

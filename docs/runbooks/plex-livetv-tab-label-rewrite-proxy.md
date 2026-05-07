@@ -91,17 +91,23 @@ this is hitting your environment.
 iptv-tunerr plex-label-proxy [flags]
 
 Flags:
-  -listen string            Listen address                          (default "0.0.0.0:33240")
+  -listen string            Listen address                          (default "127.0.0.1:33240")
   -upstream string          Upstream PMS base URL
   -plex-url string          Convenience alias for -upstream
   -token string             PMS token used to query /livetv/dvrs
+  -owner-token string       Owner PMS token for Live TV elevation    (default: owner-token env, then token/env token)
   -strip-prefix string      Prefix to strip from DVR lineupTitle     (default "iptvtunerr-")
   -refresh-seconds int      TTL for the cached /livetv/dvrs map      (default 30)
   -spoof-identity           Also rewrite root friendlyName for Plex Web
+  -elevate-live-tv          Elevate only Live TV requests to owner token
 ```
 
 `-upstream` falls back to `-plex-url`, then `IPTV_TUNERR_PMS_URL`, then
 `PLEX_HOST`. `-token` falls back to `IPTV_TUNERR_PMS_TOKEN`, then `PLEX_TOKEN`.
+`-owner-token` defaults to `IPTV_TUNERR_PMS_OWNER_TOKEN`, `PLEX_OWNER_TOKEN`,
+then the same resolved token. Use `-elevate-live-tv` only
+when this proxy is intentionally deployed as the Plex front door; see
+[Plex Live TV Entitlement Proxy](plex-live-tv-entitlement-proxy.md).
 
 ## Run locally (host test)
 
@@ -190,5 +196,6 @@ requires a separate `python:3.11-alpine` container. Prefer the Go subcommand.
 
 See also
 --------
+- [Plex Live TV Entitlement Proxy](plex-live-tv-entitlement-proxy.md)
 - [Plex DVR lifecycle and API operations](../reference/plex-dvr-lifecycle-and-api.md)
 - [Plex in cluster](plex-in-cluster.md)

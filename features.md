@@ -43,6 +43,8 @@ See: [`docs/reference/plex-dvr-lifecycle-and-api.md`](docs/reference/plex-dvr-li
 - Staged tester handoff bundle: `scripts/build-tester-release.sh`
 - Plex hidden-grab recovery helper: `scripts/plex-hidden-grab-recover.sh`
 - Plex stale session drain helper (external): `scripts/plex-live-session-drain.py`
-- Plex Live TV provider label rewrite proxy (experimental/client-dependent): `scripts/plex-media-providers-label-proxy.py`
+- Plex Live TV provider label rewrite and optional entitlement proxy (experimental/client-dependent): `iptv-tunerr plex-label-proxy`
+- VPN access patterns for Tunerr/Plex proxy deployments: Tailscale, WireGuard,
+  OpenVPN, Gluetun, NAT-PMP/static-forward, and fail-closed routing docs
 
 Full details: [`docs/features.md`](docs/features.md)

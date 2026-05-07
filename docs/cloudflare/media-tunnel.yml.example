@@ -1,0 +1,14 @@
+# Named Cloudflare Tunnel config for a Plex Live TV proxy frontend.
+# Replace the tunnel ID and credential filename with your named tunnel.
+tunnel: 00000000-0000-0000-0000-000000000000
+credentials-file: /etc/cloudflared/00000000-0000-0000-0000-000000000000.json
+protocol: quic
+metrics: 127.0.0.1:49312
+no-autoupdate: true
+
+ingress:
+  - hostname: media.example.com
+    service: http://127.0.0.1:33240
+    originRequest:
+      httpHostHeader: media.example.com
+  - service: http_status:404

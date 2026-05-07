@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Cloudflare Tunnel health check for Plex Live TV proxy frontend
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=15s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

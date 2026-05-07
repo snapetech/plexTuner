@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+metrics="${METRICS_URL:-http://127.0.0.1:49312/metrics}"
+min_connections="${MIN_CONNECTIONS:-2}"
+origin_url="${ORIGIN_URL:-http://127.0.0.1:33240/identity}"
+public_url="${PUBLIC_URL:-https://media.example.com/identity}"
+accept_codes=" ${ACCEPT_CODES:-200 401 403} "
+lock_file="${LOCK_FILE:-/run/cloudflared-media-healthcheck.lock}"
+cloudflared_service="${CLOUDFLARED_SERVICE:-cloudflared-media.service}"
+origin_service="${ORIGIN_SERVICE:-plex-live-tv-proxy.service}"
+
+log() {
+  logger -t cloudflared-media-health -- "$*"
+  printf '%s\n' "$*"
+}
+
+restart_cloudflared() {
+  log "$1; restarting ${cloudflared_service}"
+  systemctl restart "$cloudflared_service"
+}
+
+http_code() {
+  local url="$1"
+  curl -ksS --max-time 8 --connect-timeout 3 -o /dev/null -w '%{http_code}' "$url" || true
+}
+
+code_ok() {
+  local code="$1"
+  [[ "$accept_codes" == *" ${code} "* ]]
+}
+
+exec 9>"$lock_file"
+if ! flock -n 9; then
+  log "previous healthcheck still running; skipping"
+  exit 0
+fi
+
+if ! systemctl is-active --quiet "$cloudflared_service"; then
+  restart_cloudflared "${cloudflared_service} is not active"
+  exit 1
+fi
+
+metrics_body="$(curl -fsS --max-time 5 --connect-timeout 2 "$metrics" 2>/dev/null || true)"
+if [[ -z "$metrics_body" ]]; then
+  restart_cloudflared "metrics endpoint unavailable at ${metrics}"
+  exit 1
+fi
+
+value="$(awk '$1 == "cloudflared_tunnel_ha_connections" { print int($2); found=1 } END { if (!found) print "" }' <<<"$metrics_body")"
+if [[ -z "$value" ]]; then
+  restart_cloudflared "cloudflared_tunnel_ha_connections metric missing"
+  exit 1
+fi
+
+if (( value < min_connections )); then
+  restart_cloudflared "HA connections low: ${value} < ${min_connections}"
+  exit 1
+fi
+
+origin_code="$(http_code "$origin_url")"
+if ! code_ok "$origin_code"; then
+  log "origin check ${origin_url} returned ${origin_code:-curl-failed}; restarting ${origin_service} then ${cloudflared_service}"
+  systemctl restart "$origin_service" || true
+  sleep 3
+  systemctl restart "$cloudflared_service"
+  exit 1
+fi
+
+public_code="$(http_code "$public_url")"
+if ! code_ok "$public_code"; then
+  restart_cloudflared "public check ${public_url} returned ${public_code:-curl-failed}"
+  exit 1
+fi
+
+log "healthy: ha_connections=${value}, origin=${origin_code}, public=${public_code}"

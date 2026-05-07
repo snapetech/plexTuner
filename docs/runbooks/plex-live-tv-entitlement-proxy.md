@@ -1,0 +1,360 @@
+---
+id: runbook-plex-live-tv-entitlement-proxy
+type: runbook
+status: experimental
+tags: [runbook, plex, livetv, proxy, entitlement]
+---
+
+# Plex Live TV Entitlement Proxy
+
+Run `iptv-tunerr plex-label-proxy -elevate-live-tv` in front of Plex Media
+Server when shared Plex users should keep browsing libraries as themselves but
+borrow the server owner's Live TV entitlement for Plex Live TV requests.
+
+This is an unsupported Plex workaround. It does not change Plex shares, Plex
+Home membership, or watched/resume state for normal libraries. It rewrites only
+the PMS requests that the proxy classifies as Live TV.
+
+## What Problem This Solves
+
+Plex can expose ordinary shared libraries to non-Home users while hiding Live TV
+unless the account has tuner access. Plex's public sharing APIs do not reliably
+grant that flag to every non-Home shared user. The proxy works around that by:
+
+- passing normal library, metadata, account, and playback requests through with
+  the user's own Plex token
+- replacing the token only for Live TV paths with the PMS owner token
+- rewriting XML `allowTuners` hints from `0` to `1` so Plex clients reveal the
+  Live TV UI when the backend request is being elevated
+
+The owner token is therefore used only for Live TV/DVR surfaces; user-specific
+library watched state and resume state stay tied to the user's own token.
+
+## Request Classification
+
+The token is elevated for:
+
+- `/livetv/*`
+- `/media/providers`
+- `/media/grabbers/devices`
+- `/media/grabbers/*`
+- `/tv.plex.providers.epg.xmltv:*`
+- transcode or player helper requests whose query string or `Referer` contains
+  `/livetv/` or `tv.plex.providers.epg.xmltv:*`
+
+Everything else keeps the inbound client token.
+
+The implementation lives in:
+
+- `internal/plexlabelproxy/entitlement.go` - Live TV request classifier, token
+  elevation, and `allowTuners` XML hint rewrite
+- `internal/plexlabelproxy/proxy.go` - reverse proxy and response rewrite hooks
+- `cmd/iptv-tunerr/cmd_plex_label_proxy.go` - CLI wiring and env fallback
+
+## Run The Proxy
+
+Use the PMS owner token. On Linux installs, the owner token is often available
+in Plex `Preferences.xml` as `PlexOnlineToken`. Store it in an env file readable
+only by the service user.
+
+Prerequisites:
+
+- `iptv-tunerr` built and installed on the host that can reach PMS
+- PMS reachable from that host, usually `http://127.0.0.1:32400`
+- PMS owner token available as a root-only secret
+- one test Plex account that is not in Plex Home
+- one public hostname, for example `media.example.com`
+
+```bash
+install -d -m 0755 /etc/iptvtunerr
+install -m 0600 /dev/null /etc/iptvtunerr/plex-live-tv-proxy.env
+
+cat >/etc/iptvtunerr/plex-live-tv-proxy.env <<'EOF'
+IPTV_TUNERR_PMS_TOKEN=owner-token-goes-here
+IPTV_TUNERR_PMS_OWNER_TOKEN=owner-token-goes-here
+IPTV_TUNERR_PMS_URL=http://127.0.0.1:32400
+IPTV_TUNERR_PLEX_LABEL_PROXY_LISTEN=127.0.0.1:33240
+EOF
+```
+
+Start the proxy:
+
+```bash
+iptv-tunerr plex-label-proxy \
+  -listen 127.0.0.1:33240 \
+  -upstream http://127.0.0.1:32400 \
+  -elevate-live-tv \
+  -refresh-seconds 30
+```
+
+`-owner-token` defaults to `IPTV_TUNERR_PMS_OWNER_TOKEN`,
+`PLEX_OWNER_TOKEN`, and then `-token` / `IPTV_TUNERR_PMS_TOKEN` /
+`PLEX_TOKEN`. Prefer env files over command-line token flags so the owner token
+does not show up in process listings.
+
+## Make The Proxy The Only Front Door
+
+The clean topology is:
+
+```text
+clients / router / ingress
+        |
+        v
+HTTPS frontend / VPN / Cloudflare Tunnel
+        |
+        v
+iptv-tunerr plex-label-proxy 127.0.0.1:33240
+        |
+        v
+Plex Media Server 127.0.0.1:32400
+```
+
+Then close every other PMS path after the HTTPS frontend is proven:
+
+1. Point reverse proxies, Kubernetes `EndpointSlice`s, load balancers, and Plex
+   custom server URLs at the proxy frontend.
+2. Keep PMS listening on loopback for the proxy and local maintenance scripts.
+3. Keep the proxy listener private (`127.0.0.1:33240`) unless a trusted remote
+   frontend needs it.
+4. Block inbound TCP `32400` and public TCP `33240` from untrusted networks only
+   after clients are using the custom HTTPS URL.
+5. Do not redirect Plex's secure `plex.direct` port into this HTTP proxy.
+
+Important TLS boundary: `iptv-tunerr plex-label-proxy` is an HTTP reverse
+proxy. Plex's advertised `*.plex.direct:32400` and public remote-access
+`*.plex.direct:<port>` URLs are HTTPS/TLS connections owned by PMS. DNATing
+those ports into the HTTP proxy breaks secure clients with errors like
+`app.plex.tv is unable to connect securely`.
+
+Use a real HTTPS frontend instead, then advertise that URL in Plex Custom server
+access URLs:
+
+```text
+https://media.example.com -> HTTPS frontend -> http://127.0.0.1:33240 -> PMS
+```
+
+Example nftables input hardening:
+
+```nft
+iif lo accept
+ip saddr 192.168.0.0/16 tcp dport { 32400, 33240 } accept
+tcp dport { 32400, 33240 } drop comment "direct PMS/proxy blocked from public internet"
+```
+
+The input drop prevents new non-local direct PMS sessions. Local loopback still
+reaches PMS because loopback should be accepted before the drop.
+
+Frontend examples for Cloudflare Tunnel, VPN, Caddy, Traefik, and nginx are in
+[Plex Live TV Proxy Frontends](../reference/plex-live-tv-proxy-frontends.md).
+
+## Public Access Patterns
+
+### Option A: Cloudflare Tunnel
+
+Use this when you do not want to forward inbound router ports.
+
+```text
+Plex client -> https://media.example.com
+  -> Cloudflare Tunnel
+  -> local Caddy/nginx or direct http://127.0.0.1:33240
+  -> plex-label-proxy
+  -> PMS
+```
+
+Create a named tunnel and set DNS:
+
+```text
+media.example.com CNAME <tunnel-id>.cfargotunnel.com proxied
+```
+
+Normal connector restarts do not require DNS changes because the CNAME points
+at the stable named tunnel ID. Only deleting/recreating the tunnel requires a
+DNS update.
+
+Templates:
+
+- [`media-tunnel.yml.example`](../cloudflare/media-tunnel.yml.example)
+- [`cloudflared-media.service.example`](../systemd/cloudflared-media.service.example)
+- [`cloudflared-media-healthcheck.timer.example`](../systemd/cloudflared-media-healthcheck.timer.example)
+- [`ensure-media-cloudflare-tunnel.sh`](../scripts/ensure-media-cloudflare-tunnel.sh)
+
+The reconciler creates or reuses a named tunnel, writes the local cloudflared
+config, creates or updates the proxied CNAME, and restarts the systemd service
+when it exists:
+
+```bash
+CLOUDFLARE_ACCOUNT_ID=account-id \
+CLOUDFLARE_API_TOKEN=token-with-tunnel-and-dns-permissions \
+CLOUDFLARE_ZONE_NAME=example.com \
+MEDIA_TUNNEL_HOSTNAME=media.example.com \
+CLOUDFLARE_TUNNEL_NAME=media-example-com \
+  docs/scripts/ensure-media-cloudflare-tunnel.sh
+```
+
+Then install the service and health timer templates:
+
+```bash
+install -m 0644 docs/systemd/cloudflared-media.service.example /etc/systemd/system/cloudflared-media.service
+install -m 0644 docs/systemd/cloudflared-media-healthcheck.service.example /etc/systemd/system/cloudflared-media-healthcheck.service
+install -m 0644 docs/systemd/cloudflared-media-healthcheck.timer.example /etc/systemd/system/cloudflared-media-healthcheck.timer
+install -m 0755 docs/systemd/check-cloudflared-media.sh.example /usr/local/sbin/check-cloudflared-media.sh
+systemctl daemon-reload
+systemctl enable --now cloudflared-media.service cloudflared-media-healthcheck.timer
+```
+
+The health timer runs every minute. It verifies:
+
+- `cloudflared-media.service` is active
+- cloudflared metrics are reachable on `127.0.0.1:49312`
+- `cloudflared_tunnel_ha_connections` is at least `MIN_CONNECTIONS` (`2` by
+  default)
+- the local proxy origin responds at `ORIGIN_URL`, default
+  `http://127.0.0.1:33240/identity`
+- the public URL responds at `PUBLIC_URL`, default
+  `https://media.example.com/identity`
+
+On tunnel or public-path failure it restarts `cloudflared-media.service`. On
+local-origin failure it restarts `plex-live-tv-proxy.service`, waits briefly,
+then restarts `cloudflared-media.service`. Override `PUBLIC_URL` in
+`cloudflared-media-healthcheck.service` for the deployment hostname.
+
+### Option B: VPN Frontend
+
+Use this when remote users can install or use a VPN client and you want to avoid
+sending Plex media traffic through Cloudflare.
+
+```text
+Plex client -> Tailscale / WireGuard / OpenVPN
+  -> HTTPS frontend on the VPN interface
+  -> http://127.0.0.1:33240 -> PMS
+```
+
+Supported VPN patterns:
+
+- Tailscale for trusted users/devices in a tailnet
+- WireGuard for a small private overlay or VPS hub
+- OpenVPN for existing deployments
+- Gluetun/VPN-provider egress for Tunerr upstream traffic, not usually as a
+  Plex client front door
+- NAT-PMP/PCP/static forwarded ports only when a VPN provider is intentionally
+  your public ingress
+
+Keep `plex-label-proxy` private on `127.0.0.1:33240`, expose only the HTTPS
+frontend on the VPN address, and block public `32400` / `33240`. Full recipes
+are in [VPN Access Patterns](../reference/vpn-access-patterns.md).
+
+### Option C: Direct HTTPS Frontend
+
+Use this when you control the router/firewall and want a normal public HTTPS
+origin.
+
+```text
+Plex client -> WAN TCP 443 -> Caddy / Traefik / nginx
+  -> http://127.0.0.1:33240 -> PMS
+```
+
+Forward only TCP `443` to the frontend host. Do not forward `33240` or `32400`.
+If the frontend also serves internal apps, add a Host guard so public requests
+for internal hostnames return `404`.
+
+Frontend examples for Caddy, Traefik, nginx, VPN, and Cloudflare Tunnel are in
+[Plex Live TV Proxy Frontends](../reference/plex-live-tv-proxy-frontends.md).
+
+## Systemd
+
+See:
+
+- [`plex-live-tv-proxy.service.example`](../systemd/plex-live-tv-proxy.service.example)
+- [`plex-live-tv-proxy.env.example`](../systemd/plex-live-tv-proxy.env.example)
+
+Install the binary somewhere stable, for example:
+
+```bash
+install -m 0755 iptv-tunerr /opt/iptvtunerr/iptv-tunerr-proxy
+install -m 0600 docs/systemd/plex-live-tv-proxy.env.example /etc/iptvtunerr/plex-live-tv-proxy.env
+install -m 0644 docs/systemd/plex-live-tv-proxy.service.example /etc/systemd/system/plex-live-tv-proxy.service
+systemctl daemon-reload
+systemctl enable --now plex-live-tv-proxy.service
+```
+
+## Validation
+
+Use one Plex account that is not in Plex Home and does not have direct tuner
+permission. That is the account whose token goes in `USER_TOKEN`.
+
+Direct PMS should fail or hide DVRs:
+
+```bash
+curl -i "http://plex-host:32400/livetv/dvrs?X-Plex-Token=$USER_TOKEN"
+```
+
+Proxy should return DVRs:
+
+```bash
+curl -i "https://media.example.com/livetv/dvrs?X-Plex-Token=$USER_TOKEN"
+```
+
+Normal libraries should still use the user's own token:
+
+```bash
+curl -i "http://plex-host:33240/library/sections?X-Plex-Token=$USER_TOKEN"
+```
+
+Expected result:
+
+- `library/sections` stays user-scoped and should fail or show only what that
+  user can normally access.
+- `livetv/dvrs` and `media/providers` return `200` through the proxy.
+
+The repeatable validation helper is:
+
+```bash
+PROXY_URL=https://media.example.com \
+OWNER_TOKEN=owner-token \
+USER_TOKEN=optional-real-non-home-user-token \
+  docs/scripts/validate-plex-live-tv-proxy.sh
+```
+
+The helper always uses a fake token to prove that `library/sections` is not
+elevated while Live TV endpoints are elevated. If `USER_TOKEN` is set, it also
+checks Live TV with a real non-Home account token.
+
+## Plex Settings
+
+Set Plex **Custom server access URLs** to the HTTPS frontend:
+
+```text
+https://media.example.com:443
+```
+
+If Plex was using Remote Access with a manual public port, disable manual port
+mapping after the proxy URL works. Otherwise Plex may continue advertising a
+`plex.direct:<public-port>` bypass to clients. Host firewall rules should still
+block public direct PMS/proxy access.
+
+## Risks And Boundaries
+
+- This is an unsupported Plex wire-level workaround.
+- The owner token has high privilege. Store it in a root-only env file or a
+  proper secret manager.
+- Do not expose the proxy without TLS on the public internet.
+- Do not DNAT `plex.direct` TLS traffic into the HTTP proxy. Use an HTTPS
+  frontend and Plex Custom server access URLs.
+- If a future Plex client moves Live TV requests to new paths, add those paths
+  to `IsLiveTVRequest` and test with a non-Home account.
+- The proxy does not fix stale Plex DVR/device state. Use the Plex DVR lifecycle
+  tools and runbooks for pruning old devices.
+
+## Rollback
+
+1. Point ingress/router/custom URLs back to PMS `32400`.
+2. Stop `plex-live-tv-proxy.service`.
+3. Restore any firewall rules that intentionally blocked direct PMS access.
+
+See also
+--------
+- [Plex Live TV Tab Label Rewrite Proxy](plex-livetv-tab-label-rewrite-proxy.md)
+- [Plex Live TV Proxy Frontends](../reference/plex-live-tv-proxy-frontends.md)
+- [VPN Access Patterns](../reference/vpn-access-patterns.md)
+- [Plex DVR lifecycle and API operations](../reference/plex-dvr-lifecycle-and-api.md)
+- [Reverse-engineer Plex Live TV access](../how-to/reverse-engineer-plex-livetv-access.md)

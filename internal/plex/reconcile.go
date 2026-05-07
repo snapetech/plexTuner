@@ -46,6 +46,14 @@ func ReconcileTunerrRegistrations(cfg PlexAPIConfig) error {
 func buildTunerrReconcilePlan(cfg PlexAPIConfig, devices []Device, dvrs []DVRInfo) reconcilePlan {
 	desiredBase := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
 	desiredGuide := guideURLForBase(cfg.BaseURL)
+	plan := reconcilePlan{}
+	deletedDVRs := map[int]struct{}{}
+	for _, dvr := range dvrs {
+		if staleTunerrFamilyDVR(dvr, desiredBase, desiredGuide) {
+			plan.DeleteDVRKeys = append(plan.DeleteDVRKeys, dvr.Key)
+			deletedDVRs[dvr.Key] = struct{}{}
+		}
+	}
 	type matchedDevice struct {
 		Device
 		score int
@@ -63,7 +71,8 @@ func buildTunerrReconcilePlan(cfg PlexAPIConfig, devices []Device, dvrs []DVRInf
 		deviceUUIDs[strings.TrimSpace(dev.UUID)] = struct{}{}
 	}
 	if len(matched) == 0 {
-		return reconcilePlan{}
+		sort.Ints(plan.DeleteDVRKeys)
+		return plan
 	}
 	sort.SliceStable(matched, func(i, j int) bool {
 		if matched[i].score != matched[j].score {
@@ -72,7 +81,7 @@ func buildTunerrReconcilePlan(cfg PlexAPIConfig, devices []Device, dvrs []DVRInf
 		return strings.TrimSpace(matched[i].Key) < strings.TrimSpace(matched[j].Key)
 	})
 	keepDeviceKey := ""
-	if matched[0].score >= 4 {
+	if matched[0].score >= 4 && !deviceLooksDead(matched[0].Device) {
 		keepDeviceKey = strings.TrimSpace(matched[0].Key)
 	}
 
@@ -84,18 +93,19 @@ func buildTunerrReconcilePlan(cfg PlexAPIConfig, devices []Device, dvrs []DVRInf
 	}
 	keepDVRKey := 0
 	for _, dvr := range associatedDVRs {
-		if dvrGuideMatches(dvr, desiredGuide) {
+		if dvrGuideMatches(dvr, desiredGuide) && !dvrDeviceLooksDead(dvr) {
 			if keepDVRKey == 0 || dvr.Key < keepDVRKey {
 				keepDVRKey = dvr.Key
 			}
 		}
 	}
 
-	plan := reconcilePlan{
-		KeepDeviceKey: keepDeviceKey,
-		KeepDVRKey:    keepDVRKey,
-	}
+	plan.KeepDeviceKey = keepDeviceKey
+	plan.KeepDVRKey = keepDVRKey
 	for _, dvr := range associatedDVRs {
+		if _, ok := deletedDVRs[dvr.Key]; ok {
+			continue
+		}
 		if keepDVRKey != 0 && dvr.Key == keepDVRKey {
 			continue
 		}
@@ -111,6 +121,44 @@ func buildTunerrReconcilePlan(cfg PlexAPIConfig, devices []Device, dvrs []DVRInf
 	sort.Ints(plan.DeleteDVRKeys)
 	sort.Strings(plan.DeleteDeviceKeys)
 	return plan
+}
+
+func staleTunerrFamilyDVR(dvr DVRInfo, desiredBase, desiredGuide string) bool {
+	if dvr.Key == 0 || dvrGuideMatches(dvr, desiredGuide) || dvrHasDeviceURI(dvr, desiredBase) {
+		return false
+	}
+	status := strings.ToLower(strings.TrimSpace(dvr.DeviceStatus))
+	state := strings.ToLower(strings.TrimSpace(dvr.DeviceState))
+	if status != "dead" && state != "dead" && state != "disabled" {
+		return false
+	}
+	haystack := strings.ToLower(strings.Join(append(append([]string{
+		dvr.LineupTitle,
+		dvr.LineupURL,
+	}, dvr.DeviceUUIDs...), dvr.DeviceURIs...), " "))
+	if strings.Contains(haystack, ".plex.svc") {
+		return strings.Contains(haystack, "iptvtunerr") ||
+			strings.Contains(haystack, "plextuner") ||
+			strings.Contains(haystack, "oraclecap") ||
+			strings.Contains(haystack, "harvest-")
+	}
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(dvr.LineupTitle)), "harvest-") ||
+		strings.Contains(haystack, "plextuner-hdhr") ||
+		strings.Contains(haystack, "iptvtunerr-oracle") ||
+		strings.Contains(haystack, "oraclecap")
+}
+
+func dvrHasDeviceURI(dvr DVRInfo, desiredBase string) bool {
+	desiredBase = strings.TrimRight(strings.TrimSpace(desiredBase), "/")
+	if desiredBase == "" {
+		return false
+	}
+	for _, uri := range dvr.DeviceURIs {
+		if strings.EqualFold(strings.TrimRight(strings.TrimSpace(uri), "/"), desiredBase) {
+			return true
+		}
+	}
+	return false
 }
 
 func tunerrDeviceMatchScore(dev Device, cfg PlexAPIConfig, desiredBase string) int {
@@ -130,6 +178,12 @@ func tunerrDeviceMatchScore(dev Device, cfg PlexAPIConfig, desiredBase string) i
 	default:
 		return 0
 	}
+}
+
+func deviceLooksDead(dev Device) bool {
+	status := strings.ToLower(strings.TrimSpace(dev.Status))
+	state := strings.ToLower(strings.TrimSpace(dev.State))
+	return status == "dead" || state == "dead" || state == "disabled"
 }
 
 func dvrBelongsToMatchedDevices(dvr DVRInfo, deviceKeys, deviceUUIDs map[string]struct{}) bool {

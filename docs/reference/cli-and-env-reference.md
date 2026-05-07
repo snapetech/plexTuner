@@ -170,6 +170,46 @@ Notes:
 - If the same section name exists with a different path/type, the command returns an error instead of mutating it.
 - By default, applies a per-library VOD-safe Plex preset to disable expensive analysis jobs (credits, intro/chapter/preview thumbnails, ad/voice analysis) on these virtual catch-up libraries only.
 
+## `iptv-tunerr plex-label-proxy`
+
+Run a reverse proxy in front of Plex Media Server for Plex Live TV operations.
+The command has two independent uses:
+
+- rewrite `/media/providers` and provider-scoped XML labels so multiple DVRs
+  do not all render as the PMS server name
+- optionally, with `-elevate-live-tv`, elevate only Live TV requests to the PMS
+  owner token while ordinary library requests keep the user's own Plex token
+
+Common flags:
+- `-listen` (default `IPTV_TUNERR_PLEX_LABEL_PROXY_LISTEN` or `127.0.0.1:33240`)
+- `-upstream` (PMS origin URL)
+- `-plex-url` (alias for `-upstream`)
+- `-token` (token used to query `/livetv/dvrs` for label mapping)
+- `-owner-token` (owner PMS token used for Live TV elevation; defaults to `IPTV_TUNERR_PMS_OWNER_TOKEN`, `PLEX_OWNER_TOKEN`, or the resolved token)
+- `-strip-prefix` (default `iptvtunerr-`)
+- `-refresh-seconds` (default `30`)
+- `-spoof-identity` (rewrite root `friendlyName` for Plex Web label workarounds)
+- `-elevate-live-tv` (unsupported Plex workaround: replace tokens only on Live TV requests)
+
+Env fallbacks:
+- `IPTV_TUNERR_PMS_URL` or `PLEX_HOST`
+- `IPTV_TUNERR_PMS_TOKEN` or `PLEX_TOKEN`
+- `IPTV_TUNERR_PMS_OWNER_TOKEN` or `PLEX_OWNER_TOKEN`
+- `IPTV_TUNERR_PLEX_LABEL_PROXY_LISTEN`
+
+Operational note:
+- when `-elevate-live-tv` is enabled, deploy the proxy as the only PMS front
+  door and block public direct PMS `32400` and proxy `33240`; otherwise clients
+  can bypass the token-elevation path. Do not DNAT `plex.direct` TLS into this
+  HTTP proxy. See
+  [plex-live-tv-entitlement-proxy](../runbooks/plex-live-tv-entitlement-proxy.md).
+- public access can be a named Cloudflare Tunnel, VPN frontend, or a normal
+  HTTPS frontend on TCP `443`. See
+  [plex-live-tv-proxy-frontends](plex-live-tv-proxy-frontends.md).
+- for Tailscale, WireGuard, OpenVPN, Gluetun, NAT-PMP/static-forward, and
+  fail-closed routing patterns, see
+  [vpn-access-patterns](vpn-access-patterns.md).
+
 ## `iptv-tunerr vod-split`
 
 Split a VOD catalog into multiple category/region lane catalogs for separate

@@ -13,6 +13,19 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.55] — 2026-05-07
+
+### Plex / Live TV access
+- **`plex-label-proxy` can now elevate only Live TV requests:** the proxy can be run with `-elevate-live-tv` and an owner token so non-Home Plex users keep their own normal library sessions while Live TV/DVR request paths borrow the PMS owner tuner entitlement.
+- **Live TV proxy defaults are safer for local frontends:** the proxy listen address now defaults to `127.0.0.1:33240` through `IPTV_TUNERR_PLEX_LABEL_PROXY_LISTEN`, keeping the process local unless operators explicitly expose it through VPN, HTTPS, Cloudflare Tunnel, Caddy, Traefik, nginx, or another frontend.
+
+### Plex / DVR repair
+- **Dead Tunerr-family Plex DVR rows are cleaned more aggressively:** reconciliation now recognizes dead or disabled stale cluster-family DVR/device rows, tracks device URIs, avoids reusing dead canonical rows, and re-registers dead-marked DVRs even when old channel mappings still exist.
+
+### Docs / operations
+- **Plex Live TV entitlement proxy runbook added:** new docs cover systemd service examples, owner-token handling, validation, rollback, direct HTTPS/VPN/frontends, and Cloudflare Tunnel health checks for exposing the proxy as the only PMS front door.
+- **VPN and frontend patterns are documented:** added reference material for Cloudflare-free remote access patterns and common HTTPS frontend shapes for the Plex Live TV proxy.
+
 ## [v0.1.54] — 2026-04-21
 
 ### Streaming / HLS recovery
