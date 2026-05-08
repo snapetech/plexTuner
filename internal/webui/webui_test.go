@@ -925,7 +925,7 @@ func TestLoginAllowsHeadAndRejectsOtherMethods(t *testing.T) {
 }
 
 func TestNewGeneratesPasswordWhenUnset(t *testing.T) {
-	s := New(DefaultPort, ":5004", "test", false, "", "", "")
+	s := New(DefaultPort, ":5004", "test", false, "", "", "", "")
 	if s.settings.AuthUser != "admin" {
 		t.Fatalf("auth user=%q want admin", s.settings.AuthUser)
 	}

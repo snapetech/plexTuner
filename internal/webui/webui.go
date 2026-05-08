@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/snapetech/iptvtunerr/internal/store"
 )
 
 // DefaultPort is 0xBEEF in decimal.
@@ -53,8 +55,10 @@ type Server struct {
 	Version   string
 	AllowLAN  bool
 	StateFile string
+	DBPath    string // path to tunerr.db; empty = no store
 
 	tunerBase string
+	store     *store.Store
 	tmpl      *template.Template
 	loginTmpl *template.Template
 
@@ -69,6 +73,14 @@ type Server struct {
 	sessions         map[string]deckSession
 	failedLoginMu    sync.Mutex
 	failedLoginByIP  map[string][]time.Time
+
+	broadcastMu sync.Mutex
+	subscribers []chan sseEvent
+}
+
+type sseEvent struct {
+	Type    string
+	Payload any
 }
 
 type deckSession struct {
@@ -164,8 +176,8 @@ type deckOIDCApplyRequest struct {
 	} `json:"authentik"`
 }
 
-// New constructs a dedicated dashboard server.
-func New(port int, tunerAddr, version string, allowLAN bool, stateFile, user, pass string) *Server {
+// New constructs a dedicated dashboard server. dbPath is the path to tunerr.db (empty = disabled).
+func New(port int, tunerAddr, version string, allowLAN bool, stateFile, user, pass, dbPath string) *Server {
 	if port <= 0 {
 		port = DefaultPort
 	}
@@ -186,6 +198,7 @@ func New(port int, tunerAddr, version string, allowLAN bool, stateFile, user, pa
 		Version:   version,
 		AllowLAN:  allowLAN,
 		StateFile: strings.TrimSpace(stateFile),
+		DBPath:    strings.TrimSpace(dbPath),
 		settings: DeckSettings{
 			AuthUser:                        user,
 			AuthPass:                        pass,
@@ -209,22 +222,18 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	s.replayPersistedRuntimeSettings(ctx)
 
+	if s.DBPath != "" {
+		st, err := store.Open(s.DBPath)
+		if err != nil {
+			log.Printf("webui: store open %q: %v", s.DBPath, err)
+		} else {
+			s.store = st
+			log.Printf("webui: store opened %s (schema_version=%d)", s.DBPath, st.SchemaVersion())
+		}
+	}
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("/assets/deck.css", s.assetCSS)
-	mux.HandleFunc("/assets/deck.js", s.assetJS)
-	mux.HandleFunc("/login", s.login)
-	mux.HandleFunc("/logout", s.logout)
-	mux.HandleFunc("/deck/settings.json", s.deckSettings)
-	mux.HandleFunc("/api/", s.proxy)
-	mux.HandleFunc("/api", s.apiRoot)
-	mux.HandleFunc("/deck/telemetry.json", s.telemetry)
-	mux.HandleFunc("/deck/activity.json", s.activity)
-	mux.HandleFunc("/deck/migration-audit.json", s.migrationAudit)
-	mux.HandleFunc("/deck/identity-migration-audit.json", s.identityMigrationAudit)
-	mux.HandleFunc("/deck/oidc-migration-audit.json", s.oidcMigrationAudit)
-	mux.HandleFunc("/deck/oidc-migration-apply.json", s.oidcMigrationApply)
-	mux.HandleFunc("/deck/setup-doctor.json", s.setupDoctor)
-	mux.HandleFunc("/", s.index)
+	s.registerRoutes(mux)
 
 	handler := http.Handler(mux)
 	if !s.AllowLAN {
@@ -258,6 +267,11 @@ func (s *Server) Run(ctx context.Context) error {
 			log.Printf("webui shutdown: %v", err)
 		}
 		<-serverErr
+		if s.store != nil {
+			if err := s.store.Close(); err != nil {
+				log.Printf("webui: store close: %v", err)
+			}
+		}
 		return nil
 	}
 }
@@ -667,4 +681,41 @@ func (s *Server) recordActivityWithEntry(entry DeckActivityEntry) {
 	if err := s.persistState(); err != nil {
 		log.Printf("webui state persist: %v", err)
 	}
+}
+
+// registerRoutes mounts all webui routes. /api/v2/ is handled locally; /api/ is proxied to the tuner.
+func (s *Server) registerRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/login", s.login)
+	mux.HandleFunc("/logout", s.logout)
+
+	// /api/v2/ is handled by the webui store layer (registered by apiv2 init).
+	s.registerV2(mux)
+
+	// /api/ proxies to the tuner (must come after /api/v2/).
+	mux.HandleFunc("/api/", s.proxy)
+	mux.HandleFunc("/api", s.apiRoot)
+
+	// /stream/ proxies to the tuner so the SPA preview player can reach stream URLs
+	// without needing to know the tuner's port.
+	mux.HandleFunc("/stream/", s.proxy)
+
+	// Legacy deck — accessible at /legacy-deck/ for one release as a fallback.
+	// The old JSON API routes stay at their original /deck/* paths so the deck JS still works.
+	mux.HandleFunc("/legacy-deck", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/legacy-deck/", http.StatusMovedPermanently)
+	})
+	mux.HandleFunc("/legacy-deck/", s.index)
+	mux.HandleFunc("/assets/deck.css", s.assetCSS)
+	mux.HandleFunc("/assets/deck.js", s.assetJS)
+	mux.HandleFunc("/deck/settings.json", s.deckSettings)
+	mux.HandleFunc("/deck/telemetry.json", s.telemetry)
+	mux.HandleFunc("/deck/activity.json", s.activity)
+	mux.HandleFunc("/deck/migration-audit.json", s.migrationAudit)
+	mux.HandleFunc("/deck/identity-migration-audit.json", s.identityMigrationAudit)
+	mux.HandleFunc("/deck/oidc-migration-audit.json", s.oidcMigrationAudit)
+	mux.HandleFunc("/deck/oidc-migration-apply.json", s.oidcMigrationApply)
+	mux.HandleFunc("/deck/setup-doctor.json", s.setupDoctor)
+
+	// Everything else serves the React SPA.
+	mux.Handle("/", s.spaHandler())
 }

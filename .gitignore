@@ -179,3 +179,7 @@ sync-secrets*.sh
 opencode.json
 .claude/
 .cursor/
+
+# Frontend
+web/node_modules/
+web/.vite/

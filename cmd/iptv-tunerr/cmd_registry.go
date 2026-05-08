@@ -35,6 +35,7 @@ func allCommands() []commandSpec {
 	commands = append(commands, identityMigrationCommands()...)
 	commands = append(commands, plexOpsCommands()...)
 	commands = append(commands, plexLabelProxyCommands()...)
+	commands = append(commands, migrateDBCommands()...)
 	return commands
 }
 

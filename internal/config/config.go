@@ -117,6 +117,7 @@ type Config struct {
 	WebUIStateFile     string
 	WebUIUser          string
 	WebUIPass          string
+	WebUIDBPath        string // IPTV_TUNERR_DB_PATH — path to tunerr.db
 	EventWebhooksFile  string
 	RecordingRulesFile string
 	// HDHomeRun network mode: native HDHomeRun protocol (UDP+TCP) instead of HTTP-only.
@@ -237,6 +238,7 @@ func Load() *Config {
 		WebUIStateFile:              strings.TrimSpace(os.Getenv("IPTV_TUNERR_WEBUI_STATE_FILE")),
 		WebUIUser:                   strings.TrimSpace(os.Getenv("IPTV_TUNERR_WEBUI_USER")),
 		WebUIPass:                   strings.TrimSpace(os.Getenv("IPTV_TUNERR_WEBUI_PASS")),
+		WebUIDBPath:                 strings.TrimSpace(os.Getenv("IPTV_TUNERR_DB_PATH")),
 		EventWebhooksFile:           strings.TrimSpace(os.Getenv("IPTV_TUNERR_EVENT_WEBHOOKS_FILE")),
 		RecordingRulesFile:          strings.TrimSpace(os.Getenv("IPTV_TUNERR_RECORDING_RULES_FILE")),
 		HDHREnabled:                 getEnvBool("IPTV_TUNERR_HDHR_NETWORK_MODE", false),
