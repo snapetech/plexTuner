@@ -25,7 +25,7 @@ func streamURLForBase(baseURL, channelID string) string {
 	return strings.TrimRight(strings.TrimSpace(baseURL), "/") + "/stream/" + channelID
 }
 
-func registerRunPlex(ctx context.Context, cfg *config.Config, live []catalog.LiveChannel, baseURL, registerPlex string, registerOnly bool, registerInterval time.Duration, mode string) bool {
+func registerRunPlex(ctx context.Context, cfg *config.Config, srv *tuner.Server, live []catalog.LiveChannel, baseURL, registerPlex string, registerOnly bool, registerInterval time.Duration, mode string) bool {
 	log.Printf("[PLEX-REG] START: runRegisterPlex=%q runMode=%q", registerPlex, mode)
 	if registerPlex == "" || mode == "easy" {
 		_, _ = os.Stderr.WriteString("\n--- Plex one-time setup ---\n")
@@ -43,6 +43,7 @@ func registerRunPlex(ctx context.Context, cfg *config.Config, live []catalog.Liv
 
 	apiRegistrationDone := false
 	var registeredDeviceUUID string
+	var registeredDVRKey int
 	channelInfo := make([]plex.ChannelInfo, len(live))
 	for i := range live {
 		ch := &live[i]
@@ -53,13 +54,14 @@ func registerRunPlex(ctx context.Context, cfg *config.Config, live []catalog.Liv
 	}
 	if len(live) > 0 && plexHost != "" && plexToken != "" {
 		log.Printf("[PLEX-REG] Attempting Plex API registration...")
-		devUUID, _, regErr := plex.FullRegisterPlex(baseURL, plexHost, plexToken, cfg.FriendlyName, cfg.DeviceID, channelInfo)
+		devUUID, dvrKey, regErr := plex.FullRegisterPlex(baseURL, plexHost, plexToken, cfg.FriendlyName, cfg.DeviceID, channelInfo)
 		if regErr != nil {
 			log.Printf("Plex API registration failed: %v (falling back to DB registration)", regErr)
 		} else {
 			log.Printf("Plex registered via API")
 			apiRegistrationDone = true
 			registeredDeviceUUID = devUUID
+			registeredDVRKey = dvrKey
 		}
 	}
 
@@ -116,18 +118,46 @@ func registerRunPlex(ctx context.Context, cfg *config.Config, live []catalog.Liv
 		return true
 	}
 
-	if apiRegistrationDone && registeredDeviceUUID != "" && registerInterval > 0 {
-		watchdogCfg := plex.PlexAPIConfig{
-			BaseURL:      baseURL,
-			PlexHost:     plexHost,
-			PlexToken:    plexToken,
-			FriendlyName: cfg.FriendlyName,
-			DeviceID:     cfg.DeviceID,
+	if apiRegistrationDone && registeredDeviceUUID != "" {
+		if registerInterval > 0 {
+			watchdogCfg := plex.PlexAPIConfig{
+				BaseURL:      baseURL,
+				PlexHost:     plexHost,
+				PlexToken:    plexToken,
+				FriendlyName: cfg.FriendlyName,
+				DeviceID:     cfg.DeviceID,
+			}
+			guideURL := guideURLForBase(baseURL)
+			channelInfoCopy := channelInfo
+			log.Printf("[dvr-watchdog] starting: device=%s interval=%v", registeredDeviceUUID, registerInterval)
+			go plex.DVRWatchdog(ctx, watchdogCfg, registeredDeviceUUID, guideURL, registerInterval, channelInfoCopy)
 		}
-		guideURL := guideURLForBase(baseURL)
-		channelInfoCopy := channelInfo
-		log.Printf("[dvr-watchdog] starting: device=%s interval=%v", registeredDeviceUUID, registerInterval)
-		go plex.DVRWatchdog(ctx, watchdogCfg, registeredDeviceUUID, guideURL, registerInterval, channelInfoCopy)
+
+		// After each EPG cache update, tell Plex to re-fetch guide.xml. We look up
+		// the DVR key dynamically so this survives DVR re-registrations. The initial
+		// dvrKey from registration is used as a fast path; on error we fall back to
+		// the dynamic lookup.
+		if srv != nil && plexHost != "" && plexToken != "" {
+			cachedKey := registeredDVRKey
+			deviceUUID := registeredDeviceUUID
+			host := plexHost
+			token := plexToken
+			srv.SetEPGUpdateHook(func() {
+				var err error
+				if cachedKey > 0 {
+					err = plex.ReloadGuideAPI(host, token, cachedKey)
+				}
+				if err != nil || cachedKey == 0 {
+					err = plex.ReloadGuideForDevice(host, token, deviceUUID)
+				}
+				if err != nil {
+					log.Printf("[plex-epg-sync] guide reload failed: %v", err)
+				} else {
+					log.Printf("[plex-epg-sync] guide reloaded after EPG cache update")
+				}
+			})
+			log.Printf("[plex-epg-sync] EPG→Plex guide reload hook registered (device=%s)", deviceUUID)
+		}
 	}
 	return false
 }

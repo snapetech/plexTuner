@@ -291,7 +291,7 @@ func handleRun(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendl
 		}()
 	}
 
-	if registerRunPlex(runCtx, cfg, registrationLive, baseURL, registerPlex, registerOnly, registerInterval, mode) {
+	if registerRunPlex(runCtx, cfg, srv, registrationLive, baseURL, registerPlex, registerOnly, registerInterval, mode) {
 		return
 	}
 	registerRunMediaServers(runCtx, cfg, registrationLive, baseURL, registerEmby, registerJellyfin, embyStateFile, jellyfinStateFile, embyInterval, jellyfinInterval)

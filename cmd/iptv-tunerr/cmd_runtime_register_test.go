@@ -69,7 +69,7 @@ func TestApplyRegistrationRecipe_HealthyDropsWeakGuide(t *testing.T) {
 
 func TestRegisterRunPlex_EasyModeReturnsFalseWithoutRegistration(t *testing.T) {
 	cfg := &config.Config{FriendlyName: "Tunerr", DeviceID: "dev1"}
-	if stop := registerRunPlex(context.Background(), cfg, nil, "http://127.0.0.1:5004", "", false, time.Second, "easy"); stop {
+	if stop := registerRunPlex(context.Background(), cfg, nil, nil, "http://127.0.0.1:5004", "", false, time.Second, "easy"); stop {
 		t.Fatal("registerRunPlex easy mode should not request stop")
 	}
 }
@@ -81,7 +81,7 @@ func TestRegisterRunMediaServers_MissingCredentialsDoesNothing(t *testing.T) {
 
 func TestRegisterRunPlex_RegisterOnlyWithoutLiveReturnsTrue(t *testing.T) {
 	cfg := &config.Config{FriendlyName: "Tunerr", DeviceID: "dev1"}
-	if stop := registerRunPlex(context.Background(), cfg, nil, "http://127.0.0.1:5004", "api", true, time.Second, "full"); !stop {
+	if stop := registerRunPlex(context.Background(), cfg, nil, nil, "http://127.0.0.1:5004", "api", true, time.Second, "full"); !stop {
 		t.Fatal("registerRunPlex register-only without live should request stop")
 	}
 }

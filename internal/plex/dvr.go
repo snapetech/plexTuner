@@ -343,6 +343,23 @@ func ReloadGuideAPI(plexHost, token string, dvrKey int) error {
 	return nil
 }
 
+// ReloadGuideForDevice looks up the DVR key for deviceUUID then calls ReloadGuideAPI.
+// Use this when the DVR key is not cached — it tolerates DVR re-registrations.
+func ReloadGuideForDevice(plexHost, token, deviceUUID string) error {
+	dvrs, err := ListDVRsAPI(plexHost, token)
+	if err != nil {
+		return fmt.Errorf("list dvrs: %w", err)
+	}
+	for _, d := range dvrs {
+		for _, uuid := range d.DeviceUUIDs {
+			if uuid == deviceUUID {
+				return ReloadGuideAPI(plexHost, token, d.Key)
+			}
+		}
+	}
+	return fmt.Errorf("no DVR found for device %s", deviceUUID)
+}
+
 type ChannelMapping struct {
 	ChannelKey       string `xml:"channelKey,attr"`
 	DeviceIdentifier string `xml:"deviceIdentifier,attr"`

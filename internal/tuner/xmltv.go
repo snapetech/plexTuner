@@ -94,6 +94,7 @@ type XMLTV struct {
 	cachedCapsuleExp     time.Time
 
 	OnGuideHealthReady func()
+	OnEPGCacheUpdated  func() // called (in a goroutine) after each successful EPG cache update
 
 	refreshStateMu       sync.Mutex
 	refreshInFlight      bool

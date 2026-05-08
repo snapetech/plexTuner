@@ -224,6 +224,12 @@ func (s *Server) SetRuntimeSnapshot(snapshot *RuntimeSnapshot) {
 	s.runtimeMu.Unlock()
 }
 
+func (s *Server) SetEPGUpdateHook(fn func()) {
+	if s != nil && s.xmltv != nil {
+		s.xmltv.OnEPGCacheUpdated = fn
+	}
+}
+
 func (s *Server) UpdateRuntimeTunerSetting(key string, value interface{}) {
 	if s == nil || strings.TrimSpace(key) == "" {
 		return

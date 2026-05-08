@@ -1324,6 +1324,9 @@ func (x *XMLTV) runRefresh(ctx context.Context, trigger string) {
 	x.mu.Unlock()
 
 	log.Printf("xmltv: EPG cache updated (%d bytes, expires in %v)", len(data), ttl)
+	if x.OnEPGCacheUpdated != nil {
+		go x.OnEPGCacheUpdated()
+	}
 	if ghErr == nil && x.OnGuideHealthReady != nil {
 		x.OnGuideHealthReady()
 	}
