@@ -24,22 +24,24 @@ func (x *XMLTV) GuideHealth(now time.Time, aliasesRef string) (guidehealth.Repor
 	x.mu.RLock()
 	data := append([]byte(nil), x.cachedXML...)
 	x.mu.RUnlock()
+	channels := x.snapshotChannels()
 	matchRep, err := x.buildMatchReport(aliasesRef)
 	if err != nil {
 		return guidehealth.Report{}, err
 	}
-	return guidehealth.BuildWithChannelXMLID(x.Channels, data, matchRep, now, x.channelIDForChannel)
+	return guidehealth.BuildWithChannelXMLID(channels, data, matchRep, now, x.channelIDForChannel)
 }
 
 func (x *XMLTV) EPGDoctor(now time.Time, aliasesRef string) (epgdoctor.Report, error) {
 	x.mu.RLock()
 	data := append([]byte(nil), x.cachedXML...)
 	x.mu.RUnlock()
+	channels := x.snapshotChannels()
 	matchRep, err := x.buildMatchReport(aliasesRef)
 	if err != nil {
 		return epgdoctor.Report{}, err
 	}
-	gh, err := guidehealth.BuildWithChannelXMLID(x.Channels, data, matchRep, now, x.channelIDForChannel)
+	gh, err := guidehealth.BuildWithChannelXMLID(channels, data, matchRep, now, x.channelIDForChannel)
 	if err != nil {
 		return epgdoctor.Report{}, err
 	}
@@ -55,7 +57,9 @@ func (x *XMLTV) buildMatchReport(aliasesRef string) (*epglink.Report, error) {
 	}
 	currentCacheExp := x.cacheExp
 	x.mu.RUnlock()
-	if len(x.Channels) == 0 {
+
+	channels := x.snapshotChannels()
+	if len(channels) == 0 {
 		rep := epglink.Report{TotalChannels: 0, Methods: map[string]int{}}
 		return &rep, nil
 	}
@@ -99,8 +103,8 @@ func (x *XMLTV) buildMatchReport(aliasesRef string) (*epglink.Report, error) {
 		}
 	}
 	if len(sources) == 0 {
-		rep := epglink.Report{TotalChannels: len(x.Channels), Unmatched: len(x.Channels), Methods: map[string]int{}}
-		for _, ch := range x.Channels {
+		rep := epglink.Report{TotalChannels: len(channels), Unmatched: len(channels), Methods: map[string]int{}}
+		for _, ch := range channels {
 			rep.Rows = append(rep.Rows, epglink.ChannelMatch{
 				ChannelID:   ch.ChannelID,
 				GuideNumber: ch.GuideNumber,
@@ -112,12 +116,12 @@ func (x *XMLTV) buildMatchReport(aliasesRef string) (*epglink.Report, error) {
 		}
 		return &rep, nil
 	}
-	protected := make(map[string]bool, len(x.Channels))
-	final := epglink.Report{TotalChannels: len(x.Channels), Methods: map[string]int{}, Rows: make([]epglink.ChannelMatch, 0, len(x.Channels))}
+	protected := make(map[string]bool, len(channels))
+	final := epglink.Report{TotalChannels: len(channels), Methods: map[string]int{}, Rows: make([]epglink.ChannelMatch, 0, len(channels))}
 	byChannelID := map[string]epglink.ChannelMatch{}
 	for _, src := range sources {
-		candidates := make([]catalog.LiveChannel, 0, len(x.Channels))
-		for _, ch := range x.Channels {
+		candidates := make([]catalog.LiveChannel, 0, len(channels))
+		for _, ch := range channels {
 			if protected[ch.ChannelID] {
 				continue
 			}
@@ -136,7 +140,7 @@ func (x *XMLTV) buildMatchReport(aliasesRef string) (*epglink.Report, error) {
 			}
 		}
 	}
-	for _, ch := range x.Channels {
+	for _, ch := range channels {
 		row, ok := byChannelID[ch.ChannelID]
 		if !ok {
 			row = epglink.ChannelMatch{

@@ -1,6 +1,7 @@
 package tuner
 
 import (
+	"context"
 	"encoding/xml"
 	"net/http"
 	"net/http/httptest"
@@ -201,7 +202,7 @@ func TestXMLTV_epgPruneUnlinked(t *testing.T) {
 		},
 		EpgPruneUnlinked: true,
 	}
-	x.runRefresh("test")
+	x.runRefresh(context.Background(), "test")
 	req := httptest.NewRequest(http.MethodGet, "/guide.xml", nil)
 	w := httptest.NewRecorder()
 	x.ServeHTTP(w, req)
@@ -240,7 +241,7 @@ func TestXMLTV_forceLineupMatchOverridesPrune(t *testing.T) {
 		EpgPruneUnlinked:    true,
 		EpgForceLineupMatch: true,
 	}
-	x.runRefresh("test")
+	x.runRefresh(context.Background(), "test")
 	req := httptest.NewRequest(http.MethodGet, "/guide.xml", nil)
 	w := httptest.NewRecorder()
 	x.ServeHTTP(w, req)
@@ -312,7 +313,7 @@ func TestXMLTV_GuideLineupMatchReport(t *testing.T) {
 
 func TestXMLTV_runRefresh_noChannelsPreservesEmptyCache(t *testing.T) {
 	x := &XMLTV{}
-	x.runRefresh("startup")
+	x.runRefresh(context.Background(), "startup")
 	if len(x.cachedXML) != 0 {
 		t.Fatalf("cachedXML=%q want empty", string(x.cachedXML))
 	}
@@ -435,7 +436,7 @@ func TestXMLTV_externalSourceRemap(t *testing.T) {
 		},
 		SourceURL: upstream.URL,
 	}
-	x.runRefresh("test")
+	x.runRefresh(context.Background(), "test")
 	req := httptest.NewRequest(http.MethodGet, "/guide.xml", nil)
 	w := httptest.NewRecorder()
 	x.ServeHTTP(w, req)

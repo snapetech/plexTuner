@@ -295,7 +295,7 @@ func (x *XMLTV) fetchProviderShortEPGFallback(ctx context.Context, channels []ca
 	worker := func() {
 		defer wg.Done()
 		for ch := range jobs {
-			tvgID := strings.TrimSpace(ch.TVGID)
+			tvgID := strings.ToLower(strings.TrimSpace(ch.TVGID))
 			if tvgID == "" || (allowedTVGIDs != nil && !allowedTVGIDs[tvgID]) {
 				continue
 			}
@@ -451,7 +451,7 @@ func parseXMLTVProgrammes(r io.Reader, allowedTVGIDs map[string]bool) (*parsedEP
 					// Skip malformed programme elements.
 					continue
 				}
-				chanID := strings.TrimSpace(xmlAttr(node.Attrs, "channel"))
+				chanID := strings.ToLower(strings.TrimSpace(xmlAttr(node.Attrs, "channel")))
 				if chanID == "" {
 					continue
 				}
@@ -858,6 +858,7 @@ func placeholderProgrammeNodes(tvgID, channelName string) []xmlRawNode {
 //  4. Provider short-EPG programmes (optional) that gap-fill remaining holes
 //  5. Single placeholder programme spanning -24h to +7d when (1)–(4) all empty
 func mergeChannelProgrammes(tvgID string, provEPG, extEPG, hdhrEPG, shortEPG *parsedEPG, channelName string) []xmlRawNode {
+	tvgID = strings.ToLower(strings.TrimSpace(tvgID))
 	var provNodes []xmlRawNode
 	var provWindows []timeWindow
 	if provEPG != nil {
@@ -1028,12 +1029,20 @@ func channelsNeedingShortEPG(channels []catalog.LiveChannel, provEPG, extEPG, hd
 	return out
 }
 
+// buildEPGStats holds per-channel quality metrics from a single merged EPG build.
+type buildEPGStats struct {
+	totalChannels       int
+	realChannels        int
+	placeholderChannels int
+}
+
 // buildMergedEPG constructs the complete merged XMLTV guide XML for all channels.
-func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
-	// Build the allowed TVGID set (channels with a non-empty TVGID).
+func (x *XMLTV) buildMergedEPG(ctx context.Context, channels []catalog.LiveChannel) ([]byte, buildEPGStats, error) {
+	// Build the allowed TVGID set, lowercased for case-insensitive matching against
+	// provider XMLTV channel attributes.
 	allowedTVGIDs := make(map[string]bool, len(channels))
 	for _, ch := range channels {
-		tvgID := strings.TrimSpace(ch.TVGID)
+		tvgID := strings.ToLower(strings.TrimSpace(ch.TVGID))
 		if tvgID != "" {
 			allowedTVGIDs[tvgID] = true
 		}
@@ -1046,8 +1055,6 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 		if extTimeout <= 0 {
 			extTimeout = 60 * time.Second
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
 		var err error
 		extEPG, err = fetchAndParseXMLTV(ctx, x.SourceURL, extTimeout, x.Client, allowedTVGIDs)
 		if err != nil {
@@ -1063,12 +1070,6 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 	providerIDs := x.providerIdentities()
 	baseURL, user, _ := x.providerIdentity()
 	if x.ProviderEPGEnabled && baseURL != "" && user != "" {
-		ctx, cancel := context.WithTimeout(context.Background(), x.ProviderEPGTimeout+5*time.Second)
-		if x.ProviderEPGTimeout <= 0 {
-			cancel()
-			ctx, cancel = context.WithTimeout(context.Background(), 95*time.Second)
-		}
-		defer cancel()
 		var err error
 		provEPG, err = x.fetchProviderXMLTV(ctx, allowedTVGIDs)
 		if err != nil {
@@ -1078,6 +1079,7 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 			log.Printf("xmltv: provider XMLTV fetched: %d channels with programmes", len(provEPG.programmes))
 		}
 	}
+
 	var hdhrEPG *parsedEPG
 	hdhrURL := strings.TrimSpace(x.HDHRGuideURL)
 	if hdhrURL != "" {
@@ -1085,10 +1087,8 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 		if hdTimeout <= 0 {
 			hdTimeout = 90 * time.Second
 		}
-		hdCtx, hdCancel := context.WithTimeout(context.Background(), hdTimeout+5*time.Second)
 		var err error
-		hdhrEPG, err = fetchAndParseXMLTV(hdCtx, hdhrURL, hdTimeout, x.Client, allowedTVGIDs)
-		hdCancel()
+		hdhrEPG, err = fetchAndParseXMLTV(ctx, hdhrURL, hdTimeout, x.Client, allowedTVGIDs)
 		if err != nil {
 			log.Printf("xmltv: HDHR guide.xml fetch failed (%v); continuing without hardware EPG", err)
 			hdhrEPG = nil
@@ -1106,10 +1106,10 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 				workers = 1
 			}
 			waves := (len(candidates) + workers - 1) / workers
-			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(waves+1)*providerShortEPGTimeout())
-			defer cancel()
+			shortCtx, shortCancel := context.WithTimeout(ctx, time.Duration(waves+1)*providerShortEPGTimeout())
+			defer shortCancel()
 			var err error
-			shortEPG, err = x.fetchProviderShortEPGFallback(ctx, candidates, allowedTVGIDs)
+			shortEPG, err = x.fetchProviderShortEPGFallback(shortCtx, candidates, allowedTVGIDs)
 			if err != nil {
 				log.Printf("xmltv: provider short EPG gap-fill failed (%v); continuing without short EPG", err)
 				shortEPG = nil
@@ -1131,7 +1131,8 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 	}
 	orderedRefs := make([]channelRef, 0, len(channels))
 	for _, ch := range channels {
-		tvgID := strings.TrimSpace(ch.TVGID)
+		// Lowercase TVGID to match normalised programme map keys.
+		tvgID := strings.ToLower(strings.TrimSpace(ch.TVGID))
 		guideNum := strings.TrimSpace(ch.GuideNumber)
 		if guideNum == "" {
 			// Channels without a guide number can't be served properly; skip.
@@ -1157,6 +1158,7 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 		return orderedRefs[i].GuideNumber < orderedRefs[j].GuideNumber
 	})
 
+	var stats buildEPGStats
 	var buf bytes.Buffer
 	_, _ = buf.WriteString(xml.Header)
 	_, _ = buf.WriteString(`<tv source-info-name="IPTV Tunerr">`)
@@ -1169,14 +1171,14 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 	for _, ref := range orderedRefs {
 		ch := buildXMLChannel(ref.XMLID, ref.GuideName, ref.GuideNumber, nil)
 		if err := enc.EncodeElement(ch, xml.StartElement{Name: xml.Name{Local: "channel"}}); err != nil {
-			return nil, fmt.Errorf("encode channel: %w", err)
+			return nil, buildEPGStats{}, fmt.Errorf("encode channel: %w", err)
 		}
 	}
 	if err := enc.Flush(); err != nil {
-		return nil, err
+		return nil, buildEPGStats{}, err
 	}
 
-	// Write <programme> elements for each channel.
+	// Write <programme> elements for each channel, tracking placeholder vs real counts.
 	for _, ref := range orderedRefs {
 		tvgID := ref.TVGID
 		var nodes []xmlRawNode
@@ -1194,37 +1196,44 @@ func (x *XMLTV) buildMergedEPG(channels []catalog.LiveChannel) ([]byte, error) {
 				},
 				InnerXML: "<title>" + xmlEscapeText(ref.GuideName) + "</title>",
 			}}
+			stats.placeholderChannels++
 		} else {
 			nodes = mergeChannelProgrammes(tvgID, provEPG, extEPG, hdhrEPG, shortEPG, ref.GuideName)
+			if realProgrammeNodeCount(nodes, ref.GuideName) == 0 {
+				stats.placeholderChannels++
+			} else {
+				stats.realChannels++
+			}
 		}
+		stats.totalChannels++
 
 		for i := range nodes {
 			node := nodes[i]
-			// Apply text policy normalization.
 			normalizeProgrammeText(&node, ref.GuideName, policy)
-			// Remap channel attribute to local guide number.
 			node.XMLName = xml.Name{Local: "programme"}
 			node.Attrs = setXMLAttr(node.Attrs, "channel", ref.XMLID)
 			if err := enc.EncodeElement(node, xml.StartElement{Name: xml.Name{Local: "programme"}}); err != nil {
-				return nil, fmt.Errorf("encode programme: %w", err)
+				return nil, buildEPGStats{}, fmt.Errorf("encode programme: %w", err)
 			}
 		}
 	}
 
 	if err := enc.Flush(); err != nil {
-		return nil, err
+		return nil, buildEPGStats{}, err
 	}
 
 	_, _ = buf.WriteString("\n</tv>\n")
-	return buf.Bytes(), nil
+	return buf.Bytes(), stats, nil
 }
 
-// StartRefresh warms the cache synchronously, then starts a background goroutine that
+// StartRefresh warms the cache asynchronously, then starts a background goroutine that
 // re-fetches the merged EPG on every CacheTTL interval (default 10m).
 func (x *XMLTV) StartRefresh(ctx context.Context) {
-	// Startup refresh runs in the background so the tuner can bind and expose
-	// /healthz, /readyz, and placeholder /guide.xml immediately during long guide builds.
-	go x.runRefresh("startup")
+	x.refreshStateMu.Lock()
+	x.refreshCtx = ctx
+	x.refreshStateMu.Unlock()
+
+	go x.runRefresh(ctx, "startup")
 
 	ttl := x.CacheTTL
 	if ttl <= 0 {
@@ -1239,7 +1248,7 @@ func (x *XMLTV) StartRefresh(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				x.runRefresh("ticker")
+				x.runRefresh(ctx, "ticker")
 			}
 		}
 	}()
@@ -1247,7 +1256,9 @@ func (x *XMLTV) StartRefresh(ctx context.Context) {
 
 // runRefresh rebuilds the merged EPG and updates the cache.
 // On error the existing cache is preserved (serve stale on failure).
-func (x *XMLTV) runRefresh(trigger string) {
+// A quality gate blocks cache/DB updates when every channel fell back to a
+// placeholder, which indicates all upstream EPG sources are unreachable.
+func (x *XMLTV) runRefresh(ctx context.Context, trigger string) {
 	if x == nil {
 		return
 	}
@@ -1268,11 +1279,25 @@ func (x *XMLTV) runRefresh(trigger string) {
 		x.finishRefresh(started, nil)
 		return
 	}
-	data, err := x.buildMergedEPG(channels)
+	data, stats, err := x.buildMergedEPG(ctx, channels)
 	if err != nil {
 		log.Printf("xmltv: EPG refresh failed: %v (serving stale cache if available)", err)
 		x.finishRefresh(started, err)
 		return
+	}
+
+	// Quality gate: if every channel fell back to a placeholder (all EPG sources
+	// unreachable) and we already have a populated cache, preserve the existing
+	// data rather than overwriting it with channel-name-only placeholders.
+	if stats.totalChannels > 0 && stats.placeholderChannels == stats.totalChannels {
+		x.mu.RLock()
+		existingLen := len(x.cachedXML)
+		x.mu.RUnlock()
+		if existingLen > 0 {
+			log.Printf("xmltv: EPG quality gate blocked update — all %d channels fell back to placeholder (provider/external EPG sources unreachable); preserving existing cache and database to prevent data loss", stats.totalChannels)
+			x.finishRefresh(started, fmt.Errorf("quality gate: all %d channels placeholder (sources unreachable)", stats.totalChannels))
+			return
+		}
 	}
 
 	ttl := x.CacheTTL
@@ -1338,6 +1363,7 @@ func (x *XMLTV) runRefresh(trigger string) {
 
 func (x *XMLTV) finishRefresh(started time.Time, err error) {
 	var queuedTrigger string
+	var ctx context.Context
 	x.refreshStateMu.Lock()
 	if x.refreshQueued {
 		queuedTrigger = strings.TrimSpace(x.queuedRefreshTrigger)
@@ -1359,12 +1385,16 @@ func (x *XMLTV) finishRefresh(started time.Time, err error) {
 	} else {
 		x.lastRefreshError = ""
 	}
+	ctx = x.refreshCtx
 	x.refreshStateMu.Unlock()
 	if queuedTrigger != "" {
-		go x.runRefresh(queuedTrigger)
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		go x.runRefresh(ctx, queuedTrigger)
 	}
 }
 
 func (x *XMLTV) refresh() {
-	x.runRefresh("manual")
+	x.runRefresh(context.Background(), "manual")
 }

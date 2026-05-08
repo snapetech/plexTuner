@@ -2,6 +2,7 @@ package tuner
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha1"
 	"encoding/xml"
 	"errors"
@@ -78,6 +79,7 @@ type XMLTV struct {
 	HDHRGuideTimeout time.Duration
 
 	providerConfigMu sync.RWMutex
+	channelsMu       sync.RWMutex // protects Channels and GuideHealthChannels
 
 	mu        sync.RWMutex
 	cachedXML []byte
@@ -97,6 +99,7 @@ type XMLTV struct {
 	refreshInFlight      bool
 	refreshQueued        bool
 	queuedRefreshTrigger string
+	refreshCtx           context.Context // set by StartRefresh; used by TriggerRefresh / finishRefresh
 	lastRefreshStartedAt time.Time
 	lastRefreshEndedAt   time.Time
 	lastRefreshTrigger   string
@@ -223,9 +226,12 @@ func (x *XMLTV) TriggerRefresh(trigger string) bool {
 	x.lastRefreshStartedAt = time.Now().UTC()
 	x.lastRefreshTrigger = trigger
 	x.lastRefreshError = ""
+	ctx := x.refreshCtx
 	x.refreshStateMu.Unlock()
-
-	go x.runRefresh(trigger)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	go x.runRefresh(ctx, trigger)
 	return true
 }
 
@@ -266,15 +272,47 @@ func (x *XMLTV) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (x *XMLTV) filteredChannels() []catalog.LiveChannel {
-	return x.filteredChannelSet(x.Channels)
+	x.channelsMu.RLock()
+	ch := x.Channels
+	x.channelsMu.RUnlock()
+	return x.filteredChannelSet(ch)
 }
 
 func (x *XMLTV) filteredGuideHealthChannels() []catalog.LiveChannel {
-	channels := x.GuideHealthChannels
-	if len(channels) == 0 {
-		channels = x.Channels
+	x.channelsMu.RLock()
+	gh := x.GuideHealthChannels
+	ch := x.Channels
+	x.channelsMu.RUnlock()
+	if len(gh) == 0 {
+		return x.filteredChannelSet(ch)
 	}
-	return x.filteredChannelSet(channels)
+	return x.filteredChannelSet(gh)
+}
+
+// snapshotChannels returns a point-in-time copy of the channel list.
+func (x *XMLTV) snapshotChannels() []catalog.LiveChannel {
+	x.channelsMu.RLock()
+	out := append([]catalog.LiveChannel(nil), x.Channels...)
+	x.channelsMu.RUnlock()
+	return out
+}
+
+// updateChannelState atomically replaces the channel lists and invalidates all
+// derived caches. Called by the server on every lineup update.
+func (x *XMLTV) updateChannelState(channels, guideHealthChannels []catalog.LiveChannel) {
+	x.channelsMu.Lock()
+	x.Channels = channels
+	x.GuideHealthChannels = guideHealthChannels
+	x.channelsMu.Unlock()
+	x.mu.Lock()
+	x.cachedMatchReport = nil
+	x.cachedMatchAliases = ""
+	x.cachedMatchExp = time.Time{}
+	x.cachedGuideHealth = nil
+	x.cachedCapsulePreview = nil
+	x.cachedCapsuleHorizon = 0
+	x.cachedCapsuleExp = time.Time{}
+	x.mu.Unlock()
 }
 
 func (x *XMLTV) filteredChannelSet(channels []catalog.LiveChannel) []catalog.LiveChannel {
@@ -866,9 +904,9 @@ func (x *XMLTV) GuidePreview(limit int) (GuidePreview, error) {
 func (x *XMLTV) GuideLineupMatchReport(limit int) (GuideLineupMatchReport, error) {
 	limit = clampGuidePreviewLimit(limit, 25)
 	now := time.Now()
+	channels := x.snapshotChannels()
 	x.mu.RLock()
 	data := append([]byte(nil), x.cachedXML...)
-	channels := append([]catalog.LiveChannel(nil), x.Channels...)
 	x.mu.RUnlock()
 
 	out := GuideLineupMatchReport{
@@ -1003,10 +1041,10 @@ func (x *XMLTV) CatchupCapsulePreview(now time.Time, horizon time.Duration, limi
 		horizon = 3 * time.Hour
 	}
 	limit = clampGuidePreviewLimit(limit, defaultCatchupCapsuleLimit)
+	channels := x.snapshotChannels()
 	x.mu.RLock()
 	data := append([]byte(nil), x.cachedXML...)
 	cacheExp := x.cacheExp
-	channels := cloneLiveChannels(x.Channels)
 	if x.cachedCapsulePreview != nil && x.cachedCapsuleExp.Equal(cacheExp) && x.cachedCapsuleHorizon == horizon {
 		rep := truncateCatchupCapsulePreview(*x.cachedCapsulePreview, limit)
 		x.mu.RUnlock()

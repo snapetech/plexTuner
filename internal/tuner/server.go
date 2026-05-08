@@ -304,17 +304,7 @@ func (s *Server) setExposedChannels(live []catalog.LiveChannel) {
 		s.gateway.TunerCount = s.TunerCount
 	}
 	if s.xmltv != nil {
-		s.xmltv.Channels = live
-		s.xmltv.GuideHealthChannels = cloneLiveChannels(s.GuidePolicySourceChannels)
-		s.xmltv.mu.Lock()
-		s.xmltv.cachedMatchReport = nil
-		s.xmltv.cachedMatchAliases = ""
-		s.xmltv.cachedMatchExp = time.Time{}
-		s.xmltv.cachedGuideHealth = nil
-		s.xmltv.cachedCapsulePreview = nil
-		s.xmltv.cachedCapsuleHorizon = 0
-		s.xmltv.cachedCapsuleExp = time.Time{}
-		s.xmltv.mu.Unlock()
+		s.xmltv.updateChannelState(live, cloneLiveChannels(s.GuidePolicySourceChannels))
 		if len(live) > 0 {
 			s.xmltv.TriggerRefresh("lineup_update")
 		}
