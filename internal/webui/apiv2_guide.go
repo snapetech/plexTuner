@@ -25,12 +25,12 @@ type guideXMLChannel struct {
 }
 
 type guideXMLProg struct {
-	Start    string   `xml:"start,attr"`
-	Stop     string   `xml:"stop,attr"`
-	Channel  string   `xml:"channel,attr"`
-	Title    xmlText  `xml:"title"`
-	SubTitle xmlText  `xml:"sub-title"`
-	Desc     xmlText  `xml:"desc"`
+	Start    string    `xml:"start,attr"`
+	Stop     string    `xml:"stop,attr"`
+	Channel  string    `xml:"channel,attr"`
+	Title    xmlText   `xml:"title"`
+	SubTitle xmlText   `xml:"sub-title"`
+	Desc     xmlText   `xml:"desc"`
 	Category []xmlText `xml:"category"`
 	Icon     struct {
 		Src string `xml:"src,attr"`

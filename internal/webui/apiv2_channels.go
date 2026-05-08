@@ -13,7 +13,9 @@ import (
 // --- channels collection ---
 
 func (s *Server) v2Channels(w http.ResponseWriter, r *http.Request) {
-	if !s.requireStore(w) { return }
+	if !s.requireStore(w) {
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		opts := store.ChannelListOpts{
@@ -53,7 +55,9 @@ func (s *Server) v2Channels(w http.ResponseWriter, r *http.Request) {
 // --- channels/:id ---
 
 func (s *Server) v2ChannelItem(w http.ResponseWriter, r *http.Request) {
-	if !s.requireStore(w) { return }
+	if !s.requireStore(w) {
+		return
+	}
 
 	// sub-routes: /api/v2/channels/bulk and /api/v2/channels/reorder are registered
 	// with higher specificity, so this handler only sees numeric IDs.
@@ -132,12 +136,14 @@ func (s *Server) v2ChannelCRUD(w http.ResponseWriter, r *http.Request, id int64)
 // --- channels/bulk ---
 
 type bulkRequest struct {
-	IDs    []int64             `json:"ids"`
+	IDs    []int64                 `json:"ids"`
 	Update store.ChannelBulkUpdate `json:"update"`
 }
 
 func (s *Server) v2ChannelsBulk(w http.ResponseWriter, r *http.Request) {
-	if !s.requireStore(w) { return }
+	if !s.requireStore(w) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -158,10 +164,10 @@ func (s *Server) v2ChannelsBulk(w http.ResponseWriter, r *http.Request) {
 // --- channels/automatch ---
 
 type automatchRequest struct {
-	ChannelIDs      []int64  `json:"channel_ids"`
-	IgnorePrefixes  []string `json:"ignore_prefixes"`
-	IgnoreSuffixes  []string `json:"ignore_suffixes"`
-	IgnoreStrings   []string `json:"ignore_strings"`
+	ChannelIDs     []int64  `json:"channel_ids"`
+	IgnorePrefixes []string `json:"ignore_prefixes"`
+	IgnoreSuffixes []string `json:"ignore_suffixes"`
+	IgnoreStrings  []string `json:"ignore_strings"`
 }
 
 type automatchResult struct {
@@ -203,7 +209,9 @@ func normalizeName(s string, prefixes, suffixes, strs []string) string {
 }
 
 func (s *Server) v2ChannelsAutoMatch(w http.ResponseWriter, r *http.Request) {
-	if !s.requireStore(w) { return }
+	if !s.requireStore(w) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -295,7 +303,9 @@ func (s *Server) v2ChannelsAutoMatch(w http.ResponseWriter, r *http.Request) {
 // --- channels/reorder ---
 
 func (s *Server) v2ChannelsReorder(w http.ResponseWriter, r *http.Request) {
-	if !s.requireStore(w) { return }
+	if !s.requireStore(w) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -316,7 +326,9 @@ func (s *Server) v2ChannelsReorder(w http.ResponseWriter, r *http.Request) {
 // --- streams collection ---
 
 func (s *Server) v2Streams(w http.ResponseWriter, r *http.Request) {
-	if !s.requireStore(w) { return }
+	if !s.requireStore(w) {
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		opts := store.StreamListOpts{
@@ -356,7 +368,9 @@ func (s *Server) v2Streams(w http.ResponseWriter, r *http.Request) {
 // --- streams/:id ---
 
 func (s *Server) v2StreamItem(w http.ResponseWriter, r *http.Request) {
-	if !s.requireStore(w) { return }
+	if !s.requireStore(w) {
+		return
+	}
 	id, ok := pathID(r, "/api/v2/streams/")
 	if !ok {
 		http.NotFound(w, r)
@@ -369,7 +383,9 @@ func (s *Server) v2StreamItem(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case sub == "assign" && r.Method == http.MethodPost:
-		var req struct{ ChannelID int64 `json:"channel_id"` }
+		var req struct {
+			ChannelID int64 `json:"channel_id"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -394,7 +410,9 @@ func (s *Server) v2StreamItem(w http.ResponseWriter, r *http.Request) {
 // --- channel-profiles ---
 
 func (s *Server) v2ChannelProfiles(w http.ResponseWriter, r *http.Request) {
-	if !s.requireStore(w) { return }
+	if !s.requireStore(w) {
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		profiles, err := s.store.ListChannelProfiles()
@@ -404,7 +422,9 @@ func (s *Server) v2ChannelProfiles(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, profiles)
 	case http.MethodPost:
-		var req struct{ Name string `json:"name"` }
+		var req struct {
+			Name string `json:"name"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -422,7 +442,9 @@ func (s *Server) v2ChannelProfiles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) v2ChannelProfileItem(w http.ResponseWriter, r *http.Request) {
-	if !s.requireStore(w) { return }
+	if !s.requireStore(w) {
+		return
+	}
 	id, ok := pathID(r, "/api/v2/channel-profiles/")
 	if !ok {
 		http.NotFound(w, r)
@@ -431,7 +453,9 @@ func (s *Server) v2ChannelProfileItem(w http.ResponseWriter, r *http.Request) {
 	sub := pathSuffix(r, "/api/v2/channel-profiles/")
 	switch {
 	case sub == "duplicate" && r.Method == http.MethodPost:
-		var req struct{ Name string `json:"name"` }
+		var req struct {
+			Name string `json:"name"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -443,7 +467,9 @@ func (s *Server) v2ChannelProfileItem(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusCreated, p)
 	case r.Method == http.MethodPatch && sub == "":
-		var req struct{ Name string `json:"name"` }
+		var req struct {
+			Name string `json:"name"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -468,7 +494,9 @@ func (s *Server) v2ChannelProfileItem(w http.ResponseWriter, r *http.Request) {
 // --- channel-groups ---
 
 func (s *Server) v2ChannelGroups(w http.ResponseWriter, r *http.Request) {
-	if !s.requireStore(w) { return }
+	if !s.requireStore(w) {
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		groups, err := s.store.ListChannelGroups()
@@ -478,7 +506,9 @@ func (s *Server) v2ChannelGroups(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, groups)
 	case http.MethodPost:
-		var req struct{ Name string `json:"name"` }
+		var req struct {
+			Name string `json:"name"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -496,7 +526,9 @@ func (s *Server) v2ChannelGroups(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) v2ChannelGroupItem(w http.ResponseWriter, r *http.Request) {
-	if !s.requireStore(w) { return }
+	if !s.requireStore(w) {
+		return
+	}
 	id, ok := pathID(r, "/api/v2/channel-groups/")
 	if !ok {
 		http.NotFound(w, r)
@@ -504,7 +536,9 @@ func (s *Server) v2ChannelGroupItem(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodPatch:
-		var req struct{ Name string `json:"name"` }
+		var req struct {
+			Name string `json:"name"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return

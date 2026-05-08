@@ -8,17 +8,17 @@ import (
 // ── Types ──────────────────────────────────────────────────────────────────
 
 type Recording struct {
-	ID          int64   `json:"id"`
-	ChannelID   *int64  `json:"channel_id,omitempty"`
-	ChannelName string  `json:"channel_name,omitempty"`
-	Title       string  `json:"title"`
-	StartAt     string  `json:"start_at"`
-	EndAt       string  `json:"end_at"`
-	Recurring   bool    `json:"recurring"`
-	RuleID      *int64  `json:"rule_id,omitempty"`
-	Status      string  `json:"status"` // "scheduled" | "recording" | "done" | "failed"
-	FilePath    string  `json:"file_path,omitempty"`
-	CreatedAt   string  `json:"created_at"`
+	ID          int64  `json:"id"`
+	ChannelID   *int64 `json:"channel_id,omitempty"`
+	ChannelName string `json:"channel_name,omitempty"`
+	Title       string `json:"title"`
+	StartAt     string `json:"start_at"`
+	EndAt       string `json:"end_at"`
+	Recurring   bool   `json:"recurring"`
+	RuleID      *int64 `json:"rule_id,omitempty"`
+	Status      string `json:"status"` // "scheduled" | "recording" | "done" | "failed"
+	FilePath    string `json:"file_path,omitempty"`
+	CreatedAt   string `json:"created_at"`
 }
 
 type RecordingInput struct {
@@ -30,17 +30,17 @@ type RecordingInput struct {
 }
 
 type RecordingRule struct {
-	ID        int64   `json:"id"`
-	ChannelID *int64  `json:"channel_id,omitempty"`
+	ID          int64  `json:"id"`
+	ChannelID   *int64 `json:"channel_id,omitempty"`
 	ChannelName string `json:"channel_name,omitempty"`
-	Title     string  `json:"title"`
-	Days      []int   `json:"days"` // 0=Sun..6=Sat
-	StartTime string  `json:"start_time"` // "HH:MM"
-	EndTime   string  `json:"end_time"`
-	StartDate string  `json:"start_date,omitempty"`
-	EndDate   string  `json:"end_date,omitempty"`
-	IsActive  bool    `json:"is_active"`
-	CreatedAt string  `json:"created_at"`
+	Title       string `json:"title"`
+	Days        []int  `json:"days"`       // 0=Sun..6=Sat
+	StartTime   string `json:"start_time"` // "HH:MM"
+	EndTime     string `json:"end_time"`
+	StartDate   string `json:"start_date,omitempty"`
+	EndDate     string `json:"end_date,omitempty"`
+	IsActive    bool   `json:"is_active"`
+	CreatedAt   string `json:"created_at"`
 }
 
 type RecordingRuleInput struct {

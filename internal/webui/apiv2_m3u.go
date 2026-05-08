@@ -225,7 +225,7 @@ func (s *Server) v2M3UAccountProfiles(w http.ResponseWriter, r *http.Request, ac
 			Password   string `json:"password"`
 			SearchPat  string `json:"search_pat"`
 			ReplacePat string `json:"replace_pat"`
-			MaxStreams  int    `json:"max_streams"`
+			MaxStreams int    `json:"max_streams"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())

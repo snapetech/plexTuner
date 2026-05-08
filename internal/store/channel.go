@@ -9,24 +9,24 @@ import (
 )
 
 type Channel struct {
-	ID            int64   `json:"id"`
-	Name          string  `json:"name"`
-	ChannelNumber string  `json:"channel_number"`
-	GroupID       *int64  `json:"group_id,omitempty"`
-	GroupName     string  `json:"group_name,omitempty"`
-	StreamProfile string  `json:"stream_profile"`
-	LogoID        *int64  `json:"logo_id,omitempty"`
-	TVGID         string  `json:"tvg_id"`
-	GracenoteID   string  `json:"gracenote_id"`
-	EPGID         *int64  `json:"epg_id,omitempty"`
-	EPGName       string  `json:"epg_name,omitempty"`
-	UserLevel     string  `json:"user_level"`
-	Mature        bool    `json:"mature"`
-	Enabled       bool    `json:"enabled"`
-	SortOrder     int     `json:"sort_order"`
+	ID            int64    `json:"id"`
+	Name          string   `json:"name"`
+	ChannelNumber string   `json:"channel_number"`
+	GroupID       *int64   `json:"group_id,omitempty"`
+	GroupName     string   `json:"group_name,omitempty"`
+	StreamProfile string   `json:"stream_profile"`
+	LogoID        *int64   `json:"logo_id,omitempty"`
+	TVGID         string   `json:"tvg_id"`
+	GracenoteID   string   `json:"gracenote_id"`
+	EPGID         *int64   `json:"epg_id,omitempty"`
+	EPGName       string   `json:"epg_name,omitempty"`
+	UserLevel     string   `json:"user_level"`
+	Mature        bool     `json:"mature"`
+	Enabled       bool     `json:"enabled"`
+	SortOrder     int      `json:"sort_order"`
 	Streams       []Stream `json:"streams,omitempty"`
-	CreatedAt     string  `json:"created_at"`
-	UpdatedAt     string  `json:"updated_at"`
+	CreatedAt     string   `json:"created_at"`
+	UpdatedAt     string   `json:"updated_at"`
 }
 
 type ChannelListOpts struct {
@@ -39,7 +39,7 @@ type ChannelListOpts struct {
 }
 
 type ChannelBulkUpdate struct {
-	Name          *string `json:"name,omitempty"`          // regex find→replace: "find|replace"
+	Name          *string `json:"name,omitempty"` // regex find→replace: "find|replace"
 	GroupID       *int64  `json:"group_id,omitempty"`
 	StreamProfile *string `json:"stream_profile,omitempty"`
 	UserLevel     *string `json:"user_level,omitempty"`
@@ -115,13 +115,16 @@ ORDER BY c.sort_order, c.id`
 			return nil, 0, fmt.Errorf("store.ListChannels scan: %w", err)
 		}
 		if groupID.Valid {
-			v := groupID.Int64; ch.GroupID = &v
+			v := groupID.Int64
+			ch.GroupID = &v
 		}
 		if logoID.Valid {
-			v := logoID.Int64; ch.LogoID = &v
+			v := logoID.Int64
+			ch.LogoID = &v
 		}
 		if epgID.Valid {
-			v := epgID.Int64; ch.EPGID = &v
+			v := epgID.Int64
+			ch.EPGID = &v
 		}
 		channels = append(channels, ch)
 	}
@@ -154,9 +157,18 @@ WHERE c.id = ?`, id).Scan(
 	if err != nil {
 		return nil, fmt.Errorf("store.GetChannel: %w", err)
 	}
-	if groupID.Valid { v := groupID.Int64; ch.GroupID = &v }
-	if logoID.Valid  { v := logoID.Int64;  ch.LogoID = &v  }
-	if epgID.Valid   { v := epgID.Int64;   ch.EPGID = &v   }
+	if groupID.Valid {
+		v := groupID.Int64
+		ch.GroupID = &v
+	}
+	if logoID.Valid {
+		v := logoID.Int64
+		ch.LogoID = &v
+	}
+	if epgID.Valid {
+		v := epgID.Int64
+		ch.EPGID = &v
+	}
 
 	streams, err := s.ListStreamsForChannel(id)
 	if err != nil {
@@ -237,14 +249,36 @@ func (s *Store) BulkUpdateChannels(ids []int64, u ChannelBulkUpdate) error {
 	setClauses := []string{"updated_at=?"}
 	args := []any{now}
 
-	if u.GroupID != nil    { setClauses = append(setClauses, "group_id=?");       args = append(args, nullInt64(u.GroupID)) }
-	if u.StreamProfile != nil { setClauses = append(setClauses, "stream_profile=?"); args = append(args, *u.StreamProfile) }
-	if u.UserLevel != nil  { setClauses = append(setClauses, "user_level=?");     args = append(args, *u.UserLevel) }
-	if u.Mature != nil     { setClauses = append(setClauses, "mature=?");         args = append(args, boolInt(*u.Mature)) }
-	if u.LogoID != nil     { setClauses = append(setClauses, "logo_id=?");        args = append(args, nullInt64(u.LogoID)) }
-	if u.TVGID != nil      { setClauses = append(setClauses, "tvg_id=?");         args = append(args, *u.TVGID) }
-	if u.ClearEPG         { setClauses = append(setClauses, "epg_id=NULL") } else
-	if u.EPGID != nil     { setClauses = append(setClauses, "epg_id=?");          args = append(args, nullInt64(u.EPGID)) }
+	if u.GroupID != nil {
+		setClauses = append(setClauses, "group_id=?")
+		args = append(args, nullInt64(u.GroupID))
+	}
+	if u.StreamProfile != nil {
+		setClauses = append(setClauses, "stream_profile=?")
+		args = append(args, *u.StreamProfile)
+	}
+	if u.UserLevel != nil {
+		setClauses = append(setClauses, "user_level=?")
+		args = append(args, *u.UserLevel)
+	}
+	if u.Mature != nil {
+		setClauses = append(setClauses, "mature=?")
+		args = append(args, boolInt(*u.Mature))
+	}
+	if u.LogoID != nil {
+		setClauses = append(setClauses, "logo_id=?")
+		args = append(args, nullInt64(u.LogoID))
+	}
+	if u.TVGID != nil {
+		setClauses = append(setClauses, "tvg_id=?")
+		args = append(args, *u.TVGID)
+	}
+	if u.ClearEPG {
+		setClauses = append(setClauses, "epg_id=NULL")
+	} else if u.EPGID != nil {
+		setClauses = append(setClauses, "epg_id=?")
+		args = append(args, nullInt64(u.EPGID))
+	}
 
 	placeholders := make([]string, len(ids))
 	for i, id := range ids {
@@ -260,32 +294,40 @@ func (s *Store) BulkUpdateChannels(ids []int64, u ChannelBulkUpdate) error {
 // helpers
 
 func nullStr(s string) any {
-	if s == "" { return nil }
+	if s == "" {
+		return nil
+	}
 	return s
 }
 
 func nullInt64(p *int64) any {
-	if p == nil { return nil }
+	if p == nil {
+		return nil
+	}
 	return *p
 }
 
 func boolInt(b bool) int {
-	if b { return 1 }
+	if b {
+		return 1
+	}
 	return 0
 }
 
 func orDefault(s, def string) string {
-	if s == "" { return def }
+	if s == "" {
+		return def
+	}
 	return s
 }
 
 // StreamStats holds per-stream quality metadata.
 type StreamStats struct {
-	Resolution string  `json:"resolution,omitempty"`
-	FPS        float64 `json:"fps,omitempty"`
-	VideoCodec string  `json:"video_codec,omitempty"`
-	AudioCodec string  `json:"audio_codec,omitempty"`
-	BitrateKbps int64  `json:"bitrate_kbps,omitempty"`
+	Resolution  string  `json:"resolution,omitempty"`
+	FPS         float64 `json:"fps,omitempty"`
+	VideoCodec  string  `json:"video_codec,omitempty"`
+	AudioCodec  string  `json:"audio_codec,omitempty"`
+	BitrateKbps int64   `json:"bitrate_kbps,omitempty"`
 }
 
 // Stream is a single fallback URL associated with a channel.
@@ -318,8 +360,8 @@ ORDER BY cs.position`, channelID)
 }
 
 type StreamListOpts struct {
-	Search        string
-	M3UAccountID  *int64
+	Search         string
+	M3UAccountID   *int64
 	OnlyUnassigned bool
 	HideStale      bool
 	Page           int
@@ -361,7 +403,9 @@ ORDER BY cs.id`
 
 	if opts.PerPage > 0 {
 		page := opts.Page
-		if page < 1 { page = 1 }
+		if page < 1 {
+			page = 1
+		}
 		query += fmt.Sprintf(" LIMIT %d OFFSET %d", opts.PerPage, (page-1)*opts.PerPage)
 	}
 
@@ -414,8 +458,14 @@ func scanStreams(rows *sql.Rows) ([]Stream, error) {
 		); err != nil {
 			return nil, err
 		}
-		if channelID.Valid { v := channelID.Int64; st.ChannelID = &v }
-		if m3uAccount.Valid { v := m3uAccount.Int64; st.M3UAccount = &v }
+		if channelID.Valid {
+			v := channelID.Int64
+			st.ChannelID = &v
+		}
+		if m3uAccount.Valid {
+			v := m3uAccount.Int64
+			st.M3UAccount = &v
+		}
 		if statsJSON != "" {
 			var stats StreamStats
 			if json.Unmarshal([]byte(statsJSON), &stats) == nil {

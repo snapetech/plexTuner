@@ -10,23 +10,23 @@ import (
 // ── Types ──────────────────────────────────────────────────────────────────
 
 type M3UAccount struct {
-	ID                 int64   `json:"id"`
-	Name               string  `json:"name"`
-	AccountType        string  `json:"account_type"` // "standard" | "xtream"
-	URL                string  `json:"url"`
-	UploadPath         string  `json:"upload_path,omitempty"`
-	ExpirationDate     string  `json:"expiration_date,omitempty"`
-	MaxStreams         int     `json:"max_streams"`
-	UserAgent          string  `json:"user_agent,omitempty"`
-	RefreshIntervalHrs int     `json:"refresh_interval_hrs"`
-	RefreshCron        string  `json:"refresh_cron,omitempty"`
-	StaleRetentionDays int     `json:"stale_retention_days"`
-	VODScanning        bool    `json:"vod_scanning"`
-	VODPriority        int     `json:"vod_priority"`
-	IsActive           bool    `json:"is_active"`
-	LastRefreshedAt    string  `json:"last_refreshed_at,omitempty"`
-	CreatedAt          string  `json:"created_at"`
-	StreamCount        int     `json:"stream_count,omitempty"`
+	ID                 int64  `json:"id"`
+	Name               string `json:"name"`
+	AccountType        string `json:"account_type"` // "standard" | "xtream"
+	URL                string `json:"url"`
+	UploadPath         string `json:"upload_path,omitempty"`
+	ExpirationDate     string `json:"expiration_date,omitempty"`
+	MaxStreams         int    `json:"max_streams"`
+	UserAgent          string `json:"user_agent,omitempty"`
+	RefreshIntervalHrs int    `json:"refresh_interval_hrs"`
+	RefreshCron        string `json:"refresh_cron,omitempty"`
+	StaleRetentionDays int    `json:"stale_retention_days"`
+	VODScanning        bool   `json:"vod_scanning"`
+	VODPriority        int    `json:"vod_priority"`
+	IsActive           bool   `json:"is_active"`
+	LastRefreshedAt    string `json:"last_refreshed_at,omitempty"`
+	CreatedAt          string `json:"created_at"`
+	StreamCount        int    `json:"stream_count,omitempty"`
 }
 
 type M3UAccountProfile struct {
@@ -37,7 +37,7 @@ type M3UAccountProfile struct {
 	Password   string `json:"password,omitempty"`
 	SearchPat  string `json:"search_pat,omitempty"`
 	ReplacePat string `json:"replace_pat,omitempty"`
-	MaxStreams  int    `json:"max_streams"`
+	MaxStreams int    `json:"max_streams"`
 }
 
 type M3UFilter struct {
@@ -51,23 +51,23 @@ type M3UFilter struct {
 }
 
 type M3UGroup struct {
-	ID                    int64  `json:"id"`
-	AccountID             int64  `json:"account_id"`
-	Name                  string `json:"name"`
-	Enabled               bool   `json:"enabled"`
-	AutoChannelSync       bool   `json:"auto_channel_sync"`
-	ChannelNumberingMode  string `json:"channel_numbering_mode"` // "fixed" | "provider" | "next"
-	StartChannelNumber    *int   `json:"start_channel_number,omitempty"`
-	ForceDummyEPG         bool   `json:"force_dummy_epg"`
-	OverrideGroup         string `json:"override_group,omitempty"`
-	NameFindRegex         string `json:"name_find_regex,omitempty"`
-	NameReplace           string `json:"name_replace,omitempty"`
-	NameFilterRegex       string `json:"name_filter_regex,omitempty"`
-	ProfileIDs            []int64 `json:"profile_ids,omitempty"`
-	SortOrderMode         string `json:"sort_order_mode"` // "provider" | "alpha" | "fixed"
-	StreamProfile         string `json:"stream_profile,omitempty"`
-	StreamCount           int    `json:"stream_count,omitempty"`
-	CreatedAt             string `json:"created_at"`
+	ID                   int64   `json:"id"`
+	AccountID            int64   `json:"account_id"`
+	Name                 string  `json:"name"`
+	Enabled              bool    `json:"enabled"`
+	AutoChannelSync      bool    `json:"auto_channel_sync"`
+	ChannelNumberingMode string  `json:"channel_numbering_mode"` // "fixed" | "provider" | "next"
+	StartChannelNumber   *int    `json:"start_channel_number,omitempty"`
+	ForceDummyEPG        bool    `json:"force_dummy_epg"`
+	OverrideGroup        string  `json:"override_group,omitempty"`
+	NameFindRegex        string  `json:"name_find_regex,omitempty"`
+	NameReplace          string  `json:"name_replace,omitempty"`
+	NameFilterRegex      string  `json:"name_filter_regex,omitempty"`
+	ProfileIDs           []int64 `json:"profile_ids,omitempty"`
+	SortOrderMode        string  `json:"sort_order_mode"` // "provider" | "alpha" | "fixed"
+	StreamProfile        string  `json:"stream_profile,omitempty"`
+	StreamCount          int     `json:"stream_count,omitempty"`
+	CreatedAt            string  `json:"created_at"`
 }
 
 // ── M3U Accounts ──────────────────────────────────────────────────────────
@@ -142,7 +142,7 @@ type M3UAccountInput struct {
 	Name               string `json:"name"`
 	AccountType        string `json:"account_type"`
 	URL                string `json:"url"`
-	MaxStreams          int    `json:"max_streams"`
+	MaxStreams         int    `json:"max_streams"`
 	UserAgent          string `json:"user_agent"`
 	RefreshIntervalHrs int    `json:"refresh_interval_hrs"`
 	RefreshCron        string `json:"refresh_cron"`
