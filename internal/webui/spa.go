@@ -70,7 +70,17 @@ func (s *Server) serveSPAIndex(w http.ResponseWriter, r *http.Request) {
 		User:    s.sessionUser(r),
 	}
 	bootJSON, _ := json.Marshal(boot)
-	inject := `<script>window.__TUNERR_BOOT__=` + string(bootJSON) + `</script>`
+
+	// deck-bootstrap script keeps backward-compat with smoke tests and any tooling
+	// that reads the legacy format (csrfToken key, application/json type).
+	deckBoot, _ := json.Marshal(map[string]interface{}{
+		"csrfToken": csrf,
+		"version":   s.Version,
+		"user":      boot.User,
+		"port":      s.Port,
+	})
+	inject := `<script id="deck-bootstrap" type="application/json">` + string(deckBoot) + `</script>` +
+		`<script>window.__TUNERR_BOOT__=` + string(bootJSON) + `</script>`
 
 	html := bytes.ReplaceAll(raw, []byte("</head>"), []byte(inject+"</head>"))
 
