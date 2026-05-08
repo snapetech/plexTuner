@@ -13,6 +13,15 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.58] — 2026-05-08
+
+### EPG / guide reliability
+- **EPG data-loss prevention:** if every channel in a newly-built guide falls back to placeholder (all sources temporarily unreachable) and a valid populated cache already exists, Tunerr now aborts the update and preserves the good data rather than overwriting it with empty guide rows. A loud log line (`EPG quality gate blocked update`) tells operators what happened.
+- **Case-insensitive TVGID channel matching:** channel IDs are now lowercased at every point in the EPG pipeline — parse time, filter-keyset build, and merge lookup — so `CNN.US` in a provider XMLTV matches `cnn.us` in an M3U `tvg-id`. Silent mismatches that caused channels to silently receive no programming are fixed.
+- **Channel list data race fixed:** a new `channelsMu` mutex protects the `Channels` and `GuideHealthChannels` fields; `updateChannelState()` does an atomic write + cache invalidation; `snapshotChannels()` provides goroutine-safe reads throughout the guide pipeline and diagnostic endpoints.
+- **Context propagation through EPG builds:** `buildMergedEPG` and `runRefresh` now accept `context.Context` so in-flight EPG builds are cancelled on server shutdown. Redundant inner `context.WithTimeout(Background)` wrappers that were ignoring parent cancellation are removed.
+- **Plex guide reloaded automatically after every EPG cache update:** after each successful EPG rebuild Tunerr now posts `reloadGuide` to the Plex DVR API so Plex fetches fresh guide data within seconds instead of waiting hours for its own internal poll. The reload uses a dynamic DVR-key lookup (`ReloadGuideForDevice`) so it survives DVR re-registrations without a restart.
+
 ### Docs / examples
 - **Manual Plex Live TV proxy implementation guidance:** added a Tunerr-free implementation checklist plus nginx+njs examples that mirror the hardened owner-token elevation allowlist and rewrite both query-string and header token locations for eligible Live TV reads.
 - **Legacy Python Plex proxy is functional again:** `scripts/plex-media-providers-label-proxy.py` now supports hardened `--elevate-live-tv` owner-token injection, XML `allowTuners` hint rewrites, provider-scoped label rewrites, and docs that describe it as a standalone fallback instead of an unmaintained label-only prototype.
