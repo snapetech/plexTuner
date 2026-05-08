@@ -40,7 +40,7 @@ spec:
                 name: iptvtunerr-env
           env:
             - name: IPTV_TUNERR_BASE_URL
-              value: http://iptvtunerr-sports.plex.svc:5004
+              value: http://192.168.50.85:5005
             - name: IPTV_TUNERR_DEVICE_ID
               value: iptvtunerr-sports01
             - name: IPTV_TUNERR_FRIENDLY_NAME
@@ -70,7 +70,7 @@ spec:
             - name: IPTV_TUNERR_HLS_PLAYLIST_RETRY_BACKOFF_MS
               value: "1000"
             - name: PLEX_HOST
-              value: 192.168.50.148:32400
+              value: 192.168.50.248:32400
             - name: IPTV_TUNERR_LINEUP_RECIPE
               value: sports_na
             - name: IPTV_TUNERR_LINEUP_SHAPE
