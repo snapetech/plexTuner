@@ -53,6 +53,36 @@ Plex's private key.
 
 Port 32400 must be closed on the external firewall/router. Do not forward it.
 
+### 3. PMS external connection URL MUST point to the proxy (port 443)
+
+Plex uses UPnP to discover its external port and advertises that port to clients.
+If UPnP maps port 55556 (or any non-443 port), Plex advertises
+`media.snape.tech:55556` — a port that doesn't reach the proxy. Clients connect
+to the wrong port, fail, and fall through to relay (disabled) or give up.
+
+Required PMS preferences (enforced by `plex-prefs-enforce.timer`):
+
+```bash
+# Disable relay
+RelayEnabled=0
+# Use manual port mapping so Plex doesn't override with UPnP
+ManualPortMappingMode=1
+ManualPortMappingPort=443
+# Explicit external URL including port (Plex strips bare-HTTPS port otherwise)
+customConnections=https://media.snape.tech:443
+```
+
+Apply all at once:
+
+```bash
+TOKEN=your-owner-token
+curl -X PUT "http://127.0.0.1:32400/:/prefs?X-Plex-Token=$TOKEN&RelayEnabled=0&ManualPortMappingMode=1&ManualPortMappingPort=443&customConnections=https%3A%2F%2Fmedia.snape.tech%3A443"
+```
+
+**These settings drift after Plex updates** — Plex commonly resets `RelayEnabled`
+and port mapping on upgrade. The `plex-prefs-enforce.timer` on kspls0 re-applies
+them every 5 minutes. If you reinstall kspls0, re-enable that timer.
+
 ### Why not Plex Home (managed users)?
 
 Plex Home allows creating managed sub-accounts that share the owner's
