@@ -125,6 +125,8 @@ type Server struct {
 	EpgSQLiteMaxBytes int64
 	// EpgSQLiteIncrementalUpsert uses overlap-window upsert instead of full truncate+replace.
 	EpgSQLiteIncrementalUpsert bool
+	// EpgGuideServeWindowHours caps guide.xml output to programmes starting within this many hours.
+	EpgGuideServeWindowHours int
 	// ProviderEPGURLSuffix is appended to provider xmltv.php URL (optional; e.g. panel-specific date params).
 	ProviderEPGURLSuffix string
 	// HDHRGuideURL is an optional device guide.xml URL (LP-003); merged after provider + external gap-fill.
@@ -2053,6 +2055,7 @@ func (s *Server) Run(ctx context.Context) error {
 		EpgVacuumAfterPrune:        s.EpgSQLiteVacuumAfterPrune,
 		EpgMaxBytes:                s.EpgSQLiteMaxBytes,
 		EpgSQLiteIncrementalUpsert: s.EpgSQLiteIncrementalUpsert,
+		GuideServeWindowHours:      s.EpgGuideServeWindowHours,
 		ProviderEPGURLSuffix:       s.ProviderEPGURLSuffix,
 		ProviderEPGDiskCachePath:   s.ProviderEPGDiskCachePath,
 		HDHRGuideURL:               s.HDHRGuideURL,

@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 const liveProvidersBody = `<?xml version="1.0" encoding="UTF-8"?>
@@ -264,9 +266,11 @@ func TestIsLiveTVRequest(t *testing.T) {
 		"/tv.plex.providers.epg.xmltv:767/grid": true,
 		"/video/:/transcode/universal/start.m3u8?path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8": true,
 		"/playQueues?uri=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8":                              true,
-		"/library/sections?bait=%2Flivetv%2Fdvr":                                               false,
-		"/library/sections?path=%2Flivetv%2Fdvr":                                               false,
-		"/media/grabbers/tv.plex.grabbers.hdhomerun/devices":                                   false,
+		// Broad matching: any query param containing live TV text is elevated.
+		// Plex clients legitimately send live TV paths in arbitrary params.
+		"/library/sections?bait=%2Flivetv%2Fdvr":                                             true,
+		"/library/sections?path=%2Flivetv%2Fdvr":                                             true,
+		"/media/grabbers/tv.plex.grabbers.hdhomerun/devices":                                  true,
 	}
 	for target, want := range cases {
 		req := httptest.NewRequest(http.MethodGet, target, nil)
@@ -276,11 +280,28 @@ func TestIsLiveTVRequest(t *testing.T) {
 	}
 }
 
-func TestIsLiveTVRequest_BlocksMutatingMethods(t *testing.T) {
+func TestIsLiveTVRequest_MediaProviders(t *testing.T) {
+	// /media/providers must always be elevated: without the owner token Plex
+	// omits Live TV provider entries entirely for shared users, so the
+	// allowTuners XML rewrite alone is insufficient to show the Live TV tab.
+	for _, ref := range []string{"", "http://plex/web/index.html#!/server/abc/livetv/guide", "http://plex/web/index.html#!/server/abc/library"} {
+		req := httptest.NewRequest(http.MethodGet, "/media/providers", nil)
+		if ref != "" {
+			req.Header.Set("Referer", ref)
+		}
+		if !IsLiveTVRequest(req) {
+			t.Fatalf("/media/providers must always be elevated (referer=%q)", ref)
+		}
+	}
+}
+
+func TestIsLiveTVRequest_MutatingMethodsElevated(t *testing.T) {
+	// Broad matching: POST/PUT/etc. to Live TV paths are elevated. Plex clients
+	// send POST requests for play queue creation and DVR setup.
 	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
 		req := httptest.NewRequest(method, "/livetv/dvrs?X-Plex-Token=user-token", nil)
-		if IsLiveTVRequest(req) {
-			t.Fatalf("%s /livetv/dvrs must not be owner-token elevated", method)
+		if !IsLiveTVRequest(req) {
+			t.Fatalf("%s /livetv/dvrs should be elevated under broad matching", method)
 		}
 	}
 }
@@ -305,12 +326,457 @@ func TestApplyLiveTVTokenElevation(t *testing.T) {
 		t.Fatalf("library token got %q", got)
 	}
 
+	// Broad matching: a library URL with a live TV query param is elevated.
 	bait := httptest.NewRequest(http.MethodGet, "/library/sections?X-Plex-Token=user-token&bait=%2Flivetv%2Fdvr", nil)
-	if ApplyLiveTVTokenElevation(bait, "owner-token") {
-		t.Fatal("bait query on library request must not be elevated")
+	if !ApplyLiveTVTokenElevation(bait, "owner-token") {
+		t.Fatal("library request with live TV query param should be elevated under broad matching")
 	}
-	if got := bait.URL.Query().Get("X-Plex-Token"); got != "user-token" {
-		t.Fatalf("bait library token got %q", got)
+	if got := bait.URL.Query().Get("X-Plex-Token"); got != "owner-token" {
+		t.Fatalf("bait library token got %q want owner-token", got)
+	}
+}
+
+func TestProxy_UserHeaderInjected(t *testing.T) {
+	var gotUserHeader, gotToken string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotToken = r.URL.Query().Get("X-Plex-Token")
+		gotUserHeader = r.Header.Get("X-Plex-User")
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{Upstream: up.URL, Token: "label-token", OwnerToken: "owner-token", ElevateLiveTV: true, UserHeader: true})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/livetv/dvrs?X-Plex-Token=user-token", nil)
+	proxy.ServeHTTP(rec, req)
+
+	if gotToken != "owner-token" {
+		t.Fatalf("expected owner token in query, got %q", gotToken)
+	}
+	if gotUserHeader != "user-token" {
+		t.Fatalf("expected X-Plex-User=user-token, got %q", gotUserHeader)
+	}
+}
+
+func TestProxy_UserHeaderNotInjectedForLibraryPaths(t *testing.T) {
+	var gotUserHeader string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUserHeader = r.Header.Get("X-Plex-User")
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{Upstream: up.URL, Token: "label-token", OwnerToken: "owner-token", ElevateLiveTV: true, UserHeader: true})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/library/sections?X-Plex-Token=user-token", nil)
+	proxy.ServeHTTP(rec, req)
+
+	if gotUserHeader != "" {
+		t.Fatalf("X-Plex-User must not be set on non-elevated paths, got %q", gotUserHeader)
+	}
+}
+
+func TestProxy_ElevateDiscoveryOnly_DoesNotElevateStreamStart(t *testing.T) {
+	type seen struct {
+		path  string
+		token string
+	}
+	var requests []seen
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, seen{r.URL.Path, r.URL.Query().Get("X-Plex-Token")})
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{Upstream: up.URL, Token: "label-token", OwnerToken: "owner-token", ElevateLiveTV: true, ElevateDiscoveryOnly: true})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	for _, target := range []string{
+		"/livetv/dvrs?X-Plex-Token=user-token",
+		"/media/providers?X-Plex-Token=user-token",
+		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
+		"/playQueues?X-Plex-Token=user-token&uri=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
+	} {
+		rec := httptest.NewRecorder()
+		proxy.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+	}
+
+	if len(requests) != 4 {
+		t.Fatalf("want 4 requests, got %d", len(requests))
+	}
+	// Discovery paths must be elevated.
+	if requests[0].token != "owner-token" {
+		t.Fatalf("livetv/dvrs should be elevated, got token=%q", requests[0].token)
+	}
+	if requests[1].token != "owner-token" {
+		t.Fatalf("media/providers should be elevated, got token=%q", requests[1].token)
+	}
+	// Stream-start paths must NOT be elevated.
+	if requests[2].token != "user-token" {
+		t.Fatalf("transcode should NOT be elevated in discovery-only mode, got token=%q", requests[2].token)
+	}
+	if requests[3].token != "user-token" {
+		t.Fatalf("playQueues should NOT be elevated in discovery-only mode, got token=%q", requests[3].token)
+	}
+}
+
+func TestIsLiveTVDiscoveryRequest(t *testing.T) {
+	cases := map[string]bool{
+		"/media/providers":                      true,
+		"/livetv/dvrs":                          true,
+		"/tv.plex.providers.epg.xmltv:767/grid": true,
+		"/media/grabbers/devices":               true,
+		// stream-start paths must return false
+		"/video/:/transcode/universal/start.m3u8?path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8": false,
+		"/playQueues?uri=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8":                              false,
+		// non-live-tv paths must return false
+		"/library/sections": false,
+	}
+	for target, want := range cases {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		if got := IsLiveTVDiscoveryRequest(req); got != want {
+			t.Errorf("IsLiveTVDiscoveryRequest(%q) = %v, want %v", target, got, want)
+		}
+	}
+}
+
+func TestIsLiveTVStreamRequest(t *testing.T) {
+	cases := map[string]bool{
+		"/video/:/transcode/universal/start.m3u8?path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8": true,
+		"/playQueues?uri=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8":                              true,
+		"/playQueues?path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8":                             true,
+		"/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F123":             false, // VOD, not live TV
+		"/livetv/dvrs":    false,
+		"/media/providers": false,
+	}
+	for target, want := range cases {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		if got := IsLiveTVStreamRequest(req); got != want {
+			t.Errorf("IsLiveTVStreamRequest(%q) = %v, want %v", target, got, want)
+		}
+	}
+}
+
+func TestProxy_NeutralizeOwnerHistory_UnscrobblesFiredForTrackedSessions(t *testing.T) {
+	var mu sync.Mutex
+	var unscrobblePaths []string
+
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/:/unscrobble" {
+			mu.Lock()
+			unscrobblePaths = append(unscrobblePaths, r.URL.Query().Get("ratingKey"))
+			mu.Unlock()
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:               up.URL,
+		Token:                  "label-token",
+		OwnerToken:             "owner-token",
+		ElevateLiveTV:          true,
+		NeutralizeOwnerHistory: true,
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	const sessionID = "test-session-abc"
+
+	// 1. Simulate elevated Live TV stream start (records session).
+	streamReq := httptest.NewRequest(http.MethodGet,
+		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
+		nil)
+	streamReq.Header.Set("X-Plex-Session-Identifier", sessionID)
+	proxy.ServeHTTP(httptest.NewRecorder(), streamReq)
+
+	// 2. Simulate a /:/scrobble call (marks content as watched — this is when
+	// the owner unscrobble fires; timeline ticks do not trigger it).
+	scrobbleReq := httptest.NewRequest(http.MethodGet,
+		"/:/scrobble?X-Plex-Token=user-token&ratingKey=9876&identifier=com.plexapp.plugins.library",
+		nil)
+	scrobbleReq.Header.Set("X-Plex-Session-Identifier", sessionID)
+	proxy.ServeHTTP(httptest.NewRecorder(), scrobbleReq)
+
+	// Give background goroutines time to complete.
+	time.Sleep(200 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(unscrobblePaths) == 0 {
+		t.Fatal("expected at least one /:/unscrobble call for the elevated session")
+	}
+	if unscrobblePaths[0] != "9876" {
+		t.Fatalf("unscrobble ratingKey=%q, want 9876", unscrobblePaths[0])
+	}
+}
+
+// TestProxy_ElevateAll_* tests document the token-spoof mode (-elevate-all).
+//
+// ARCHITECTURE NOTE — why Live TV only works for clients on media.snape.tech:
+//
+// The proxy sits at 127.0.0.1:33240. Caddy routes media.snape.tech → proxy →
+// Plex. This is the ONLY path the proxy can intercept. Plex has two other
+// external connection paths that bypass the proxy entirely:
+//
+//  1. Plex Relay (relay.plex.tv) — an outbound WebSocket from the Plex process
+//     itself to relay.plex.tv. Client traffic flows client→relay.plex.tv→Plex
+//     over that socket. The proxy sees none of this traffic.
+//
+//  2. plex.direct — Plex signs TLS certificates keyed to the server's machine
+//     identifier, enabling direct HTTPS to the server IP on port 32400. We
+//     cannot MITM this without Plex's private key.
+//
+// Therefore: Plex relay MUST be disabled (RelayEnabled=0 in Plex prefs) and
+// port 32400 MUST NOT be reachable externally. media.snape.tech must be the
+// only working external path. The proxy cannot offer Live TV entitlement to
+// clients that are not using media.snape.tech.
+//
+// WHY NOT PLEX HOME / MANAGED USERS:
+//
+// Plex Home (managed users) is a household-level feature that permanently links
+// accounts under the owner's subscription. The external users (imantor, rylan,
+// lafunk) are independent Plex account holders who are shared the server, not
+// household members. Adding them to Plex Home would merge their Plex identity
+// into this household, affecting their watchlists, recommendations, and account
+// on every Plex server they access — not just this one. That is not acceptable.
+// The proxy approach grants Live TV entitlement without any account changes.
+
+func TestProxy_ElevateAll_InjectsOwnerTokenOnEveryRequest(t *testing.T) {
+	var gotToken string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotToken = r.URL.Query().Get("X-Plex-Token")
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:   up.URL,
+		Token:      "owner-token",
+		OwnerToken: "owner-token",
+		ElevateAll: true,
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	for _, path := range []string{
+		"/library/sections",
+		"/media/providers",
+		"/livetv/dvrs",
+		"/:/timeline",
+		"/video/:/transcode/universal/start.m3u8",
+	} {
+		gotToken = ""
+		req := httptest.NewRequest(http.MethodGet, path+"?X-Plex-Token=user-token", nil)
+		proxy.ServeHTTP(httptest.NewRecorder(), req)
+		if gotToken != "owner-token" {
+			t.Errorf("path %s: upstream got token %q, want owner-token", path, gotToken)
+		}
+	}
+}
+
+func TestProxy_ElevateAll_OwnerRequestNotUnscrobbled(t *testing.T) {
+	// When the requesting client IS the owner, their Live TV sessions must not
+	// be unscrobbled — they're watching legitimately under their own account.
+	var unscrobbleCalled bool
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/:/unscrobble" {
+			unscrobbleCalled = true
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:               up.URL,
+		Token:                  "owner-token",
+		OwnerToken:             "owner-token",
+		ElevateAll:             true,
+		NeutralizeOwnerHistory: true,
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	const sessionID = "owner-session"
+
+	// Owner starts a Live TV stream — originalToken == ownerToken, must not track.
+	streamReq := httptest.NewRequest(http.MethodGet,
+		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=owner-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
+		nil)
+	streamReq.Header.Set("X-Plex-Session-Identifier", sessionID)
+	proxy.ServeHTTP(httptest.NewRecorder(), streamReq)
+
+	scrobbleReq := httptest.NewRequest(http.MethodGet,
+		"/:/scrobble?X-Plex-Token=owner-token&ratingKey=42&identifier=com.plexapp.plugins.library",
+		nil)
+	scrobbleReq.Header.Set("X-Plex-Session-Identifier", sessionID)
+	proxy.ServeHTTP(httptest.NewRecorder(), scrobbleReq)
+
+	time.Sleep(100 * time.Millisecond)
+	if unscrobbleCalled {
+		t.Fatal("owner's own Live TV session must not be unscrobbled")
+	}
+}
+
+func TestProxy_ElevateAll_UserSessionReplayed(t *testing.T) {
+	// When a non-owner user watches Live TV under the spoofed owner token,
+	// their scrobble must be: (a) unscrobbled from owner, (b) replayed under
+	// their original token so their watch history is updated correctly.
+	var mu sync.Mutex
+	var paths []string
+	var tokens []string
+
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		tokens = append(tokens, r.URL.Query().Get("X-Plex-Token"))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:               up.URL,
+		Token:                  "owner-token",
+		OwnerToken:             "owner-token",
+		ElevateAll:             true,
+		NeutralizeOwnerHistory: true,
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	const sessionID = "user-session"
+
+	streamReq := httptest.NewRequest(http.MethodGet,
+		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
+		nil)
+	streamReq.Header.Set("X-Plex-Session-Identifier", sessionID)
+	proxy.ServeHTTP(httptest.NewRecorder(), streamReq)
+
+	mu.Lock()
+	paths = paths[:0]
+	tokens = tokens[:0]
+	mu.Unlock()
+
+	scrobbleReq := httptest.NewRequest(http.MethodGet,
+		"/:/scrobble?X-Plex-Token=user-token&ratingKey=99&identifier=com.plexapp.plugins.library",
+		nil)
+	scrobbleReq.Header.Set("X-Plex-Session-Identifier", sessionID)
+	proxy.ServeHTTP(httptest.NewRecorder(), scrobbleReq)
+
+	time.Sleep(200 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	var sawUnscrobble, sawUserReplay bool
+	for i, p := range paths {
+		if p == "/:/unscrobble" && tokens[i] == "owner-token" {
+			sawUnscrobble = true
+		}
+		if p == "/:/scrobble" && tokens[i] == "user-token" {
+			sawUserReplay = true
+		}
+	}
+	if !sawUnscrobble {
+		t.Error("expected /:/unscrobble under owner-token")
+	}
+	if !sawUserReplay {
+		t.Error("expected /:/scrobble replay under user-token")
+	}
+}
+
+// TestProxy_ElevateAll_LibraryContentRescrobbled verifies that downloaded
+// library content (movies, shows) watched through the proxy also has its
+// progress and watch history correctly attributed to the original user rather
+// than the owner. Previously the proxy only tracked Live TV sessions; this test
+// guards the extension to all content types.
+func TestProxy_ElevateAll_LibraryContentRescrobbled(t *testing.T) {
+	var mu sync.Mutex
+	var paths []string
+	var tokens []string
+
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		tokens = append(tokens, r.URL.Query().Get("X-Plex-Token"))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:               up.URL,
+		Token:                  "owner-token",
+		OwnerToken:             "owner-token",
+		ElevateAll:             true,
+		NeutralizeOwnerHistory: true,
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	const sessionID = "library-session"
+
+	// Library VOD transcode — not a Live TV path.
+	streamReq := httptest.NewRequest(http.MethodGet,
+		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flibrary%2Fmetadata%2F123",
+		nil)
+	streamReq.Header.Set("X-Plex-Session-Identifier", sessionID)
+	proxy.ServeHTTP(httptest.NewRecorder(), streamReq)
+
+	mu.Lock()
+	paths = paths[:0]
+	tokens = tokens[:0]
+	mu.Unlock()
+
+	scrobbleReq := httptest.NewRequest(http.MethodGet,
+		"/:/scrobble?X-Plex-Token=user-token&ratingKey=42&identifier=com.plexapp.plugins.library",
+		nil)
+	scrobbleReq.Header.Set("X-Plex-Session-Identifier", sessionID)
+	proxy.ServeHTTP(httptest.NewRecorder(), scrobbleReq)
+
+	time.Sleep(200 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	var sawUnscrobble, sawUserReplay bool
+	for i, p := range paths {
+		if p == "/:/unscrobble" && tokens[i] == "owner-token" {
+			sawUnscrobble = true
+		}
+		if p == "/:/scrobble" && tokens[i] == "user-token" {
+			sawUserReplay = true
+		}
+	}
+	if !sawUnscrobble {
+		t.Error("expected /:/unscrobble under owner-token for library content")
+	}
+	if !sawUserReplay {
+		t.Error("expected /:/scrobble replay under user-token for library content")
 	}
 }
 

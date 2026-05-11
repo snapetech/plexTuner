@@ -7,28 +7,85 @@ tags: [runbook, plex, livetv, proxy, entitlement]
 
 # Plex Live TV Entitlement Proxy
 
-Run `iptv-tunerr plex-label-proxy -elevate-live-tv` in front of Plex Media
-Server when shared Plex users should keep browsing libraries as themselves but
-borrow the server owner's Live TV entitlement for Plex Live TV requests.
+Run `iptv-tunerr plex-label-proxy -elevate-all` in front of Plex Media Server
+to give shared Plex users Live TV access by injecting the server owner's token
+on every request that passes through the proxy.
 
-This is an unsupported Plex workaround. It does not change Plex shares, Plex
-Home membership, or watched/resume state for normal libraries. It rewrites only
-the PMS requests that the proxy classifies as Live TV.
+This is an unsupported Plex workaround. It works by making the proxy the only
+external path to PMS, then spoofing the owner token so all proxied clients carry
+valid tuner entitlement.
+
+## Critical Requirements — Read This First
+
+**The proxy only intercepts requests that arrive via the configured HTTPS
+frontend (e.g. `media.snape.tech`).** Plex has two other connection paths that
+bypass the proxy entirely and MUST be closed:
+
+### 1. Plex Relay — MUST BE DISABLED
+
+Plex Relay (`relay.plex.tv`) is an outbound WebSocket that the Plex process
+opens to Cloudflare's relay infrastructure. Client traffic then flows:
+
+```
+client → relay.plex.tv → [websocket back to PMS] → PMS
+```
+
+This never touches the proxy. Plex clients prefer relay when it is available
+because it is often lower latency than a custom HTTPS URL. With relay enabled,
+clients WILL bypass the proxy, and Live TV entitlement WILL NOT work.
+
+**Relay must be disabled via the Plex API:**
+
+```bash
+curl -X PUT "http://127.0.0.1:32400/:/prefs?X-Plex-Token=$OWNER_TOKEN&RelayEnabled=0"
+```
+
+Verify: `RelayEnabled value="0"` in the response of `GET /:/prefs`.
+
+This is a persistent Plex preference. It survives restarts. Do not re-enable it.
+
+### 2. plex.direct — port 32400 MUST NOT be externally reachable
+
+`plex.direct` is Plex's own TLS certificate infrastructure. Plex signs certs
+keyed to the server's machine identifier, enabling HTTPS directly to the server
+IP on port 32400. This also bypasses the proxy and cannot be intercepted without
+Plex's private key.
+
+Port 32400 must be closed on the external firewall/router. Do not forward it.
+
+### Why not Plex Home (managed users)?
+
+Plex Home allows creating managed sub-accounts that share the owner's
+subscription. This would grant Live TV without a proxy.
+
+**This is not viable for external shared users.** Plex Home membership
+permanently links an account to this household. It affects the user's Plex
+identity across every server they access — watchlists, recommendations, and
+account settings are merged under this household. Independent Plex account
+holders (e.g. friends with their own libraries, watch history, and other server
+access) cannot join Plex Home without losing their independent identity.
+
+The proxy approach grants Live TV entitlement without modifying anyone's account.
 
 ## What Problem This Solves
 
 Plex can expose ordinary shared libraries to non-Home users while hiding Live TV
 unless the account has tuner access. Plex's public sharing APIs do not reliably
-grant that flag to every non-Home shared user. The proxy works around that by:
+grant that flag to every non-Home shared user.
 
-- passing normal library, metadata, account, and playback requests through with
-  the user's own Plex token
-- replacing the token only for Live TV paths with the PMS owner token
-- rewriting XML `allowTuners` hints from `0` to `1` so Plex clients reveal the
-  Live TV UI when the backend request is being elevated
+The `-elevate-all` mode works around that by injecting the owner token on every
+proxied request. All clients connecting through the HTTPS frontend use the
+owner's tuner entitlement. Live TV is fully accessible.
 
-The owner token is therefore used only for Live TV/DVR surfaces; user-specific
-library watched state and resume state stay tied to the user's own token.
+Trade-off: because every request carries the owner token, Plex attributes all
+activity to the owner by default.
+
+`-neutralize-owner-history` corrects this for **all content** (movies, shows,
+Live TV). The proxy tracks every playback session by the originating client
+token. For each timeline tick it replays the progress event under the original
+user token so on-deck and resume state land on the right account. On the final
+scrobble it also unscrobbles from the owner and replays the mark-watched under
+the original user token.
 
 ## Request Classification
 

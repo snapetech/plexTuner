@@ -35,11 +35,42 @@ type Config struct {
 	// owner's tuner entitlement.
 	OwnerToken string
 
+	// ElevateAll, when true, injects OwnerToken into every proxied request
+	// regardless of path. This is the blunt "token spoof" mode: all clients
+	// connecting through this proxy browse and stream as the owner. Watch history,
+	// resume state, and ratings are shared. Live TV works because every request
+	// carries the owner's tuner entitlement.
+	ElevateAll bool
+
 	// ElevateLiveTV enables the unsupported Live TV token-elevation mode.
 	// When enabled, only requests classified by IsLiveTVRequest are rewritten
 	// to use OwnerToken, and XML responses have allowTuners="0" rewritten to
 	// allowTuners="1" as a UI hint for proxied clients.
 	ElevateLiveTV bool
+
+	// ElevateDiscoveryOnly restricts elevation to browse/metadata paths only
+	// (IsLiveTVDiscoveryRequest). Stream-start requests (/video/:/transcode/
+	// and /playQueues) are forwarded with the client's own token so any Plex
+	// session is attributed to the user. Requires ElevateLiveTV=true.
+	//
+	// Test this first: if Plex enforces per-stream entitlement for shared users
+	// the stream will fail; if it only checks at DVR-setup time streams will
+	// succeed and watch history will go to the correct user automatically.
+	ElevateDiscoveryOnly bool
+
+	// UserHeader, when true, injects an X-Plex-User header containing the
+	// original client token alongside the elevated owner token. Plex's managed-
+	// user machinery uses a similar split header internally; this is speculative
+	// for shared users but costs nothing to test. Requires ElevateLiveTV=true.
+	UserHeader bool
+
+	// NeutralizeOwnerHistory, when true, intercepts /:/timeline, /:/scrobble,
+	// and /:/progress calls for sessions that were elevated (owner token injected)
+	// and replays them under the original user token so progress, on-deck, and
+	// watch history land on the correct account. On final scrobble events it also
+	// fires /:/unscrobble under the owner token to remove the mark from the owner's
+	// history. Works for all content types (library movies/shows and Live TV).
+	NeutralizeOwnerHistory bool
 
 	// Labels supplies the LiveTV identifier -> tab label map. Refreshed lazily.
 	Labels LabelSource
@@ -69,6 +100,12 @@ type Proxy struct {
 
 	warnedMu sync.Mutex
 	warned   map[string]struct{}
+
+	// sessionUsers maps X-Plex-Session-Identifier values to the original client
+	// token captured before elevation. Used by NeutralizeOwnerHistory to replay
+	// timeline/scrobble events under the correct user for all content types.
+	sessionMu   sync.Mutex
+	sessionUsers map[string]string
 }
 
 func (p *Proxy) warnNonXMLOnce(path, ct string) {
@@ -126,6 +163,14 @@ func New(cfg Config) (*Proxy, error) {
 	}
 	originalDirector := rp.Director
 	rp.Director = func(req *http.Request) {
+		// Capture the original client token before any modification.
+		// Both query-param and header locations are checked; query param wins
+		// because that is what Plex clients most consistently use.
+		originalToken := req.URL.Query().Get("X-Plex-Token")
+		if originalToken == "" {
+			originalToken = req.Header.Get("X-Plex-Token")
+		}
+
 		originalDirector(req)
 		// httputil's director does not strip hop-by-hop headers — do it here.
 		for name := range hopHeaders {
@@ -141,8 +186,25 @@ func New(cfg Config) (*Proxy, error) {
 		// clients use an IP+token connection where Host is irrelevant; this is
 		// the safer default for behind-ingress deployments).
 		req.Host = u.Host
-		if p.cfg.ElevateLiveTV {
-			p.elevateLiveTVRequest(req)
+
+		if p.cfg.ElevateAll && strings.TrimSpace(p.cfg.OwnerToken) != "" {
+			q := req.URL.Query()
+			q.Set("X-Plex-Token", p.cfg.OwnerToken)
+			req.URL.RawQuery = q.Encode()
+			req.Header.Set("X-Plex-Token", p.cfg.OwnerToken)
+			p.logger.Printf("plexlabelproxy: spoofed owner token on %s", req.URL.Path)
+			if p.cfg.NeutralizeOwnerHistory &&
+				originalToken != strings.TrimSpace(p.cfg.OwnerToken) {
+				p.trackSession(req, originalToken)
+			}
+		} else if p.cfg.ElevateLiveTV {
+			p.elevateLiveTVRequest(req, originalToken)
+		}
+		// NeutralizeOwnerHistory side-effect: for timeline/scrobble calls that
+		// belong to elevated Live TV sessions, fire a background owner unscrobble.
+		// This runs regardless of whether the current request itself is elevated.
+		if p.cfg.NeutralizeOwnerHistory {
+			p.neutralizeOwnerScrobble(req)
 		}
 	}
 	p.reverseProxy = rp
@@ -237,9 +299,156 @@ func (p *Proxy) modifyResponse(resp *http.Response) error {
 	return restoreBody(resp, rewritten, encoding)
 }
 
-func (p *Proxy) elevateLiveTVRequest(req *http.Request) {
-	if ApplyLiveTVTokenElevation(req, p.cfg.OwnerToken) {
-		p.logger.Printf("plexlabelproxy: elevated Live TV request %s", req.URL.Path)
+// elevateLiveTVRequest applies token elevation according to the configured mode
+// and injects any supplementary headers. originalToken is the client token
+// captured before this request was modified.
+func (p *Proxy) elevateLiveTVRequest(req *http.Request, originalToken string) {
+	var elevated bool
+	if p.cfg.ElevateDiscoveryOnly {
+		elevated = ApplyLiveTVDiscoveryElevation(req, p.cfg.OwnerToken)
+	} else {
+		elevated = ApplyLiveTVTokenElevation(req, p.cfg.OwnerToken)
+	}
+	if !elevated {
+		return
+	}
+	p.logger.Printf("plexlabelproxy: elevated Live TV request %s (discovery_only=%v)", req.URL.Path, p.cfg.ElevateDiscoveryOnly)
+
+	// X-Plex-User injection: send the original user token in a supplementary
+	// header so Plex may attribute the session to the user rather than the owner.
+	// Plex's own managed-user stack uses a similar split internally; this is
+	// speculative for shared users but is zero-cost to attempt.
+	if p.cfg.UserHeader && originalToken != "" && originalToken != strings.TrimSpace(p.cfg.OwnerToken) {
+		req.Header.Set("X-Plex-User", originalToken)
+	}
+
+	// Session tracking for NeutralizeOwnerHistory: only track when the token
+	// was genuinely elevated (original token ≠ owner token). ElevateLiveTV only
+	// elevates Live TV stream starts, so limiting tracking to those is correct
+	// here (library content uses the user's own token and is attributed correctly).
+	if p.cfg.NeutralizeOwnerHistory && !p.cfg.ElevateDiscoveryOnly &&
+		IsLiveTVStreamRequest(req) &&
+		originalToken != strings.TrimSpace(p.cfg.OwnerToken) {
+		p.trackSession(req, originalToken)
+	}
+}
+
+// trackSession stores the X-Plex-Session-Identifier → original user token
+// mapping for any elevated request. Called on every request in ElevateAll mode
+// (so direct-play library sessions are tracked before the first timeline tick)
+// and on Live TV stream-start requests in ElevateLiveTV mode.
+func (p *Proxy) trackSession(req *http.Request, originalToken string) {
+	sessionID := req.Header.Get("X-Plex-Session-Identifier")
+	if sessionID == "" {
+		sessionID = req.URL.Query().Get("X-Plex-Session-Identifier")
+	}
+	if sessionID == "" || originalToken == "" {
+		return
+	}
+	p.sessionMu.Lock()
+	defer p.sessionMu.Unlock()
+	if p.sessionUsers == nil {
+		p.sessionUsers = make(map[string]string)
+	}
+	p.sessionUsers[sessionID] = originalToken
+}
+
+// neutralizeOwnerScrobble checks whether an incoming /:/timeline, /:/scrobble,
+// or /:/progress call belongs to an elevated session. When it does:
+//   - replays the full event under the original user token so their on-deck,
+//     progress, and watch history are updated correctly
+//   - on /:/scrobble, also unscrobbles the ratingKey from the owner's history
+func (p *Proxy) neutralizeOwnerScrobble(req *http.Request) {
+	path := req.URL.EscapedPath()
+	if path != "/:/timeline" && path != "/:/scrobble" && path != "/:/progress" {
+		return
+	}
+	sessionID := req.Header.Get("X-Plex-Session-Identifier")
+	if sessionID == "" {
+		sessionID = req.URL.Query().Get("X-Plex-Session-Identifier")
+	}
+	if sessionID == "" {
+		return
+	}
+	p.sessionMu.Lock()
+	userToken, tracked := p.sessionUsers[sessionID]
+	if req.URL.Query().Get("state") == "stopped" {
+		delete(p.sessionUsers, sessionID)
+	}
+	p.sessionMu.Unlock()
+
+	if !tracked || userToken == "" {
+		return
+	}
+	ratingKey := req.URL.Query().Get("ratingKey")
+
+	// Always replay the event under the user's own token so their progress,
+	// on-deck, and watch history are updated correctly.
+	go p.replayAsUser(path, req.URL.Query(), userToken)
+
+	// Unscrobble from owner only on explicit scrobble events (not every
+	// timeline tick) to avoid hammering the API.
+	if path == "/:/scrobble" && ratingKey != "" {
+		go p.ownerUnscrobble(ratingKey)
+	}
+}
+
+// replayAsUser re-fires a timeline/scrobble/progress event under the original
+// user token so Plex attributes progress and watched state to that user.
+func (p *Proxy) replayAsUser(path string, q url.Values, userToken string) {
+	u := *p.upstreamURL
+	u.Path = path
+	nq := make(url.Values, len(q))
+	for k, vs := range q {
+		nq[k] = vs
+	}
+	nq.Set("X-Plex-Token", userToken)
+	u.RawQuery = nq.Encode()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		p.logger.Printf("plexlabelproxy: user replay %s: %v", path, err)
+		return
+	}
+	resp.Body.Close()
+}
+
+// ownerUnscrobble calls /:/unscrobble on the upstream PMS under the owner
+// token to remove EPG-matched Live TV content from the owner's watch history.
+func (p *Proxy) ownerUnscrobble(ratingKey string) {
+	ownerToken := strings.TrimSpace(p.cfg.OwnerToken)
+	if ownerToken == "" {
+		return
+	}
+	u := *p.upstreamURL
+	u.Path = "/:/unscrobble"
+	q := url.Values{}
+	q.Set("ratingKey", ratingKey)
+	q.Set("key", "/library/metadata/"+ratingKey)
+	q.Set("identifier", "com.plexapp.plugins.library")
+	q.Set("X-Plex-Token", ownerToken)
+	u.RawQuery = q.Encode()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		p.logger.Printf("plexlabelproxy: owner unscrobble ratingKey=%s: %v", ratingKey, err)
+		return
+	}
+	resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		p.logger.Printf("plexlabelproxy: owner unscrobble ratingKey=%s: status %d", ratingKey, resp.StatusCode)
 	}
 }
 

@@ -77,6 +77,9 @@ type XMLTV struct {
 	HDHRGuideURL string
 	// HDHRGuideTimeout for fetching HDHRGuideURL; 0 = default 90s.
 	HDHRGuideTimeout time.Duration
+	// GuideServeWindowHours caps guide.xml output to programmes starting within this many hours
+	// from now. 0 = no cap. Reduces Plex's EPG SQLite import size and duration.
+	GuideServeWindowHours int
 
 	providerConfigMu sync.RWMutex
 	channelsMu       sync.RWMutex // protects Channels and GuideHealthChannels

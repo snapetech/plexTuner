@@ -30,8 +30,12 @@ func plexLabelProxyCommands() []commandSpec {
 	plexURL := cmd.String("plex-url", "", "Convenience alias for -upstream")
 	stripPrefix := cmd.String("strip-prefix", "iptvtunerr-", "Prefix to strip from DVR lineup titles when forming labels (\"\" disables)")
 	refreshSec := cmd.Int("refresh-seconds", 30, "TTL for the cached /livetv/dvrs label map")
-	spoofIdentity := cmd.Bool("spoof-identity", false, "Also rewrite root MediaContainer friendlyName for Plex Web (carries identity-cache risk; see runbook)")
-	elevateLiveTV := cmd.Bool("elevate-live-tv", false, "Unsupported: use owner token only for Live TV paths while passing normal library paths through as the user")
+	spoofIdentity           := cmd.Bool("spoof-identity", false, "Also rewrite root MediaContainer friendlyName for Plex Web (carries identity-cache risk; see runbook)")
+	elevateAll              := cmd.Bool("elevate-all", false, "Inject owner token on every proxied request (full token spoof — Live TV works, watch history is shared with owner)")
+	elevateLiveTV           := cmd.Bool("elevate-live-tv", false, "Use owner token only for Live TV classified paths; normal library paths pass through as the user")
+	elevateDiscoveryOnly    := cmd.Bool("elevate-discovery-only", false, "With -elevate-live-tv: only elevate browse/EPG paths, not stream start")
+	userHeader              := cmd.Bool("user-header", false, "With -elevate-live-tv: inject X-Plex-User header with the original client token when elevating")
+	neutralizeOwnerHistory  := cmd.Bool("neutralize-owner-history", false, "With -elevate-live-tv: fire /:/unscrobble under the owner token for each Live TV timeline event")
 
 	return []commandSpec{
 		{
@@ -41,13 +45,13 @@ func plexLabelProxyCommands() []commandSpec {
 			FlagSet: cmd,
 			Run: func(_ *config.Config, args []string) {
 				_ = cmd.Parse(args)
-				runPlexLabelProxy(*listen, *upstream, *plexURL, *token, *ownerToken, *stripPrefix, *refreshSec, *spoofIdentity, *elevateLiveTV)
+				runPlexLabelProxy(*listen, *upstream, *plexURL, *token, *ownerToken, *stripPrefix, *refreshSec, *spoofIdentity, *elevateAll, *elevateLiveTV, *elevateDiscoveryOnly, *userHeader, *neutralizeOwnerHistory)
 			},
 		},
 	}
 }
 
-func runPlexLabelProxy(listen, upstream, plexURL, token, ownerToken, stripPrefix string, refreshSec int, spoofIdentity, elevateLiveTV bool) {
+func runPlexLabelProxy(listen, upstream, plexURL, token, ownerToken, stripPrefix string, refreshSec int, spoofIdentity, elevateAll, elevateLiveTV, elevateDiscoveryOnly, userHeader, neutralizeOwnerHistory bool) {
 	// Always consult env/aliases so a flag for one field doesn't suppress
 	// fallback resolution for the other.
 	resolved, resolvedToken := resolvePlexAccess(plexURL, token)
@@ -73,8 +77,8 @@ func runPlexLabelProxy(listen, upstream, plexURL, token, ownerToken, stripPrefix
 		os.Exit(1)
 	}
 	ownerToken = resolvePlexOwnerToken(ownerToken, token)
-	if elevateLiveTV && strings.TrimSpace(ownerToken) == "" {
-		log.Print("plex-label-proxy: need -owner-token (or IPTV_TUNERR_PMS_OWNER_TOKEN / PLEX_OWNER_TOKEN) when -elevate-live-tv is enabled")
+	if (elevateAll || elevateLiveTV) && strings.TrimSpace(ownerToken) == "" {
+		log.Print("plex-label-proxy: need -owner-token (or IPTV_TUNERR_PMS_OWNER_TOKEN / PLEX_OWNER_TOKEN) when -elevate-all or -elevate-live-tv is enabled")
 		os.Exit(1)
 	}
 
@@ -87,12 +91,16 @@ func runPlexLabelProxy(listen, upstream, plexURL, token, ownerToken, stripPrefix
 	}
 
 	proxy, err := plexlabelproxy.New(plexlabelproxy.Config{
-		Upstream:      upstream,
-		Token:         token,
-		OwnerToken:    ownerToken,
-		ElevateLiveTV: elevateLiveTV,
-		Labels:        cache,
-		SpoofIdentity: spoofIdentity,
+		Upstream:               upstream,
+		Token:                  token,
+		OwnerToken:             ownerToken,
+		ElevateAll:             elevateAll,
+		ElevateLiveTV:          elevateLiveTV,
+		ElevateDiscoveryOnly:   elevateDiscoveryOnly,
+		UserHeader:             userHeader,
+		NeutralizeOwnerHistory: neutralizeOwnerHistory,
+		Labels:                 cache,
+		SpoofIdentity:          spoofIdentity,
 	})
 	if err != nil {
 		log.Printf("plex-label-proxy: %v", err)
@@ -102,7 +110,8 @@ func runPlexLabelProxy(listen, upstream, plexURL, token, ownerToken, stripPrefix
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	log.Printf("plex-label-proxy: starting on %s -> %s (spoof_identity=%v elevate_live_tv=%v strip_prefix=%q)", listen, upstream, spoofIdentity, elevateLiveTV, stripPrefix)
+	log.Printf("plex-label-proxy: starting on %s -> %s (elevate_all=%v elevate_live_tv=%v discovery_only=%v neutralize_owner=%v spoof_identity=%v strip_prefix=%q)",
+		listen, upstream, elevateAll, elevateLiveTV, elevateDiscoveryOnly, neutralizeOwnerHistory, spoofIdentity, stripPrefix)
 	if err := proxy.ListenAndServe(ctx, listen); err != nil {
 		log.Printf("plex-label-proxy: server exited: %v", err)
 		os.Exit(1)

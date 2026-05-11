@@ -1178,6 +1178,11 @@ func (x *XMLTV) buildMergedEPG(ctx context.Context, channels []catalog.LiveChann
 		return nil, buildEPGStats{}, err
 	}
 
+	var guideCutoff time.Time
+	if x.GuideServeWindowHours > 0 {
+		guideCutoff = time.Now().Add(time.Duration(x.GuideServeWindowHours) * time.Hour)
+	}
+
 	// Write <programme> elements for each channel, tracking placeholder vs real counts.
 	for _, ref := range orderedRefs {
 		tvgID := ref.TVGID
@@ -1209,6 +1214,13 @@ func (x *XMLTV) buildMergedEPG(ctx context.Context, channels []catalog.LiveChann
 
 		for i := range nodes {
 			node := nodes[i]
+			if !guideCutoff.IsZero() {
+				if startStr := strings.TrimSpace(xmlAttr(node.Attrs, "start")); startStr != "" {
+					if t, ok := parseXMLTVTime(startStr); ok && t.After(guideCutoff) {
+						continue
+					}
+				}
+			}
 			normalizeProgrammeText(&node, ref.GuideName, policy)
 			node.XMLName = xml.Name{Local: "programme"}
 			node.Attrs = setXMLAttr(node.Attrs, "channel", ref.XMLID)
@@ -1323,7 +1335,11 @@ func (x *XMLTV) runRefresh(ctx context.Context, trigger string) {
 	}
 	x.mu.Unlock()
 
-	log.Printf("xmltv: EPG cache updated (%d bytes, expires in %v)", len(data), ttl)
+	if x.GuideServeWindowHours > 0 {
+		log.Printf("xmltv: EPG cache updated (%d bytes, expires in %v, guide window %dh)", len(data), ttl, x.GuideServeWindowHours)
+	} else {
+		log.Printf("xmltv: EPG cache updated (%d bytes, expires in %v)", len(data), ttl)
+	}
 	if x.OnEPGCacheUpdated != nil {
 		go x.OnEPGCacheUpdated()
 	}

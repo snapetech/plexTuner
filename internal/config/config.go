@@ -151,6 +151,10 @@ type Config struct {
 	ProviderEPGBackfillHours int
 	// EpgSQLiteIncrementalUpsert enables non-truncate XMLTV sync mode.
 	EpgSQLiteIncrementalUpsert bool
+	// EpgGuideServeWindowHours caps guide.xml output to programmes starting within this many
+	// hours from now. 0 = no cap (serve all fetched data). Reducing this shrinks Plex's EPG
+	// SQLite import, making periodic refreshes faster and preventing HTTP server stalls.
+	EpgGuideServeWindowHours int
 
 	// Free public sources: supplement or enrich the paid catalog with public M3U feeds
 	// (e.g. iptv-org/iptv). No credentials required. Never redistributed — fetched at index time.
@@ -215,6 +219,7 @@ func Load() *Config {
 		EpgSQLiteVacuumAfterPrune:   getEnvBool("IPTV_TUNERR_EPG_SQLITE_VACUUM", false),
 		EpgSQLiteMaxBytes:           epgMaxBytesFromEnv(),
 		EpgSQLiteIncrementalUpsert:  getEnvBool("IPTV_TUNERR_EPG_SQLITE_INCREMENTAL_UPSERT", false),
+		EpgGuideServeWindowHours:    getEnvInt("IPTV_TUNERR_EPG_GUIDE_SERVE_WINDOW_HOURS", 0),
 		HDHRLineupMergeURL:          getEnvURL("IPTV_TUNERR_HDHR_LINEUP_URL"),
 		HDHRLineupIDPrefix:          getEnv("IPTV_TUNERR_HDHR_LINEUP_ID_PREFIX", "hdhr"),
 		ProviderEPGURLSuffix:        strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROVIDER_EPG_URL_SUFFIX")),
