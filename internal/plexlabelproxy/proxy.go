@@ -350,7 +350,17 @@ func (p *Proxy) trackSession(req *http.Request, originalToken string) {
 	if p.sessionUsers == nil {
 		p.sessionUsers = make(map[string]string)
 	}
+	if _, exists := p.sessionUsers[sessionID]; !exists {
+		p.logger.Printf("plexlabelproxy: tracking session %s → token ...%s (path=%s)", sessionID, last6(originalToken), req.URL.Path)
+	}
 	p.sessionUsers[sessionID] = originalToken
+}
+
+func last6(s string) string {
+	if len(s) <= 6 {
+		return s
+	}
+	return s[len(s)-6:]
 }
 
 // neutralizeOwnerScrobble checks whether an incoming /:/timeline, /:/scrobble,
@@ -381,6 +391,8 @@ func (p *Proxy) neutralizeOwnerScrobble(req *http.Request) {
 		return
 	}
 	ratingKey := req.URL.Query().Get("ratingKey")
+
+	p.logger.Printf("plexlabelproxy: neutralize %s session=%s ratingKey=%s token=...%s", path, sessionID, ratingKey, last6(userToken))
 
 	// Always replay the event under the user's own token so their progress,
 	// on-deck, and watch history are updated correctly.
@@ -417,6 +429,7 @@ func (p *Proxy) replayAsUser(path string, q url.Values, userToken string) {
 		return
 	}
 	resp.Body.Close()
+	p.logger.Printf("plexlabelproxy: user replay %s: status %d", path, resp.StatusCode)
 }
 
 // ownerUnscrobble calls /:/unscrobble on the upstream PMS under the owner
@@ -447,9 +460,7 @@ func (p *Proxy) ownerUnscrobble(ratingKey string) {
 		return
 	}
 	resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		p.logger.Printf("plexlabelproxy: owner unscrobble ratingKey=%s: status %d", ratingKey, resp.StatusCode)
-	}
+	p.logger.Printf("plexlabelproxy: owner unscrobble ratingKey=%s: status %d", ratingKey, resp.StatusCode)
 }
 
 func (p *Proxy) shouldRewriteTunerEntitlement(resp *http.Response) bool {
