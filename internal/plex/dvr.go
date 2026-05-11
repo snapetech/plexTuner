@@ -907,6 +907,21 @@ func deadDVRNeedsReregistration(d DVRInfo, enabledCount, expectedCount int) bool
 	return dvrDeviceLooksDead(d)
 }
 
+// StandbyPrimaryIsUp probes the primary tuner's lineup.json endpoint with a short
+// timeout. Returns true if the primary is reachable and healthy (HTTP 200).
+// Used to implement standby mode: the secondary node skips registration when the
+// primary is up.
+func StandbyPrimaryIsUp(primaryURL string) bool {
+	u := strings.TrimRight(strings.TrimSpace(primaryURL), "/") + "/lineup.json"
+	client := httpclient.WithTimeout(3 * time.Second)
+	resp, err := client.Get(u)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
 // DVRWatchdog periodically verifies that this tuner's DVR registration is present and
 // correct in Plex, and re-registers if it has gone missing or the guide URL has changed.
 //
@@ -914,9 +929,13 @@ func deadDVRNeedsReregistration(d DVRInfo, enabledCount, expectedCount int) bool
 // guideURL is the expected guide URL (baseURL + "/guide.xml"). interval is the check
 // cadence (recommended: 5 minutes). The watchdog runs until ctx is cancelled.
 //
+// If standbyPrimaryURL is non-empty, the watchdog operates in standby mode: before each
+// check cycle it probes standbyPrimaryURL/lineup.json. If the primary responds with 200,
+// the cycle is skipped. The watchdog only acts when the primary is unreachable.
+//
 // Re-registration calls FullRegisterPlex, which is idempotent — if the DVR already
 // exists with the correct guide URL it is reused, not duplicated.
-func DVRWatchdog(ctx context.Context, cfg PlexAPIConfig, deviceUUID, guideURL string, interval time.Duration, channels []ChannelInfo) {
+func DVRWatchdog(ctx context.Context, cfg PlexAPIConfig, deviceUUID, guideURL, standbyPrimaryURL string, interval time.Duration, channels []ChannelInfo) {
 	if interval <= 0 {
 		interval = 5 * time.Minute
 	}
@@ -1008,6 +1027,13 @@ func DVRWatchdog(ctx context.Context, cfg PlexAPIConfig, deviceUUID, guideURL st
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if standbyPrimaryURL != "" {
+				if StandbyPrimaryIsUp(standbyPrimaryURL) {
+					log.Printf("[dvr-watchdog] standby: primary %s is up — skipping cycle", standbyPrimaryURL)
+					continue
+				}
+				log.Printf("[dvr-watchdog] standby: primary %s is unreachable — taking over", standbyPrimaryURL)
+			}
 			check()
 		}
 	}

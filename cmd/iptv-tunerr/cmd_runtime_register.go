@@ -25,8 +25,8 @@ func streamURLForBase(baseURL, channelID string) string {
 	return strings.TrimRight(strings.TrimSpace(baseURL), "/") + "/stream/" + channelID
 }
 
-func registerRunPlex(ctx context.Context, cfg *config.Config, srv *tuner.Server, live []catalog.LiveChannel, baseURL, registerPlex string, registerOnly bool, registerInterval time.Duration, mode string) bool {
-	log.Printf("[PLEX-REG] START: runRegisterPlex=%q runMode=%q", registerPlex, mode)
+func registerRunPlex(ctx context.Context, cfg *config.Config, srv *tuner.Server, live []catalog.LiveChannel, baseURL, registerPlex string, registerOnly bool, registerInterval time.Duration, standbyPrimaryURL, mode string) bool {
+	log.Printf("[PLEX-REG] START: runRegisterPlex=%q runMode=%q standbyPrimaryURL=%q", registerPlex, mode, standbyPrimaryURL)
 	if registerPlex == "" || mode == "easy" {
 		_, _ = os.Stderr.WriteString("\n--- Plex one-time setup ---\n")
 		_, _ = os.Stderr.WriteString("Easy (wizard): -mode=easy -> lineup capped at 479; add tuner in Plex, pick suggested guide (e.g. Rogers West).\n")
@@ -51,6 +51,10 @@ func registerRunPlex(ctx context.Context, cfg *config.Config, srv *tuner.Server,
 	}
 	if len(live) == 0 {
 		log.Printf("[PLEX-REG] Skipping registration: 0 channels after filtering (no empty EPG tabs)")
+	}
+	if standbyPrimaryURL != "" && plex.StandbyPrimaryIsUp(standbyPrimaryURL) {
+		log.Printf("[PLEX-REG] standby: primary %s is up — skipping initial registration", standbyPrimaryURL)
+		return false
 	}
 	if len(live) > 0 && plexHost != "" && plexToken != "" {
 		log.Printf("[PLEX-REG] Attempting Plex API registration...")
@@ -129,8 +133,8 @@ func registerRunPlex(ctx context.Context, cfg *config.Config, srv *tuner.Server,
 			}
 			guideURL := guideURLForBase(baseURL)
 			channelInfoCopy := channelInfo
-			log.Printf("[dvr-watchdog] starting: device=%s interval=%v", registeredDeviceUUID, registerInterval)
-			go plex.DVRWatchdog(ctx, watchdogCfg, registeredDeviceUUID, guideURL, registerInterval, channelInfoCopy)
+			log.Printf("[dvr-watchdog] starting: device=%s interval=%v standby=%q", registeredDeviceUUID, registerInterval, standbyPrimaryURL)
+			go plex.DVRWatchdog(ctx, watchdogCfg, registeredDeviceUUID, guideURL, standbyPrimaryURL, registerInterval, channelInfoCopy)
 		}
 
 		// After each EPG cache update, tell Plex to re-fetch guide.xml. We look up

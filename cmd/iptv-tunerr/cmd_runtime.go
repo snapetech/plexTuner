@@ -123,7 +123,7 @@ func handleServe(cfg *config.Config, catalogPath, addr, baseURL, deviceID, frien
 	}
 }
 
-func handleRun(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendlyName string, refresh time.Duration, skipIndex, skipHealth bool, registerPlex string, registerOnly bool, registerInterval time.Duration, registerRecipe, mode string, registerEmby, registerJellyfin bool, embyInterval, jellyfinInterval time.Duration, embyStateFile, jellyfinStateFile string) {
+func handleRun(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendlyName string, refresh time.Duration, skipIndex, skipHealth bool, registerPlex string, registerOnly bool, registerInterval time.Duration, standbyPrimaryURL, registerRecipe, mode string, registerEmby, registerJellyfin bool, embyInterval, jellyfinInterval time.Duration, embyStateFile, jellyfinStateFile string) {
 	runCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -291,7 +291,7 @@ func handleRun(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendl
 		}()
 	}
 
-	if registerRunPlex(runCtx, cfg, srv, registrationLive, baseURL, registerPlex, registerOnly, registerInterval, mode) {
+	if registerRunPlex(runCtx, cfg, srv, registrationLive, baseURL, registerPlex, registerOnly, registerInterval, standbyPrimaryURL, mode) {
 		return
 	}
 	registerRunMediaServers(runCtx, cfg, registrationLive, baseURL, registerEmby, registerJellyfin, embyStateFile, jellyfinStateFile, embyInterval, jellyfinInterval)

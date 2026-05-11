@@ -42,6 +42,7 @@ func coreCommands() []commandSpec {
 	runRegisterPlex := runCmd.String("register-plex", "", "Plex registration target: use api for zero-touch Plex API registration, or a Plex data path for legacy DB-assisted registration")
 	runRegisterOnly := runCmd.Bool("register-only", false, "If set with -register-plex and -mode=full: register/sync Plex and exit without starting the tuner server (for one-shot jobs)")
 	runRegisterInterval := runCmd.Duration("register-plex-interval", 5*time.Minute, "How often to verify and repair DVR registration while running (0 = disable watchdog; default 5m)")
+	runStandbyPrimaryURL := runCmd.String("standby-primary-url", "", "If set, this node acts as standby: skip Plex DVR registration and watchdog cycles while the primary tuner at this URL is reachable (e.g. http://192.168.50.84:5004)")
 	runRegisterRecipe := runCmd.String("register-recipe", strings.TrimSpace(os.Getenv("IPTV_TUNERR_REGISTER_RECIPE")), "Optional registration recipe: off|balanced|high_confidence|guide_first|resilient")
 	runMode := runCmd.String("mode", "", "Flow: easy = HDHR + wizard, lineup capped at 479 (strip from end); full = zero-touch/API-friendly mode for headless Plex/Emby/Jellyfin registration")
 	runRegisterEmby := runCmd.Bool("register-emby", false, "Register with Emby (requires IPTV_TUNERR_EMBY_HOST and IPTV_TUNERR_EMBY_TOKEN env vars)")
@@ -66,7 +67,7 @@ func coreCommands() []commandSpec {
 			FlagSet: runCmd,
 			Run: func(cfg *config.Config, args []string) {
 				_ = runCmd.Parse(args)
-				handleRun(cfg, *runCatalog, *runAddr, *runBaseURL, *runDeviceID, *runFriendlyName, *runRefresh, *runSkipIndex, *runSkipHealth, *runRegisterPlex, *runRegisterOnly, *runRegisterInterval, *runRegisterRecipe, *runMode, *runRegisterEmby, *runRegisterJellyfin, *runEmbyInterval, *runJellyfinInterval, *runEmbyStateFile, *runJellyfinStateFile)
+				handleRun(cfg, *runCatalog, *runAddr, *runBaseURL, *runDeviceID, *runFriendlyName, *runRefresh, *runSkipIndex, *runSkipHealth, *runRegisterPlex, *runRegisterOnly, *runRegisterInterval, *runStandbyPrimaryURL, *runRegisterRecipe, *runMode, *runRegisterEmby, *runRegisterJellyfin, *runEmbyInterval, *runJellyfinInterval, *runEmbyStateFile, *runJellyfinStateFile)
 			},
 		},
 		{
