@@ -13,6 +13,11 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.65] — 2026-05-12
+
+### Fixed
+- **Authorized Plex users are no longer blocked by source-level abuse blocks:** temporary Live TV abuse blocks still deny missing or unauthorized tokens, but owner tokens and tokens already authorized for the Plex server can continue through from the same source/NAT.
+
 ## [v0.1.64] — 2026-05-12
 
 ### Security / Plex Live TV proxy

@@ -656,7 +656,32 @@ func (p *Proxy) isBlocked(req *http.Request) bool {
 		return false
 	}
 	p.abuseMu.Unlock()
+	if p.blockBypassAllowed(req, inboundPlexToken(req)) {
+		return false
+	}
 	return true
+}
+
+func (p *Proxy) blockBypassAllowed(req *http.Request, token string) bool {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return false
+	}
+	if token == strings.TrimSpace(p.cfg.OwnerToken) {
+		return true
+	}
+	if p.authorizer == nil {
+		return true
+	}
+	if p.badAuthCooldownActive(req, token) {
+		return false
+	}
+	decision := AuthorizationDecision{Allowed: p.authorizer.AllowPlexToken(req.Context(), token)}
+	if detailed, ok := p.authorizer.(DetailedTokenAuthorizer); ok {
+		decision = detailed.AllowPlexTokenDetailed(req.Context(), token)
+	}
+	p.recordAuthDecision(decision.CacheHit)
+	return decision.Allowed
 }
 
 func abuseKey(req *http.Request) string {

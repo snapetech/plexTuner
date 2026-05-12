@@ -1,3 +1,11 @@
+## 2026-05-12 - Fix external Plex Live TV abuse-block false positive
+
+- External user reported the Plex Live TV provider unavailable again.
+- Found the live proxy had temporarily blocked the user's apparent source after repeated missing-token Live TV probes, and the source-level block was also rejecting later `/media/providers` requests that carried valid Plex tokens.
+- Immediate live fix: cleared the persisted abuse-block state and restarted `plex-live-tv-proxy.service`; the affected source resumed `elevated_live_tv` requests immediately.
+- Code fix: source blocks now apply only after checking for an authorized inbound Plex token. Owner tokens and tokens already authorized for the Plex server bypass the source block; missing/unauthorized tokens remain blocked or cooled down.
+- Verification: public `/identity` returned `200`, public no-token `/livetv/dvrs` returned `403`, all media services remained active, and `go test -count=1 ./cmd/iptv-tunerr ./internal/plexlabelproxy` passed.
+
 ## 2026-05-12 - Harden Plex Live TV proxy abuse controls
 
 - Added env/CLI knobs for Live TV bad-source blocking threshold/window/duration, denied source+token authorization cooldown, optional persisted block state, and audit summary interval.

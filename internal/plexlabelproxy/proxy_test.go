@@ -448,6 +448,59 @@ func TestProxy_TemporarilyBlocksRepeatedBadElevationAttempts(t *testing.T) {
 	}
 }
 
+func TestProxy_BadSourceBlockDoesNotBlockAuthorizedToken(t *testing.T) {
+	var gotToken string
+	var upstreamHits int
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamHits++
+		gotToken = r.URL.Query().Get("X-Plex-Token")
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer allowTuners="0"/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:            up.URL,
+		Token:               "label-token",
+		OwnerToken:          "owner-token",
+		ElevateLiveTV:       true,
+		TokenAuthorizer:     staticTokenAuthorizer{"shared-user-token": true},
+		AbuseBlockThreshold: 2,
+		AbuseBlockWindow:    time.Minute,
+		AbuseBlockDuration:  time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/livetv/dvrs", nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		req.Header.Set("X-Forwarded-For", "203.0.113.44")
+		rec := httptest.NewRecorder()
+		proxy.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("bad attempt %d status=%d", i+1, rec.Code)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/media/providers?X-Plex-Token=shared-user-token", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	req.Header.Set("X-Forwarded-For", "203.0.113.44")
+	rec := httptest.NewRecorder()
+	proxy.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("authorized request status=%d want 200", rec.Code)
+	}
+	if gotToken != "owner-token" {
+		t.Fatalf("authorized token should be elevated, got %q", gotToken)
+	}
+	if upstreamHits != 3 {
+		t.Fatalf("authorized request should reach upstream; hits=%d", upstreamHits)
+	}
+}
+
 func TestProxy_ElevatesTokenWithServerAccess(t *testing.T) {
 	var gotToken string
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
