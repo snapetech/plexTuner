@@ -136,12 +136,6 @@ func staleTunerrFamilyDVR(dvr DVRInfo, desiredBase, desiredGuide string) bool {
 		dvr.LineupTitle,
 		dvr.LineupURL,
 	}, dvr.DeviceUUIDs...), dvr.DeviceURIs...), " "))
-	if strings.Contains(haystack, ".plex.svc") {
-		return strings.Contains(haystack, "iptvtunerr") ||
-			strings.Contains(haystack, "plextuner") ||
-			strings.Contains(haystack, "oraclecap") ||
-			strings.Contains(haystack, "harvest-")
-	}
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(dvr.LineupTitle)), "harvest-") ||
 		strings.Contains(haystack, "plextuner-hdhr") ||
 		strings.Contains(haystack, "iptvtunerr-oracle") ||

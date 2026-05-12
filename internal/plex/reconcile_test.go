@@ -4,17 +4,17 @@ import "testing"
 
 func TestBuildTunerrReconcilePlanKeepsCanonicalAndDeletesStale(t *testing.T) {
 	cfg := PlexAPIConfig{
-		BaseURL:      "http://iptvtunerr.plex.svc:5004",
+		BaseURL:      "http://iptvtunerr.local:5004",
 		FriendlyName: "IPTV Tunerr",
 		DeviceID:     "iptvtunerr01",
 	}
 	devices := []Device{
-		{Key: "10", UUID: "device://tv.plex.grabbers.hdhomerun/iptvtunerr01", DeviceID: "iptvtunerr01", URI: "http://old.plex.svc:5004"},
-		{Key: "20", UUID: "device://tv.plex.grabbers.hdhomerun/iptvtunerr01", DeviceID: "iptvtunerr01", URI: "http://iptvtunerr.plex.svc:5004"},
+		{Key: "10", UUID: "device://tv.plex.grabbers.hdhomerun/iptvtunerr01", DeviceID: "iptvtunerr01", URI: "http://old-tunerr.local:5004"},
+		{Key: "20", UUID: "device://tv.plex.grabbers.hdhomerun/iptvtunerr01", DeviceID: "iptvtunerr01", URI: "http://iptvtunerr.local:5004"},
 	}
 	dvrs := []DVRInfo{
-		{Key: 730, DeviceKey: "10", DeviceUUIDs: []string{"device://tv.plex.grabbers.hdhomerun/iptvtunerr01"}, LineupURL: "lineup://tv.plex.providers.epg.xmltv/http%3A%2F%2Fold.plex.svc%3A5004%2Fguide.xml#IPTV+Tunerr"},
-		{Key: 755, DeviceKey: "20", DeviceUUIDs: []string{"device://tv.plex.grabbers.hdhomerun/iptvtunerr01"}, LineupURL: "lineup://tv.plex.providers.epg.xmltv/http%3A%2F%2Fiptvtunerr.plex.svc%3A5004%2Fguide.xml#IPTV+Tunerr"},
+		{Key: 730, DeviceKey: "10", DeviceUUIDs: []string{"device://tv.plex.grabbers.hdhomerun/iptvtunerr01"}, LineupURL: "lineup://tv.plex.providers.epg.xmltv/http%3A%2F%2Fold-tunerr.local%3A5004%2Fguide.xml#IPTV+Tunerr"},
+		{Key: 755, DeviceKey: "20", DeviceUUIDs: []string{"device://tv.plex.grabbers.hdhomerun/iptvtunerr01"}, LineupURL: "lineup://tv.plex.providers.epg.xmltv/http%3A%2F%2Fiptvtunerr.local%3A5004%2Fguide.xml#IPTV+Tunerr"},
 	}
 	plan := buildTunerrReconcilePlan(cfg, devices, dvrs)
 	if plan.KeepDeviceKey != "20" {
@@ -33,15 +33,15 @@ func TestBuildTunerrReconcilePlanKeepsCanonicalAndDeletesStale(t *testing.T) {
 
 func TestBuildTunerrReconcilePlanDeletesConflictingRowsWhenNoCanonicalMatch(t *testing.T) {
 	cfg := PlexAPIConfig{
-		BaseURL:      "http://iptvtunerr.plex.svc:5004",
+		BaseURL:      "http://iptvtunerr.local:5004",
 		FriendlyName: "IPTV Tunerr",
 		DeviceID:     "iptvtunerr01",
 	}
 	devices := []Device{
-		{Key: "10", UUID: "device://tv.plex.grabbers.hdhomerun/iptvtunerr01", DeviceID: "iptvtunerr01", URI: "http://old.plex.svc:5004"},
+		{Key: "10", UUID: "device://tv.plex.grabbers.hdhomerun/iptvtunerr01", DeviceID: "iptvtunerr01", URI: "http://old-tunerr.local:5004"},
 	}
 	dvrs := []DVRInfo{
-		{Key: 730, DeviceKey: "10", DeviceUUIDs: []string{"device://tv.plex.grabbers.hdhomerun/iptvtunerr01"}, LineupURL: "lineup://tv.plex.providers.epg.xmltv/http%3A%2F%2Fold.plex.svc%3A5004%2Fguide.xml#IPTV+Tunerr"},
+		{Key: 730, DeviceKey: "10", DeviceUUIDs: []string{"device://tv.plex.grabbers.hdhomerun/iptvtunerr01"}, LineupURL: "lineup://tv.plex.providers.epg.xmltv/http%3A%2F%2Fold-tunerr.local%3A5004%2Fguide.xml#IPTV+Tunerr"},
 	}
 	plan := buildTunerrReconcilePlan(cfg, devices, dvrs)
 	if plan.KeepDeviceKey != "" {
@@ -68,20 +68,20 @@ func TestBuildTunerrReconcilePlanDeletesDeadClusterFamilyDVRsWithoutMatchedDevic
 		{
 			Key:          730,
 			LineupTitle:  "harvest-100",
-			LineupURL:    "lineup://tv.plex.providers.epg.xmltv/http%3A%2F%2Fiptvtunerr-oracle100.plex.svc%3A5004%2Fguide.xml#harvest-100",
+			LineupURL:    "lineup://tv.plex.providers.epg.xmltv/http%3A%2F%2Fiptvtunerr-oracle100.local%3A5004%2Fguide.xml#harvest-100",
 			DeviceStatus: "dead",
 			DeviceState:  "enabled",
 			DeviceUUIDs:  []string{"device://tv.plex.grabbers.hdhomerun/oraclecap100"},
-			DeviceURIs:   []string{"http://iptvtunerr-oracle100.plex.svc:5004"},
+			DeviceURIs:   []string{"http://iptvtunerr-oracle100.local:5004"},
 		},
 		{
 			Key:          749,
 			LineupTitle:  "plextuner-hdhr",
-			LineupURL:    "lineup://tv.plex.providers.epg.xmltv/http%3A%2F%2Fplextuner-hdhr.plex.svc%3A5004%2Fguide.xml#plextuner-hdhr",
+			LineupURL:    "lineup://tv.plex.providers.epg.xmltv/http%3A%2F%2Fplextuner-hdhr.local%3A5004%2Fguide.xml#plextuner-hdhr",
 			DeviceStatus: "dead",
 			DeviceState:  "enabled",
 			DeviceUUIDs:  []string{"device://tv.plex.grabbers.hdhomerun/hdhrbcast"},
-			DeviceURIs:   []string{"http://iptvtunerr-hdhr.plex.svc:5004"},
+			DeviceURIs:   []string{"http://iptvtunerr-hdhr.local:5004"},
 		},
 	}
 	plan := buildTunerrReconcilePlan(cfg, nil, dvrs)

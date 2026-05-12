@@ -268,9 +268,9 @@ func TestIsLiveTVRequest(t *testing.T) {
 		"/playQueues?uri=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8":                              true,
 		// Broad matching: any query param containing live TV text is elevated.
 		// Plex clients legitimately send live TV paths in arbitrary params.
-		"/library/sections?bait=%2Flivetv%2Fdvr":                                             true,
-		"/library/sections?path=%2Flivetv%2Fdvr":                                             true,
-		"/media/grabbers/tv.plex.grabbers.hdhomerun/devices":                                  true,
+		"/library/sections?bait=%2Flivetv%2Fdvr":             true,
+		"/library/sections?path=%2Flivetv%2Fdvr":             true,
+		"/media/grabbers/tv.plex.grabbers.hdhomerun/devices": true,
 	}
 	for target, want := range cases {
 		req := httptest.NewRequest(http.MethodGet, target, nil)
@@ -459,7 +459,7 @@ func TestIsLiveTVStreamRequest(t *testing.T) {
 		"/playQueues?uri=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8":                              true,
 		"/playQueues?path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8":                             true,
 		"/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F123":             false, // VOD, not live TV
-		"/livetv/dvrs":    false,
+		"/livetv/dvrs":     false,
 		"/media/providers": false,
 	}
 	for target, want := range cases {

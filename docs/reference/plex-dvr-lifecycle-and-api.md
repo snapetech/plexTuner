@@ -60,7 +60,7 @@ Use when you want to bypass the wizard and create/update DVRs directly (for exam
 
 In this repo that is done by:
 - `iptv-tunerr` API registration path (`-register-plex`)
-- helper scripts / k8s jobs (category activation, guide reloads, channelmap save)
+- helper scripts (category activation, guide reloads, channelmap save)
 
 Notes:
 - This is how multi-category DVR fleets are created quickly.
@@ -196,7 +196,6 @@ Fixes:
 Plex can retain hidden active Live TV grabs and block new tunes (`Waiting for media grab to start`) even when `/status/sessions` shows no playback.
 
 Operational recovery:
-- see [plex-hidden-live-grab-recovery](../runbooks/plex-hidden-live-grab-recovery.md)
 
 ## Validation checklist (backend + UI)
 
@@ -220,7 +219,6 @@ Validate all of:
 
 ## Related tools in this repo
 
-- `scripts/plex-live-session-drain.py`
   - stale Plex live-session cleanup helper (external script)
 - `scripts/plex-hidden-grab-recover.sh`
   - operational recovery for hidden Plex grabs
@@ -235,6 +233,3 @@ See also
 --------
 - [reverse-engineer-plex-livetv-access](../how-to/reverse-engineer-plex-livetv-access.md)
 - [testing-and-supervisor-config](testing-and-supervisor-config.md)
-- [plex-hidden-live-grab-recovery](../runbooks/plex-hidden-live-grab-recovery.md)
-- [deploy-and-connect-plex-home](../how-to/deploy-and-connect-plex-home.md)
-- [k8s/README](../../k8s/README.md)

@@ -22,7 +22,7 @@ tags: [lp-012, lineup-parity, operator]
 
 ## Ops readiness
 
-- [ ] **`/readyz`** / **`/healthz`** in runbooks and k8s examples ([troubleshooting runbook](../runbooks/iptvtunerr-troubleshooting.md) §8, [k8s/README](../../k8s/README.md))
+- [ ] **`/readyz`** / **`/healthz`** in runbooks and host examples ([troubleshooting runbook](../runbooks/iptvtunerr-troubleshooting.md) §8, [host/README](../../host/README.md))
 
 ## Live TV intelligence (LTV)
 

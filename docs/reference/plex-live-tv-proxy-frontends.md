@@ -165,7 +165,6 @@ apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
   name: plex-live-tv-proxy
-  namespace: plex
 spec:
   entryPoints:
     - websecure
@@ -256,4 +255,3 @@ WAN port forward. The tunnel opens outbound connections to Cloudflare.
 See also
 --------
 - [Plex Live TV Entitlement Proxy](../runbooks/plex-live-tv-entitlement-proxy.md)
-- [Plex Live TV Tab Label Rewrite Proxy](../runbooks/plex-livetv-tab-label-rewrite-proxy.md)

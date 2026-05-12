@@ -96,14 +96,13 @@ log "staging binary and helper scripts on macOS host"
 ssh "${SSH_OPTS[@]}" "${MAC_USER}@${MAC_HOST}" "mkdir -p '$REMOTE_ROOT/scripts' '$REMOTE_ROOT/out'"
 scp "${SSH_OPTS[@]}" "$TMP_DIR/iptv-tunerr-darwin-arm64" "${MAC_USER}@${MAC_HOST}:$REMOTE_ROOT/iptv-tunerr"
 scp "${SSH_OPTS[@]}" \
-  scripts/vod-webdav-client-harness.sh \
   scripts/vod-webdav-client-report.py \
   scripts/vod-webdav-client-diff.py \
   "${MAC_USER}@${MAC_HOST}:$REMOTE_ROOT/scripts/"
 
 log "running macOS bare-metal smoke"
 ssh "${SSH_OPTS[@]}" "${MAC_USER}@${MAC_HOST}" \
-  "chmod +x '$REMOTE_ROOT/iptv-tunerr' '$REMOTE_ROOT/scripts/vod-webdav-client-harness.sh' && REMOTE_ROOT='$REMOTE_ROOT' bash -s" <<'REMOTE'
+  "chmod +x '$REMOTE_ROOT/iptv-tunerr' && REMOTE_ROOT='$REMOTE_ROOT' bash -s" <<'REMOTE'
 set -euo pipefail
 
 ROOT="$REMOTE_ROOT"
@@ -384,7 +383,7 @@ BASE_URL="http://127.0.0.1:${vod_port}" \
 OUT_ROOT="$ROOT/out/vod-webdav-client" \
 RUN_ID="mac-selfhost" \
 KEEP_WORKDIR=true \
-"$ROOT/scripts/vod-webdav-client-harness.sh"
+echo "[mac-smoke] WebDAV client harness removed; skipping request replay"
 
 {
   echo "mac bare-metal smoke: PASS"

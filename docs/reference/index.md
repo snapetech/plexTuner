@@ -27,7 +27,6 @@ Dense and factual. Add CLI reference, env vars, API docs as needed.
 | [plex-live-tv-proxy-frontends](plex-live-tv-proxy-frontends.md) | Cloudflare Tunnel, VPN, Caddy, Traefik, and nginx frontend patterns for `iptv-tunerr plex-label-proxy`, including why not to DNAT `plex.direct` TLS into the HTTP proxy. |
 | [vpn-access-patterns](vpn-access-patterns.md) | Tailscale, WireGuard, OpenVPN, Gluetun, NAT-PMP/static-forward, and fail-closed routing patterns for Tunerr and the Plex Live TV proxy. |
 | [epg-linking-pipeline](epg-linking-pipeline.md) | Multi-provider channel/EPG linking pipeline: normalization, alias/override DB, confidence scoring, and rollout strategy for large unlinked channel sets. |
-| [upstream-m3u-split-requirement](upstream-m3u-split-requirement.md) | Required behavior for iptv-m3u-server when generating category `dvr-*.m3u`: emit all stream URLs per channel so strip + dedupe keep non-CF. |
 | [testing-and-supervisor-config](testing-and-supervisor-config.md) | Supervisor mode and recent test/lab env vars (guide offsets, reaper, HDHR shaping, XMLTV normalization). |
 | [memory-bank/commands.yml](../../memory-bank/commands.yml) | Verification commands. |
 

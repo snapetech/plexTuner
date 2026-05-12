@@ -66,7 +66,7 @@ type DVRInfo struct {
 	DeviceStatus string   // status of the first Device child, e.g. alive/dead
 	DeviceState  string   // state of the first Device child, e.g. enabled/disabled
 	DeviceUUIDs  []string // UUIDs of Device children, e.g. ["device://tv.plex.grabbers.hdhomerun/newsus"]
-	DeviceURIs   []string // URIs of Device children, e.g. ["http://iptvtunerr.plex.svc:5004"]
+	DeviceURIs   []string // URIs of Device children, e.g. ["http://iptvtunerr.local:5004"]
 }
 
 func RegisterTunerViaAPI(cfg PlexAPIConfig) (*DeviceInfo, error) {
@@ -447,7 +447,7 @@ func activateChannelsRequest(cfg PlexAPIConfig, deviceKey string, enabled []stri
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("activate channels request failed: %w", err)
+		return fmt.Errorf("activate channels request failed: %s: %w", safeurl.RedactQuery(activateURL), err)
 	}
 	defer resp.Body.Close()
 
@@ -904,7 +904,14 @@ func dvrDeviceLooksDead(d DVRInfo) bool {
 }
 
 func deadDVRNeedsReregistration(d DVRInfo, enabledCount, expectedCount int) bool {
-	return dvrDeviceLooksDead(d)
+	if !dvrDeviceLooksDead(d) {
+		return false
+	}
+	if expectedCount <= 0 {
+		return false
+	}
+	threshold := int(float64(expectedCount) * 0.9)
+	return enabledCount < threshold
 }
 
 // StandbyPrimaryIsUp probes the primary tuner's lineup.json endpoint with a short

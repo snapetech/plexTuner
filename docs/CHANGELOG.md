@@ -13,6 +13,17 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.59] — 2026-05-12
+
+### Plex / DVR safety
+- **Plex registration is less likely to churn duplicate empty DVRs:** the watchdog no longer re-registers solely because Plex reports a Tunerr-family DVR as `dead` when the expected channel mappings remain healthy, and activation URLs are redacted from registration error logs.
+- **Removed obsolete cluster-family stale-DVR matching:** reconciliation no longer preserves special handling for the retired cluster service identity path; stale matching now stays on current Tunerr-family/device lineage.
+
+### Deployment / operations
+- **Removed the obsolete cluster deployment path:** repository manifests, deploy jobs, helper scripts, examples, and runbooks for the retired deployment model were removed so operators and agents do not fall back to it.
+- **Supported deployment contract is now explicit:** deployment docs now define binary, systemd, and Docker/container-on-host as the supported paths, with one active Tunerr instance per Plex DVR identity and distinct base URLs/device names for intentional multi-DVR buckets.
+- **Duplicate-DVR recovery is documented:** Plex ops docs now describe the correct order for stopping extra processes, validating the intended base URL, removing empty DVR rows, and registering from the single intended owner.
+
 ## [v0.1.58] — 2026-05-08
 
 ### EPG / guide reliability
@@ -129,7 +140,6 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 ### Plex / multi-DVR onboarding
 - **API-first zero-touch Plex registration is now the default documented path:** top-level help, `setup-doctor`, the Plex connection guide, and deployment docs now steer new users toward `PLEX_HOST` + `PLEX_TOKEN` with `run -mode=full -register-plex=api` instead of leading with the older DB-path registration flow.
 - **Full-mode setup doctor now checks Plex API readiness:** `setup-doctor` now reports whether `IPTV_TUNERR_PMS_URL` / `PLEX_HOST` and `IPTV_TUNERR_PMS_TOKEN` / `PLEX_TOKEN` are present when users choose `-mode=full`, and it prints the exact zero-touch next step when they are.
-- **Official two-DVR pattern is now shipped:** the repo now includes `k8s/iptvtunerr-supervisor-general-sports.example.json`, which documents the validated `general` + `sports_na` supervisor pattern with distinct device IDs, base URLs, and guide-number offset handling.
 
 ### Lineup shaping
 - **New `sports_na` recipe:** lineup and registration shaping now support a stricter North America sports-first recipe that keeps Canadian and US sports brands/leagues while rejecting obvious international sports-only noise that would otherwise pollute a second sports DVR.
@@ -418,7 +428,6 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Multi-stream harness:** new [how-to/multi-stream-harness.md](how-to/multi-stream-harness.md) (quick start + pointers); linked from **`docs/how-to/index`**, **`docs/index`**, **`README`** (Documentation + Recent Changes), **runbook §10** + **runbooks index**.
 - **HLS go-relay env:** **`cli-and-env-reference`** + **`plex-livetv-http-tuning`** now describe **`IPTV_TUNERR_HLS_RELAY_PREFER_GO_ON_PROVIDER_PRESSURE`** as covering **autotune host penalty** (not only learned concurrency), matching **`shouldPreferGoRelayForHLSRemux`** in **`gateway_policy.go`**.
 - **Autopilot URL semantics:** **`streamURLsSemanticallyEqual`** godoc in **`gateway_adapt.go`** and **Gateway / Autopilot** row in **`memory-bank/known_issues.md`** spell out what is folded (ports, trailing slash, scheme/host case) vs intentionally not folded (path segment case, exact query).
-- **README:** expanded **Documentation** map (CHANGELOG, features, HR/mux references, architecture); **Kubernetes** probe guidance (**`/readyz`** / **`/healthz`** vs **`/discover.json`**); **Recent Changes** bullets for native mux header, profiles file, **HR-010** pool, live-race PMS snapshots; **Repo layout** lists **`internal/probe`**, **`internal/materializer`**; tuner endpoints mention readiness paths.
 - **`docs/features.md`:** **`/healthz`** / **`/readyz`**, **`X-IptvTunerr-Native-Mux`**, named profile matrix row, **`provider_profile.json`** mux breadcrumbs, runtime **`URLs.ready`**, materializer scope, live-race harness + Plex sessions; **See also** links **CHANGELOG** / tuning docs.
 - **`docs/index.md`:** quick entrypoints (**README**, **CHANGELOG**, **features**, CLI ref); runbooks row points at troubleshooting §8; **See also** → **repo_map**.
 - **`docs/reference/index.md`:** **features** + **CHANGELOG** rows for discoverability.
@@ -447,7 +456,6 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **`internal/materializer`**: unit tests for **`Stub`**, **`DownloadToFile`** (SSRF guard, full GET, ranged GET, HTTP errors), **`DirectFile`**, and **`Cache`** materialization (`materializer_test.go`). HLS/ffmpeg paths remain integration-only.
 
 ### Operability
-- **`GET /readyz`**: Kubernetes-oriented readiness JSON — **503** `not_ready` until **`UpdateChannels`** has live channels, then **200** `ready` (same gate as **`/healthz`**, which returns **`loading`** / **`ok`** plus **`source_ready`**). Example **`k8s/`** manifests probe **`/readyz`** for **`readinessProbe`**; **`/discover.json`** remains a better **liveness** target during long first catalog builds. See runbook §8 and **`TestServer_readyz`**.
 - **Startup visibility for `run`:** the tuner now binds before long catalog and guide startup work completes, so **`/healthz`** and **`/readyz`** report **`loading`** / **`not_ready`** instead of looking dead during big provider indexes. Catalog startup also logs phase timings (`provider probe + rank`, `index provider ...`, free-source fetch, HDHR merge, EPG repair, smoketest), and **`IndexFromPlayerAPI`** now logs per-step durations for stream-base resolve, live, VOD, and series fetches.
 
 ### Reliability / Plex ops (work breakdown slices)
@@ -475,7 +483,6 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Docs:** [potential_fixes](potential_fixes.md) “current implementation” aligns with post-**`gateway_*`** split (symbol links, not stale **`gateway.go`** line anchors); references [plex-livetv-http-tuning](reference/plex-livetv-http-tuning.md) / troubleshooting runbook.
 - **Backlog:** **`memory-bank/opportunities.md`** superseded duplicate **XMLTV `/guide.xml` cache** rows (**2026-02-24** / **2026-02-25**) now that **`internal/tuner/xmltv.go`** ships merged-guide TTL cache + tests (**`TestXMLTV_cacheHit`**).
 - **Backlog:** **`memory-bank/opportunities.md`** superseded **2026-02-25** smoketest “no disk cache” row — **`IPTV_TUNERR_SMOKETEST_CACHE_FILE`** / **`_TTL`** + **`internal/indexer/smoketest_cache.go`** already shipped.
-- **Docs:** [plex-livetv-http-tuning](reference/plex-livetv-http-tuning.md) links **`X-IptvTunerr-Native-Mux`** to **[hls-mux-toolkit](reference/hls-mux-toolkit.md)**; [hybrid-hdhr-iptv](how-to/hybrid-hdhr-iptv.md) See also → mux toolkit + troubleshooting. **`k8s/README.md`** verify snippet includes **`/readyz`** / **`/healthz`**.
 - **Docs:** [plex-livetv-http-tuning](reference/plex-livetv-http-tuning.md) lists all major **`httpclient`** consumers (Plex, Emby, provider, HDHR, EPG pipeline, health, probe) and notes mux **`seg=`** exception; HR-007 precedence pointer updated to **`gateway_adapt.go`** / **`gateway_policy.go`**.
 - **Shared HTTP client:** **`httpclient.WithTimeout`** replaces raw timeout-only clients in **`internal/tuner/epg_pipeline.go`** (**`httpClientOrDefault`**), **`internal/health`**, **`internal/probe`**, **`internal/plex`** (**`dvr.go`**, **`library.go`** **`plexHTTPClient`**), **`internal/provider/probe.go`**, and **`internal/emby/register.go`** (**`newHTTPClient`**) so media-server registration, provider ranking, and guide fetches share tuned idle pools (**HR-010**). **`internal/tuner/mux_http_client.go`** still builds a custom **`&http.Client`** for redirect policy.
 - **HDHR client HTTP:** **`internal/hdhomerun`** (**`FetchDiscoverJSON`**, **`FetchLineupJSON`**, **`FetchGuideXML`**) and **`iptv-tunerr hdhr-scan`** use **`internal/httpclient`** (shared transport / idle pool) instead of ad hoc **`http.Client`** timeouts.
@@ -789,13 +796,11 @@ First tagged release. Covers all features developed through the pre-release test
 - **Fix README and repo docs for IPTV Tunerr** — Align README and docs with actual IPTV Tunerr behavior (IPTV bridge, catalog, tuner, VODFS).
 - **Strip all iptvTunerr content from template** — Template repo stripped to generic agentic template; IPTV Tunerr lives in this repo only.
 - **Add IPTV Tunerr: IPTV indexer, catalog, VODFS, gateway, and tests** — Initial IPTV Tunerr implementation: index from M3U or player_api, catalog (movies/series/live), HDHomeRun emulator, XMLTV, stream gateway, optional VODFS mount, materializer (cache, direct file, HLS), config from env, health check, Plex DB registration, provider probe. Subcommands: run, index, serve, mount, probe.
-- **Learnings from k3s IPTV, HLS smoketest, config/gateway/VODFS and scripts** — Document k3s IPTV stack (Threadfin, M3U server, Plex EPG), what we reuse (player_api first, multi-host, EPG-linked, smoketest), and optional future work (Plex API DVR, 480-channel split, EPG prune). Add systemd example and LEARNINGS-FROM-K3S-IPTV.md.
 
 ### Template and agentic workflow
 
 - **Language-agnostic template** — Any language, not just Go.
 - **Harden .gitignore for reusable Go template.**
-- **Strip to generic agentic Go template** — Remove iptv-tunerr, k3s, all project examples.
 - **Template: decision log, definition of done, dangerous ops, repro-first, runbook, scope guard, repo orientation, link check.**
 - **Add performance & resource-respect skill, Git-first workflow skill.**
 - **Add curly-quotes/special-chars loop + copy/paste-safe doc policy.**

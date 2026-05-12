@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Local QA and smoke test for IPTV Tunerr (no Kubernetes).
+# Local QA and smoke test for IPTV Tunerr.
 # Run from repo root: ./scripts/iptvtunerr-local-test.sh [qa|serve|run|smoke|all]
-# See docs/how-to/run-without-kubernetes.md
+# See docs/how-to/deployment.md
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

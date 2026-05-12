@@ -38,7 +38,7 @@ type Config struct {
 	MountPoint      string // e.g. /mnt/vodfs
 	CacheDir        string // e.g. /var/cache/iptvtunerr
 	CatalogPath     string // e.g. /var/lib/iptvtunerr/catalog.json
-	VODFSAllowOther bool   // Linux only: mount VODFS with FUSE allow_other (needed for some Plex/k8s hostPath setups)
+	VODFSAllowOther bool   // Linux only: mount VODFS with FUSE allow_other (needed for some Plex host setups)
 
 	// Live tuner
 	TunerCount        int
@@ -293,7 +293,7 @@ func Load() *Config {
 	if c.WebUIPort <= 0 {
 		c.WebUIPort = 48879
 	}
-	// Subscription file fallback (same pattern as k3s update-iptv-m3u.sh / iptv.subscription.2026.txt)
+	// Subscription file fallback (same pattern as iptv.subscription.2026.txt)
 	if c.ProviderUser == "" || c.ProviderPass == "" {
 		if user, pass, err := readSubscriptionFile(getEnv("IPTV_TUNERR_SUBSCRIPTION_FILE", "")); err == nil {
 			if c.ProviderUser == "" {

@@ -503,7 +503,6 @@ block public direct PMS/proxy access.
 
 See also
 --------
-- [Plex Live TV Tab Label Rewrite Proxy](plex-livetv-tab-label-rewrite-proxy.md)
 - [Plex Live TV Proxy Frontends](../reference/plex-live-tv-proxy-frontends.md)
 - [VPN Access Patterns](../reference/vpn-access-patterns.md)
 - [Plex DVR lifecycle and API operations](../reference/plex-dvr-lifecycle-and-api.md)

@@ -673,7 +673,7 @@ func mpegTSMuxRateForProfile(profile string) string {
 
 // canonicalizeFFmpegInputURL resolves the input host in Go and rewrites the URL
 // to a numeric host for ffmpeg. This avoids resolver differences where Go can
-// resolve a host (for example a k8s short service hostname) but the bundled
+// resolve a host (for example a short service hostname) but the bundled
 // ffmpeg binary cannot.
 // Set IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE=1 to disable and keep original hostname.
 func canonicalizeFFmpegInputURL(ctx context.Context, raw string, disableResolve bool) (rewritten string, fromHost string, toHost string) {

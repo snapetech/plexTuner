@@ -104,7 +104,7 @@ type Proxy struct {
 	// sessionUsers maps X-Plex-Session-Identifier values to the original client
 	// token captured before elevation. Used by NeutralizeOwnerHistory to replay
 	// timeline/scrobble events under the correct user for all content types.
-	sessionMu   sync.Mutex
+	sessionMu    sync.Mutex
 	sessionUsers map[string]string
 }
 

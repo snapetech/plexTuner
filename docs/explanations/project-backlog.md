@@ -17,7 +17,7 @@ This page is the **single entry point** for “what is left to work on” across
 | [EPIC-lineup-parity](../epics/EPIC-lineup-parity.md) | **LP** hybrid HDHR + IPTV, SQLite EPG, mux profiles — implementation status and PR-sized history. |
 | [EPIC-programming-manager](../epics/EPIC-programming-manager.md) | **PM** channel-builder / lineup-curation product plan: categories, per-channel selection, custom order, backup grouping. |
 | [EPIC-station-ops](../epics/EPIC-station-ops.md) | **STN** free "run your own TV station" lane: branding, scheduling, filler recovery, and multi-backend station operations. |
-| [memory-bank/opportunities.md](../../memory-bank/opportunities.md) | **Continuous improvement** backlog: dated entries with **Status** where known (many items are **sibling-repo** / k8s / Plex-helper scripts — read each entry). |
+| [memory-bank/opportunities.md](../../memory-bank/opportunities.md) | **Continuous improvement** backlog: dated entries with **Status** where known (many items are **sibling-repo** / host / Plex-helper scripts — read each entry). |
 | [EPIC-operator-completion](../epics/EPIC-operator-completion.md) | **Active completion umbrella** for all non-postgres, non-admin-plane operator work across LP/ACC/PM/LH/PAR/HR/VODX/REC lineages. |
 | [memory-bank/known_issues.md](../../memory-bank/known_issues.md) | **Operational** limitations, cluster quirks, and design tradeoffs (not always a code change in *this* repo). |
 | [docs-gaps.md](../docs-gaps.md) | **Documentation** gaps (currently none tracked at High/Medium/Low — see Resolved table). |
@@ -70,8 +70,8 @@ The opportunities file is authoritative for **dated entries** (including **Statu
 - **Catch-up:** programme-bound / “true replay” vs near-live launcher; category libraries / scans (large scope).
 - **Migration / janitor:** identity-cutover/OIDC follow-through and the larger “Tunerr as a general-purpose library janitor” direction remain future backlog themes; see `memory-bank/opportunities.md`.
 - **Product surface:** first-run onboarding is now narrower (`setup-doctor`, `.env.minimal.example`, readiness-first deck copy/lane ordering, advanced raw/workflow deck surfaces hidden by default), but deeper persona splitting between simple user, operator, and lab surfaces remains open; see `memory-bank/opportunities.md`.
-- **Plex / k8s adjacent:** split-pipeline instrumentation, postvalidate tuning, external scripts — often **sibling repo**; read each entry’s **Context**.
-- **Gateway / WebSafe:** ffmpeg DNS vs k8s service names, IDR-aware startup, TS debug — see opportunities.
+- **Plex / host adjacent:** split-pipeline instrumentation, postvalidate tuning, external scripts — often **sibling repo**; read each entry’s **Context**.
+- **Gateway / WebSafe:** ffmpeg DNS vs host service names, IDR-aware startup, TS debug — see opportunities.
 - **Maintainability:** e.g. dedupe **`hdhomerun`** env helpers vs **`internal/config`** (refactor), and continue splitting dense route/controller files like **`internal/tuner/server.go`** and **`internal/webui/webui.go`**.
 - **Build / release:** multi-arch Docker images (`buildx`); placeholder credentials in sample manifests (security).
 
@@ -81,7 +81,7 @@ The opportunities file is authoritative for **dated entries** (including **Statu
 
 ## 4. Operational constraints ([known_issues](../../memory-bank/known_issues.md))
 
-Runbook-heavy: OpenBao/supervisor env ordering, nftables, k3s image import vs Docker, Cloudflare/Plex category DVRs, HDHR scaling, etc. Treat as **environment and process** knowledge, not a single “backlog ticket.”
+Runbook-heavy: OpenBao/supervisor env ordering, nftables, host image import vs Docker, Cloudflare/Plex category DVRs, HDHR scaling, etc. Treat as **environment and process** knowledge, not a single “backlog ticket.”
 
 ---
 

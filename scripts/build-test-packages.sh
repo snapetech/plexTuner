@@ -78,13 +78,9 @@ pkg_name() {
 copy_bundle_files() {
   local target_dir="$1"
   cp README.md "$target_dir/"
-  mkdir -p "$target_dir/docs/how-to" "$target_dir/docs/reference" "$target_dir/k8s" "$target_dir/scripts"
-  cp docs/how-to/run-without-kubernetes.md "$target_dir/docs/how-to/"
+  mkdir -p "$target_dir/docs/how-to" "$target_dir/docs/reference" "$target_dir/scripts"
   cp docs/how-to/package-test-builds.md "$target_dir/docs/how-to/"
   cp docs/reference/testing-and-supervisor-config.md "$target_dir/docs/reference/"
-  cp k8s/iptvtunerr-supervisor-multi.example.json "$target_dir/k8s/"
-  cp k8s/iptvtunerr-supervisor-singlepod.example.yaml "$target_dir/k8s/"
-  cp scripts/plex-live-session-drain.py "$target_dir/scripts/"
 }
 
 build_source_zip() {

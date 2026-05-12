@@ -138,7 +138,7 @@ func TestRegisterTunerViaAPI_synthesizesDeviceAfterGrabber404s(t *testing.T) {
 
 	host := strings.TrimPrefix(srv.URL, "http://")
 	dev, err := RegisterTunerViaAPI(PlexAPIConfig{
-		BaseURL:   "http://iptvtunerr-sports.plex.svc:5004",
+		BaseURL:   "http://iptvtunerr-sports.local:5004",
 		PlexHost:  host,
 		PlexToken: "demo",
 		DeviceID:  "iptvtunerr-sports01",
@@ -158,8 +158,8 @@ func TestListDVRsAPI_includesDeviceStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
 <MediaContainer size="1">
-  <Dvr key="761" uuid="demo" lineupTitle="IPTV Tunerr Sports" lineup="lineup://tv.plex.providers.epg.xmltv/http%3A%2F%2Fiptvtunerr-sports.plex.svc%3A5004%2Fguide.xml#IPTV+Tunerr+Sports">
-    <Device key="760" uuid="device://tv.plex.grabbers.hdhomerun/iptvtunerr-sports01" uri="http://iptvtunerr-sports.plex.svc:5004" status="dead" state="enabled"/>
+  <Dvr key="761" uuid="demo" lineupTitle="IPTV Tunerr Sports" lineup="lineup://tv.plex.providers.epg.xmltv/http%3A%2F%2Fiptvtunerr-sports.local%3A5004%2Fguide.xml#IPTV+Tunerr+Sports">
+    <Device key="760" uuid="device://tv.plex.grabbers.hdhomerun/iptvtunerr-sports01" uri="http://iptvtunerr-sports.local:5004" status="dead" state="enabled"/>
   </Dvr>
 </MediaContainer>`))
 	}))
@@ -197,11 +197,14 @@ func TestWatchdogExpectedChannelCountUsesCurrentTunerLineup(t *testing.T) {
 
 func TestDeadDVRNeedsReregistration(t *testing.T) {
 	dead := DVRInfo{DeviceStatus: "dead", DeviceState: "enabled"}
-	if !deadDVRNeedsReregistration(dead, 95, 100) {
-		t.Fatal("dead-marked dvr should re-register even when channel mappings exist")
+	if deadDVRNeedsReregistration(dead, 95, 100) {
+		t.Fatal("dead-marked dvr with healthy mappings should not re-register")
 	}
 	if !deadDVRNeedsReregistration(dead, 50, 100) {
 		t.Fatal("under-activated dead-marked dvr should re-register")
+	}
+	if deadDVRNeedsReregistration(dead, 0, 0) {
+		t.Fatal("dead-marked dvr with unknown expected count should not re-register")
 	}
 }
 

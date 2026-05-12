@@ -22,7 +22,6 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[how-to/deployment.md](how-to/deployment.md)** | Deploy IPTV Tunerr (binary, Docker, systemd, local test script). |
 | **[how-to/mac-baremetal-smoke.md](how-to/mac-baremetal-smoke.md)** | Cross-build, wake, SSH, and prove the app on a real macOS host. |
 | **[how-to/windows-baremetal-smoke.md](how-to/windows-baremetal-smoke.md)** | Prepare and run the Windows bare-metal smoke lane when the host/VM is available. |
-| **[how-to/vod-webdav-client-harness.md](how-to/vod-webdav-client-harness.md)** | Replay macOS/Windows WebDAV client request shapes against `vod-webdav`. |
 | **[how-to/plex-lineup-harvest.md](how-to/plex-lineup-harvest.md)** | Probe Plex lineup variants, capture harvest bundles, and feed Programming Manager import/assist flows. |
 | **[how-to/plex-ops-patterns.md](how-to/plex-ops-patterns.md)** | Advanced Plex-only operating patterns: zero-touch, category DVR fleets, injected DVRs. |
 | **[how-to/reverse-engineer-plex-livetv-access.md](how-to/reverse-engineer-plex-livetv-access.md)** | Prove where Live TV is inserted, mine undocumented PMS endpoints from logs, and test plex.tv tuner-access gating. |
@@ -59,7 +58,6 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[explanations/observability-prometheus-and-otel.md](explanations/observability-prometheus-and-otel.md)** | **`/metrics`** and bridging to OpenTelemetry via collector scrape. |
 | **[explanations/always-on-recorder-daemon.md](explanations/always-on-recorder-daemon.md)** | Rolling catch-up recorder daemon (`catchup-daemon`): MVP shipped, extensions noted. |
 | **[explanations/release-readiness-matrix.md](explanations/release-readiness-matrix.md)** | Feature-family proof table for `./scripts/release-readiness.sh`, binary smoke, and host lanes. |
-| **[k8s/README.md](../k8s/README.md)** | Kubernetes deployment (HDHR in cluster). |
 | **[epics/](epics/EPIC-template.md)** | Multi-PR epic template. Use with [memory-bank/work_breakdown.md](../memory-bank/work_breakdown.md). |
 | **[epics/EPIC-lineup-parity.md](epics/EPIC-lineup-parity.md)** | Optional **Lineup-app-style** track: real HDHomeRun client, web dashboard, SQLite EPG, HLS/fMP4 profiles ([inspiration](https://github.com/am385/lineup)). |
 | **[epics/EPIC-operator-completion.md](epics/EPIC-operator-completion.md)** | Umbrella completion lane for all non-admin, non-Postgres follow-through across LP/PM/LH/PAR/ACC/HR/INT/REC/VODX. |

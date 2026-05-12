@@ -2,10 +2,10 @@
 id: howto-vodfs-plex-libraries
 type: how-to
 status: draft
-tags: [how-to, vodfs, plex, k3s, fuse]
+tags: [how-to, vodfs, plex, fuse]
 ---
 
-# Mount VODFS and Register Plex Libraries (Linux / k3s)
+# Mount VODFS and Register Plex Libraries (Linux)
 
 Mount IPTV VOD content as a filesystem (`Movies/`, `TV/`) and create/reuse Plex libraries:
 - `VOD` (TV library) -> `<mount>/TV`
@@ -64,7 +64,7 @@ For real testing in Plex, use `-cache`.
 
 ## FUSE access and `allow_other` (important)
 
-If Plex runs as a different user/process/runtime than the process that mounted VODFS (common in Docker/k8s), use:
+If Plex runs as a different user/process/runtime than the process that mounted VODFS (common in Docker), use:
 
 ```bash
 iptv-tunerr mount ... -allow-other
@@ -84,28 +84,27 @@ echo user_allow_other | sudo tee -a /etc/fuse.conf
 
 Without this, you may see:
 - `fusermount3: option allow_other only allowed if 'user_allow_other' is set`
-- kubelet / container runtime `stat ... permission denied` on a hostPath backed by a FUSE mount
+- host / container runtime `stat ... permission denied` on a host backed by a FUSE mount
 
-## k3s / Kubernetes (Plex in pod) pattern
 
-Recommended pattern for k3s:
+Recommended pattern for host:
 
-1. Mount VODFS on the **Plex node host** (not in a random helper pod)
+1. Mount VODFS on the **Plex node host** (not in a random helper host)
 2. Use `-allow-other`
-3. Mount that host path into the Plex pod with a `hostPath` volume (for example `/media/iptv-vodfs`)
-4. Run `plex-vod-register` pointing at the in-pod path
+3. Mount that host path into the Plex host with a `host` volume (for example `/media/iptv-vodfs`)
+4. Run `plex-vod-register` pointing at the in-host path
 
-### Why not mount in a helper pod?
+### Why not mount in a helper host?
 
-FUSE mounts are mount-namespace local. A helper pod mount is not automatically visible to the Plex pod.
+FUSE mounts are mount-namespace local. A helper host mount is not automatically visible to the Plex host.
 
-### k3s hostPath gotchas (real-world)
+### host host gotchas (real-world)
 
-- `hostPath.type: Directory` can fail after the path becomes a FUSE mount (kubelet type-check mismatch). If needed, omit the strict `type`.
-- If the FUSE mount is not `allow_other`, kubelet may fail to `stat` the hostPath with `permission denied`.
-- After fixing/remounting the host FUSE mount, restart/recreate the Plex pod so kubelet rebinds the corrected view.
+- `host.type: Directory` can fail after the path becomes a FUSE mount (host type-check mismatch). If needed, omit the strict `type`.
+- If the FUSE mount is not `allow_other`, host may fail to `stat` the host with `permission denied`.
+- After fixing/remounting the host FUSE mount, restart/recreate the Plex host so host rebinds the corrected view.
 
-## Example k3s sequence (host + pod)
+## Example host sequence (host + host)
 
 On the Plex node host:
 
@@ -117,11 +116,11 @@ iptv-tunerr mount \
   -allow-other
 ```
 
-Plex Deployment hostPath mount (example):
+Plex Deployment host mount (example):
 - host path: `/srv/iptvtunerr-vodfs`
-- in-pod path: `/media/iptv-vodfs`
+- in-host path: `/media/iptv-vodfs`
 
-Then inside the Plex pod (or from a host that can reach PMS and the in-pod path is mounted):
+Then inside the Plex host (or from a host that can reach PMS and the in-host path is mounted):
 
 ```bash
 iptv-tunerr plex-vod-register \
@@ -141,13 +140,12 @@ Optional:
 
 - Verify the mount root contains `Movies/` and `TV/`
 - Verify you passed the mount root, not the `Movies` subdir
-- In k8s, verify the Plex pod can see the mounted path (not just the host)
 
-### `permission denied` on hostPath / kubelet
+### `permission denied` on host / host
 
 - Remount VODFS with `-allow-other`
 - Enable `user_allow_other` in `/etc/fuse.conf`
-- Restart the Plex pod after remounting
+- Restart the Plex host after remounting
 
 ### `Input/output error` while listing `Movies` / `TV`
 
@@ -263,4 +261,3 @@ After cutover:
 
 - [CLI and env reference](../reference/cli-and-env-reference.md)
 - [Deployment guide](deployment.md)
-- [k8s README](../../k8s/README.md)

@@ -135,18 +135,14 @@ Expected outputs after workflows finish:
 - `docs/how-to/deployment.md`
 - `docs/how-to/package-test-builds.md`
 - `docs/reference/testing-and-supervisor-config.md`
-- `k8s/iptvtunerr-supervisor-multi.example.json`
-- `k8s/iptvtunerr-supervisor-singlepod.example.yaml`
-- `scripts/plex-live-session-drain.py` (optional external helper)
 
 ## Test a packaged supervisor build
 
 1. Unpack the archive.
-2. Copy `k8s/iptvtunerr-supervisor-multi.example.json` and adapt child envs.
 3. Run:
 
 ```bash
-./iptv-tunerr supervise -config ./iptvtunerr-supervisor-multi.example.json
+./iptv-tunerr run -mode=easy
 ```
 
 4. Verify sample child endpoints:
@@ -166,11 +162,9 @@ sha256sum -c SHA256SUMS.txt
 ## Notes
 
 - The built-in Plex stale-session reaper is in the Go binary (no Python required).
-- `scripts/plex-live-session-drain.py` is still included as a stronger lab helper when PMS log access is available.
 - Windows/macOS test bundles support core tuner/supervisor validation. `VODFS` mount remains Linux-only.
 
 See also
 --------
 - [deployment](deployment.md)
 - [testing-and-supervisor-config](../reference/testing-and-supervisor-config.md)
-- [k8s/README](../../k8s/README.md)

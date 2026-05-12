@@ -44,7 +44,7 @@ See also:
 |---------|-------------|
 | **`discover.json`** | HDHR discovery endpoint (Plex-compatible). |
 | **`lineup.json` / `lineup_status.json`** | Tuner channel lineup and status endpoints. |
-| **`/healthz` / `/readyz`** | Catalog readiness for operators and Kubernetes: **`/readyz`** returns JSON **`ready`** / **`not_ready`** (**503** until **`UpdateChannels`** has live rows); **`/healthz`** returns **`ok`** / **`loading`** plus **`source_ready`**, **`channels`**, **`last_refresh`**. Example **`k8s/`** readiness probes use **`/readyz`**; **`/discover.json`** is often a better **liveness** target during long cold starts. See [runbook §8](runbooks/iptvtunerr-troubleshooting.md#8-tuner-endpoints-sanity-check). |
+| **`/healthz` / `/readyz`** | Catalog readiness for operators: **`/readyz`** returns JSON **`ready`** / **`not_ready`** (**503** until **`UpdateChannels`** has live rows); **`/healthz`** returns **`ok`** / **`loading`** plus **`source_ready`**, **`channels`**, **`last_refresh`**. Example **`host/`** readiness probes use **`/readyz`**; **`/discover.json`** is often a better **liveness** target during long cold starts. See [runbook §8](runbooks/iptvtunerr-troubleshooting.md#8-tuner-endpoints-sanity-check). |
 | **`guide.xml`** | Layered XMLTV guide output (provider `xmltv.php` > external XMLTV > optional HDHR device `guide.xml` gap-fill > placeholder). While the real merged guide is still building, Tunerr returns **`503`** with a visible placeholder body plus **`Retry-After: 5`** and **`X-IptvTunerr-Guide-State: loading`** instead of a misleading success response. |
 | **`live.m3u`** | Live channel M3U export. |
 | **`/stream/<id>`** | Stream gateway with provider auth/failover and tuner count limiting. |
@@ -161,7 +161,7 @@ Reference:
 | **Child env/args isolation** | Each child gets its own args/env/workdir while sharing one binary/container. |
 | **Restart/fail-fast controls** | Supervisor-level restart and fail-fast behavior. |
 | **Category + HDHR split** | Supports many injected DVR children plus one (or more) HDHR wizard children in parallel. |
-| **k8s cutover examples** | Example JSON/manifests and URI cutover mapping included. |
+| **host cutover examples** | Example JSON/manifests and URI cutover mapping included. |
 | **Overflow shard generation** | Supervisor manifest generator can auto-create overflow category children from confirmed linked counts (`--category-counts-json`, `--category-cap`). |
 
 ## 10. Plex session cleanup / stale playback handling
@@ -171,7 +171,7 @@ Reference:
 | **Built-in reaper (Go)** | Optional background worker in app for Plex Live TV stale-session cleanup. |
 | **Polling + SSE** | Polls Plex sessions and optionally listens to Plex SSE notifications for faster wakeups. |
 | **Idle / renewable lease / hard lease** | Tunable timers for stale-session pruning and backstop cleanup. |
-| **External helper (Python)** | `scripts/plex-live-session-drain.py` remains available for lab/k8s workflows. |
+| **External helper (Python)** | `built-in Plex session reaper` remains available for lab/host workflows. |
 
 ## 11. VOD and VODFS
 

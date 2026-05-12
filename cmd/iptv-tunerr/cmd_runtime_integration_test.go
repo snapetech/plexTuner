@@ -37,15 +37,15 @@ func TestRuntimeCommandHelperProcess(t *testing.T) {
 	case "handle-run-success":
 		addr := os.Getenv("IPTV_TUNERR_HELPER_ADDR")
 		baseURL := os.Getenv("IPTV_TUNERR_HELPER_BASEURL")
-		handleRun(cfg, cfg.CatalogPath, addr, baseURL, cfg.DeviceID, cfg.FriendlyName, 0, true, true, "", true, 0, "", "full", false, false, 0, 0, "", "")
+		handleRun(cfg, cfg.CatalogPath, addr, baseURL, cfg.DeviceID, cfg.FriendlyName, 0, true, true, "", true, 0, "", "", "full", false, false, 0, 0, "", "")
 	case "handle-run-refresh":
 		addr := os.Getenv("IPTV_TUNERR_HELPER_ADDR")
 		baseURL := os.Getenv("IPTV_TUNERR_HELPER_BASEURL")
-		handleRun(cfg, cfg.CatalogPath, addr, baseURL, cfg.DeviceID, cfg.FriendlyName, 0, false, true, "", true, 0, "", "full", false, false, 0, 0, "", "")
+		handleRun(cfg, cfg.CatalogPath, addr, baseURL, cfg.DeviceID, cfg.FriendlyName, 0, false, true, "", true, 0, "", "", "full", false, false, 0, 0, "", "")
 	case "handle-run-missing":
 		addr := os.Getenv("IPTV_TUNERR_HELPER_ADDR")
 		baseURL := os.Getenv("IPTV_TUNERR_HELPER_BASEURL")
-		handleRun(cfg, cfg.CatalogPath, addr, baseURL, cfg.DeviceID, cfg.FriendlyName, 0, true, true, "", true, 0, "", "full", false, false, 0, 0, "", "")
+		handleRun(cfg, cfg.CatalogPath, addr, baseURL, cfg.DeviceID, cfg.FriendlyName, 0, true, true, "", true, 0, "", "", "full", false, false, 0, 0, "", "")
 	}
 	os.Exit(0)
 }

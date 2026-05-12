@@ -18,7 +18,6 @@ iptv-tunerr supervise -config /path/to/supervisor.json
 `supervisor.json` contains a list of child `iptv-tunerr` instances (commands + env).
 
 Example:
-- [`k8s/iptvtunerr-supervisor-multi.example.json`](../../k8s/iptvtunerr-supervisor-multi.example.json)
 
 ## Env vars (recently added / important for testing)
 
@@ -101,7 +100,6 @@ Important:
 
 ### Supervisor manifest generator overflow support
 
-`scripts/generate-k3s-supervisor-manifests.py` can now auto-create overflow
 category children from a confirmed linked-channel count file.
 
 Flags:
@@ -128,4 +126,3 @@ See also
 --------
 - [package-test-builds](../how-to/package-test-builds.md)
 - [deployment](../how-to/deployment.md)
-- [k8s/README](../../k8s/README.md)

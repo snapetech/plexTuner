@@ -9,7 +9,6 @@ tags: [how-to, plex, livetv, dvr, registration]
 
 IPTV Tunerr speaks **HDHomeRun-style** HTTP (`/discover.json`, `/lineup.json`, `/guide.xml`, `/stream/…`). Plex discovers it like a network tuner. The confusing part is **which Plex path** you use and what still has to happen **after** the DVR row exists.
 
-See also: [plex-dvr-lifecycle-and-api](../reference/plex-dvr-lifecycle-and-api.md) (API detail), [deploy-and-connect-plex-home](deploy-and-connect-plex-home.md) (in-cluster home example), [troubleshooting runbook](../runbooks/iptvtunerr-troubleshooting.md).
 
 ## Choose a path
 

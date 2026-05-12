@@ -692,7 +692,7 @@ func TestServer_programmingHarvestEndpoint(t *testing.T) {
 func TestServer_programmingHarvestRequestEndpoint(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_PMS_URL", "http://plex.example:32400")
 	t.Setenv("IPTV_TUNERR_PMS_TOKEN", "token")
-	t.Setenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_BASE_URL_TEMPLATE", "http://iptvtunerr-oracle{cap}.plex.svc:5004")
+	t.Setenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_BASE_URL_TEMPLATE", "http://iptvtunerr-oracle-{cap}.local:5004")
 	t.Setenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_CAPS", "100,200")
 	t.Setenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_FRIENDLY_NAME_PREFIX", "harvest-")
 	path := filepath.Join(t.TempDir(), "harvest.json")
@@ -770,7 +770,7 @@ func TestServer_programmingHarvestRequestEndpoint(t *testing.T) {
 func TestServer_programmingHarvestWorkflow(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_PMS_URL", "http://plex.example:32400")
 	t.Setenv("IPTV_TUNERR_PMS_TOKEN", "token")
-	t.Setenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_BASE_URL_TEMPLATE", "http://iptvtunerr-oracle{cap}.plex.svc:5004")
+	t.Setenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_BASE_URL_TEMPLATE", "http://iptvtunerr-oracle-{cap}.local:5004")
 	t.Setenv("IPTV_TUNERR_PLEX_LINEUP_HARVEST_CAPS", "100,200,300")
 	s := &Server{}
 	req := httptest.NewRequest(http.MethodGet, "/ops/workflows/programming-harvest.json", nil)

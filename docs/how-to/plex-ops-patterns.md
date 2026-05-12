@@ -80,9 +80,15 @@ Typical ingredients:
 - supervisor mode
 - separate category M3U inputs where available
 
+Required guardrails:
+- each bucket needs a distinct reachable base URL or port
+- each bucket needs a distinct device ID/friendly name
+- each bucket should own a non-overlapping guide-number range
+- only one process should register or reconcile a given bucket
+- remove retired DVR rows from Plex before reusing their identity for a different bucket
+
 Related docs:
 - [testing-and-supervisor-config](../reference/testing-and-supervisor-config.md)
-- [upstream-m3u-split-requirement](../reference/upstream-m3u-split-requirement.md)
 
 ## Pattern 4: Wizard lane plus injected DVRs
 
@@ -102,12 +108,24 @@ This is where guide-number offsets become especially important.
 Use the Plex-specific tooling when the tuner itself looks healthy but Plex behavior is still wrong:
 - `ghost-hunter`
 - Plex DVR lifecycle/API operations
-- hidden-grab recovery runbook
 - oracle tooling for wizard/channelmap experiments
 
 Relevant docs:
 - [Plex DVR lifecycle and API](../reference/plex-dvr-lifecycle-and-api.md)
-- [plex-hidden-live-grab-recovery](../runbooks/plex-hidden-live-grab-recovery.md)
+
+## Recovery: duplicate or empty Plex DVR rows
+
+Empty duplicate DVRs usually mean more than one Tunerr process or registration path touched the same Plex server with the same or near-identical tuner identity.
+
+Recovery order:
+1. Stop every unintended Tunerr process.
+2. Keep only the intended binary, systemd service, or Docker container running.
+3. Verify `IPTV_TUNERR_BASE_URL` returns the expected lineup and guide from the host Plex should use.
+4. Delete the empty duplicate DVR rows in Plex.
+5. Register or reconcile from the one intended Tunerr instance.
+6. Confirm Plex has the expected DVR count and channel mappings before restarting automation.
+
+Do not fix duplicates by repeatedly registering. That usually creates more stale rows. Fix ownership first, then clean Plex.
 
 ## Decision guide
 

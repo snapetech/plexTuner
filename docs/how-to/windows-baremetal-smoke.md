@@ -56,4 +56,3 @@ Artifacts land under:
 ## See also
 
 - [macOS bare-metal smoke](./mac-baremetal-smoke.md)
-- [VOD WebDAV client harness](./vod-webdav-client-harness.md)

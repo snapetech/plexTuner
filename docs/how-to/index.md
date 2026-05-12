@@ -15,13 +15,10 @@ Goal → preconditions → steps → verify.
 | [connect-plex-to-iptv-tunerr](connect-plex-to-iptv-tunerr.md) | Plex UI wizard vs **`-register-plex`** vs API; channelmap, 480 limit, empty-guide pitfalls. |
 | [first-push](first-push.md) | Add remote and push (GitHub / GitLab / self-hosted). |
 | [deployment](deployment.md) | Deploy IPTV Tunerr: binary, Docker, systemd; **`run`** vs **`index`/`serve`**; local QA/smoke script. |
-| [run-without-kubernetes](run-without-kubernetes.md) | Bare-metal / local-only path when you want the app without cluster assumptions. |
 | [mount-vodfs-and-register-plex-libraries](mount-vodfs-and-register-plex-libraries.md) | Linux VODFS mount, `-cache`, Plex library registration. |
 | [mac-baremetal-smoke](mac-baremetal-smoke.md) | Cross-build, wake, SSH, and prove a real macOS host path from Linux. |
 | [windows-baremetal-smoke](windows-baremetal-smoke.md) | Prepare and run the Windows host smoke lane when the VM/host is ready. |
-| [vod-webdav-client-harness](vod-webdav-client-harness.md) | Replay macOS Finder/WebDAVFS and Windows MiniRedir request shapes against `vod-webdav`. |
 | [fix-guide-data-with-epg-doctor](fix-guide-data-with-epg-doctor.md) | Diagnose and fix bad guide data, placeholder-only channels, and weak XMLTV matches. |
-| [deploy-and-connect-plex-home](deploy-and-connect-plex-home.md) | Deploy IPTV Tunerr in-cluster and connect Plex at plex.home (one-command deploy, zero-touch or manual add). |
 | [package-test-builds](package-test-builds.md) | Build cross-platform test bundles (Linux/macOS/Windows) for binary + supervisor testing. |
 | [tester-handoff-checklist](tester-handoff-checklist.md) | Final handoff checklist for sending tester bundles and collecting useful bug reports. |
 | [tester-release-notes-draft](tester-release-notes-draft.md) | Draft release notes / tester-facing summary for current validation builds. |

@@ -30,12 +30,12 @@ func plexLabelProxyCommands() []commandSpec {
 	plexURL := cmd.String("plex-url", "", "Convenience alias for -upstream")
 	stripPrefix := cmd.String("strip-prefix", "iptvtunerr-", "Prefix to strip from DVR lineup titles when forming labels (\"\" disables)")
 	refreshSec := cmd.Int("refresh-seconds", 30, "TTL for the cached /livetv/dvrs label map")
-	spoofIdentity           := cmd.Bool("spoof-identity", false, "Also rewrite root MediaContainer friendlyName for Plex Web (carries identity-cache risk; see runbook)")
-	elevateAll              := cmd.Bool("elevate-all", false, "Inject owner token on every proxied request (full token spoof — Live TV works, watch history is shared with owner)")
-	elevateLiveTV           := cmd.Bool("elevate-live-tv", false, "Use owner token only for Live TV classified paths; normal library paths pass through as the user")
-	elevateDiscoveryOnly    := cmd.Bool("elevate-discovery-only", false, "With -elevate-live-tv: only elevate browse/EPG paths, not stream start")
-	userHeader              := cmd.Bool("user-header", false, "With -elevate-live-tv: inject X-Plex-User header with the original client token when elevating")
-	neutralizeOwnerHistory  := cmd.Bool("neutralize-owner-history", false, "With -elevate-live-tv: fire /:/unscrobble under the owner token for each Live TV timeline event")
+	spoofIdentity := cmd.Bool("spoof-identity", false, "Also rewrite root MediaContainer friendlyName for Plex Web (carries identity-cache risk; see runbook)")
+	elevateAll := cmd.Bool("elevate-all", false, "Inject owner token on every proxied request (full token spoof — Live TV works, watch history is shared with owner)")
+	elevateLiveTV := cmd.Bool("elevate-live-tv", false, "Use owner token only for Live TV classified paths; normal library paths pass through as the user")
+	elevateDiscoveryOnly := cmd.Bool("elevate-discovery-only", false, "With -elevate-live-tv: only elevate browse/EPG paths, not stream start")
+	userHeader := cmd.Bool("user-header", false, "With -elevate-live-tv: inject X-Plex-User header with the original client token when elevating")
+	neutralizeOwnerHistory := cmd.Bool("neutralize-owner-history", false, "With -elevate-live-tv: fire /:/unscrobble under the owner token for each Live TV timeline event")
 
 	return []commandSpec{
 		{

@@ -6,7 +6,7 @@ They are not part of the supported IPTV Tunerr CLI surface, packaging flow, or C
 
 Examples:
 - early HDHomeRun network mode smoke scripts
-- environment-specific wrappers used during local/k3s troubleshooting
+- environment-specific wrappers used during local troubleshooting
 
 Prefer:
 - `scripts/verify`

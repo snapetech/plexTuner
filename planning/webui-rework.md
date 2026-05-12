@@ -117,7 +117,7 @@ Today the writable surfaces are scattered: deck settings JSON, cookie jar JSON, 
 - `notifications`, `system_events` (rolling, capped)
 - `kv_settings` (UI prefs, runtime toggles)
 
-Migration path: existing programming/recipe/order JSON, deck settings, autopilot state stay where they are for one release; a one-shot `iptv-tunerr migrate-to-db` imports them. Provider/HDHR config stays env-var-first (operators rely on it for compose/k8s); DB rows are an override layer.
+Migration path: existing programming/recipe/order JSON, deck settings, autopilot state stay where they are for one release; a one-shot `iptv-tunerr migrate-to-db` imports them. Provider/HDHR config stays env-var-first (operators rely on it for compose); DB rows are an override layer.
 
 ### 4.2 New `/api/v2/` surface
 

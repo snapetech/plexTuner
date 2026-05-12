@@ -13,7 +13,7 @@ Purpose:
   - swap in catalog.seriesfixed.json as the main catalog
   - remount VODFS cleanly with the repaired catalog
 
-Defaults are aligned to the common k3s host-run layout used in testing.
+Defaults are aligned to the common host-run layout used in testing.
 
 Options:
   --run-dir PATH            Default: /srv/iptvtunerr-vodfs-run

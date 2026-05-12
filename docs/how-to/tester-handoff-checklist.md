@@ -35,8 +35,6 @@ ls dist/test-releases/<version>/packages/SHA256SUMS.txt
 - `docs/testing-and-supervisor-config.md`
 
 4. Confirm examples are included
-- `examples/iptvtunerr-supervisor-multi.example.json`
-- `examples/iptvtunerr-supervisor-singlepod.example.yaml`
 
 ## If using a tag-based release (recommended)
 
@@ -104,4 +102,3 @@ See also
 --------
 - [package-test-builds](package-test-builds.md)
 - [testing-and-supervisor-config](../reference/testing-and-supervisor-config.md)
-- [plex-hidden-live-grab-recovery](../runbooks/plex-hidden-live-grab-recovery.md)

@@ -56,8 +56,6 @@ mkdir -p "$REL_DIR/packages" "$REL_DIR/examples" "$REL_DIR/docs"
 cp "$PKG_DIR"/SHA256SUMS.txt "$REL_DIR/packages/"
   cp "$PKG_DIR"/*.zip "$REL_DIR/packages/" 2>/dev/null || true
 
-cp k8s/iptvtunerr-supervisor-multi.example.json "$REL_DIR/examples/"
-cp k8s/iptvtunerr-supervisor-singlepod.example.yaml "$REL_DIR/examples/"
 cp docs/how-to/package-test-builds.md "$REL_DIR/docs/"
 cp docs/reference/testing-and-supervisor-config.md "$REL_DIR/docs/"
 
@@ -67,7 +65,7 @@ Version: $VERSION
 Commit:  $COMMIT
 Built:   $DATE_UTC
 
-This bundle is for binary/supervisor testing.
+This bundle is for binary testing.
 
 Supported by packaged binaries (cross-platform):
   - Core tuner paths: run / serve / supervise
@@ -79,11 +77,10 @@ Platform-specific limits:
   - macOS: no VODFS mount (Linux-only)
   - Windows: no VODFS mount (Linux-only)
 
-Quick start (supervisor test):
+Quick start:
   1. Extract a package for your platform from packages/
-  2. Copy examples/iptvtunerr-supervisor-multi.example.json beside the binary
-  3. Edit child envs/URLs
-  4. Run: iptv-tunerr supervise -config ./iptvtunerr-supervisor-multi.example.json
+  2. Configure environment variables or an env file
+  3. Run: iptv-tunerr run -mode=easy
 
 Verify checksums:
   cd packages && sha256sum -c SHA256SUMS.txt

@@ -379,14 +379,14 @@ environment variable leakage to child instances. Add `"emby"` and/or `"jellyfin"
   "emby": {
     "host": "http://emby:8096",
     "token": "YOUR_EMBY_API_KEY",
-    "tunerUrl": "http://iptvtunerr-supervisor.plex.svc:5004",
+    "tunerUrl": "http://127.0.0.1:5004",
     "stateFile": "/data/emby-state.json",
     "interval": "5m"
   },
   "jellyfin": {
     "host": "http://jellyfin:8096",
     "token": "YOUR_JELLYFIN_API_KEY",
-    "tunerUrl": "http://iptvtunerr-supervisor.plex.svc:5004",
+    "tunerUrl": "http://127.0.0.1:5004",
     "stateFile": "/data/jellyfin-state.json",
     "interval": "5m"
   },
@@ -413,7 +413,7 @@ process environments so children never attempt to re-register.
 
 ## Kubernetes
 
-See `k8s/emby-test.yaml` and `k8s/jellyfin-test.yaml` for standalone single-instance Deployments.
+Run standalone host services with distinct ports when testing multiple media servers.
 For production, prefer the supervisor approach above — a single pod handles all tuner instances
 plus Emby/Jellyfin registration.
 

@@ -5,7 +5,6 @@
   <a href="https://github.com/snapetech/iptvtunerr/issues">Issues</a> •
   <a href="#core-capabilities">Features</a> •
   <a href="#quick-start">Quick Start</a> •
-  <a href="#kubernetes">Kubernetes</a> •
   <a href="#cloudflare-provider-support">Cloudflare</a>
 </p>
 <p align="center">
@@ -93,7 +92,6 @@ The current limits are deliberate: Tunerr does not clone Plex passwords, it does
 - [Setup Paths](#setup-paths) — wizard · programmatic · supervisor · HDHR network mode
 - [Supervisor Mode](#supervisor-mode)
 - [VOD Filesystem and WebDAV](#vod-filesystem-and-webdav)
-- [Kubernetes](#kubernetes)
 - [CLI Commands](#cli-commands)
 - [Key Environment Variables](#key-environment-variables)
 - [Platform Support](#platform-support)
@@ -222,7 +220,6 @@ The clean repeatable Plex pattern is now:
 - distinct `IPTV_TUNERR_BASE_URL`, `IPTV_TUNERR_DEVICE_ID`, and `IPTV_TUNERR_FRIENDLY_NAME` per instance
 - optional `IPTV_TUNERR_GUIDE_NUMBER_OFFSET` on the second DVR so guide numbers do not overlap
 
-A shipped example supervisor config for this exact pattern lives at `k8s/iptvtunerr-supervisor-general-sports.example.json`.
 For Docker, systemd, and bare-metal: [`docs/how-to/deployment.md`](docs/how-to/deployment.md)
 
 ---
@@ -1168,10 +1165,6 @@ Run multiple virtual tuner instances from a single process — each on its own p
 iptv-tunerr supervise -config /path/to/supervisor.json
 ```
 
-Examples:
-- [`k8s/iptvtunerr-supervisor-multi.example.json`](k8s/iptvtunerr-supervisor-multi.example.json)
-- [`k8s/iptvtunerr-supervisor-singlepod.example.yaml`](k8s/iptvtunerr-supervisor-singlepod.example.yaml)
-
 Config reference: [`docs/reference/testing-and-supervisor-config.md`](docs/reference/testing-and-supervisor-config.md)
 
 ---
@@ -1190,7 +1183,7 @@ iptv-tunerr plex-vod-register \
 
 By default this creates `VOD` (TV) and `VOD-Movies` libraries. Use `-shows-only` or `-movies-only` to register one at a time.
 
-The mount path must be visible to the Plex server. In Kubernetes, VODFS mounts inside a helper container are not automatically visible to the Plex pod without host-level mounts or `MountPropagation`.
+The mount path must be visible to the Plex server process.
 
 Guide: [`docs/how-to/mount-vodfs-and-register-plex-libraries.md`](docs/how-to/mount-vodfs-and-register-plex-libraries.md)
 
@@ -1203,30 +1196,6 @@ iptv-tunerr vod-webdav -catalog ./catalog.json -cache ./cache -addr 127.0.0.1:58
 That serves the same synthetic `Movies/` / `TV/` tree over read-only WebDAV so the OS can mount it natively. Reads still need `-cache` / `IPTV_TUNERR_CACHE` so Tunerr has somewhere to materialize bytes on demand.
 
 Platform details: [`docs/how-to/platform-requirements.md`](docs/how-to/platform-requirements.md)
-Host validation paths: [`docs/how-to/mac-baremetal-smoke.md`](docs/how-to/mac-baremetal-smoke.md) · [`docs/how-to/windows-baremetal-smoke.md`](docs/how-to/windows-baremetal-smoke.md) · [`docs/how-to/vod-webdav-client-harness.md`](docs/how-to/vod-webdav-client-harness.md)
-
----
-
-## Kubernetes
-
-Single-command deployment:
-
-```bash
-./k8s/standup-local-cluster.sh
-```
-
-Or step-by-step with env-based credentials:
-
-```bash
-IPTV_TUNERR_PROVIDER_USER='user' \
-IPTV_TUNERR_PROVIDER_PASS='pass' \
-IPTV_TUNERR_PROVIDER_URL='https://provider.com' \
-./k8s/deploy-hdhr-one-shot.sh --static
-```
-
-Full K8s guide: [`k8s/README.md`](k8s/README.md)
-
-**Probes:** example manifests use **`GET /readyz`** for **`readinessProbe`** (JSON **`ready`** / **`not_ready`**; **503** until the catalog has live channels). **`GET /healthz`** is the same HTTP gate with **`ok`** / **`loading`** plus **`source_ready`**. Prefer **`/discover.json`** for **liveness** during long first-time catalog builds (it stays **200** even with zero channels). Quick checks: [runbook §8](docs/runbooks/iptvtunerr-troubleshooting.md#8-tuner-endpoints-sanity-check).
 
 ---
 
@@ -1512,7 +1481,6 @@ internal/catalog/     Normalized channel/VOD data model
 internal/vodfs/       VOD filesystem mount (Linux only)
 internal/vodwebdav/   Read-only WebDAV VOD surface for cross-platform mounting
 internal/epglink/     EPG match reporting
-k8s/                  Manifests, supervisor examples, deploy scripts
 scripts/              Packaging, Plex ops helpers, analysis tools
 docs/                 Reference, how-to guides, runbooks
 ```
@@ -1568,10 +1536,7 @@ docs/                 Reference, how-to guides, runbooks
 
 **Runbooks**
 - [`docs/runbooks/iptvtunerr-troubleshooting.md`](docs/runbooks/iptvtunerr-troubleshooting.md) — **`/healthz`**, **`/readyz`**, harnesses, **HR-***
-- [`docs/runbooks/plex-hidden-live-grab-recovery.md`](docs/runbooks/plex-hidden-live-grab-recovery.md)
 - [`docs/runbooks/plex-live-tv-entitlement-proxy.md`](docs/runbooks/plex-live-tv-entitlement-proxy.md)
-- [`docs/runbooks/plex-in-cluster.md`](docs/runbooks/plex-in-cluster.md)
-- [`k8s/README.md`](k8s/README.md) — Cluster deploy, verify **`curl`** snippets
 
 **Development**
 - [`AGENTS.md`](AGENTS.md) — Agent/handoff workflow
@@ -1609,7 +1574,7 @@ This project is dual-licensed under the GNU Affero General Public License v3.0-o
 - **Provider-account pooling is deeper:** Tunerr now spreads live sessions across distinct account credentials, learns tighter per-account upstream caps from real limit responses, persists those learned caps across restarts, and exposes them on `/provider/profile.json`.
 - **Cross-platform VOD parity is stronger:** Linux keeps native `mount`, while macOS/Windows use the read-only `vod-webdav` surface with explicit protocol contract, client-matrix harnesses, baseline-vs-host diff tooling, and a passing macOS bare-metal smoke lane.
 - **Xtream parity is broader:** downstream users now get entitled `player_api.php`, `get.php`, and `xmltv.php` exports backed by Tunerr’s real live/VOD/series/guide/virtual-channel pipeline instead of a live-only starter.
-- **Startup and guide readiness are less deceptive:** `/guide.xml` returns `503` with a visible loading placeholder until the first real merged guide is ready, and `/readyz` / `/healthz` remain the canonical startup gates for operators and k8s.
+- **Startup and guide readiness are less deceptive:** `/guide.xml` returns `503` with a visible loading placeholder until the first real merged guide is ready, and `/readyz` / `/healthz` remain the canonical startup gates for operators.
 - **Shared HTTP idle pool**: **`IPTV_TUNERR_HTTP_MAX_IDLE_CONNS`**, **`IPTV_TUNERR_HTTP_IDLE_CONN_TIMEOUT_SEC`** across most subsystems (**HR-010**) — [plex-livetv-http-tuning](docs/reference/plex-livetv-http-tuning.md).
 - **Live-race harness + PMS**: optional Plex **`/status/sessions`** snapshots during **`scripts/live-race-harness.sh`** when **`PMS_URL`** + token are set — report summarizes players/sessions (**HR-002** / **HR-003**).
 - **Stream-compare harness how-to**: [docs/how-to/stream-compare-harness.md](docs/how-to/stream-compare-harness.md) (direct vs Tunerr + **`stream-compare-report.py`**; [runbook §9](docs/runbooks/iptvtunerr-troubleshooting.md#9-direct-upstream-vs-tunerr-comparison-harness)).

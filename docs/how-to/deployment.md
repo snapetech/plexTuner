@@ -7,7 +7,6 @@ tags: [how-to, deployment, docker, systemd, binary]
 
 # Deploy IPTV Tunerr
 
-Deploy IPTV Tunerr on any host: **binary**, **Docker**, or **systemd**. For Kubernetes, see [k8s/README.md](../../k8s/README.md).
 
 See also:
 - [README](../../README.md)
@@ -29,6 +28,20 @@ See [Platform requirements and installation](platform-requirements.md) for FFmpe
   - Plex, Emby, and Jellyfin can all use the same tuner and guide endpoints.
   - If you only need a standard setup, stay on this page.
   - If you need advanced Plex multi-DVR or injected-DVR workflows, switch to [Plex ops patterns](plex-ops-patterns.md).
+
+## Supported deployment contract
+
+IPTV Tunerr is supported as a single reachable tuner process per Plex DVR identity. Run it as a local binary, a persistent systemd service, or a Docker/container process on a host. The media server must reach `IPTV_TUNERR_BASE_URL` directly, and that URL should stay stable across restarts.
+
+For Plex, this rule matters more than the process manager:
+- one active Tunerr instance per Plex DVR device identity and friendly name
+- one canonical `IPTV_TUNERR_BASE_URL` for that instance
+- one registration owner for a given Plex DVR row
+- no duplicate background jobs registering the same tuner into the same Plex server
+
+If you intentionally run multiple DVR buckets, give each bucket a distinct base URL or port, distinct device/friendly-name settings, and a non-overlapping lineup. See [Plex ops patterns](plex-ops-patterns.md) before doing that.
+
+Avoid changing the base URL, device ID, friendly name, or lineup split casually. Plex treats those as part of the DVR identity/mapping surface, so accidental duplication can create empty or stale DVR rows.
 
 ---
 
@@ -60,7 +73,9 @@ For Emby/Jellyfin registration, see [Emby and Jellyfin Support](../emby-jellyfin
 ./iptv-tunerr serve -addr :5004 # tuner only (no re-index)
 ```
 
-**Add tuner in Plex:** Settings → Live TV & DVR → Set up → Device URL = your `IPTV_TUNERR_BASE_URL`, Guide URL = `$IPTV_TUNERR_BASE_URL/guide.xml`.
+**Add tuner in Plex:** Settings -> Live TV & DVR -> Set up -> Device URL = your `IPTV_TUNERR_BASE_URL`, Guide URL = `$IPTV_TUNERR_BASE_URL/guide.xml`.
+
+After registration, confirm Plex has exactly the DVR rows you expect. For a simple setup that means one IPTV Tunerr DVR. If Plex shows empty duplicates, stop extra Tunerr processes first, then remove the empty Plex DVR rows and register again from the single intended service.
 
 ### Optional: built-in stale Live TV session reaper (Plex-focused)
 
@@ -103,7 +118,7 @@ Notes:
 To run multiple DVR buckets in one app/container instead of one pod per bucket:
 
 ```bash
-./iptv-tunerr supervise -config ./k8s/iptvtunerr-supervisor-multi.example.json
+./iptv-tunerr supervise -config ./supervisor.json
 ```
 
 This starts multiple child `iptv-tunerr run` processes with per-instance args/env from a JSON config.
@@ -112,7 +127,7 @@ If you are using this for category DVR fleets or mixed wizard-plus-injected Plex
 
 Important HDHR note:
 - Only one child should enable `IPTV_TUNERR_HDHR_NETWORK_MODE=true` on the default HDHR ports (`65001`), unless you intentionally assign different HDHR ports.
-- HDHR LAN discovery is UDP broadcast-based; in Kubernetes this usually requires `hostNetwork`/host port exposure, not just a Service/Ingress.
+- HDHR LAN discovery is UDP broadcast-based; expose the HDHR ports directly on the host when using network discovery.
 
 ---
 
@@ -179,6 +194,31 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:5004/discover.json   # e
 ```
 
 Example unit: [docs/systemd/iptvtunerr.service.example](../systemd/iptvtunerr.service.example).
+
+### Internal host pattern
+
+For our own always-on Plex/Tunerr host, use systemd as the source of truth:
+
+```bash
+sudo systemctl status iptvtunerr
+curl -s http://127.0.0.1:5004/discover.json | jq .
+curl -s http://127.0.0.1:5004/lineup_status.json | jq .
+```
+
+Operational rules:
+- keep the active `.env` under the service working directory
+- keep `IPTV_TUNERR_BASE_URL` pointed at the stable LAN address Plex uses
+- roll back by installing the previous binary and restarting the same service
+- do not start a second registration path while the service is enabled
+- when testing another instance, use a different port and do not point it at production Plex registration
+
+Useful checks:
+
+```bash
+sudo journalctl -u iptvtunerr -n 200 --no-pager
+curl -s -o /dev/null -w "%{http_code}\n" "$IPTV_TUNERR_BASE_URL/discover.json"
+curl -s -o /dev/null -w "%{http_code}\n" "$IPTV_TUNERR_BASE_URL/guide.xml"
+```
 
 ---
 

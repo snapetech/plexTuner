@@ -68,7 +68,3 @@ Key files:
 - `out/vod-webdav.log`
 - `out/vod-webdav-client/mac-selfhost/report.txt`
 - `header-diff.txt` when a local baseline bundle exists
-
-## See also
-
-- [VOD WebDAV client harness](./vod-webdav-client-harness.md)

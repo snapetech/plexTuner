@@ -250,7 +250,7 @@ func (r *plexSessionReaper) observeAndOptionallyStop(ctx context.Context, observ
 		report.Notes = append(report.Notes, "single-snapshot mode: stale classification is limited without observing offset/timestamp movement over time")
 	}
 	if report.StaleCount > 0 {
-		report.Runbook = firstNonEmptyString(report.Runbook, "docs/runbooks/plex-hidden-live-grab-recovery.md")
+		report.Runbook = firstNonEmptyString(report.Runbook, "docs/runbooks/iptvtunerr-troubleshooting.md")
 		report.SafeActions = append(report.SafeActions, "inspect_visible_stale_sessions")
 		if stop {
 			report.RecommendedAction = "Visible stale sessions were classified and stop mode was enabled. If tunes are still blocked afterward, escalate to hidden-grab recovery."
@@ -266,7 +266,7 @@ func (r *plexSessionReaper) observeAndOptionallyStop(ctx context.Context, observ
 		report.HiddenGrabSuspected = true
 		report.RecommendedAction = "If channel tunes are still blocked and IptvTunerr sees no /stream requests, run the guarded hidden-grab recovery helper."
 		report.RecoveryCommand = "./scripts/plex-hidden-grab-recover.sh --dry-run"
-		report.Runbook = "docs/runbooks/plex-hidden-live-grab-recovery.md"
+		report.Runbook = "docs/runbooks/iptvtunerr-troubleshooting.md"
 		report.SafeActions = append(report.SafeActions, "run_hidden_grab_recovery_dry_run")
 		report.Notes = append(report.Notes, "no visible live sessions found; hidden Plex grabs can still require external recovery if tunes remain blocked")
 	}

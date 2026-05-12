@@ -161,7 +161,7 @@ Dry-run:
 ./iptv-tunerr plex-dvr-cutover \
   -plex-url http://127.0.0.1:32400 \
   -token "$PLEX_TOKEN" \
-  -map k8s/iptvtunerr-supervisor-cutover-map.example.tsv
+  -map cutover-map.tsv
 ```
 
 Apply:

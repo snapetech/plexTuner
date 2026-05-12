@@ -370,7 +370,7 @@ Common flags:
 - `-out`
 
 Use for:
-- migrating injected DVRs from dead `.plex.svc` URIs to reachable hostnames
+- migrating injected DVRs from dead service-DNS URIs to reachable hostnames
 - replaying unsupported PMS registration manually but repeatably
 - proving whether a DVR failure is fixed by re-registering against a new tuner URI
 
