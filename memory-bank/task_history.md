@@ -1,3 +1,13 @@
+## 2026-05-12 - Block repeated bad Plex Live TV elevation attempts
+
+- Added an in-process temporary block for repeated missing-token or unauthorized-token Live TV elevation attempts from the same apparent source.
+- Default policy: 5 failed Live TV elevation attempts within 5 minutes blocks that source from Live TV entitlement paths for 30 minutes; ordinary non-Live-TV paths are not blocked by this guard.
+- Added redacted audit outcomes for block creation (`bad_actor_blocked`) and blocked requests (`blocked_bad_actor`).
+- Verification: `go test -count=1 ./internal/plexlabelproxy` passed; `./scripts/verify` passed.
+- Live deploy: installed the patched proxy binary and restarted `plex-live-tv-proxy.service`.
+- Live validation: `/library/sections` without a token returned `401` without an audit denial; six bad Live TV requests from a synthetic source returned `403` for the first five and `429` for the sixth, with redacted block audit logs.
+- Monitoring: watched the live audit journal for 3 minutes after deploy; observed authorized Live TV elevation only, plus the synthetic block validation.
+
 ## 2026-05-12 - Add Plex Live TV proxy security audit logging
 
 - Added redacted `plexlabelproxy_audit` log lines for Live TV owner-token elevation, missing-token denial, and unauthorized-token denial decisions.

@@ -164,11 +164,19 @@ elevation decision that matters operationally:
   elevation path and was not elevated
 - `outcome=deny_unauthorized_token` means a token was present but could not
   access this Plex server and was not elevated
+- `outcome=bad_actor_blocked` means a source crossed the repeated-denial
+  threshold and is now temporarily blocked
+- `outcome=blocked_bad_actor` means a request was rejected by that temporary
+  block before it reached PMS
 
 Audit lines are prefixed with `plexlabelproxy_audit:` and include method, path,
 Live TV classifier booleans, source address, `X-Forwarded-For`,
 `CF-Connecting-IP`, and a short SHA-256 token fingerprint. Raw Plex tokens are
 not logged.
+
+By default, five failed Live TV elevation attempts from the same apparent source
+inside five minutes block that source from Live TV entitlement paths for thirty
+minutes. The block is in-process, so restarting the proxy clears it.
 
 Useful checks:
 

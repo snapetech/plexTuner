@@ -275,6 +275,37 @@ func TestProxy_DoesNotElevateUnauthenticatedLiveTVRequest(t *testing.T) {
 	}
 }
 
+func TestProxy_DoesNotAuditMissingTokenForNonElevationPath(t *testing.T) {
+	var logBuf bytes.Buffer
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:      up.URL,
+		Token:         "label-token",
+		OwnerToken:    "owner-token",
+		ElevateLiveTV: true,
+		Logger:        log.New(&logBuf, "", 0),
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/library/sections", nil)
+	proxy.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d", rec.Code)
+	}
+	if strings.Contains(logBuf.String(), "plexlabelproxy_audit:") {
+		t.Fatalf("non-elevation path should not produce audit denial, got %s", logBuf.String())
+	}
+}
+
 func TestProxy_DoesNotElevateTokenWithoutServerAccess(t *testing.T) {
 	var gotToken string
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -343,6 +374,61 @@ func TestProxy_AuditLogsElevationDenialsWithoutRawTokens(t *testing.T) {
 		if !strings.Contains(logged, want) {
 			t.Fatalf("audit log missing %q in %s", want, logged)
 		}
+	}
+	if strings.Contains(logged, "random-token") || strings.Contains(logged, "owner-token") {
+		t.Fatalf("audit log leaked raw token: %s", logged)
+	}
+}
+
+func TestProxy_TemporarilyBlocksRepeatedBadElevationAttempts(t *testing.T) {
+	var logBuf bytes.Buffer
+	var upstreamHits int
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamHits++
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer allowTuners="0"/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:            up.URL,
+		Token:               "label-token",
+		OwnerToken:          "owner-token",
+		ElevateLiveTV:       true,
+		TokenAuthorizer:     staticTokenAuthorizer{"shared-user-token": true},
+		Logger:              log.New(&logBuf, "", 0),
+		AbuseBlockThreshold: 2,
+		AbuseBlockWindow:    time.Minute,
+		AbuseBlockDuration:  time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/livetv/dvrs?X-Plex-Token=random-token", nil)
+		req.Header.Set("X-Forwarded-For", "203.0.113.44")
+		rec := httptest.NewRecorder()
+		proxy.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("attempt %d status=%d", i+1, rec.Code)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/livetv/dvrs?X-Plex-Token=random-token", nil)
+	req.Header.Set("X-Forwarded-For", "203.0.113.44")
+	rec := httptest.NewRecorder()
+	proxy.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("blocked request status=%d want 429", rec.Code)
+	}
+	if upstreamHits != 2 {
+		t.Fatalf("blocked request should not hit upstream; hits=%d", upstreamHits)
+	}
+	logged := logBuf.String()
+	if !strings.Contains(logged, "outcome=bad_actor_blocked") || !strings.Contains(logged, "outcome=blocked_bad_actor") {
+		t.Fatalf("expected block audit lines, got %s", logged)
 	}
 	if strings.Contains(logged, "random-token") || strings.Contains(logged, "owner-token") {
 		t.Fatalf("audit log leaked raw token: %s", logged)

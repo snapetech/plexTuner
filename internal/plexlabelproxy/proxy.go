@@ -97,6 +97,19 @@ type Config struct {
 	// that a non-empty token exists; production CLI wiring installs a Plex API
 	// authorizer so random or unauthenticated callers are not elevated.
 	TokenAuthorizer TokenAuthorizer
+
+	// AbuseBlockThreshold controls how many failed elevation attempts from the
+	// same apparent client are allowed inside AbuseBlockWindow before the proxy
+	// temporarily blocks that source. Zero uses a conservative default.
+	AbuseBlockThreshold int
+
+	// AbuseBlockWindow controls the rolling window for failed elevation
+	// attempts. Zero uses a conservative default.
+	AbuseBlockWindow time.Duration
+
+	// AbuseBlockDuration controls how long a source is blocked after crossing
+	// AbuseBlockThreshold. Zero uses a conservative default.
+	AbuseBlockDuration time.Duration
 }
 
 // Proxy implements the reverse proxy with rewrite hooks.
@@ -115,6 +128,22 @@ type Proxy struct {
 	// timeline/scrobble events under the correct user for all content types.
 	sessionMu    sync.Mutex
 	sessionUsers map[string]string
+
+	abuseMu    sync.Mutex
+	abuseState map[string]abuseEntry
+	abuseCfg   abuseConfig
+}
+
+type abuseConfig struct {
+	threshold int
+	window    time.Duration
+	duration  time.Duration
+}
+
+type abuseEntry struct {
+	firstFailure time.Time
+	failures     int
+	blockedUntil time.Time
 }
 
 func (p *Proxy) warnNonXMLOnce(path, ct string) {
@@ -159,7 +188,15 @@ func New(cfg Config) (*Proxy, error) {
 	if logger == nil {
 		logger = log.Default()
 	}
-	p := &Proxy{cfg: cfg, upstreamURL: u, logger: logger, authorizer: cfg.TokenAuthorizer}
+	p := &Proxy{
+		cfg:          cfg,
+		upstreamURL:  u,
+		logger:       logger,
+		authorizer:   cfg.TokenAuthorizer,
+		abuseState:   make(map[string]abuseEntry),
+		abuseCfg:     normalizeAbuseConfig(cfg),
+		sessionUsers: make(map[string]string),
+	}
 
 	rp := httputil.NewSingleHostReverseProxy(u)
 	if cfg.Transport != nil {
@@ -224,6 +261,7 @@ func (p *Proxy) canElevate(req *http.Request, originalToken string) bool {
 	token := strings.TrimSpace(originalToken)
 	if token == "" {
 		p.auditElevation(req, "deny_missing_token", token, "missing inbound Plex token")
+		p.recordBadElevationAttempt(req, token, "missing_token")
 		return false
 	}
 	if token == strings.TrimSpace(p.cfg.OwnerToken) {
@@ -236,6 +274,7 @@ func (p *Proxy) canElevate(req *http.Request, originalToken string) bool {
 		return true
 	}
 	p.auditElevation(req, "deny_unauthorized_token", token, "inbound Plex token is not authorized for this server")
+	p.recordBadElevationAttempt(req, token, "unauthorized_token")
 	return false
 }
 
@@ -258,6 +297,11 @@ func (p *Proxy) auditElevation(req *http.Request, outcome, token, reason string)
 
 // ServeHTTP implements http.Handler.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if p.isBlocked(r) {
+		p.auditElevation(r, "blocked_bad_actor", inboundPlexToken(r), "temporary block after repeated bad elevation attempts")
+		http.Error(w, "too many unauthorized requests", http.StatusTooManyRequests)
+		return
+	}
 	p.reverseProxy.ServeHTTP(w, r)
 }
 
@@ -348,6 +392,13 @@ func (p *Proxy) modifyResponse(resp *http.Response) error {
 // and injects any supplementary headers. originalToken is the client token
 // captured before this request was modified.
 func (p *Proxy) elevateLiveTVRequest(req *http.Request, originalToken string) {
+	if p.cfg.ElevateDiscoveryOnly {
+		if !IsLiveTVDiscoveryRequest(req) {
+			return
+		}
+	} else if !IsLiveTVRequest(req) {
+		return
+	}
 	if !p.canElevate(req, originalToken) {
 		return
 	}
@@ -434,6 +485,113 @@ func clientAddress(remoteAddr string) string {
 		return host
 	}
 	return strings.TrimSpace(remoteAddr)
+}
+
+func inboundPlexToken(req *http.Request) string {
+	if req == nil {
+		return ""
+	}
+	if token := req.URL.Query().Get("X-Plex-Token"); token != "" {
+		return token
+	}
+	return req.Header.Get("X-Plex-Token")
+}
+
+func normalizeAbuseConfig(cfg Config) abuseConfig {
+	out := abuseConfig{
+		threshold: 5,
+		window:    5 * time.Minute,
+		duration:  30 * time.Minute,
+	}
+	if cfg.AbuseBlockThreshold > 0 {
+		out.threshold = cfg.AbuseBlockThreshold
+	}
+	if cfg.AbuseBlockWindow > 0 {
+		out.window = cfg.AbuseBlockWindow
+	}
+	if cfg.AbuseBlockDuration > 0 {
+		out.duration = cfg.AbuseBlockDuration
+	}
+	return out
+}
+
+func (p *Proxy) recordBadElevationAttempt(req *http.Request, token, reason string) {
+	key := abuseKey(req)
+	if key == "" {
+		return
+	}
+	now := time.Now()
+	cfg := p.abuseCfg
+
+	p.abuseMu.Lock()
+	entry := p.abuseState[key]
+	if entry.firstFailure.IsZero() || now.Sub(entry.firstFailure) > cfg.window {
+		entry = abuseEntry{firstFailure: now}
+	}
+	entry.failures++
+	if entry.failures >= cfg.threshold {
+		entry.blockedUntil = now.Add(cfg.duration)
+	}
+	p.abuseState[key] = entry
+	p.abuseMu.Unlock()
+
+	if !entry.blockedUntil.IsZero() && now.Before(entry.blockedUntil) {
+		p.logger.Printf(
+			"plexlabelproxy_audit: outcome=bad_actor_blocked source=%s failures=%d window=%s blocked_for=%s token_fp=%s reason=%q",
+			key,
+			entry.failures,
+			cfg.window,
+			time.Until(entry.blockedUntil).Round(time.Second),
+			tokenFingerprint(token),
+			reason,
+		)
+	}
+}
+
+func (p *Proxy) isBlocked(req *http.Request) bool {
+	if !IsLiveTVRequest(req) {
+		return false
+	}
+	key := abuseKey(req)
+	if key == "" {
+		return false
+	}
+	now := time.Now()
+	p.abuseMu.Lock()
+	entry, ok := p.abuseState[key]
+	if !ok || entry.blockedUntil.IsZero() {
+		p.abuseMu.Unlock()
+		return false
+	}
+	if now.After(entry.blockedUntil) {
+		delete(p.abuseState, key)
+		p.abuseMu.Unlock()
+		return false
+	}
+	p.abuseMu.Unlock()
+	return true
+}
+
+func abuseKey(req *http.Request) string {
+	if req == nil {
+		return ""
+	}
+	if ip := firstForwardedFor(req.Header); ip != "" {
+		return ip
+	}
+	if ip := firstHeader(req.Header, "CF-Connecting-IP"); ip != "" {
+		return ip
+	}
+	return clientAddress(req.RemoteAddr)
+}
+
+func firstForwardedFor(h http.Header) string {
+	raw := firstHeader(h, "X-Forwarded-For")
+	if raw == "" {
+		return ""
+	}
+	first, _, _ := strings.Cut(raw, ",")
+	return strings.TrimSpace(first)
 }
 
 // neutralizeOwnerScrobble checks whether an incoming /:/timeline, /:/scrobble,

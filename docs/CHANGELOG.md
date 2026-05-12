@@ -13,6 +13,11 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.63] — 2026-05-12
+
+### Security / Plex Live TV proxy
+- **Repeated bad Live TV elevation attempts are temporarily blocked:** after repeated missing-token or unauthorized-token elevation attempts from the same apparent source, `plex-label-proxy` now rejects Live TV entitlement-path requests before they reach PMS and emits redacted block audit logs.
+
 ## [v0.1.62] — 2026-05-12
 
 ### Security / Plex Live TV proxy
