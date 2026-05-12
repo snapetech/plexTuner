@@ -178,7 +178,9 @@ The command has two independent uses:
 - rewrite `/media/providers` and provider-scoped XML labels so multiple DVRs
   do not all render as the PMS server name
 - optionally, with `-elevate-live-tv`, elevate only Live TV requests to the PMS
-  owner token while ordinary library requests keep the user's own Plex token
+  owner token while ordinary library requests keep the user's own Plex token;
+  elevation requires an inbound Plex token that already has access to this
+  server
 
 Common flags:
 - `-listen` (default `IPTV_TUNERR_PLEX_LABEL_PROXY_LISTEN` or `127.0.0.1:33240`)
@@ -190,6 +192,8 @@ Common flags:
 - `-refresh-seconds` (default `30`)
 - `-spoof-identity` (rewrite root `friendlyName` for Plex Web label workarounds)
 - `-elevate-live-tv` (unsupported Plex workaround: replace tokens only on Live TV requests)
+- `-neutralize-owner-history` (replay elevated Live TV progress/scrobble events
+  under the original user token and remove owner-side watched marks)
 
 Env fallbacks:
 - `IPTV_TUNERR_PMS_URL` or `PLEX_HOST`

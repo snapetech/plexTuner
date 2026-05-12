@@ -102,6 +102,12 @@ func IsLiveTVRequest(req *http.Request) bool {
 	if req == nil || req.URL == nil {
 		return false
 	}
+	if !liveTVElevationMethod(req.Method) {
+		if strings.EqualFold(req.Method, http.MethodPost) && IsLiveTVStreamRequest(req) {
+			return true
+		}
+		return false
+	}
 	path := req.URL.EscapedPath()
 	switch {
 	case path == "/media/providers":
@@ -115,18 +121,11 @@ func IsLiveTVRequest(req *http.Request) bool {
 	case strings.HasPrefix(path, "/tv.plex.providers.epg.xmltv:"):
 		return true
 	}
-	for key, vals := range req.URL.Query() {
-		if liveTVText(key) {
-			return true
-		}
-		for _, v := range vals {
-			if liveTVText(v) {
-				return true
-			}
-		}
-	}
-	if liveTVText(req.Header.Get("Referer")) {
+	if IsLiveTVStreamRequest(req) {
 		return true
+	}
+	if path == "/" || path == "/identity" {
+		return refererIsLiveTV(req.Header.Get("Referer"))
 	}
 	return false
 }

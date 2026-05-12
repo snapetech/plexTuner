@@ -89,6 +89,12 @@ type Config struct {
 
 	// Transport overrides the proxy's HTTP transport. Nil uses the default.
 	Transport http.RoundTripper
+
+	// TokenAuthorizer verifies that an inbound client token already has access
+	// to this Plex server before the proxy borrows OwnerToken. Nil only checks
+	// that a non-empty token exists; production CLI wiring installs a Plex API
+	// authorizer so random or unauthenticated callers are not elevated.
+	TokenAuthorizer TokenAuthorizer
 }
 
 // Proxy implements the reverse proxy with rewrite hooks.
@@ -97,6 +103,7 @@ type Proxy struct {
 	upstreamURL  *url.URL
 	reverseProxy *httputil.ReverseProxy
 	logger       *log.Logger
+	authorizer   TokenAuthorizer
 
 	warnedMu sync.Mutex
 	warned   map[string]struct{}
@@ -150,7 +157,7 @@ func New(cfg Config) (*Proxy, error) {
 	if logger == nil {
 		logger = log.Default()
 	}
-	p := &Proxy{cfg: cfg, upstreamURL: u, logger: logger}
+	p := &Proxy{cfg: cfg, upstreamURL: u, logger: logger, authorizer: cfg.TokenAuthorizer}
 
 	rp := httputil.NewSingleHostReverseProxy(u)
 	if cfg.Transport != nil {
@@ -187,7 +194,7 @@ func New(cfg Config) (*Proxy, error) {
 		// the safer default for behind-ingress deployments).
 		req.Host = u.Host
 
-		if p.cfg.ElevateAll && strings.TrimSpace(p.cfg.OwnerToken) != "" {
+		if p.cfg.ElevateAll && strings.TrimSpace(p.cfg.OwnerToken) != "" && p.canElevate(req, originalToken) {
 			q := req.URL.Query()
 			q.Set("X-Plex-Token", p.cfg.OwnerToken)
 			req.URL.RawQuery = q.Encode()
@@ -209,6 +216,25 @@ func New(cfg Config) (*Proxy, error) {
 	}
 	p.reverseProxy = rp
 	return p, nil
+}
+
+func (p *Proxy) canElevate(req *http.Request, originalToken string) bool {
+	token := strings.TrimSpace(originalToken)
+	if token == "" {
+		p.logger.Printf("plexlabelproxy: refusing owner-token elevation for %s: missing inbound Plex token", req.URL.Path)
+		return false
+	}
+	if token == strings.TrimSpace(p.cfg.OwnerToken) {
+		return true
+	}
+	if p.authorizer == nil {
+		return true
+	}
+	if p.authorizer.AllowPlexToken(req.Context(), token) {
+		return true
+	}
+	p.logger.Printf("plexlabelproxy: refusing owner-token elevation for %s: inbound Plex token is not authorized for this server", req.URL.Path)
+	return false
 }
 
 // ServeHTTP implements http.Handler.
@@ -303,6 +329,9 @@ func (p *Proxy) modifyResponse(resp *http.Response) error {
 // and injects any supplementary headers. originalToken is the client token
 // captured before this request was modified.
 func (p *Proxy) elevateLiveTVRequest(req *http.Request, originalToken string) {
+	if !p.canElevate(req, originalToken) {
+		return
+	}
 	var elevated bool
 	if p.cfg.ElevateDiscoveryOnly {
 		elevated = ApplyLiveTVDiscoveryElevation(req, p.cfg.OwnerToken)

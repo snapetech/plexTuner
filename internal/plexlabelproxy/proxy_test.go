@@ -3,6 +3,7 @@ package plexlabelproxy
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,12 @@ import (
 	"testing"
 	"time"
 )
+
+type staticTokenAuthorizer map[string]bool
+
+func (a staticTokenAuthorizer) AllowPlexToken(_ context.Context, token string) bool {
+	return a[token]
+}
 
 const liveProvidersBody = `<?xml version="1.0" encoding="UTF-8"?>
 <MediaContainer size="2" friendlyName="plexKube">
@@ -238,6 +245,93 @@ func TestProxy_ElevatesOnlyLiveTVRequests(t *testing.T) {
 	}
 }
 
+func TestProxy_DoesNotElevateUnauthenticatedLiveTVRequest(t *testing.T) {
+	var gotToken string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotToken = r.URL.Query().Get("X-Plex-Token")
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer allowTuners="0"/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:        up.URL,
+		Token:           "label-token",
+		OwnerToken:      "owner-token",
+		ElevateLiveTV:   true,
+		TokenAuthorizer: staticTokenAuthorizer{"shared-user-token": true},
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/livetv/dvrs", nil)
+	proxy.ServeHTTP(rec, req)
+
+	if gotToken == "owner-token" {
+		t.Fatal("unauthenticated Live TV request must not receive owner token")
+	}
+}
+
+func TestProxy_DoesNotElevateTokenWithoutServerAccess(t *testing.T) {
+	var gotToken string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotToken = r.URL.Query().Get("X-Plex-Token")
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer allowTuners="0"/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:        up.URL,
+		Token:           "label-token",
+		OwnerToken:      "owner-token",
+		ElevateLiveTV:   true,
+		TokenAuthorizer: staticTokenAuthorizer{"shared-user-token": true},
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/livetv/dvrs?X-Plex-Token=random-token", nil)
+	proxy.ServeHTTP(rec, req)
+
+	if gotToken != "random-token" {
+		t.Fatalf("unauthorized token should pass through unchanged, got %q", gotToken)
+	}
+}
+
+func TestProxy_ElevatesTokenWithServerAccess(t *testing.T) {
+	var gotToken string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotToken = r.URL.Query().Get("X-Plex-Token")
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer allowTuners="0"/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:        up.URL,
+		Token:           "label-token",
+		OwnerToken:      "owner-token",
+		ElevateLiveTV:   true,
+		TokenAuthorizer: staticTokenAuthorizer{"shared-user-token": true},
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/livetv/dvrs?X-Plex-Token=shared-user-token", nil)
+	proxy.ServeHTTP(rec, req)
+
+	if gotToken != "owner-token" {
+		t.Fatalf("authorized token should be elevated, got %q", gotToken)
+	}
+}
+
 func TestProxy_RewritesAllowTunersWhenElevationEnabled(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")
@@ -266,11 +360,9 @@ func TestIsLiveTVRequest(t *testing.T) {
 		"/tv.plex.providers.epg.xmltv:767/grid": true,
 		"/video/:/transcode/universal/start.m3u8?path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8": true,
 		"/playQueues?uri=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8":                              true,
-		// Broad matching: any query param containing live TV text is elevated.
-		// Plex clients legitimately send live TV paths in arbitrary params.
-		"/library/sections?bait=%2Flivetv%2Fdvr":             true,
-		"/library/sections?path=%2Flivetv%2Fdvr":             true,
-		"/media/grabbers/tv.plex.grabbers.hdhomerun/devices": true,
+		"/library/sections?bait=%2Flivetv%2Fdvr":                                               false,
+		"/library/sections?path=%2Flivetv%2Fdvr":                                               false,
+		"/media/grabbers/tv.plex.grabbers.hdhomerun/devices":                                   true,
 	}
 	for target, want := range cases {
 		req := httptest.NewRequest(http.MethodGet, target, nil)
@@ -295,14 +387,23 @@ func TestIsLiveTVRequest_MediaProviders(t *testing.T) {
 	}
 }
 
-func TestIsLiveTVRequest_MutatingMethodsElevated(t *testing.T) {
-	// Broad matching: POST/PUT/etc. to Live TV paths are elevated. Plex clients
-	// send POST requests for play queue creation and DVR setup.
+func TestIsLiveTVRequest_MutatingMethodsNotElevated(t *testing.T) {
 	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
 		req := httptest.NewRequest(method, "/livetv/dvrs?X-Plex-Token=user-token", nil)
-		if !IsLiveTVRequest(req) {
-			t.Fatalf("%s /livetv/dvrs should be elevated under broad matching", method)
+		if IsLiveTVRequest(req) {
+			t.Fatalf("%s /livetv/dvrs must not be elevated", method)
 		}
+	}
+}
+
+func TestIsLiveTVRequest_PostPlayQueueElevatedOnlyForLiveTV(t *testing.T) {
+	live := httptest.NewRequest(http.MethodPost, "/playQueues?uri=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8", nil)
+	if !IsLiveTVRequest(live) {
+		t.Fatal("POST /playQueues for Live TV should be elevated")
+	}
+	library := httptest.NewRequest(http.MethodPost, "/playQueues?uri=%2Flibrary%2Fmetadata%2F123", nil)
+	if IsLiveTVRequest(library) {
+		t.Fatal("POST /playQueues for library content must not be elevated")
 	}
 }
 
@@ -326,13 +427,13 @@ func TestApplyLiveTVTokenElevation(t *testing.T) {
 		t.Fatalf("library token got %q", got)
 	}
 
-	// Broad matching: a library URL with a live TV query param is elevated.
+	// A library URL with an arbitrary live TV query param is not elevated.
 	bait := httptest.NewRequest(http.MethodGet, "/library/sections?X-Plex-Token=user-token&bait=%2Flivetv%2Fdvr", nil)
-	if !ApplyLiveTVTokenElevation(bait, "owner-token") {
-		t.Fatal("library request with live TV query param should be elevated under broad matching")
+	if ApplyLiveTVTokenElevation(bait, "owner-token") {
+		t.Fatal("library request with arbitrary live TV query param must not be elevated")
 	}
-	if got := bait.URL.Query().Get("X-Plex-Token"); got != "owner-token" {
-		t.Fatalf("bait library token got %q want owner-token", got)
+	if got := bait.URL.Query().Get("X-Plex-Token"); got != "user-token" {
+		t.Fatalf("bait library token got %q want user-token", got)
 	}
 }
 
@@ -567,10 +668,11 @@ func TestProxy_ElevateAll_InjectsOwnerTokenOnEveryRequest(t *testing.T) {
 	defer up.Close()
 
 	proxy, err := New(Config{
-		Upstream:   up.URL,
-		Token:      "owner-token",
-		OwnerToken: "owner-token",
-		ElevateAll: true,
+		Upstream:        up.URL,
+		Token:           "owner-token",
+		OwnerToken:      "owner-token",
+		ElevateAll:      true,
+		TokenAuthorizer: staticTokenAuthorizer{"user-token": true},
 	})
 	if err != nil {
 		t.Fatalf("new proxy: %v", err)
@@ -589,6 +691,33 @@ func TestProxy_ElevateAll_InjectsOwnerTokenOnEveryRequest(t *testing.T) {
 		if gotToken != "owner-token" {
 			t.Errorf("path %s: upstream got token %q, want owner-token", path, gotToken)
 		}
+	}
+}
+
+func TestProxy_ElevateAll_DoesNotElevateUnauthenticatedRequest(t *testing.T) {
+	var gotToken string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotToken = r.URL.Query().Get("X-Plex-Token")
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:        up.URL,
+		Token:           "owner-token",
+		OwnerToken:      "owner-token",
+		ElevateAll:      true,
+		TokenAuthorizer: staticTokenAuthorizer{"user-token": true},
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/library/sections", nil)
+	proxy.ServeHTTP(httptest.NewRecorder(), req)
+	if gotToken == "owner-token" {
+		t.Fatal("unauthenticated request must not be elevated in elevate-all mode")
 	}
 }
 

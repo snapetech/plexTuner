@@ -81,6 +81,15 @@ func runPlexLabelProxy(listen, upstream, plexURL, token, ownerToken, stripPrefix
 		log.Print("plex-label-proxy: need -owner-token (or IPTV_TUNERR_PMS_OWNER_TOKEN / PLEX_OWNER_TOKEN) when -elevate-all or -elevate-live-tv is enabled")
 		os.Exit(1)
 	}
+	var tokenAuthorizer plexlabelproxy.TokenAuthorizer
+	if elevateAll || elevateLiveTV {
+		authorizer, err := plexlabelproxy.NewPlexTokenAuthorizer(upstream, ownerToken, nil)
+		if err != nil {
+			log.Printf("plex-label-proxy: build token authorizer: %v", err)
+			os.Exit(1)
+		}
+		tokenAuthorizer = authorizer
+	}
 
 	ttl := time.Duration(refreshSec) * time.Second
 	cache := plexlabelproxy.NewLabelMapCache(upstream, token, stripPrefix, ttl, nil)
@@ -101,6 +110,7 @@ func runPlexLabelProxy(listen, upstream, plexURL, token, ownerToken, stripPrefix
 		NeutralizeOwnerHistory: neutralizeOwnerHistory,
 		Labels:                 cache,
 		SpoofIdentity:          spoofIdentity,
+		TokenAuthorizer:        tokenAuthorizer,
 	})
 	if err != nil {
 		log.Printf("plex-label-proxy: %v", err)

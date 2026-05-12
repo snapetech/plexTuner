@@ -13,6 +13,13 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.61] — 2026-05-12
+
+### Security / Plex Live TV proxy
+- **Owner-token elevation now requires an already-authorized Plex user token:** `plex-label-proxy` refuses owner-token elevation when the inbound request has no Plex token, and the CLI validates non-owner tokens against PMS `/library/sections` before borrowing owner Live TV entitlement.
+- **Live TV elevation is narrower:** arbitrary query parameters that merely mention Live TV no longer trigger elevation, and mutating Live TV methods are not elevated except `POST /playQueues` when starting a Live TV stream.
+- **Proxy docs now match the no-friction security model:** Smart TV clients keep using their normal Plex tokens; only users already shared on the Plex server can borrow owner tuner entitlement for Live TV. The systemd example uses `-elevate-live-tv -neutralize-owner-history`.
+
 ## [v0.1.60] — 2026-05-12
 
 ### Docs / deployment

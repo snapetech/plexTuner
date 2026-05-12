@@ -7,13 +7,14 @@ tags: [runbook, plex, livetv, proxy, entitlement]
 
 # Plex Live TV Entitlement Proxy
 
-Run `iptv-tunerr plex-label-proxy -elevate-all` in front of Plex Media Server
-to give shared Plex users Live TV access by injecting the server owner's token
-on every request that passes through the proxy.
+Run `iptv-tunerr plex-label-proxy -elevate-live-tv` in front of Plex Media
+Server to give already-shared Plex users Live TV access by borrowing the server
+owner's token only for the Plex Live TV requests that need tuner entitlement.
 
 This is an unsupported Plex workaround. It works by making the proxy the only
-external path to PMS, then spoofing the owner token so all proxied clients carry
-valid tuner entitlement.
+external path to PMS, then preserving each user's Plex token by default and
+injecting the owner token only after the inbound token is verified against this
+server.
 
 ## Critical Requirements — Read This First
 
@@ -103,24 +104,28 @@ Plex can expose ordinary shared libraries to non-Home users while hiding Live TV
 unless the account has tuner access. Plex's public sharing APIs do not reliably
 grant that flag to every non-Home shared user.
 
-The `-elevate-all` mode works around that by injecting the owner token on every
-proxied request. All clients connecting through the HTTPS frontend use the
-owner's tuner entitlement. Live TV is fully accessible.
+The `-elevate-live-tv` mode works around that by injecting the owner token only
+for classified Live TV requests. Normal libraries, metadata, account paths, and
+ordinary playback stay on the inbound user's Plex token.
 
-Trade-off: because every request carries the owner token, Plex attributes all
-activity to the owner by default.
+Before injecting the owner token, the proxy validates the inbound token against
+PMS using `/library/sections`. This means:
 
-`-neutralize-owner-history` corrects this for **all content** (movies, shows,
-Live TV). The proxy tracks every playback session by the originating client
-token. For each timeline tick it replays the progress event under the original
-user token so on-deck and resume state land on the right account. On the final
-scrobble it also unscrobbles from the owner and replays the mark-watched under
-the original user token.
+- a request with no `X-Plex-Token` is not elevated
+- a random Plex account token that cannot access this server is not elevated
+- an already-shared user token can borrow owner tuner entitlement for Live TV
+- the raw owner token is not returned to the client
+
+`-elevate-all` still exists as a blunt compatibility mode, but it is not the
+recommended mode. Even there, owner-token injection is gated by the same
+inbound-token validation.
 
 ## Request Classification
 
-The owner token is elevated only for safe read/probe methods (`GET`, `HEAD`,
-and `OPTIONS`) on known Live TV surfaces:
+The owner token is elevated only after the inbound Plex token is present and
+already authorized for this server. After that check, elevation is limited to
+safe read/probe methods (`GET`, `HEAD`, and `OPTIONS`) on known Live TV
+surfaces:
 
 - `/livetv/*`
 - `/media/providers`
@@ -129,20 +134,24 @@ and `OPTIONS`) on known Live TV surfaces:
 - transcode helper requests under `/video/:/transcode/*` whose `path` query
   parameter is a Live TV session/provider path
 - play queue helper requests under `/playQueues` whose `uri` or `path` query
-  parameter is a Live TV session/provider path
+  parameter is a Live TV session/provider path; `POST /playQueues` is allowed
+  only for this Live TV stream-start case
 - root identity requests (`/` or `/identity`) only when the `Referer` is already
   a Live TV page
 
-Everything else keeps the inbound client token. In particular, arbitrary query
-parameters that merely mention `/livetv/` do not trigger elevation, and
-mutating methods such as `POST`, `PUT`, `PATCH`, and `DELETE` are not elevated
-even on Live TV paths.
+Everything else keeps the inbound client token. In particular:
 
-Security boundary: this mode should still be treated as granting proxied users
-owner-backed Live TV access. The raw owner token is not returned to clients by
-the proxy, but the proxy can act as a limited owner-token deputy for the
-allowlisted Live TV reads above. Expose it only to users who should be allowed
-to use the server owner's tuners.
+- unauthenticated requests are not elevated
+- Plex tokens that cannot already access this server are not elevated
+- arbitrary query parameters that merely mention `/livetv/` do not trigger elevation
+- mutating methods such as `POST`, `PUT`, `PATCH`, and `DELETE` are not elevated
+  on Live TV paths, except `POST /playQueues` when its `uri`/`path` points at a
+  Live TV stream
+
+Security boundary: this mode should still be treated as granting already-shared
+proxied users owner-backed Live TV access. It is not a public anonymous Plex
+frontend. Keep direct PMS paths closed so clients cannot bypass the entitlement
+path, and keep the proxy behind the intended HTTPS/VPN frontend.
 
 The implementation lives in:
 
@@ -159,24 +168,32 @@ want to run `iptv-tunerr plex-label-proxy`. The required behavior is:
 1. Keep PMS behind a proxy URL that clients use as their Plex Custom server
    access URL.
 2. For every request, preserve the user's inbound Plex token by default.
-3. Replace `X-Plex-Token` with the PMS owner token only when all of these are
+3. Reject owner-token elevation when the inbound request has no Plex token.
+4. Validate the inbound token against PMS first; for example, require a `2xx`
+   from `/library/sections?X-Plex-Token=<user-token>`.
+5. Replace `X-Plex-Token` with the PMS owner token only when all of these are
    true:
+   - the inbound token already has access to this Plex server
    - method is `GET`, `HEAD`, or `OPTIONS`
    - path is one of the allowlisted Live TV paths above, or the request is a
      transcode/playQueue helper whose `path`/`uri` parameter points at Live TV
-4. Replace both token locations when elevating:
+   - `POST /playQueues` is elevated only when its `uri`/`path` points at Live TV
+6. Replace both token locations when elevating:
    - query string parameter `X-Plex-Token`
    - request header `X-Plex-Token`
-5. Do not elevate ordinary library/account paths, even if an arbitrary query
+7. Do not elevate ordinary library/account paths, even if an arbitrary query
    parameter contains text like `/livetv/`.
-6. Do not elevate mutating methods (`POST`, `PUT`, `PATCH`, `DELETE`).
-7. Optionally rewrite small XML entitlement hints from `allowTuners="0"` to
+8. Do not elevate mutating methods (`POST`, `PUT`, `PATCH`, `DELETE`), except
+   the Live TV `POST /playQueues` stream-start case above.
+9. Optionally rewrite small XML entitlement hints from `allowTuners="0"` to
    `allowTuners="1"` so Plex Web reveals the Live TV entry point.
 
 Manual implementation checklist:
 
 ```text
 incoming user request
+  -> require inbound Plex token
+  -> validate inbound token can access this server
   -> classify method + path + specific helper param
   -> if eligible, replace query/header token with owner token
   -> otherwise preserve user's original token
@@ -234,6 +251,7 @@ iptv-tunerr plex-label-proxy \
   -listen 127.0.0.1:33240 \
   -upstream http://127.0.0.1:32400 \
   -elevate-live-tv \
+  -neutralize-owner-history \
   -refresh-seconds 30
 ```
 
@@ -454,7 +472,9 @@ Expected result:
 
 - `library/sections` stays user-scoped and should fail or show only what that
   user can normally access.
-- `livetv/dvrs` and `media/providers` return `200` through the proxy.
+- `livetv/dvrs` and `media/providers` return `200` through the proxy only when
+  `USER_TOKEN` is an already-shared Plex user for this server.
+- fake, missing, or unrelated Plex tokens must not reveal libraries or Live TV.
 
 The repeatable validation helper is:
 
@@ -465,9 +485,10 @@ USER_TOKEN=optional-real-non-home-user-token \
   docs/scripts/validate-plex-live-tv-proxy.sh
 ```
 
-The helper always uses a fake token to prove that `library/sections` is not
-elevated while Live TV endpoints are elevated. If `USER_TOKEN` is set, it also
-checks Live TV with a real non-Home account token.
+The helper should use a fake token to prove that neither `library/sections` nor
+Live TV endpoints are elevated for unauthenticated/unshared callers. If
+`USER_TOKEN` is set, it should also check Live TV with a real non-Home account
+token that is already shared on the server.
 
 ## Plex Settings
 
