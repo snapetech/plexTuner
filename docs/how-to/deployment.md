@@ -2,7 +2,7 @@
 id: deployment
 type: how-to
 status: stable
-tags: [how-to, deployment, docker, systemd, binary]
+tags: [how-to, deployment, docker, systemd, binary, k3s]
 ---
 
 # Deploy IPTV Tunerr
@@ -13,6 +13,7 @@ See also:
 - [Media server integration modes](../explanations/media-server-integration-modes.md)
 - [Emby and Jellyfin Support](../emby-jellyfin-support.md)
 - [Plex ops patterns](plex-ops-patterns.md)
+- [k3s deployment](k3s-deployment.md)
 - [iptvtunerr-troubleshooting](../runbooks/iptvtunerr-troubleshooting.md)
 
 ---
@@ -31,7 +32,7 @@ See [Platform requirements and installation](platform-requirements.md) for FFmpe
 
 ## Supported deployment contract
 
-IPTV Tunerr is supported as a single reachable tuner process per Plex DVR identity. Run it as a local binary, a persistent systemd service, or a Docker/container process on a host. The media server must reach `IPTV_TUNERR_BASE_URL` directly, and that URL should stay stable across restarts.
+IPTV Tunerr is supported as a single reachable tuner process per Plex DVR identity. Run it as a local binary, a persistent systemd service, Docker/container on a host, or a k3s workload. The media server must reach `IPTV_TUNERR_BASE_URL` directly, and that URL should stay stable across restarts.
 
 For Plex, this rule matters more than the process manager:
 - one active Tunerr instance per Plex DVR device identity and friendly name
@@ -42,6 +43,8 @@ For Plex, this rule matters more than the process manager:
 If you intentionally run multiple DVR buckets, give each bucket a distinct base URL or port, distinct device/friendly-name settings, and a non-overlapping lineup. See [Plex ops patterns](plex-ops-patterns.md) before doing that.
 
 Avoid changing the base URL, device ID, friendly name, or lineup split casually. Plex treats those as part of the DVR identity/mapping surface, so accidental duplication can create empty or stale DVR rows.
+
+For k3s-specific notes, manifests, and Plex reachability rules, see [Deploy IPTV Tunerr on k3s](k3s-deployment.md).
 
 ---
 
@@ -219,6 +222,16 @@ sudo journalctl -u iptvtunerr -n 200 --no-pager
 curl -s -o /dev/null -w "%{http_code}\n" "$IPTV_TUNERR_BASE_URL/discover.json"
 curl -s -o /dev/null -w "%{http_code}\n" "$IPTV_TUNERR_BASE_URL/guide.xml"
 ```
+
+---
+
+## 4. k3s
+
+k3s is supported for users and lab deployments. The important rule is the same as every other process manager: do not let k3s and another local service register the same Plex DVR identity at the same time.
+
+Use the dedicated guide:
+
+- [Deploy IPTV Tunerr on k3s](k3s-deployment.md)
 
 ---
 

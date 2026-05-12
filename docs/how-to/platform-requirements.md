@@ -182,6 +182,6 @@ sudo ufw allow 65001/udp
 
 ## See also
 
-- [Deployment guide](deployment.md) — binary, Docker, and systemd setup
+- [Deployment guide](deployment.md) — binary, Docker, systemd, and k3s setup
 - [CLI and env reference](../reference/cli-and-env-reference.md) — all flags and environment variables
 - [Emby and Jellyfin support](../emby-jellyfin-support.md) — media server registration

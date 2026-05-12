@@ -14,7 +14,8 @@ Goal → preconditions → steps → verify.
 | [interpreting-probe-results](interpreting-probe-results.md) | Read **`iptv-tunerr probe`** output (`get.php` vs **`player_api`**, CF, ranked order). |
 | [connect-plex-to-iptv-tunerr](connect-plex-to-iptv-tunerr.md) | Plex UI wizard vs **`-register-plex`** vs API; channelmap, 480 limit, empty-guide pitfalls. |
 | [first-push](first-push.md) | Add remote and push (GitHub / GitLab / self-hosted). |
-| [deployment](deployment.md) | Deploy IPTV Tunerr: binary, Docker, systemd; **`run`** vs **`index`/`serve`**; local QA/smoke script. |
+| [deployment](deployment.md) | Deploy IPTV Tunerr: binary, Docker, systemd, k3s; **`run`** vs **`index`/`serve`**; local QA/smoke script. |
+| [k3s-deployment](k3s-deployment.md) | Run IPTV Tunerr as a k3s workload without creating duplicate Plex DVR owners. |
 | [mount-vodfs-and-register-plex-libraries](mount-vodfs-and-register-plex-libraries.md) | Linux VODFS mount, `-cache`, Plex library registration. |
 | [mac-baremetal-smoke](mac-baremetal-smoke.md) | Cross-build, wake, SSH, and prove a real macOS host path from Linux. |
 | [windows-baremetal-smoke](windows-baremetal-smoke.md) | Prepare and run the Windows host smoke lane when the VM/host is ready. |

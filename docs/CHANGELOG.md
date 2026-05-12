@@ -13,6 +13,12 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.60] — 2026-05-12
+
+### Docs / deployment
+- **Clarified k3s support after `v0.1.59`:** k3s remains a supported user/lab deployment mode. The removed fallback was only the local production split-brain path where another process manager could register the same Plex DVR identity as the systemd-owned host.
+- **Added a k3s deployment guide:** new docs include Secret, Deployment, Service, readiness/liveness, Plex reachability, HDHomeRun discovery, and multi-DVR ownership guardrails for k3s.
+
 ## [v0.1.59] — 2026-05-12
 
 ### Plex / DVR safety
@@ -20,8 +26,8 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Removed obsolete cluster-family stale-DVR matching:** reconciliation no longer preserves special handling for the retired cluster service identity path; stale matching now stays on current Tunerr-family/device lineage.
 
 ### Deployment / operations
-- **Removed the obsolete cluster deployment path:** repository manifests, deploy jobs, helper scripts, examples, and runbooks for the retired deployment model were removed so operators and agents do not fall back to it.
-- **Supported deployment contract is now explicit:** deployment docs now define binary, systemd, and Docker/container-on-host as the supported paths, with one active Tunerr instance per Plex DVR identity and distinct base URLs/device names for intentional multi-DVR buckets.
+- **Removed the obsolete local cluster fallback path:** repository manifests, deploy jobs, helper scripts, examples, and runbooks for the retired local deployment path were removed so operators and agents do not fall back to it for the production Plex/Tunerr host.
+- **Supported deployment contract is now explicit:** deployment docs now define binary, systemd, Docker/container-on-host, and k3s workloads as supported paths, with one active Tunerr instance per Plex DVR identity and distinct base URLs/device names for intentional multi-DVR buckets.
 - **Duplicate-DVR recovery is documented:** Plex ops docs now describe the correct order for stopping extra processes, validating the intended base URL, removing empty DVR rows, and registering from the single intended owner.
 
 ## [v0.1.58] — 2026-05-08

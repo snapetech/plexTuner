@@ -1,6 +1,6 @@
 # Repo map (navigation)
 
-First place to look before editing. This repo is IPTV Tunerr. Active deployment paths are binary, Docker, and systemd/bare-metal. The old orchestration-based Tunerr/Plex path has been removed and must not be recreated.
+First place to look before editing. This repo is IPTV Tunerr. Active deployment paths are binary, Docker, systemd/bare-metal, and k3s. The old local split-brain Tunerr/Plex fallback has been removed and must not be recreated for the production Plex server.
 
 ## Main entrypoints
 

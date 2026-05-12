@@ -220,7 +220,7 @@ The clean repeatable Plex pattern is now:
 - distinct `IPTV_TUNERR_BASE_URL`, `IPTV_TUNERR_DEVICE_ID`, and `IPTV_TUNERR_FRIENDLY_NAME` per instance
 - optional `IPTV_TUNERR_GUIDE_NUMBER_OFFSET` on the second DVR so guide numbers do not overlap
 
-For Docker, systemd, and bare-metal: [`docs/how-to/deployment.md`](docs/how-to/deployment.md)
+For Docker, systemd, bare-metal, and k3s: [`docs/how-to/deployment.md`](docs/how-to/deployment.md). For k3s-specific manifests and ownership guardrails, see [`docs/how-to/k3s-deployment.md`](docs/how-to/k3s-deployment.md).
 
 ---
 

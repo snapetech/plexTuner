@@ -2,7 +2,7 @@
 
 ## Plex / Deployment
 
-- **The old cluster Tunerr/Plex deployment path is intentionally removed (2026-05-12).** Do not recreate manifest trees, cluster deploy workflows, service-DNS DVR URIs, or cluster recovery paths. Active deployment paths are binary, Docker, and systemd/bare-metal only.
+- **The old local split-brain Tunerr/Plex fallback is intentionally removed (2026-05-12).** Do not recreate local production jobs that register the same Plex DVR identity as the systemd-owned host. Active supported deployment paths are binary, Docker, systemd/bare-metal, and k3s when k3s is the single owner for its Plex DVR identity.
 
 - **Plex can report a DVR device as `dead` even when enabled channel mappings are healthy.** The watchdog must not recreate a mapped DVR solely because of that flag; recreate only when mappings are missing or badly under-activated.
 
