@@ -20,6 +20,16 @@ func (a staticTokenAuthorizer) AllowPlexToken(_ context.Context, token string) b
 	return a[token]
 }
 
+type countingTokenAuthorizer struct {
+	allowed map[string]bool
+	calls   int
+}
+
+func (a *countingTokenAuthorizer) AllowPlexToken(_ context.Context, token string) bool {
+	a.calls++
+	return a.allowed[token]
+}
+
 const liveProvidersBody = `<?xml version="1.0" encoding="UTF-8"?>
 <MediaContainer size="2" friendlyName="plexKube">
   <MediaProvider identifier="tv.plex.providers.epg.xmltv:135" friendlyName="plexKube" sourceTitle="plexKube" title="Live TV &amp; DVR"/>
@@ -356,6 +366,7 @@ func TestProxy_AuditLogsElevationDenialsWithoutRawTokens(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/livetv/dvrs?X-Plex-Token=random-token", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("X-Forwarded-For", "203.0.113.9, 10.0.0.2")
 	req.Header.Set("CF-Connecting-IP", "203.0.113.9")
 	proxy.ServeHTTP(httptest.NewRecorder(), req)
@@ -407,6 +418,7 @@ func TestProxy_TemporarilyBlocksRepeatedBadElevationAttempts(t *testing.T) {
 
 	for i := 0; i < 2; i++ {
 		req := httptest.NewRequest(http.MethodGet, "/livetv/dvrs?X-Plex-Token=random-token", nil)
+		req.RemoteAddr = "127.0.0.1:12345"
 		req.Header.Set("X-Forwarded-For", "203.0.113.44")
 		rec := httptest.NewRecorder()
 		proxy.ServeHTTP(rec, req)
@@ -416,6 +428,7 @@ func TestProxy_TemporarilyBlocksRepeatedBadElevationAttempts(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/livetv/dvrs?X-Plex-Token=random-token", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("X-Forwarded-For", "203.0.113.44")
 	rec := httptest.NewRecorder()
 	proxy.ServeHTTP(rec, req)
@@ -500,6 +513,7 @@ func TestProxy_ExternalSharedUserLiveTVIsElevatedAndAudited(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/media/providers?X-Plex-Token=shared-user-token", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("X-Forwarded-For", "203.0.113.77, 10.0.0.4")
 	req.Header.Set("CF-Connecting-IP", "203.0.113.77")
 	proxy.ServeHTTP(httptest.NewRecorder(), req)
@@ -529,6 +543,127 @@ func TestProxy_ExternalSharedUserLiveTVIsElevatedAndAudited(t *testing.T) {
 	}
 	if strings.Contains(logged, "shared-user-token") || strings.Contains(logged, "owner-token") {
 		t.Fatalf("audit log leaked raw token: %s", logged)
+	}
+}
+
+func TestProxy_IgnoresSpoofedSourceHeadersFromUntrustedRemote(t *testing.T) {
+	var logBuf bytes.Buffer
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:        up.URL,
+		Token:           "label-token",
+		OwnerToken:      "owner-token",
+		ElevateLiveTV:   true,
+		TokenAuthorizer: staticTokenAuthorizer{"shared-user-token": true},
+		Logger:          log.New(&logBuf, "", 0),
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/media/providers?X-Plex-Token=shared-user-token", nil)
+	req.RemoteAddr = "198.51.100.200:4567"
+	req.Header.Set("X-Forwarded-For", "203.0.113.77")
+	req.Header.Set("CF-Connecting-IP", "203.0.113.77")
+	proxy.ServeHTTP(httptest.NewRecorder(), req)
+
+	logged := logBuf.String()
+	if !strings.Contains(logged, `source=198.51.100.200`) {
+		t.Fatalf("untrusted remote should be audit source, got %s", logged)
+	}
+	if strings.Contains(logged, `forwarded_for="203.0.113.77"`) || strings.Contains(logged, `cf_connecting_ip="203.0.113.77"`) {
+		t.Fatalf("spoofed source headers should not be trusted in audit, got %s", logged)
+	}
+}
+
+func TestProxy_BadAuthCooldownAvoidsRepeatedPMSAuthorization(t *testing.T) {
+	var logBuf bytes.Buffer
+	authorizer := &countingTokenAuthorizer{allowed: map[string]bool{"shared-user-token": true}}
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:        up.URL,
+		Token:           "label-token",
+		OwnerToken:      "owner-token",
+		ElevateLiveTV:   true,
+		TokenAuthorizer: authorizer,
+		Logger:          log.New(&logBuf, "", 0),
+		BadAuthCooldown: time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/livetv/dvrs?X-Plex-Token=random-token", nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		req.Header.Set("CF-Connecting-IP", "203.0.113.100")
+		proxy.ServeHTTP(httptest.NewRecorder(), req)
+	}
+
+	if authorizer.calls != 1 {
+		t.Fatalf("expected one PMS authorization call due cooldown, got %d", authorizer.calls)
+	}
+	if !strings.Contains(logBuf.String(), "outcome=deny_auth_cooldown") {
+		t.Fatalf("expected cooldown audit log, got %s", logBuf.String())
+	}
+}
+
+func TestProxy_PersistsBadActorBlocks(t *testing.T) {
+	stateFile := t.TempDir() + "/blocks.json"
+	upstreamHits := 0
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamHits++
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer/>`))
+	}))
+	defer up.Close()
+
+	cfg := Config{
+		Upstream:            up.URL,
+		Token:               "label-token",
+		OwnerToken:          "owner-token",
+		ElevateLiveTV:       true,
+		TokenAuthorizer:     staticTokenAuthorizer{"shared-user-token": true},
+		AbuseBlockThreshold: 1,
+		AbuseBlockWindow:    time.Minute,
+		AbuseBlockDuration:  time.Hour,
+		AbuseBlockStateFile: stateFile,
+		BadAuthCooldown:     -1,
+	}
+	proxy, err := New(cfg)
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/livetv/dvrs?X-Plex-Token=random-token", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	req.Header.Set("CF-Connecting-IP", "203.0.113.101")
+	proxy.ServeHTTP(httptest.NewRecorder(), req)
+
+	proxy2, err := New(cfg)
+	if err != nil {
+		t.Fatalf("new proxy 2: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet, "/livetv/dvrs?X-Plex-Token=random-token-2", nil)
+	req2.RemoteAddr = "127.0.0.1:12345"
+	req2.Header.Set("CF-Connecting-IP", "203.0.113.101")
+	proxy2.ServeHTTP(rec, req2)
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("persisted block status=%d want 429", rec.Code)
+	}
+	if upstreamHits != 1 {
+		t.Fatalf("persisted block should not hit upstream, hits=%d", upstreamHits)
 	}
 }
 

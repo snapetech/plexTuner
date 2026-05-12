@@ -1,3 +1,12 @@
+## 2026-05-12 - Harden Plex Live TV proxy abuse controls
+
+- Added env/CLI knobs for Live TV bad-source blocking threshold/window/duration, denied source+token authorization cooldown, optional persisted block state, and audit summary interval.
+- Changed source identity handling to prefer trusted `CF-Connecting-IP`, then trusted `X-Forwarded-For`, then socket remote address; forwarded source headers are trusted only from loopback/private frontend peers.
+- Added optional persisted JSON block/cooldown state so bad actors remain blocked across proxy restarts without storing Plex tokens.
+- Added aggregate `plexlabelproxy_audit_summary` counters for elevated, denied, cooldown, cache-hit/cache-miss, and blocked requests.
+- Updated `docs/scripts/validate-plex-live-tv-proxy.sh` to verify owner success, random/no-token denial, optional shared-user success, and repeated bad-attempt blocking.
+- Verification: `bash -n docs/scripts/validate-plex-live-tv-proxy.sh`, `go test -count=1 ./internal/plexlabelproxy ./cmd/iptv-tunerr`, and `./scripts/verify` passed.
+
 ## 2026-05-12 - Validate v0.1.63 live Plex/Tunerr/proxy stack
 
 - Confirmed GitHub `v0.1.63` release, CI, Docker, CodeQL, and Gitleaks completed successfully.

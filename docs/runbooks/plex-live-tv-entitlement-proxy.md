@@ -164,25 +164,58 @@ elevation decision that matters operationally:
   elevation path and was not elevated
 - `outcome=deny_unauthorized_token` means a token was present but could not
   access this Plex server and was not elevated
+- `outcome=deny_auth_cooldown` means the same source/token pair was recently
+  denied and the proxy rejected it without asking PMS to validate it again
 - `outcome=bad_actor_blocked` means a source crossed the repeated-denial
   threshold and is now temporarily blocked
 - `outcome=blocked_bad_actor` means a request was rejected by that temporary
   block before it reached PMS
 
 Audit lines are prefixed with `plexlabelproxy_audit:` and include method, path,
-Live TV classifier booleans, source address, `X-Forwarded-For`,
+Live TV classifier booleans, source address, trusted `X-Forwarded-For`, trusted
 `CF-Connecting-IP`, and a short SHA-256 token fingerprint. Raw Plex tokens are
-not logged.
+not logged. Frontend source headers are trusted only when the direct peer is a
+loopback/private frontend; if the proxy is accidentally exposed directly,
+client-supplied source headers are ignored for audit and block identity.
 
 By default, five failed Live TV elevation attempts from the same apparent source
 inside five minutes block that source from Live TV entitlement paths for thirty
-minutes. The block is in-process, so restarting the proxy clears it.
+minutes. The default rejected source+token authorization cooldown is two
+minutes, so repeated probes do not keep asking PMS to re-check the same bad
+token. Blocks can be persisted across restarts with
+`IPTV_TUNERR_PROXY_ABUSE_STATE_FILE`.
+
+Tunables:
+
+```bash
+IPTV_TUNERR_PROXY_ABUSE_THRESHOLD=5
+IPTV_TUNERR_PROXY_ABUSE_WINDOW=5m
+IPTV_TUNERR_PROXY_ABUSE_BLOCK_DURATION=30m
+IPTV_TUNERR_PROXY_ABUSE_STATE_FILE=/var/lib/iptvtunerr/plex-live-tv-proxy-blocks.json
+IPTV_TUNERR_PROXY_BAD_AUTH_COOLDOWN=2m
+IPTV_TUNERR_PROXY_AUDIT_SUMMARY_INTERVAL=5m
+```
+
+Set `IPTV_TUNERR_PROXY_BAD_AUTH_COOLDOWN` or
+`IPTV_TUNERR_PROXY_AUDIT_SUMMARY_INTERVAL` to a negative duration, such as
+`-1s`, to disable that feature.
+
+Every audit summary interval the proxy emits a `plexlabelproxy_audit_summary:`
+line with elevated, denied, cooldown, cache-hit/cache-miss, and block counters.
 
 Useful checks:
 
 ```bash
 journalctl -u plex-live-tv-proxy.service --since "24 hours ago" -g 'plexlabelproxy_audit'
 journalctl -u plex-live-tv-proxy.service --since "24 hours ago" -g 'outcome=deny_'
+journalctl -u plex-live-tv-proxy.service --since "24 hours ago" -g 'plexlabelproxy_audit_summary'
+```
+
+Live validation:
+
+```bash
+PROXY_URL=https://media.example.com OWNER_TOKEN=... docs/scripts/validate-plex-live-tv-proxy.sh
+PROXY_URL=https://media.example.com OWNER_TOKEN=... USER_TOKEN=... docs/scripts/validate-plex-live-tv-proxy.sh
 ```
 
 The implementation lives in:

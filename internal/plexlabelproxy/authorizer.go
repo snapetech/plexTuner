@@ -17,6 +17,15 @@ type TokenAuthorizer interface {
 	AllowPlexToken(ctx context.Context, token string) bool
 }
 
+type AuthorizationDecision struct {
+	Allowed  bool
+	CacheHit bool
+}
+
+type DetailedTokenAuthorizer interface {
+	AllowPlexTokenDetailed(ctx context.Context, token string) AuthorizationDecision
+}
+
 type tokenDecision struct {
 	allowed bool
 	expires time.Time
@@ -56,19 +65,23 @@ func NewPlexTokenAuthorizer(upstream, ownerToken string, transport http.RoundTri
 }
 
 func (a *PlexTokenAuthorizer) AllowPlexToken(ctx context.Context, token string) bool {
+	return a.AllowPlexTokenDetailed(ctx, token).Allowed
+}
+
+func (a *PlexTokenAuthorizer) AllowPlexTokenDetailed(ctx context.Context, token string) AuthorizationDecision {
 	token = strings.TrimSpace(token)
 	if token == "" {
-		return false
+		return AuthorizationDecision{}
 	}
 	if a.ownerToken != "" && token == a.ownerToken {
-		return true
+		return AuthorizationDecision{Allowed: true, CacheHit: true}
 	}
 
 	now := time.Now()
 	a.mu.Lock()
 	if d, ok := a.cache[token]; ok && now.Before(d.expires) {
 		a.mu.Unlock()
-		return d.allowed
+		return AuthorizationDecision{Allowed: d.allowed, CacheHit: true}
 	}
 	a.mu.Unlock()
 
@@ -76,7 +89,7 @@ func (a *PlexTokenAuthorizer) AllowPlexToken(ctx context.Context, token string) 
 	a.mu.Lock()
 	a.cache[token] = tokenDecision{allowed: allowed, expires: now.Add(a.ttl)}
 	a.mu.Unlock()
-	return allowed
+	return AuthorizationDecision{Allowed: allowed, CacheHit: false}
 }
 
 func (a *PlexTokenAuthorizer) check(ctx context.Context, token string) bool {

@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,8 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -110,6 +113,20 @@ type Config struct {
 	// AbuseBlockDuration controls how long a source is blocked after crossing
 	// AbuseBlockThreshold. Zero uses a conservative default.
 	AbuseBlockDuration time.Duration
+
+	// AbuseBlockStateFile, when set, persists temporary bad-source blocks across
+	// proxy restarts. The file stores only source keys, counts, and timestamps;
+	// it never stores Plex tokens.
+	AbuseBlockStateFile string
+
+	// BadAuthCooldown controls how long an already-denied source+token pair is
+	// rejected before asking PMS to validate that token again. Zero uses a
+	// conservative default; a negative value disables the cooldown.
+	BadAuthCooldown time.Duration
+
+	// AuditSummaryInterval emits aggregate proxy audit counters at this cadence.
+	// Zero uses a conservative default; a negative value disables summaries.
+	AuditSummaryInterval time.Duration
 }
 
 // Proxy implements the reverse proxy with rewrite hooks.
@@ -132,18 +149,49 @@ type Proxy struct {
 	abuseMu    sync.Mutex
 	abuseState map[string]abuseEntry
 	abuseCfg   abuseConfig
+
+	statsMu sync.Mutex
+	stats   auditStats
 }
 
 type abuseConfig struct {
 	threshold int
 	window    time.Duration
 	duration  time.Duration
+	stateFile string
+	cooldown  time.Duration
+	summary   time.Duration
 }
 
 type abuseEntry struct {
 	firstFailure time.Time
 	failures     int
 	blockedUntil time.Time
+	cooldowns    map[string]time.Time
+}
+
+type auditStats struct {
+	since            time.Time
+	elevated         int
+	denyMissing      int
+	denyUnauthorized int
+	authCacheHit     int
+	authCacheMiss    int
+	authCooldownDeny int
+	blockedSources   int
+	blockedRequests  int
+	bySource         map[string]int
+}
+
+type persistedAbuseState struct {
+	Sources map[string]persistedAbuseEntry `json:"sources"`
+}
+
+type persistedAbuseEntry struct {
+	FirstFailureUnix int64            `json:"first_failure_unix"`
+	Failures         int              `json:"failures"`
+	BlockedUntilUnix int64            `json:"blocked_until_unix,omitempty"`
+	Cooldowns        map[string]int64 `json:"cooldowns,omitempty"`
 }
 
 func (p *Proxy) warnNonXMLOnce(path, ct string) {
@@ -196,7 +244,12 @@ func New(cfg Config) (*Proxy, error) {
 		abuseState:   make(map[string]abuseEntry),
 		abuseCfg:     normalizeAbuseConfig(cfg),
 		sessionUsers: make(map[string]string),
+		stats: auditStats{
+			since:    time.Now(),
+			bySource: make(map[string]int),
+		},
 	}
+	p.loadAbuseState()
 
 	rp := httputil.NewSingleHostReverseProxy(u)
 	if cfg.Transport != nil {
@@ -270,17 +323,29 @@ func (p *Proxy) canElevate(req *http.Request, originalToken string) bool {
 	if p.authorizer == nil {
 		return true
 	}
-	if p.authorizer.AllowPlexToken(req.Context(), token) {
+	if p.badAuthCooldownActive(req, token) {
+		p.auditElevation(req, "deny_auth_cooldown", token, "recently denied source/token pair is cooling down")
+		p.recordBadElevationAttempt(req, token, "auth_cooldown")
+		return false
+	}
+	decision := AuthorizationDecision{Allowed: p.authorizer.AllowPlexToken(req.Context(), token)}
+	if detailed, ok := p.authorizer.(DetailedTokenAuthorizer); ok {
+		decision = detailed.AllowPlexTokenDetailed(req.Context(), token)
+	}
+	p.recordAuthDecision(decision.CacheHit)
+	if decision.Allowed {
 		return true
 	}
-	p.auditElevation(req, "deny_unauthorized_token", token, "inbound Plex token is not authorized for this server")
+	p.auditElevation(req, "deny_unauthorized_token", token, fmt.Sprintf("inbound Plex token is not authorized for this server auth_cache_hit=%v", decision.CacheHit))
 	p.recordBadElevationAttempt(req, token, "unauthorized_token")
 	return false
 }
 
 func (p *Proxy) auditElevation(req *http.Request, outcome, token, reason string) {
+	source := apparentSource(req)
+	p.recordAuditOutcome(outcome, source)
 	p.logger.Printf(
-		"plexlabelproxy_audit: outcome=%s method=%s path=%s live_tv=%v discovery=%v stream=%v remote=%s forwarded_for=%q cf_connecting_ip=%q token_fp=%s reason=%q",
+		"plexlabelproxy_audit: outcome=%s method=%s path=%s live_tv=%v discovery=%v stream=%v remote=%s source=%s forwarded_for=%q cf_connecting_ip=%q token_fp=%s reason=%q",
 		outcome,
 		req.Method,
 		req.URL.EscapedPath(),
@@ -288,8 +353,9 @@ func (p *Proxy) auditElevation(req *http.Request, outcome, token, reason string)
 		IsLiveTVDiscoveryRequest(req),
 		IsLiveTVStreamRequest(req),
 		clientAddress(req.RemoteAddr),
-		firstHeader(req.Header, "X-Forwarded-For"),
-		firstHeader(req.Header, "CF-Connecting-IP"),
+		source,
+		trustedHeader(req, "X-Forwarded-For"),
+		trustedHeader(req, "CF-Connecting-IP"),
 		tokenFingerprint(token),
 		reason,
 	)
@@ -502,6 +568,8 @@ func normalizeAbuseConfig(cfg Config) abuseConfig {
 		threshold: 5,
 		window:    5 * time.Minute,
 		duration:  30 * time.Minute,
+		cooldown:  2 * time.Minute,
+		summary:   5 * time.Minute,
 	}
 	if cfg.AbuseBlockThreshold > 0 {
 		out.threshold = cfg.AbuseBlockThreshold
@@ -511,6 +579,17 @@ func normalizeAbuseConfig(cfg Config) abuseConfig {
 	}
 	if cfg.AbuseBlockDuration > 0 {
 		out.duration = cfg.AbuseBlockDuration
+	}
+	out.stateFile = strings.TrimSpace(cfg.AbuseBlockStateFile)
+	if cfg.BadAuthCooldown < 0 {
+		out.cooldown = 0
+	} else if cfg.BadAuthCooldown > 0 {
+		out.cooldown = cfg.BadAuthCooldown
+	}
+	if cfg.AuditSummaryInterval < 0 {
+		out.summary = 0
+	} else if cfg.AuditSummaryInterval > 0 {
+		out.summary = cfg.AuditSummaryInterval
 	}
 	return out
 }
@@ -528,11 +607,18 @@ func (p *Proxy) recordBadElevationAttempt(req *http.Request, token, reason strin
 	if entry.firstFailure.IsZero() || now.Sub(entry.firstFailure) > cfg.window {
 		entry = abuseEntry{firstFailure: now}
 	}
+	if entry.cooldowns == nil {
+		entry.cooldowns = make(map[string]time.Time)
+	}
+	if cfg.cooldown > 0 && token != "" {
+		entry.cooldowns[tokenFingerprint(token)] = now.Add(cfg.cooldown)
+	}
 	entry.failures++
 	if entry.failures >= cfg.threshold {
 		entry.blockedUntil = now.Add(cfg.duration)
 	}
 	p.abuseState[key] = entry
+	_ = p.saveAbuseStateLocked(now)
 	p.abuseMu.Unlock()
 
 	if !entry.blockedUntil.IsZero() && now.Before(entry.blockedUntil) {
@@ -565,6 +651,7 @@ func (p *Proxy) isBlocked(req *http.Request) bool {
 	}
 	if now.After(entry.blockedUntil) {
 		delete(p.abuseState, key)
+		_ = p.saveAbuseStateLocked(now)
 		p.abuseMu.Unlock()
 		return false
 	}
@@ -573,25 +660,259 @@ func (p *Proxy) isBlocked(req *http.Request) bool {
 }
 
 func abuseKey(req *http.Request) string {
+	return apparentSource(req)
+}
+
+func apparentSource(req *http.Request) string {
 	if req == nil {
 		return ""
 	}
-	if ip := firstForwardedFor(req.Header); ip != "" {
+	if ip := trustedHeader(req, "CF-Connecting-IP"); ip != "" {
 		return ip
 	}
-	if ip := firstHeader(req.Header, "CF-Connecting-IP"); ip != "" {
+	if ip := firstTrustedForwardedFor(req); ip != "" {
 		return ip
 	}
 	return clientAddress(req.RemoteAddr)
 }
 
-func firstForwardedFor(h http.Header) string {
-	raw := firstHeader(h, "X-Forwarded-For")
+func firstTrustedForwardedFor(req *http.Request) string {
+	raw := trustedHeader(req, "X-Forwarded-For")
 	if raw == "" {
 		return ""
 	}
 	first, _, _ := strings.Cut(raw, ",")
 	return strings.TrimSpace(first)
+}
+
+func trustedHeader(req *http.Request, name string) string {
+	if req == nil || !trustedFrontendRemote(clientAddress(req.RemoteAddr)) {
+		return ""
+	}
+	return firstHeader(req.Header, name)
+}
+
+func trustedFrontendRemote(host string) bool {
+	if host == "" {
+		return false
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate()
+}
+
+func (p *Proxy) badAuthCooldownActive(req *http.Request, token string) bool {
+	cfg := p.abuseCfg
+	if cfg.cooldown <= 0 || strings.TrimSpace(token) == "" {
+		return false
+	}
+	key := abuseKey(req)
+	if key == "" {
+		return false
+	}
+	fp := tokenFingerprint(token)
+	now := time.Now()
+	p.abuseMu.Lock()
+	defer p.abuseMu.Unlock()
+	entry, ok := p.abuseState[key]
+	if !ok || entry.cooldowns == nil {
+		return false
+	}
+	until, ok := entry.cooldowns[fp]
+	if !ok {
+		return false
+	}
+	if now.After(until) {
+		delete(entry.cooldowns, fp)
+		p.abuseState[key] = entry
+		_ = p.saveAbuseStateLocked(now)
+		return false
+	}
+	return true
+}
+
+func (p *Proxy) loadAbuseState() {
+	path := p.abuseCfg.stateFile
+	if path == "" {
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			p.logger.Printf("plexlabelproxy: load abuse state %s: %v", path, err)
+		}
+		return
+	}
+	var state persistedAbuseState
+	if err := json.Unmarshal(data, &state); err != nil {
+		p.logger.Printf("plexlabelproxy: parse abuse state %s: %v", path, err)
+		return
+	}
+	now := time.Now()
+	loaded := 0
+	p.abuseMu.Lock()
+	defer p.abuseMu.Unlock()
+	for source, persisted := range state.Sources {
+		source = strings.TrimSpace(source)
+		if source == "" {
+			continue
+		}
+		entry := abuseEntry{
+			firstFailure: time.Unix(persisted.FirstFailureUnix, 0),
+			failures:     persisted.Failures,
+			cooldowns:    make(map[string]time.Time),
+		}
+		if persisted.BlockedUntilUnix > 0 {
+			entry.blockedUntil = time.Unix(persisted.BlockedUntilUnix, 0)
+		}
+		for fp, unix := range persisted.Cooldowns {
+			until := time.Unix(unix, 0)
+			if now.Before(until) {
+				entry.cooldowns[fp] = until
+			}
+		}
+		if entry.blockedUntil.IsZero() || now.Before(entry.blockedUntil) || len(entry.cooldowns) > 0 {
+			p.abuseState[source] = entry
+			loaded++
+		}
+	}
+	if loaded > 0 {
+		p.logger.Printf("plexlabelproxy: loaded %d abuse block/cooldown entr%s from %s", loaded, pluralY(loaded), path)
+	}
+}
+
+func (p *Proxy) saveAbuseStateLocked(now time.Time) error {
+	path := p.abuseCfg.stateFile
+	if path == "" {
+		return nil
+	}
+	state := persistedAbuseState{Sources: make(map[string]persistedAbuseEntry)}
+	for source, entry := range p.abuseState {
+		if source == "" {
+			continue
+		}
+		cooldowns := make(map[string]int64)
+		for fp, until := range entry.cooldowns {
+			if now.Before(until) {
+				cooldowns[fp] = until.Unix()
+			}
+		}
+		blocked := int64(0)
+		if !entry.blockedUntil.IsZero() && now.Before(entry.blockedUntil) {
+			blocked = entry.blockedUntil.Unix()
+		}
+		if blocked == 0 && len(cooldowns) == 0 && now.Sub(entry.firstFailure) > p.abuseCfg.window {
+			continue
+		}
+		state.Sources[source] = persistedAbuseEntry{
+			FirstFailureUnix: entry.firstFailure.Unix(),
+			Failures:         entry.failures,
+			BlockedUntilUnix: blocked,
+			Cooldowns:        cooldowns,
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+func pluralY(n int) string {
+	if n == 1 {
+		return "y"
+	}
+	return "ies"
+}
+
+func (p *Proxy) recordAuditOutcome(outcome, source string) {
+	p.statsMu.Lock()
+	defer p.statsMu.Unlock()
+	if p.stats.bySource == nil {
+		p.stats.bySource = make(map[string]int)
+	}
+	switch outcome {
+	case "elevated_live_tv":
+		p.stats.elevated++
+	case "deny_missing_token":
+		p.stats.denyMissing++
+	case "deny_unauthorized_token":
+		p.stats.denyUnauthorized++
+	case "deny_auth_cooldown":
+		p.stats.authCooldownDeny++
+	case "bad_actor_blocked":
+		p.stats.blockedSources++
+	case "blocked_bad_actor":
+		p.stats.blockedRequests++
+	}
+	if source != "" {
+		p.stats.bySource[source]++
+	}
+}
+
+func (p *Proxy) recordAuthDecision(cacheHit bool) {
+	p.statsMu.Lock()
+	defer p.statsMu.Unlock()
+	if cacheHit {
+		p.stats.authCacheHit++
+	} else {
+		p.stats.authCacheMiss++
+	}
+}
+
+func (p *Proxy) emitAuditSummary() {
+	p.statsMu.Lock()
+	stats := p.stats
+	p.stats = auditStats{since: time.Now(), bySource: make(map[string]int)}
+	p.statsMu.Unlock()
+	top := topAuditSources(stats.bySource, 5)
+	p.logger.Printf(
+		"plexlabelproxy_audit_summary: since=%s elevated=%d deny_missing=%d deny_unauthorized=%d deny_auth_cooldown=%d auth_cache_hit=%d auth_cache_miss=%d blocked_sources=%d blocked_requests=%d top_sources=%q",
+		stats.since.Format(time.RFC3339),
+		stats.elevated,
+		stats.denyMissing,
+		stats.denyUnauthorized,
+		stats.authCooldownDeny,
+		stats.authCacheHit,
+		stats.authCacheMiss,
+		stats.blockedSources,
+		stats.blockedRequests,
+		strings.Join(top, ","),
+	)
+}
+
+func topAuditSources(m map[string]int, limit int) []string {
+	type pair struct {
+		source string
+		count  int
+	}
+	pairs := make([]pair, 0, len(m))
+	for source, count := range m {
+		pairs = append(pairs, pair{source: source, count: count})
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		if pairs[i].count == pairs[j].count {
+			return pairs[i].source < pairs[j].source
+		}
+		return pairs[i].count > pairs[j].count
+	})
+	if len(pairs) > limit {
+		pairs = pairs[:limit]
+	}
+	out := make([]string, 0, len(pairs))
+	for _, p := range pairs {
+		out = append(out, fmt.Sprintf("%s:%d", p.source, p.count))
+	}
+	return out
 }
 
 // neutralizeOwnerScrobble checks whether an incoming /:/timeline, /:/scrobble,
@@ -887,13 +1208,35 @@ func (p *Proxy) ListenAndServe(ctx context.Context, listen string) error {
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Serve(ln) }()
 	p.logger.Printf("plexlabelproxy: listening on %s -> %s", ln.Addr(), p.upstreamURL)
+	var summaryStop chan struct{}
+	if p.abuseCfg.summary > 0 {
+		summaryStop = make(chan struct{})
+		go func() {
+			ticker := time.NewTicker(p.abuseCfg.summary)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					p.emitAuditSummary()
+				case <-summaryStop:
+					return
+				}
+			}
+		}()
+	}
 	select {
 	case <-ctx.Done():
+		if summaryStop != nil {
+			close(summaryStop)
+		}
 		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutCtx)
 		return nil
 	case err := <-errCh:
+		if summaryStop != nil {
+			close(summaryStop)
+		}
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}

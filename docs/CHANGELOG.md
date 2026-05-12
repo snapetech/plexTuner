@@ -13,6 +13,12 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.64] — 2026-05-12
+
+### Security / Plex Live TV proxy
+- **Proxy abuse controls are configurable and restart-aware:** Live TV entitlement bad-source blocking now supports env/CLI threshold/window/duration knobs, optional JSON persistence, rejected source+token authorization cooldowns, trusted frontend source headers, and aggregate audit summary logs.
+- **Live proxy validation is stricter:** `docs/scripts/validate-plex-live-tv-proxy.sh` now verifies owner success, random/no-token denial, optional shared-user success, and repeated bad-attempt blocking.
+
 ## [v0.1.63] — 2026-05-12
 
 ### Security / Plex Live TV proxy
