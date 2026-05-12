@@ -13,6 +13,9 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+### Security / Plex Live TV proxy
+- **Owner-token elevation decisions now emit redacted audit logs:** `plex-label-proxy` logs elevated Live TV requests plus missing-token and unauthorized-token denials with path, source headers, classifier state, and a token fingerprint without writing raw Plex tokens.
+
 ## [v0.1.61] — 2026-05-12
 
 ### Security / Plex Live TV proxy

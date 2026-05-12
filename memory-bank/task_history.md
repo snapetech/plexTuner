@@ -1,3 +1,11 @@
+## 2026-05-12 - Add Plex Live TV proxy security audit logging
+
+- Added redacted `plexlabelproxy_audit` log lines for Live TV owner-token elevation, missing-token denial, and unauthorized-token denial decisions.
+- Audit fields include method, path, Live TV classifier state, remote address, proxy source headers, and a SHA-256 token fingerprint; raw Plex tokens are not logged.
+- Updated the Live TV entitlement proxy runbook with audit queries for operator checks.
+- Verification: `go test -count=1 ./internal/plexlabelproxy` passed; `./scripts/verify` passed.
+- Live deploy: rebuilt and installed the proxy binary, restarted `plex-live-tv-proxy.service`, and confirmed live missing-token/fake-token probes return `403` while emitting audit lines.
+
 ## 2026-05-12 - Harden Plex Live TV entitlement proxy
 
 - Found the live `plex-live-tv-proxy.service` was running `-elevate-all`; unauthenticated public requests to the media frontend returned `200`, so the proxy was effectively acting as an owner-token deputy for anyone who could reach it.

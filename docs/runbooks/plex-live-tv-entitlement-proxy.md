@@ -153,6 +153,30 @@ proxied users owner-backed Live TV access. It is not a public anonymous Plex
 frontend. Keep direct PMS paths closed so clients cannot bypass the entitlement
 path, and keep the proxy behind the intended HTTPS/VPN frontend.
 
+## Security Audit Logs
+
+`iptv-tunerr plex-label-proxy` writes security audit lines for every owner-token
+elevation decision that matters operationally:
+
+- `outcome=elevated_live_tv` means an already-authorized user token borrowed the
+  owner token for a classified Live TV request
+- `outcome=deny_missing_token` means an unauthenticated request reached an
+  elevation path and was not elevated
+- `outcome=deny_unauthorized_token` means a token was present but could not
+  access this Plex server and was not elevated
+
+Audit lines are prefixed with `plexlabelproxy_audit:` and include method, path,
+Live TV classifier booleans, source address, `X-Forwarded-For`,
+`CF-Connecting-IP`, and a short SHA-256 token fingerprint. Raw Plex tokens are
+not logged.
+
+Useful checks:
+
+```bash
+journalctl -u plex-live-tv-proxy.service --since "24 hours ago" -g 'plexlabelproxy_audit'
+journalctl -u plex-live-tv-proxy.service --since "24 hours ago" -g 'outcome=deny_'
+```
+
 The implementation lives in:
 
 - `internal/plexlabelproxy/entitlement.go` - Live TV request classifier, token

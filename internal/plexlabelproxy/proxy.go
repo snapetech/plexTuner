@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -221,7 +223,7 @@ func New(cfg Config) (*Proxy, error) {
 func (p *Proxy) canElevate(req *http.Request, originalToken string) bool {
 	token := strings.TrimSpace(originalToken)
 	if token == "" {
-		p.logger.Printf("plexlabelproxy: refusing owner-token elevation for %s: missing inbound Plex token", req.URL.Path)
+		p.auditElevation(req, "deny_missing_token", token, "missing inbound Plex token")
 		return false
 	}
 	if token == strings.TrimSpace(p.cfg.OwnerToken) {
@@ -233,8 +235,25 @@ func (p *Proxy) canElevate(req *http.Request, originalToken string) bool {
 	if p.authorizer.AllowPlexToken(req.Context(), token) {
 		return true
 	}
-	p.logger.Printf("plexlabelproxy: refusing owner-token elevation for %s: inbound Plex token is not authorized for this server", req.URL.Path)
+	p.auditElevation(req, "deny_unauthorized_token", token, "inbound Plex token is not authorized for this server")
 	return false
+}
+
+func (p *Proxy) auditElevation(req *http.Request, outcome, token, reason string) {
+	p.logger.Printf(
+		"plexlabelproxy_audit: outcome=%s method=%s path=%s live_tv=%v discovery=%v stream=%v remote=%s forwarded_for=%q cf_connecting_ip=%q token_fp=%s reason=%q",
+		outcome,
+		req.Method,
+		req.URL.EscapedPath(),
+		IsLiveTVRequest(req),
+		IsLiveTVDiscoveryRequest(req),
+		IsLiveTVStreamRequest(req),
+		clientAddress(req.RemoteAddr),
+		firstHeader(req.Header, "X-Forwarded-For"),
+		firstHeader(req.Header, "CF-Connecting-IP"),
+		tokenFingerprint(token),
+		reason,
+	)
 }
 
 // ServeHTTP implements http.Handler.
@@ -341,7 +360,7 @@ func (p *Proxy) elevateLiveTVRequest(req *http.Request, originalToken string) {
 	if !elevated {
 		return
 	}
-	p.logger.Printf("plexlabelproxy: elevated Live TV request %s (discovery_only=%v)", req.URL.Path, p.cfg.ElevateDiscoveryOnly)
+	p.auditElevation(req, "elevated_live_tv", originalToken, "owner token borrowed for authorized Live TV request")
 
 	// X-Plex-User injection: send the original user token in a supplementary
 	// header so Plex may attribute the session to the user rather than the owner.
@@ -390,6 +409,31 @@ func last6(s string) string {
 		return s
 	}
 	return s[len(s)-6:]
+}
+
+func tokenFingerprint(token string) string {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return "missing"
+	}
+	sum := sha256.Sum256([]byte(token))
+	return "sha256:" + hex.EncodeToString(sum[:8])
+}
+
+func firstHeader(h http.Header, name string) string {
+	v := h.Values(name)
+	if len(v) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(v[0])
+}
+
+func clientAddress(remoteAddr string) string {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err == nil {
+		return host
+	}
+	return strings.TrimSpace(remoteAddr)
 }
 
 // neutralizeOwnerScrobble checks whether an incoming /:/timeline, /:/scrobble,

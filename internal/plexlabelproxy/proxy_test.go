@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -300,6 +301,51 @@ func TestProxy_DoesNotElevateTokenWithoutServerAccess(t *testing.T) {
 
 	if gotToken != "random-token" {
 		t.Fatalf("unauthorized token should pass through unchanged, got %q", gotToken)
+	}
+}
+
+func TestProxy_AuditLogsElevationDenialsWithoutRawTokens(t *testing.T) {
+	var logBuf bytes.Buffer
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer allowTuners="0"/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:        up.URL,
+		Token:           "label-token",
+		OwnerToken:      "owner-token",
+		ElevateLiveTV:   true,
+		TokenAuthorizer: staticTokenAuthorizer{"shared-user-token": true},
+		Logger:          log.New(&logBuf, "", 0),
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/livetv/dvrs?X-Plex-Token=random-token", nil)
+	req.Header.Set("X-Forwarded-For", "203.0.113.9, 10.0.0.2")
+	req.Header.Set("CF-Connecting-IP", "203.0.113.9")
+	proxy.ServeHTTP(httptest.NewRecorder(), req)
+
+	logged := logBuf.String()
+	for _, want := range []string{
+		"plexlabelproxy_audit:",
+		"outcome=deny_unauthorized_token",
+		"method=GET",
+		"path=/livetv/dvrs",
+		"live_tv=true",
+		`forwarded_for="203.0.113.9, 10.0.0.2"`,
+		`cf_connecting_ip="203.0.113.9"`,
+		"token_fp=sha256:",
+	} {
+		if !strings.Contains(logged, want) {
+			t.Fatalf("audit log missing %q in %s", want, logged)
+		}
+	}
+	if strings.Contains(logged, "random-token") || strings.Contains(logged, "owner-token") {
+		t.Fatalf("audit log leaked raw token: %s", logged)
 	}
 }
 
