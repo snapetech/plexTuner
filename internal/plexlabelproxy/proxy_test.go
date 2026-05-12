@@ -464,6 +464,74 @@ func TestProxy_ElevatesTokenWithServerAccess(t *testing.T) {
 	}
 }
 
+func TestProxy_ExternalSharedUserLiveTVIsElevatedAndAudited(t *testing.T) {
+	var logBuf bytes.Buffer
+	type seen struct {
+		path        string
+		queryToken  string
+		headerToken string
+		forwarded   string
+		cfIP        string
+	}
+	var requests []seen
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, seen{
+			path:        r.URL.Path,
+			queryToken:  r.URL.Query().Get("X-Plex-Token"),
+			headerToken: r.Header.Get("X-Plex-Token"),
+			forwarded:   r.Header.Get("X-Forwarded-For"),
+			cfIP:        r.Header.Get("CF-Connecting-IP"),
+		})
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer allowTuners="0"/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:        up.URL,
+		Token:           "label-token",
+		OwnerToken:      "owner-token",
+		ElevateLiveTV:   true,
+		TokenAuthorizer: staticTokenAuthorizer{"shared-user-token": true},
+		Logger:          log.New(&logBuf, "", 0),
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/media/providers?X-Plex-Token=shared-user-token", nil)
+	req.Header.Set("X-Forwarded-For", "203.0.113.77, 10.0.0.4")
+	req.Header.Set("CF-Connecting-IP", "203.0.113.77")
+	proxy.ServeHTTP(httptest.NewRecorder(), req)
+
+	if len(requests) != 1 {
+		t.Fatalf("requests=%d", len(requests))
+	}
+	got := requests[0]
+	if got.queryToken != "owner-token" || got.headerToken != "owner-token" {
+		t.Fatalf("external shared Live TV request should be elevated, got %+v", got)
+	}
+	if !strings.HasPrefix(got.forwarded, "203.0.113.77, 10.0.0.4") || got.cfIP != "203.0.113.77" {
+		t.Fatalf("source headers should be preserved upstream for audit context, got %+v", got)
+	}
+	logged := logBuf.String()
+	for _, want := range []string{
+		"plexlabelproxy_audit:",
+		"outcome=elevated_live_tv",
+		"path=/media/providers",
+		`forwarded_for="203.0.113.77, 10.0.0.4"`,
+		`cf_connecting_ip="203.0.113.77"`,
+		"token_fp=sha256:",
+	} {
+		if !strings.Contains(logged, want) {
+			t.Fatalf("audit log missing %q in %s", want, logged)
+		}
+	}
+	if strings.Contains(logged, "shared-user-token") || strings.Contains(logged, "owner-token") {
+		t.Fatalf("audit log leaked raw token: %s", logged)
+	}
+}
+
 func TestProxy_RewritesAllowTunersWhenElevationEnabled(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")

@@ -1,3 +1,14 @@
+## 2026-05-12 - Validate v0.1.63 live Plex/Tunerr/proxy stack
+
+- Confirmed GitHub `v0.1.63` release, CI, Docker, CodeQL, and Gitleaks completed successfully.
+- Reinstalled the live proxy binary with `-X main.Version=v0.1.63`; `/opt/iptvtunerr/iptv-tunerr-proxy --version` now reports `v0.1.63`.
+- Live services checked: Plex host, proxy, primary Tunerr bridge, sports Tunerr bridge, frontend tunnel, and VODFS services are running.
+- Tunerr endpoints checked: primary and sports `/discover.json`, `/lineup.json`, `/lineup_status.json`, and `/guide.xml` all return `200`.
+- Plex DVR state checked: two intended Tunerr DVRs, both enabled, with 479 and 92 enabled channel mappings.
+- Entitlement checks: local and public Live TV owner-token paths return `200`; public no-token and fake-token Live TV paths return `403`; local non-Live-TV no-token path returns Plex `401` without entitlement audit noise.
+- Added automated proxy coverage for an external shared user coming through forwarded frontend headers: shared token is authorized, Live TV request is elevated to owner token, source headers are retained for audit context, and raw tokens are not logged.
+- Verification: `go test -count=1 ./internal/plexlabelproxy` passed; `./scripts/verify` passed.
+
 ## 2026-05-12 - Block repeated bad Plex Live TV elevation attempts
 
 - Added an in-process temporary block for repeated missing-token or unauthorized-token Live TV elevation attempts from the same apparent source.
