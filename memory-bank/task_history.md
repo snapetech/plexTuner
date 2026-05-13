@@ -1,3 +1,9 @@
+## 2026-05-13 - Patch Snap release payload layout
+
+- `v0.1.72` confirmed release assets, Docker, AUR, COPR, PPA, and Winget paths were working, while Snap reached the pack step and failed because the command path referenced a versioned directory that was absent from Snapcraft's dump-plugin prime output.
+- Changed the Snap workflow to build a root-level `iptv-tunerr` tarball inside `packaging/snap/` and keep the Snap app command as `iptv-tunerr`.
+- Chocolatey remains blocked by a remote `403 Forbidden` during `choco push`, which points at package/account/API-key permission rather than local packaging.
+
 ## 2026-05-13 - Add AUR release-channel scaffolding
 
 - Added AUR package metadata for `iptvtunerr` (source build from tagged GitHub archive) and `iptvtunerr-bin` (Linux amd64 release asset).

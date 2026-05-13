@@ -14,7 +14,7 @@ platforms:
 
 apps:
   iptvtunerr:
-    command: iptv-tunerr-v0.1.63-linux-amd64
+    command: iptv-tunerr
     plugs: [network, network-bind, home, removable-media]
 
 parts:

@@ -13,6 +13,11 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.73] — 2026-05-13
+
+### Release channels
+- **Snap package command paths now match the staged payload:** the Snap workflow now builds a root-level `iptv-tunerr` source tarball and keeps the Snap app command at `iptv-tunerr`, matching Snapcraft's dump-plugin prime layout.
+
 ## [v0.1.72] — 2026-05-13
 
 ### Release channels
