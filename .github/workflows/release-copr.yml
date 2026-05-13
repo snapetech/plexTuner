@@ -30,6 +30,8 @@ jobs:
           fetch-depth: 0
 
       - name: Require release tag on main
+        env:
+          RELEASE_TAG_MAIN_MODE: ancestor
         run: ./scripts/ensure-release-tag-on-main.sh "${{ steps.version.outputs.tag }}"
 
       - uses: actions/setup-go@v6

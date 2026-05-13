@@ -24,6 +24,8 @@ jobs:
 
       - name: Require release tag on main
         shell: bash
+        env:
+          RELEASE_TAG_MAIN_MODE: ancestor
         run: ./scripts/ensure-release-tag-on-main.sh "${{ inputs.version }}"
 
       - name: Download Windows release asset

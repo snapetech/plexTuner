@@ -13,6 +13,11 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.71] — 2026-05-13
+
+### Release process
+- **Package-channel dispatches tolerate newer main commits:** the primary Release workflow still requires the release tag to point at current `main`, while downstream package-channel workflows now accept any release tag already contained in `main` history so later release-fix commits do not invalidate queued channel jobs.
+
 ## [v0.1.70] — 2026-05-13
 
 ### Release channels
