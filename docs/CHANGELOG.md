@@ -13,6 +13,9 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+### Release channels
+- **Windows package publishing is paused for manual gate handling:** GitHub Releases still build Windows executable ZIPs, but the release workflow no longer auto-dispatches Chocolatey or Winget publishing while Chocolatey returns push `403` responses and the initial Winget PR is under Microsoft validation review.
+
 ## [v0.1.73] — 2026-05-13
 
 ### Release channels

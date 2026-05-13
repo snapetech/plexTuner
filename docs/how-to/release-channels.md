@@ -133,6 +133,11 @@ Configured packaging:
   from a release tag.
 - `.github/workflows/publish-winget.yml` submits a Winget PR from a release tag.
 
+These Windows package workflows are manual-only until their external gates are
+clean. The main release workflow intentionally does not auto-dispatch
+Chocolatey or Winget so release tags do not spam Chocolatey push attempts or
+duplicate Winget PRs while validation/account issues are pending.
+
 Required GitHub secrets:
 
 - `CHOCO_API_KEY` - Chocolatey API key for the `iptvtunerr` package.
@@ -143,6 +148,14 @@ Current status:
 
 - `CHOCO_API_KEY` is configured for the `slskdn` Chocolatey account.
 - `WINGETCREATE_GITHUB_TOKEN` is configured.
+- Chocolatey package packing succeeds, but `choco push` currently returns
+  `403 Forbidden` from `https://push.chocolatey.org/`; the public feed has no
+  existing `iptvtunerr` package entry, so this is an account/API-key/package
+  permission gate to resolve in Chocolatey's portal.
+- Winget PR `microsoft/winget-pkgs#374269` cleared the Microsoft CLA after the
+  GitHub agreement comment, but currently has Microsoft validation labels
+  `Internal-Error`, `Needs-Attention`, and `Validation-Guide`. Duplicate
+  automated PRs for later release tags were closed.
 
 NuGet is not currently a fit for IPTV Tunerr. The project ships a Go CLI/server
 binary, not a .NET library or .NET global tool.

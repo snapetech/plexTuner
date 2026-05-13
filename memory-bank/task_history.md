@@ -1,3 +1,10 @@
+## 2026-05-13 - Pause noisy Windows package publishing
+
+- Closed duplicate automated Winget PRs `microsoft/winget-pkgs#374279`, `#374280`, and `#374285`; kept the original `#374269` open for the first validation gate.
+- Confirmed `#374269` has a green `license/cla` check after the agreement comment, but is labeled `Internal-Error`, `Needs-Attention`, and `Validation-Guide` by Microsoft's validation system.
+- Confirmed Chocolatey package packing succeeds and the public feed has no existing `iptvtunerr` package entry, but `choco push` returns `403 Forbidden` from Chocolatey's push endpoint.
+- Removed Chocolatey and Winget from the automatic post-release channel dispatch list; the workflows remain available for manual dispatch after their external gates are resolved.
+
 ## 2026-05-13 - Patch Snap release payload layout
 
 - `v0.1.72` confirmed release assets, Docker, AUR, COPR, PPA, and Winget paths were working, while Snap reached the pack step and failed because the command path referenced a versioned directory that was absent from Snapcraft's dump-plugin prime output.

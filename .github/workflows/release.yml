@@ -189,6 +189,4 @@ jobs:
             gh workflow run "$workflow" --repo "$REPO" -f "tag=$TAG"
           done
 
-          for workflow in publish-chocolatey.yml publish-winget.yml; do
-            gh workflow run "$workflow" --repo "$REPO" -f "version=$TAG"
-          done
+          echo "Chocolatey and Winget publishing are intentionally manual while external account and validation gates are pending."

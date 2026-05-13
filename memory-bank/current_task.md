@@ -20,5 +20,6 @@
 - Done: changed Docker publishing to tag-only and added CI release-asset verification.
 - Done: added local git hook, installer, CI gate, and release gate requiring changelog updates and populated release tag sections.
 - Done: signed the Microsoft CLA for the Winget PR by posting the GitHub bot agreement comment; the CLA check cleared.
-- In progress: patching the Snap source archive layout after `v0.1.72` reached Snapcraft packing but failed because the app command referenced a versioned directory path that was not present in the primed dump output.
-- Follow-up: first live package-channel runs may need workflow hardening based on remote service responses.
+- Done: patched the Snap source archive layout; `v0.1.73` Snap, AUR, COPR, PPA, Winget workflow, Docker, and GitHub Release runs completed successfully.
+- In progress: assessing Windows package gates and pausing automatic Chocolatey/Winget dispatch until Chocolatey push permissions and Winget validation state are resolved.
+- Follow-up: Chocolatey still needs portal/account/API-key remediation for `403 Forbidden`; Winget PR `microsoft/winget-pkgs#374269` needs validation follow-up before submitting more versions.
