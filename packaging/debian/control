@@ -1,0 +1,19 @@
+Source: iptvtunerr
+Section: net
+Priority: optional
+Maintainer: snapetech <iptvtunerr@proton.me>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Homepage: https://github.com/snapetech/iptvtunerr
+Vcs-Browser: https://github.com/snapetech/iptvtunerr
+Vcs-Git: https://github.com/snapetech/iptvtunerr.git
+Rules-Requires-Root: no
+
+Package: iptvtunerr
+Architecture: amd64
+Depends: ${misc:Depends}
+Recommends: ffmpeg
+Description: IPTV to Plex, Emby, and Jellyfin bridge
+ IPTV Tunerr turns IPTV sources into a stable HDHomeRun-style tuner and XMLTV
+ guide surface for Plex, Emby, and Jellyfin. It supports live TV, guide shaping,
+ stream adaptation, provider failover, and read-only WebDAV VOD access.

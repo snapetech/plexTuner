@@ -740,6 +740,26 @@ func TestProxy_RewritesAllowTunersWhenElevationEnabled(t *testing.T) {
 	}
 }
 
+func TestProxy_RewritesJSONAllowTunersWhenElevationEnabled(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"MediaContainer":{"allowTuners":false,"title":"Library"}}`))
+	}))
+	defer up.Close()
+	proxy, err := New(Config{Upstream: up.URL, Token: "label-token", OwnerToken: "owner-token", ElevateLiveTV: true})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/media/providers?X-Plex-Token=user-token", nil)
+	proxy.ServeHTTP(rec, req)
+
+	if !strings.Contains(rec.Body.String(), `"allowTuners":true`) {
+		t.Fatalf("expected JSON allowTuners rewrite, got %s", rec.Body.String())
+	}
+}
+
 func TestIsLiveTVRequest(t *testing.T) {
 	cases := map[string]bool{
 		"/library/sections":                     false,
@@ -1012,6 +1032,117 @@ func TestProxy_NeutralizeOwnerHistory_UnscrobblesFiredForTrackedSessions(t *test
 	}
 	if unscrobblePaths[0] != "9876" {
 		t.Fatalf("unscrobble ratingKey=%q, want 9876", unscrobblePaths[0])
+	}
+}
+
+func TestProxy_NeutralizeOwnerHistory_CorrelatesByClientIdentifier(t *testing.T) {
+	var mu sync.Mutex
+	var paths []string
+	var tokens []string
+
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		tokens = append(tokens, r.URL.Query().Get("X-Plex-Token"))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:               up.URL,
+		Token:                  "label-token",
+		OwnerToken:             "owner-token",
+		ElevateLiveTV:          true,
+		NeutralizeOwnerHistory: true,
+		TokenAuthorizer:        staticTokenAuthorizer{"user-token": true},
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	streamReq := httptest.NewRequest(http.MethodGet,
+		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
+		nil)
+	streamReq.Header.Set("X-Plex-Client-Identifier", "client-a")
+	proxy.ServeHTTP(httptest.NewRecorder(), streamReq)
+
+	mu.Lock()
+	paths = paths[:0]
+	tokens = tokens[:0]
+	mu.Unlock()
+
+	scrobbleReq := httptest.NewRequest(http.MethodGet,
+		"/:/scrobble?X-Plex-Token=user-token&ratingKey=2468&identifier=com.plexapp.plugins.library",
+		nil)
+	scrobbleReq.Header.Set("X-Plex-Client-Identifier", "client-a")
+	proxy.ServeHTTP(httptest.NewRecorder(), scrobbleReq)
+
+	time.Sleep(200 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	var sawUnscrobble, sawUserReplay bool
+	for i, p := range paths {
+		if p == "/:/unscrobble" && tokens[i] == "owner-token" {
+			sawUnscrobble = true
+		}
+		if p == "/:/scrobble" && tokens[i] == "user-token" {
+			sawUserReplay = true
+		}
+	}
+	if !sawUnscrobble {
+		t.Error("expected /:/unscrobble under owner-token via client identifier correlation")
+	}
+	if !sawUserReplay {
+		t.Error("expected /:/scrobble replay under user-token via client identifier correlation")
+	}
+}
+
+func TestProxy_NeutralizeOwnerHistory_CorrelatesByPlayQueue(t *testing.T) {
+	var mu sync.Mutex
+	var unscrobbleKeys []string
+
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/:/unscrobble" {
+			mu.Lock()
+			unscrobbleKeys = append(unscrobbleKeys, r.URL.Query().Get("ratingKey"))
+			mu.Unlock()
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:               up.URL,
+		Token:                  "label-token",
+		OwnerToken:             "owner-token",
+		ElevateLiveTV:          true,
+		NeutralizeOwnerHistory: true,
+		TokenAuthorizer:        staticTokenAuthorizer{"user-token": true},
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	streamReq := httptest.NewRequest(http.MethodGet,
+		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8&playQueueID=777",
+		nil)
+	proxy.ServeHTTP(httptest.NewRecorder(), streamReq)
+
+	scrobbleReq := httptest.NewRequest(http.MethodGet,
+		"/:/scrobble?X-Plex-Token=user-token&ratingKey=1357&identifier=com.plexapp.plugins.library&playQueueID=777",
+		nil)
+	proxy.ServeHTTP(httptest.NewRecorder(), scrobbleReq)
+
+	time.Sleep(200 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(unscrobbleKeys) == 0 || unscrobbleKeys[0] != "1357" {
+		t.Fatalf("unscrobble keys=%v, want [1357]", unscrobbleKeys)
 	}
 }
 

@@ -1,0 +1,91 @@
+name: Publish COPR
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, for example v0.1.63"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish-copr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve version
+        id: version
+        run: |
+          set -euo pipefail
+          tag="${{ github.event.inputs.tag || github.event.release.tag_name }}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.version.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Require release tag on main
+        run: ./scripts/ensure-release-tag-on-main.sh "${{ steps.version.outputs.tag }}"
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build release source
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          asset="iptv-tunerr-v${version}-linux-amd64"
+          mkdir -p "${asset}"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=vendor -trimpath -ldflags="-s -w -X main.Version=v${version}" -o "${asset}/iptv-tunerr" ./cmd/iptv-tunerr
+          tar -czf "${asset}.tar.gz" "${asset}"
+
+      - name: Install RPM/COPR tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm python3-pip
+          pip3 install --user copr-cli
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Configure COPR
+        env:
+          COPR_LOGIN: ${{ secrets.COPR_LOGIN }}
+          COPR_TOKEN: ${{ secrets.COPR_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$COPR_LOGIN"
+          test -n "$COPR_TOKEN"
+          mkdir -p ~/.config
+          cat > ~/.config/copr <<EOF
+          [copr-cli]
+          login = ${COPR_LOGIN}
+          username = slskdn
+          token = ${COPR_TOKEN}
+          copr_url = https://copr.fedorainfracloud.org
+          EOF
+
+      - name: Build SRPM
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          mkdir -p ~/rpmbuild/{SOURCES,SPECS,SRPMS}
+          cp "iptv-tunerr-v${version}-linux-amd64.tar.gz" ~/rpmbuild/SOURCES/
+          cp packaging/aur/iptvtunerr.service ~/rpmbuild/SOURCES/
+          cp packaging/aur/iptvtunerr.env ~/rpmbuild/SOURCES/
+          cp packaging/aur/iptvtunerr.sysusers ~/rpmbuild/SOURCES/iptvtunerr.conf
+          cp packaging/aur/iptvtunerr.tmpfiles ~/rpmbuild/SOURCES/
+          cp packaging/rpm/iptvtunerr.spec ~/rpmbuild/SPECS/
+          sed -i "s/^Version:.*/Version:        ${version}/" ~/rpmbuild/SPECS/iptvtunerr.spec
+          sed -i "s|^Source0:.*|Source0:        iptv-tunerr-v${version}-linux-amd64.tar.gz|" ~/rpmbuild/SPECS/iptvtunerr.spec
+          rpmbuild -bs ~/rpmbuild/SPECS/iptvtunerr.spec --define "_topdir $HOME/rpmbuild"
+
+      - name: Upload to COPR
+        run: |
+          set -euo pipefail
+          srpm="$(find ~/rpmbuild/SRPMS -name '*.src.rpm' -print -quit)"
+          copr-cli build iptvtunerr "$srpm" --nowait

@@ -1,0 +1,85 @@
+name: Publish PPA
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, for example v0.1.63"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish-ppa:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve version
+        id: version
+        run: |
+          set -euo pipefail
+          tag="${{ github.event.inputs.tag || github.event.release.tag_name }}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.version.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Require release tag on main
+        run: ./scripts/ensure-release-tag-on-main.sh "${{ steps.version.outputs.tag }}"
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Install packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y devscripts debhelper gnupg dput
+
+      - name: Import GPG key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$GPG_PRIVATE_KEY"
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
+
+      - name: Prepare source package
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          src="iptvtunerr-${version}"
+          rm -rf "$src"
+          mkdir -p "$src/usr/bin" "$src/lib/systemd/system" "$src/etc/iptvtunerr" "$src/usr/lib/sysusers.d" "$src/usr/lib/tmpfiles.d"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=vendor -trimpath -ldflags="-s -w -X main.Version=v${version}" -o "$src/usr/bin/iptv-tunerr" ./cmd/iptv-tunerr
+          cp packaging/aur/iptvtunerr.service "$src/lib/systemd/system/"
+          cp packaging/aur/iptvtunerr.env "$src/etc/iptvtunerr/"
+          cp packaging/aur/iptvtunerr.sysusers "$src/usr/lib/sysusers.d/iptvtunerr.conf"
+          cp packaging/aur/iptvtunerr.tmpfiles "$src/usr/lib/tmpfiles.d/iptvtunerr.conf"
+          cp -r packaging/debian "$src/debian"
+          ppa_rev="$(date -u +%Y%m%d%H%M)"
+          cat > "$src/debian/changelog" <<EOF
+          iptvtunerr (${version}+ppa${ppa_rev}~jammy) jammy; urgency=medium
+
+            * Release ${{ steps.version.outputs.tag }}
+
+           -- snapetech <iptvtunerr@proton.me>  $(date -R)
+          EOF
+          chmod +x "$src/debian/rules" "$src/debian/postinst"
+
+      - name: Build signed source package
+        run: |
+          set -euo pipefail
+          cd "iptvtunerr-${{ steps.version.outputs.version }}"
+          debuild -S -sa -d -k07E2531E1F470F8008ACCFC996A07606FE65392F
+
+      - name: Upload to Launchpad PPA
+        run: |
+          set -euo pipefail
+          changes="$(find . -maxdepth 1 -name '*.changes' -print -quit)"
+          dput ppa:keefshape/iptvtunerr "$changes"

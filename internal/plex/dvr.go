@@ -447,7 +447,7 @@ func activateChannelsRequest(cfg PlexAPIConfig, deviceKey string, enabled []stri
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("activate channels request failed: %s: %w", safeurl.RedactQuery(activateURL), err)
+		return fmt.Errorf("activate channels request failed (url_len=%d channels=%d): %w", len(activateURL), len(channels), err)
 	}
 	defer resp.Body.Close()
 
@@ -470,7 +470,7 @@ func ActivateChannelsAPI(cfg PlexAPIConfig, deviceKey string, channels []Channel
 		return 0, fmt.Errorf("no channels to activate")
 	}
 
-	client := httpclient.WithTimeout(60 * time.Second)
+	client := httpclient.WithTimeout(5 * time.Minute)
 	enabled := make([]string, 0, len(channels))
 	for _, ch := range channels {
 		enabled = append(enabled, ch.DeviceIdentifier)

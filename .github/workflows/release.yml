@@ -14,6 +14,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Require release tag on main
+        run: ./scripts/ensure-release-tag-on-main.sh "${GITHUB_REF_NAME}"
+
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -24,45 +27,19 @@ jobs:
       - name: Release smoke
         run: go test -count=1 ./internal/tuner -run 'Test(XMLTV_serve|XMLTV_serveCachedGuideReady|HDHR_discover|HDHR_lineup|HDHR_lineup_status|Server_UpdateChannelsTriggersXMLTVRefresh)'
 
-      - name: Build binaries
+      - name: Install Linux package tools
         run: |
-          set -euo pipefail
-          VERSION="${GITHUB_REF_NAME}"
-          LDFLAGS="-X main.Version=${VERSION}"
-          mkdir -p dist
+          sudo apt-get update
+          sudo apt-get install -y rpm
 
-          build() {
-            local os=$1 arch=$2 arm=${3:-}
-            local suffix="$arch"
-            if [ "$arch" = "arm" ] && [ -n "$arm" ]; then
-              suffix="armv${arm}"
-            fi
-            local name="iptv-tunerr-${VERSION}-${os}-${suffix}"
-            local out="dist/${name}"
-            echo "Building ${name}..."
-            CGO_ENABLED=0 GOOS=${os} GOARCH=${arch} GOARM=${arm} \
-              go build -mod=vendor -ldflags="${LDFLAGS}" \
-              -o "${out}" ./cmd/iptv-tunerr
-            if [ "${os}" = "windows" ]; then
-              mv "${out}" "${out}.exe"
-              zip -j "dist/${name}.zip" "${out}.exe"
-            else
-              tar -czf "dist/${name}.tar.gz" -C dist "${name}"
-            fi
-            rm -f "${out}" "${out}.exe"
-          }
+      - name: Build binaries
+        run: ./scripts/build-release-assets.sh "${GITHUB_REF_NAME}" dist
 
-          build linux  amd64
-          build linux  arm64
-          build linux  arm 7
-          build darwin amd64
-          build darwin arm64
-          build windows amd64
-          build windows arm64
+      - name: Build Linux package assets
+        run: ./scripts/build-linux-package-assets.sh "${GITHUB_REF_NAME}" dist
 
-          cd dist
-          sha256sum *.tar.gz *.zip > SHA256SUMS.txt
-          cat SHA256SUMS.txt
+      - name: Verify release assets
+        run: ./scripts/verify-release-assets.sh "${GITHUB_REF_NAME}" dist
 
       - name: Generate release notes
         run: |
@@ -75,8 +52,10 @@ jobs:
         with:
           body_path: dist/release-notes.md
           files: |
-            dist/*.tar.gz
-            dist/*.zip
+            dist/iptv-tunerr-*
+            dist/iptvtunerr_*.deb
+            dist/*.rpm
+            dist/release-manifest.json
             dist/SHA256SUMS.txt
 
   announce-discord:

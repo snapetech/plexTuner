@@ -211,6 +211,7 @@ curl -s http://127.0.0.1:5004/lineup_status.json | jq .
 Operational rules:
 - keep the active `.env` under the service working directory
 - keep `IPTV_TUNERR_BASE_URL` pointed at the stable LAN address Plex uses
+- run the Plex host container with the LinuxServer Plex Pass update channel enabled (`VERSION=latest` on `linuxserver/plex`) so Plex can fetch the newest build the signed-in Plex Pass account is entitled to; without `VERSION`, the LSIO update routine is skipped
 - roll back by installing the previous binary and restarting the same service
 - do not start a second registration path while the service is enabled
 - when testing another instance, use a different port and do not point it at production Plex registration
@@ -219,6 +220,8 @@ Useful checks:
 
 ```bash
 sudo journalctl -u iptvtunerr -n 200 --no-pager
+docker inspect plex-host --format '{{range .Config.Env}}{{println .}}{{end}}' | grep '^VERSION=latest$'
+docker exec plex-host /usr/lib/plexmediaserver/Plex\ Media\ Server --version
 curl -s -o /dev/null -w "%{http_code}\n" "$IPTV_TUNERR_BASE_URL/discover.json"
 curl -s -o /dev/null -w "%{http_code}\n" "$IPTV_TUNERR_BASE_URL/guide.xml"
 ```

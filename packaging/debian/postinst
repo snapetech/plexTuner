@@ -1,0 +1,19 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure)
+        if ! getent passwd iptvtunerr >/dev/null; then
+            useradd -r -s /usr/sbin/nologin -d /var/lib/iptvtunerr -c "IPTV Tunerr service account" iptvtunerr
+        fi
+        install -dm750 -o iptvtunerr -g iptvtunerr /var/lib/iptvtunerr
+        install -dm750 -o iptvtunerr -g iptvtunerr /var/cache/iptvtunerr
+        install -dm750 -o iptvtunerr -g iptvtunerr /var/log/iptvtunerr
+        systemctl daemon-reload || true
+        echo "IPTV Tunerr installed. Edit /etc/iptvtunerr/iptvtunerr.env, then run: sudo systemctl enable --now iptvtunerr.service"
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

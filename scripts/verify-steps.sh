@@ -27,9 +27,12 @@ if ! go vet ./...; then
 fi
 
 # --- Harness / helper script syntax (no network; catches edit typos in CI) ---
-step "script syntax (bash -n + py_compile on scripts/*)"
+step "script syntax (bash -n + py_compile on scripts/* and packaging/scripts/*)"
 shopt -s nullglob
 for f in "$ROOT"/scripts/*.sh; do
+  bash -n "$f" || err "bash -n failed on $f"
+done
+for f in "$ROOT"/packaging/scripts/*.sh; do
   bash -n "$f" || err "bash -n failed on $f"
 done
 command -v python3 >/dev/null 2>&1 || err "python3 required for scripts/*.py syntax check (py_compile)"

@@ -13,6 +13,17 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.66] — 2026-05-13
+
+### Release channels
+- **Release automation now builds complete cross-platform assets:** GitHub Releases include raw Linux/macOS/Windows executables, Linux/macOS tarballs, Windows ZIPs, direct `.deb` and `.rpm` packages, `SHA256SUMS.txt`, and `release-manifest.json`.
+- **Package-manager channels are scaffolded and credential-ready:** AUR, Snap, Launchpad/PPA, COPR, Chocolatey, Winget, Docker Hub, and GHCR release paths now have workflows, package metadata, checksums, and required repository secrets/variables.
+- **Release publishing is tag-gated:** release, package-channel, and container publishing workflows reject release tags that do not point at current `main`; Docker `latest` now moves only on release tags.
+- **Release notes are populated automatically:** GitHub Release notes now prefer changelog content, fall back to commit ranges, and include asset sizes plus SHA256 hashes.
+
+### Plex Live TV proxy
+- **Authorized Plex users bypass temporary source-level abuse blocks:** temporary Live TV abuse blocks still deny missing or unauthorized tokens, but owner tokens and tokens already authorized for the Plex server can continue through from the same source/NAT.
+
 ## [v0.1.65] — 2026-05-12
 
 ### Fixed

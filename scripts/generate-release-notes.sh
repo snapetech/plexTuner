@@ -67,6 +67,7 @@ subject_highlight() {
 
 TAG="${1:-${GITHUB_REF_NAME:-}}"
 OUT_PATH="${2:-$ROOT_DIR/dist/release-notes.md}"
+MANIFEST_PATH="${MANIFEST_PATH:-$ROOT_DIR/dist/release-manifest.json}"
 
 [[ -n "$TAG" ]] || err "usage: $0 <tag> [output-path]"
 git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || err "tag '$TAG' not found"
@@ -150,6 +151,36 @@ fi
       fi
     done <<<"$COMMITS"
   fi
+
+  printf '\n\n## Release Assets\n\n'
+  if [[ -f "$MANIFEST_PATH" ]]; then
+    python3 - "$MANIFEST_PATH" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+assets = manifest.get("assets", [])
+if not assets:
+    print("- No release assets were listed in the build manifest.")
+else:
+    for asset in assets:
+        size = int(asset.get("size", 0))
+        mib = size / 1024 / 1024
+        print(f"- `{asset['name']}` - {mib:.1f} MiB, SHA256 `{asset['sha256']}`")
+PY
+  else
+    printf '%s\n' "- See \`SHA256SUMS.txt\` attached to this release for asset checksums."
+  fi
+
+  cat <<'EOF'
+
+## Install Notes
+
+- Linux and macOS include raw executable assets plus `.tar.gz` bundles.
+- Windows includes raw `.exe` assets plus `.zip` bundles for package managers.
+- Verify downloads with `SHA256SUMS.txt` before installing on shared hosts.
+EOF
 } >"$OUT_PATH"
 
 printf 'Wrote %s\n' "$OUT_PATH"

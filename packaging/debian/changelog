@@ -1,0 +1,5 @@
+iptvtunerr (0.1.63) stable; urgency=medium
+
+  * Initial IPTV Tunerr Debian packaging.
+
+ -- snapetech <iptvtunerr@proton.me>  Wed, 13 May 2026 00:00:00 +0000

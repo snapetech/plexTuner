@@ -1,0 +1,72 @@
+name: Publish Chocolatey
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag to publish, for example v0.1.63"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish Chocolatey
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.version }}
+          fetch-depth: 0
+
+      - name: Require release tag on main
+        shell: bash
+        run: ./scripts/ensure-release-tag-on-main.sh "${{ inputs.version }}"
+
+      - name: Download Windows release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          gh release download "${{ inputs.version }}" `
+            --repo ${{ github.repository }} `
+            --pattern "iptv-tunerr-${{ inputs.version }}-windows-amd64.zip"
+
+      - name: Pack and push
+        env:
+          CHOCO_API_KEY: ${{ secrets.CHOCO_API_KEY }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ([string]::IsNullOrWhiteSpace($env:CHOCO_API_KEY)) {
+            Write-Error "CHOCO_API_KEY secret is not configured"
+            exit 1
+          }
+
+          $Version = "${{ inputs.version }}"
+          $PackageVersion = $Version.TrimStart("v")
+          $Asset = "iptv-tunerr-$Version-windows-amd64.zip"
+          $Url = "https://github.com/${{ github.repository }}/releases/download/$Version/$Asset"
+          $Checksum = (Get-FileHash $Asset -Algorithm SHA256).Hash.ToLowerInvariant()
+          $ExeName = "iptv-tunerr-$Version-windows-amd64.exe"
+
+          (Get-Content packaging/chocolatey/iptvtunerr.nuspec) `
+            -replace '<version>.*</version>', "<version>$PackageVersion</version>" |
+            Set-Content packaging/chocolatey/iptvtunerr.nuspec
+          (Get-Content packaging/chocolatey/tools/chocolateyinstall.ps1) `
+            -replace '\$url\s*=\s*".*"', "`$url = `"$Url`"" `
+            -replace '\$checksum\s*=\s*".*"', "`$checksum = `"$Checksum`"" `
+            -replace 'iptv-tunerr-v[0-9][^"]*-windows-amd64\.exe', $ExeName |
+            Set-Content packaging/chocolatey/tools/chocolateyinstall.ps1
+
+          cd packaging/chocolatey
+          choco pack
+          $nupkg = Get-ChildItem -Filter "*.nupkg" | Select-Object -First 1
+          if (-not $nupkg) {
+            Write-Error "No .nupkg file found"
+            exit 1
+          }
+          choco push $nupkg.FullName --source https://push.chocolatey.org/ --api-key $env:CHOCO_API_KEY --execution-timeout 300

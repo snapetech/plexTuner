@@ -160,7 +160,7 @@ func liveTVText(s string) bool {
 		strings.Contains(s, "tv.plex.providers.epg.xmltv%3a")
 }
 
-// RewriteTunerEntitlementFlags rewrites the small XML hints Plex Web uses to
+// RewriteTunerEntitlementFlags rewrites the small XML/JSON hints Plex Web uses to
 // decide whether the account can see Live TV entry points. It is deliberately
 // narrow: it only changes allowTuners fields and never rewrites account,
 // library, or server identity.
@@ -170,5 +170,9 @@ func RewriteTunerEntitlementFlags(body []byte) []byte {
 	}
 	out := bytes.ReplaceAll(body, []byte(`allowTuners="0"`), []byte(`allowTuners="1"`))
 	out = bytes.ReplaceAll(out, []byte(`<Setting id="allowTuners" value="0"`), []byte(`<Setting id="allowTuners" value="1"`))
+	out = bytes.ReplaceAll(out, []byte(`"allowTuners":false`), []byte(`"allowTuners":true`))
+	out = bytes.ReplaceAll(out, []byte(`"allowTuners": false`), []byte(`"allowTuners": true`))
+	out = bytes.ReplaceAll(out, []byte(`"allowTuners":0`), []byte(`"allowTuners":1`))
+	out = bytes.ReplaceAll(out, []byte(`"allowTuners": 0`), []byte(`"allowTuners": 1`))
 	return out
 }

@@ -1,3 +1,97 @@
+## 2026-05-13 - Add AUR release-channel scaffolding
+
+- Added AUR package metadata for `iptvtunerr` (source build from tagged GitHub archive) and `iptvtunerr-bin` (Linux amd64 release asset).
+- Added systemd, sysusers, tmpfiles, env, and install metadata under `packaging/aur/`.
+- Added AUR helper scripts for SSH setup, clone/push, `.SRCINFO` generation, and checksum validation.
+- Added `.github/workflows/release-aur.yml` to publish both AUR packages on GitHub release publication or manual tag dispatch when `AUR_SSH_KEY` is configured.
+- Added `AUR_SSH_KEY` to `snapetech/iptvtunerr` GitHub secrets from the local AUR SSH key, then created and pushed the initial `iptvtunerr` and `iptvtunerr-bin` AUR repos.
+- Unsealed local OpenBao and checked for release-channel credentials; COPR/Snapcraft credentials were not present there. Added available PPA credentials (`GPG_PRIVATE_KEY`, `LAUNCHPAD_SFTP_KEY`, `LAUNCHPAD_SFTP_USER`) to `snapetech/iptvtunerr`.
+- Created Launchpad PPA `ppa:keefshape/iptvtunerr`; Launchpad account `keefshape` has display name `slskdn`.
+- Added provided COPR credentials as `COPR_LOGIN` and `COPR_TOKEN` GitHub secrets for `snapetech/iptvtunerr`.
+- Installed `snapd` from AUR and `snapcraft` via snap locally; attempted constrained Snapcraft credential export, but it requires Ubuntu One interactive email/password/2FA and no local Snapcraft session exists.
+- Confirmed user completed Snapcraft credential export and `SNAPCRAFT_STORE_CREDENTIALS` is present in `snapetech/iptvtunerr`.
+- Documented the AUR setup and remaining credential sources in `docs/how-to/release-channels.md`.
+- Verification: `bash -n packaging/scripts/*.sh`, AUR checksum validation, `.SRCINFO` generation for both packages, and a Go build/version smoke passed.
+- Verification: `./scripts/verify` passed after the packaging changes; AUR `list-repos` shows `iptvtunerr` and `iptvtunerr-bin`; fresh HTTPS clones of both AUR repos include `.SRCINFO`, `PKGBUILD`, and support files.
+- Opportunity filed: Snap, Launchpad/PPA, and COPR packaging still need adapted package metadata/workflows.
+
+## 2026-05-13 - Add Windows channel scaffolding
+
+- Added Chocolatey package metadata and install/uninstall scripts for the Windows amd64 GitHub Release ZIP.
+- Added Winget manifest generator for `snapetech.iptvtunerr`.
+- Added manual GitHub Actions workflows for Chocolatey publishing and Winget PR submission from a release tag.
+- Added `WINGETCREATE_GITHUB_TOKEN` from the authenticated GitHub CLI token.
+- Documented Windows release-channel status and required secrets in `docs/how-to/release-channels.md`.
+- Verification: `bash -n packaging/scripts/*.sh`, Winget manifest generation smoke, and `./scripts/windows-baremetal-package.sh` passed.
+- Remaining: native Windows host proof is still recommended.
+
+## 2026-05-13 - Add Snap, PPA, COPR, and Docker release-channel wiring
+
+- Added Snap metadata and `release-snap.yml` to build/publish the strict `iptvtunerr` snap from the release binary.
+- Added Debian package metadata and `release-ppa.yml` to build/sign/upload a source package to `ppa:keefshape/iptvtunerr`.
+- Added RPM spec and `release-copr.yml` to build/upload an SRPM to the `slskdn/iptvtunerr` COPR project.
+- Set repo variable `DOCKERHUB_USERNAME=keefshape`; existing Docker workflow now has the Docker Hub username needed to publish alongside GHCR.
+- Added `CHOCO_API_KEY` GitHub secret from the `slskdn` Chocolatey account.
+- Documented container, Linux package, and Windows package-channel status in `docs/how-to/release-channels.md`.
+- Verification: packaging script syntax passed; `./scripts/windows-baremetal-package.sh` passed. Debian/RPM package CLIs were not installed locally, so PPA/COPR workflows still need first-run validation in Actions.
+
+## 2026-05-13 - Harden tag-only release asset pipeline
+
+- Added `scripts/build-release-assets.sh` to produce raw executables, Linux/macOS tarballs, Windows ZIPs, `SHA256SUMS.txt`, and `release-manifest.json` for Linux amd64/arm64/armv7, macOS amd64/arm64, and Windows amd64/arm64.
+- Added `scripts/build-linux-package-assets.sh` to add direct `.deb` and `.rpm` assets to GitHub Releases.
+- Added `scripts/verify-release-assets.sh` and wired CI to build and verify the full release asset set with a dummy version.
+- Added `scripts/ensure-release-tag-on-main.sh` and wired release, Docker, AUR, Snap, PPA, COPR, Chocolatey, and Winget workflows to reject tags that do not point at current `main`.
+- Changed Docker publishing to tag-only; `latest` now moves only on release tags.
+- Expanded generated release notes with release asset/checksum details and install notes.
+- Verification: installed local `dpkg-deb` and `rpmbuild` tooling, then the full release asset path passed locally for raw binaries, archives, `.deb`, `.rpm`, manifest, and checksum verification.
+
+## 2026-05-12 - Expand sports DVR and restore slow-but-working playback
+
+- Expanded `iptvtunerr-sports` from the strict `sports_na` recipe to `sports_now`, set `IPTV_TUNERR_LINEUP_MAX_CHANNELS=480`, disabled runtime lineup probing, and turned sports runtime guide pruning off so non-EPG sports rows remain visible.
+- Verified `/lineup.json` and `/guide.xml` expose 480 sports channels and Plex activated all 480 channel mappings.
+- Confirmed the guide/EPG path was not the playback blocker: direct Tunerr stream test on `CA| SPORTSNET WORLD FHD` returned about 24 MB over 20 seconds with HTTP 200.
+- Patched `plex-label-proxy` to rewrite JSON `allowTuners` hints in addition to XML, because Plex Web was negotiating JSON `/media/providers` and the proxy previously logged that rewrite was skipped.
+- Verification: `go test -count=1 ./internal/plexlabelproxy ./cmd/iptv-tunerr` passed; patched proxy binary installed on `kspls0`; `plex-live-tv-proxy.service` restarted; JSON `/media/providers` now reports `allowTuners: true`.
+- User confirmed streams do play, but startup remains slow.
+
+## 2026-05-12 - Repair Plex Live TV spinning after Plex Pass switch
+
+- Found the immediate external failure was the Live TV entitlement proxy's persisted abuse block: `/media/providers` from the user's apparent external source was returning `blocked_bad_actor` even when later requests carried a valid Plex token.
+- Backed up and removed `/var/lib/iptvtunerr/plex-live-tv-proxy-blocks.json`, restarted `plex-live-tv-proxy.service`, and verified the same source now gets `outcome=elevated_live_tv` with HTTP 200.
+- Found Plex was still advertising a dead automatic remote route (`plex.direct:55556`) after NAT-PMP. Cleared `LastAutomaticMappedPort`, enforced `ManualPortMappingMode=1`, `ManualPortMappingPort=443`, `RelayEnabled=0`, and `customConnections=https://media.snape.tech:443`, then restarted Plex.
+- Verified PMS stayed on the Plex Pass build `1.43.2.10687-563d026ea`; plex.tv resources now advertise `https://media.snape.tech:443` plus the static `plex.direct:443`, with the stale `:55556` route gone.
+- Found the sports tuner lineup had dropped to 0 channels after runtime probing; disabled `IPTV_TUNERR_LINEUP_PROBE_ENABLED` in `/etc/iptvtunerr/sports.env`, restarted `iptvtunerr-sports.service`, and verified `lineup.json` recovered to 100 channels.
+- Plex sports DVR activation completed successfully for all 100 channels.
+
+## 2026-05-12 - Restore external Live TV after Plex Pass switch
+
+- External users reported Live TV disappeared after the Plex container was recreated for the Plex Pass update channel.
+- Confirmed Plex, Tunerr, and proxy services were active, but PMS returned `503 Maintenance` for several minutes while database migrations completed.
+- Verified the public Cloudflare path `https://media.snape.tech` returns `200` for owner-token `/media/providers` and `/livetv/dvrs`; no-token Live TV remains denied.
+- Found Plex was advertising both the intended custom remote URL and a direct `plex.direct` public-port URL. Later repair showed the working production state is static manual mapping (`ManualPortMappingMode=1`) with port 443, `RelayEnabled=0`, and `customConnections=https://media.snape.tech:443`.
+- Proxy audit showed an external `/media/providers` request from `204.83.235.92` was elevated after PMS recovered.
+- Updated the Live TV entitlement proxy runbook so future Plex updates keep static port mode and do not reintroduce automatic NAT-PMP routes.
+
+## 2026-05-12 - Enable Plex Pass PMS update channel on kspls0
+
+- Found `plex-host` was running `linuxserver/plex:latest` without `VERSION`; LSIO logs said the update routine was skipped because `VERSION` was unset.
+- Recreated `plex-host` with the same host network, mounts, `/dev/dri`, and group settings plus `VERSION=latest`, which lets the signed-in Plex Pass account receive the newest entitled PMS build.
+- Preserved rollback container as `plex-host.pre-version-latest-20260512-165623` and left it stopped.
+- PMS upgraded from `1.43.1.10611-1e34174b1` to `1.43.2.10687-563d026ea`; `/identity` returned 200 after startup migrations.
+- Validation: `plex-host`, `iptvtunerr-primary`, `iptvtunerr-sports`, and `plex-live-tv-proxy` are active; Live TV channel mappings remain enabled (`385/385` primary, `77/77` sports after guide-policy filtering).
+- Updated deployment docs to require/check `VERSION=latest` for the live Plex host container.
+
+## 2026-05-12 - Point local Tunerr env/docs at kspls0
+
+- Updated local `.env` `IPTV_TUNERR_BASE_URL` from `http://kspld0:5004` to `http://kspls0:5004`.
+- Updated the stale shared-lease deployment note in `docs/reference/cli-and-env-reference.md` to name `kspls0`.
+- Verified `http://kspls0:5004/discover.json` returns 200 and advertises `http://192.168.50.84:5004`.
+- Verified `http://kspls0:5004/guide.xml` returns 200 with `X-Iptvtunerr-Guide-State: ready`; response size was 6,937,320 bytes.
+- Found Plex channel activation, not Tunerr guide serving, was the slow step: primary `/guide.xml` served in milliseconds, but Plex's full 385-channel activation PUT exceeded the old 60s client timeout.
+- Live repair: sent full primary and sports channelmaps with a longer timeout; Plex now reports enabled `ChannelMapping` rows: primary `385/385`, sports `79/79`.
+- Code fix: raised `ActivateChannelsAPI` timeout to 5 minutes and removed token-bearing activation URLs from timeout errors.
+- Verification: `go test -count=1 ./internal/plex ./cmd/iptv-tunerr` passed; patched binary installed on `kspls0`; both Tunerr services restarted and `/discover.json` checks passed.
+
 ## 2026-05-12 - Fix external Plex Live TV abuse-block false positive
 
 - External user reported the Plex Live TV provider unavailable again.

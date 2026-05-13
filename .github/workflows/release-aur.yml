@@ -1,0 +1,123 @@
+name: Publish AUR
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish to AUR, for example v0.1.63"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish-aur:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve version
+        id: version
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            tag="${{ github.event.inputs.tag }}"
+          else
+            tag="${{ github.event.release.tag_name }}"
+          fi
+          pkgver="${tag#v}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "pkgver=${pkgver}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.version.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Require release tag on main
+        run: ./scripts/ensure-release-tag-on-main.sh "${{ steps.version.outputs.tag }}"
+
+      - name: Wait for Linux amd64 release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          asset="iptv-tunerr-${TAG}-linux-amd64.tar.gz"
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${asset}"
+          auth_args=()
+          if [[ -n "${GH_TOKEN:-}" ]]; then
+            auth_args=(-H "Authorization: Bearer ${GH_TOKEN}")
+          fi
+
+          for attempt in {1..20}; do
+            echo "Attempt ${attempt}: checking ${asset}"
+            if curl -fsSL "${auth_args[@]}" -H "Accept: application/octet-stream" "$url" -o /tmp/release-linux-amd64.tar.gz; then
+              tar -tzf /tmp/release-linux-amd64.tar.gz | grep -Fx "iptv-tunerr-${TAG}-linux-amd64"
+              exit 0
+            fi
+            sleep 30
+          done
+
+          echo "ERROR: release asset not available after waiting: ${url}" >&2
+          exit 1
+
+      - name: Update PKGBUILDs
+        env:
+          PKGVER: ${{ steps.version.outputs.pkgver }}
+        run: |
+          set -euo pipefail
+          cd packaging/aur
+
+          for pkgbuild in PKGBUILD PKGBUILD-bin; do
+            sed -i "s/^pkgver=.*/pkgver=${PKGVER}/" "$pkgbuild"
+          done
+
+          bash ../scripts/validate-aur-pkgbuild-hashes.sh PKGBUILD PKGBUILD-bin
+
+      - name: Setup AUR SSH
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${AUR_SSH_KEY:-}" ]]; then
+            echo "AUR_SSH_KEY is not configured; skipping AUR publish."
+            exit 0
+          fi
+          tmp_key="$(mktemp)"
+          trap 'rm -f "$tmp_key"' EXIT
+          printf '%s\n' "$AUR_SSH_KEY" > "$tmp_key"
+          bash packaging/scripts/setup-aur-ssh.sh "$tmp_key"
+
+      - name: Push iptvtunerr-bin to AUR
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${AUR_SSH_KEY:-}" ]]; then
+            exit 0
+          fi
+          bash packaging/scripts/checkout-aur-repo.sh iptvtunerr-bin aur-iptvtunerr-bin
+          cp packaging/aur/PKGBUILD-bin aur-iptvtunerr-bin/PKGBUILD
+          cp packaging/aur/iptvtunerr.{service,env,sysusers,tmpfiles,install} aur-iptvtunerr-bin/
+          bash packaging/scripts/generate-aur-srcinfo.sh aur-iptvtunerr-bin/PKGBUILD > aur-iptvtunerr-bin/.SRCINFO
+          (cd aur-iptvtunerr-bin && git add -A)
+          bash packaging/scripts/push-aur-repo.sh aur-iptvtunerr-bin iptvtunerr-bin "Update to ${TAG}"
+
+      - name: Push iptvtunerr to AUR
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${AUR_SSH_KEY:-}" ]]; then
+            exit 0
+          fi
+          bash packaging/scripts/checkout-aur-repo.sh iptvtunerr aur-iptvtunerr
+          cp packaging/aur/PKGBUILD aur-iptvtunerr/PKGBUILD
+          cp packaging/aur/iptvtunerr.{service,env,sysusers,tmpfiles,install} aur-iptvtunerr/
+          bash packaging/scripts/generate-aur-srcinfo.sh aur-iptvtunerr/PKGBUILD > aur-iptvtunerr/.SRCINFO
+          (cd aur-iptvtunerr && git add -A)
+          bash packaging/scripts/push-aur-repo.sh aur-iptvtunerr iptvtunerr "Update to ${TAG}"

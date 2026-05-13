@@ -54,19 +54,18 @@ Plex's private key.
 
 Port 32400 must be closed on the external firewall/router. Do not forward it.
 
-### 3. PMS external connection URL MUST point to the proxy (port 443)
+### 3. PMS external connection URL MUST point to the proxy
 
-Plex uses UPnP to discover its external port and advertises that port to clients.
-If UPnP maps port 55556 (or any non-443 port), Plex advertises
-`media.example.com:55556` — a port that doesn't reach the proxy. Clients connect
-to the wrong port, fail, and fall through to relay (disabled) or give up.
+Plex may advertise automatic `plex.direct` remote connections that bypass the
+entitlement proxy. The supported external Live TV path is the custom Cloudflare
+URL (`https://media.example.com:443`) that terminates on the proxy.
 
 Required PMS preferences (enforced by `plex-prefs-enforce.timer`):
 
 ```bash
 # Disable relay
 RelayEnabled=0
-# Use manual port mapping so Plex doesn't override with UPnP
+# Use static port mode so PMS does not publish an automatic NAT-PMP port
 ManualPortMappingMode=1
 ManualPortMappingPort=443
 # Explicit external URL including port (Plex strips bare-HTTPS port otherwise)

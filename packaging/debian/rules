@@ -1,0 +1,20 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	# Binary is pre-built by the release workflow.
+
+override_dh_auto_install:
+	install -Dm755 usr/bin/iptv-tunerr debian/iptvtunerr/usr/bin/iptv-tunerr
+	install -Dm644 lib/systemd/system/iptvtunerr.service debian/iptvtunerr/lib/systemd/system/iptvtunerr.service
+	install -Dm644 etc/iptvtunerr/iptvtunerr.env debian/iptvtunerr/etc/iptvtunerr/iptvtunerr.env
+	install -Dm644 usr/lib/sysusers.d/iptvtunerr.conf debian/iptvtunerr/usr/lib/sysusers.d/iptvtunerr.conf
+	install -Dm644 usr/lib/tmpfiles.d/iptvtunerr.conf debian/iptvtunerr/usr/lib/tmpfiles.d/iptvtunerr.conf
+
+override_dh_strip:
+	# Keep Go binary as built by the release workflow.
+
+override_dh_shlibdeps:
+	# Statically linked Go binary; no shared library dependency scan needed.

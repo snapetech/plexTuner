@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>iptvtunerr</id>
+    <version>0.1.63</version>
+    <title>IPTV Tunerr</title>
+    <authors>snapetech</authors>
+    <projectUrl>https://github.com/snapetech/iptvtunerr</projectUrl>
+    <licenseUrl>https://github.com/snapetech/iptvtunerr/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <tags>iptv plex emby jellyfin hdhomerun xmltv live-tv dvr</tags>
+    <summary>IPTV to Plex, Emby, and Jellyfin bridge</summary>
+    <description>IPTV Tunerr turns IPTV sources into a stable HDHomeRun-style tuner and XMLTV guide surface for Plex, Emby, and Jellyfin.</description>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>

@@ -1,0 +1,80 @@
+name: Publish Winget
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag to submit, for example v0.1.63"
+        required: true
+        type: string
+
+env:
+  WINGETCREATE_GITHUB_TOKEN: ${{ secrets.WINGETCREATE_GITHUB_TOKEN }}
+
+permissions:
+  contents: read
+
+jobs:
+  submit:
+    name: Submit Winget PR
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.version }}
+          fetch-depth: 0
+
+      - name: Require release tag on main
+        shell: bash
+        run: ./scripts/ensure-release-tag-on-main.sh "${{ inputs.version }}"
+
+      - name: Require Winget token
+        if: ${{ env.WINGETCREATE_GITHUB_TOKEN == '' }}
+        shell: pwsh
+        run: |
+          Write-Error "WINGETCREATE_GITHUB_TOKEN is not configured"
+          exit 1
+
+      - name: Download wingetcreate
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+
+      - name: Download Windows release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          gh release download "${{ inputs.version }}" `
+            --repo ${{ github.repository }} `
+            --pattern "iptv-tunerr-${{ inputs.version }}-windows-amd64.zip"
+
+      - name: Prepare manifests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ReleaseVersion = "${{ inputs.version }}"
+          $WingetVersion = $ReleaseVersion.TrimStart("v").Replace("-", ".")
+          $Asset = "iptv-tunerr-$ReleaseVersion-windows-amd64.zip"
+          $InstallerUrl = "https://github.com/${{ github.repository }}/releases/download/$ReleaseVersion/$Asset"
+          $InstallerSha = (Get-FileHash $Asset -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          bash packaging/scripts/update-winget-manifests.sh `
+            $ReleaseVersion `
+            $InstallerUrl `
+            $InstallerSha `
+            $ReleaseVersion
+
+          $WingetSubmitPath = Join-Path "winget-submit" "manifests/s/snapetech/iptvtunerr/$WingetVersion"
+          New-Item -ItemType Directory -Force $WingetSubmitPath | Out-Null
+          Copy-Item packaging/winget/snapetech.iptvtunerr.yaml $WingetSubmitPath/
+          Copy-Item packaging/winget/snapetech.iptvtunerr.installer.yaml $WingetSubmitPath/
+          Copy-Item packaging/winget/snapetech.iptvtunerr.locale.en-US.yaml $WingetSubmitPath/
+          "WINGET_SUBMIT_PATH=$WingetSubmitPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Submit manifests to winget-pkgs
+        shell: pwsh
+        run: |
+          .\wingetcreate.exe submit $env:WINGET_SUBMIT_PATH `
+            -t $env:WINGETCREATE_GITHUB_TOKEN

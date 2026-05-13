@@ -140,11 +140,12 @@ type Proxy struct {
 	warnedMu sync.Mutex
 	warned   map[string]struct{}
 
-	// sessionUsers maps X-Plex-Session-Identifier values to the original client
-	// token captured before elevation. Used by NeutralizeOwnerHistory to replay
-	// timeline/scrobble events under the correct user for all content types.
-	sessionMu    sync.Mutex
-	sessionUsers map[string]string
+	// sessions maps Plex session correlation keys to the original client token
+	// captured before elevation. Plex clients are not consistent about sending
+	// X-Plex-Session-Identifier on every request, so we track several bounded
+	// keys: session id, client identifier, and play queue ids.
+	sessionMu sync.Mutex
+	sessions  map[string]sessionRecord
 
 	abuseMu    sync.Mutex
 	abuseState map[string]abuseEntry
@@ -182,6 +183,13 @@ type auditStats struct {
 	blockedRequests  int
 	bySource         map[string]int
 }
+
+type sessionRecord struct {
+	userToken string
+	expiresAt time.Time
+}
+
+const elevatedSessionTTL = 8 * time.Hour
 
 type persistedAbuseState struct {
 	Sources map[string]persistedAbuseEntry `json:"sources"`
@@ -237,13 +245,13 @@ func New(cfg Config) (*Proxy, error) {
 		logger = log.Default()
 	}
 	p := &Proxy{
-		cfg:          cfg,
-		upstreamURL:  u,
-		logger:       logger,
-		authorizer:   cfg.TokenAuthorizer,
-		abuseState:   make(map[string]abuseEntry),
-		abuseCfg:     normalizeAbuseConfig(cfg),
-		sessionUsers: make(map[string]string),
+		cfg:         cfg,
+		upstreamURL: u,
+		logger:      logger,
+		authorizer:  cfg.TokenAuthorizer,
+		abuseState:  make(map[string]abuseEntry),
+		abuseCfg:    normalizeAbuseConfig(cfg),
+		sessions:    make(map[string]sessionRecord),
 		stats: auditStats{
 			since:    time.Now(),
 			bySource: make(map[string]int),
@@ -397,6 +405,9 @@ func (p *Proxy) modifyResponse(resp *http.Response) error {
 		return err
 	}
 	if !looksLikeXML(body) {
+		if p.shouldRewriteTunerEntitlement(resp) {
+			return restoreBody(resp, RewriteTunerEntitlementFlags(body), encoding)
+		}
 		return restoreBody(resp, body, encoding)
 	}
 
@@ -498,27 +509,73 @@ func (p *Proxy) elevateLiveTVRequest(req *http.Request, originalToken string) {
 	}
 }
 
-// trackSession stores the X-Plex-Session-Identifier → original user token
-// mapping for any elevated request. Called on every request in ElevateAll mode
-// (so direct-play library sessions are tracked before the first timeline tick)
-// and on Live TV stream-start requests in ElevateLiveTV mode.
+// trackSession stores request correlation keys → original user token mappings
+// for elevated requests. Called on every request in ElevateAll mode (so
+// direct-play library sessions are tracked before the first timeline tick) and
+// on Live TV stream-start requests in ElevateLiveTV mode.
 func (p *Proxy) trackSession(req *http.Request, originalToken string) {
-	sessionID := req.Header.Get("X-Plex-Session-Identifier")
-	if sessionID == "" {
-		sessionID = req.URL.Query().Get("X-Plex-Session-Identifier")
+	keys := sessionCorrelationKeys(req)
+	if originalToken == "" {
+		return
 	}
-	if sessionID == "" || originalToken == "" {
+	if len(keys) == 0 {
+		p.logger.Printf(
+			"plexlabelproxy_playback: outcome=track_unkeyed path=%s source=%s token_fp=%s",
+			req.URL.EscapedPath(),
+			apparentSource(req),
+			tokenFingerprint(originalToken),
+		)
 		return
 	}
 	p.sessionMu.Lock()
 	defer p.sessionMu.Unlock()
-	if p.sessionUsers == nil {
-		p.sessionUsers = make(map[string]string)
+	if p.sessions == nil {
+		p.sessions = make(map[string]sessionRecord)
 	}
-	if _, exists := p.sessionUsers[sessionID]; !exists {
-		p.logger.Printf("plexlabelproxy: tracking session %s → token ...%s (path=%s)", sessionID, last6(originalToken), req.URL.Path)
+	rec := sessionRecord{userToken: originalToken, expiresAt: time.Now().Add(elevatedSessionTTL)}
+	for _, key := range keys {
+		if _, exists := p.sessions[key]; !exists {
+			p.logger.Printf(
+				"plexlabelproxy_playback: outcome=track key=%s path=%s source=%s token_fp=%s",
+				key,
+				req.URL.EscapedPath(),
+				apparentSource(req),
+				tokenFingerprint(originalToken),
+			)
+		}
+		p.sessions[key] = rec
 	}
-	p.sessionUsers[sessionID] = originalToken
+}
+
+func sessionCorrelationKeys(req *http.Request) []string {
+	if req == nil || req.URL == nil {
+		return nil
+	}
+	q := req.URL.Query()
+	var keys []string
+	add := func(prefix, value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		key := prefix + ":" + value
+		for _, existing := range keys {
+			if existing == key {
+				return
+			}
+		}
+		keys = append(keys, key)
+	}
+	add("session", req.Header.Get("X-Plex-Session-Identifier"))
+	add("session", q.Get("X-Plex-Session-Identifier"))
+	add("session", q.Get("session"))
+	add("session", q.Get("sessionID"))
+	add("client", req.Header.Get("X-Plex-Client-Identifier"))
+	add("client", q.Get("X-Plex-Client-Identifier"))
+	add("client", q.Get("clientIdentifier"))
+	add("playqueue", q.Get("playQueueID"))
+	add("playqueue", q.Get("playQueueItemID"))
+	return keys
 }
 
 func last6(s string) string {
@@ -950,26 +1007,46 @@ func (p *Proxy) neutralizeOwnerScrobble(req *http.Request) {
 	if path != "/:/timeline" && path != "/:/scrobble" && path != "/:/progress" {
 		return
 	}
-	sessionID := req.Header.Get("X-Plex-Session-Identifier")
-	if sessionID == "" {
-		sessionID = req.URL.Query().Get("X-Plex-Session-Identifier")
-	}
-	if sessionID == "" {
+	keys := sessionCorrelationKeys(req)
+	if len(keys) == 0 {
+		p.logPlaybackCorrelation(req, "unmatched_no_keys", "", nil)
 		return
 	}
 	p.sessionMu.Lock()
-	userToken, tracked := p.sessionUsers[sessionID]
+	now := time.Now()
+	var (
+		userToken string
+		tracked   bool
+		matched   string
+	)
+	for _, key := range keys {
+		rec, ok := p.sessions[key]
+		if !ok {
+			continue
+		}
+		if !rec.expiresAt.IsZero() && now.After(rec.expiresAt) {
+			delete(p.sessions, key)
+			continue
+		}
+		userToken = rec.userToken
+		tracked = userToken != ""
+		matched = key
+		break
+	}
 	if req.URL.Query().Get("state") == "stopped" {
-		delete(p.sessionUsers, sessionID)
+		for _, key := range keys {
+			delete(p.sessions, key)
+		}
 	}
 	p.sessionMu.Unlock()
 
 	if !tracked || userToken == "" {
+		p.logPlaybackCorrelation(req, "unmatched", "", keys)
 		return
 	}
 	ratingKey := req.URL.Query().Get("ratingKey")
 
-	p.logger.Printf("plexlabelproxy: neutralize %s session=%s ratingKey=%s token=...%s", path, sessionID, ratingKey, last6(userToken))
+	p.logPlaybackCorrelation(req, "neutralize", matched, keys)
 
 	// Always replay the event under the user's own token so their progress,
 	// on-deck, and watch history are updated correctly.
@@ -980,6 +1057,36 @@ func (p *Proxy) neutralizeOwnerScrobble(req *http.Request) {
 	if path == "/:/scrobble" && ratingKey != "" {
 		go p.ownerUnscrobble(ratingKey)
 	}
+}
+
+func (p *Proxy) logPlaybackCorrelation(req *http.Request, outcome, matched string, keys []string) {
+	if req == nil || req.URL == nil {
+		return
+	}
+	q := req.URL.Query()
+	p.logger.Printf(
+		"plexlabelproxy_playback: outcome=%s path=%s source=%s matched=%q keys=%q state=%q ratingKey=%q playQueueID=%q playQueueItemID=%q clientIdentifier=%q token_fp=%s",
+		outcome,
+		req.URL.EscapedPath(),
+		apparentSource(req),
+		matched,
+		strings.Join(keys, ","),
+		q.Get("state"),
+		q.Get("ratingKey"),
+		q.Get("playQueueID"),
+		q.Get("playQueueItemID"),
+		firstNonEmpty(req.Header.Get("X-Plex-Client-Identifier"), q.Get("X-Plex-Client-Identifier"), q.Get("clientIdentifier")),
+		tokenFingerprint(inboundPlexToken(req)),
+	)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // replayAsUser re-fires a timeline/scrobble/progress event under the original
@@ -1045,7 +1152,7 @@ func (p *Proxy) shouldRewriteTunerEntitlement(resp *http.Response) bool {
 		return false
 	}
 	ct := strings.ToLower(resp.Header.Get("Content-Type"))
-	return strings.Contains(ct, "xml") || ct == ""
+	return strings.Contains(ct, "xml") || strings.Contains(ct, "json") || ct == ""
 }
 
 // labelFromReferer parses the Referer header and returns the label for the

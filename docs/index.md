@@ -30,6 +30,7 @@ Where to find what. This repo uses the [Diátaxis](https://diataxis.fr/) split b
 | **[examples/plex-live-tv-elevate.nginx.conf.example](examples/plex-live-tv-elevate.nginx.conf.example)** | Manual nginx+njs example for owner-token Live TV elevation without running the Tunerr proxy binary. |
 | **[reference/vpn-access-patterns.md](reference/vpn-access-patterns.md)** | Tailscale, WireGuard, OpenVPN, Gluetun, NAT-PMP/static-forward, and fail-closed routing patterns for Tunerr and Plex Live TV proxy access. |
 | **[how-to/package-test-builds.md](how-to/package-test-builds.md)** | Build cross-platform test bundles for testers (Linux/macOS/Windows). |
+| **[how-to/release-channels.md](how-to/release-channels.md)** | Package-channel automation, starting with AUR publishing for `iptvtunerr` and `iptvtunerr-bin`. |
 | **[how-to/tester-handoff-checklist.md](how-to/tester-handoff-checklist.md)** | Tester handoff checklist (bundle contents, platform expectations, bug report capture). |
 | **[how-to/tester-release-notes-draft.md](how-to/tester-release-notes-draft.md)** | Draft tester-facing release notes for current validation builds. |
 | **[how-to/cloudflare-bypass.md](how-to/cloudflare-bypass.md)** | Cloudflare-protected providers: UA cycling, cookies, headers, troubleshooting. |
