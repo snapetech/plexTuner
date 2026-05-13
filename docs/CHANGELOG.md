@@ -13,6 +13,12 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.68] — 2026-05-13
+
+### Release process
+- **Direct GitHub Release RPM asset builds now skip external build-dependency resolution:** the binary RPM asset path uses `rpmbuild --nodeps`, keeping COPR metadata intact while allowing Ubuntu release runners to build the direct `.rpm` artifact.
+- **Local pre-push secret scanning no longer emits broken-pipe warnings:** hook regex checks now avoid pipelines that can trip `pipefail` when scanners exit early.
+
 ## [v0.1.67] — 2026-05-13
 
 ### Release process

@@ -70,8 +70,8 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     while IFS= read -r path; do
       [[ -z "$path" ]] && continue
 
-      if printf '%s\n' "$path" | rg -qi "$SUSP_PATH"; then
-        if ! printf '%s\n' "$path" | rg -qi '(\.example$|example|sample|template)'; then
+      if rg -qi "$SUSP_PATH" <<<"$path"; then
+        if ! rg -qi '(\.example$|example|sample|template)' <<<"$path"; then
           if [[ -z "${seen_warn_path[$path]:-}" ]]; then
             seen_warn_path["$path"]=1
             printf 'warn:path:%s\n' "$path" >> "$report_file"
@@ -89,13 +89,13 @@ while read -r local_ref local_sha remote_ref remote_sha; do
       if ! blob=$(git show "${commit}:${path}" 2>/dev/null); then
         continue
       fi
-      if ! printf '%s' "$blob" | grep -Iq .; then
+      if ! grep -Iq . <<<"$blob"; then
         continue
       fi
 
-      hits=$(printf '%s' "$blob" | rg -n --no-heading -e "$PAT" 2>/dev/null || true)
+      hits=$(rg -n --no-heading -e "$PAT" <<<"$blob" 2>/dev/null || true)
       [[ -z "$hits" ]] && continue
-      filtered=$(printf '%s\n' "$hits" | rg -vn "$ALLOW" || true)
+      filtered=$(rg -vn "$ALLOW" <<<"$hits" || true)
       [[ -z "$filtered" ]] && continue
 
       blocked=1

@@ -52,6 +52,8 @@
 - Wired CI to enforce changelog updates on release-relevant code, workflow, script, packaging, and docs changes.
 - Wired the Release workflow to require a populated changelog section for the exact release tag before release notes are generated.
 - Documented the hook installation and release changelog rule in `docs/how-to/release-channels.md`.
+- Follow-up while testing releases: `v0.1.66` failed direct RPM asset generation on Ubuntu because `rpmbuild` enforced `systemd-rpm-macros`; patched the direct GitHub Release RPM build to use `--nodeps` while leaving COPR metadata intact.
+- Follow-up while testing hooks: patched `.githooks/pre-push` to avoid `pipefail` broken-pipe warnings during regex scans.
 
 ## 2026-05-12 - Expand sports DVR and restore slow-but-working playback
 

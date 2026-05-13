@@ -68,7 +68,7 @@ cp packaging/aur/iptvtunerr.tmpfiles "$RPM_TOP/SOURCES/"
 cp packaging/rpm/iptvtunerr.spec "$RPM_TOP/SPECS/"
 sed -i "s/^Version:.*/Version:        ${PKG_VERSION}/" "$RPM_TOP/SPECS/iptvtunerr.spec"
 sed -i "s|^Source0:.*|Source0:        iptv-tunerr-${VERSION}-linux-amd64.tar.gz|" "$RPM_TOP/SPECS/iptvtunerr.spec"
-rpmbuild -bb "$RPM_TOP/SPECS/iptvtunerr.spec" \
+rpmbuild -bb --nodeps "$RPM_TOP/SPECS/iptvtunerr.spec" \
   --define "_topdir $RPM_TOP" \
   --define "_unitdir /usr/lib/systemd/system" \
   --define "_sysusersdir /usr/lib/sysusers.d" \
