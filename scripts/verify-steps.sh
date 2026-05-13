@@ -32,6 +32,10 @@ shopt -s nullglob
 for f in "$ROOT"/scripts/*.sh; do
   bash -n "$f" || err "bash -n failed on $f"
 done
+for f in "$ROOT"/.githooks/*; do
+  [[ -f "$f" ]] || continue
+  bash -n "$f" || err "bash -n failed on $f"
+done
 for f in "$ROOT"/packaging/scripts/*.sh; do
   bash -n "$f" || err "bash -n failed on $f"
 done

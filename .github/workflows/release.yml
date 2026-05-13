@@ -21,6 +21,9 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Require populated changelog section
+        run: ./scripts/verify-changelog-entry.sh release "${GITHUB_REF_NAME}"
+
       - name: Verify
         run: ./scripts/verify
 

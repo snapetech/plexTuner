@@ -13,6 +13,11 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.67] — 2026-05-13
+
+### Release process
+- **Changelog entries are now enforced before release:** local git hooks, CI, and the release workflow now require release-relevant changes to update `docs/CHANGELOG.md`, and release tags must have a populated changelog section before GitHub Release notes can be published.
+
 ## [v0.1.66] — 2026-05-13
 
 ### Release channels

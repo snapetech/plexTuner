@@ -27,6 +27,17 @@ CI runs the same release asset builder and checksum verifier with a dummy
 version so asset naming, archive layout, and checksum coverage stay tested
 before tags are cut.
 
+Release-relevant changes must update `docs/CHANGELOG.md`. Install local hooks
+with:
+
+```bash
+./scripts/install-git-hooks.sh
+```
+
+CI enforces the same changelog rule for code, workflow, script, packaging, and
+documentation changes. The release workflow also requires a populated changelog
+section for the exact release tag before GitHub Release notes can be generated.
+
 ## AUR
 
 The repo includes AUR packaging for:

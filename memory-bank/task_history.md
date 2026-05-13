@@ -45,6 +45,14 @@
 - Expanded generated release notes with release asset/checksum details and install notes.
 - Verification: installed local `dpkg-deb` and `rpmbuild` tooling, then the full release asset path passed locally for raw binaries, archives, `.deb`, `.rpm`, manifest, and checksum verification.
 
+## 2026-05-13 - Enforce changelog-backed release notes
+
+- Added `scripts/verify-changelog-entry.sh` with staged, range, and release-tag modes.
+- Added `.githooks/pre-commit` plus `scripts/install-git-hooks.sh` so local commits reject release-relevant changes that omit `docs/CHANGELOG.md`.
+- Wired CI to enforce changelog updates on release-relevant code, workflow, script, packaging, and docs changes.
+- Wired the Release workflow to require a populated changelog section for the exact release tag before release notes are generated.
+- Documented the hook installation and release changelog rule in `docs/how-to/release-channels.md`.
+
 ## 2026-05-12 - Expand sports DVR and restore slow-but-working playback
 
 - Expanded `iptvtunerr-sports` from the strict `sports_na` recipe to `sports_now`, set `IPTV_TUNERR_LINEUP_MAX_CHANNELS=480`, disabled runtime lineup probing, and turned sports runtime guide pruning off so non-EPG sports rows remain visible.

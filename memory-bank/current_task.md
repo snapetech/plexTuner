@@ -18,4 +18,5 @@
 - Done: added direct `.deb` and `.rpm` GitHub Release package assets.
 - Done: added tag-on-current-main guards to release, Docker, AUR, Snap, PPA, COPR, Chocolatey, and Winget workflows.
 - Done: changed Docker publishing to tag-only and added CI release-asset verification.
+- Done: added local git hook, installer, CI gate, and release gate requiring changelog updates and populated release tag sections.
 - Follow-up: first live package-channel runs may need workflow hardening based on remote service responses.

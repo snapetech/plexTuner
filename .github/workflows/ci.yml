@@ -20,6 +20,16 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Changelog gate
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git fetch --quiet origin "${{ github.base_ref }}"
+            ./scripts/verify-changelog-entry.sh range "origin/${{ github.base_ref }}" HEAD
+          else
+            ./scripts/verify-changelog-entry.sh range "${{ github.event.before }}" HEAD
+          fi
+
       - name: Verify (runs scripts/verify-steps.sh or template default)
         run: ./scripts/verify
 
