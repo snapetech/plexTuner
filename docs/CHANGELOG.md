@@ -13,6 +13,11 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.72] — 2026-05-13
+
+### Release channels
+- **Snap builds can see their staged source tarball:** the Snap workflow now writes the release tarball inside `packaging/snap/` and points Snapcraft at the binary path inside the extracted directory, matching managed LXD build isolation.
+
 ## [v0.1.71] — 2026-05-13
 
 ### Release process

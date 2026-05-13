@@ -43,12 +43,14 @@ jobs:
           set -euo pipefail
           version="${{ steps.version.outputs.version }}"
           asset="iptv-tunerr-v${version}-linux-amd64"
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=vendor -trimpath -ldflags="-s -w -X main.Version=v${version}" -o "$asset" ./cmd/iptv-tunerr
-          tar -czf "${asset}.tar.gz" "$asset"
-          sha="$(sha256sum "${asset}.tar.gz" | awk '{print $1}')"
+          rm -rf "$asset" "packaging/snap/${asset}.tar.gz"
+          mkdir -p "$asset"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=vendor -trimpath -ldflags="-s -w -X main.Version=v${version}" -o "$asset/iptv-tunerr" ./cmd/iptv-tunerr
+          tar -czf "packaging/snap/${asset}.tar.gz" "$asset"
+          sha="$(sha256sum "packaging/snap/${asset}.tar.gz" | awk '{print $1}')"
           sed -i "s/^version: .*/version: '${version}'/" packaging/snap/snapcraft.yaml
-          sed -i "s#^    command: .*#    command: ${asset}#" packaging/snap/snapcraft.yaml
-          sed -i "s#^    source: .*#    source: ${GITHUB_WORKSPACE}/${asset}.tar.gz#" packaging/snap/snapcraft.yaml
+          sed -i "s#^    command: .*#    command: ${asset}/iptv-tunerr#" packaging/snap/snapcraft.yaml
+          sed -i "s#^    source: .*#    source: ${asset}.tar.gz#" packaging/snap/snapcraft.yaml
           sed -i "s#^    source-checksum: .*#    source-checksum: sha256/${sha}#" packaging/snap/snapcraft.yaml
 
       - uses: snapcore/action-build@v1

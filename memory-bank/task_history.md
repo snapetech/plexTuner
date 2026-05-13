@@ -57,6 +57,7 @@
 - Follow-up while testing `v0.1.68`: GitHub Release and Docker succeeded, but release-event package workflows did not fan out from a release created by Actions. Manually dispatched AUR, Snap, PPA, COPR, Chocolatey, and Winget for `v0.1.68`, then patched the Release workflow to explicitly dispatch those channel workflows after asset upload.
 - Follow-up while inspecting manual `v0.1.68` channel tests: PPA, Chocolatey, and Winget passed. AUR failed only its tarball layout check, Snap failed because `core24` requires `platforms`, and COPR failed because `slskdn/iptvtunerr` did not exist yet. Patched all three for `v0.1.70`.
 - Follow-up while watching `v0.1.69` package-channel auto-dispatch: some queued channel jobs failed the strict tag-equals-current-main guard after a newer release-fix commit advanced `main`. Patched channel workflows to use an ancestor-in-main guard while keeping the primary Release workflow exact.
+- Follow-up while watching `v0.1.71` package-channel runs: AUR, COPR, PPA, Winget, Release, Docker, and CI passed. Snap failed because the managed LXD build could not see a source tarball written outside `packaging/snap`; patched the Snap workflow to stage the tarball inside the snap project.
 
 ## 2026-05-12 - Expand sports DVR and restore slow-but-working playback
 
