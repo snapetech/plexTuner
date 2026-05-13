@@ -168,3 +168,27 @@ jobs:
             "${MATRIX_BASE_URL}/_matrix/client/r0/rooms/%21feVqoCPCPPaCQmTCEE%3Atimeways.net/send/m.room.message/${txn_id}"; then
             echo "Matrix release announcement failed; continuing without failing the release workflow."
           fi
+
+  dispatch-package-channels:
+    name: Dispatch Package Channels
+    needs: [release]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch channel workflows
+        env:
+          GH_TOKEN: ${{ secrets.GH_WORKFLOW_TOKEN || secrets.GHCR_TOKEN || github.token }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          for workflow in release-aur.yml release-snap.yml release-ppa.yml release-copr.yml; do
+            gh workflow run "$workflow" --repo "$REPO" -f "tag=$TAG"
+          done
+
+          for workflow in publish-chocolatey.yml publish-winget.yml; do
+            gh workflow run "$workflow" --repo "$REPO" -f "version=$TAG"
+          done

@@ -13,6 +13,11 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.69] — 2026-05-13
+
+### Release process
+- **GitHub Releases now explicitly dispatch package-channel workflows:** the release workflow starts AUR, Snap, PPA, COPR, Chocolatey, and Winget workflow-dispatch runs after the GitHub Release asset upload succeeds, avoiding GitHub's `GITHUB_TOKEN` release-event fan-out limitation.
+
 ## [v0.1.68] — 2026-05-13
 
 ### Release process
