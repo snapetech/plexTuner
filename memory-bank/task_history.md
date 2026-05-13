@@ -55,6 +55,7 @@
 - Follow-up while testing releases: `v0.1.66` failed direct RPM asset generation on Ubuntu because `rpmbuild` enforced `systemd-rpm-macros`; patched the direct GitHub Release RPM build to use `--nodeps` while leaving COPR metadata intact.
 - Follow-up while testing hooks: patched `.githooks/pre-push` to avoid `pipefail` broken-pipe warnings during regex scans.
 - Follow-up while testing `v0.1.68`: GitHub Release and Docker succeeded, but release-event package workflows did not fan out from a release created by Actions. Manually dispatched AUR, Snap, PPA, COPR, Chocolatey, and Winget for `v0.1.68`, then patched the Release workflow to explicitly dispatch those channel workflows after asset upload.
+- Follow-up while inspecting manual `v0.1.68` channel tests: PPA, Chocolatey, and Winget passed. AUR failed only its tarball layout check, Snap failed because `core24` requires `platforms`, and COPR failed because `slskdn/iptvtunerr` did not exist yet. Patched all three for `v0.1.70`.
 
 ## 2026-05-12 - Expand sports DVR and restore slow-but-working playback
 

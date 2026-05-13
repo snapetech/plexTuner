@@ -13,6 +13,11 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.70] — 2026-05-13
+
+### Release channels
+- **First-run package-channel failures are fixed:** AUR now validates the actual tarball binary path, Snapcraft uses `core24` `platforms`, and COPR creates the `slskdn/iptvtunerr` project before submitting the first SRPM when the project is missing.
+
 ## [v0.1.69] — 2026-05-13
 
 ### Release process

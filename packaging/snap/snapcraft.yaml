@@ -7,8 +7,10 @@ description: |
   guide surface for Plex, Emby, and Jellyfin.
 grade: stable
 confinement: strict
-architectures:
-  - amd64
+platforms:
+  amd64:
+    build-on: [amd64]
+    build-for: [amd64]
 
 apps:
   iptvtunerr:

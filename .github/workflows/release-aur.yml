@@ -54,7 +54,7 @@ jobs:
           for attempt in {1..20}; do
             echo "Attempt ${attempt}: checking ${asset}"
             if curl -fsSL "${auth_args[@]}" -H "Accept: application/octet-stream" "$url" -o /tmp/release-linux-amd64.tar.gz; then
-              tar -tzf /tmp/release-linux-amd64.tar.gz | grep -Fx "iptv-tunerr-${TAG}-linux-amd64"
+              tar -tzf /tmp/release-linux-amd64.tar.gz | grep -Fx "iptv-tunerr-${TAG}-linux-amd64/iptv-tunerr"
               exit 0
             fi
             sleep 30

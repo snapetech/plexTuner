@@ -84,6 +84,18 @@ jobs:
           sed -i "s|^Source0:.*|Source0:        iptv-tunerr-v${version}-linux-amd64.tar.gz|" ~/rpmbuild/SPECS/iptvtunerr.spec
           rpmbuild -bs ~/rpmbuild/SPECS/iptvtunerr.spec --define "_topdir $HOME/rpmbuild"
 
+      - name: Ensure COPR project exists
+        run: |
+          set -euo pipefail
+          if copr-cli get iptvtunerr >/dev/null 2>&1; then
+            exit 0
+          fi
+          copr-cli create iptvtunerr \
+            --chroot fedora-43-x86_64 \
+            --chroot fedora-rawhide-x86_64 \
+            --description "IPTV Tunerr RPM builds" \
+            --instructions "dnf copr enable slskdn/iptvtunerr && dnf install iptvtunerr"
+
       - name: Upload to COPR
         run: |
           set -euo pipefail
