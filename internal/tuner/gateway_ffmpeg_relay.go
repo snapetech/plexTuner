@@ -145,6 +145,7 @@ func (g *Gateway) startHLSRelayFFmpegStdinNormalizer(
 	flushBody func(),
 	bufferBytes int,
 	responseStarted bool,
+	sharedSession *sharedRelaySession,
 ) (*hlsRelayFFmpegStdinNormalizer, error) {
 	reqField := gatewayReqIDField(r.Context())
 	modeLabel := "hls-relay-ffmpeg-stdin-remux"
@@ -211,6 +212,9 @@ func (g *Gateway) startHLSRelayFFmpegStdinNormalizer(
 		startedSignal: &norm.responseStart,
 	}
 	dst := io.Writer(out)
+	if sharedSession != nil {
+		dst = &sharedRelayFanoutWriter{base: dst, session: sharedSession}
+	}
 	if flusher != nil {
 		dst = &firstWriteLogger{
 			w:           dst,

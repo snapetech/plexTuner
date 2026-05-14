@@ -47,6 +47,28 @@ func TestPrioritizeWinningProvider_NormalizesEquivalentBases(t *testing.T) {
 	}
 }
 
+func TestAppendConfiguredProviderFallbacksKeepsUnrankedCredentials(t *testing.T) {
+	ranked := []provider.EntryResult{
+		{Entry: provider.Entry{BaseURL: "http://line.test", User: "u2", Pass: "p2"}},
+	}
+	entries := []config.ProviderEntry{
+		{BaseURL: "http://pod.test", User: "u1", Pass: "p1"},
+		{BaseURL: " http://line.test/ ", User: "u2", Pass: "p2"},
+		{BaseURL: "http://third.test", User: "u3", Pass: "p3"},
+	}
+
+	got := appendConfiguredProviderFallbacks(ranked, entries)
+	if len(got) != 3 {
+		t.Fatalf("len(got)=%d want 3", len(got))
+	}
+	wantBases := []string{"http://line.test", "http://pod.test", "http://third.test"}
+	for i, want := range wantBases {
+		if got[i].Entry.BaseURL != want {
+			t.Fatalf("got[%d].BaseURL=%q want %q", i, got[i].Entry.BaseURL, want)
+		}
+	}
+}
+
 func TestStreamVariantsFromRankedEntries_NormalizesBase(t *testing.T) {
 	variants := streamVariantsFromRankedEntries("http://origin.test/live/u/p/1001.m3u8", []provider.EntryResult{
 		{Entry: provider.Entry{BaseURL: "  http://provider.test///  ", User: "u", Pass: "p"}},
@@ -56,6 +78,19 @@ func TestStreamVariantsFromRankedEntries_NormalizesBase(t *testing.T) {
 	}
 	if got := variants[0].URL; got != "http://provider.test/live/u/p/1001.m3u8" {
 		t.Fatalf("variant url=%q", got)
+	}
+}
+
+func TestStreamVariantsFromRankedEntries_RewritesProviderCredentials(t *testing.T) {
+	variants := streamVariantsFromRankedEntries("http://origin.test/live/winner/pass/1001.m3u8", []provider.EntryResult{
+		{Entry: provider.Entry{BaseURL: "http://backup.test", User: "backup user", Pass: "backup/pass"}},
+	})
+	if len(variants) != 1 {
+		t.Fatalf("len(variants)=%d want 1", len(variants))
+	}
+	want := "http://backup.test/live/backup%20user/backup%2Fpass/1001.m3u8"
+	if got := variants[0].URL; got != want {
+		t.Fatalf("variant url=%q want %q", got, want)
 	}
 }
 

@@ -320,7 +320,15 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 		log.Printf("gateway: channel=%q id=%s ffmpeg disabled by config (using go relay)", channel.GuideName, channelID)
 	}
 	var sharedSession *sharedRelaySession
-	if !transcode {
+	if getenvBool("IPTV_TUNERR_HLS_RELAY_FFMPEG_STDIN_NORMALIZE", false) {
+		sharedSession = g.createSharedOutputRelaySession(
+			sharedFFmpegRelayKey(channelID, profileSelection, outputMux),
+			channelID,
+			gatewayReqIDFromContext(r.Context()),
+			"hls_relay_ffmpeg_stdin",
+			sharedRelayContentType(outputMux),
+		)
+	} else if !transcode {
 		sharedSession = g.createSharedRelaySession(channelID, gatewayReqIDFromContext(r.Context()))
 	}
 	if err := g.relayHLSAsTS(
@@ -434,7 +442,14 @@ func (g *Gateway) relaySuccessfulRawUpstream(
 		strings.HasSuffix(strings.ToLower(streamURL), ".ts")
 	if isMPEGTS && !g.DisableFFmpeg && !shouldBypassFFmpegForRawMPEGTS(channel, streamURL) {
 		if ffmpegPath, ffmpegErr := resolveFFmpegPath(); ffmpegErr == nil {
-			if g.relayRawTSWithFFmpeg(w, r, ffmpegPath, resp.Body, channel.GuideName, channelID, resp.StatusCode, start, bufferSize) {
+			sharedSession := g.createSharedOutputRelaySession(
+				sharedRawTSRelayKey(channelID),
+				channelID,
+				gatewayReqIDFromContext(r.Context()),
+				"raw_ts_ffmpeg",
+				"video/mp2t",
+			)
+			if g.relayRawTSWithFFmpeg(w, r, ffmpegPath, resp.Body, channel.GuideName, channelID, resp.StatusCode, start, bufferSize, sharedSession) {
 				return "", "", "", true
 			}
 			log.Printf("gateway: channel=%q id=%s ffmpeg-ts-norm failed to launch; falling back to raw proxy", channel.GuideName, channelID)

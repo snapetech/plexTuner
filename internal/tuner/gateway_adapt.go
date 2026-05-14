@@ -398,6 +398,9 @@ func (g *Gateway) requestAdaptation(ctx context.Context, r *http.Request, channe
 	if looksLikePlexWeb(info.Product) || looksLikePlexWeb(info.Platform) {
 		return true, true, plexResolvedWebsafeProfileName(clientClass), "resolved-web-client", clientClass
 	}
+	if looksLikePlexInternalFetcherUserAgent(r.UserAgent()) {
+		return applyPlexAdaptPolicy(plexInternalFetcherPolicy(), "internal-fetcher-websafe", "internal")
+	}
 	if looksLikePlexInternalFetcher(info.Product, info.Platform) {
 		return applyPlexAdaptPolicy(plexInternalFetcherPolicy(), "internal-fetcher-websafe", clientClass)
 	}

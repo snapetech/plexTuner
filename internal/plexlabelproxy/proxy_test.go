@@ -285,6 +285,43 @@ func TestProxy_DoesNotElevateUnauthenticatedLiveTVRequest(t *testing.T) {
 	}
 }
 
+func TestProxy_DoesNotTrustHopByHopHeaderTokenForElevation(t *testing.T) {
+	var gotToken string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotToken = r.URL.Query().Get("X-Plex-Token")
+		if gotToken == "" {
+			gotToken = r.Header.Get("X-Plex-Token")
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer allowTuners="0"/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:        up.URL,
+		Token:           "label-token",
+		OwnerToken:      "owner-token",
+		ElevateLiveTV:   true,
+		TokenAuthorizer: staticTokenAuthorizer{"shared-user-token": true},
+		Logger:          log.New(io.Discard, "", 0),
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/livetv/dvrs", nil)
+	req.Header.Set("Connection", "X-Plex-Token")
+	req.Header.Set("X-Plex-Token", "shared-user-token")
+	proxy.ServeHTTP(httptest.NewRecorder(), req)
+
+	if gotToken == "owner-token" {
+		t.Fatal("hop-by-hop X-Plex-Token must not authorize owner-token elevation")
+	}
+	if gotToken == "shared-user-token" {
+		t.Fatal("hop-by-hop X-Plex-Token must not be forwarded upstream")
+	}
+}
+
 func TestProxy_DoesNotAuditMissingTokenForNonElevationPath(t *testing.T) {
 	var logBuf bytes.Buffer
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -530,6 +567,85 @@ func TestProxy_ElevatesTokenWithServerAccess(t *testing.T) {
 	}
 }
 
+func TestProxy_ElevatesTokenlessLiveTVSessionSegmentFromTrackedClient(t *testing.T) {
+	var gotToken string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotToken = r.URL.Query().Get("X-Plex-Token")
+		w.Header().Set("Content-Type", "video/mp2t")
+		_, _ = w.Write([]byte("segment"))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:               up.URL,
+		Token:                  "label-token",
+		OwnerToken:             "owner-token",
+		ElevateLiveTV:          true,
+		NeutralizeOwnerHistory: true,
+		TokenAuthorizer:        staticTokenAuthorizer{"shared-user-token": true},
+		Logger:                 log.New(io.Discard, "", 0),
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	start := httptest.NewRequest(http.MethodPost, "/livetv/dvrs/123/channels/c7pt/tune?X-Plex-Token=shared-user-token", nil)
+	start.Header.Set("X-Plex-Client-Identifier", "client-1")
+	rec := httptest.NewRecorder()
+	proxy.ServeHTTP(rec, start)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("start status=%d body=%q", rec.Code, rec.Body.String())
+	}
+
+	segment := httptest.NewRequest(http.MethodGet, "/livetv/sessions/session-1/client-1/00000.ts", nil)
+	rec = httptest.NewRecorder()
+	proxy.ServeHTTP(rec, segment)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("segment status=%d body=%q", rec.Code, rec.Body.String())
+	}
+	if gotToken != "owner-token" {
+		t.Fatalf("tokenless segment token=%q want owner-token", gotToken)
+	}
+}
+
+func TestProxy_DoesNotRecoverTokenlessLiveTVSegmentFromDifferentSource(t *testing.T) {
+	var gotToken string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotToken = r.URL.Query().Get("X-Plex-Token")
+		w.Header().Set("Content-Type", "video/mp2t")
+		_, _ = w.Write([]byte("segment"))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:               up.URL,
+		Token:                  "label-token",
+		OwnerToken:             "owner-token",
+		ElevateLiveTV:          true,
+		NeutralizeOwnerHistory: true,
+		TokenAuthorizer:        staticTokenAuthorizer{"shared-user-token": true},
+		Logger:                 log.New(io.Discard, "", 0),
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	start := httptest.NewRequest(http.MethodPost, "/livetv/dvrs/123/channels/c7pt/tune?X-Plex-Token=shared-user-token", nil)
+	start.RemoteAddr = "127.0.0.1:12345"
+	start.Header.Set("CF-Connecting-IP", "203.0.113.10")
+	start.Header.Set("X-Plex-Client-Identifier", "client-1")
+	proxy.ServeHTTP(httptest.NewRecorder(), start)
+
+	segment := httptest.NewRequest(http.MethodGet, "/livetv/sessions/session-1/client-1/00000.ts", nil)
+	segment.RemoteAddr = "127.0.0.1:12345"
+	segment.Header.Set("CF-Connecting-IP", "203.0.113.11")
+	proxy.ServeHTTP(httptest.NewRecorder(), segment)
+
+	if gotToken == "owner-token" {
+		t.Fatal("tokenless segment from a different source must not receive owner-token")
+	}
+}
+
 func TestProxy_ExternalSharedUserLiveTVIsElevatedAndAudited(t *testing.T) {
 	var logBuf bytes.Buffer
 	type seen struct {
@@ -567,7 +683,7 @@ func TestProxy_ExternalSharedUserLiveTVIsElevatedAndAudited(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/media/providers?X-Plex-Token=shared-user-token", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
-	req.Header.Set("X-Forwarded-For", "203.0.113.77, 10.0.0.4")
+	req.Header.Set("X-Forwarded-For", "127.0.0.1")
 	req.Header.Set("CF-Connecting-IP", "203.0.113.77")
 	proxy.ServeHTTP(httptest.NewRecorder(), req)
 
@@ -578,7 +694,7 @@ func TestProxy_ExternalSharedUserLiveTVIsElevatedAndAudited(t *testing.T) {
 	if got.queryToken != "owner-token" || got.headerToken != "owner-token" {
 		t.Fatalf("external shared Live TV request should be elevated, got %+v", got)
 	}
-	if !strings.HasPrefix(got.forwarded, "203.0.113.77, 10.0.0.4") || got.cfIP != "203.0.113.77" {
+	if !strings.HasPrefix(got.forwarded, "127.0.0.1") || got.cfIP != "203.0.113.77" {
 		t.Fatalf("source headers should be preserved upstream for audit context, got %+v", got)
 	}
 	logged := logBuf.String()
@@ -586,7 +702,8 @@ func TestProxy_ExternalSharedUserLiveTVIsElevatedAndAudited(t *testing.T) {
 		"plexlabelproxy_audit:",
 		"outcome=elevated_live_tv",
 		"path=/media/providers",
-		`forwarded_for="203.0.113.77, 10.0.0.4"`,
+		`source=203.0.113.77`,
+		`forwarded_for="127.0.0.1`,
 		`cf_connecting_ip="203.0.113.77"`,
 		"token_fp=sha256:",
 	} {
@@ -631,6 +748,76 @@ func TestProxy_IgnoresSpoofedSourceHeadersFromUntrustedRemote(t *testing.T) {
 	}
 	if strings.Contains(logged, `forwarded_for="203.0.113.77"`) || strings.Contains(logged, `cf_connecting_ip="203.0.113.77"`) {
 		t.Fatalf("spoofed source headers should not be trusted in audit, got %s", logged)
+	}
+}
+
+func TestProxy_IgnoresSpoofedSourceHeadersFromPrivateRemote(t *testing.T) {
+	var logBuf bytes.Buffer
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:        up.URL,
+		Token:           "label-token",
+		OwnerToken:      "owner-token",
+		ElevateLiveTV:   true,
+		TokenAuthorizer: staticTokenAuthorizer{"shared-user-token": true},
+		Logger:          log.New(&logBuf, "", 0),
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/media/providers?X-Plex-Token=shared-user-token", nil)
+	req.RemoteAddr = "192.168.50.10:4567"
+	req.Header.Set("X-Forwarded-For", "203.0.113.77")
+	req.Header.Set("CF-Connecting-IP", "203.0.113.77")
+	proxy.ServeHTTP(httptest.NewRecorder(), req)
+
+	logged := logBuf.String()
+	if !strings.Contains(logged, `source=192.168.50.10`) {
+		t.Fatalf("private non-loopback remote should be audit source, got %s", logged)
+	}
+	if strings.Contains(logged, `forwarded_for="203.0.113.77"`) || strings.Contains(logged, `cf_connecting_ip="203.0.113.77"`) {
+		t.Fatalf("spoofed source headers from private remote should not be trusted, got %s", logged)
+	}
+}
+
+func TestProxy_RejectsSpoofedCFConnectingIPWhenForwardedPeerIsLAN(t *testing.T) {
+	var logBuf bytes.Buffer
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:        up.URL,
+		Token:           "label-token",
+		OwnerToken:      "owner-token",
+		ElevateLiveTV:   true,
+		TokenAuthorizer: staticTokenAuthorizer{"shared-user-token": true},
+		Logger:          log.New(&logBuf, "", 0),
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/media/providers?X-Plex-Token=shared-user-token", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	req.Header.Set("X-Forwarded-For", "192.168.50.25")
+	req.Header.Set("CF-Connecting-IP", "203.0.113.200")
+	proxy.ServeHTTP(httptest.NewRecorder(), req)
+
+	logged := logBuf.String()
+	if !strings.Contains(logged, `source=192.168.50.25`) {
+		t.Fatalf("LAN forwarded peer should win over spoofed CF header, got %s", logged)
+	}
+	if strings.Contains(logged, `source=203.0.113.200`) {
+		t.Fatalf("spoofed CF header must not be apparent source, got %s", logged)
 	}
 }
 
@@ -760,6 +947,29 @@ func TestProxy_RewritesJSONAllowTunersWhenElevationEnabled(t *testing.T) {
 	}
 }
 
+func TestProxy_DoesNotRewriteAllowTunersOnUnrelatedPaths(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"MediaContainer":{"allowTuners":false,"path":"library"}}`))
+	}))
+	defer up.Close()
+	proxy, err := New(Config{Upstream: up.URL, Token: "label-token", OwnerToken: "owner-token", ElevateLiveTV: true})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/library/sections?X-Plex-Token=user-token", nil)
+	proxy.ServeHTTP(rec, req)
+
+	if strings.Contains(rec.Body.String(), `"allowTuners":true`) {
+		t.Fatalf("unrelated path should not rewrite allowTuners, got %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"allowTuners":false`) {
+		t.Fatalf("expected original allowTuners=false, got %s", rec.Body.String())
+	}
+}
+
 func TestIsLiveTVRequest(t *testing.T) {
 	cases := map[string]bool{
 		"/library/sections":                     false,
@@ -812,6 +1022,20 @@ func TestIsLiveTVRequest_PostPlayQueueElevatedOnlyForLiveTV(t *testing.T) {
 	library := httptest.NewRequest(http.MethodPost, "/playQueues?uri=%2Flibrary%2Fmetadata%2F123", nil)
 	if IsLiveTVRequest(library) {
 		t.Fatal("POST /playQueues for library content must not be elevated")
+	}
+}
+
+func TestIsLiveTVRequest_PostDVRChannelTuneElevated(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/livetv/dvrs/12317/channels/c1/tune?autoPreview=0", nil)
+	if !IsLiveTVRequest(req) {
+		t.Fatal("POST /livetv/dvrs/{id}/channels/{id}/tune should be elevated")
+	}
+}
+
+func TestIsLiveTVRequest_OptionsPreflightNotElevated(t *testing.T) {
+	req := httptest.NewRequest(http.MethodOptions, "/tv.plex.providers.epg.xmltv:12317/grid", nil)
+	if IsLiveTVRequest(req) {
+		t.Fatal("OPTIONS preflight must not require Live TV token elevation")
 	}
 }
 
@@ -1097,6 +1321,80 @@ func TestProxy_NeutralizeOwnerHistory_CorrelatesByClientIdentifier(t *testing.T)
 	}
 	if !sawUserReplay {
 		t.Error("expected /:/scrobble replay under user-token via client identifier correlation")
+	}
+}
+
+func TestProxy_NeutralizeOwnerHistory_DoesNotCorrelateDifferentSource(t *testing.T) {
+	var mu sync.Mutex
+	var paths []string
+	var tokens []string
+
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		tokens = append(tokens, r.URL.Query().Get("X-Plex-Token"))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer/>`))
+	}))
+	defer up.Close()
+
+	var logBuf bytes.Buffer
+	proxy, err := New(Config{
+		Upstream:               up.URL,
+		Token:                  "label-token",
+		OwnerToken:             "owner-token",
+		ElevateLiveTV:          true,
+		NeutralizeOwnerHistory: true,
+		TokenAuthorizer:        staticTokenAuthorizer{"user-token": true},
+		Logger:                 log.New(&logBuf, "", 0),
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	streamReq := httptest.NewRequest(http.MethodGet,
+		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
+		nil)
+	streamReq.RemoteAddr = "127.0.0.1:12345"
+	streamReq.Header.Set("CF-Connecting-IP", "203.0.113.20")
+	streamReq.Header.Set("X-Plex-Client-Identifier", "client-a")
+	proxy.ServeHTTP(httptest.NewRecorder(), streamReq)
+
+	mu.Lock()
+	paths = paths[:0]
+	tokens = tokens[:0]
+	mu.Unlock()
+
+	scrobbleReq := httptest.NewRequest(http.MethodGet,
+		"/:/scrobble?X-Plex-Token=user-token&ratingKey=2468&identifier=com.plexapp.plugins.library",
+		nil)
+	scrobbleReq.RemoteAddr = "127.0.0.1:12345"
+	scrobbleReq.Header.Set("CF-Connecting-IP", "203.0.113.21")
+	scrobbleReq.Header.Set("X-Plex-Client-Identifier", "client-a")
+	proxy.ServeHTTP(httptest.NewRecorder(), scrobbleReq)
+
+	time.Sleep(200 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	var scrobbles int
+	for i, p := range paths {
+		if p == "/:/unscrobble" {
+			t.Fatalf("different source must not trigger owner unscrobble, paths=%v tokens=%v", paths, tokens)
+		}
+		if p == "/:/scrobble" {
+			scrobbles++
+			if tokens[i] != "user-token" {
+				t.Fatalf("unexpected scrobble token for different source, paths=%v tokens=%v", paths, tokens)
+			}
+		}
+	}
+	if scrobbles > 1 {
+		t.Fatalf("different source must not trigger an extra user replay, paths=%v tokens=%v", paths, tokens)
+	}
+	if !strings.Contains(logBuf.String(), "outcome=source_mismatch") {
+		t.Fatalf("expected source_mismatch playback log, got %s", logBuf.String())
 	}
 }
 

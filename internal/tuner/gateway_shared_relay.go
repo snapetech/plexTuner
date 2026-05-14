@@ -85,6 +85,10 @@ func sharedFFmpegRelayKey(channelID string, profile resolvedStreamProfile, outpu
 	}, "\x1f")
 }
 
+func sharedRawTSRelayKey(channelID string) string {
+	return "raw_ts_ffmpeg\x1f" + strings.TrimSpace(channelID)
+}
+
 func sharedRelayContentType(outputMux string) string {
 	if normalizeStreamOutputMuxName(outputMux) == streamMuxFMP4 {
 		return "video/mp4"

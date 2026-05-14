@@ -7,6 +7,7 @@ format: "gofmt -s -l .  # fail if any file needs formatting; fix with: gofmt -s 
 lint: "go vet ./..."
 typecheck: "N/A  # Go is compiled"
 test: "go test -count=1 ./..."
+council: "bash ./scripts/run-bug-council-all-phases.sh  # required CI/deploy council gate: scanner/backlog/negative-space checks plus calibrated proxy/tuner/cmd tests"
 integration_test: "go test -count=1 ./internal/tuner -run 'Test(XMLTV_serve|XMLTV_serveCachedGuideReady|HDHR_discover|HDHR_lineup|HDHR_lineup_status|Server_UpdateChannelsTriggersXMLTVRefresh)'  # startup/registration contract smoke"
 build: "go build -o /dev/null ./cmd/iptv-tunerr"
 smoke: "bash ./scripts/ci-smoke.sh  # build synthetic catalog binary smoke: startup contract, programming recipe persistence, and vod-webdav OPTIONS/PROPFIND/HEAD/range through the real cached materializer path"
@@ -19,6 +20,7 @@ verify_steps:
   - format
   - vet
   - script_syntax  # bash -n scripts/*.sh .githooks/* packaging/scripts/*.sh; python3 -m py_compile scripts/*.py
+  - council
   - test
   - build
   - smoke

@@ -44,6 +44,12 @@ for f in "$ROOT"/scripts/*.py; do
   python3 -m py_compile "$f" || err "py_compile failed on $f"
 done
 
+# --- Council gate ---
+step "council pass (scripts/run-bug-council-all-phases.sh)"
+if ! bash ./scripts/run-bug-council-all-phases.sh; then
+  err "council pass failed"
+fi
+
 # --- Test ---
 step "test (go test ./...)"
 # -count=1 avoids cache so CI always runs tests; -short allows skipping slow tests later

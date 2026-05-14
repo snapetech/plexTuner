@@ -123,8 +123,7 @@ inbound-token validation.
 
 The owner token is elevated only after the inbound Plex token is present and
 already authorized for this server. After that check, elevation is limited to
-safe read/probe methods (`GET`, `HEAD`, and `OPTIONS`) on known Live TV
-surfaces:
+safe read/probe methods (`GET` and `HEAD`) on known Live TV surfaces:
 
 - `/livetv/*`
 - `/media/providers`
@@ -143,9 +142,10 @@ Everything else keeps the inbound client token. In particular:
 - unauthenticated requests are not elevated
 - Plex tokens that cannot already access this server are not elevated
 - arbitrary query parameters that merely mention `/livetv/` do not trigger elevation
-- mutating methods such as `POST`, `PUT`, `PATCH`, and `DELETE` are not elevated
-  on Live TV paths, except `POST /playQueues` when its `uri`/`path` points at a
-  Live TV stream
+- `OPTIONS` preflight requests are not elevated
+- mutating methods such as `POST`, `PUT`, `PATCH`, and `DELETE` are not
+  elevated on Live TV paths, except stream-start requests when their `uri` or
+  `path` points at a Live TV stream
 
 Security boundary: this mode should still be treated as granting already-shared
 proxied users owner-backed Live TV access. It is not a public anonymous Plex
@@ -174,8 +174,10 @@ Audit lines are prefixed with `plexlabelproxy_audit:` and include method, path,
 Live TV classifier booleans, source address, trusted `X-Forwarded-For`, trusted
 `CF-Connecting-IP`, and a short SHA-256 token fingerprint. Raw Plex tokens are
 not logged. Frontend source headers are trusted only when the direct peer is a
-loopback/private frontend; if the proxy is accidentally exposed directly,
-client-supplied source headers are ignored for audit and block identity.
+loopback frontend. `CF-Connecting-IP` is accepted only when the closest
+forwarded peer is also loopback, matching the local cloudflared/Caddy path. If
+the proxy is accidentally exposed directly on LAN or WAN, client-supplied
+source headers are ignored for audit and block identity.
 
 By default, five failed Live TV elevation attempts from the same apparent source
 inside five minutes block that source from Live TV entitlement paths for thirty
@@ -238,10 +240,11 @@ want to run `iptv-tunerr plex-label-proxy`. The required behavior is:
 5. Replace `X-Plex-Token` with the PMS owner token only when all of these are
    true:
    - the inbound token already has access to this Plex server
-   - method is `GET`, `HEAD`, or `OPTIONS`
+   - method is `GET` or `HEAD`
    - path is one of the allowlisted Live TV paths above, or the request is a
      transcode/playQueue helper whose `path`/`uri` parameter points at Live TV
-   - `POST /playQueues` is elevated only when its `uri`/`path` points at Live TV
+   - stream-start `POST` requests are elevated only when their `uri`/`path`
+     points at Live TV
 6. Replace both token locations when elevating:
    - query string parameter `X-Plex-Token`
    - request header `X-Plex-Token`

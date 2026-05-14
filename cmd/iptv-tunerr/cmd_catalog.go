@@ -323,7 +323,8 @@ func streamVariantsFromRankedEntries(streamURL string, ranked []provider.EntryRe
 		if base == "" {
 			continue
 		}
-		variantURL := base + path
+		variantPath := providerCredentialPath(path, er.Entry.User, er.Entry.Pass)
+		variantURL := base + variantPath
 		out = append(out, streamVariant{
 			URL: variantURL,
 			Auth: catalog.StreamAuth{
@@ -334,6 +335,16 @@ func streamVariantsFromRankedEntries(streamURL string, ranked []provider.EntryRe
 		})
 	}
 	return out
+}
+
+func providerCredentialPath(path, user, pass string) string {
+	parts := strings.Split(path, "/")
+	if len(parts) < 5 || strings.TrimSpace(parts[1]) != "live" {
+		return path
+	}
+	parts[2] = url.PathEscape(user)
+	parts[3] = url.PathEscape(pass)
+	return strings.Join(parts, "/")
 }
 
 func normalizeCatalogProviderBase(base string) string {
@@ -531,6 +542,36 @@ func prioritizeWinningProvider(ranked []provider.EntryResult, winner provider.En
 	return out
 }
 
+func appendConfiguredProviderFallbacks(ranked []provider.EntryResult, entries []config.ProviderEntry) []provider.EntryResult {
+	out := make([]provider.EntryResult, 0, len(ranked)+len(entries))
+	seen := make(map[string]struct{}, len(ranked)+len(entries))
+	for _, entry := range ranked {
+		key := catalogProviderIdentityKey(entry.Entry.BaseURL, entry.Entry.User, entry.Entry.Pass)
+		if key == "||" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		out = append(out, entry)
+		seen[key] = struct{}{}
+	}
+	for _, entry := range entries {
+		key := catalogProviderIdentityKey(entry.BaseURL, entry.User, entry.Pass)
+		if key == "||" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		out = append(out, provider.EntryResult{
+			Entry: provider.Entry{BaseURL: entry.BaseURL, User: entry.User, Pass: entry.Pass},
+		})
+		seen[key] = struct{}{}
+	}
+	return out
+}
+
 func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error) {
 	var res catalogResult
 
@@ -684,7 +725,7 @@ func fetchCatalog(cfg *config.Config, m3uOverride string) (catalogResult, error)
 					res.ProviderBase = candidate.Entry.BaseURL
 					res.ProviderUser = candidate.Entry.User
 					res.ProviderPass = candidate.Entry.Pass
-					applyStreamVariants(res.Live, prioritizeWinningProvider(ranked, candidate))
+					applyStreamVariants(res.Live, appendConfiguredProviderFallbacks(prioritizeWinningProvider(ranked, candidate), entries))
 					break
 				}
 				lockoutTracker.notePlayerAPI(catalogProviderIdentityKey(candidate.Entry.BaseURL, candidate.Entry.User, candidate.Entry.Pass), fetchErr)

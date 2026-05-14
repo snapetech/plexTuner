@@ -1687,10 +1687,11 @@ func TestGateway_stream_rollsAcrossThreeXtreamPathAccounts(t *testing.T) {
 		},
 	}
 	g := &Gateway{
-		Channels:     []catalog.LiveChannel{ch},
-		TunerCount:   4,
-		ProviderUser: "fallback",
-		ProviderPass: "fallback",
+		Channels:      []catalog.LiveChannel{ch},
+		TunerCount:    4,
+		ProviderUser:  "fallback",
+		ProviderPass:  "fallback",
+		DisableFFmpeg: true,
 	}
 
 	type result struct {
@@ -3289,17 +3290,17 @@ func TestGateway_requestAdaptation_unknownInternalFetcherInfersSingleNativeSessi
 	if !hasOverride {
 		t.Fatalf("expected override for inferred native session")
 	}
-	if transcode {
-		t.Fatalf("expected inferred native session to stay direct")
+	if !transcode {
+		t.Fatalf("expected Plex internal fetcher policy to force websafe even for inferred native session")
 	}
-	if profile != "" {
-		t.Fatalf("profile=%q want empty", profile)
+	if profile != profilePlexSafe {
+		t.Fatalf("profile=%q want %q", profile, profilePlexSafe)
 	}
-	if reason != "resolved-nonweb-client" {
-		t.Fatalf("reason=%q want resolved-nonweb-client", reason)
+	if reason != "internal-fetcher-websafe" {
+		t.Fatalf("reason=%q want internal-fetcher-websafe", reason)
 	}
-	if clientClass != "native" {
-		t.Fatalf("clientClass=%q want native", clientClass)
+	if clientClass != "internal" {
+		t.Fatalf("clientClass=%q want internal", clientClass)
 	}
 }
 
@@ -3853,6 +3854,107 @@ func TestGateway_ffmpegInputHeaderBlock_includesCustomHeaders(t *testing.T) {
 	}
 	if !strings.Contains(block, "User-Agent: IptvTunerr/1.0") {
 		t.Fatalf("missing User-Agent in block: %q", block)
+	}
+}
+
+func TestSanitizeHeaderSummary_redactsCredentialShapedHeaders(t *testing.T) {
+	lines := []string{
+		"Authorization: Bearer upstream-token",
+		"Cookie: cf_clearance=secret",
+		"X-Plex-Token: plex-secret",
+		"X-API-Key: provider-key",
+		"X-Auth-Token: provider-token",
+		"X-Session-Id: session-secret",
+		"Referer: https://provider.example/watch",
+	}
+	got := sanitizeHeaderSummary(lines)
+	joined := strings.Join(got, "\n")
+	for _, secret := range []string{"upstream-token", "cf_clearance=secret", "plex-secret", "provider-key", "provider-token", "session-secret"} {
+		if strings.Contains(joined, secret) {
+			t.Fatalf("sanitizeHeaderSummary leaked %q in:\n%s", secret, joined)
+		}
+	}
+	for _, want := range []string{
+		"Authorization: <redacted>",
+		"Cookie: <redacted>",
+		"X-Plex-Token: <redacted>",
+		"X-API-Key: <redacted>",
+		"X-Auth-Token: <redacted>",
+		"X-Session-Id: <redacted>",
+		"Referer: https://provider.example/watch",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("sanitizeHeaderSummary missing %q in:\n%s", want, joined)
+		}
+	}
+}
+
+func TestDebugHeaderLines_redactsCredentialShapedHeaders(t *testing.T) {
+	h := http.Header{}
+	h.Set("Authorization", "Bearer upstream-token")
+	h.Set("X-Plex-Token", "plex-secret")
+	h.Set("X-API-Key", "provider-key")
+	h.Set("Referer", "https://provider.example/watch")
+	joined := strings.Join(debugHeaderLines(h), "\n")
+	for _, secret := range []string{"upstream-token", "plex-secret", "provider-key"} {
+		if strings.Contains(joined, secret) {
+			t.Fatalf("debugHeaderLines leaked %q in:\n%s", secret, joined)
+		}
+	}
+	if !strings.Contains(joined, "Referer: https://provider.example/watch") {
+		t.Fatalf("debugHeaderLines should keep non-secret Referer, got:\n%s", joined)
+	}
+}
+
+func TestGateway_applyUpstreamRequestHeaders_stillForwardsCredentialHeaders(t *testing.T) {
+	g := &Gateway{
+		CustomHeaders: map[string]string{
+			"X-API-Key":    "provider-key",
+			"X-Auth-Token": "provider-token",
+		},
+	}
+	incoming := httptest.NewRequest(http.MethodGet, "http://tunerr.example/stream/ch1", nil)
+	incoming.Header.Set("Cookie", "cf_clearance=secret")
+	incoming.Header.Set("Authorization", "Bearer upstream-token")
+	upstream := httptest.NewRequest(http.MethodGet, "http://provider.example/plain.m3u8", nil)
+
+	g.applyUpstreamRequestHeaders(upstream, incoming)
+
+	if got := upstream.Header.Get("Cookie"); got != "cf_clearance=secret" {
+		t.Fatalf("Cookie was not forwarded to upstream, got %q", got)
+	}
+	if got := upstream.Header.Get("Authorization"); got != "Bearer upstream-token" {
+		t.Fatalf("Authorization was not forwarded to upstream, got %q", got)
+	}
+	if got := upstream.Header.Get("X-API-Key"); got != "provider-key" {
+		t.Fatalf("X-API-Key custom header was not forwarded to upstream, got %q", got)
+	}
+	if got := upstream.Header.Get("X-Auth-Token"); got != "provider-token" {
+		t.Fatalf("X-Auth-Token custom header was not forwarded to upstream, got %q", got)
+	}
+}
+
+func TestGateway_ffmpegInputHeaderBlock_stillIncludesCredentialHeaders(t *testing.T) {
+	g := &Gateway{
+		CustomHeaders: map[string]string{
+			"X-API-Key":    "provider-key",
+			"X-Auth-Token": "provider-token",
+		},
+	}
+	incoming := httptest.NewRequest(http.MethodGet, "http://tunerr.example/stream/ch1", nil)
+	incoming.Header.Set("Cookie", "cf_clearance=secret")
+	incoming.Header.Set("Authorization", "Bearer upstream-token")
+
+	block := g.ffmpegInputHeaderBlock(incoming, "http://provider.example/plain.m3u8", "provider.example")
+	for _, want := range []string{
+		"Cookie: cf_clearance=secret",
+		"Authorization: Bearer upstream-token",
+		"X-API-Key: provider-key",
+		"X-Auth-Token: provider-token",
+	} {
+		if !strings.Contains(block, want) {
+			t.Fatalf("ffmpeg header block missing %q in:\n%s", want, block)
+		}
 	}
 }
 

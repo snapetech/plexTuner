@@ -114,6 +114,11 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			finalMode = "hls_ffmpeg_shared"
 			return
 		}
+		if g.tryServeAttachedSharedRelay(w, r, channel, sharedRawTSRelayKey(channelID), reqID, start) {
+			finalStatus = "ok"
+			finalMode = "raw_ts_ffmpeg_shared"
+			return
+		}
 	}
 	attempt := newStreamAttemptBuilder(reqID, r, channelID, channel.GuideName, len(urls))
 	defer func() {

@@ -31,7 +31,7 @@ InstallerType: zip
 ReleaseDate: $RELEASE_DATE
 NestedInstallerType: portable
 NestedInstallerFiles:
-- RelativeFilePath: iptv-tunerr-${RELEASE_TAG}-windows-amd64.exe
+- RelativeFilePath: iptv-tunerr-${RELEASE_TAG}-windows-amd64/iptv-tunerr.exe
   PortableCommandAlias: iptv-tunerr
 Commands:
 - iptv-tunerr

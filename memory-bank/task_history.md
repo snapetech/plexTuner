@@ -1,3 +1,11 @@
+## 2026-05-14 - Fix Winget install validation path
+
+- Inspected `microsoft/winget-pkgs#374269` after the Microsoft package-manager bot reported a general installation failure.
+- Root cause: the submitted ZIP portable manifest pointed `NestedInstallerFiles.RelativeFilePath` at root-level `iptv-tunerr-v0.1.68-windows-amd64.exe`, but the release ZIP contains `iptv-tunerr-v0.1.68-windows-amd64/iptv-tunerr.exe`.
+- Patched `packaging/scripts/update-winget-manifests.sh` to generate the correct nested executable path and added a Windows ZIP nested-path assertion to `scripts/verify-release-assets.sh`.
+- Pushed winget-pkgs PR update commit `740f80f081e` with only the manifest path correction.
+- Verification: downloaded the v0.1.68 Windows ZIP, confirmed the corrected manifest path exists in the archive, then ran `./scripts/build-release-assets.sh v0.0.0 dist && ./scripts/verify-release-assets.sh v0.0.0 dist`.
+
 ## 2026-05-13 - Pause noisy Windows package publishing
 
 - Closed duplicate automated Winget PRs `microsoft/winget-pkgs#374279`, `#374280`, and `#374285`; kept the original `#374269` open for the first validation gate.

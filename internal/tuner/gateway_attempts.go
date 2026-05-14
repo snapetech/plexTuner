@@ -179,16 +179,29 @@ func sanitizeHeaderSummary(lines []string) []string {
 		}
 		name = strings.TrimSpace(name)
 		value = strings.TrimSpace(value)
-		switch {
-		case strings.EqualFold(name, "Authorization"):
+		if sensitiveHeaderName(name) {
 			out = append(out, name+": <redacted>")
-		case strings.EqualFold(name, "Cookie"):
-			out = append(out, name+": <redacted>")
-		default:
-			out = append(out, name+": "+value)
+			continue
 		}
+		out = append(out, name+": "+value)
 	}
 	return out
+}
+
+func sensitiveHeaderName(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return false
+	}
+	switch name {
+	case "authorization", "cookie", "proxy-authorization", "set-cookie", "x-plex-token":
+		return true
+	}
+	return strings.Contains(name, "token") ||
+		strings.Contains(name, "secret") ||
+		strings.Contains(name, "api-key") ||
+		strings.Contains(name, "apikey") ||
+		strings.Contains(name, "session")
 }
 
 func ffmpegHeaderSummary(block string) []string {

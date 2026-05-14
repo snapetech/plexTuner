@@ -92,8 +92,7 @@ func debugHeaderLines(h http.Header) []string {
 		for i := range vv {
 			show[i] = vv[i]
 		}
-		switch strings.ToLower(k) {
-		case "authorization", "cookie":
+		if sensitiveHeaderName(k) {
 			for i := range show {
 				show[i] = "<redacted>"
 			}

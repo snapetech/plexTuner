@@ -44,6 +44,13 @@ done
 tar -tzf "$DIST_DIR/iptv-tunerr-${VERSION}-linux-amd64.tar.gz" | grep -Fx "iptv-tunerr-${VERSION}-linux-amd64/iptv-tunerr" >/dev/null \
   || err "linux tarball does not contain expected binary path"
 
+for arch in amd64 arm64; do
+  zip_asset="$DIST_DIR/iptv-tunerr-${VERSION}-windows-${arch}.zip"
+  nested_exe="iptv-tunerr-${VERSION}-windows-${arch}/iptv-tunerr.exe"
+  unzip -l "$zip_asset" "$nested_exe" >/dev/null 2>&1 \
+    || err "windows zip does not contain expected binary path: $nested_exe"
+done
+
 for optional_asset in "$DIST_DIR"/iptvtunerr_*.deb "$DIST_DIR"/*.rpm; do
   [[ -e "$optional_asset" ]] || continue
   optional_name="$(basename "$optional_asset")"

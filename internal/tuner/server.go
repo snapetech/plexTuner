@@ -1280,7 +1280,7 @@ func lineupRecipeNorthAmericanSportsEventScore(ch catalog.LiveChannel) int {
 	if !naSource {
 		return 0
 	}
-	nbaContext := strings.Contains(s, " nba") || strings.Contains(s, " wnba") || strings.Contains(s, " basketball")
+	nbaContext := strings.Contains(s, " nba") || strings.Contains(s, "wnba") || strings.Contains(s, " basketball")
 	eventStyle := strings.Contains(s, " vs ") || strings.Contains(s, " vs. ") || strings.Contains(s, " @ ") || strings.Contains(s, " game ")
 	matchup := false
 	if eventStyle {
@@ -1289,6 +1289,8 @@ func lineupRecipeNorthAmericanSportsEventScore(ch catalog.LiveChannel) int {
 			"celtics", "76ers", "sixers", "thunder", "suns", "pistons", "bucks", "pacers", "grizzlies",
 			"warriors", "clippers", "mavericks", "spurs", "pelicans", "kings", "trail blazers", "jazz",
 			"hornets", "wizards", "nets", "bulls", "heat", "magic",
+			"aces", "dream", "fire", "fever", "liberty", "lynx", "mercury", "mystics", "sky", "sparks",
+			"storm", "sun", "tempo", "valkyries", "wings",
 		} {
 			if strings.Contains(s, term) {
 				matchup = true
@@ -1306,6 +1308,9 @@ func lineupRecipeNorthAmericanSportsEventScore(ch catalog.LiveChannel) int {
 		}
 	}
 	score := 105
+	if strings.Contains(s, "wnba") {
+		score += 140
+	}
 	if strings.Contains(s, " nba pass ppv") || strings.Contains(s, " league pass") {
 		score += 35
 	}

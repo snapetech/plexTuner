@@ -64,6 +64,7 @@ func (g *Gateway) relayRawTSWithFFmpeg(
 	respStatus int,
 	start time.Time,
 	bufferBytes int,
+	sharedSession *sharedRelaySession,
 ) bool {
 	args := []string{
 		"-hide_banner",
@@ -94,7 +95,12 @@ func (g *Gateway) relayRawTSWithFFmpeg(
 	defer cmd.Wait() //nolint:errcheck
 	w.WriteHeader(respStatus)
 	sw, flush := streamWriter(w, bufferBytes)
-	n, _ := io.Copy(sw, stdout)
+	dst := io.Writer(sw)
+	if sharedSession != nil {
+		dst = &sharedRelayFanoutWriter{base: dst, session: sharedSession}
+		defer g.closeSharedRelaySession(sharedSession.RelayKey, sharedSession)
+	}
+	n, _ := io.Copy(dst, stdout)
 	flush()
 	log.Printf("gateway: channel=%q id=%s ffmpeg-ts-norm bytes=%d dur=%s",
 		channelName, channelID, n, time.Since(start).Round(time.Millisecond))
@@ -652,6 +658,7 @@ func (g *Gateway) relayHLSAsTS(
 				flush,
 				bufferBytes,
 				responseStarted,
+				sharedSession,
 			)
 			if err != nil {
 				log.Printf("gateway:%s channel=%q id=%s hls-relay-ffmpeg-stdin start failed (falling back to raw relay): %v",

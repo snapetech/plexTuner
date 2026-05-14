@@ -5635,16 +5635,17 @@ func TestApplyLineupPreCapFilters_lineupRecipeSportsNA(t *testing.T) {
 		{ChannelID: "18", GuideName: "US (Peacock 003) | Game 2: Raptors vs. Cavaliers (2026-04-20 16:00:05)", StreamURL: "http://a/live/18.m3u8"},
 		{ChannelID: "19", GuideName: "LIVE | FOWLER GRIZZLIES VS. LA JUNTA | Mon 20 Apr 20:30 EDT (US) | 8K EXCLUSIVE | US: NFHS PPV 83", StreamURL: "http://a/19"},
 		{ChannelID: "20", GuideName: "ENDED | PROUT VS. SOUTH KINGSTOWN | Mon 20 Apr 11:00 EDT (US) | 8K EXCLUSIVE | US: NFHS PPV 9", StreamURL: "http://a/20"},
+		{ChannelID: "21", GuideName: "US (WNBA 05) | Las Vegas Aces at Connecticut Sun (2026-04-20 20:30:00)", StreamURL: "http://a/21"},
 	}
 	out := applyLineupPreCapFilters(in)
-	if len(out) != 7 {
-		t.Fatalf("len=%d want 7: %+v", len(out), out)
+	if len(out) != 8 {
+		t.Fatalf("len=%d want 8: %+v", len(out), out)
 	}
 	got := map[string]bool{}
 	for _, ch := range out {
 		got[ch.ChannelID] = true
 	}
-	for _, id := range []string{"1", "2", "6", "7", "10", "11", "12"} {
+	for _, id := range []string{"1", "2", "6", "7", "10", "11", "12", "21"} {
 		if !got[id] {
 			t.Fatalf("missing sports_na channel %s in %+v", id, out)
 		}

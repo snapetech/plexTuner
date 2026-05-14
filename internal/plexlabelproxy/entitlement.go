@@ -82,6 +82,8 @@ func IsLiveTVStreamRequest(req *http.Request) bool {
 	}
 	path := req.URL.EscapedPath()
 	switch {
+	case strings.HasPrefix(path, "/livetv/dvrs/") && strings.Contains(path, "/channels/") && strings.HasSuffix(path, "/tune"):
+		return true
 	case strings.HasPrefix(path, "/video/:/transcode/"):
 		return queryParamIsLiveTVPath(req.URL.Query(), "path")
 	case strings.HasPrefix(path, "/playQueues"):
@@ -132,7 +134,7 @@ func IsLiveTVRequest(req *http.Request) bool {
 
 func liveTVElevationMethod(method string) bool {
 	switch strings.ToUpper(strings.TrimSpace(method)) {
-	case "", http.MethodGet, http.MethodHead, http.MethodOptions:
+	case "", http.MethodGet, http.MethodHead:
 		return true
 	default:
 		return false

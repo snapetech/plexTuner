@@ -13,6 +13,10 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+### Security / Plex Live TV proxy
+- **Live TV proxy diagnostics now redact credential-shaped headers while preserving upstream playback headers:** debug and attempt logs no longer expose provider tokens, API keys, cookies, or authorization-like header values, and regression tests pin both the diagnostic redaction and the runtime header forwarding path.
+- **Council review now includes a red-team abuse lens:** the deployment verification path runs the bug council checks with attacker-view scans for spoofing, secret disclosure, confused-deputy paths, replay, SSRF/path/process escape, and operational downgrade risks.
+
 ### Release channels
 - **Windows package publishing is paused for manual gate handling:** GitHub Releases still build Windows executable ZIPs, but the release workflow no longer auto-dispatches Chocolatey or Winget publishing while Chocolatey returns push `403` responses and the initial Winget PR is under Microsoft validation review.
 - **Release-facing text now has a local identity leak gate:** CI and local hooks scan changelog/release-note surfaces for private local hostnames and usernames using a private denylist without printing matched values.

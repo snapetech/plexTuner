@@ -186,6 +186,7 @@ type auditStats struct {
 
 type sessionRecord struct {
 	userToken string
+	sourceKey string
 	expiresAt time.Time
 }
 
@@ -270,17 +271,21 @@ func New(cfg Config) (*Proxy, error) {
 	}
 	originalDirector := rp.Director
 	rp.Director = func(req *http.Request) {
+		connectionHeaders := connectionHeaderNames(req.Header)
 		// Capture the original client token before any modification.
 		// Both query-param and header locations are checked; query param wins
 		// because that is what Plex clients most consistently use.
 		originalToken := req.URL.Query().Get("X-Plex-Token")
-		if originalToken == "" {
+		if _, hopByHopToken := connectionHeaders["x-plex-token"]; originalToken == "" && !hopByHopToken {
 			originalToken = req.Header.Get("X-Plex-Token")
 		}
 
 		originalDirector(req)
 		// httputil's director does not strip hop-by-hop headers — do it here.
 		for name := range hopHeaders {
+			req.Header.Del(name)
+		}
+		for name := range connectionHeaders {
 			req.Header.Del(name)
 		}
 		// Drop client-supplied Accept-Encoding so we always get an uncompressed
@@ -476,7 +481,20 @@ func (p *Proxy) elevateLiveTVRequest(req *http.Request, originalToken string) {
 	} else if !IsLiveTVRequest(req) {
 		return
 	}
-	if !p.canElevate(req, originalToken) {
+	elevationToken := originalToken
+	if strings.TrimSpace(elevationToken) == "" {
+		if token, matched := p.sessionTokenForRequest(req); token != "" {
+			elevationToken = token
+			p.logger.Printf(
+				"plexlabelproxy_playback: outcome=session_token_recovered path=%s source=%s matched=%q token_fp=%s",
+				req.URL.EscapedPath(),
+				apparentSource(req),
+				matched,
+				tokenFingerprint(token),
+			)
+		}
+	}
+	if !p.canElevate(req, elevationToken) {
 		return
 	}
 	var elevated bool
@@ -488,14 +506,14 @@ func (p *Proxy) elevateLiveTVRequest(req *http.Request, originalToken string) {
 	if !elevated {
 		return
 	}
-	p.auditElevation(req, "elevated_live_tv", originalToken, "owner token borrowed for authorized Live TV request")
+	p.auditElevation(req, "elevated_live_tv", elevationToken, "owner token borrowed for authorized Live TV request")
 
 	// X-Plex-User injection: send the original user token in a supplementary
 	// header so Plex may attribute the session to the user rather than the owner.
 	// Plex's own managed-user stack uses a similar split internally; this is
 	// speculative for shared users but is zero-cost to attempt.
-	if p.cfg.UserHeader && originalToken != "" && originalToken != strings.TrimSpace(p.cfg.OwnerToken) {
-		req.Header.Set("X-Plex-User", originalToken)
+	if p.cfg.UserHeader && elevationToken != "" && elevationToken != strings.TrimSpace(p.cfg.OwnerToken) {
+		req.Header.Set("X-Plex-User", elevationToken)
 	}
 
 	// Session tracking for NeutralizeOwnerHistory: only track when the token
@@ -504,8 +522,8 @@ func (p *Proxy) elevateLiveTVRequest(req *http.Request, originalToken string) {
 	// here (library content uses the user's own token and is attributed correctly).
 	if p.cfg.NeutralizeOwnerHistory && !p.cfg.ElevateDiscoveryOnly &&
 		IsLiveTVStreamRequest(req) &&
-		originalToken != strings.TrimSpace(p.cfg.OwnerToken) {
-		p.trackSession(req, originalToken)
+		elevationToken != strings.TrimSpace(p.cfg.OwnerToken) {
+		p.trackSession(req, elevationToken)
 	}
 }
 
@@ -532,7 +550,7 @@ func (p *Proxy) trackSession(req *http.Request, originalToken string) {
 	if p.sessions == nil {
 		p.sessions = make(map[string]sessionRecord)
 	}
-	rec := sessionRecord{userToken: originalToken, expiresAt: time.Now().Add(elevatedSessionTTL)}
+	rec := sessionRecord{userToken: originalToken, sourceKey: apparentSource(req), expiresAt: time.Now().Add(elevatedSessionTTL)}
 	for _, key := range keys {
 		if _, exists := p.sessions[key]; !exists {
 			p.logger.Printf(
@@ -573,9 +591,61 @@ func sessionCorrelationKeys(req *http.Request) []string {
 	add("client", req.Header.Get("X-Plex-Client-Identifier"))
 	add("client", q.Get("X-Plex-Client-Identifier"))
 	add("client", q.Get("clientIdentifier"))
+	for _, key := range liveTVSessionPathKeys(req.URL.EscapedPath()) {
+		parts := strings.SplitN(key, ":", 2)
+		if len(parts) == 2 {
+			add(parts[0], parts[1])
+		}
+	}
 	add("playqueue", q.Get("playQueueID"))
 	add("playqueue", q.Get("playQueueItemID"))
 	return keys
+}
+
+func liveTVSessionPathKeys(path string) []string {
+	const prefix = "/livetv/sessions/"
+	if !strings.HasPrefix(path, prefix) {
+		return nil
+	}
+	rest := strings.TrimPrefix(path, prefix)
+	parts := strings.Split(rest, "/")
+	if len(parts) == 0 {
+		return nil
+	}
+	var keys []string
+	if session := strings.TrimSpace(parts[0]); session != "" {
+		keys = append(keys, "session:"+session)
+	}
+	if len(parts) > 1 {
+		if client := strings.TrimSpace(parts[1]); client != "" {
+			keys = append(keys, "client:"+client)
+		}
+	}
+	return keys
+}
+
+func (p *Proxy) sessionTokenForRequest(req *http.Request) (string, string) {
+	keys := sessionCorrelationKeys(req)
+	if len(keys) == 0 {
+		return "", ""
+	}
+	p.sessionMu.Lock()
+	defer p.sessionMu.Unlock()
+	now := time.Now()
+	for _, key := range keys {
+		rec, ok := p.sessions[key]
+		if !ok {
+			continue
+		}
+		if !rec.expiresAt.IsZero() && now.After(rec.expiresAt) {
+			delete(p.sessions, key)
+			continue
+		}
+		if strings.TrimSpace(rec.userToken) != "" && sessionRecordMatchesSource(rec, req) {
+			return rec.userToken, key
+		}
+	}
+	return "", ""
 }
 
 func last6(s string) string {
@@ -583,6 +653,14 @@ func last6(s string) string {
 		return s
 	}
 	return s[len(s)-6:]
+}
+
+func sessionRecordMatchesSource(rec sessionRecord, req *http.Request) bool {
+	source := strings.TrimSpace(rec.sourceKey)
+	if source == "" {
+		return true
+	}
+	return source == apparentSource(req)
 }
 
 func tokenFingerprint(token string) string {
@@ -617,7 +695,23 @@ func inboundPlexToken(req *http.Request) string {
 	if token := req.URL.Query().Get("X-Plex-Token"); token != "" {
 		return token
 	}
+	if _, hopByHopToken := connectionHeaderNames(req.Header)["x-plex-token"]; hopByHopToken {
+		return ""
+	}
 	return req.Header.Get("X-Plex-Token")
+}
+
+func connectionHeaderNames(h http.Header) map[string]struct{} {
+	out := make(map[string]struct{})
+	for _, raw := range h.Values("Connection") {
+		for _, part := range strings.Split(raw, ",") {
+			name := strings.ToLower(strings.TrimSpace(part))
+			if name != "" {
+				out[name] = struct{}{}
+			}
+		}
+	}
+	return out
 }
 
 func normalizeAbuseConfig(cfg Config) abuseConfig {
@@ -749,22 +843,39 @@ func apparentSource(req *http.Request) string {
 	if req == nil {
 		return ""
 	}
-	if ip := trustedHeader(req, "CF-Connecting-IP"); ip != "" {
+	if ip := trustedCloudflareConnectingIP(req); ip != "" {
 		return ip
 	}
-	if ip := firstTrustedForwardedFor(req); ip != "" {
+	if ip := closestTrustedForwardedFor(req); ip != "" {
 		return ip
 	}
 	return clientAddress(req.RemoteAddr)
 }
 
-func firstTrustedForwardedFor(req *http.Request) string {
+func closestTrustedForwardedFor(req *http.Request) string {
 	raw := trustedHeader(req, "X-Forwarded-For")
 	if raw == "" {
 		return ""
 	}
-	first, _, _ := strings.Cut(raw, ",")
-	return strings.TrimSpace(first)
+	parts := strings.Split(raw, ",")
+	for i := len(parts) - 1; i >= 0; i-- {
+		if value := strings.TrimSpace(parts[i]); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func trustedCloudflareConnectingIP(req *http.Request) string {
+	ip := trustedHeader(req, "CF-Connecting-IP")
+	if ip == "" {
+		return ""
+	}
+	closest := closestTrustedForwardedFor(req)
+	if closest == "" || isLoopbackIP(closest) {
+		return ip
+	}
+	return ""
 }
 
 func trustedHeader(req *http.Request, name string) string {
@@ -775,14 +886,12 @@ func trustedHeader(req *http.Request, name string) string {
 }
 
 func trustedFrontendRemote(host string) bool {
-	if host == "" {
-		return false
-	}
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return false
-	}
-	return ip.IsLoopback() || ip.IsPrivate()
+	return isLoopbackIP(host)
+}
+
+func isLoopbackIP(host string) bool {
+	ip := net.ParseIP(strings.TrimSpace(host))
+	return ip != nil && ip.IsLoopback()
 }
 
 func (p *Proxy) badAuthCooldownActive(req *http.Request, token string) bool {
@@ -1015,9 +1124,10 @@ func (p *Proxy) neutralizeOwnerScrobble(req *http.Request) {
 	p.sessionMu.Lock()
 	now := time.Now()
 	var (
-		userToken string
-		tracked   bool
-		matched   string
+		userToken      string
+		tracked        bool
+		matched        string
+		sourceMismatch string
 	)
 	for _, key := range keys {
 		rec, ok := p.sessions[key]
@@ -1026,6 +1136,10 @@ func (p *Proxy) neutralizeOwnerScrobble(req *http.Request) {
 		}
 		if !rec.expiresAt.IsZero() && now.After(rec.expiresAt) {
 			delete(p.sessions, key)
+			continue
+		}
+		if !sessionRecordMatchesSource(rec, req) {
+			sourceMismatch = key
 			continue
 		}
 		userToken = rec.userToken
@@ -1041,6 +1155,10 @@ func (p *Proxy) neutralizeOwnerScrobble(req *http.Request) {
 	p.sessionMu.Unlock()
 
 	if !tracked || userToken == "" {
+		if sourceMismatch != "" {
+			p.logPlaybackCorrelation(req, "source_mismatch", sourceMismatch, keys)
+			return
+		}
 		p.logPlaybackCorrelation(req, "unmatched", "", keys)
 		return
 	}
@@ -1151,8 +1269,18 @@ func (p *Proxy) shouldRewriteTunerEntitlement(resp *http.Response) bool {
 	if !p.cfg.ElevateLiveTV {
 		return false
 	}
+	if resp == nil || resp.Request == nil || resp.Request.URL == nil {
+		return false
+	}
+	if !pathCanCarryTunerEntitlement(resp.Request.URL.EscapedPath()) {
+		return false
+	}
 	ct := strings.ToLower(resp.Header.Get("Content-Type"))
 	return strings.Contains(ct, "xml") || strings.Contains(ct, "json") || ct == ""
+}
+
+func pathCanCarryTunerEntitlement(path string) bool {
+	return pathIsRewriteCandidate(path) || path == "/:/prefs"
 }
 
 // labelFromReferer parses the Referer header and returns the label for the
@@ -1319,7 +1447,7 @@ func classifyResponse(path, contentType string) scope {
 // JSON responses on those paths so operators notice the gap.
 func pathIsRewriteCandidate(path string) bool {
 	switch path {
-	case "/media/providers", "/identity", "/":
+	case "/media/providers", "/identity", "/", "/:/prefs":
 		return true
 	}
 	return liveProviderPathRE.MatchString(path)
