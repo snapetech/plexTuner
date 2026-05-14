@@ -118,3 +118,7 @@ The goal is to give future agents **early warnings** and **concrete guidance** s
 This repo is an **agentic repo template** for **any language or stack**: memory-bank workflow, single verify script, Diátaxis docs. Add your own code and define verification in `scripts/verify-steps.sh` and `memory-bank/commands.yml`.
 
 **After cloning from template:** Run `scripts/init-template`; replace placeholders in README, CODEOWNERS, and docs. See [TEMPLATE.md](TEMPLATE.md). The memory bank holds **current state**, **known issues**, and **recurring loops**. When behavior/config changes, update or add one doc and file gaps in `opportunities.md`; see [memory-bank/code_quality.md](memory-bank/code_quality.md).
+
+## Local Identity Privacy
+
+Never include private local hostnames, local OS usernames, home-directory paths, or operator-specific machine names in commit messages, changelogs, release notes, public docs, or GitHub release text. Use generic wording such as "live validation host", "test host", "operator account", or "local checkout". CI can pass extra private denylist terms through the `LOCAL_IDENTITY_DENYLIST` secret; local-only terms can live in an untracked file such as `.local/identity-denylist.txt` and be passed with `LOCAL_IDENTITY_DENYLIST_FILE`.

@@ -183,3 +183,6 @@ opencode.json
 # Frontend
 web/node_modules/
 web/.vite/
+
+# Local private denylist/config
+/.local/
