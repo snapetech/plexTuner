@@ -22,6 +22,11 @@ log() {
 
 fail() {
   printf '[ci-smoke] ERROR: %s\n' "$*" >&2
+  for log_path in "$TMP_DIR"/*.log; do
+    [[ -f "$log_path" ]] || continue
+    printf '[ci-smoke] --- %s ---\n' "$(basename "$log_path")" >&2
+    tail -n 80 "$log_path" >&2 || true
+  done
   exit 1
 }
 
@@ -93,6 +98,9 @@ PIDS=()
 # retry settings make sense for real providers, but they turn these fixtures into
 # multi-minute waits after the first bytes are proven.
 export IPTV_TUNERR_UPSTREAM_RETRY_LIMIT="${IPTV_TUNERR_UPSTREAM_RETRY_LIMIT:-0}"
+export IPTV_TUNERR_HLS_MUX_DENY_LITERAL_PRIVATE_UPSTREAM="${IPTV_TUNERR_HLS_MUX_DENY_LITERAL_PRIVATE_UPSTREAM:-false}"
+export IPTV_TUNERR_VIRTUAL_CHANNEL_DENY_LITERAL_PRIVATE_UPSTREAM="${IPTV_TUNERR_VIRTUAL_CHANNEL_DENY_LITERAL_PRIVATE_UPSTREAM:-false}"
+export IPTV_TUNERR_XTREAM_VOD_DENY_LITERAL_PRIVATE_UPSTREAM="${IPTV_TUNERR_XTREAM_VOD_DENY_LITERAL_PRIVATE_UPSTREAM:-false}"
 
 cat >"$TMP_DIR/catalog-full.json" <<'JSON'
 {
