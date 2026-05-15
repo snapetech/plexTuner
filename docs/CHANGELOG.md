@@ -13,6 +13,14 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.74] — 2026-05-14
+
+### Security / Plex Live TV proxy
+- **Provider EPG diagnostics redact credential-bearing URLs:** XMLTV provider fetch failures now scrub provider usernames/passwords before logging, including stale-cache fallback paths.
+- **Startup guide recovery uses stale provider EPG cache:** when the in-memory guide is empty after restart, IPTVtunerr now seeds provider guide data from the private disk cache before slow/bad provider probes, reducing Plex Live TV guide loading gaps.
+- **Runtime state and exported artifacts are private and symlink-aware:** provider EPG caches, shared leases, autopilot state, Plex proxy abuse state, catchup outputs, Emby registration state, WebUI deck state, and debug/evidence artifacts now use private writes and symlink overwrite refusal.
+- **Operator-facing diagnostics consistently redact secrets:** runtime snapshots, Plex API response previews, debug bundles, cookie dry-runs, event hook reports, stream attempts, and XMLTV startup logs now avoid reflecting provider/Plex credentials.
+
 ### Security / Plex Live TV proxy
 - **Catchup capsule exports are private and symlink-aware:** generated lane JSON, publish manifests, `.strm`, and `.nfo` artifacts now use private directories, randomized temp writes, and symlink overwrite refusal.
 - **WebUI deck state is private and symlink-aware:** persisted operator deck activity/settings now write through private randomized temp files and refuse symlinked state targets.
