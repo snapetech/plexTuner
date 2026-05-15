@@ -17,6 +17,7 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/entitlements"
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
 	"github.com/snapetech/iptvtunerr/internal/programming"
+	"github.com/snapetech/iptvtunerr/internal/safeurl"
 	"github.com/snapetech/iptvtunerr/internal/virtualchannels"
 )
 
@@ -192,7 +193,7 @@ func (s *Server) serveXtreamLiveProxy() http.Handler {
 			writeMethodNotAllowed(w, http.MethodGet, http.MethodHead)
 			return
 		}
-		principal, channelID, ok := s.xtreamPathPrincipalID(r.URL.Path, "live")
+		principal, channelID, ok := s.xtreamPathPrincipalID(r.URL.EscapedPath(), "live")
 		if !ok {
 			http.NotFound(w, r)
 			return
@@ -242,13 +243,25 @@ func (s *Server) xtreamPathPrincipalID(rawPath, prefix string) (xtreamPrincipal,
 	if len(parts) < 4 || parts[0] != prefix {
 		return xtreamPrincipal{}, "", false
 	}
-	principal, ok := s.xtreamPrincipal(parts[1], parts[2])
+	username, err := url.PathUnescape(parts[1])
+	if err != nil {
+		return xtreamPrincipal{}, "", false
+	}
+	password, err := url.PathUnescape(parts[2])
+	if err != nil {
+		return xtreamPrincipal{}, "", false
+	}
+	principal, ok := s.xtreamPrincipal(username, password)
 	if !ok {
 		return xtreamPrincipal{}, "", false
 	}
 	id := parts[3]
 	if ext := pathpkg.Ext(id); len(ext) > 1 {
 		id = strings.TrimSuffix(id, ext)
+	}
+	id, err = url.PathUnescape(id)
+	if err != nil {
+		return xtreamPrincipal{}, "", false
 	}
 	id = strings.TrimSpace(id)
 	return principal, id, id != ""
@@ -355,7 +368,7 @@ func (s *Server) xtreamMovieStreams(principal xtreamPrincipal) []xtreamVODStream
 			StreamID:     strings.TrimSpace(movie.ID),
 			StreamIcon:   strings.TrimSpace(movie.ArtworkURL),
 			CategoryID:   catIDs[strings.ToLower(category)],
-			DirectSource: base + "/movie/" + principal.Username + "/" + s.xtreamPasswordForPrincipal(principal) + "/" + strings.TrimSpace(movie.ID) + ".mp4",
+			DirectSource: base + "/movie/" + xtreamPathSegment(principal.Username) + "/" + xtreamPathSegment(s.xtreamPasswordForPrincipal(principal)) + "/" + xtreamPathSegment(movie.ID) + ".mp4",
 			ContainerExt: "mp4",
 		})
 	}
@@ -403,7 +416,7 @@ func (s *Server) xtreamSeriesInfo(principal xtreamPrincipal, id string) (xtreamS
 					ID:           strings.TrimSpace(episode.ID),
 					Title:        strings.TrimSpace(episode.Title),
 					ContainerExt: "mp4",
-					DirectSource: base + "/series/" + principal.Username + "/" + s.xtreamPasswordForPrincipal(principal) + "/" + strings.TrimSpace(episode.ID) + ".mp4",
+					DirectSource: base + "/series/" + xtreamPathSegment(principal.Username) + "/" + xtreamPathSegment(s.xtreamPasswordForPrincipal(principal)) + "/" + xtreamPathSegment(episode.ID) + ".mp4",
 					EpisodeNum:   episode.EpisodeNum,
 					Season:       episode.SeasonNum,
 				})
@@ -674,7 +687,7 @@ func (s *Server) serveXtreamVODProxy(prefix string) http.Handler {
 			writeMethodNotAllowed(w, http.MethodGet, http.MethodHead)
 			return
 		}
-		principal, id, ok := s.xtreamPathPrincipalID(r.URL.Path, prefix)
+		principal, id, ok := s.xtreamPathPrincipalID(r.URL.EscapedPath(), prefix)
 		if !ok {
 			http.NotFound(w, r)
 			return
@@ -682,6 +695,10 @@ func (s *Server) serveXtreamVODProxy(prefix string) http.Handler {
 		sourceURL, found := s.xtreamVODSourceURL(principal, prefix, id)
 		if !found {
 			http.NotFound(w, r)
+			return
+		}
+		if xtreamVODDenyLiteralPrivateUpstream() && safeurl.HTTPURLHostIsLiteralBlockedPrivate(sourceURL) {
+			http.Error(w, "blocked private upstream", http.StatusForbidden)
 			return
 		}
 		req, err := http.NewRequestWithContext(r.Context(), r.Method, sourceURL, nil)
@@ -732,6 +749,10 @@ func (s *Server) xtreamVODSourceURL(principal xtreamPrincipal, prefix, id string
 		}
 	}
 	return "", false
+}
+
+func xtreamVODDenyLiteralPrivateUpstream() bool {
+	return getenvBool("IPTV_TUNERR_XTREAM_VOD_DENY_LITERAL_PRIVATE_UPSTREAM", true)
 }
 
 func (s *Server) xtreamLiveChannelsFor(principal xtreamPrincipal) []catalog.LiveChannel {
@@ -797,7 +818,11 @@ func (s *Server) xtreamLiveDirectSource(principal xtreamPrincipal, channelID str
 		prefix = "live"
 		ext = ".mp4"
 	}
-	return s.xtreamBaseURL() + "/" + prefix + "/" + principal.Username + "/" + s.xtreamPasswordForPrincipal(principal) + "/" + channelID + ext
+	return s.xtreamBaseURL() + "/" + prefix + "/" + xtreamPathSegment(principal.Username) + "/" + xtreamPathSegment(s.xtreamPasswordForPrincipal(principal)) + "/" + xtreamPathSegment(channelID) + ext
+}
+
+func xtreamPathSegment(value string) string {
+	return url.PathEscape(strings.TrimSpace(value))
 }
 
 func (s *Server) xtreamMoviesFor(principal xtreamPrincipal) []catalog.Movie {

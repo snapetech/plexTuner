@@ -39,9 +39,10 @@ func PublishRecordedCatchupItem(rootDir string, capsule CatchupCapsule, recorded
 	lane := firstNonEmptyString(capsule.Lane, "general")
 	dirName := catchupPublishDirName(capsule, start)
 	itemDir := filepath.Join(rootDir, lane, dirName)
-	if err := os.MkdirAll(itemDir, 0o755); err != nil {
+	if err := os.MkdirAll(itemDir, 0o700); err != nil {
 		return CatchupRecordedPublishedItem{}, err
 	}
+	_ = os.Chmod(itemDir, 0o700)
 	baseName := dirName
 	mediaPath := filepath.Join(itemDir, baseName+".ts")
 	if err := linkOrCopyFile(recorded.OutputPath, mediaPath); err != nil {
@@ -148,10 +149,11 @@ func linkOrCopyFile(src, dst string) error {
 	if src == dst {
 		return nil
 	}
-	if err := os.RemoveAll(dst); err != nil {
+	if err := preparePublishDestination(dst); err != nil {
 		return err
 	}
 	if err := os.Link(src, dst); err == nil {
+		_ = os.Chmod(dst, 0o600)
 		return nil
 	}
 	in, err := os.Open(src)
@@ -159,13 +161,60 @@ func linkOrCopyFile(src, dst string) error {
 		return err
 	}
 	defer in.Close()
-	out, err := os.Create(dst)
+	if err := copyPublishFile(in, dst); err != nil {
+		return err
+	}
+	return nil
+}
+
+func preparePublishDestination(dst string) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		return err
+	}
+	_ = os.Chmod(filepath.Dir(dst), 0o700)
+	info, err := os.Lstat(dst)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("refusing to overwrite symlinked published media %q", dst)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("refusing to overwrite directory published media %q", dst)
+	}
+	return os.Remove(dst)
+}
+
+func copyPublishFile(in io.Reader, dst string) error {
+	dir := filepath.Dir(dst)
+	tmp, err := os.CreateTemp(dir, ".publish-*.tmp")
 	if err != nil {
 		return err
 	}
-	defer out.Close()
-	if _, err := io.Copy(out, in); err != nil {
+	tmpName := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpName)
+		}
+	}()
+	if _, err := io.Copy(tmp, in); err != nil {
+		_ = tmp.Close()
 		return err
 	}
-	return out.Close()
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, dst); err != nil {
+		return err
+	}
+	cleanup = false
+	return os.Chmod(dst, 0o600)
 }

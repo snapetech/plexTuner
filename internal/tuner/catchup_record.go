@@ -66,9 +66,10 @@ func RecordCatchupCapsules(ctx context.Context, preview CatchupCapsulePreview, s
 	if client == nil {
 		client = httpclient.ForStreaming()
 	}
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
+	if err := os.MkdirAll(outDir, 0o700); err != nil {
 		return CatchupRecordManifest{}, err
 	}
+	_ = os.Chmod(outDir, 0o700)
 	manifest := CatchupRecordManifest{
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		RootDir:     outDir,

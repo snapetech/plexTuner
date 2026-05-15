@@ -10,12 +10,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/config"
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
+	"github.com/snapetech/iptvtunerr/internal/safeurl"
 )
 
 var debugBundleHTTPClient = httpclient.WithTimeout(15 * time.Second)
@@ -81,7 +83,7 @@ Flags:
 			{"provider-profile.json", "/provider/profile.json"},
 		} {
 			dest := filepath.Join(dir, ep.name)
-			err := fetchURLToFile(base+ep.path, dest)
+			err := fetchURLToFile(base+ep.path, dest, *redact)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "warn: fetch %s: %v\n", ep.path, err)
 				summary[ep.name] = "error: " + err.Error()
@@ -145,7 +147,7 @@ Flags:
 	info := map[string]any{
 		"collected_at": now.Format(time.RFC3339),
 		"version":      Version,
-		"server_url":   base,
+		"server_url":   redactDebugBundleText(base, *redact),
 		"files":        summary,
 	}
 	if data, err := json.MarshalIndent(info, "", "  "); err == nil {
@@ -173,7 +175,7 @@ Flags:
 	}
 }
 
-func fetchURLToFile(rawURL, destPath string) error {
+func fetchURLToFile(rawURL, destPath string, redact bool) error {
 	resp, err := debugBundleHTTPClient.Get(rawURL) //nolint:gosec
 	if err != nil {
 		return err
@@ -185,6 +187,9 @@ func fetchURLToFile(rawURL, destPath string) error {
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
 	if err != nil {
 		return err
+	}
+	if redact {
+		data = []byte(redactDebugBundleText(string(data), true))
 	}
 	return os.WriteFile(destPath, data, 0o600)
 }
@@ -272,6 +277,8 @@ func writeEnvDump(destPath string, redact bool) error {
 		}
 		if redact && isSecretEnvKey(key) {
 			val = "[REDACTED]"
+		} else {
+			val = redactDebugBundleText(val, redact)
 		}
 		out[key] = val
 	}
@@ -299,6 +306,24 @@ func isSecretEnvKey(key string) bool {
 		}
 	}
 	return false
+}
+
+var (
+	debugBundleURLPattern          = regexp.MustCompile(`https?://[^\s"'<>]+`)
+	debugBundleQuerySecretPattern  = regexp.MustCompile(`(?i)\b(password|passwd|pwd|token|api[_-]?key|apikey|key|secret|x-plex-token|cf_clearance)=([^&\s"'<>]+)`)
+	debugBundleHeaderSecretPattern = regexp.MustCompile(`(?im)\b(authorization|cookie|x-plex-token|x-api-key|x-auth-token|x-session-id)\s*:\s*[^\r\n"']+`)
+)
+
+func redactDebugBundleText(text string, redact bool) string {
+	if !redact || strings.TrimSpace(text) == "" {
+		return text
+	}
+	text = debugBundleURLPattern.ReplaceAllStringFunc(text, func(raw string) string {
+		return safeurl.RedactURL(raw)
+	})
+	text = debugBundleQuerySecretPattern.ReplaceAllString(text, `$1=<redacted>`)
+	text = debugBundleHeaderSecretPattern.ReplaceAllString(text, `$1: <redacted>`)
+	return text
 }
 
 func createTarGz(destPath, srcDir string) error {

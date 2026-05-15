@@ -68,6 +68,13 @@ func TestDownloadToFile_fullGet(t *testing.T) {
 	if string(got) != string(payload) {
 		t.Fatalf("got %q", got)
 	}
+	info, err := os.Stat(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("download mode=%#o want 0600", info.Mode().Perm())
+	}
 }
 
 func TestDownloadToFile_rangeWhenSupported(t *testing.T) {
@@ -102,6 +109,42 @@ func TestDownloadToFile_rangeWhenSupported(t *testing.T) {
 	got, _ := os.ReadFile(dest)
 	if string(got) != string(payload) {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestDownloadToFile_refusesDestinationSymlink(t *testing.T) {
+	payload := []byte("evil-overwrite")
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodHead:
+			w.Header().Set("Content-Length", fmt.Sprint(len(payload)))
+			w.WriteHeader(http.StatusOK)
+		case http.MethodGet:
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(payload)
+		}
+	}))
+	defer ts.Close()
+
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.txt")
+	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(dir, "dl.partial")
+	if err := os.Symlink(target, dest); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	err := DownloadToFile(context.Background(), ts.URL+"/v.mp4", dest, ts.Client())
+	if err == nil {
+		t.Fatal("expected symlink destination to be rejected")
+	}
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "original" {
+		t.Fatalf("symlink target changed: %q", got)
 	}
 }
 
@@ -175,6 +218,13 @@ func TestDirectFile_downloadsAndCaches(t *testing.T) {
 	}
 	if path2 != path {
 		t.Fatalf("%q vs %q", path2, path)
+	}
+	info, err := os.Stat(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Fatalf("cache dir mode=%#o want 0700", info.Mode().Perm())
 	}
 }
 

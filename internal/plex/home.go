@@ -75,13 +75,13 @@ func CreateSharedServer(plexToken, clientID string, reqBody SharedServerRequest)
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("plex.tv shared_servers create returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, fmt.Errorf("plex.tv shared_servers create returned %d: %s", resp.StatusCode, redactPlexDiagnosticText(string(body)))
 	}
 	return &SharedServerResult{
 		Status:      resp.StatusCode,
 		Requested:   reqBody,
 		Observed:    parseCreatedSharedServer(body),
-		BodyPreview: strings.TrimSpace(string(body)),
+		BodyPreview: redactPlexDiagnosticText(string(body)),
 	}, nil
 }
 
@@ -103,7 +103,7 @@ func ListSharedServers(plexToken, machineID string) ([]SharedServer, error) {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("list shared servers returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, fmt.Errorf("list shared servers returned %d: %s", resp.StatusCode, redactPlexDiagnosticText(string(body)))
 	}
 	return parseSharedServers(body), nil
 }
@@ -126,7 +126,7 @@ func DeleteSharedServer(plexToken, machineID string, sharedServerID int) error {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 16*1024))
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("delete shared server %d returned %d: %s", sharedServerID, resp.StatusCode, strings.TrimSpace(string(body)))
+		return fmt.Errorf("delete shared server %d returned %d: %s", sharedServerID, resp.StatusCode, redactPlexDiagnosticText(string(body)))
 	}
 	return nil
 }

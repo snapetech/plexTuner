@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -10,8 +11,19 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/channeldna"
 	"github.com/snapetech/iptvtunerr/internal/config"
 	"github.com/snapetech/iptvtunerr/internal/eventhooks"
+	"github.com/snapetech/iptvtunerr/internal/safeurl"
 	"github.com/snapetech/iptvtunerr/internal/tuner"
 )
+
+var runtimeSnapshotSecretKVPattern = regexp.MustCompile(`(?i)\b(password|passwd|pwd|token|api[_-]?key|apikey|key|secret|x-plex-token)=([^&\s"'<>]+)`)
+
+func redactRuntimeSnapshotText(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	return runtimeSnapshotSecretKVPattern.ReplaceAllString(safeurl.RedactURL(raw), `$1=<redacted>`)
+}
 
 func loadRuntimeLiveChannels(cfg *config.Config, path, providerBase, providerUser, providerPass string) ([]catalog.LiveChannel, error) {
 	c := catalog.New()
@@ -119,7 +131,7 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 	providerBases := make([]string, 0, len(cfg.ProviderEntries()))
 	for _, entry := range cfg.ProviderEntries() {
 		if base := strings.TrimSpace(entry.BaseURL); base != "" {
-			providerBases = append(providerBases, base)
+			providerBases = append(providerBases, redactRuntimeSnapshotText(base))
 		}
 	}
 	return &tuner.RuntimeSnapshot{
@@ -145,7 +157,7 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"transcode_overrides_file":                       strings.TrimSpace(os.Getenv("IPTV_TUNERR_TRANSCODE_OVERRIDES_FILE")),
 			"profile_overrides_file":                         strings.TrimSpace(os.Getenv("IPTV_TUNERR_PROFILE_OVERRIDES_FILE")),
 			"stream_profiles_file":                           strings.TrimSpace(os.Getenv("IPTV_TUNERR_STREAM_PROFILES_FILE")),
-			"stream_public_base_url":                         strings.TrimSpace(os.Getenv("IPTV_TUNERR_STREAM_PUBLIC_BASE_URL")),
+			"stream_public_base_url":                         redactRuntimeSnapshotText(os.Getenv("IPTV_TUNERR_STREAM_PUBLIC_BASE_URL")),
 			"shared_relay_replay_bytes":                      strings.TrimSpace(os.Getenv("IPTV_TUNERR_SHARED_RELAY_REPLAY_BYTES")),
 			"hls_mux_cors":                                   cfg.HlsMuxCORS,
 			"hls_mux_upstream_err_body_max":                  strings.TrimSpace(os.Getenv("IPTV_TUNERR_HLS_MUX_UPSTREAM_ERR_BODY_MAX")),
@@ -204,7 +216,7 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"xtream_users_file":                              strings.TrimSpace(os.Getenv("IPTV_TUNERR_XTREAM_USERS_FILE")),
 		},
 		Guide: map[string]interface{}{
-			"xmltv_url":                     cfg.XMLTVURL,
+			"xmltv_url":                     redactRuntimeSnapshotText(cfg.XMLTVURL),
 			"xmltv_timeout":                 cfg.XMLTVTimeout.String(),
 			"xmltv_cache_ttl":               cfg.XMLTVCacheTTL.String(),
 			"xmltv_plex_safe_ids":           cfg.XMLTVPlexSafeIDs,
@@ -216,18 +228,18 @@ func buildRuntimeSnapshot(cfg *config.Config, addr, baseURL, deviceID, friendlyN
 			"provider_epg_incremental":      cfg.ProviderEPGIncremental,
 			"provider_epg_lookahead_hours":  cfg.ProviderEPGLookaheadHours,
 			"provider_epg_backfill_hours":   cfg.ProviderEPGBackfillHours,
-			"provider_epg_url_suffix":       cfg.ProviderEPGURLSuffix,
+			"provider_epg_url_suffix":       redactRuntimeSnapshotText(cfg.ProviderEPGURLSuffix),
 			"epg_sqlite_path":               cfg.EpgSQLitePath,
 			"epg_sqlite_retain_past_hours":  cfg.EpgSQLiteRetainPastHours,
 			"epg_sqlite_vacuum":             cfg.EpgSQLiteVacuumAfterPrune,
 			"epg_sqlite_max_bytes":          cfg.EpgSQLiteMaxBytes,
 			"epg_sqlite_incremental_upsert": cfg.EpgSQLiteIncrementalUpsert,
 			"epg_guide_serve_window_hours":  cfg.EpgGuideServeWindowHours,
-			"hdhr_guide_url":                cfg.HDHRGuideURL,
+			"hdhr_guide_url":                redactRuntimeSnapshotText(cfg.HDHRGuideURL),
 			"hdhr_guide_timeout":            cfg.HDHRGuideTimeout.String(),
 		},
 		Provider: map[string]interface{}{
-			"base_url":                 providerBase,
+			"base_url":                 redactRuntimeSnapshotText(providerBase),
 			"base_urls":                providerBases,
 			"user_configured":          strings.TrimSpace(providerUser) != "",
 			"entry_count":              len(cfg.ProviderEntries()),

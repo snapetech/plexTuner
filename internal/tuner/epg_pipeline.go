@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -557,7 +558,48 @@ func saveProviderEPGCacheMeta(path string, m providerEPGCacheMeta) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, b, 0644)
+	return writeProviderEPGCacheFile(path, b)
+}
+
+func writeProviderEPGCacheFile(path string, body []byte) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return fmt.Errorf("provider EPG cache path required")
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	if info, err := os.Lstat(path); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("refusing to overwrite symlinked provider EPG cache %q", path)
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, ".provider-epg-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(body); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := os.Chmod(tmpName, 0o600); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	return nil
 }
 
 func parseProviderEPGDiskCache(cacheFile string, allowedTVGIDs map[string]bool) (*parsedEPG, error) {
@@ -606,7 +648,7 @@ func (x *XMLTV) fetchProviderXMLTVConditional(ctx context.Context, rawURL string
 	resp, err := client.Do(req)
 	if err != nil {
 		if parsed, cacheErr := parseProviderEPGDiskCache(cacheFile, allowedTVGIDs); cacheErr == nil {
-			log.Printf("xmltv: provider EPG fetch failed (%v); using stale disk cache %s", err, cacheFile)
+			log.Printf("xmltv: provider EPG fetch failed (%s); using stale disk cache %s", redactProviderEPGDiagnosticText(err), cacheFile)
 			return parsed, nil
 		}
 		return nil, fmt.Errorf("epg fetch: %w", err)
@@ -635,7 +677,7 @@ func (x *XMLTV) fetchProviderXMLTVConditional(ctx context.Context, rawURL string
 			if parseErr != nil {
 				return nil, fmt.Errorf("epg fetch read body: %w", err)
 			}
-			if writeErr := os.WriteFile(cacheFile, body, 0644); writeErr != nil {
+			if writeErr := writeProviderEPGCacheFile(cacheFile, body); writeErr != nil {
 				log.Printf("xmltv: provider partial EPG disk cache write failed (%v)", writeErr)
 			} else {
 				_ = os.Remove(metaPath)
@@ -645,7 +687,7 @@ func (x *XMLTV) fetchProviderXMLTVConditional(ctx context.Context, rawURL string
 		}
 		etag := strings.TrimSpace(resp.Header.Get("ETag"))
 		lm := strings.TrimSpace(resp.Header.Get("Last-Modified"))
-		if err := os.WriteFile(cacheFile, body, 0644); err != nil {
+		if err := writeProviderEPGCacheFile(cacheFile, body); err != nil {
 			log.Printf("xmltv: provider EPG disk cache write failed (%v)", err)
 		} else if etag != "" || lm != "" {
 			if err := saveProviderEPGCacheMeta(metaPath, providerEPGCacheMeta{ETag: etag, LastModified: lm}); err != nil {
@@ -780,6 +822,12 @@ func (x *XMLTV) fetchProviderXMLTV(ctx context.Context, allowedTVGIDs map[string
 		success  int
 		firstErr error
 	)
+	if cachePath := strings.TrimSpace(x.ProviderEPGDiskCachePath); cachePath != "" && x.inMemoryGuideEmpty() {
+		if cached, err := parseProviderEPGDiskCache(cachePath, allowedTVGIDs); err == nil {
+			log.Printf("xmltv: provider XMLTV startup using stale disk cache %s", cachePath)
+			return cached, nil
+		}
+	}
 	for i, id := range ids {
 		cachePath := ""
 		if i == 0 {
@@ -787,10 +835,11 @@ func (x *XMLTV) fetchProviderXMLTV(ctx context.Context, allowedTVGIDs map[string
 		}
 		epg, err := x.fetchProviderXMLTVForIdentity(ctx, allowedTVGIDs, id, cachePath)
 		if err != nil {
+			redactedErr := fmt.Errorf("%s", redactProviderEPGDiagnosticText(err))
 			if firstErr == nil {
-				firstErr = err
+				firstErr = redactedErr
 			}
-			log.Printf("xmltv: provider XMLTV source unavailable base=%s (%v)", id.BaseURL, err)
+			log.Printf("xmltv: provider XMLTV source unavailable base=%s (%v)", redactProviderEPGDiagnosticText(id.BaseURL), redactedErr)
 			continue
 		}
 		merged = mergeParsedEPG(merged, epg)
@@ -803,6 +852,19 @@ func (x *XMLTV) fetchProviderXMLTV(ctx context.Context, allowedTVGIDs map[string
 		return nil, firstErr
 	}
 	return merged, nil
+}
+
+func redactProviderEPGDiagnosticText(v any) string {
+	return redactOperatorDiagnosticText(fmt.Sprint(v))
+}
+
+func (x *XMLTV) inMemoryGuideEmpty() bool {
+	if x == nil {
+		return true
+	}
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+	return len(x.cachedXML) == 0
 }
 
 // windowsOverlap reports whether window w overlaps any window in the sorted slice wins.

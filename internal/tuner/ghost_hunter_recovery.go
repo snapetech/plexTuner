@@ -46,7 +46,7 @@ func RunGhostHunterRecoveryHelper(ctx context.Context, mode string) (GhostHunter
 	result := GhostHunterRecoveryResult{
 		Mode:   mode,
 		Path:   path,
-		Output: strings.TrimSpace(string(out)),
+		Output: redactOperatorDiagnosticText(string(out)),
 	}
 	if err == nil {
 		return result, nil

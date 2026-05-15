@@ -2,6 +2,7 @@ package tuner
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -152,9 +153,22 @@ func (s *autopilotStore) saveLocked() error {
 		return err
 	}
 	dir := filepath.Dir(s.path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return err
+	}
+	if info, err := os.Lstat(s.path); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("refusing to overwrite symlinked autopilot state %q", s.path)
+	}
+	if err := writeAutopilotStateFile(dir, s.path, data); err != nil {
+		return err
+	}
+	return nil
+}
+
+func writeAutopilotStateFile(dir, path string, data []byte) error {
 	tmp, err := os.CreateTemp(dir, ".autopilot-*.json.tmp")
 	if err != nil {
 		return err
@@ -165,15 +179,20 @@ func (s *autopilotStore) saveLocked() error {
 		_ = os.Remove(tmpName)
 		return err
 	}
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		_ = os.Remove(tmpName)
 		return err
 	}
-	if err := os.Rename(tmpName, s.path); err != nil {
+	if err := os.Rename(tmpName, path); err != nil {
 		_ = os.Remove(tmpName)
 		return err
 	}
-	return nil
+	return os.Chmod(path, 0o600)
 }
 
 func autopilotKey(dnaID, clientClass string) string {

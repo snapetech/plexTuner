@@ -3,8 +3,10 @@ package webui
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,7 +18,22 @@ import (
 	"github.com/snapetech/iptvtunerr/internal/emby"
 	"github.com/snapetech/iptvtunerr/internal/livetvbundle"
 	"github.com/snapetech/iptvtunerr/internal/migrationident"
+	"github.com/snapetech/iptvtunerr/internal/store"
 )
+
+func newTestWebUIServerWithStore(t *testing.T, root string) *Server {
+	t.Helper()
+	st, err := store.Open(filepath.Join(root, "tunerr.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := st.Close(); err != nil {
+			t.Fatalf("close store: %v", err)
+		}
+	})
+	return &Server{store: st}
+}
 
 func TestProxyBase(t *testing.T) {
 	tests := []struct {
@@ -35,6 +52,110 @@ func TestProxyBase(t *testing.T) {
 		if got := proxyBase(tt.addr); got != tt.want {
 			t.Fatalf("proxyBase(%q) = %q want %q", tt.addr, got, tt.want)
 		}
+	}
+}
+
+func TestSanitizeLogoFilename_DropsPathAndUnsafeCharacters(t *testing.T) {
+	got, ok := sanitizeLogoFilename(`..\bad logo?.png`)
+	if !ok {
+		t.Fatal("expected filename to sanitize")
+	}
+	if got != "_bad_logo_.png" {
+		t.Fatalf("sanitized filename=%q", got)
+	}
+
+	for _, raw := range []string{"", ".", "..", "///"} {
+		if got, ok := sanitizeLogoFilename(raw); ok {
+			t.Fatalf("sanitizeLogoFilename(%q)=%q, true; want false", raw, got)
+		}
+	}
+}
+
+func TestV2LogosUploadCreatesPrivateDirAndDoesNotFollowExistingSymlink(t *testing.T) {
+	root := t.TempDir()
+	logosDir := filepath.Join(root, "logos")
+	target := filepath.Join(root, "target.txt")
+	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(logosDir, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(logosDir, "logo.png")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+
+	s := newTestWebUIServerWithStore(t, root)
+	t.Setenv(logosDirEnv, logosDir)
+
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	part, err := mw.CreateFormFile("file", "logo.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write([]byte("png-bytes")); err != nil {
+		t.Fatal(err)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/logos", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	w := httptest.NewRecorder()
+	s.v2Logos(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got, err := os.ReadFile(target); err != nil || string(got) != "original" {
+		t.Fatalf("symlink target changed: got=%q err=%v", got, err)
+	}
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("uploaded logo remained a symlink")
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("logo mode=%#o want 0600", info.Mode().Perm())
+	}
+	dirInfo, err := os.Stat(logosDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dirInfo.Mode().Perm() != 0o700 {
+		t.Fatalf("logos dir mode=%#o want 0700", dirInfo.Mode().Perm())
+	}
+}
+
+func TestV2LogoItemStoredTraversalFilenameDoesNotEscapeLogoDir(t *testing.T) {
+	root := t.TempDir()
+	secret := filepath.Join(root, "secret.png")
+	if err := os.WriteFile(secret, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	logosDir := filepath.Join(root, "logos")
+	if err := os.MkdirAll(logosDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	s := newTestWebUIServerWithStore(t, root)
+	t.Setenv(logosDirEnv, logosDir)
+
+	logo, err := s.store.UpsertLogo("../secret.png", "image/png", 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v2/logos/%d/image", logo.ID), nil)
+	w := httptest.NewRecorder()
+	s.v2LogoItem(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status=%d body=%q", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "secret") {
+		t.Fatalf("response leaked traversal target: %q", w.Body.String())
 	}
 }
 
@@ -1010,6 +1131,44 @@ func TestPersistStateExcludesTelemetryAndAuthSecret(t *testing.T) {
 	}
 	if !bytes.Contains(data, []byte(`"virtual_channel_recovery_live_stall_sec": 7`)) {
 		t.Fatalf("state file missing live stall setting: %s", string(data))
+	}
+	if info, err := os.Stat(dir); err != nil {
+		t.Fatalf("stat state dir: %v", err)
+	} else if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("state dir mode=%#o want 0700", got)
+	}
+	if info, err := os.Stat(stateFile); err != nil {
+		t.Fatalf("stat state file: %v", err)
+	} else if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("state file mode=%#o want 0600", got)
+	}
+}
+
+func TestPersistStateRefusesSymlinkOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.json")
+	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stateFile := filepath.Join(dir, "deck-state.json")
+	if err := os.Symlink(target, stateFile); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{
+		StateFile: stateFile,
+		settings: DeckSettings{
+			DefaultRefreshSec:               45,
+			SharedRelayReplayBytes:          262144,
+			VirtualChannelRecoveryLiveStall: 7,
+		},
+	}
+	if err := s.persistState(); err == nil {
+		t.Fatal("expected symlink overwrite refusal")
+	}
+	if got, err := os.ReadFile(target); err != nil {
+		t.Fatal(err)
+	} else if string(got) != "original" {
+		t.Fatalf("target changed to %q", string(got))
 	}
 }
 

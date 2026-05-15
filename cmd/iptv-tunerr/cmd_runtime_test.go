@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -98,6 +101,73 @@ func TestBuildRuntimeSnapshot_ExposesVirtualRecoveryRuntimeFields(t *testing.T) 
 	}
 	if got := strings.TrimSpace(snap.Tuner["virtual_channel_branding_default"].(string)); got != "true" {
 		t.Fatalf("virtual_channel_branding_default=%q", got)
+	}
+}
+
+func TestBuildRuntimeSnapshot_RedactsCredentialBearingRuntimeURLs(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_STREAM_PUBLIC_BASE_URL", "http://user:pass@public.example/stream?token=env-secret")
+
+	cfg := &config.Config{
+		XMLTVURL:             "http://guide.example/xmltv.php?username=guide-user&password=guide-pass&token=guide-token",
+		ProviderEPGURLSuffix: "&api_key=suffix-secret&token=suffix-token",
+		HDHRGuideURL:         "http://hdhr.example/guide.xml?x-plex-token=plex-secret",
+		ProviderBaseURL:      "http://entry-user:entry-pass@entry.example/base?password=entry-pass&token=entry-token",
+	}
+	snap := buildRuntimeSnapshot(cfg, ":5004", "http://127.0.0.1:5004", "abc123", "Tunerr", 479, "http://provider-user:provider-pass@provider.example/base?password=provider-pass&token=provider-token", "configured-user")
+	if snap == nil {
+		t.Fatal("runtime snapshot missing")
+	}
+	raw, err := json.Marshal(snap)
+	if err != nil {
+		t.Fatalf("marshal snapshot: %v", err)
+	}
+	body := string(raw)
+	for _, secret := range []string{
+		"user:pass",
+		"env-secret",
+		"guide-pass",
+		"guide-token",
+		"suffix-secret",
+		"suffix-token",
+		"plex-secret",
+		"entry-user:entry-pass",
+		"entry-pass",
+		"entry-token",
+		"provider-user:provider-pass",
+		"provider-pass",
+		"provider-token",
+	} {
+		if strings.Contains(body, secret) {
+			t.Fatalf("runtime snapshot leaked %q in %s", secret, body)
+		}
+	}
+	if !strings.Contains(body, "redacted") {
+		t.Fatalf("runtime snapshot did not include redaction markers: %s", body)
+	}
+}
+
+func TestLogExternalXMLTVEnabled_RedactsCredentialBearingURL(t *testing.T) {
+	var buf bytes.Buffer
+	origWriter := log.Writer()
+	origFlags := log.Flags()
+	log.SetOutput(&buf)
+	log.SetFlags(0)
+	defer func() {
+		log.SetOutput(origWriter)
+		log.SetFlags(origFlags)
+	}()
+
+	logExternalXMLTVEnabled(&config.Config{
+		XMLTVURL: "http://guide-user:guide-pass@guide.example/xmltv.php?username=guide-user&password=guide-pass&token=guide-token",
+	})
+	got := buf.String()
+	for _, secret := range []string{"guide-user:guide-pass", "guide-pass", "guide-token"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("external XMLTV log leaked %q in %q", secret, got)
+		}
+	}
+	if !strings.Contains(got, "http://guide.example/xmltv.php") {
+		t.Fatalf("external XMLTV log lost useful redacted URL context: %q", got)
 	}
 }
 

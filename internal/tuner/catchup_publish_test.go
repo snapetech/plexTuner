@@ -67,6 +67,66 @@ func TestSaveCatchupCapsuleLibraryLayout(t *testing.T) {
 	if len(parsed.Libraries) != len(DefaultCatchupCapsuleLanes()) {
 		t.Fatalf("libraries=%d want %d", len(parsed.Libraries), len(DefaultCatchupCapsuleLanes()))
 	}
+	if info, err := os.Stat(dir); err != nil {
+		t.Fatal(err)
+	} else if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("publish root mode=%#o want 0700", got)
+	}
+	if info, err := os.Stat(filepath.Join(dir, "general")); err != nil {
+		t.Fatal(err)
+	} else if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("publish lane mode=%#o want 0700", got)
+	}
+	if info, err := os.Stat(item.Directory); err != nil {
+		t.Fatal(err)
+	} else if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("publish item mode=%#o want 0700", got)
+	}
+	if info, err := os.Stat(item.StreamPath); err != nil {
+		t.Fatal(err)
+	} else if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("strm mode=%#o want 0600", got)
+	}
+}
+
+func TestSaveCatchupCapsuleLibraryLayoutRefusesSymlinkedArtifact(t *testing.T) {
+	dir := t.TempDir()
+	itemDir := filepath.Join(dir, "general", "Adventure-Time-2026-03-18-18-00-UTC")
+	if err := os.MkdirAll(itemDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(dir, "target.strm")
+	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(itemDir, "Adventure-Time-2026-03-18-18-00-UTC.strm")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := SaveCatchupCapsuleLibraryLayout(dir, "http://127.0.0.1:5004", "Catchup", CatchupCapsulePreview{
+		GeneratedAt: "2026-03-18T18:00:00Z",
+		SourceReady: true,
+		Capsules: []CatchupCapsule{
+			{
+				CapsuleID:   "dna:1",
+				ChannelID:   "1001",
+				Title:       "Adventure Time",
+				Lane:        "general",
+				Start:       "2026-03-18T18:00:00Z",
+				Stop:        "2026-03-18T18:30:00Z",
+				ReplayMode:  "launcher",
+				ReplayURL:   "",
+				ChannelName: "Cartoon Network",
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected symlinked artifact refusal")
+	}
+	if got, err := os.ReadFile(target); err != nil {
+		t.Fatal(err)
+	} else if string(got) != "original" {
+		t.Fatalf("target changed to %q", string(got))
+	}
 }
 
 func TestBuildRecordedCatchupPublishManifest(t *testing.T) {
@@ -113,5 +173,62 @@ func TestLoadRecordedCatchupPublishManifest(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].CapsuleID != "a" {
 		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestPublishRecordedCatchupItemCreatesPrivateArtifacts(t *testing.T) {
+	root := t.TempDir()
+	recordedDir := t.TempDir()
+	recordedPath := filepath.Join(recordedDir, "recorded.ts")
+	if err := os.WriteFile(recordedPath, []byte("media"), 0o600); err != nil {
+		t.Fatalf("write recorded: %v", err)
+	}
+	item, err := PublishRecordedCatchupItem(root, CatchupCapsule{
+		CapsuleID: "dna:private",
+		Lane:      "sports",
+		Title:     "Live Game",
+		Start:     "2026-03-18T18:00:00Z",
+	}, CatchupRecordedItem{OutputPath: recordedPath})
+	if err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	if info, err := os.Stat(item.Directory); err != nil {
+		t.Fatal(err)
+	} else if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("publish item dir mode=%#o want 0700", got)
+	}
+	if info, err := os.Stat(item.MediaPath); err != nil {
+		t.Fatal(err)
+	} else if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("media mode=%#o want 0600", got)
+	}
+	if info, err := os.Stat(item.NFOPath); err != nil {
+		t.Fatal(err)
+	} else if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("nfo mode=%#o want 0600", got)
+	}
+}
+
+func TestLinkOrCopyFileRefusesSymlinkedDestination(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.ts")
+	if err := os.WriteFile(src, []byte("media"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(dir, "target.ts")
+	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(dir, "dst.ts")
+	if err := os.Symlink(target, dst); err != nil {
+		t.Fatal(err)
+	}
+	if err := linkOrCopyFile(src, dst); err == nil {
+		t.Fatal("expected symlinked destination refusal")
+	}
+	if got, err := os.ReadFile(target); err != nil {
+		t.Fatal(err)
+	} else if string(got) != "original" {
+		t.Fatalf("target changed to %q", string(got))
 	}
 }

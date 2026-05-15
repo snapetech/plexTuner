@@ -89,11 +89,11 @@ When **`IPTV_TUNERR_HLS_MUX_CORS`** is on, this header is listed in **`Access-Co
 | `IPTV_TUNERR_HLS_MUX_SEG_AUTO_BONUS_CAP` | Max bonus slots (default **64**) |
 | `IPTV_TUNERR_HLS_MUX_ACCESS_LOG` | Append **one JSON line** per successful **`seg=`** (redacted URL, duration); see [ADR 0005](../adr/0005-hls-mux-no-disk-packager.md) |
 | `IPTV_TUNERR_HLS_MUX_MAX_SEG_PARAM_BYTES` | Max decoded **`seg=`** |
-| `IPTV_TUNERR_HLS_MUX_DENY_LITERAL_PRIVATE_UPSTREAM` | Block literal RFC1918 / loopback / link-local IPs in URL host |
+| `IPTV_TUNERR_HLS_MUX_DENY_LITERAL_PRIVATE_UPSTREAM` | Block literal RFC1918 / loopback / link-local IPs in URL host (default **true**) |
 | `IPTV_TUNERR_HLS_MUX_DENY_RESOLVED_PRIVATE_UPSTREAM` | DNS lookup + block if any resolved IP is unsafe |
 | `IPTV_TUNERR_HLS_MUX_UPSTREAM_ERR_BODY_MAX` | Upstream error body cap |
 | `IPTV_TUNERR_HLS_MUX_SEG_RPS_PER_IP` | Token-bucket rate / IP (**0** = off) |
-| `IPTV_TUNERR_HLS_MUX_WEB_DEMO` | Serves **`/debug/hls-mux-demo.html`** (hls.js sample) when **true** |
+| `IPTV_TUNERR_HLS_MUX_WEB_DEMO` | Serves **`/debug/hls-mux-demo.html`** (hls.js sample) when **true**, behind the operator localhost/LAN gate |
 | `IPTV_TUNERR_METRICS_ENABLE` | Exposes Prometheus **`GET /metrics`** + mux counters + **`iptv_tunerr_mux_seg_request_duration_seconds`** and **`iptv_tunerr_mux_manifest_request_duration_seconds`** histograms |
 | `IPTV_TUNERR_METRICS_MUX_CHANNEL_LABELS` | Add **`channel_id`** to mux counter/histogram labels (**high cardinality**; default off) |
 | `IPTV_TUNERR_HTTP_ACCEPT_BROTLI` | Accept **br** and decompress brotli upstream bodies on the shared HTTP stack |

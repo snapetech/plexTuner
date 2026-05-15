@@ -2,6 +2,7 @@ package materializer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,7 +27,7 @@ func DownloadToFile(ctx context.Context, streamURL, destPath string, client *htt
 		client = httpclient.Default()
 	}
 	transferClient := cloneClientNoTimeout(client)
-	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o700); err != nil {
 		return err
 	}
 
@@ -47,7 +48,7 @@ func DownloadToFile(ctx context.Context, streamURL, destPath string, client *htt
 }
 
 func downloadRange(ctx context.Context, client *http.Client, streamURL, destPath string, total int64) error {
-	f, err := os.Create(destPath)
+	f, err := createDownloadFile(destPath)
 	if err != nil {
 		return err
 	}
@@ -96,13 +97,24 @@ func downloadFull(ctx context.Context, client *http.Client, streamURL, destPath 
 	if resp.StatusCode != http.StatusOK {
 		return errStatus(resp.StatusCode)
 	}
-	f, err := os.Create(destPath)
+	f, err := createDownloadFile(destPath)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 	_, err = io.Copy(f, resp.Body)
 	return err
+}
+
+func createDownloadFile(destPath string) (*os.File, error) {
+	if info, err := os.Lstat(destPath); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil, fmt.Errorf("download: refusing to overwrite symlink %q", destPath)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	return os.OpenFile(destPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 }
 
 func errStatus(code int) error {

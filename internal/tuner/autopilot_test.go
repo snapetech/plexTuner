@@ -60,6 +60,42 @@ func TestAutopilotStorePersistsAndReloads(t *testing.T) {
 	if row.UpdatedAt == "" {
 		t.Fatalf("expected updated timestamp")
 	}
+	if info, err := os.Stat(filepath.Dir(path)); err != nil {
+		t.Fatalf("stat autopilot dir: %v", err)
+	} else if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("autopilot dir mode=%#o want 0700", got)
+	}
+	if info, err := os.Stat(path); err != nil {
+		t.Fatalf("stat autopilot file: %v", err)
+	} else if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("autopilot file mode=%#o want 0600", got)
+	}
+}
+
+func TestAutopilotStoreRefusesSymlinkOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.json")
+	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+	link := filepath.Join(dir, "autopilot.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	store := &autopilotStore{
+		path: link,
+		byKey: map[string]autopilotDecision{
+			autopilotKey("dna:test", "web"): {DNAID: "dna:test", ClientClass: "web", Profile: profilePlexSafe, Hits: 1},
+		},
+	}
+	if err := store.saveLocked(); err == nil {
+		t.Fatal("expected symlink overwrite refusal")
+	}
+	if got, err := os.ReadFile(target); err != nil {
+		t.Fatalf("read target: %v", err)
+	} else if string(got) != "original" {
+		t.Fatalf("target changed to %q", string(got))
+	}
 }
 
 func TestAutopilot_consensusPreferredHost(t *testing.T) {

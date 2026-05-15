@@ -66,9 +66,10 @@ func SaveCatchupCapsuleLibraryLayout(outDir, streamBaseURL, libraryPrefix string
 	if libraryPrefix == "" {
 		libraryPrefix = "Catchup"
 	}
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
+	if err := os.MkdirAll(outDir, 0o700); err != nil {
 		return CatchupPublishManifest{}, fmt.Errorf("mkdir %s: %w", outDir, err)
 	}
+	_ = os.Chmod(outDir, 0o700)
 	manifest := CatchupPublishManifest{
 		GeneratedAt:   preview.GeneratedAt,
 		SourceReady:   preview.SourceReady,
@@ -79,9 +80,10 @@ func SaveCatchupCapsuleLibraryLayout(outDir, streamBaseURL, libraryPrefix string
 	laneCounts := map[string]int{}
 	for _, lane := range DefaultCatchupCapsuleLanes() {
 		laneDir := filepath.Join(outDir, lane)
-		if err := os.MkdirAll(laneDir, 0o755); err != nil {
+		if err := os.MkdirAll(laneDir, 0o700); err != nil {
 			return CatchupPublishManifest{}, fmt.Errorf("mkdir lane %s: %w", laneDir, err)
 		}
+		_ = os.Chmod(laneDir, 0o700)
 		manifest.Libraries = append(manifest.Libraries, CatchupPublishedLibrary{
 			Lane:           lane,
 			Name:           CatchupLibraryName(libraryPrefix, lane),
@@ -100,20 +102,21 @@ func SaveCatchupCapsuleLibraryLayout(outDir, streamBaseURL, libraryPrefix string
 		}
 		dirName := catchupPublishDirName(capsule, start)
 		itemDir := filepath.Join(outDir, lane, dirName)
-		if err := os.MkdirAll(itemDir, 0o755); err != nil {
+		if err := os.MkdirAll(itemDir, 0o700); err != nil {
 			return CatchupPublishManifest{}, fmt.Errorf("mkdir item %s: %w", itemDir, err)
 		}
+		_ = os.Chmod(itemDir, 0o700)
 		baseName := dirName
 		streamPath := filepath.Join(itemDir, baseName+".strm")
 		streamURL := streamBaseURL + "/stream/" + capsule.ChannelID
 		if strings.TrimSpace(capsule.ReplayURL) != "" {
 			streamURL = strings.TrimSpace(capsule.ReplayURL)
 		}
-		if err := os.WriteFile(streamPath, []byte(streamURL+"\n"), 0o600); err != nil {
+		if err := writePrivateCatchupArtifact(streamPath, []byte(streamURL+"\n")); err != nil {
 			return CatchupPublishManifest{}, fmt.Errorf("write strm %s: %w", streamPath, err)
 		}
 		nfoPath := filepath.Join(itemDir, baseName+".nfo")
-		if err := os.WriteFile(nfoPath, buildCatchupMovieNFO(capsule), 0o600); err != nil {
+		if err := writePrivateCatchupArtifact(nfoPath, buildCatchupMovieNFO(capsule)); err != nil {
 			return CatchupPublishManifest{}, fmt.Errorf("write nfo %s: %w", nfoPath, err)
 		}
 		manifest.Items = append(manifest.Items, CatchupPublishedItem{
@@ -146,7 +149,7 @@ func SaveCatchupCapsuleLibraryLayout(outDir, streamBaseURL, libraryPrefix string
 	if err != nil {
 		return CatchupPublishManifest{}, fmt.Errorf("marshal publish manifest: %w", err)
 	}
-	if err := os.WriteFile(manifestPath, data, 0o600); err != nil {
+	if err := writePrivateCatchupArtifact(manifestPath, data); err != nil {
 		return CatchupPublishManifest{}, fmt.Errorf("write publish manifest: %w", err)
 	}
 	return manifest, nil

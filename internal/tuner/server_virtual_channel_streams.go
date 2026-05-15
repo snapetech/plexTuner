@@ -20,6 +20,7 @@ import (
 
 	"github.com/snapetech/iptvtunerr/internal/catalog"
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
+	"github.com/snapetech/iptvtunerr/internal/safeurl"
 	"github.com/snapetech/iptvtunerr/internal/virtualchannels"
 )
 
@@ -97,13 +98,13 @@ func (s *Server) serveVirtualChannelBrandedStream() http.Handler {
 		if err != nil {
 			fallbackURL, fallbackEntryID := resolveVirtualChannelFallback(channel, s.Movies, s.Series)
 			if fallbackURL == "" || strings.TrimSpace(fallbackURL) == sourceURL {
-				http.Error(w, "proxy request failed", http.StatusBadGateway)
+				writeVirtualChannelProxyError(w, err)
 				return
 			}
 			s.recordVirtualChannelRecoveryEvent(channel, slot, sourceURL, fallbackURL, fallbackEntryID, "proxy-error", "branded-stream")
 			resp, err = doVirtualChannelProxyRequest(r, fallbackURL)
 			if err != nil {
-				http.Error(w, "proxy request failed", http.StatusBadGateway)
+				writeVirtualChannelProxyError(w, err)
 				return
 			}
 			sourceURL = fallbackURL
@@ -214,13 +215,13 @@ func (s *Server) serveVirtualChannelStream() http.Handler {
 		if err != nil {
 			fallbackURL, fallbackEntryID := resolveVirtualChannelFallback(channel, s.Movies, s.Series)
 			if fallbackURL == "" || strings.TrimSpace(fallbackURL) == sourceURL {
-				http.Error(w, "proxy request failed", http.StatusBadGateway)
+				writeVirtualChannelProxyError(w, err)
 				return
 			}
 			s.recordVirtualChannelRecoveryEvent(channel, slot, sourceURL, fallbackURL, fallbackEntryID, "proxy-error", "stream")
 			resp, err = doVirtualChannelProxyRequest(r, fallbackURL)
 			if err != nil {
-				http.Error(w, "proxy request failed", http.StatusBadGateway)
+				writeVirtualChannelProxyError(w, err)
 				return
 			}
 			sourceURL = fallbackURL
@@ -288,6 +289,9 @@ func (s *Server) serveVirtualChannelStream() http.Handler {
 }
 
 func doVirtualChannelProxyRequest(r *http.Request, sourceURL string) (*http.Response, error) {
+	if virtualChannelDenyLiteralPrivateUpstream() && safeurl.HTTPURLHostIsLiteralBlockedPrivate(sourceURL) {
+		return nil, errVirtualChannelBlockedPrivateUpstream
+	}
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, sourceURL, nil)
 	if err != nil {
 		return nil, err
@@ -296,6 +300,20 @@ func doVirtualChannelProxyRequest(r *http.Request, sourceURL string) (*http.Resp
 		req.Header.Set("Range", raw)
 	}
 	return httpclient.ForStreaming().Do(req)
+}
+
+var errVirtualChannelBlockedPrivateUpstream = errors.New("blocked private upstream")
+
+func writeVirtualChannelProxyError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errVirtualChannelBlockedPrivateUpstream) {
+		http.Error(w, "blocked private upstream", http.StatusForbidden)
+		return
+	}
+	http.Error(w, "proxy request failed", http.StatusBadGateway)
+}
+
+func virtualChannelDenyLiteralPrivateUpstream() bool {
+	return getenvBool("IPTV_TUNERR_VIRTUAL_CHANNEL_DENY_LITERAL_PRIVATE_UPSTREAM", true)
 }
 
 type virtualChannelRecoveryRelayBody struct {
@@ -741,6 +759,9 @@ func shouldFallbackVirtualChannelByContentProbe(ch virtualchannels.Channel, sour
 	if strings.ToLower(strings.TrimSpace(ch.Recovery.Mode)) != "filler" {
 		return false, ""
 	}
+	if virtualChannelDenyLiteralPrivateUpstream() && safeurl.HTTPURLHostIsLiteralBlockedPrivate(sourceURL) {
+		return true, "blocked-private-upstream"
+	}
 	ffmpegPath, err := resolveFFmpegPath()
 	if err != nil {
 		return false, ""
@@ -896,9 +917,9 @@ func (s *Server) recordVirtualChannelRecoveryEvent(ch virtualchannels.Channel, s
 		ChannelID:       strings.TrimSpace(ch.ID),
 		ChannelName:     strings.TrimSpace(ch.Name),
 		EntryID:         strings.TrimSpace(slot.EntryID),
-		SourceURL:       strings.TrimSpace(sourceURL),
+		SourceURL:       safeurl.RedactURL(strings.TrimSpace(sourceURL)),
 		FallbackEntryID: strings.TrimSpace(fallbackEntryID),
-		FallbackURL:     strings.TrimSpace(fallbackURL),
+		FallbackURL:     safeurl.RedactURL(strings.TrimSpace(fallbackURL)),
 		Reason:          strings.TrimSpace(reason),
 		Surface:         strings.TrimSpace(surface),
 	}
@@ -963,6 +984,9 @@ func (s *Server) ensureVirtualRecoveryStateLoadedLocked() {
 	if len(payload.Events) > 200 {
 		payload.Events = append([]virtualChannelRecoveryEvent(nil), payload.Events[:200]...)
 	}
+	for i := range payload.Events {
+		payload.Events[i] = sanitizeVirtualChannelRecoveryEvent(payload.Events[i])
+	}
 	s.virtualRecoveryEvents = append([]virtualChannelRecoveryEvent(nil), payload.Events...)
 }
 
@@ -989,13 +1013,26 @@ func (s *Server) persistVirtualRecoveryState(events []virtualChannelRecoveryEven
 		log.Printf("Virtual recovery state persist skipped: encode %q failed: %v", path, err)
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		log.Printf("Virtual recovery state persist skipped: mkdir %q failed: %v", path, err)
 		return
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		log.Printf("Virtual recovery state persist skipped: write %q failed: %v", path, err)
 	}
+}
+
+func sanitizeVirtualChannelRecoveryEvent(event virtualChannelRecoveryEvent) virtualChannelRecoveryEvent {
+	event.DetectedAtUTC = strings.TrimSpace(event.DetectedAtUTC)
+	event.ChannelID = strings.TrimSpace(event.ChannelID)
+	event.ChannelName = strings.TrimSpace(event.ChannelName)
+	event.EntryID = strings.TrimSpace(event.EntryID)
+	event.SourceURL = safeurl.RedactURL(strings.TrimSpace(event.SourceURL))
+	event.FallbackEntryID = strings.TrimSpace(event.FallbackEntryID)
+	event.FallbackURL = safeurl.RedactURL(strings.TrimSpace(event.FallbackURL))
+	event.Reason = strings.TrimSpace(event.Reason)
+	event.Surface = strings.TrimSpace(event.Surface)
+	return event
 }
 
 func intMax(a, b int) int {

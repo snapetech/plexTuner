@@ -145,7 +145,7 @@ func newCappedBodyTee(dir string, maxBytes int64, reqID, channelName, channelID 
 		channelID:   channelID,
 		remain:      maxBytes,
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.openErr = err
 		log.Printf("gateway: req=%s channel=%q id=%s debug-tee mkdir failed dir=%q err=%v", reqID, channelName, channelID, dir, err)
 		return t
@@ -157,7 +157,7 @@ func newCappedBodyTee(dir string, maxBytes int64, reqID, channelName, channelID 
 		sanitizeFileToken(channelName),
 	)
 	path := filepath.Join(dir, name)
-	f, err := os.Create(path)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		t.openErr = err
 		log.Printf("gateway: req=%s channel=%q id=%s debug-tee open failed path=%q err=%v", reqID, channelName, channelID, path, err)

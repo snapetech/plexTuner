@@ -38,7 +38,7 @@ func ListUsers(plexToken string) ([]UserInfo, error) {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("list users returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, fmt.Errorf("list users returned %d: %s", resp.StatusCode, redactPlexDiagnosticText(string(body)))
 	}
 	var doc struct {
 		Users []struct {

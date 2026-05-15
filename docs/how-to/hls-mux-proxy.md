@@ -16,7 +16,7 @@ This mode is **not** ffmpeg segment packaging: Tunerr **rewrites** manifest line
 - You want **M3U8 in / M3U8 out** through Tunerr (e.g. testing with `ffplay` or an HLS-aware player) without transcoding to TS first.
 - A client mishandles **relative** URLs inside playlists: set **`IPTV_TUNERR_STREAM_PUBLIC_BASE_URL`** so media lines use **absolute** Tunerr URLs.
 - A **browser** or **devtools** page loads the manifest from a different origin than Tunerr: set **`IPTV_TUNERR_HLS_MUX_CORS`**. Tunerr then adds permissive CORS headers on **`?mux=hls`** and **`?mux=dash`** responses and answers **`OPTIONS`** preflight for both query patterns.
-- Optional **`IPTV_TUNERR_HLS_MUX_WEB_DEMO`** exposes **`/debug/hls-mux-demo.html`** (uses **hls.js** from a CDN — still your responsibility to allow CORS to the tuner).
+- Optional **`IPTV_TUNERR_HLS_MUX_WEB_DEMO`** exposes **`/debug/hls-mux-demo.html`** behind the operator localhost/LAN gate (uses **hls.js** from a CDN — still your responsibility to allow CORS to the tuner).
 
 ## Preconditions
 

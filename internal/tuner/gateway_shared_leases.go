@@ -76,7 +76,7 @@ func (m *providerSharedLeaseManager) acquire(identity providerAccountLease, limi
 	if m == nil || strings.TrimSpace(identity.Key) == "" || limit <= 0 {
 		return nil, 0, false, nil
 	}
-	if err := os.MkdirAll(m.dir, 0o755); err != nil {
+	if err := m.ensureLeaseDir(); err != nil {
 		return nil, 0, false, err
 	}
 	lockFile, err := m.lockFile(identity.Key)
@@ -109,7 +109,7 @@ func (m *providerSharedLeaseManager) acquire(identity providerAccountLease, limi
 	if err != nil {
 		return nil, 0, false, err
 	}
-	if err := os.WriteFile(leasePath, payload, 0o644); err != nil {
+	if err := writeProviderSharedLeaseFile(leasePath, payload); err != nil {
 		return nil, 0, false, err
 	}
 	handle := &providerSharedLeaseHandle{
@@ -166,7 +166,7 @@ func (m *providerSharedLeaseManager) snapshot() []providerAccountLease {
 	if m == nil {
 		return nil
 	}
-	if err := os.MkdirAll(m.dir, 0o755); err != nil {
+	if err := m.ensureLeaseDir(); err != nil {
 		return nil
 	}
 	entries, err := os.ReadDir(m.dir)
@@ -175,7 +175,7 @@ func (m *providerSharedLeaseManager) snapshot() []providerAccountLease {
 	}
 	seen := map[string]providerAccountLease{}
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || strings.HasSuffix(entry.Name(), ".lock") {
+		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !strings.HasSuffix(entry.Name(), ".json") || strings.HasSuffix(entry.Name(), ".lock") {
 			continue
 		}
 		path := filepath.Join(m.dir, entry.Name())
@@ -236,14 +236,18 @@ func (m *providerSharedLeaseManager) startHeartbeat(handle *providerSharedLeaseH
 }
 
 func (m *providerSharedLeaseManager) lockFile(key string) (*os.File, error) {
-	if err := os.MkdirAll(m.dir, 0o755); err != nil {
+	if err := m.ensureLeaseDir(); err != nil {
 		return nil, err
 	}
 	path := filepath.Join(m.dir, m.lockFilename(key))
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("refusing symlinked shared lease lock %q", path)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, err
 	}
+	_ = os.Chmod(path, 0o600)
 	if err := lockProviderSharedLeaseFile(f); err != nil {
 		_ = f.Close()
 		return nil, err
@@ -277,7 +281,7 @@ func (m *providerSharedLeaseManager) activeLeaseFilesLocked(key string) ([]strin
 	prefix := m.leaseFilePrefix(key)
 	out := make([]string, 0)
 	for _, entry := range entries {
-		if entry.IsDir() {
+		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
 			continue
 		}
 		name := entry.Name()
@@ -287,6 +291,47 @@ func (m *providerSharedLeaseManager) activeLeaseFilesLocked(key string) ([]strin
 		out = append(out, filepath.Join(m.dir, name))
 	}
 	return out, nil
+}
+
+func (m *providerSharedLeaseManager) ensureLeaseDir() error {
+	if err := os.MkdirAll(m.dir, 0o700); err != nil {
+		return err
+	}
+	return os.Chmod(m.dir, 0o700)
+}
+
+func writeProviderSharedLeaseFile(path string, payload []byte) error {
+	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("refusing to overwrite symlinked shared lease %q", path)
+	}
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".lease-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if _, err := tmp.Write(payload); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	cleanup = false
+	return os.Chmod(path, 0o600)
 }
 
 func (m *providerSharedLeaseManager) leaseFilePrefix(key string) string {

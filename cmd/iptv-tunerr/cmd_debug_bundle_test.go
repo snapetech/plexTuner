@@ -74,11 +74,26 @@ func TestFetchURLToFile_UsesTimeoutCapableClient(t *testing.T) {
 	}
 
 	dest := filepath.Join(t.TempDir(), "out.json")
-	err := fetchURLToFile("http://example.invalid/debug/runtime.json", dest)
+	err := fetchURLToFile("http://example.invalid/debug/runtime.json", dest, true)
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
 	if !errors.Is(err, os.ErrDeadlineExceeded) && !strings.Contains(strings.ToLower(err.Error()), "deadline") {
 		t.Fatalf("expected deadline-style error, got %v", err)
+	}
+}
+
+func TestRedactDebugBundleText_RedactsDiagnosticPayloadSecrets(t *testing.T) {
+	raw := `{"url":"http://user:pass@provider.example/live/u/p/1.ts?password=p&token=abc","header":"Authorization: Bearer plex-secret","cookie":"Cookie: cf_clearance=cloud-secret","plain":"api_key=standalone-secret"}`
+	got := redactDebugBundleText(raw, true)
+	for _, secret := range []string{"user:pass", "password=p", "token=abc", "plex-secret", "cloud-secret", "standalone-secret"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("debug bundle redaction leaked %q in:\n%s", secret, got)
+		}
+	}
+	for _, want := range []string{"http://provider.example/live/redacted/redacted/1.ts", "Authorization: <redacted>", "Cookie: <redacted>", "api_key=<redacted>"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("debug bundle redaction missing %q in:\n%s", want, got)
+		}
 	}
 }

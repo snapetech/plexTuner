@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -343,6 +344,7 @@ func TestGateway_hlsMuxSeg_redirectToBlockedPrivateUpstream(t *testing.T) {
 }
 
 func TestGateway_hlsMuxSeg_chunkedUpstreamPassthrough(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_HLS_MUX_DENY_LITERAL_PRIVATE_UPSTREAM", "false")
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.WriteHeader(http.StatusOK)
@@ -409,6 +411,7 @@ func TestGateway_effectiveHLSMuxSegLimit_adaptiveBonus(t *testing.T) {
 }
 
 func TestGateway_dashMuxSeg_proxiesBinary(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_HLS_MUX_DENY_LITERAL_PRIVATE_UPSTREAM", "false")
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/init.m4s" {
 			t.Fatalf("path %s", r.URL.Path)
@@ -446,6 +449,54 @@ func TestRewriteHLSPlaylistToGatewayProxy_usesPublicBaseURLWhenConfigured(t *tes
 	s := string(out)
 	if !strings.Contains(s, "http://deck.example:5004/stream/abc?mux=hls&seg=") {
 		t.Fatalf("missing absolute proxy url: %q", s)
+	}
+}
+
+func TestGateway_hlsPlaylistStartupLogRedactsFirstSegmentURL(t *testing.T) {
+	var logs bytes.Buffer
+	origWriter := log.Writer()
+	origFlags := log.Flags()
+	log.SetOutput(&logs)
+	log.SetFlags(0)
+	defer func() {
+		log.SetOutput(origWriter)
+		log.SetFlags(origFlags)
+	}()
+
+	body := strings.NewReader(`#EXTM3U
+#EXT-X-TARGETDURATION:4
+#EXTINF:4,
+http://user:pass@segments.example/live/u/p/seg.ts?password=p&token=secret
+`)
+	resp := &http.Response{
+		StatusCode:    http.StatusOK,
+		Header:        make(http.Header),
+		Body:          io.NopCloser(body),
+		ContentLength: int64(body.Len()),
+	}
+	resp.Header.Set("Content-Type", "application/vnd.apple.mpegurl")
+	g := &Gateway{TunerCount: 1}
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0?mux=hls", nil)
+	attempt := newStreamAttemptBuilder("req-1", req, "ch1", "Channel 1", 1)
+	attemptIdx := attempt.addUpstream(1, "http://provider.example/live/u/p/1.m3u8", nil, false, false, false, false)
+
+	_, _, _, ok := g.relaySuccessfulHLSUpstream(
+		w, req, &catalog.LiveChannel{GuideName: "Channel 1"}, "ch1",
+		"http://provider.example/live/u/p/1.m3u8", "http://provider.example/live/u/p/1.m3u8",
+		time.Now(), attempt, attemptIdx, http.DefaultClient, resp, false, "", "", "", "hls",
+	)
+	if !ok {
+		t.Fatalf("relaySuccessfulHLSUpstream returned not ok, code=%d body=%q logs=%q", w.Code, w.Body.String(), logs.String())
+	}
+	got := logs.String()
+	for _, secret := range []string{"user:pass", "password=p", "token=secret"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("HLS startup log leaked %q in %q", secret, got)
+		}
+	}
+	if !strings.Contains(got, "http://segments.example/live/redacted/redacted/seg.ts") {
+		t.Fatalf("HLS startup log lost redacted segment context: %q", got)
 	}
 }
 
@@ -586,6 +637,7 @@ func TestGateway_serveHLSMuxTarget_forwardsNotModified(t *testing.T) {
 
 func TestGateway_hlsMuxSeg_rejectsWhenAtConcurrencyLimit(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_HLS_MUX_MAX_CONCURRENT", "1")
+	t.Setenv("IPTV_TUNERR_HLS_MUX_DENY_LITERAL_PRIVATE_UPSTREAM", "false")
 	block := make(chan struct{})
 	var firstEntered sync.WaitGroup
 	firstEntered.Add(1)
@@ -762,7 +814,6 @@ func TestGateway_hlsMuxSeg_paramTooLarge_returnsBadRequest(t *testing.T) {
 }
 
 func TestGateway_hlsMuxSeg_literalPrivateBlocked_returnsForbidden(t *testing.T) {
-	t.Setenv("IPTV_TUNERR_HLS_MUX_DENY_LITERAL_PRIVATE_UPSTREAM", "true")
 	g := &Gateway{
 		Channels: []catalog.LiveChannel{
 			{GuideNumber: "0", GuideName: "Ch", StreamURL: "http://up.example/live.m3u8"},
@@ -785,7 +836,29 @@ func TestGateway_hlsMuxSeg_literalPrivateBlocked_returnsForbidden(t *testing.T) 
 	}
 }
 
+func TestGateway_hlsMuxSeg_literalPrivateBlockCanBeDisabledForLabUse(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_HLS_MUX_DENY_LITERAL_PRIVATE_UPSTREAM", "false")
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer up.Close()
+	g := &Gateway{
+		Channels: []catalog.LiveChannel{
+			{GuideNumber: "0", GuideName: "Ch", StreamURL: "http://placeholder/x.m3u8"},
+		},
+		TunerCount: 2,
+	}
+	seg := url.QueryEscape(up.URL + "/seg.ts")
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/0?mux=hls&seg="+seg, nil)
+	w := httptest.NewRecorder()
+	g.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want explicit lab override to preserve reachable upstreams, got %d body=%q", w.Code, w.Body.String())
+	}
+}
+
 func TestGateway_hlsMuxSeg_successIncrementsProfileCounter(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_HLS_MUX_DENY_LITERAL_PRIVATE_UPSTREAM", "false")
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "video/mp2t")
 		w.WriteHeader(http.StatusOK)
@@ -881,6 +954,7 @@ func TestServeHLSMuxTarget_returnsUpstreamHTTPError(t *testing.T) {
 }
 
 func TestGateway_hlsMuxSeg_upstreamHTTP_passedThrough(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_HLS_MUX_DENY_LITERAL_PRIVATE_UPSTREAM", "false")
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte("gone"))
@@ -919,6 +993,7 @@ func TestGateway_hlsMuxSeg_upstreamHTTP_passedThrough(t *testing.T) {
 }
 
 func TestGateway_dashMuxSeg_successUpdatesRecentOutcome(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_HLS_MUX_DENY_LITERAL_PRIVATE_UPSTREAM", "false")
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "video/mp4")
 		w.WriteHeader(http.StatusOK)
@@ -2032,6 +2107,85 @@ func TestProviderSharedLeaseSnapshotRemovesExpiredFiles(t *testing.T) {
 	}
 	if _, err := os.Stat(lease.Path); !os.IsNotExist(err) {
 		t.Fatalf("expired lease file still exists err=%v", err)
+	}
+}
+
+func TestProviderSharedLeaseManagerCreatesPrivateLeaseFiles(t *testing.T) {
+	dir := t.TempDir()
+	mgr := newProviderSharedLeaseManager(dir, "pod-a", time.Minute)
+	identity := providerAccountLease{
+		Key:   "provider.example|u|p|http://provider.example/live/u/p/",
+		Label: "provider.example/u",
+		Host:  "provider.example",
+	}
+	lease, _, acquired, err := mgr.acquire(identity, 2)
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	if !acquired || lease == nil {
+		t.Fatalf("acquired=%v lease=%#v", acquired, lease)
+	}
+	defer mgr.release(lease)
+
+	if info, err := os.Stat(dir); err != nil {
+		t.Fatalf("stat lease dir: %v", err)
+	} else if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("lease dir mode=%#o want 0700", got)
+	}
+	if info, err := os.Stat(lease.Path); err != nil {
+		t.Fatalf("stat lease file: %v", err)
+	} else if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("lease file mode=%#o want 0600", got)
+	}
+	lockPath := filepath.Join(dir, mgr.lockFilename(identity.Key))
+	if info, err := os.Stat(lockPath); err != nil {
+		t.Fatalf("stat lock file: %v", err)
+	} else if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("lock file mode=%#o want 0600", got)
+	}
+}
+
+func TestWriteProviderSharedLeaseFileRefusesSymlinkOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.json")
+	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+	link := filepath.Join(dir, "lease-link.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	if err := writeProviderSharedLeaseFile(link, []byte("changed")); err == nil {
+		t.Fatal("expected symlink overwrite refusal")
+	}
+	if got, err := os.ReadFile(target); err != nil {
+		t.Fatalf("read target: %v", err)
+	} else if string(got) != "original" {
+		t.Fatalf("target changed to %q", string(got))
+	}
+}
+
+func TestProviderSharedLeaseManagerRejectsSymlinkedLockFile(t *testing.T) {
+	dir := t.TempDir()
+	mgr := newProviderSharedLeaseManager(dir, "pod-a", time.Minute)
+	key := "provider.example|u|p|http://provider.example/live/u/p/"
+	target := filepath.Join(dir, "target.lock")
+	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+	lockPath := filepath.Join(dir, mgr.lockFilename(key))
+	if err := os.Symlink(target, lockPath); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	f, err := mgr.lockFile(key)
+	if err == nil {
+		_ = f.Close()
+		t.Fatal("expected symlinked lock refusal")
+	}
+	if got, err := os.ReadFile(target); err != nil {
+		t.Fatalf("read target: %v", err)
+	} else if string(got) != "original" {
+		t.Fatalf("target changed to %q", string(got))
 	}
 }
 
@@ -3903,6 +4057,59 @@ func TestDebugHeaderLines_redactsCredentialShapedHeaders(t *testing.T) {
 	}
 	if !strings.Contains(joined, "Referer: https://provider.example/watch") {
 		t.Fatalf("debugHeaderLines should keep non-secret Referer, got:\n%s", joined)
+	}
+}
+
+func TestCappedBodyTee_CreatesPrivateEvidenceFiles(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "tee")
+	tee := newCappedBodyTee(dir, 16, "req/../secret", "Channel: One", "ch/1")
+	if tee == nil || tee.file == nil {
+		t.Fatalf("expected tee file, openErr=%v", tee.openErr)
+	}
+	tee.Write([]byte("provider-bytes"))
+	tee.Close()
+
+	dirInfo, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("stat dir: %v", err)
+	}
+	if got := dirInfo.Mode().Perm(); got != 0o700 {
+		t.Fatalf("tee dir mode=%#o want 0700", got)
+	}
+	fileInfo, err := os.Stat(tee.path)
+	if err != nil {
+		t.Fatalf("stat tee file: %v", err)
+	}
+	if got := fileInfo.Mode().Perm(); got != 0o600 {
+		t.Fatalf("tee file mode=%#o want 0600", got)
+	}
+	if strings.Contains(filepath.Base(tee.path), "/") || strings.Contains(filepath.Base(tee.path), ":") {
+		t.Fatalf("tee path was not filename-tokenized: %q", tee.path)
+	}
+}
+
+func TestStreamAttemptBuilder_RedactsDiagnosticURLFields(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://local/stream/1", nil)
+	attempt := newStreamAttemptBuilder("req-redact", req, "1", "Secret Channel", 1)
+	idx := attempt.addUpstream(1, "http://user:pass@provider.example/live/u/p/1.m3u8?password=p&token=abc", nil, false, false, false, false)
+	attempt.markPlaylist(idx, true, 128, "http://user:pass@provider.example/live/u/p/seg.ts?api_key=secret&token=abc")
+	attempt.markUpstreamError(idx, "failed", errors.New("fetch http://provider.example/live/u/p/seg.ts?password=p&token=abc failed: Authorization: Bearer provider-secret"))
+	rec := attempt.finish("failed", "hls", errors.New("final http://provider.example/live/u/p/seg.ts?password=p&token=abc failed: Cookie: cf_clearance=secret"), "http://provider.example/live/u/p/1.m3u8?password=p&token=abc")
+
+	raw, err := json.Marshal(rec)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	body := string(raw)
+	for _, secret := range []string{"user:pass", "password=p", "token=abc", "api_key=secret", "provider-secret", "cf_clearance=secret"} {
+		if strings.Contains(body, secret) {
+			t.Fatalf("stream attempt diagnostic leaked %q in:\n%s", secret, body)
+		}
+	}
+	for _, want := range []string{"http://provider.example/live/redacted/redacted/seg.ts", "Authorization: \\u003credacted\\u003e", "Cookie: \\u003credacted\\u003e"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("stream attempt diagnostic missing redaction marker %q in:\n%s", want, body)
+		}
 	}
 }
 

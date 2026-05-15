@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -61,6 +63,7 @@ func TestFetchProviderXMLTV_conditionalDiskCache(t *testing.T) {
 	if hits != 1 {
 		t.Fatalf("hits after first: %d", hits)
 	}
+	x.cachedXML = []byte(`<?xml version="1.0"?><tv></tv>`)
 
 	second, err := x.fetchProviderXMLTV(ctx, allowed)
 	if err != nil {
@@ -71,6 +74,20 @@ func TestFetchProviderXMLTV_conditionalDiskCache(t *testing.T) {
 	}
 	if hits != 2 {
 		t.Fatalf("hits after second: %d want 2", hits)
+	}
+	info, err := os.Stat(cacheFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("provider EPG cache mode=%#o want 0600", info.Mode().Perm())
+	}
+	metaInfo, err := os.Stat(providerEPGMetaPath(cacheFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metaInfo.Mode().Perm() != 0o600 {
+		t.Fatalf("provider EPG cache meta mode=%#o want 0600", metaInfo.Mode().Perm())
 	}
 }
 
@@ -171,6 +188,28 @@ func TestFetchProviderXMLTVConditional_acceptsPartialBodyOnReadError(t *testing.
 	}
 	if !bytes.Equal(cached, []byte(body)) {
 		t.Fatalf("cache mismatch: got %q want %q", string(cached), body)
+	}
+}
+
+func TestWriteProviderEPGCacheFile_refusesSymlinkOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.xml")
+	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cacheFile := filepath.Join(dir, "provider.xml")
+	if err := os.Symlink(target, cacheFile); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	if err := writeProviderEPGCacheFile(cacheFile, []byte("<tv/>")); err == nil {
+		t.Fatal("expected symlinked EPG cache write to be rejected")
+	}
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "original" {
+		t.Fatalf("symlink target changed: %q", got)
 	}
 }
 
@@ -615,4 +654,110 @@ func TestXMLTV_buildMergedEPG_usesAdditionalProviderIdentityForGuideGap(t *testi
 	if !strings.Contains(string(x.cachedXML), "Secondary Guide") {
 		t.Fatalf("merged xml missing secondary provider guide: %s", string(x.cachedXML))
 	}
+}
+
+func TestFetchProviderXMLTVLogsRedactProviderCredentials(t *testing.T) {
+	good := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/xmltv.php" {
+			t.Fatalf("path=%s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="utf-8"?>
+<tv>
+  <programme start="20300101080000 +0000" stop="20300101090000 +0000" channel="sports.1"><title>Good Guide</title></programme>
+</tv>`))
+	}))
+	defer good.Close()
+
+	var logs bytes.Buffer
+	orig := log.Writer()
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(orig) })
+
+	x := &XMLTV{
+		ProviderBaseURL: "http://bad-provider.example",
+		ProviderUser:    "primary-user",
+		ProviderPass:    "primary-pass",
+		ProviderIdentities: []ProviderIdentity{{
+			BaseURL: good.URL,
+			User:    "secondary-user",
+			Pass:    "secondary-pass",
+		}},
+		ProviderEPGEnabled: true,
+		ProviderEPGTimeout: 2 * time.Second,
+		Client: &http.Client{Transport: providerEPGRedactionRoundTripper{
+			goodHost: good.Listener.Addr().String(),
+			next:     good.Client().Transport,
+		}},
+	}
+	_, err := x.fetchProviderXMLTV(context.Background(), map[string]bool{"sports.1": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := logs.String()
+	for _, secret := range []string{"primary-user", "primary-pass", "secondary-user", "secondary-pass"} {
+		if strings.Contains(text, secret) {
+			t.Fatalf("provider EPG log leaked %q in:\n%s", secret, text)
+		}
+	}
+	redacted := redactProviderEPGDiagnosticText(`Get "http://bad-provider.example/xmltv.php?username=primary-user&password=primary-pass": boom`)
+	if strings.Contains(redacted, "primary-user") || strings.Contains(redacted, "primary-pass") {
+		t.Fatalf("provider EPG redaction helper leaked credentials: %s", redacted)
+	}
+	if !strings.Contains(redacted, "http://bad-provider.example/xmltv.php") {
+		t.Fatalf("provider EPG redaction helper lost safe URL context: %s", redacted)
+	}
+}
+
+func TestFetchProviderXMLTVUsesDiskCacheWhenMemoryGuideEmpty(t *testing.T) {
+	cacheFile := filepath.Join(t.TempDir(), "provider.xml")
+	cacheBody := `<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <programme channel="sports.1" start="20300101000000 +0000" stop="20300101010000 +0000"><title>Cached Startup Guide</title></programme>
+</tv>`
+	if err := os.WriteFile(cacheFile, []byte(cacheBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var networkHits int
+	x := &XMLTV{
+		ProviderBaseURL:          "http://slow-provider.example",
+		ProviderUser:             "user",
+		ProviderPass:             "pass",
+		ProviderEPGEnabled:       true,
+		ProviderEPGDiskCachePath: cacheFile,
+		ProviderEPGTimeout:       2 * time.Second,
+		Client: &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			networkHits++
+			return nil, fmt.Errorf("network should not be needed for startup cache")
+		})},
+	}
+
+	epg, err := x.fetchProviderXMLTV(context.Background(), map[string]bool{"sports.1": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if networkHits != 0 {
+		t.Fatalf("network hits=%d want 0", networkHits)
+	}
+	if epg == nil || epg.programmes["sports.1"] == nil || len(epg.programmes["sports.1"].nodes) != 1 {
+		t.Fatalf("cached epg not loaded: %+v", epg)
+	}
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+type providerEPGRedactionRoundTripper struct {
+	goodHost string
+	next     http.RoundTripper
+}
+
+func (rt providerEPGRedactionRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.URL.Host == rt.goodHost {
+		return rt.next.RoundTrip(req)
+	}
+	return nil, fmt.Errorf("dial failed for %s", req.URL.String())
 }

@@ -45,9 +45,10 @@ func RecordCatchupCapsuleResilient(ctx context.Context, capsule CatchupCapsule, 
 		return CatchupRecordedItem{}, RecordCaptureMetrics{}, err
 	}
 	laneDir := filepath.Join(outDir, firstNonEmptyString(capsule.Lane, "general"))
-	if err := os.MkdirAll(laneDir, 0o755); err != nil {
+	if err := os.MkdirAll(laneDir, 0o700); err != nil {
 		return CatchupRecordedItem{}, RecordCaptureMetrics{}, err
 	}
+	_ = os.Chmod(laneDir, 0o700)
 	spoolPath, finalPath := CatchupRecordArtifactPaths(capsule, outDir)
 	ua := strings.TrimSpace(capsule.PreferredStreamUA)
 
@@ -102,6 +103,7 @@ func RecordCatchupCapsuleResilient(ctx context.Context, capsule CatchupCapsule, 
 				if err := os.Rename(spoolPath, finalPath); err != nil {
 					return CatchupRecordedItem{}, metrics, err
 				}
+				_ = os.Chmod(finalPath, 0o600)
 				var total int64
 				if st, err := os.Stat(finalPath); err == nil {
 					total = st.Size()
@@ -171,7 +173,7 @@ func spoolCopyFromHTTP(ctx context.Context, client *http.Client, url string, cap
 	case http.StatusOK:
 		if offset > 0 {
 			// Server ignored Range; replace spool with this full body.
-			f, err := os.Create(spoolPath)
+			f, err := openCatchupSpoolFile(spoolPath, false)
 			if err != nil {
 				return 0, retryAfter, err
 			}
@@ -187,7 +189,7 @@ func spoolCopyFromHTTP(ctx context.Context, client *http.Client, url string, cap
 			}
 			return 0, retryAfter, nil
 		}
-		f, err := os.Create(spoolPath)
+		f, err := openCatchupSpoolFile(spoolPath, false)
 		if err != nil {
 			return 0, retryAfter, err
 		}
@@ -204,7 +206,7 @@ func spoolCopyFromHTTP(ctx context.Context, client *http.Client, url string, cap
 		return 0, retryAfter, nil
 
 	case http.StatusPartialContent:
-		f, err := os.OpenFile(spoolPath, os.O_WRONLY|os.O_CREATE, 0o644)
+		f, err := openCatchupSpoolFile(spoolPath, true)
 		if err != nil {
 			return 0, retryAfter, err
 		}
@@ -236,4 +238,26 @@ func spoolCopyFromHTTP(ctx context.Context, client *http.Client, url string, cap
 	default:
 		return 0, retryAfter, newRecordHTTPStatusError(capsuleID, resp)
 	}
+}
+
+func openCatchupSpoolFile(path string, appendMode bool) (*os.File, error) {
+	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("refusing to overwrite symlinked catchup spool %q", path)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, err
+	}
+	_ = os.Chmod(filepath.Dir(path), 0o700)
+	flags := os.O_WRONLY | os.O_CREATE
+	if appendMode {
+		flags |= os.O_APPEND
+	} else {
+		flags |= os.O_TRUNC
+	}
+	f, err := os.OpenFile(path, flags, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	_ = f.Chmod(0o600)
+	return f, nil
 }

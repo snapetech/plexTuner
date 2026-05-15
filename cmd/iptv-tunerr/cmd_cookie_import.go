@@ -130,7 +130,7 @@ Flags:
 		cookies := parseCookieString(*cookieStr, d, *path, *secure, expiry)
 		for _, c := range cookies {
 			if *dryRun {
-				fmt.Printf("  [dry-run] import: domain=%s name=%s value=%.40s...\n", c.Domain, c.Name, c.Value)
+				fmt.Printf("  [dry-run] import: domain=%s name=%s value=<redacted>\n", c.Domain, c.Name)
 			} else {
 				storeCookie(saved, c)
 			}
@@ -152,7 +152,7 @@ Flags:
 		}
 		for _, c := range cookies {
 			if *dryRun {
-				fmt.Printf("  [dry-run] import: domain=%s name=%s value=%.40s...\n", c.Domain, c.Name, c.Value)
+				fmt.Printf("  [dry-run] import: domain=%s name=%s value=<redacted>\n", c.Domain, c.Name)
 			} else {
 				storeCookie(saved, c)
 			}
@@ -173,7 +173,7 @@ Flags:
 		}
 		for _, c := range cookies {
 			if *dryRun {
-				fmt.Printf("  [dry-run] import: domain=%s name=%s value=%.40s...\n", c.Domain, c.Name, c.Value)
+				fmt.Printf("  [dry-run] import: domain=%s name=%s value=<redacted>\n", c.Domain, c.Name)
 			} else {
 				storeCookie(saved, c)
 			}

@@ -100,7 +100,7 @@ func (b *streamAttemptBuilder) markUpstreamError(idx int, outcome string, err er
 	}
 	b.record.Upstreams[idx].Outcome = outcome
 	if err != nil {
-		b.record.Upstreams[idx].Error = err.Error()
+		b.record.Upstreams[idx].Error = redactOperatorDiagnosticText(err.Error())
 	}
 }
 
@@ -123,7 +123,7 @@ func (b *streamAttemptBuilder) markPlaylist(idx int, usable bool, bytes int, fir
 	u := &b.record.Upstreams[idx]
 	u.PlaylistUsable = usable
 	u.PlaylistBytes = bytes
-	u.FirstSegment = strings.TrimSpace(firstSegment)
+	u.FirstSegment = safeurl.RedactURL(strings.TrimSpace(firstSegment))
 }
 
 func (b *streamAttemptBuilder) setFFmpegHeaders(idx int, headers []string) {
@@ -144,7 +144,7 @@ func (b *streamAttemptBuilder) finish(status, mode string, err error, effectiveU
 	b.record.FinalStatus = strings.TrimSpace(status)
 	b.record.FinalMode = strings.TrimSpace(mode)
 	if err != nil {
-		b.record.FinalError = err.Error()
+		b.record.FinalError = redactOperatorDiagnosticText(err.Error())
 	}
 	if strings.TrimSpace(effectiveURL) != "" {
 		b.record.EffectiveURL = safeurl.RedactURL(effectiveURL)

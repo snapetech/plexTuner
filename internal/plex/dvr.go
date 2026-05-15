@@ -119,7 +119,7 @@ func RegisterTunerViaAPI(cfg PlexAPIConfig) (*DeviceInfo, error) {
 			continue
 		}
 		if resp.StatusCode != 200 {
-			return nil, fmt.Errorf("register device via %s returned %d: %s", p, resp.StatusCode, string(body))
+			return nil, fmt.Errorf("register device via %s returned %d: %s", p, resp.StatusCode, redactPlexDiagnosticText(string(body)))
 		}
 		// Parse this response and check for the device before trying the next path.
 		// The /discover endpoint returns all devices (ignoring uri=), so we parse it but
@@ -243,14 +243,14 @@ func CreateDVRViaAPI(cfg PlexAPIConfig, deviceInfo *DeviceInfo) (dvrKey int, dvr
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 
-		bodyStr := string(body)
+		bodyStr := redactPlexDiagnosticText(string(body))
 		if len(bodyStr) > 500 {
 			bodyStr = bodyStr[:500]
 		}
 		fmt.Printf("[PLEX-REG] Create DVR response: status=%d body_len=%d body=%s\n", resp.StatusCode, len(body), bodyStr)
 
 		if resp.StatusCode != 200 {
-			return 0, "", nil, fmt.Errorf("create DVR returned %d: %s", resp.StatusCode, string(body))
+			return 0, "", nil, fmt.Errorf("create DVR returned %d: %s", resp.StatusCode, redactPlexDiagnosticText(string(body)))
 		}
 
 		var mc MediaContainer
@@ -452,7 +452,7 @@ func activateChannelsRequest(cfg PlexAPIConfig, deviceKey string, enabled []stri
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-	bodyStr := string(body)
+	bodyStr := redactPlexDiagnosticText(string(body))
 	fmt.Printf("[PLEX-REG] Activate batch response: status=%d body=%.200s\n", resp.StatusCode, bodyStr)
 
 	if resp.StatusCode != http.StatusOK {
@@ -558,7 +558,7 @@ func enabledChannelCount(plexHost, token string, dvrKey int) (int, error) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return 0, fmt.Errorf("livetv/dvrs/%d returned %d: %s", dvrKey, resp.StatusCode, string(body))
+		return 0, fmt.Errorf("livetv/dvrs/%d returned %d: %s", dvrKey, resp.StatusCode, redactPlexDiagnosticText(string(body)))
 	}
 	var mc MediaContainer
 	if err := xml.NewDecoder(resp.Body).Decode(&mc); err != nil {
@@ -593,7 +593,7 @@ func ListDVRsAPI(plexHost, token string) ([]DVRInfo, error) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return nil, fmt.Errorf("list dvrs returned %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("list dvrs returned %d: %s", resp.StatusCode, redactPlexDiagnosticText(string(body)))
 	}
 	var mc MediaContainer
 	if err := xml.NewDecoder(resp.Body).Decode(&mc); err != nil {
@@ -663,7 +663,7 @@ func ListDevicesAPI(plexHost, token string) ([]Device, error) {
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 			resp.Body.Close()
-			lastErr = fmt.Errorf("%s returned %d: %s", p, resp.StatusCode, string(body))
+			lastErr = fmt.Errorf("%s returned %d: %s", p, resp.StatusCode, redactPlexDiagnosticText(string(body)))
 			continue
 		}
 		var mc MediaContainer
@@ -697,7 +697,7 @@ func DeleteDVRAPI(plexHost, token string, dvrKey int) error {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("delete dvr %d returned %d: %s", dvrKey, resp.StatusCode, string(body))
+		return fmt.Errorf("delete dvr %d returned %d: %s", dvrKey, resp.StatusCode, redactPlexDiagnosticText(string(body)))
 	}
 	return nil
 }
@@ -730,7 +730,7 @@ func DeleteDeviceAPI(plexHost, token, deviceKey string) error {
 		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 			resp.Body.Close()
-			lastErr = fmt.Errorf("%s returned %d: %s", p, resp.StatusCode, string(body))
+			lastErr = fmt.Errorf("%s returned %d: %s", p, resp.StatusCode, redactPlexDiagnosticText(string(body)))
 			continue
 		}
 		resp.Body.Close()

@@ -242,7 +242,7 @@ func (g *Gateway) relaySuccessfulHLSUpstream(
 		bufDesc = "adaptive"
 	}
 	log.Printf("gateway: channel=%q id=%s hls-playlist bytes=%d first-seg=%q dur=%s (relaying as ts, %s buffer=%s)",
-		channel.GuideName, channelID, len(body), firstSeg, time.Since(start).Round(time.Millisecond), mode, bufDesc)
+		channel.GuideName, channelID, len(body), redactOperatorDiagnosticText(firstSeg), time.Since(start).Round(time.Millisecond), mode, bufDesc)
 	log.Printf("gateway: channel=%q id=%s hls-mode transcode=%t mode=%q guide=%q tvg=%q", channel.GuideName, channelID, transcode, g.StreamTranscodeMode, channel.GuideNumber, channel.TVGID)
 	hotStart := g.hotStartConfig(channel, clientClass)
 	profileName := g.profileForChannelMeta(channelID, channel.GuideNumber, channel.TVGID)

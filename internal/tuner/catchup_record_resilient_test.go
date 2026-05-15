@@ -39,6 +39,78 @@ func TestSpoolCopyFromHTTP_206Append(t *testing.T) {
 	if string(data) != "abcdef" {
 		t.Fatalf("got %q", string(data))
 	}
+	if info, err := os.Stat(spool); err != nil {
+		t.Fatal(err)
+	} else if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("spool mode=%#o want 0600", got)
+	}
+}
+
+func TestSpoolCopyFromHTTPRefusesSymlinkedSpool(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.ts")
+	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	spool := filepath.Join(dir, "x.partial.ts")
+	if err := os.Symlink(target, spool); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("changed"))
+	}))
+	defer srv.Close()
+
+	_, _, err := spoolCopyFromHTTP(context.Background(), srv.Client(), srv.URL, "c", spool, 0, "")
+	if err == nil {
+		t.Fatal("expected symlinked spool refusal")
+	}
+	if got, err := os.ReadFile(target); err != nil {
+		t.Fatal(err)
+	} else if string(got) != "original" {
+		t.Fatalf("target changed to %q", string(got))
+	}
+}
+
+func TestRecordCatchupCapsuleResilientCreatesPrivateArtifacts(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("okdata"))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	now := time.Now().UTC()
+	capsule := CatchupCapsule{
+		CapsuleID: "dna:private",
+		ChannelID: "101",
+		Lane:      "sports",
+		State:     "in_progress",
+		Start:     now.Add(-time.Minute).Format(time.RFC3339),
+		Stop:      now.Add(time.Minute).Format(time.RFC3339),
+		ReplayURL: srv.URL,
+	}
+	item, _, err := RecordCatchupCapsuleResilient(context.Background(), capsule, "http://unused", dir, srv.Client(), ResilientRecordOptions{
+		MaxAttempts:    1,
+		InitialBackoff: time.Millisecond,
+		MaxBackoff:     time.Millisecond,
+		ResumePartial:  false,
+	})
+	if err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	laneDir := filepath.Join(dir, "sports")
+	if info, err := os.Stat(laneDir); err != nil {
+		t.Fatal(err)
+	} else if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("lane dir mode=%#o want 0700", got)
+	}
+	if info, err := os.Stat(item.OutputPath); err != nil {
+		t.Fatal(err)
+	} else if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("recorded file mode=%#o want 0600", got)
+	}
 }
 
 func TestRecordCatchupCapsuleResilient_Retries503ThenOK(t *testing.T) {

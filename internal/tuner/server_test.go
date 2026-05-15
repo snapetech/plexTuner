@@ -79,6 +79,27 @@ func TestServer_healthz(t *testing.T) {
 	}
 }
 
+func TestServer_hlsMuxWebDemoRequiresLocalOperatorAccess(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_HLS_MUX_WEB_DEMO", "1")
+	handler := (&Server{}).serveHlsMuxWebDemo()
+
+	remote := httptest.NewRequest(http.MethodGet, "/debug/hls-mux-demo.html", nil)
+	remote.RemoteAddr = "203.0.113.10:4444"
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, remote)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("remote demo status=%d body=%q", w.Code, w.Body.String())
+	}
+
+	local := httptest.NewRequest(http.MethodGet, "/debug/hls-mux-demo.html", nil)
+	local.RemoteAddr = "127.0.0.1:4444"
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, local)
+	if w.Code != http.StatusOK {
+		t.Fatalf("local demo status=%d body=%q", w.Code, w.Body.String())
+	}
+}
+
 func TestServer_readyz(t *testing.T) {
 	s := &Server{LineupMaxChannels: 480}
 
@@ -910,6 +931,7 @@ func TestServer_programmingHarvestImport(t *testing.T) {
 }
 
 func TestServer_virtualChannelRulesAndPreview(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_DENY_LITERAL_PRIVATE_UPSTREAM", "false")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/movie.mp4":
@@ -1497,7 +1519,153 @@ func TestServer_virtualChannelStreamMissingSourceStaysJSON(t *testing.T) {
 	}
 }
 
+func TestServer_virtualChannelStreamBlocksLiteralPrivateUpstreamByDefault(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "virtual-channels.json")
+	if _, err := virtualchannels.SaveFile(path, virtualchannels.Ruleset{
+		Channels: []virtualchannels.Channel{{
+			ID:      "vc-private",
+			Name:    "Private Loop",
+			Enabled: true,
+			Entries: []virtualchannels.Entry{{
+				Type:         "movie",
+				MovieID:      "m1",
+				DurationMins: 60,
+			}},
+		}},
+	}); err != nil {
+		t.Fatalf("save virtual channels: %v", err)
+	}
+	s := &Server{
+		VirtualChannelsFile: path,
+		Movies: []catalog.Movie{{
+			ID:        "m1",
+			Title:     "Private",
+			StreamURL: "http://127.0.0.1:1/private.mp4",
+		}},
+	}
+
+	origNow := timeNow
+	timeNow = func() time.Time { return time.Date(2026, 3, 21, 0, 15, 0, 0, time.UTC) }
+	defer func() { timeNow = origNow }()
+
+	req := httptest.NewRequest(http.MethodGet, "/virtual-channels/stream/vc-private.mp4", nil)
+	w := httptest.NewRecorder()
+	s.serveVirtualChannelStream().ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("virtual stream status=%d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "blocked private upstream") {
+		t.Fatalf("body=%q", w.Body.String())
+	}
+}
+
+func TestServer_virtualChannelStreamPrivateUpstreamBlockCanBeDisabledForLabUse(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_DENY_LITERAL_PRIVATE_UPSTREAM", "false")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/mp4")
+		_, _ = w.Write([]byte("lab-bytes"))
+	}))
+	defer upstream.Close()
+
+	path := filepath.Join(t.TempDir(), "virtual-channels.json")
+	if _, err := virtualchannels.SaveFile(path, virtualchannels.Ruleset{
+		Channels: []virtualchannels.Channel{{
+			ID:      "vc-lab",
+			Name:    "Lab Loop",
+			Enabled: true,
+			Entries: []virtualchannels.Entry{{
+				Type:         "movie",
+				MovieID:      "m1",
+				DurationMins: 60,
+			}},
+		}},
+	}); err != nil {
+		t.Fatalf("save virtual channels: %v", err)
+	}
+	s := &Server{
+		VirtualChannelsFile: path,
+		Movies: []catalog.Movie{{
+			ID:        "m1",
+			Title:     "Lab",
+			StreamURL: upstream.URL + "/movie.mp4",
+		}},
+	}
+
+	origNow := timeNow
+	timeNow = func() time.Time { return time.Date(2026, 3, 21, 0, 15, 0, 0, time.UTC) }
+	defer func() { timeNow = origNow }()
+
+	req := httptest.NewRequest(http.MethodGet, "/virtual-channels/stream/vc-lab.mp4", nil)
+	w := httptest.NewRecorder()
+	s.serveVirtualChannelStream().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual stream status=%d body=%s", w.Code, w.Body.String())
+	}
+	if w.Body.String() != "lab-bytes" {
+		t.Fatalf("body=%q", w.Body.String())
+	}
+}
+
+func TestServer_virtualChannelStreamFallsBackBeforeProbeWhenPrivateUpstreamBlocked(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/mp4")
+		_, _ = w.Write([]byte("fallback-bytes"))
+	}))
+	defer upstream.Close()
+	fallbackURL := strings.Replace(upstream.URL, "127.0.0.1", "localhost", 1) + "/fallback.mp4"
+
+	path := filepath.Join(t.TempDir(), "virtual-channels.json")
+	if _, err := virtualchannels.SaveFile(path, virtualchannels.Ruleset{
+		Channels: []virtualchannels.Channel{{
+			ID:      "vc-probe-private",
+			Name:    "Probe Private Loop",
+			Enabled: true,
+			Recovery: virtualchannels.RecoveryPolicy{
+				Mode:               "filler",
+				BlackScreenSeconds: 1,
+				FallbackEntries: []virtualchannels.Entry{{
+					Type:         "movie",
+					MovieID:      "m2",
+					DurationMins: 5,
+				}},
+			},
+			Entries: []virtualchannels.Entry{{
+				Type:         "movie",
+				MovieID:      "m1",
+				DurationMins: 60,
+			}},
+		}},
+	}); err != nil {
+		t.Fatalf("save virtual channels: %v", err)
+	}
+	s := &Server{
+		VirtualChannelsFile: path,
+		Movies: []catalog.Movie{
+			{ID: "m1", Title: "Private", StreamURL: "http://127.0.0.1:1/private.mp4"},
+			{ID: "m2", Title: "Fallback", StreamURL: fallbackURL},
+		},
+	}
+
+	origNow := timeNow
+	timeNow = func() time.Time { return time.Date(2026, 3, 21, 0, 15, 0, 0, time.UTC) }
+	defer func() { timeNow = origNow }()
+
+	req := httptest.NewRequest(http.MethodGet, "/virtual-channels/stream/vc-probe-private.mp4", nil)
+	w := httptest.NewRecorder()
+	s.serveVirtualChannelStream().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("virtual stream status=%d body=%s", w.Code, w.Body.String())
+	}
+	if w.Body.String() != "fallback-bytes" {
+		t.Fatalf("body=%q", w.Body.String())
+	}
+	if got := w.Header().Get("X-IptvTunerr-Virtual-Recovery-Reason"); got != "blocked-private-upstream" {
+		t.Fatalf("recovery reason=%q", got)
+	}
+}
+
 func TestServer_virtualChannelStreamFallsBackToRecoveryFiller(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_DENY_LITERAL_PRIVATE_UPSTREAM", "false")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/bad.html":
@@ -1612,6 +1780,7 @@ func TestServer_virtualChannelStreamFallsBackToRecoveryFiller(t *testing.T) {
 }
 
 func TestServer_virtualChannelStreamFallsBackDuringLiveStall(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_DENY_LITERAL_PRIVATE_UPSTREAM", "false")
 	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_LIVE_STALL_SEC", "1")
 	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_PROBE_MAX_BYTES", "4096")
 	lead := strings.Repeat("a", 4096)
@@ -1701,6 +1870,7 @@ func TestServer_virtualChannelStreamFallsBackDuringLiveStall(t *testing.T) {
 }
 
 func TestServer_virtualChannelStreamLiveStallSkipsBrokenFirstFallback(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_DENY_LITERAL_PRIVATE_UPSTREAM", "false")
 	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_LIVE_STALL_SEC", "1")
 	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_PROBE_MAX_BYTES", "4096")
 	lead := strings.Repeat("b", 4096)
@@ -1797,6 +1967,7 @@ func TestServer_virtualChannelStreamLiveStallSkipsBrokenFirstFallback(t *testing
 }
 
 func TestServer_virtualChannelStreamFallsBackAgainAfterFallbackStalls(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_DENY_LITERAL_PRIVATE_UPSTREAM", "false")
 	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_LIVE_STALL_SEC", "1")
 	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_PROBE_MAX_BYTES", "4096")
 	lead := strings.Repeat("c", 4096)
@@ -1903,6 +2074,7 @@ func TestServer_virtualChannelStreamFallsBackAgainAfterFallbackStalls(t *testing
 }
 
 func TestServer_virtualChannelStreamReportsRecoveryExhaustion(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_DENY_LITERAL_PRIVATE_UPSTREAM", "false")
 	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_LIVE_STALL_SEC", "1")
 	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_RECOVERY_PROBE_MAX_BYTES", "4096")
 	lead := strings.Repeat("e", 4096)
@@ -2026,8 +2198,8 @@ func TestServer_virtualRecoveryStatePersistsAcrossRestart(t *testing.T) {
 	channel := virtualchannels.Channel{ID: "vc-persist", Name: "Persist Station"}
 
 	s1 := &Server{VirtualRecoveryStateFile: path}
-	s1.recordVirtualChannelRecoveryEvent(channel, slot, "http://src/primary.mp4", "http://src/fallback.mp4", "m2", "live-stall-timeout", "stream")
-	s1.recordVirtualChannelRecoveryEvent(channel, slot, "http://src/fallback.mp4", "", "", "live-stall-timeout-exhausted", "stream")
+	s1.recordVirtualChannelRecoveryEvent(channel, slot, "http://user:pass@src/primary.mp4?password=p&token=abc", "http://src/fallback.mp4?api_key=secret", "m2", "live-stall-timeout", "stream")
+	s1.recordVirtualChannelRecoveryEvent(channel, slot, "http://src/fallback.mp4?token=abc", "", "", "live-stall-timeout-exhausted", "stream")
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -2035,6 +2207,18 @@ func TestServer_virtualRecoveryStatePersistsAcrossRestart(t *testing.T) {
 	}
 	if !bytes.Contains(data, []byte(`"live-stall-timeout-exhausted"`)) {
 		t.Fatalf("recovery state file=%s", string(data))
+	}
+	for _, secret := range []string{"user:pass", "password=", "token="} {
+		if bytes.Contains(data, []byte(secret)) {
+			t.Fatalf("recovery state file leaked %q: %s", secret, string(data))
+		}
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat recovery state file: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("recovery state mode=%#o want 0600", got)
 	}
 
 	s2 := &Server{VirtualRecoveryStateFile: path}
@@ -2047,7 +2231,43 @@ func TestServer_virtualRecoveryStatePersistsAcrossRestart(t *testing.T) {
 	}
 }
 
+func TestServer_virtualRecoveryStateRedactsLoadedLegacyURLs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "virtual-recovery-state.json")
+	if err := os.WriteFile(path, []byte(`{
+  "events": [
+    {
+      "detected_at_utc": "2026-05-14T00:00:00Z",
+      "channel_id": "vc-legacy",
+      "channel_name": "Legacy",
+      "entry_id": "m1",
+      "source_url": "http://user:pass@provider.example/live/u/p/1.ts?password=p&token=abc",
+      "fallback_url": "http://provider.example/live/u/p/2.ts?api_key=secret",
+      "reason": "proxy-error",
+      "surface": "stream"
+    }
+  ]
+}`), 0o600); err != nil {
+		t.Fatalf("write legacy recovery state: %v", err)
+	}
+
+	s := &Server{VirtualRecoveryStateFile: path}
+	events := s.virtualRecoveryHistory("vc-legacy", 10)
+	if len(events) != 1 {
+		t.Fatalf("loaded events=%+v", events)
+	}
+	joined, err := json.Marshal(events)
+	if err != nil {
+		t.Fatalf("marshal events: %v", err)
+	}
+	for _, secret := range []string{"user:pass", "password=p", "token=abc", "api_key=secret"} {
+		if bytes.Contains(joined, []byte(secret)) {
+			t.Fatalf("legacy recovery event leaked %q: %s", secret, joined)
+		}
+	}
+}
+
 func TestServer_virtualChannelStreamFallsBackOnContentProbe(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_DENY_LITERAL_PRIVATE_UPSTREAM", "false")
 	ffmpegPath := filepath.Join(t.TempDir(), "fake-ffmpeg.sh")
 	if err := os.WriteFile(ffmpegPath, []byte(`#!/bin/sh
 case " $* " in
@@ -2151,6 +2371,7 @@ exit 0
 }
 
 func TestServer_virtualChannelStreamFallsBackOnMidstreamContentProbe(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_DENY_LITERAL_PRIVATE_UPSTREAM", "false")
 	ffmpegPath := filepath.Join(t.TempDir(), "fake-ffmpeg.sh")
 	if err := os.WriteFile(ffmpegPath, []byte(`#!/bin/sh
 case " $* " in
@@ -2259,6 +2480,7 @@ exit 0
 }
 
 func TestServer_virtualChannelStreamFallsBackOnLaterRollingMidstreamProbe(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_DENY_LITERAL_PRIVATE_UPSTREAM", "false")
 	ffmpegPath := filepath.Join(t.TempDir(), "fake-ffmpeg.sh")
 	if err := os.WriteFile(ffmpegPath, []byte(`#!/bin/sh
 case " $* " in
@@ -2419,6 +2641,7 @@ func TestServer_virtualChannelSlateRendersBranding(t *testing.T) {
 }
 
 func TestServer_virtualChannelBrandedStreamUsesFFmpegPath(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_DENY_LITERAL_PRIVATE_UPSTREAM", "false")
 	argsPath := filepath.Join(t.TempDir(), "ffmpeg-args.txt")
 	ffmpegPath := filepath.Join(t.TempDir(), "fake-ffmpeg.sh")
 	if err := os.WriteFile(ffmpegPath, []byte("#!/bin/sh\nprintf '%s\n' \"$@\" > \""+argsPath+"\"\ncat >/dev/null\nprintf 'branded-output'\n"), 0o755); err != nil {
@@ -2692,7 +2915,20 @@ func TestServer_diagnosticsWorkflowAndEvidenceAction(t *testing.T) {
 	if !action.OK || action.Action != "evidence_intake_start" {
 		t.Fatalf("action=%+v", action)
 	}
-	if _, err := os.Stat(filepath.Join(tmp, ".diag", "evidence", "smoke-case", "notes.md")); err != nil {
+	evidenceDir := filepath.Join(tmp, ".diag", "evidence", "smoke-case")
+	if info, err := os.Stat(evidenceDir); err != nil {
+		t.Fatalf("expected evidence dir: %v", err)
+	} else if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("evidence dir mode=%#o want 0700", got)
+	}
+	for _, sub := range []string{"bundle", "logs/plex", "logs/tunerr", "pcap", "notes"} {
+		if info, err := os.Stat(filepath.Join(evidenceDir, sub)); err != nil {
+			t.Fatalf("expected evidence subdir %s: %v", sub, err)
+		} else if got := info.Mode().Perm(); got != 0o700 {
+			t.Fatalf("evidence subdir %s mode=%#o want 0700", sub, got)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(evidenceDir, "notes.md")); err != nil {
 		t.Fatalf("expected notes.md: %v", err)
 	}
 
@@ -2724,6 +2960,78 @@ func TestServer_diagnosticsWorkflowAndEvidenceAction(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(gotOutputDir, "notes.md")); err != nil {
 		t.Fatalf("expected sanitized notes.md: %v", err)
+	}
+}
+
+func TestRedactOperatorDiagnosticText_redactsURLsHeadersAndTokens(t *testing.T) {
+	raw := `DIRECT_URL=http://user:pass@provider.example/live/u/p/123.ts?username=u&password=p&token=abc
+Authorization: Bearer plex-secret
+Cookie: cf_clearance=cloud-secret
+plain api_key=standalone-secret`
+	got := redactOperatorDiagnosticText(raw)
+	for _, secret := range []string{"user:pass", "username=u", "password=p", "token=abc", "plex-secret", "cloud-secret", "standalone-secret"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("redaction leaked %q in:\n%s", secret, got)
+		}
+	}
+	for _, want := range []string{"http://provider.example/live/redacted/redacted/123.ts", "Authorization: <redacted>", "Cookie: <redacted>", "api_key=<redacted>"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("redaction missing %q in:\n%s", want, got)
+		}
+	}
+}
+
+func TestRunDiagnosticsHarnessAction_redactsCapturedStdout(t *testing.T) {
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	tmp := t.TempDir()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origWd) }()
+	if err := os.MkdirAll("scripts", 0o755); err != nil {
+		t.Fatalf("mkdir scripts: %v", err)
+	}
+	script := filepath.Join("scripts", "channel-diff-harness.sh")
+	if err := os.WriteFile(script, []byte(`#!/usr/bin/env bash
+echo "direct=$GOOD_DIRECT_URL"
+echo "Authorization: Bearer plex-secret"
+echo "Cookie: cf_clearance=cloud-secret"
+`), 0o700); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+	detail, err := runDiagnosticsHarnessAction(context.Background(), "channel-diff-harness.sh", ".diag/channel-diff", map[string]string{
+		"RUN_ID":          "redact-smoke",
+		"GOOD_DIRECT_URL": "http://user:pass@provider.example/live/u/p/123.ts?password=p&token=abc",
+	})
+	if err != nil {
+		t.Fatalf("run harness: %v", err)
+	}
+	stdout, _ := detail["stdout"].(string)
+	for _, secret := range []string{"user:pass", "password=p", "token=abc", "plex-secret", "cloud-secret"} {
+		if strings.Contains(stdout, secret) {
+			t.Fatalf("stdout leaked %q in:\n%s", secret, stdout)
+		}
+	}
+}
+
+func TestRunDiagnosticsHarnessAction_rejectsScriptPathEscape(t *testing.T) {
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	tmp := t.TempDir()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origWd) }()
+	if err := os.WriteFile("escape.sh", []byte("#!/bin/sh\nexit 42\n"), 0o700); err != nil {
+		t.Fatalf("write escape script: %v", err)
+	}
+	if _, err := runDiagnosticsHarnessAction(context.Background(), "../escape.sh", ".diag/channel-diff", map[string]string{"RUN_ID": "escape"}); err == nil {
+		t.Fatal("expected path-escaped diagnostics script to be rejected")
 	}
 }
 
@@ -6242,6 +6550,7 @@ func TestServer_XtreamLiveProxy(t *testing.T) {
 }
 
 func TestServer_XtreamLiveProxy_VirtualChannel(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_VIRTUAL_CHANNEL_DENY_LITERAL_PRIVATE_UPSTREAM", "false")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("movie-bytes"))
 	}))
@@ -6670,7 +6979,99 @@ func TestServer_XtreamExports_NormalizeBaseURLWhitespace(t *testing.T) {
 	}
 }
 
+func TestServer_XtreamPathSegmentsAreEscapedAndParsedLosslessly(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_XTREAM_VOD_DENY_LITERAL_PRIVATE_UPSTREAM", "false")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("movie-bytes"))
+	}))
+	defer upstream.Close()
+
+	srv := &Server{
+		BaseURL:          "http://127.0.0.1:5004",
+		XtreamOutputUser: "demo user",
+		XtreamOutputPass: "sec/ret",
+		Channels: []catalog.LiveChannel{{
+			ChannelID:   "chan/one",
+			GuideNumber: "101",
+			GuideName:   "News One",
+		}},
+		Movies: []catalog.Movie{{
+			ID:        "movie/one",
+			Title:     "Movie One",
+			StreamURL: upstream.URL + "/movie.mp4",
+		}},
+	}
+
+	if got := srv.xtreamLiveDirectSource(xtreamPrincipal{Username: "demo user", FullAccess: true}, "chan/one"); got != "http://127.0.0.1:5004/live/demo%20user/sec%2Fret/chan%2Fone.ts" {
+		t.Fatalf("live direct source=%q", got)
+	}
+	movies := srv.xtreamMovieStreams(xtreamPrincipal{Username: "demo user", FullAccess: true})
+	if len(movies) != 1 || movies[0].DirectSource != "http://127.0.0.1:5004/movie/demo%20user/sec%2Fret/movie%2Fone.mp4" {
+		t.Fatalf("movie direct source=%+v", movies)
+	}
+
+	principal, id, ok := srv.xtreamPathPrincipalID("/movie/demo%20user/sec%2Fret/movie%2Fone.mp4", "movie")
+	if !ok || principal.Username != "demo user" || id != "movie/one" {
+		t.Fatalf("parsed principal=%+v id=%q ok=%v", principal, id, ok)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/movie/demo%20user/sec%2Fret/movie%2Fone.mp4", nil)
+	rr := httptest.NewRecorder()
+	srv.serveXtreamMovieProxy().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK || rr.Body.String() != "movie-bytes" {
+		t.Fatalf("movie proxy status=%d body=%q", rr.Code, rr.Body.String())
+	}
+}
+
+func TestServer_XtreamVODProxyBlocksLiteralPrivateUpstreamByDefault(t *testing.T) {
+	srv := &Server{
+		XtreamOutputUser: "demo",
+		XtreamOutputPass: "secret",
+		Movies: []catalog.Movie{{
+			ID:        "m1",
+			Title:     "Movie One",
+			StreamURL: "http://127.0.0.1:1/movie.mp4",
+		}},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/movie/demo/secret/m1.mp4", nil)
+	rr := httptest.NewRecorder()
+	srv.serveXtreamMovieProxy().ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%q", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "blocked private upstream") {
+		t.Fatalf("body=%q", rr.Body.String())
+	}
+}
+
+func TestServer_XtreamVODProxyPrivateUpstreamBlockCanBeDisabledForLabUse(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_XTREAM_VOD_DENY_LITERAL_PRIVATE_UPSTREAM", "false")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("movie-bytes"))
+	}))
+	defer upstream.Close()
+
+	srv := &Server{
+		XtreamOutputUser: "demo",
+		XtreamOutputPass: "secret",
+		Movies: []catalog.Movie{{
+			ID:        "m1",
+			Title:     "Movie One",
+			StreamURL: upstream.URL + "/movie.mp4",
+		}},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/movie/demo/secret/m1.mp4", nil)
+	rr := httptest.NewRecorder()
+	srv.serveXtreamMovieProxy().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK || rr.Body.String() != "movie-bytes" {
+		t.Fatalf("status=%d body=%q", rr.Code, rr.Body.String())
+	}
+}
+
 func TestServer_XtreamMovieAndSeriesProxy(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_XTREAM_VOD_DENY_LITERAL_PRIVATE_UPSTREAM", "false")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if raw := strings.TrimSpace(r.Header.Get("Range")); raw != "" {
 			w.Header().Set("Accept-Ranges", "bytes")
@@ -6841,6 +7242,7 @@ func TestServer_XtreamXMLTVUsesUniqueChannelIDsWhenTVGIDCollides(t *testing.T) {
 }
 
 func TestServer_XtreamEntitlementsLimitOutput(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_XTREAM_VOD_DENY_LITERAL_PRIVATE_UPSTREAM", "false")
 	usersPath := filepath.Join(t.TempDir(), "xtream-users.json")
 	if _, err := entitlements.SaveFile(usersPath, entitlements.Ruleset{
 		Users: []entitlements.User{{

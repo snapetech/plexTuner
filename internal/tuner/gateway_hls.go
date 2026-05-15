@@ -136,7 +136,7 @@ func hlsMuxMaxSegParamBytes() int {
 }
 
 func hlsMuxDenyLiteralPrivateUpstream() bool {
-	return getenvBool("IPTV_TUNERR_HLS_MUX_DENY_LITERAL_PRIVATE_UPSTREAM", false)
+	return getenvBool("IPTV_TUNERR_HLS_MUX_DENY_LITERAL_PRIVATE_UPSTREAM", true)
 }
 
 func hlsMuxDenyResolvedPrivateUpstream() bool {

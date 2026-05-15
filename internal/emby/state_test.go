@@ -53,6 +53,16 @@ func TestSaveState_createsParentDir(t *testing.T) {
 	if _, err := os.Stat(file); err != nil {
 		t.Errorf("state file not created: %v", err)
 	}
+	if info, err := os.Stat(filepath.Dir(file)); err != nil {
+		t.Fatalf("stat state dir: %v", err)
+	} else if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("state dir mode=%#o want 0700", got)
+	}
+	if info, err := os.Stat(file); err != nil {
+		t.Fatalf("stat state file: %v", err)
+	} else if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("state file mode=%#o want 0600", got)
+	}
 }
 
 // TestSaveState_atomic verifies no .tmp file is left on success.
@@ -66,6 +76,26 @@ func TestSaveState_atomic(t *testing.T) {
 
 	if _, err := os.Stat(file + ".tmp"); !os.IsNotExist(err) {
 		t.Error("temp file should be removed after successful save")
+	}
+}
+
+func TestSaveState_refusesSymlinkOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.json")
+	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "state.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveState(link, &RegistrationState{TunerHostID: "changed"}); err == nil {
+		t.Fatal("expected symlink overwrite refusal")
+	}
+	if got, err := os.ReadFile(target); err != nil {
+		t.Fatal(err)
+	} else if string(got) != "original" {
+		t.Fatalf("target changed to %q", string(got))
 	}
 }
 

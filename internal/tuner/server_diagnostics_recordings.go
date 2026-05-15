@@ -93,7 +93,7 @@ func populateDiagRunSummary(ref *diagRunRef) {
 		if line == "" {
 			continue
 		}
-		ref.Summary = append(ref.Summary, line)
+		ref.Summary = append(ref.Summary, redactOperatorDiagnosticText(line))
 		if len(ref.Summary) >= 3 {
 			break
 		}
@@ -167,7 +167,7 @@ func stringSliceFromAny(v interface{}, limit int) []string {
 		if text == "" {
 			continue
 		}
-		out = append(out, text)
+		out = append(out, redactOperatorDiagnosticText(text))
 		if limit > 0 && len(out) >= limit {
 			break
 		}
@@ -221,8 +221,11 @@ func createEvidenceIntakeBundle(outDir string) error {
 	if outDir == "" {
 		return fmt.Errorf("evidence output directory required")
 	}
+	if err := os.MkdirAll(outDir, 0o700); err != nil {
+		return err
+	}
 	for _, sub := range []string{"bundle", "logs/plex", "logs/tunerr", "pcap", "notes"} {
-		if err := os.MkdirAll(filepath.Join(outDir, sub), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(outDir, sub), 0o700); err != nil {
 			return err
 		}
 	}
@@ -296,8 +299,21 @@ func mergeOperatorActionDetail(left, right map[string]interface{}) map[string]in
 	return out
 }
 
-func repoScriptPath(name string) string {
-	return filepath.Join(".", "scripts", strings.TrimSpace(name))
+func repoScriptPath(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("script name required")
+	}
+	if name != filepath.Base(name) || strings.ContainsAny(name, `/\`) {
+		return "", fmt.Errorf("invalid script name")
+	}
+	scriptsDir := filepath.Clean("scripts")
+	path := filepath.Join(scriptsDir, name)
+	rel, err := filepath.Rel(scriptsDir, path)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return "", fmt.Errorf("invalid script path")
+	}
+	return path, nil
 }
 
 func runDiagnosticsHarnessAction(ctx context.Context, scriptName, outRoot string, env map[string]string) (map[string]interface{}, error) {
@@ -305,7 +321,10 @@ func runDiagnosticsHarnessAction(ctx context.Context, scriptName, outRoot string
 	if scriptName == "" {
 		return nil, fmt.Errorf("script name required")
 	}
-	scriptPath := repoScriptPath(scriptName)
+	scriptPath, err := repoScriptPath(scriptName)
+	if err != nil {
+		return nil, err
+	}
 	cmd := exec.CommandContext(ctx, "bash", scriptPath)
 	cmd.Dir = "."
 	runEnv := append([]string{}, os.Environ()...)
@@ -336,7 +355,7 @@ func runDiagnosticsHarnessAction(ctx context.Context, scriptName, outRoot string
 		}
 	}
 	if len(out) > 0 {
-		text := strings.TrimSpace(string(out))
+		text := redactOperatorDiagnosticText(string(out))
 		if len(text) > 1200 {
 			text = text[:1200] + "..."
 		}
@@ -642,6 +661,9 @@ func (s *Server) serveHlsMuxWebDemo() http.Handler {
 		}
 		if !getenvBool("IPTV_TUNERR_HLS_MUX_WEB_DEMO", false) {
 			http.NotFound(w, r)
+			return
+		}
+		if !operatorUIAllowed(w, r) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

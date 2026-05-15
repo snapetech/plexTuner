@@ -974,6 +974,36 @@ func (p *Proxy) loadAbuseState() {
 	}
 }
 
+func writeAbuseStateFile(dir, path string, data []byte) error {
+	tmp, err := os.CreateTemp(dir, ".abuse-state-*.json.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpName)
+		}
+	}()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	cleanup = false
+	return os.Chmod(path, 0o600)
+}
+
 func (p *Proxy) saveAbuseStateLocked(now time.Time) error {
 	path := p.abuseCfg.stateFile
 	if path == "" {
@@ -1004,18 +1034,21 @@ func (p *Proxy) saveAbuseStateLocked(now time.Time) error {
 			Cooldowns:        cooldowns,
 		}
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	tmp := path + ".tmp"
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return err
+	}
+	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("refusing to overwrite symlinked abuse state %q", path)
+	}
+	return writeAbuseStateFile(dir, path, data)
 }
 
 func pluralY(n int) string {

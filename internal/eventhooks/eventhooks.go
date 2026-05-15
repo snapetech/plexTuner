@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/snapetech/iptvtunerr/internal/httpclient"
+	"github.com/snapetech/iptvtunerr/internal/safeurl"
 )
 
 const recentLimit = 64
@@ -144,10 +145,8 @@ func (d *Dispatcher) Report() Report {
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	hooks := make([]Hook, len(d.hooks))
-	copy(hooks, d.hooks)
-	recent := make([]Delivery, len(d.recent))
-	copy(recent, d.recent)
+	hooks := redactedHooks(d.hooks)
+	recent := redactedDeliveries(d.recent)
 	report := Report{
 		Enabled:    len(hooks) > 0,
 		ConfigFile: d.configFile,
@@ -168,7 +167,7 @@ func (d *Dispatcher) deliver(hook Hook, event Event, body []byte) {
 		EventName:  event.Name,
 		EventID:    event.ID,
 		HookName:   hook.Name,
-		URL:        hook.URL,
+		URL:        safeurl.RedactURL(hook.URL),
 		OccurredAt: event.OccurredAt,
 	}
 	client := d.client
@@ -244,4 +243,65 @@ func parseHookTimeout(raw string) time.Duration {
 		return 0
 	}
 	return d
+}
+
+func redactedHooks(hooks []Hook) []Hook {
+	out := make([]Hook, 0, len(hooks))
+	for _, hook := range hooks {
+		redacted := hook
+		redacted.URL = safeurl.RedactURL(redacted.URL)
+		if len(hook.Headers) > 0 {
+			redacted.Headers = make(map[string]string, len(hook.Headers))
+			for k, v := range hook.Headers {
+				if sensitiveHookHeaderName(k) || safeurl.HasSensitive(v) {
+					redacted.Headers[k] = "[REDACTED]"
+				} else {
+					redacted.Headers[k] = v
+				}
+			}
+		}
+		out = append(out, redacted)
+	}
+	return out
+}
+
+func redactedDeliveries(deliveries []Delivery) []Delivery {
+	out := make([]Delivery, 0, len(deliveries))
+	for _, delivery := range deliveries {
+		redacted := delivery
+		redacted.URL = safeurl.RedactURL(redacted.URL)
+		if safeurl.HasSensitive(redacted.Error) {
+			redacted.Error = redactSensitiveHookText(redacted.Error)
+		}
+		out = append(out, redacted)
+	}
+	return out
+}
+
+func redactSensitiveHookText(raw string) string {
+	fields := strings.Fields(raw)
+	for i, field := range fields {
+		if safeurl.IsHTTPOrHTTPS(field) || safeurl.HasSensitive(field) {
+			fields[i] = safeurl.RedactURL(field)
+			if safeurl.HasSensitive(fields[i]) {
+				fields[i] = "[REDACTED]"
+			}
+		}
+	}
+	return strings.Join(fields, " ")
+}
+
+func sensitiveHookHeaderName(name string) bool {
+	n := strings.ToLower(strings.TrimSpace(name))
+	if n == "" {
+		return false
+	}
+	if n == "authorization" || n == "cookie" || n == "set-cookie" || n == "proxy-authorization" {
+		return true
+	}
+	return strings.Contains(n, "token") ||
+		strings.Contains(n, "secret") ||
+		strings.Contains(n, "apikey") ||
+		strings.Contains(n, "api-key") ||
+		strings.Contains(n, "x-api-key")
 }

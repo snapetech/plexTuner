@@ -80,7 +80,7 @@ func (c *Cache) Materialize(ctx context.Context, assetID string, streamURL strin
 	}()
 
 	// Ensure cache dir exists before writing (DownloadToFile does it; materializeHLS does not).
-	if err := os.MkdirAll(filepath.Dir(partialPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(partialPath), 0o700); err != nil {
 		return "", err
 	}
 

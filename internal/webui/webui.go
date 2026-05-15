@@ -478,17 +478,50 @@ func (s *Server) persistState() error {
 	if err != nil {
 		return fmt.Errorf("encode %s: %w", s.StateFile, err)
 	}
-	if err := os.MkdirAll(filepath.Dir(s.StateFile), 0o755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", filepath.Dir(s.StateFile), err)
+	dir := filepath.Dir(s.StateFile)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("mkdir %s: %w", dir, err)
 	}
-	tmp := s.StateFile + ".tmp"
-	if err := os.WriteFile(tmp, body, 0o600); err != nil {
-		return fmt.Errorf("write tmp %s: %w", tmp, err)
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return fmt.Errorf("chmod %s: %w", dir, err)
 	}
-	if err := os.Rename(tmp, s.StateFile); err != nil {
-		return fmt.Errorf("rename %s: %w", s.StateFile, err)
+	if info, err := os.Lstat(s.StateFile); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("refusing to overwrite symlinked deck state %q", s.StateFile)
+	}
+	if err := writeDeckStateFile(dir, s.StateFile, body); err != nil {
+		return fmt.Errorf("write state %s: %w", s.StateFile, err)
 	}
 	return nil
+}
+
+func writeDeckStateFile(dir, path string, body []byte) error {
+	tmp, err := os.CreateTemp(dir, ".deck-state-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpName)
+		}
+	}()
+	if _, err := tmp.Write(body); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("rename %s: %w", path, err)
+	}
+	cleanup = false
+	return os.Chmod(path, 0o600)
 }
 
 func (s *Server) replayPersistedRuntimeSettings(ctx context.Context) {

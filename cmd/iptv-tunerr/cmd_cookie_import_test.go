@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"io"
+	"os"
 	"strings"
 	"testing"
 )
@@ -85,4 +88,36 @@ func TestStoreCookie_merges(t *testing.T) {
 			t.Errorf("value = %q, want new", v.Value)
 		}
 	}
+}
+
+func TestRunImportCookiesDryRunRedactsCookieValues(t *testing.T) {
+	t.Setenv("IPTV_TUNERR_COOKIE_JAR_FILE", t.TempDir()+"/cookies.json")
+	stdout := captureStdout(t, func() {
+		runImportCookies(nil, []string{"-cookie", "cf_clearance=super-secret-value", "-domain", "provider.example", "-dry-run"})
+	})
+	if strings.Contains(stdout, "super-secret-value") {
+		t.Fatalf("dry-run leaked cookie value in stdout:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "value=<redacted>") {
+		t.Fatalf("dry-run missing redaction marker:\n%s", stdout)
+	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	orig := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout = w
+	defer func() {
+		os.Stdout = orig
+	}()
+	fn()
+	_ = w.Close()
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	_ = r.Close()
+	return buf.String()
 }

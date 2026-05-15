@@ -8,6 +8,8 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -904,6 +906,49 @@ func TestProxy_PersistsBadActorBlocks(t *testing.T) {
 	}
 	if upstreamHits != 1 {
 		t.Fatalf("persisted block should not hit upstream, hits=%d", upstreamHits)
+	}
+	if info, err := os.Stat(filepath.Dir(stateFile)); err != nil {
+		t.Fatalf("stat abuse state dir: %v", err)
+	} else if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("abuse state dir mode=%#o want 0700", got)
+	}
+	if info, err := os.Stat(stateFile); err != nil {
+		t.Fatalf("stat abuse state file: %v", err)
+	} else if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("abuse state file mode=%#o want 0600", got)
+	}
+}
+
+func TestProxy_AbuseStateRefusesSymlinkOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.json")
+	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+	link := filepath.Join(dir, "blocks.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	proxy := &Proxy{
+		abuseState: map[string]abuseEntry{
+			"203.0.113.101": {
+				firstFailure: time.Now(),
+				failures:     1,
+				blockedUntil: time.Now().Add(time.Hour),
+			},
+		},
+		abuseCfg: abuseConfig{
+			stateFile: link,
+			window:    time.Minute,
+		},
+	}
+	if err := proxy.saveAbuseStateLocked(time.Now()); err == nil {
+		t.Fatal("expected symlink overwrite refusal")
+	}
+	if got, err := os.ReadFile(target); err != nil {
+		t.Fatalf("read target: %v", err)
+	} else if string(got) != "original" {
+		t.Fatalf("target changed to %q", string(got))
 	}
 }
 

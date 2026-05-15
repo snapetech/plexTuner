@@ -52,6 +52,13 @@ func startDedicatedWebUI(ctx context.Context, cfg *config.Config, tunerAddr stri
 	}()
 }
 
+func logExternalXMLTVEnabled(cfg *config.Config) {
+	if cfg == nil || strings.TrimSpace(cfg.XMLTVURL) == "" {
+		return
+	}
+	log.Printf("External XMLTV enabled: %s (timeout %v)", redactRuntimeSnapshotText(cfg.XMLTVURL), cfg.XMLTVTimeout)
+}
+
 func handleServe(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendlyName, mode string) {
 	path := catalogPath
 	if path == "" {
@@ -78,9 +85,7 @@ func handleServe(cfg *config.Config, catalogPath, addr, baseURL, deviceID, frien
 	if closeEpg != nil {
 		defer closeEpg()
 	}
-	if cfg.XMLTVURL != "" {
-		log.Printf("External XMLTV enabled: %s (timeout %v)", cfg.XMLTVURL, cfg.XMLTVTimeout)
-	}
+	logExternalXMLTVEnabled(cfg)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -170,9 +175,7 @@ func handleRun(cfg *config.Config, catalogPath, addr, baseURL, deviceID, friendl
 	if closeEpg != nil {
 		defer closeEpg()
 	}
-	if cfg.XMLTVURL != "" {
-		log.Printf("External XMLTV enabled: %s (timeout %v)", cfg.XMLTVURL, cfg.XMLTVTimeout)
-	}
+	logExternalXMLTVEnabled(cfg)
 
 	serverErr := make(chan error, 1)
 	if !registerOnly {

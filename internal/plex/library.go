@@ -148,7 +148,7 @@ func GetLibrarySectionItemCount(plexBaseURL, plexToken, key string) (int, error)
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("get library section item count %s returned %d: %s", key, resp.StatusCode, strings.TrimSpace(string(body)))
+		return 0, fmt.Errorf("get library section item count %s returned %d: %s", key, resp.StatusCode, redactPlexDiagnosticText(string(body)))
 	}
 	var mc libraryItemsMediaContainer
 	if err := xml.Unmarshal(body, &mc); err != nil {
@@ -186,7 +186,7 @@ func GetLibrarySectionItemTitles(plexBaseURL, plexToken, key string, limit int) 
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("get library section item titles %s returned %d: %s", key, resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, fmt.Errorf("get library section item titles %s returned %d: %s", key, resp.StatusCode, redactPlexDiagnosticText(string(body)))
 	}
 	var mc libraryItemsMediaContainer
 	if err := xml.Unmarshal(body, &mc); err != nil {
@@ -263,7 +263,7 @@ func CreateLibrarySection(plexBaseURL, plexToken string, spec LibraryCreateSpec)
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("create library section %q returned %d: %s", spec.Name, resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, fmt.Errorf("create library section %q returned %d: %s", spec.Name, resp.StatusCode, redactPlexDiagnosticText(string(body)))
 	}
 	var mc libraryMediaContainer
 	if err := xml.Unmarshal(body, &mc); err != nil {
@@ -300,7 +300,7 @@ func RefreshLibrarySection(plexBaseURL, plexToken, key string) error {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("refresh library section %s returned %d: %s", key, resp.StatusCode, strings.TrimSpace(string(body)))
+		return fmt.Errorf("refresh library section %s returned %d: %s", key, resp.StatusCode, redactPlexDiagnosticText(string(body)))
 	}
 	return nil
 }
@@ -352,7 +352,7 @@ func GetLibrarySectionPrefs(plexBaseURL, plexToken, key string) (LibrarySectionP
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("get library section prefs %s returned %d: %s", key, resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, fmt.Errorf("get library section prefs %s returned %d: %s", key, resp.StatusCode, redactPlexDiagnosticText(string(body)))
 	}
 	var mc libraryMediaContainer
 	if err := xml.Unmarshal(body, &mc); err != nil {
@@ -404,7 +404,7 @@ func UpdateLibrarySectionPrefs(plexBaseURL, plexToken, key string, updates map[s
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-			lastErr = fmt.Errorf("%s library section prefs %s returned %d: %s", method, key, resp.StatusCode, strings.TrimSpace(string(body)))
+			lastErr = fmt.Errorf("%s library section prefs %s returned %d: %s", method, key, resp.StatusCode, redactPlexDiagnosticText(string(body)))
 			continue
 		}
 		// Plex may return 200 even when a method/path combo is a no-op. Verify.
