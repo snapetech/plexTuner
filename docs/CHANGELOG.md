@@ -13,6 +13,9 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+### Release process
+- **Verification workflows install their scanner dependency:** CI and release runners now install ripgrep before invoking the shared council verification path.
+
 ## [v0.1.74] — 2026-05-14
 
 ### Security / Plex Live TV proxy

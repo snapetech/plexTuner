@@ -21,6 +21,11 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Install verification tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
+
       - name: Require populated changelog section
         run: ./scripts/verify-changelog-entry.sh release "${GITHUB_REF_NAME}"
 
