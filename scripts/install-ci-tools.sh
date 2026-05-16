@@ -25,6 +25,9 @@ for tool in "$@"; do
     gh)
       have gh || missing+=("gh")
       ;;
+    gitleaks)
+      have gitleaks || missing+=("gitleaks")
+      ;;
     rpm)
       have rpmbuild || missing+=("rpm")
       ;;
@@ -58,6 +61,21 @@ for pkg in "${missing[@]}"; do
   done
   [[ "$found" == "1" ]] || dedup+=("$pkg")
 done
+
+if printf '%s\n' "${dedup[@]}" | grep -Fxq gitleaks && have go; then
+  go install github.com/zricethezav/gitleaks/v8@v8.24.3
+  gopath="$(go env GOPATH)"
+  export PATH="${gopath}/bin:${PATH}"
+  if [[ -n "${GITHUB_PATH:-}" ]]; then
+    echo "${gopath}/bin" >> "$GITHUB_PATH"
+  fi
+  filtered=()
+  for pkg in "${dedup[@]}"; do
+    [[ "$pkg" == "gitleaks" ]] || filtered+=("$pkg")
+  done
+  dedup=("${filtered[@]}")
+  [[ ${#dedup[@]} -gt 0 ]] || exit 0
+fi
 
 if have apt-get; then
   sudo apt-get update

@@ -13,7 +13,9 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
-*No unreleased changes yet.*
+### CI
+- **Gitleaks runs directly on local runners:** secret scanning now installs and runs the `gitleaks` CLI directly to avoid third-party action cache extraction failures on the local self-hosted runner.
+- **Gitleaks scans tracked release content:** the scan runs against a `git archive` of `HEAD`, avoiding local-only ignored files while retaining a narrow allowlist for generated vendored SQLite Windows constants.
 
 ## [v0.1.76] - 2026-05-16
 

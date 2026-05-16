@@ -8,7 +8,9 @@
 - Done: promoted `docs/CHANGELOG.md` Unreleased notes into `v0.1.76`.
 - Done: patched local-runner workflow failures by replacing Debian-only installs with `scripts/install-ci-tools.sh` and making CodeQL use an explicit Go build.
 - Done: `./scripts/release-readiness.sh` passed locally.
-- Next: commit/push the release-prep change, tag `v0.1.76`, push the tag, and monitor the release workflow.
+- Done: committed and pushed release prep as `80004d4`, pushed annotated tag `v0.1.76`, and the GitHub release job uploaded release assets.
+- Done: found a local-runner Gitleaks action cache extraction failure after the tag release; patched and pushed the workflow fix as `c8bcd40`.
+- Next: wait for the queued remote replacement Gitleaks scan to get a local runner and complete.
 
 **Previous (2026-05-16):** Triage and action all open GitHub PRs and security issues for `snapetech/iptvtunerr`.
 

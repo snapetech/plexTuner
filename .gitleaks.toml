@@ -1,0 +1,7 @@
+title = "IPTV Tunerr Gitleaks configuration"
+
+[allowlist]
+description = "Generated vendored SQLite Windows constants are not secrets."
+paths = [
+  '''vendor/modernc\.org/sqlite/lib/sqlite_windows(_386)?\.go''',
+]
