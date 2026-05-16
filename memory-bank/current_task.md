@@ -11,14 +11,11 @@
 - Done: committed and pushed release prep as `80004d4`, pushed annotated tag `v0.1.76`, and the GitHub release job uploaded release assets.
 - Done: found a local-runner Gitleaks action cache extraction failure after the tag release; patched and pushed the workflow fix as `c8bcd40`.
 - Done: remote replacement Gitleaks scan completed successfully; release Discord announcement completed successfully.
-- Done: patched and pushed the initial PPA workflow fix as `8881c3b`, then reran the PPA publish for `v0.1.76`.
-- In progress: replacing PPA `dput` upload with direct Launchpad FTP upload because the PyPI `dput` package is not installable on the local runner.
-- In progress: patching Snap publishing to use `snap pack` with explicit metadata after Snapcraft destructive mode rejected the Arch-based local runner host.
-- In progress: patching COPR publishing after system Python rejected `pip3 install --user copr-cli` under PEP 668.
-- In progress: moving PPA/COPR tool installs inline because release-channel workflow-dispatch jobs check out the immutable release tag before package installation.
+- Done: patched release-channel local-runner follow-up failures through `d502b64`: Gitleaks direct CLI scan, PPA direct `dpkg`/FTP upload, COPR isolated CLI venv, and Snap direct `snap pack`.
 - Done: PPA rerun completed successfully with the inline installer and Launchpad FTP upload.
-- In progress: patching COPR venv install after `copr-cli` missed its `rich` runtime dependency.
-- Next: push the Snap `snap pack` fix, rerun Snap, and continue monitoring queued CI/CodeQL/Gitleaks jobs.
+- Done: COPR and Snap reruns completed successfully.
+- Done: latest `main` checks on `d502b64` completed successfully: CI, CodeQL, Gitleaks, and Local Identity Leak Check.
+- Next: no release-monitoring action pending.
 
 **Previous (2026-05-16):** Triage and action all open GitHub PRs and security issues for `snapetech/iptvtunerr`.
 

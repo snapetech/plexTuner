@@ -4,7 +4,8 @@
 - Patched local-runner workflow failures by replacing Debian-only package installs with `scripts/install-ci-tools.sh` and making CodeQL use `actions/setup-go` plus a manual Go build.
 - Committed and pushed release prep as `80004d4`, pushed annotated tag `v0.1.76`, and the GitHub release job uploaded binary, archive, `.deb`, `.rpm`, checksum, and manifest assets.
 - Post-release CI follow-up: replaced the Gitleaks third-party action with direct CLI installation/execution because the action cache extraction failed on the local self-hosted runner.
-- Verification: `./scripts/release-readiness.sh` passed; macOS bare-metal and Windows package smoke were skipped by default; direct local Gitleaks validation passed after the workflow fix.
+- Post-release channel follow-up: patched PPA, COPR, and Snap workflows for local-runner portability; successful reruns published PPA, COPR, and Snap.
+- Verification: `./scripts/release-readiness.sh` passed; macOS bare-metal and Windows package smoke were skipped by default; latest `main` CI, CodeQL, Gitleaks, Local Identity Leak Check, PPA, COPR, and Snap runs completed successfully.
 
 ## 2026-05-16 - GitHub PR and security maintenance
 
