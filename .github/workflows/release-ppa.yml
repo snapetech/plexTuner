@@ -39,9 +39,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install packaging tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y devscripts debhelper gnupg dput
+        run: bash scripts/install-ci-tools.sh debian-packaging
 
       - name: Import GPG key
         env:

@@ -22,9 +22,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install verification tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ripgrep
+        run: bash scripts/install-ci-tools.sh ripgrep
 
       - name: Require populated changelog section
         run: ./scripts/verify-changelog-entry.sh release "${GITHUB_REF_NAME}"
@@ -36,9 +34,7 @@ jobs:
         run: go test -count=1 ./internal/tuner -run 'Test(XMLTV_serve|XMLTV_serveCachedGuideReady|HDHR_discover|HDHR_lineup|HDHR_lineup_status|Server_UpdateChannelsTriggersXMLTVRefresh)'
 
       - name: Install Linux package tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y rpm
+        run: bash scripts/install-ci-tools.sh rpm
 
       - name: Build binaries
         run: ./scripts/build-release-assets.sh "${GITHUB_REF_NAME}" dist
@@ -71,6 +67,11 @@ jobs:
     needs: [release]
     runs-on: [self-hosted, Linux, X64, iptvtunerr-deploy]
     steps:
+      - uses: actions/checkout@v6
+
+      - name: Install announcement tools
+        run: bash scripts/install-ci-tools.sh jq
+
       - name: Post Discord announcement
         env:
           DISCORD_RELEASE_WEBHOOK: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
@@ -182,6 +183,11 @@ jobs:
       actions: write
       contents: read
     steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dispatch tools
+        run: bash scripts/install-ci-tools.sh gh
+
       - name: Dispatch channel workflows
         env:
           GH_TOKEN: ${{ secrets.GH_WORKFLOW_TOKEN || secrets.GHCR_TOKEN || github.token }}

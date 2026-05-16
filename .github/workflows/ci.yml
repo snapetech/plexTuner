@@ -21,9 +21,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install verification tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ripgrep
+        run: bash scripts/install-ci-tools.sh ripgrep
 
       - name: Changelog gate
         run: |
@@ -64,9 +62,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install Linux package tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y rpm
+        run: bash scripts/install-ci-tools.sh rpm
 
       - name: Build release asset set
         run: ./scripts/build-release-assets.sh v0.0.0 dist

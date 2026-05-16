@@ -13,6 +13,10 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+*No unreleased changes yet.*
+
+## [v0.1.76] - 2026-05-16
+
 ### Security
 - **Plex proxy audit logs no longer include raw source addresses:** Live TV entitlement proxy audit/access/playback logs now emit source fingerprints, trusted forwarded-hop counts, and Cloudflare-header presence instead of raw apparent source or proxy header values.
 - **Provider lineup and HDHomeRun URL fetches are constrained:** Plex provider lineup channel URLs must stay on the configured provider origin, and HDHomeRun lineup fetches now reject non-HTTP(S), missing-host, and credentialed URLs.
@@ -21,7 +25,8 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Updated GitHub maintenance dependencies:** `github.com/andybalholm/brotli` is now `v1.2.1`; Dependabot PRs for `github.com/hanwen/go-fuse/v2 v2.10.1` and `golang.org/x/net v0.54.0` were merged.
 
 ### CI
-- **GitHub Actions use local self-hosted runners:** Linux workflows now target the local self-hosted Linux runner labels, and Windows package workflows target self-hosted Windows labels.
+- **GitHub Actions use local self-hosted runners:** Linux workflows now target the local self-hosted Linux runner labels, Windows package workflows target self-hosted Windows labels, and shared workflow tool installation now supports non-Debian local runners.
+- **CodeQL uses an explicit Go build on local runners:** Code scanning now sets up Go from `go.mod` and runs a manual Go build before analysis instead of relying on CodeQL's autobuild path.
 
 ## [v0.1.75] - 2026-05-15
 

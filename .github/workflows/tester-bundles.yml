@@ -28,7 +28,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install packaging deps
-        run: sudo apt-get update && sudo apt-get install -y zip
+        run: bash scripts/install-ci-tools.sh zip
 
       - name: Build tester release bundle
         env:

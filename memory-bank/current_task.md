@@ -1,6 +1,16 @@
 **Latest (2026-05-12):** **Plex Live TV playback works again on kspls0; remaining issue is startup latency.** Sports DVR is expanded to 480 channels with `IPTV_TUNERR_LINEUP_RECIPE=sports_now`, `IPTV_TUNERR_LINEUP_MAX_CHANNELS=480`, `IPTV_TUNERR_GUIDE_POLICY=off`, and `IPTV_TUNERR_LINEUP_PROBE_ENABLED=false`; Plex activated all 480. Deployed a proxy fix so JSON `/media/providers` responses rewrite `allowTuners` entitlement hints, matching the existing XML rewrite. Direct Tunerr stream test returned ~24 MB in 20s, and user confirmed playback works but starts slowly.
 
-**Current (2026-05-16):** Triage and action all open GitHub PRs and security issues for `snapetech/iptvtunerr`.
+**Current (2026-05-16):** Cut `v0.1.76` from current `main`.
+
+- Goal: publish a new GitHub release for the GitHub PR/security maintenance batch now on `main`.
+- Scope: release prep only: changelog promotion, release-readiness verification, commit/push, tag/push, and workflow monitoring.
+- Assumption: next semver patch tag after `v0.1.75` is `v0.1.76`.
+- Done: promoted `docs/CHANGELOG.md` Unreleased notes into `v0.1.76`.
+- Done: patched local-runner workflow failures by replacing Debian-only installs with `scripts/install-ci-tools.sh` and making CodeQL use an explicit Go build.
+- Done: `./scripts/release-readiness.sh` passed locally.
+- Next: commit/push the release-prep change, tag `v0.1.76`, push the tag, and monitor the release workflow.
+
+**Previous (2026-05-16):** Triage and action all open GitHub PRs and security issues for `snapetech/iptvtunerr`.
 
 - Goal: inspect open PRs, failing checks, review comments, and GitHub security/dependency/code-scanning alerts; fix what is actionable; merge PRs that are safe; document anything blocked.
 - Scope: GitHub PR and security maintenance only. Avoid unrelated refactors and do not recreate removed split-brain deployment paths.

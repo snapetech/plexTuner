@@ -1,3 +1,9 @@
+## 2026-05-16 - Prepare v0.1.76 release
+
+- Promoted the Unreleased security/dependency/CI notes into `v0.1.76`.
+- Patched local-runner workflow failures by replacing Debian-only package installs with `scripts/install-ci-tools.sh` and making CodeQL use `actions/setup-go` plus a manual Go build.
+- Verification: `./scripts/release-readiness.sh` passed; macOS bare-metal and Windows package smoke were skipped by default.
+
 ## 2026-05-16 - GitHub PR and security maintenance
 
 - Merged Dependabot PRs `#19` (`github.com/hanwen/go-fuse/v2` to `v2.10.1`) and `#20` (`golang.org/x/net` to `v0.54.0`).
