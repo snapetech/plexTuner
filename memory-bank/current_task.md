@@ -16,7 +16,9 @@
 - In progress: patching Snap publishing to use `snapcraft pack --destructive-mode` after LXD bridge initialization failed on the local runner.
 - In progress: patching COPR publishing after system Python rejected `pip3 install --user copr-cli` under PEP 668.
 - In progress: moving PPA/COPR tool installs inline because release-channel workflow-dispatch jobs check out the immutable release tag before package installation.
-- Next: push the inline installer workflow fix, rerun the failed Snap/COPR/PPA publishes, and continue monitoring queued CI/package-channel jobs.
+- Done: PPA rerun completed successfully with the inline installer and Launchpad FTP upload.
+- In progress: patching COPR venv install after `copr-cli` missed its `rich` runtime dependency.
+- Next: push the COPR dependency fix, rerun COPR, and continue monitoring queued CI/Snap jobs.
 
 **Previous (2026-05-16):** Triage and action all open GitHub PRs and security issues for `snapetech/iptvtunerr`.
 

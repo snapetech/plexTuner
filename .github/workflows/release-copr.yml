@@ -68,7 +68,7 @@ jobs:
           venv="${RUNNER_TEMP:-/tmp}/iptvtunerr-copr-cli"
           python3 -m venv "$venv"
           "$venv/bin/python" -m pip install --upgrade pip
-          "$venv/bin/python" -m pip install copr-cli
+          "$venv/bin/python" -m pip install copr-cli rich
           echo "$venv/bin" >> "$GITHUB_PATH"
 
       - name: Configure COPR

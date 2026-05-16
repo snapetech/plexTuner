@@ -20,6 +20,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Snap publishing avoids LXD on local runners:** Snap publishing now uses `snapcraft pack --destructive-mode` for the prebuilt binary payload, avoiding fragile LXD bridge initialization on local runners.
 - **COPR CLI installs in an isolated venv:** COPR publishing now uses the shared CI tool installer for `copr-cli`, avoiding system Python package writes on local runners.
 - **Release-channel tool installs are self-contained:** PPA and COPR workflows now install their runner tools inline so workflow-dispatch reruns can use fixed tooling while checking out the immutable release tag.
+- **COPR venv includes CLI runtime dependencies:** the COPR workflow explicitly installs `rich` alongside `copr-cli` for Python environments where the CLI package omits that dependency.
 
 ## [v0.1.76] - 2026-05-16
 
