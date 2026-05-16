@@ -13,9 +13,9 @@
 - Done: remote replacement Gitleaks scan completed successfully; release Discord announcement completed successfully.
 - Done: patched and pushed the initial PPA workflow fix as `8881c3b`, then reran the PPA publish for `v0.1.76`.
 - In progress: replacing PPA `dput` upload with direct Launchpad FTP upload because the PyPI `dput` package is not installable on the local runner.
-- In progress: patching Snap publishing after the local runner installed LXD under Snap's bin directory but the Snapcraft action invoked `sudo lxd` without that path.
+- In progress: patching Snap publishing to use `snapcraft pack --destructive-mode` after LXD bridge initialization failed on the local runner.
 - In progress: patching COPR publishing after system Python rejected `pip3 install --user copr-cli` under PEP 668.
-- Next: push the Snap/COPR workflow fixes, rerun the failed Snap and COPR publishes, and continue monitoring queued CI/local identity/package-channel jobs.
+- Next: push the Snap destructive-mode workflow fix, rerun the failed Snap/COPR/PPA publishes, and continue monitoring queued CI/package-channel jobs.
 
 **Previous (2026-05-16):** Triage and action all open GitHub PRs and security issues for `snapetech/iptvtunerr`.
 
