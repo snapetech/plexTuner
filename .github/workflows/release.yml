@@ -6,7 +6,7 @@ on:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, iptvtunerr-deploy]
     permissions:
       contents: write
     steps:
@@ -69,7 +69,7 @@ jobs:
   announce-discord:
     name: Announce Release to Discord
     needs: [release]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, iptvtunerr-deploy]
     steps:
       - name: Post Discord announcement
         env:
@@ -177,7 +177,7 @@ jobs:
   dispatch-package-channels:
     name: Dispatch Package Channels
     needs: [release]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, iptvtunerr-deploy]
     permissions:
       actions: write
       contents: read

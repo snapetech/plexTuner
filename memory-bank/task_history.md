@@ -1,3 +1,12 @@
+## 2026-05-16 - GitHub PR and security maintenance
+
+- Merged Dependabot PRs `#19` (`github.com/hanwen/go-fuse/v2` to `v2.10.1`) and `#20` (`golang.org/x/net` to `v0.54.0`).
+- Applied the stale/conflicting Dependabot PR `#15` directly by upgrading `github.com/andybalholm/brotli` to `v1.2.1` and refreshing `vendor/`.
+- Hardened CodeQL findings by removing raw apparent-source and trusted proxy header values from Plex label proxy logs, constraining Plex provider lineup URLs to the configured provider origin, and rejecting invalid HDHomeRun lineup URL schemes/credentials.
+- Switched GitHub Actions Linux jobs to the local self-hosted Linux runner labels and Windows package jobs to self-hosted Windows labels.
+- Updated the Plex Live TV entitlement proxy runbook for the new redacted audit log fields.
+- Verification: focused package tests passed; `./scripts/verify` passed.
+
 ## 2026-05-15 - Prepare v0.1.75 release
 
 - Promoted the populated Unreleased changelog notes for Plex Live TV proxy stability and release-process fixes into `v0.1.75`.

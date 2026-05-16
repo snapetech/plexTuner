@@ -373,7 +373,7 @@ func (p *Proxy) auditElevation(req *http.Request, outcome, token, reason string)
 	source := apparentSource(req)
 	p.recordAuditOutcome(outcome, source)
 	p.logger.Printf(
-		"plexlabelproxy_audit: outcome=%s method=%s path=%s live_tv=%v discovery=%v stream=%v remote=%s source=%s forwarded_for=%q cf_connecting_ip=%q token_fp=%s reason=%q",
+		"plexlabelproxy_audit: outcome=%s method=%s path=%s live_tv=%v discovery=%v stream=%v remote=%s source=%s forwarded_for_count=%d cf_connecting_ip=%t token_fp=%s reason=%q",
 		outcome,
 		req.Method,
 		req.URL.EscapedPath(),
@@ -381,9 +381,9 @@ func (p *Proxy) auditElevation(req *http.Request, outcome, token, reason string)
 		IsLiveTVDiscoveryRequest(req),
 		IsLiveTVStreamRequest(req),
 		clientAddress(req.RemoteAddr),
-		source,
-		trustedHeader(req, "X-Forwarded-For"),
-		trustedHeader(req, "CF-Connecting-IP"),
+		sourceFingerprint(source),
+		trustedForwardedForCount(req),
+		trustedHeaderPresent(req, "CF-Connecting-IP"),
 		tokenFingerprint(token),
 		reason,
 	)
@@ -401,15 +401,15 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	lw := &loggingResponseWriter{ResponseWriter: w, status: http.StatusOK}
 	if logAccess {
 		p.logger.Printf(
-			"plexlabelproxy_access: phase=start method=%s path=%s live_tv=%v stream=%v remote=%s source=%s forwarded_for=%q cf_connecting_ip=%q ua=%q",
+			"plexlabelproxy_access: phase=start method=%s path=%s live_tv=%v stream=%v remote=%s source=%s forwarded_for_count=%d cf_connecting_ip=%t ua=%q",
 			r.Method,
 			r.URL.EscapedPath(),
 			IsLiveTVRequest(r),
 			IsLiveTVStreamRequest(r),
 			clientAddress(r.RemoteAddr),
-			apparentSource(r),
-			trustedHeader(r, "X-Forwarded-For"),
-			trustedHeader(r, "CF-Connecting-IP"),
+			sourceFingerprint(apparentSource(r)),
+			trustedForwardedForCount(r),
+			trustedHeaderPresent(r, "CF-Connecting-IP"),
 			r.UserAgent(),
 		)
 	}
@@ -422,7 +422,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			lw.status,
 			lw.bytes,
 			time.Since(start).Round(time.Millisecond),
-			apparentSource(r),
+			sourceFingerprint(apparentSource(r)),
 			tokenFingerprint(inboundPlexToken(r)),
 		)
 	}
@@ -575,7 +575,7 @@ func (p *Proxy) elevateLiveTVRequest(req *http.Request, originalToken string) {
 			p.logger.Printf(
 				"plexlabelproxy_playback: outcome=session_token_recovered path=%s source=%s matched=%q token_fp=%s",
 				req.URL.EscapedPath(),
-				apparentSource(req),
+				sourceFingerprint(apparentSource(req)),
 				matched,
 				tokenFingerprint(token),
 			)
@@ -627,7 +627,7 @@ func (p *Proxy) trackSession(req *http.Request, originalToken string) {
 		p.logger.Printf(
 			"plexlabelproxy_playback: outcome=track_unkeyed path=%s source=%s token_fp=%s",
 			req.URL.EscapedPath(),
-			apparentSource(req),
+			sourceFingerprint(apparentSource(req)),
 			tokenFingerprint(originalToken),
 		)
 		return
@@ -637,14 +637,15 @@ func (p *Proxy) trackSession(req *http.Request, originalToken string) {
 	if p.sessions == nil {
 		p.sessions = make(map[string]sessionRecord)
 	}
-	rec := sessionRecord{userToken: originalToken, sourceKey: apparentSource(req), expiresAt: time.Now().Add(elevatedSessionTTL)}
+	source := apparentSource(req)
+	rec := sessionRecord{userToken: originalToken, sourceKey: source, expiresAt: time.Now().Add(elevatedSessionTTL)}
 	for _, key := range keys {
 		if _, exists := p.sessions[key]; !exists {
 			p.logger.Printf(
 				"plexlabelproxy_playback: outcome=track key=%s path=%s source=%s token_fp=%s",
 				key,
 				req.URL.EscapedPath(),
-				apparentSource(req),
+				sourceFingerprint(source),
 				tokenFingerprint(originalToken),
 			)
 		}
@@ -756,6 +757,15 @@ func tokenFingerprint(token string) string {
 		return "missing"
 	}
 	sum := sha256.Sum256([]byte(token))
+	return "sha256:" + hex.EncodeToString(sum[:8])
+}
+
+func sourceFingerprint(source string) string {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return "missing"
+	}
+	sum := sha256.Sum256([]byte(source))
 	return "sha256:" + hex.EncodeToString(sum[:8])
 }
 
@@ -987,6 +997,24 @@ func trustedHeader(req *http.Request, name string) string {
 		return ""
 	}
 	return firstHeader(req.Header, name)
+}
+
+func trustedHeaderPresent(req *http.Request, name string) bool {
+	return strings.TrimSpace(trustedHeader(req, name)) != ""
+}
+
+func trustedForwardedForCount(req *http.Request) int {
+	raw := trustedHeader(req, "X-Forwarded-For")
+	if raw == "" {
+		return 0
+	}
+	count := 0
+	for _, part := range strings.Split(raw, ",") {
+		if strings.TrimSpace(part) != "" {
+			count++
+		}
+	}
+	return count
 }
 
 func trustedFrontendRemote(host string) bool {
@@ -1370,7 +1398,7 @@ func (p *Proxy) logPlaybackCorrelation(req *http.Request, outcome, matched strin
 		"plexlabelproxy_playback: outcome=%s path=%s source=%s matched=%q keys=%q state=%q ratingKey=%q playQueueID=%q playQueueItemID=%q clientIdentifier=%q token_fp=%s",
 		outcome,
 		req.URL.EscapedPath(),
-		apparentSource(req),
+		sourceFingerprint(apparentSource(req)),
 		matched,
 		strings.Join(keys, ","),
 		q.Get("state"),

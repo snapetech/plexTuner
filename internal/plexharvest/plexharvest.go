@@ -585,23 +585,69 @@ func appendUnique(in []string, value string) []string {
 }
 
 func providerAbsoluteURL(baseURL, path string) string {
+	u, err := providerAbsoluteURLChecked(baseURL, path)
+	if err != nil {
+		return ""
+	}
+	return u
+}
+
+func providerAbsoluteURLChecked(baseURL, path string) (string, error) {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	path = strings.TrimSpace(path)
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		return "", err
+	}
+	if base.Scheme != "http" && base.Scheme != "https" {
+		return "", fmt.Errorf("provider base URL must use http or https")
+	}
+	if base.Host == "" || base.User != nil {
+		return "", fmt.Errorf("provider base URL must include a host and no credentials")
+	}
 	if path == "" {
-		return baseURL
+		return base.String(), nil
 	}
 	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
-		return path
+		child, err := url.Parse(path)
+		if err != nil {
+			return "", err
+		}
+		if !sameURLAuthority(base, child) {
+			return "", fmt.Errorf("provider lineup URL must stay on provider host")
+		}
+		if child.User != nil {
+			return "", fmt.Errorf("provider lineup URL must not include credentials")
+		}
+		return child.String(), nil
 	}
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
-	return baseURL + path
+	child, err := base.Parse(path)
+	if err != nil {
+		return "", err
+	}
+	if !sameURLAuthority(base, child) {
+		return "", fmt.Errorf("provider lineup URL must stay on provider host")
+	}
+	return child.String(), nil
+}
+
+func sameURLAuthority(a, b *url.URL) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	return strings.EqualFold(a.Scheme, b.Scheme) && strings.EqualFold(a.Host, b.Host)
 }
 
 func fetchProviderLineups(baseURL, version, token, country, postalCode string) ([]providerLineupEntry, error) {
 	country, postalCode = normalizeProviderQuery(country, postalCode)
-	u, err := url.Parse(providerAbsoluteURL(baseURL, "/lineups"))
+	lineupsURL, err := providerAbsoluteURLChecked(baseURL, "/lineups")
+	if err != nil {
+		return nil, err
+	}
+	u, err := url.Parse(lineupsURL)
 	if err != nil {
 		return nil, err
 	}
@@ -631,7 +677,11 @@ func fetchProviderLineups(baseURL, version, token, country, postalCode string) (
 }
 
 func fetchProviderLineupChannels(baseURL, version, token, path string) ([]HarvestedChannel, int, error) {
-	req, err := http.NewRequest(http.MethodGet, providerAbsoluteURL(baseURL, path), nil)
+	channelsURL, err := providerAbsoluteURLChecked(baseURL, path)
+	if err != nil {
+		return nil, 0, err
+	}
+	req, err := http.NewRequest(http.MethodGet, channelsURL, nil)
 	if err != nil {
 		return nil, 0, err
 	}

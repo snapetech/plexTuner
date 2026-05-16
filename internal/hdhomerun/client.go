@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -372,6 +373,9 @@ func FetchLineupJSON(ctx context.Context, client *http.Client, baseOrLineupURL s
 		return nil, fmt.Errorf("hdhomerun: lineup base url required")
 	}
 	u := LineupURLFromBase(baseOrLineupURL)
+	if err := validateHTTPURL(u); err != nil {
+		return nil, fmt.Errorf("hdhomerun: lineup URL: %w", err)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
@@ -390,4 +394,21 @@ func FetchLineupJSON(ctx context.Context, client *http.Client, baseOrLineupURL s
 		return nil, fmt.Errorf("hdhomerun: decode lineup.json: %w", err)
 	}
 	return &doc, nil
+}
+
+func validateHTTPURL(raw string) error {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return err
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("must use http or https")
+	}
+	if u.Host == "" {
+		return fmt.Errorf("must include host")
+	}
+	if u.User != nil {
+		return fmt.Errorf("must not include credentials")
+	}
+	return nil
 }

@@ -1,6 +1,17 @@
 **Latest (2026-05-12):** **Plex Live TV playback works again on kspls0; remaining issue is startup latency.** Sports DVR is expanded to 480 channels with `IPTV_TUNERR_LINEUP_RECIPE=sports_now`, `IPTV_TUNERR_LINEUP_MAX_CHANNELS=480`, `IPTV_TUNERR_GUIDE_POLICY=off`, and `IPTV_TUNERR_LINEUP_PROBE_ENABLED=false`; Plex activated all 480. Deployed a proxy fix so JSON `/media/providers` responses rewrite `allowTuners` entitlement hints, matching the existing XML rewrite. Direct Tunerr stream test returned ~24 MB in 20s, and user confirmed playback works but starts slowly.
 
-**Current (2026-05-15):** Cut `v0.1.75` from current `main`.
+**Current (2026-05-16):** Triage and action all open GitHub PRs and security issues for `snapetech/iptvtunerr`.
+
+- Goal: inspect open PRs, failing checks, review comments, and GitHub security/dependency/code-scanning alerts; fix what is actionable; merge PRs that are safe; document anything blocked.
+- Scope: GitHub PR and security maintenance only. Avoid unrelated refactors and do not recreate removed split-brain deployment paths.
+- Assumptions: user explicitly asked to action/upgrade/fix/merge/resolve all items, so safe merges and alert resolutions are in scope after verification; anything requiring unavailable external privileges or unsafe compatibility choices should be reported rather than guessed.
+- Done: merged Dependabot PRs `#19` and `#20`; applied the stale/conflicting `#15` brotli upgrade directly on current `main`.
+- Done: hardened CodeQL security findings by redacting Plex proxy source/header logs, constraining provider lineup URLs, and validating HDHomeRun lineup URLs.
+- Done: switched GitHub Actions Linux jobs to the local `self-hosted, Linux, X64, iptvtunerr-deploy` runner labels and Windows package jobs to `self-hosted, Windows, X64`.
+- Done: focused package tests and `./scripts/verify` passed locally.
+- Next: commit and push `main`; close obsolete PR `#15` after the direct upgrade is on `main`.
+
+**Previous (2026-05-15):** Cut `v0.1.75` from current `main`.
 
 - Goal: commit/push the current repo state and publish a new GitHub release tag.
 - Scope: whole worktree as explicitly requested by the user; working tree was already clean before release prep, so only release-prep memory/changelog edits are expected locally.

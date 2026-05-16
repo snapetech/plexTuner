@@ -456,8 +456,8 @@ func TestProxy_AuditLogsElevationDenialsWithoutRawTokens(t *testing.T) {
 		"method=GET",
 		"path=/livetv/dvrs",
 		"live_tv=true",
-		`forwarded_for="203.0.113.9, 10.0.0.2"`,
-		`cf_connecting_ip="203.0.113.9"`,
+		"forwarded_for_count=2",
+		"cf_connecting_ip=true",
 		"token_fp=sha256:",
 	} {
 		if !strings.Contains(logged, want) {
@@ -743,9 +743,9 @@ func TestProxy_ExternalSharedUserLiveTVIsElevatedAndAudited(t *testing.T) {
 		"plexlabelproxy_audit:",
 		"outcome=elevated_live_tv",
 		"path=/media/providers",
-		`source=203.0.113.77`,
-		`forwarded_for="127.0.0.1`,
-		`cf_connecting_ip="203.0.113.77"`,
+		"source=" + sourceFingerprint("203.0.113.77"),
+		"forwarded_for_count=1",
+		"cf_connecting_ip=true",
 		"token_fp=sha256:",
 	} {
 		if !strings.Contains(logged, want) {
@@ -784,7 +784,7 @@ func TestProxy_IgnoresSpoofedSourceHeadersFromUntrustedRemote(t *testing.T) {
 	proxy.ServeHTTP(httptest.NewRecorder(), req)
 
 	logged := logBuf.String()
-	if !strings.Contains(logged, `source=198.51.100.200`) {
+	if !strings.Contains(logged, "source="+sourceFingerprint("198.51.100.200")) {
 		t.Fatalf("untrusted remote should be audit source, got %s", logged)
 	}
 	if strings.Contains(logged, `forwarded_for="203.0.113.77"`) || strings.Contains(logged, `cf_connecting_ip="203.0.113.77"`) {
@@ -819,7 +819,7 @@ func TestProxy_IgnoresSpoofedSourceHeadersFromPrivateRemote(t *testing.T) {
 	proxy.ServeHTTP(httptest.NewRecorder(), req)
 
 	logged := logBuf.String()
-	if !strings.Contains(logged, `source=192.168.50.10`) {
+	if !strings.Contains(logged, "source="+sourceFingerprint("192.168.50.10")) {
 		t.Fatalf("private non-loopback remote should be audit source, got %s", logged)
 	}
 	if strings.Contains(logged, `forwarded_for="203.0.113.77"`) || strings.Contains(logged, `cf_connecting_ip="203.0.113.77"`) {
@@ -854,10 +854,10 @@ func TestProxy_RejectsSpoofedCFConnectingIPWhenForwardedPeerIsLAN(t *testing.T) 
 	proxy.ServeHTTP(httptest.NewRecorder(), req)
 
 	logged := logBuf.String()
-	if !strings.Contains(logged, `source=192.168.50.25`) {
+	if !strings.Contains(logged, "source="+sourceFingerprint("192.168.50.25")) {
 		t.Fatalf("LAN forwarded peer should win over spoofed CF header, got %s", logged)
 	}
-	if strings.Contains(logged, `source=203.0.113.200`) {
+	if strings.Contains(logged, "source="+sourceFingerprint("203.0.113.200")) {
 		t.Fatalf("spoofed CF header must not be apparent source, got %s", logged)
 	}
 }

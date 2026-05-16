@@ -171,13 +171,14 @@ elevation decision that matters operationally:
   block before it reached PMS
 
 Audit lines are prefixed with `plexlabelproxy_audit:` and include method, path,
-Live TV classifier booleans, source address, trusted `X-Forwarded-For`, trusted
-`CF-Connecting-IP`, and a short SHA-256 token fingerprint. Raw Plex tokens are
-not logged. Frontend source headers are trusted only when the direct peer is a
-loopback frontend. `CF-Connecting-IP` is accepted only when the closest
-forwarded peer is also loopback, matching the local cloudflared/Caddy path. If
-the proxy is accidentally exposed directly on LAN or WAN, client-supplied
-source headers are ignored for audit and block identity.
+Live TV classifier booleans, a short SHA-256 source fingerprint, trusted
+`X-Forwarded-For` hop count, trusted `CF-Connecting-IP` presence, and a short
+SHA-256 token fingerprint. Raw Plex tokens, raw source headers, and raw apparent
+source addresses are not logged. Frontend source headers are trusted only when
+the direct peer is a loopback frontend. `CF-Connecting-IP` is accepted only when
+the closest forwarded peer is also loopback, matching the local cloudflared/Caddy
+path. If the proxy is accidentally exposed directly on LAN or WAN,
+client-supplied source headers are ignored for audit and block identity.
 
 By default, five failed Live TV elevation attempts from the same apparent source
 inside five minutes block that source from Live TV entitlement paths for thirty
