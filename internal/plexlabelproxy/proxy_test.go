@@ -1070,6 +1070,32 @@ func TestIsLiveTVRequest_PostPlayQueueElevatedOnlyForLiveTV(t *testing.T) {
 	}
 }
 
+func TestIsLiveTVRequest_PostPlayQueueFormBodyElevatedAndPreserved(t *testing.T) {
+	body := "uri=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8"
+	req := httptest.NewRequest(http.MethodPost, "/playQueues", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	if !IsLiveTVRequest(req) {
+		t.Fatal("POST /playQueues with Live TV form body should be elevated")
+	}
+	restored, err := io.ReadAll(req.Body)
+	if err != nil {
+		t.Fatalf("read restored body: %v", err)
+	}
+	if string(restored) != body {
+		t.Fatalf("body not restored after classification: got %q want %q", restored, body)
+	}
+}
+
+func TestIsLiveTVRequest_PostPlayQueueFormBodyLibraryNotElevated(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/playQueues", strings.NewReader("uri=%2Flibrary%2Fmetadata%2F123"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	if IsLiveTVRequest(req) {
+		t.Fatal("POST /playQueues with library form body must not be elevated")
+	}
+}
+
 func TestIsLiveTVRequest_PostDVRChannelTuneElevated(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/livetv/dvrs/12317/channels/c1/tune?autoPreview=0", nil)
 	if !IsLiveTVRequest(req) {

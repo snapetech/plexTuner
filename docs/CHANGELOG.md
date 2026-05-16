@@ -13,6 +13,9 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+### Plex Live TV proxy
+- **Live TV play queue elevation recognizes form bodies:** Plex clients that send `/playQueues` Live TV URIs in POST form bodies now receive the same owner-entitlement elevation as query-string play queue requests without consuming the forwarded body.
+
 ### Release process
 - **Verification workflows install their scanner dependency:** CI and release runners now install ripgrep before invoking the shared council verification path.
 - **Binary smoke tests declare their lab-local upstream mode:** release smoke fixtures now explicitly allow their localhost media origins while preserving the production private-upstream defaults.

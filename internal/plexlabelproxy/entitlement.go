@@ -2,6 +2,7 @@ package plexlabelproxy
 
 import (
 	"bytes"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -88,7 +89,9 @@ func IsLiveTVStreamRequest(req *http.Request) bool {
 		return queryParamIsLiveTVPath(req.URL.Query(), "path")
 	case strings.HasPrefix(path, "/playQueues"):
 		return queryParamIsLiveTVPath(req.URL.Query(), "uri") ||
-			queryParamIsLiveTVPath(req.URL.Query(), "path")
+			queryParamIsLiveTVPath(req.URL.Query(), "path") ||
+			bodyParamIsLiveTVPath(req, "uri") ||
+			bodyParamIsLiveTVPath(req, "path")
 	}
 	return false
 }
@@ -148,6 +151,31 @@ func queryParamIsLiveTVPath(q url.Values, name string) bool {
 		}
 	}
 	return false
+}
+
+func bodyParamIsLiveTVPath(req *http.Request, name string) bool {
+	if req == nil || req.Body == nil {
+		return false
+	}
+	const maxBody = 1 << 20
+	body, err := io.ReadAll(io.LimitReader(req.Body, maxBody+1))
+	if err != nil {
+		return false
+	}
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	if req.ContentLength >= 0 && int64(len(body)) <= maxBody {
+		req.ContentLength = int64(len(body))
+	}
+	if len(body) > maxBody {
+		return false
+	}
+	ct := strings.ToLower(req.Header.Get("Content-Type"))
+	if strings.Contains(ct, "application/x-www-form-urlencoded") || ct == "" {
+		if values, err := url.ParseQuery(string(body)); err == nil && queryParamIsLiveTVPath(values, name) {
+			return true
+		}
+	}
+	return liveTVText(string(body))
 }
 
 func refererIsLiveTV(ref string) bool {
