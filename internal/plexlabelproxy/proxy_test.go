@@ -1434,6 +1434,74 @@ func TestProxy_NeutralizeOwnerHistory_CorrelatesByClientIdentifier(t *testing.T)
 	}
 }
 
+func TestProxy_NeutralizeOwnerHistory_ElevatesTrackedTimelineResponse(t *testing.T) {
+	var mu sync.Mutex
+	var paths []string
+	var tokens []string
+
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		tokens = append(tokens, r.URL.Query().Get("X-Plex-Token"))
+		mu.Unlock()
+		if r.URL.Path == "/:/timeline" && r.URL.Query().Get("X-Plex-Token") != "owner-token" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<MediaContainer/>`))
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:               up.URL,
+		Token:                  "label-token",
+		OwnerToken:             "owner-token",
+		ElevateLiveTV:          true,
+		NeutralizeOwnerHistory: true,
+		TokenAuthorizer:        staticTokenAuthorizer{"user-token": true},
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	streamReq := httptest.NewRequest(http.MethodGet,
+		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
+		nil)
+	streamReq.Header.Set("X-Plex-Client-Identifier", "client-a")
+	proxy.ServeHTTP(httptest.NewRecorder(), streamReq)
+
+	timelineReq := httptest.NewRequest(http.MethodGet,
+		"/:/timeline?X-Plex-Token=user-token&state=playing&ratingKey=2468",
+		nil)
+	timelineReq.Header.Set("X-Plex-Client-Identifier", "client-a")
+	rec := httptest.NewRecorder()
+	proxy.ServeHTTP(rec, timelineReq)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("timeline status=%d, want 200", rec.Code)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	var sawOwnerTimeline, sawUserReplay bool
+	for i, p := range paths {
+		if p == "/:/timeline" && tokens[i] == "owner-token" {
+			sawOwnerTimeline = true
+		}
+		if p == "/:/timeline" && tokens[i] == "user-token" {
+			sawUserReplay = true
+		}
+	}
+	if !sawOwnerTimeline {
+		t.Fatalf("expected client-facing timeline under owner token, paths=%v tokens=%v", paths, tokens)
+	}
+	if !sawUserReplay {
+		t.Fatalf("expected background timeline replay under user token, paths=%v tokens=%v", paths, tokens)
+	}
+}
+
 func TestProxy_NeutralizeOwnerHistory_DoesNotCorrelateDifferentSource(t *testing.T) {
 	var mu sync.Mutex
 	var paths []string

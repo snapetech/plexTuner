@@ -324,6 +324,9 @@ func New(cfg Config) (*Proxy, error) {
 		} else if p.cfg.ElevateLiveTV {
 			p.elevateLiveTVRequest(req, originalToken)
 		}
+		if p.cfg.NeutralizeOwnerHistory && p.cfg.ElevateLiveTV {
+			p.elevateTrackedPlaybackRequest(req)
+		}
 		// NeutralizeOwnerHistory side-effect: for timeline/scrobble calls that
 		// belong to elevated Live TV sessions, fire a background owner unscrobble.
 		// This runs regardless of whether the current request itself is elevated.
@@ -1309,6 +1312,53 @@ func (p *Proxy) neutralizeOwnerScrobble(req *http.Request) {
 	if path == "/:/scrobble" && ratingKey != "" {
 		go p.ownerUnscrobble(ratingKey)
 	}
+}
+
+func (p *Proxy) elevateTrackedPlaybackRequest(req *http.Request) {
+	if strings.TrimSpace(p.cfg.OwnerToken) == "" || !isPlaybackProgressPath(req) {
+		return
+	}
+	if matched, ok := p.matchTrackedPlaybackSession(req); ok {
+		q := req.URL.Query()
+		q.Set("X-Plex-Token", p.cfg.OwnerToken)
+		req.URL.RawQuery = q.Encode()
+		req.Header.Set("X-Plex-Token", p.cfg.OwnerToken)
+		p.auditElevation(req, "elevated_live_tv", p.cfg.OwnerToken, "owner token borrowed for tracked Live TV playback progress")
+		p.logPlaybackCorrelation(req, "elevate_progress", matched, sessionCorrelationKeys(req))
+	}
+}
+
+func isPlaybackProgressPath(req *http.Request) bool {
+	if req == nil || req.URL == nil {
+		return false
+	}
+	path := req.URL.EscapedPath()
+	return path == "/:/timeline" || path == "/:/scrobble" || path == "/:/progress"
+}
+
+func (p *Proxy) matchTrackedPlaybackSession(req *http.Request) (string, bool) {
+	keys := sessionCorrelationKeys(req)
+	if len(keys) == 0 {
+		return "", false
+	}
+	p.sessionMu.Lock()
+	defer p.sessionMu.Unlock()
+	now := time.Now()
+	for _, key := range keys {
+		rec, ok := p.sessions[key]
+		if !ok {
+			continue
+		}
+		if !rec.expiresAt.IsZero() && now.After(rec.expiresAt) {
+			delete(p.sessions, key)
+			continue
+		}
+		if !sessionRecordMatchesSource(rec, req) {
+			continue
+		}
+		return key, rec.userToken != ""
+	}
+	return "", false
 }
 
 func (p *Proxy) logPlaybackCorrelation(req *http.Request, outcome, matched string, keys []string) {

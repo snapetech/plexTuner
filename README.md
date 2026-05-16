@@ -1299,14 +1299,18 @@ transcoding for remote playback, avoid stacking extra normalization stages unles
 there is a proven stream-specific reason. In production testing, the Go HLS
 segment relay could return a clean `200` after several minutes when the upstream
 playlist stopped advancing, which caused Plex to keep requesting stale DASH
-segments and eventually report playback/network errors. The safer operational
-posture for those feeds is remux-first ffmpeg HLS input with
-`IPTV_TUNERR_PLEX_INTERNAL_FETCHER_POLICY=direct`, no forced Go relay, no
+segments and eventually report playback/network errors. Direct/remux-first
+ffmpeg input removed one relay stage but was not stable for all remote Plex Web
+clients. The safer fallback for those feeds is normal ffmpeg transcode with
+`IPTV_TUNERR_PLEX_INTERNAL_FETCHER_POLICY=websafe`,
+`IPTV_TUNERR_PLEX_INTERNAL_FETCHER_PROFILE=plexsafehq`, no forced Go relay, no
 stdin-normalizer, and `IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE=true` when the provider
 CDN validates hostnames. A future proper implementation should make the Go relay
 distinguish client disconnects, playlist end, and no-new-segment stalls in logs,
 then either keep polling live playlists across temporary stalls or retry/rebase
-without returning a successful completed tuner response.
+without returning a successful completed tuner response. Direct/remux can be
+retested per client once those relay diagnostics exist, but it should not be the
+default recovery posture for fragile remote Plex sessions.
 | `IPTV_TUNERR_CF_LEARNED_FILE` | Per-host CF learned state: working UA and CF-tagged flag (auto-derived beside jar) |
 | `IPTV_TUNERR_HOST_UA` | Pin UA per hostname: `host:preset,...` — skips cycling for known-good hosts |
 | `IPTV_TUNERR_CF_AUTO_BOOT` | Enable CF auto-bootstrap at startup and clearance freshness monitor |
