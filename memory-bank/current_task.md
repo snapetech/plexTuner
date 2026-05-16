@@ -11,8 +11,11 @@
 - Done: committed and pushed release prep as `80004d4`, pushed annotated tag `v0.1.76`, and the GitHub release job uploaded release assets.
 - Done: found a local-runner Gitleaks action cache extraction failure after the tag release; patched and pushed the workflow fix as `c8bcd40`.
 - Done: remote replacement Gitleaks scan completed successfully; release Discord announcement completed successfully.
-- In progress: patching PPA packaging after the local runner rejected Debian-only package names for `devscripts`, `debhelper`, and `dput`.
-- Next: push the PPA workflow fix, rerun the failed PPA publish, and continue monitoring queued CodeQL/CI/local identity/package-channel jobs.
+- Done: patched and pushed the initial PPA workflow fix as `8881c3b`, then reran the PPA publish for `v0.1.76`.
+- In progress: replacing PPA `dput` upload with direct Launchpad FTP upload because the PyPI `dput` package is not installable on the local runner.
+- In progress: patching Snap publishing after the local runner installed LXD under Snap's bin directory but the Snapcraft action invoked `sudo lxd` without that path.
+- In progress: patching COPR publishing after system Python rejected `pip3 install --user copr-cli` under PEP 668.
+- Next: push the Snap/COPR workflow fixes, rerun the failed Snap and COPR publishes, and continue monitoring queued CI/local identity/package-channel jobs.
 
 **Previous (2026-05-16):** Triage and action all open GitHub PRs and security issues for `snapetech/iptvtunerr`.
 

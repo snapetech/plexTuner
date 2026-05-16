@@ -53,6 +53,15 @@ jobs:
           sed -i "s#^    source: .*#    source: ${asset}.tar.gz#" packaging/snap/snapcraft.yaml
           sed -i "s#^    source-checksum: .*#    source-checksum: sha256/${sha}#" packaging/snap/snapcraft.yaml
 
+      - name: Prepare snap command path
+        run: |
+          set -euo pipefail
+          sudo snap install lxd || true
+          sudo snap install snapcraft --classic || true
+          sudo ln -sf /var/lib/snapd/snap/bin/lxd /usr/local/bin/lxd
+          sudo ln -sf /var/lib/snapd/snap/bin/snapcraft /usr/local/bin/snapcraft
+          echo /var/lib/snapd/snap/bin >> "$GITHUB_PATH"
+
       - uses: snapcore/action-build@v1
         id: build
         with:

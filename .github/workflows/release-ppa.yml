@@ -88,5 +88,13 @@ jobs:
       - name: Upload to Launchpad PPA
         run: |
           set -euo pipefail
+          incoming="ftp://ppa.launchpad.net/~keefshape/ubuntu/iptvtunerr/"
           changes="$(find . -maxdepth 1 -name '*.changes' -print -quit)"
-          dput ppa:keefshape/iptvtunerr "$changes"
+          test -n "$changes"
+          awk '/^Files:/{files=1; next} files && NF >= 5 {print $5}' "$changes" | while read -r file; do
+            test -f "$file"
+            curl --fail --show-error --ftp-create-dirs --user anonymous: \
+              --upload-file "$file" "${incoming}${file}"
+          done
+          curl --fail --show-error --ftp-create-dirs --user anonymous: \
+            --upload-file "$changes" "${incoming}$(basename "$changes")"

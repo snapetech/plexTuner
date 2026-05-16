@@ -22,8 +22,14 @@ for tool in "$@"; do
     zip)
       have zip || missing+=("zip")
       ;;
+    curl)
+      have curl || missing+=("curl")
+      ;;
     gh)
       have gh || missing+=("gh")
+      ;;
+    copr-cli)
+      have copr-cli || missing+=("copr-cli")
       ;;
     gitleaks)
       have gitleaks || missing+=("gitleaks")
@@ -38,7 +44,7 @@ for tool in "$@"; do
       have dpkg-source || missing+=("dpkg")
       have dpkg-genchanges || missing+=("dpkg")
       have gpg || missing+=("gnupg")
-      have dput || missing+=("dput")
+      have curl || missing+=("curl")
       ;;
     *)
       missing+=("$tool")
@@ -77,18 +83,18 @@ if printf '%s\n' "${dedup[@]}" | grep -Fxq gitleaks && have go; then
   [[ ${#dedup[@]} -gt 0 ]] || exit 0
 fi
 
-if printf '%s\n' "${dedup[@]}" | grep -Fxq dput && have python3; then
+if printf '%s\n' "${dedup[@]}" | grep -Fxq copr-cli && have python3; then
   venv="${RUNNER_TEMP:-/tmp}/iptvtunerr-ci-tools"
   python3 -m venv "$venv"
   "$venv/bin/python" -m pip install --upgrade pip
-  "$venv/bin/python" -m pip install dput
+  "$venv/bin/python" -m pip install copr-cli
   export PATH="${venv}/bin:${PATH}"
   if [[ -n "${GITHUB_PATH:-}" ]]; then
     echo "${venv}/bin" >> "$GITHUB_PATH"
   fi
   filtered=()
   for pkg in "${dedup[@]}"; do
-    [[ "$pkg" == "dput" ]] || filtered+=("$pkg")
+    [[ "$pkg" == "copr-cli" ]] || filtered+=("$pkg")
   done
   dedup=("${filtered[@]}")
   [[ ${#dedup[@]} -gt 0 ]] || exit 0

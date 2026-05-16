@@ -49,9 +49,7 @@ jobs:
 
       - name: Install RPM/COPR tooling
         run: |
-          bash scripts/install-ci-tools.sh rpm python3-pip
-          pip3 install --user copr-cli
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          bash scripts/install-ci-tools.sh rpm python3-pip copr-cli
 
       - name: Configure COPR
         env:

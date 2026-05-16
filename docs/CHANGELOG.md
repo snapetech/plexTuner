@@ -16,7 +16,9 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 ### CI
 - **Gitleaks runs directly on local runners:** secret scanning now installs and runs the `gitleaks` CLI directly to avoid third-party action cache extraction failures on the local self-hosted runner.
 - **Gitleaks scans tracked release content:** the scan runs against a `git archive` of `HEAD`, avoiding local-only ignored files while retaining a narrow allowlist for generated vendored SQLite Windows constants.
-- **PPA packaging is portable on local runners:** the PPA workflow now builds and signs the source upload with `dpkg` tools directly, avoiding Debian-only `devscripts`/`debhelper` package assumptions on Arch-based local runners.
+- **PPA packaging is portable on local runners:** the PPA workflow now builds and signs the source upload with `dpkg` tools directly and uploads via Launchpad FTP, avoiding Debian-only `devscripts`/`debhelper`/`dput` package assumptions on Arch-based local runners.
+- **Snap publishing prepares snap command shims:** local runners now expose Snap-installed `lxd` and `snapcraft` on the command path before invoking the Snapcraft build action.
+- **COPR CLI installs in an isolated venv:** COPR publishing now uses the shared CI tool installer for `copr-cli`, avoiding system Python package writes on local runners.
 
 ## [v0.1.76] - 2026-05-16
 
