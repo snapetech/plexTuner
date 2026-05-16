@@ -1287,6 +1287,7 @@ Full reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-a
 | `IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE` | Keep the original ffmpeg input hostname instead of rewriting it to an IP |
 | `IPTV_TUNERR_CLIENT_ADAPT` | Detect Plex Web; apply browser-compatible codec automatically |
 | `IPTV_TUNERR_CLIENT_ADAPT_STICKY_FALLBACK` | After failed native-path tune, stick WebSafe for that Plex session (see docs) |
+| `IPTV_TUNERR_HLS_RELAY_FFMPEG_STDIN_NORMALIZE` | Optional experimental HLS relay normalizer. Leave disabled for Plex Live TV paths where Plex already transcodes remote playback; double-normalizing can make Plex abandon long-running tuner fetches. |
 | `IPTV_TUNERR_FORCE_WEBSAFE` | Always transcode with MP3 audio |
 | `IPTV_TUNERR_UPSTREAM_HEADERS` | Extra upstream request headers such as `Referer`, `Origin`, or `Host` |
 | `IPTV_TUNERR_UPSTREAM_ADD_SEC_FETCH` | Add browser-style `Sec-Fetch-*` headers on upstream requests |
