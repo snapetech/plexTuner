@@ -1,6 +1,7 @@
 package plexlabelproxy
 
 import (
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -261,6 +262,7 @@ func New(cfg Config) (*Proxy, error) {
 	p.loadAbuseState()
 
 	rp := httputil.NewSingleHostReverseProxy(u)
+	rp.FlushInterval = -1
 	if cfg.Transport != nil {
 		rp.Transport = cfg.Transport
 	}
@@ -272,6 +274,7 @@ func New(cfg Config) (*Proxy, error) {
 	originalDirector := rp.Director
 	rp.Director = func(req *http.Request) {
 		connectionHeaders := connectionHeaderNames(req.Header)
+		preserveUpgrade := isWebSocketUpgrade(req)
 		// Capture the original client token before any modification.
 		// Both query-param and header locations are checked; query param wins
 		// because that is what Plex clients most consistently use.
@@ -283,10 +286,19 @@ func New(cfg Config) (*Proxy, error) {
 		originalDirector(req)
 		// httputil's director does not strip hop-by-hop headers — do it here.
 		for name := range hopHeaders {
+			if preserveUpgrade && (name == "connection" || name == "upgrade") {
+				continue
+			}
 			req.Header.Del(name)
 		}
 		for name := range connectionHeaders {
+			if preserveUpgrade && name == "upgrade" {
+				continue
+			}
 			req.Header.Del(name)
+		}
+		if preserveUpgrade {
+			req.Header.Set("Connection", "Upgrade")
 		}
 		// Drop client-supplied Accept-Encoding so we always get an uncompressed
 		// or gzip response we can rewrite. Plex servers honor gzip.
@@ -381,7 +393,79 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "too many unauthorized requests", http.StatusTooManyRequests)
 		return
 	}
-	p.reverseProxy.ServeHTTP(w, r)
+	logAccess := shouldLogProxyAccess(r)
+	start := time.Now()
+	lw := &loggingResponseWriter{ResponseWriter: w, status: http.StatusOK}
+	if logAccess {
+		p.logger.Printf(
+			"plexlabelproxy_access: phase=start method=%s path=%s live_tv=%v stream=%v remote=%s source=%s forwarded_for=%q cf_connecting_ip=%q ua=%q",
+			r.Method,
+			r.URL.EscapedPath(),
+			IsLiveTVRequest(r),
+			IsLiveTVStreamRequest(r),
+			clientAddress(r.RemoteAddr),
+			apparentSource(r),
+			trustedHeader(r, "X-Forwarded-For"),
+			trustedHeader(r, "CF-Connecting-IP"),
+			r.UserAgent(),
+		)
+	}
+	p.reverseProxy.ServeHTTP(lw, r)
+	if logAccess {
+		p.logger.Printf(
+			"plexlabelproxy_access: phase=done method=%s path=%s status=%d bytes=%d dur=%s source=%s token_fp=%s",
+			r.Method,
+			r.URL.EscapedPath(),
+			lw.status,
+			lw.bytes,
+			time.Since(start).Round(time.Millisecond),
+			apparentSource(r),
+			tokenFingerprint(inboundPlexToken(r)),
+		)
+	}
+}
+
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	status int
+	bytes  int64
+}
+
+func (w *loggingResponseWriter) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *loggingResponseWriter) Write(p []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(p)
+	w.bytes += int64(n)
+	return n, err
+}
+
+func (w *loggingResponseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (w *loggingResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("underlying response writer does not support hijacking")
+	}
+	return h.Hijack()
+}
+
+func shouldLogProxyAccess(req *http.Request) bool {
+	if req == nil || req.URL == nil {
+		return false
+	}
+	path := req.URL.EscapedPath()
+	return IsLiveTVRequest(req) ||
+		strings.HasPrefix(path, "/video/:/transcode/") ||
+		strings.HasPrefix(path, "/playQueues") ||
+		strings.HasPrefix(path, "/:/timeline") ||
+		strings.HasPrefix(path, "/:/websockets/")
 }
 
 // modifyResponse is the ReverseProxy hook where we read the upstream body,
@@ -712,6 +796,23 @@ func connectionHeaderNames(h http.Header) map[string]struct{} {
 		}
 	}
 	return out
+}
+
+func isWebSocketUpgrade(req *http.Request) bool {
+	if req == nil || req.URL == nil {
+		return false
+	}
+	if !strings.EqualFold(req.Header.Get("Upgrade"), "websocket") {
+		return false
+	}
+	for _, raw := range req.Header.Values("Connection") {
+		for _, part := range strings.Split(raw, ",") {
+			if strings.EqualFold(strings.TrimSpace(part), "upgrade") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func normalizeAbuseConfig(cfg Config) abuseConfig {

@@ -324,6 +324,45 @@ func TestProxy_DoesNotTrustHopByHopHeaderTokenForElevation(t *testing.T) {
 	}
 }
 
+func TestProxy_PreservesWebSocketUpgradeHeaders(t *testing.T) {
+	var gotConnection, gotUpgrade, gotToken string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotConnection = r.Header.Get("Connection")
+		gotUpgrade = r.Header.Get("Upgrade")
+		gotToken = r.Header.Get("X-Plex-Token")
+		w.WriteHeader(http.StatusSwitchingProtocols)
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:        up.URL,
+		Token:           "label-token",
+		OwnerToken:      "owner-token",
+		ElevateLiveTV:   true,
+		TokenAuthorizer: staticTokenAuthorizer{"shared-user-token": true},
+		Logger:          log.New(io.Discard, "", 0),
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/:/websockets/notifications?X-Plex-Token=shared-user-token", nil)
+	req.Header.Set("Connection", "Upgrade, X-Plex-Token")
+	req.Header.Set("Upgrade", "websocket")
+	req.Header.Set("X-Plex-Token", "must-not-forward")
+	proxy.ServeHTTP(httptest.NewRecorder(), req)
+
+	if !strings.EqualFold(gotConnection, "Upgrade") {
+		t.Fatalf("websocket Connection header not preserved safely, got %q", gotConnection)
+	}
+	if !strings.EqualFold(gotUpgrade, "websocket") {
+		t.Fatalf("websocket Upgrade header not preserved, got %q", gotUpgrade)
+	}
+	if gotToken == "must-not-forward" {
+		t.Fatal("hop-by-hop X-Plex-Token must still be stripped on websocket requests")
+	}
+}
+
 func TestProxy_DoesNotAuditMissingTokenForNonElevationPath(t *testing.T) {
 	var logBuf bytes.Buffer
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
