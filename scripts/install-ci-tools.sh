@@ -35,8 +35,8 @@ for tool in "$@"; do
       have pip3 || have pip || missing+=("python3-pip")
       ;;
     debian-packaging)
-      have debuild || missing+=("devscripts")
-      have dh || missing+=("debhelper")
+      have dpkg-source || missing+=("dpkg")
+      have dpkg-genchanges || missing+=("dpkg")
       have gpg || missing+=("gnupg")
       have dput || missing+=("dput")
       ;;
@@ -72,6 +72,23 @@ if printf '%s\n' "${dedup[@]}" | grep -Fxq gitleaks && have go; then
   filtered=()
   for pkg in "${dedup[@]}"; do
     [[ "$pkg" == "gitleaks" ]] || filtered+=("$pkg")
+  done
+  dedup=("${filtered[@]}")
+  [[ ${#dedup[@]} -gt 0 ]] || exit 0
+fi
+
+if printf '%s\n' "${dedup[@]}" | grep -Fxq dput && have python3; then
+  venv="${RUNNER_TEMP:-/tmp}/iptvtunerr-ci-tools"
+  python3 -m venv "$venv"
+  "$venv/bin/python" -m pip install --upgrade pip
+  "$venv/bin/python" -m pip install dput
+  export PATH="${venv}/bin:${PATH}"
+  if [[ -n "${GITHUB_PATH:-}" ]]; then
+    echo "${venv}/bin" >> "$GITHUB_PATH"
+  fi
+  filtered=()
+  for pkg in "${dedup[@]}"; do
+    [[ "$pkg" == "dput" ]] || filtered+=("$pkg")
   done
   dedup=("${filtered[@]}")
   [[ ${#dedup[@]} -gt 0 ]] || exit 0

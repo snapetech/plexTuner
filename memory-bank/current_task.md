@@ -10,7 +10,9 @@
 - Done: `./scripts/release-readiness.sh` passed locally.
 - Done: committed and pushed release prep as `80004d4`, pushed annotated tag `v0.1.76`, and the GitHub release job uploaded release assets.
 - Done: found a local-runner Gitleaks action cache extraction failure after the tag release; patched and pushed the workflow fix as `c8bcd40`.
-- Next: wait for the queued remote replacement Gitleaks scan to get a local runner and complete.
+- Done: remote replacement Gitleaks scan completed successfully; release Discord announcement completed successfully.
+- In progress: patching PPA packaging after the local runner rejected Debian-only package names for `devscripts`, `debhelper`, and `dput`.
+- Next: push the PPA workflow fix, rerun the failed PPA publish, and continue monitoring queued CodeQL/CI/local identity/package-channel jobs.
 
 **Previous (2026-05-16):** Triage and action all open GitHub PRs and security issues for `snapetech/iptvtunerr`.
 

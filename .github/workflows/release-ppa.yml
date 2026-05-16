@@ -76,7 +76,14 @@ jobs:
         run: |
           set -euo pipefail
           cd "iptvtunerr-${{ steps.version.outputs.version }}"
-          debuild -S -sa -d -k07E2531E1F470F8008ACCFC996A07606FE65392F
+          dpkg-source -b .
+          dpkg-genchanges -S -sa -O../iptvtunerr_${{ steps.version.outputs.version }}_source.changes
+          cd ..
+          for signed in *.dsc *.changes; do
+            gpg --batch --yes --local-user 07E2531E1F470F8008ACCFC996A07606FE65392F \
+              --clearsign --digest-algo SHA512 --output "${signed}.asc" "$signed"
+            mv "${signed}.asc" "$signed"
+          done
 
       - name: Upload to Launchpad PPA
         run: |
