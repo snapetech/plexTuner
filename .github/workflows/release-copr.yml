@@ -49,7 +49,27 @@ jobs:
 
       - name: Install RPM/COPR tooling
         run: |
-          bash scripts/install-ci-tools.sh rpm python3-pip copr-cli
+          set -euo pipefail
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y rpm python3-pip python3-venv
+          elif command -v pacman >/dev/null 2>&1; then
+            sudo pacman -Sy --needed --noconfirm rpm-tools python-pip python-virtualenv
+          elif command -v dnf >/dev/null 2>&1; then
+            sudo dnf install -y rpm-build python3-pip
+          elif command -v yum >/dev/null 2>&1; then
+            sudo yum install -y rpm-build python3-pip
+          elif command -v apk >/dev/null 2>&1; then
+            sudo apk add --no-cache rpm python3 py3-pip
+          else
+            echo "No supported package manager found for COPR tooling" >&2
+            exit 1
+          fi
+          venv="${RUNNER_TEMP:-/tmp}/iptvtunerr-copr-cli"
+          python3 -m venv "$venv"
+          "$venv/bin/python" -m pip install --upgrade pip
+          "$venv/bin/python" -m pip install copr-cli
+          echo "$venv/bin" >> "$GITHUB_PATH"
 
       - name: Configure COPR
         env:

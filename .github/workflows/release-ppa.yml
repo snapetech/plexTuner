@@ -39,7 +39,23 @@ jobs:
           go-version-file: go.mod
 
       - name: Install packaging tools
-        run: bash scripts/install-ci-tools.sh debian-packaging
+        run: |
+          set -euo pipefail
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y dpkg-dev gnupg curl
+          elif command -v pacman >/dev/null 2>&1; then
+            sudo pacman -Sy --needed --noconfirm dpkg gnupg curl
+          elif command -v dnf >/dev/null 2>&1; then
+            sudo dnf install -y dpkg-dev gnupg2 curl
+          elif command -v yum >/dev/null 2>&1; then
+            sudo yum install -y dpkg-dev gnupg2 curl
+          elif command -v apk >/dev/null 2>&1; then
+            sudo apk add --no-cache dpkg gnupg curl
+          else
+            echo "No supported package manager found for PPA packaging tools" >&2
+            exit 1
+          fi
 
       - name: Import GPG key
         env:
