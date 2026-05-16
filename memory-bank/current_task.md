@@ -1,13 +1,20 @@
 **Latest (2026-05-12):** **Plex Live TV playback works again on kspls0; remaining issue is startup latency.** Sports DVR is expanded to 480 channels with `IPTV_TUNERR_LINEUP_RECIPE=sports_now`, `IPTV_TUNERR_LINEUP_MAX_CHANNELS=480`, `IPTV_TUNERR_GUIDE_POLICY=off`, and `IPTV_TUNERR_LINEUP_PROBE_ENABLED=false`; Plex activated all 480. Deployed a proxy fix so JSON `/media/providers` responses rewrite `allowTuners` entitlement hints, matching the existing XML rewrite. Direct Tunerr stream test returned ~24 MB in 20s, and user confirmed playback works but starts slowly.
 
-**Current (2026-05-14):** Repair Winget PR installation validation for `microsoft/winget-pkgs#374269`.
+**Current (2026-05-15):** Cut `v0.1.75` from current `main`.
 
-- Goal: diagnose why Microsoft package-manager validation says IPTV Tunerr does not install correctly and push a targeted PR update.
-- Scope: Winget packaging/release asset installability only; avoid touching unrelated Plex/proxy runtime changes already in the worktree.
-- Assumption: keep the ZIP package shape because Chocolatey and release docs already consume it; fix Winget's `NestedInstallerFiles.RelativeFilePath` to match the actual archive layout.
+- Goal: commit/push the current repo state and publish a new GitHub release tag.
+- Scope: whole worktree as explicitly requested by the user; working tree was already clean before release prep, so only release-prep memory/changelog edits are expected locally.
+- Assumption: next semver patch tag after `v0.1.74` is `v0.1.75`; use the existing populated changelog entries as the release notes.
+- Done: confirmed `main` is at `origin/main` with commits after `v0.1.74`.
+- Done: promoted `docs/CHANGELOG.md` Unreleased notes into `v0.1.75`.
+- Done: `./scripts/verify` and `./scripts/release-readiness.sh` passed locally.
+- Next: commit, push `main`, tag `v0.1.75`, push the tag, and monitor the release workflow.
+
+**Previous (2026-05-14):** Repair Winget PR installation validation for `microsoft/winget-pkgs#374269`.
+
 - Done: patched the Winget manifest generator and release-asset verification so generated ZIP portable manifests use `iptv-tunerr-vX.Y.Z-windows-amd64/iptv-tunerr.exe`.
 - Done: pushed `microsoft/winget-pkgs#374269` update commit `740f80f081e` with only the corrected nested installer path.
-- Next: wait for Microsoft validation to rerun; do not post another `@wingetbot run` unless the pushed manifest update does not trigger validation.
+- Follow-up: wait for Microsoft validation to rerun; do not post another `@wingetbot run` unless the pushed manifest update does not trigger validation.
 - Done: added `packaging/aur` metadata for `iptvtunerr` and `iptvtunerr-bin`, AUR helper scripts, and `.github/workflows/release-aur.yml`.
 - Done: unsealed local OpenBao, checked for release-channel credentials, added `AUR_SSH_KEY`, `GPG_PRIVATE_KEY`, `LAUNCHPAD_SFTP_KEY`, and `LAUNCHPAD_SFTP_USER` GitHub secrets for `snapetech/iptvtunerr`.
 - Done: created and pushed the initial AUR repos `iptvtunerr` and `iptvtunerr-bin`.

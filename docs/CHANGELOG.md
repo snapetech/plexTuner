@@ -13,6 +13,10 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+*No unreleased changes yet.*
+
+## [v0.1.75] - 2026-05-15
+
 ### Plex Live TV proxy
 - **Tracked Live TV timeline calls borrow owner entitlement:** when `-neutralize-owner-history` is enabled, tracked Live TV `/:/timeline`, `/:/progress`, and `/:/scrobble` calls now use the owner token for the client-facing PMS request while still replaying the event under the original user token for attribution. This keeps remote Plex Web sessions from receiving entitlement `403`s mid-playback.
 - **Plex HLS relay stability guidance:** docs now call out the websafe `plexsafehq` transcode fallback for Plex Live TV feeds where PMS already transcodes remote playback but remote Plex Web clients choke on Go relay or direct-remux paths, including when to disable forced Go relay, leave the stdin normalizer off, and keep ffmpeg on the original CDN hostname.

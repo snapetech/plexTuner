@@ -28,8 +28,8 @@ history.
 
 | Section | Candidate count | Status | Current classification | Next action |
 | --- | ---: | --- | --- | --- |
-| `Proxy elevation trust boundary` | 16 | Open | Added by council sweep; classify this active-bughunt section for this repo. | Split into narrower subgroups, reject with rationale, or promote accepted bug classes into behavior tests and remediation anchors. |
-| `Tokenless session recovery boundary` | 21 | Open | Added by council sweep; classify this active-bughunt section for this repo. | Split into narrower subgroups, reject with rationale, or promote accepted bug classes into behavior tests and remediation anchors. |
+| `Proxy elevation trust boundary` | 17 | Open | Added by council sweep; classify this active-bughunt section for this repo. | Split into narrower subgroups, reject with rationale, or promote accepted bug classes into behavior tests and remediation anchors. |
+| `Tokenless session recovery boundary` | 24 | Open | Added by council sweep; classify this active-bughunt section for this repo. | Split into narrower subgroups, reject with rationale, or promote accepted bug classes into behavior tests and remediation anchors. |
 | `Response rewrite boundary` | 17 | Open | Added by council sweep; classify this active-bughunt section for this repo. | Split into narrower subgroups, reject with rationale, or promote accepted bug classes into behavior tests and remediation anchors. |
 | `Operator/debug HTTP boundary` | 193 | Open | Added by council sweep; classify this active-bughunt section for this repo. | Split into narrower subgroups, reject with rationale, or promote accepted bug classes into behavior tests and remediation anchors. |
 | `Provider process and file boundary` | 967 | Open | Added by council sweep; classify this active-bughunt section for this repo. | Split into narrower subgroups, reject with rationale, or promote accepted bug classes into behavior tests and remediation anchors. |

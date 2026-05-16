@@ -1,3 +1,9 @@
+## 2026-05-15 - Prepare v0.1.75 release
+
+- Promoted the populated Unreleased changelog notes for Plex Live TV proxy stability and release-process fixes into `v0.1.75`.
+- Confirmed the repo was already clean on `main` before release-prep edits; no unrelated dirty files were present to include.
+- Verification: `./scripts/verify` passed; `./scripts/release-readiness.sh` passed.
+
 ## 2026-05-14 - Fix Winget install validation path
 
 - Inspected `microsoft/winget-pkgs#374269` after the Microsoft package-manager bot reported a general installation failure.
