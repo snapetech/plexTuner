@@ -60,6 +60,20 @@ On **`index` / catalog refresh**, **`live_channels`** are stored in **sorted ord
 Provider-pressure / flaky-host follow-on:
 - **`IPTV_TUNERR_HLS_RELAY_PREFER_GO_ON_PROVIDER_PRESSURE`** (default **on**) skips the non-transcode **ffmpeg remux** attempt and goes straight to the Go HLS relay when Tunerr has **observed concurrency pressure** *or* the upstream **host already has autotune penalty** (e.g. ffmpeg remux failed earlier on that host while **`IPTV_TUNERR_PROVIDER_AUTOTUNE`** records failures). Turning it **off** disables both triggers unless **`IPTV_TUNERR_HLS_RELAY_PREFER_GO`** is set.
 - playlist refreshes on the Go HLS relay use bounded retries when the provider answers with concurrency-style failures; tune with **`IPTV_TUNERR_HLS_PLAYLIST_RETRY_LIMIT`** and **`IPTV_TUNERR_HLS_PLAYLIST_RETRY_BACKOFF_MS`**.
+- For Plex remote playback that PMS is already transcoding, do not enable the
+  experimental stdin-normalizer just to make HLS look cleaner. It adds another
+  media-processing stage before Plex's own transcoder and can make quality worse
+  while making failures harder to classify.
+- If the Go HLS relay completes after a few minutes with a normal **`200`** while
+  Plex continues polling the same DASH transcode session, prefer ffmpeg HLS input
+  remux instead of forcing Go relay. Use **`IPTV_TUNERR_PLEX_INTERNAL_FETCHER_POLICY=direct`**,
+  **`IPTV_TUNERR_HLS_RELAY_PREFER_GO=false`**, and, for CDNs that reject direct-IP
+  ffmpeg input, **`IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE=true`**.
+- Future hardening should make the Go relay log and expose distinct outcomes for
+  client disconnect, provider playlist end, no-new-segment stall, and rebase
+  failure. Once those outcomes are explicit, the relay can safely keep polling
+  through short live-playlist stalls or retry/rebase without presenting Plex with
+  a successful completed tuner stream.
 
 **Per-channel file** (`IPTV_TUNERR_TRANSCODE_OVERRIDES_FILE`): JSON map; each key is matched against **`channel_id`**, then **`guide_number`**, then **`tvg_id`**. For **`off` / `on` / `auto`**, the file **overrides** the global mode for hits (e.g. force remux for one hot channel while `on` everywhere else, or force transcode for a single bad feed under `off`). Logs: `gateway: transcode policy mode=...` when an override **differs** from the computed base (and always for `auto_cached` hits/misses).
 

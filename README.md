@@ -1284,7 +1284,7 @@ Full reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-a
 | `IPTV_TUNERR_HLS_MUX_SEG_SLOTS_PER_TUNER` | Multiplier for default seg cap (`effective tuner limit × N`, default `8`) |
 | `IPTV_TUNERR_FFMPEG_PATH` | Custom ffmpeg binary path |
 | `IPTV_TUNERR_FFMPEG_DISABLED` | Disable ffmpeg relay and use the Go HLS relay path only |
-| `IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE` | Keep the original ffmpeg input hostname instead of rewriting it to an IP |
+| `IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE` | Keep the original ffmpeg input hostname instead of rewriting it to an IP. Use this for CDNs that reject direct-IP ffmpeg inputs even when the HTTP `Host` header is preserved. |
 | `IPTV_TUNERR_CLIENT_ADAPT` | Detect Plex Web; apply browser-compatible codec automatically |
 | `IPTV_TUNERR_CLIENT_ADAPT_STICKY_FALLBACK` | After failed native-path tune, stick WebSafe for that Plex session (see docs) |
 | `IPTV_TUNERR_HLS_RELAY_FFMPEG_STDIN_NORMALIZE` | Optional experimental HLS relay normalizer. Leave disabled for Plex Live TV paths where Plex already transcodes remote playback; double-normalizing can make Plex abandon long-running tuner fetches. |
@@ -1293,6 +1293,20 @@ Full reference: [`docs/reference/cli-and-env-reference.md`](docs/reference/cli-a
 | `IPTV_TUNERR_UPSTREAM_ADD_SEC_FETCH` | Add browser-style `Sec-Fetch-*` headers on upstream requests |
 | `IPTV_TUNERR_UPSTREAM_USER_AGENT` | Override upstream `User-Agent` (preset: `lavf`, `vlc`, `mpv`, `kodi`, `firefox`, or literal) |
 | `IPTV_TUNERR_COOKIE_JAR_FILE` | Persist upstream cookies such as Cloudflare clearance tokens |
+
+Plex Live TV stability note: on provider HLS feeds where Plex itself is already
+transcoding for remote playback, avoid stacking extra normalization stages unless
+there is a proven stream-specific reason. In production testing, the Go HLS
+segment relay could return a clean `200` after several minutes when the upstream
+playlist stopped advancing, which caused Plex to keep requesting stale DASH
+segments and eventually report playback/network errors. The safer operational
+posture for those feeds is remux-first ffmpeg HLS input with
+`IPTV_TUNERR_PLEX_INTERNAL_FETCHER_POLICY=direct`, no forced Go relay, no
+stdin-normalizer, and `IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE=true` when the provider
+CDN validates hostnames. A future proper implementation should make the Go relay
+distinguish client disconnects, playlist end, and no-new-segment stalls in logs,
+then either keep polling live playlists across temporary stalls or retry/rebase
+without returning a successful completed tuner response.
 | `IPTV_TUNERR_CF_LEARNED_FILE` | Per-host CF learned state: working UA and CF-tagged flag (auto-derived beside jar) |
 | `IPTV_TUNERR_HOST_UA` | Pin UA per hostname: `host:preset,...` — skips cycling for known-good hosts |
 | `IPTV_TUNERR_CF_AUTO_BOOT` | Enable CF auto-bootstrap at startup and clearance freshness monitor |

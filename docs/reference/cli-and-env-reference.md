@@ -1953,7 +1953,7 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
 - **Byte-range / conditional segments:** client **`Range`** / **`If-Range`** / **`If-None-Match`** / **`If-Modified-Since`** are forwarded to upstream **`?mux=hls&seg=`** fetches; **`206`** + **`Content-Range`**, or **`304`**, are passed back when the CDN responds that way.
 - `IPTV_TUNERR_FFMPEG_PATH` — override the ffmpeg binary path (e.g. `/opt/ffmpeg-static/current/ffmpeg`).
 - `IPTV_TUNERR_FFMPEG_DISABLED` — disable ffmpeg entirely for HLS relay and stay on the Go playlist/segment fetch path. Useful when ffmpeg cannot satisfy provider header/cookie requirements.
-- `IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE` — keep the original ffmpeg input hostname instead of rewriting it to a resolved IP. Useful for CDNs that validate the hostname against `Host` or TLS state.
+- `IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE` — keep the original ffmpeg input hostname instead of rewriting it to a resolved IP. Useful for CDNs that validate the hostname against `Host` or TLS state; some provider HLS edges reject direct-IP ffmpeg input even when headers are otherwise correct.
 - `IPTV_TUNERR_FFMPEG_HLS_RECONNECT` — when `true`, adds HLS reconnect flags to ffmpeg (`-reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1`). Helps with providers whose HLS segment URLs expire mid-stream.
 - `IPTV_TUNERR_FFMPEG_HLS_PACKAGER_DIR` — optional base directory for ffmpeg-packaged HLS session workdirs. Empty = system temp dir.
 - `IPTV_TUNERR_FFMPEG_HLS_PACKAGER_STARTUP_TIMEOUT_MS` — wait this long for the first packaged playlist file before falling back to the normal relay path (default **8000**).
@@ -1968,6 +1968,18 @@ IPTV_TUNERR_FREE_SOURCE_MODE=merge
 - `IPTV_TUNERR_HLS_RELAY_PREFER_GO_ON_PROVIDER_PRESSURE` — skip non-transcode ffmpeg remux and go straight to the Go playlist/segment relay when Tunerr has **learned concurrency pressure** *or* the upstream host already has **autotune penalty** (same process; requires **`IPTV_TUNERR_PROVIDER_AUTOTUNE`** so failures are recorded). Turning this **off** disables both signals unless **`IPTV_TUNERR_HLS_RELAY_PREFER_GO`** is on.
 - `IPTV_TUNERR_HLS_RELAY_PREFER_GO` — unconditional Go-relay preference (overrides the `false` branch above).
 - `IPTV_TUNERR_HLS_RELAY_ALLOW_FFMPEG_CROSS_HOST` — default `false`; when disabled, non-transcode HLS playlists that reference media/key/map/variant URLs on a different host than the playlist itself skip ffmpeg remux and use the Go relay. This avoids one static ffmpeg request-header context being reused across cross-host HLS subrequests.
+
+Operational note for Plex Live TV: when Plex already transcodes remote playback,
+prefer the smallest additional processing chain that stays stable. If the Go HLS
+relay returns a clean completed tuner response after the live playlist stops
+advancing, Plex may continue polling the now-ended transcode session and surface
+stale `start.mpd` / segment errors. For these feeds, disable forced Go relay,
+leave the stdin-normalizer off, use `IPTV_TUNERR_PLEX_INTERNAL_FETCHER_POLICY=direct`,
+and set `IPTV_TUNERR_FFMPEG_NO_DNS_RESOLVE=true` when the CDN rejects direct-IP
+ffmpeg input. Future work should improve Go-relay exit classification and live
+playlist recovery so temporary no-new-segment windows do not look like a normal
+successful stream completion.
+
 - `IPTV_TUNERR_CLIENT_ADAPT` — when `true`, resolve the Plex client from the active session and adapt stream mode by client class. By default, web/browser clients still get websafe (transcode + MP3 audio), while non-web/native clients stay on the direct/remux path unless another override wins.
 - `IPTV_TUNERR_CLIENT_ADAPT_STICKY_FALLBACK` — when enabled (default), if adaptation chose the **non-websafe** path and the tune ends with **`all_upstreams_failed`** or **`upstream_concurrency_limited`**, register a **session-scoped** WebSafe fallback for that channel + Plex session/client id until TTL (see [plex-livetv-http-tuning](plex-livetv-http-tuning.md) **HR-004**).
 - `IPTV_TUNERR_CLIENT_ADAPT_STICKY_TTL_SEC` — sticky lifetime in seconds (default **14400**; clamped **120**–**604800**).

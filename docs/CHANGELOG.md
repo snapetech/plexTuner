@@ -14,6 +14,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 ## [Unreleased]
 
 ### Plex Live TV proxy
+- **Plex HLS relay stability guidance:** docs now call out the remux-first posture for Plex Live TV feeds where PMS already transcodes remote playback, including when to disable forced Go relay, leave the stdin normalizer off, and keep ffmpeg on the original CDN hostname.
 - **WebSocket upgrades survive proxy hardening:** the Plex Live TV entitlement proxy now preserves safe WebSocket `Connection: Upgrade` headers while continuing to strip hop-by-hop token headers, fixing notification-path `502` errors seen by remote Plex clients.
 - **Live TV proxy access diagnostics include playback paths:** proxied Live TV, play queue, transcode, timeline, and notification requests now emit concise status/byte/duration/source logs, and streaming responses flush immediately through the Go reverse proxy.
 - **Live TV play queue elevation recognizes form bodies:** Plex clients that send `/playQueues` Live TV URIs in POST form bodies now receive the same owner-entitlement elevation as query-string play queue requests without consuming the forwarded body.
