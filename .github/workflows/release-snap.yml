@@ -64,9 +64,31 @@ jobs:
         id: build
         run: |
           set -euo pipefail
-          cd packaging/snap
-          snapcraft pack --destructive-mode
-          snap="$(find "$PWD" -maxdepth 1 -name '*.snap' -print -quit)"
+          version="${{ steps.version.outputs.version }}"
+          asset="iptv-tunerr-v${version}-linux-amd64"
+          rm -rf snap-prime
+          mkdir -p snap-prime/meta
+          tar -xzf "packaging/snap/${asset}.tar.gz" -C snap-prime
+          chmod 0755 snap-prime/iptv-tunerr
+          cat > snap-prime/meta/snap.yaml <<EOF
+          name: iptvtunerr
+          base: core24
+          version: '${version}'
+          summary: IPTV to Plex, Emby, and Jellyfin bridge
+          description: |
+            IPTV Tunerr turns IPTV sources into a stable HDHomeRun-style tuner and XMLTV
+            guide surface for Plex, Emby, and Jellyfin.
+          grade: stable
+          confinement: strict
+          architectures:
+            - amd64
+          apps:
+            iptvtunerr:
+              command: iptv-tunerr
+              plugs: [network, network-bind, home, removable-media]
+          EOF
+          snap pack snap-prime packaging/snap --filename "iptvtunerr_${version}_amd64.snap"
+          snap="$(find "$PWD/packaging/snap" -maxdepth 1 -name '*.snap' -print -quit)"
           test -n "$snap"
           echo "snap=$snap" >> "$GITHUB_OUTPUT"
 
