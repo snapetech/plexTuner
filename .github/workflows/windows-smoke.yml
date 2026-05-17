@@ -1,0 +1,32 @@
+name: Windows Smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/windows-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: [self-hosted, Windows, X64, packer-windows]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build Windows binary
+        shell: pwsh
+        run: go build ./cmd/iptv-tunerr
+
+      - name: Run focused Windows-safe tests
+        shell: pwsh
+        run: |
+          go test ./cmd/... ./internal/config ./internal/provider ./internal/safeurl ./internal/store
