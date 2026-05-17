@@ -11,7 +11,7 @@ on:
 
 jobs:
   scan:
-    runs-on: [self-hosted, Linux, X64, iptvtunerr-deploy]
+    runs-on: [self-hosted, Linux, X64, iptvtunerr]
     steps:
       - uses: actions/checkout@v6
         with:

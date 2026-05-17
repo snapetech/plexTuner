@@ -6,7 +6,7 @@ on:
 
 jobs:
   build:
-    runs-on: [self-hosted, Linux, X64, iptvtunerr-deploy]
+    runs-on: [self-hosted, Linux, X64, iptvtunerr]
     permissions:
       contents: read
       packages: write

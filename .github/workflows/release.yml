@@ -6,7 +6,7 @@ on:
 
 jobs:
   release:
-    runs-on: [self-hosted, Linux, X64, iptvtunerr-deploy]
+    runs-on: [self-hosted, Linux, X64, iptvtunerr]
     permissions:
       contents: write
     steps:
@@ -65,7 +65,7 @@ jobs:
   announce-discord:
     name: Announce Release to Discord
     needs: [release]
-    runs-on: [self-hosted, Linux, X64, iptvtunerr-deploy]
+    runs-on: [self-hosted, Linux, X64, iptvtunerr]
     steps:
       - uses: actions/checkout@v6
 
@@ -178,7 +178,7 @@ jobs:
   dispatch-package-channels:
     name: Dispatch Package Channels
     needs: [release]
-    runs-on: [self-hosted, Linux, X64, iptvtunerr-deploy]
+    runs-on: [self-hosted, Linux, X64, iptvtunerr]
     permissions:
       actions: write
       contents: read

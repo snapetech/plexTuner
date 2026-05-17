@@ -11,7 +11,7 @@ on:
 
 jobs:
   verify:
-    runs-on: [self-hosted, Linux, X64, iptvtunerr-deploy]
+    runs-on: [self-hosted, Linux, X64, iptvtunerr]
     steps:
       - uses: actions/checkout@v6
 
@@ -37,7 +37,7 @@ jobs:
         run: ./scripts/verify
 
   smoke:
-    runs-on: [self-hosted, Linux, X64, iptvtunerr-deploy]
+    runs-on: [self-hosted, Linux, X64, iptvtunerr]
     needs: verify
     steps:
       - uses: actions/checkout@v6
@@ -51,7 +51,7 @@ jobs:
         run: bash ./scripts/ci-smoke.sh
 
   release-assets:
-    runs-on: [self-hosted, Linux, X64, iptvtunerr-deploy]
+    runs-on: [self-hosted, Linux, X64, iptvtunerr]
     needs: verify
     steps:
       - uses: actions/checkout@v6

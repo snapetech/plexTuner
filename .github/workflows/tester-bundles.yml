@@ -14,7 +14,7 @@ on:
 
 jobs:
   build-tester-bundle:
-    runs-on: [self-hosted, Linux, X64, iptvtunerr-deploy]
+    runs-on: [self-hosted, Linux, X64, iptvtunerr]
     permissions:
       contents: write
     steps:

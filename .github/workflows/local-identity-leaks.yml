@@ -7,7 +7,7 @@ on:
 
 jobs:
   local-identity-leaks:
-    runs-on: [self-hosted, Linux, X64, iptvtunerr-deploy]
+    runs-on: [self-hosted, Linux, X64, iptvtunerr]
     steps:
       - name: Checkout
         uses: actions/checkout@v6

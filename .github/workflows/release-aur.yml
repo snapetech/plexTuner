@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   publish-aur:
-    runs-on: [self-hosted, Linux, X64, iptvtunerr-deploy]
+    runs-on: [self-hosted, Linux, X64, iptvtunerr]
     steps:
       - name: Resolve version
         id: version
