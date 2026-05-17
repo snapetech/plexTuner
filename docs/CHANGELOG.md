@@ -14,7 +14,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 ## [Unreleased]
 
 ### CI
-- **Linux workflows use the paired local runner pool:** Linux jobs now target the repo-specific `iptvtunerr` self-hosted label so either `kspld0` or `kspls0` can take amd64 or arm64-cross build work.
+- **Linux workflows use the paired local runner pool:** Linux jobs now target the repo-specific `iptvtunerr` self-hosted label so either local build host can take amd64 or arm64-cross build work.
 - **Windows smoke coverage uses the on-demand runner:** PRs can now wake the private `packer-windows` ephemeral Windows VM to build the Windows binary and run the current Windows-safe Go test subset.
 - **Gitleaks runs directly on local runners:** secret scanning now installs and runs the `gitleaks` CLI directly to avoid third-party action cache extraction failures on the local self-hosted runner.
 - **Gitleaks scans tracked release content:** the scan runs against a `git archive` of `HEAD`, avoiding local-only ignored files while retaining a narrow allowlist for generated vendored SQLite Windows constants.
