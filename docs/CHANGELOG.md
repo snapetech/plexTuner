@@ -23,6 +23,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 - **Discord release announcements use the secret-backed release workflow:** tagged releases continue to announce to Matrix and now use the configured `DISCORD_RELEASE_WEBHOOK` repository secret for Discord release announcements.
 - **Binary smoke startup retries port collisions:** release smoke tests now retry standard and custom tuner startup blocks if a self-hosted runner has a transient port collision, avoiding false release failures from stale local listeners.
 - **Release asset jobs install archive and package tooling:** CI and release asset builds now request `zip` and Debian package tools before creating Windows archives and Linux package assets on self-hosted Linux runners.
+- **Council generated counts are refreshed for release gates:** the active bughunt backlog count now matches the current generated council report so release verification does not fail on stale generated metadata.
 
 ### CI
 - **Linux workflows use the paired local runner pool:** Linux jobs now target the repo-specific `iptvtunerr` self-hosted label so either local build host can take amd64 or arm64-cross build work.

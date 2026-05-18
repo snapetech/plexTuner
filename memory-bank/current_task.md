@@ -16,8 +16,9 @@
 - Done: third release workflow passed verify and smoke, then failed in `Build binaries` because the runner did not have `zip` installed for Windows release archives.
 - Done: fourth release workflow published `v0.1.77`; release asset build/verification, Discord announcement, Matrix announcement, and package-channel dispatch all passed.
 - Done: committed and pushed Debian package tool installation as `0625c70`, then moved tag `v0.1.77` to include it.
-- In progress: fifth release workflow hit another smoke port collision in a custom `serve` launch block; extending the retry wrapper to all custom smoke `serve` launch paths.
-- Next: verify smoke locally, commit/push, move tag `v0.1.77`, and monitor the replacement release/CI workflows.
+- Done: fifth release workflow hit another smoke port collision in a custom `serve` launch block; extended the retry wrapper to all custom smoke `serve` launch paths and verified `bash ./scripts/ci-smoke.sh` locally.
+- In progress: fifth release workflow also exposed council generated-count drift after the smoke hardening; regenerated council state and updated the active backlog count.
+- Next: commit/push, move tag `v0.1.77`, and monitor the replacement release/CI workflows.
 
 **Previous (2026-05-17):** Improve Plex DVR event-only sports recording windows.
 
