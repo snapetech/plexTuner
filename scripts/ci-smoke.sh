@@ -512,6 +512,31 @@ run_serve_ready() {
   fail "$label could not find a free port"
 }
 
+run_serve_env_ready() {
+  local catalog="$1" port_var="$2" label="$3" log_prefix="$4"
+  shift 4
+  local port pid log_path
+  for _ in $(seq 1 10); do
+    port="$(pick_port)"
+    log_path="$TMP_DIR/${log_prefix}-${port}.log"
+    env "$@" "$BIN" serve -catalog "$catalog" -addr ":$port" -base-url "http://127.0.0.1:$port" \
+      >"$log_path" 2>&1 &
+    PIDS+=("$!")
+    pid="${PIDS[${#PIDS[@]}-1]}"
+    if wait_http_code "http://127.0.0.1:$port/discover.json" "200"; then
+      printf -v "$port_var" '%s' "$port"
+      return 0
+    fi
+    if ! kill -0 "$pid" 2>/dev/null && grep -q 'bind: address already in use' "$log_path" 2>/dev/null; then
+      log "$label port $port already in use; retrying"
+      wait "$pid" 2>/dev/null || true
+      continue
+    fi
+    fail "$label discover.json not ready"
+  done
+  fail "$label could not find a free port"
+}
+
 run_with_webui() {
   local catalog="$1" port="$2" webui_port="$3"
   IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
@@ -803,18 +828,14 @@ limited_movie_body="$(curl -sS "http://127.0.0.1:$port_xtream/movie/limited/pw/m
 limited_series_code="$(curl -sS -o "$body_file" -w '%{http_code}' "http://127.0.0.1:$port_xtream/series/limited/pw/e1.mp4" || true)"
 [[ "$limited_series_code" == "404" ]] || fail "limited xtream series proxy status=$limited_series_code body=$(cat "$body_file" 2>/dev/null)"
 
-port_shared="$(pick_port)"
-IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
-IPTV_TUNERR_XMLTV_URL= \
-IPTV_TUNERR_WEBUI_DISABLED=1 \
-IPTV_TUNERR_FFMPEG_DISABLED=1 \
-IPTV_TUNERR_XTREAM_USER=demo \
-IPTV_TUNERR_XTREAM_PASS=secret \
-IPTV_TUNERR_PROGRAMMING_RECIPE_FILE="$TMP_DIR/programming.json" \
-"$BIN" serve -catalog "$TMP_DIR/catalog-shared.json" -addr ":$port_shared" -base-url "http://127.0.0.1:$port_shared" \
-  >"$TMP_DIR/serve-shared-$port_shared.log" 2>&1 &
-PIDS+=("$!")
-wait_http_code "http://127.0.0.1:$port_shared/discover.json" "200" || fail "shared relay discover.json not ready"
+run_serve_env_ready "$TMP_DIR/catalog-shared.json" port_shared "shared relay" "serve-shared" \
+  IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
+  IPTV_TUNERR_XMLTV_URL= \
+  IPTV_TUNERR_WEBUI_DISABLED=1 \
+  IPTV_TUNERR_FFMPEG_DISABLED=1 \
+  IPTV_TUNERR_XTREAM_USER=demo \
+  IPTV_TUNERR_XTREAM_PASS=secret \
+  IPTV_TUNERR_PROGRAMMING_RECIPE_FILE="$TMP_DIR/programming.json"
 curl -sS "http://127.0.0.1:$port_shared/stream/shared1" -o "$TMP_DIR/shared-first.out" &
 first_stream_pid=$!
 sleep 0.25
@@ -857,18 +878,14 @@ sleep 5
 SH
 chmod +x "$fake_packager_ffmpeg"
 
-port_packager="$(pick_port)"
-IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
-IPTV_TUNERR_XMLTV_URL= \
-IPTV_TUNERR_WEBUI_DISABLED=1 \
-IPTV_TUNERR_FFMPEG_DISABLED=0 \
-IPTV_TUNERR_FFMPEG_PATH="$fake_packager_ffmpeg" \
-IPTV_TUNERR_STREAM_PROFILES_FILE="$TMP_DIR/stream-profiles.json" \
-IPTV_TUNERR_TUNER_COUNT=1 \
-"$BIN" serve -catalog "$TMP_DIR/catalog-remux.json" -addr ":$port_packager" -base-url "http://127.0.0.1:$port_packager" \
-  >"$TMP_DIR/serve-packager-$port_packager.log" 2>&1 &
-PIDS+=("$!")
-wait_http_code "http://127.0.0.1:$port_packager/discover.json" "200" || fail "packaged hls discover.json not ready"
+run_serve_env_ready "$TMP_DIR/catalog-remux.json" port_packager "packaged hls" "serve-packager" \
+  IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
+  IPTV_TUNERR_XMLTV_URL= \
+  IPTV_TUNERR_WEBUI_DISABLED=1 \
+  IPTV_TUNERR_FFMPEG_DISABLED=0 \
+  IPTV_TUNERR_FFMPEG_PATH="$fake_packager_ffmpeg" \
+  IPTV_TUNERR_STREAM_PROFILES_FILE="$TMP_DIR/stream-profiles.json" \
+  IPTV_TUNERR_TUNER_COUNT=1
 packager_first="$TMP_DIR/packager-first.m3u8"
 curl -sS "http://127.0.0.1:$port_packager/stream/remux1?profile=shared-hls" -o "$packager_first"
 packager_second="$TMP_DIR/packager-second.m3u8"
@@ -918,17 +935,13 @@ printf 'ffmpeg'
 SH
 chmod +x "$fake_shared_ffmpeg"
 
-port_ffmpeg_shared="$(pick_port)"
-IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
-IPTV_TUNERR_XMLTV_URL= \
-IPTV_TUNERR_WEBUI_DISABLED=1 \
-IPTV_TUNERR_FFMPEG_DISABLED=0 \
-IPTV_TUNERR_FFMPEG_PATH="$fake_shared_ffmpeg" \
-IPTV_TUNERR_TUNER_COUNT=1 \
-"$BIN" serve -catalog "$TMP_DIR/catalog-remux.json" -addr ":$port_ffmpeg_shared" -base-url "http://127.0.0.1:$port_ffmpeg_shared" \
-  >"$TMP_DIR/serve-ffmpeg-shared-$port_ffmpeg_shared.log" 2>&1 &
-PIDS+=("$!")
-wait_http_code "http://127.0.0.1:$port_ffmpeg_shared/discover.json" "200" || fail "ffmpeg shared discover.json not ready"
+run_serve_env_ready "$TMP_DIR/catalog-remux.json" port_ffmpeg_shared "ffmpeg shared" "serve-ffmpeg-shared" \
+  IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
+  IPTV_TUNERR_XMLTV_URL= \
+  IPTV_TUNERR_WEBUI_DISABLED=1 \
+  IPTV_TUNERR_FFMPEG_DISABLED=0 \
+  IPTV_TUNERR_FFMPEG_PATH="$fake_shared_ffmpeg" \
+  IPTV_TUNERR_TUNER_COUNT=1
 curl -sS "http://127.0.0.1:$port_ffmpeg_shared/stream/remux1" -o "$TMP_DIR/ffmpeg-shared-first.out" &
 ffmpeg_shared_first_pid=$!
 sleep 0.25
@@ -945,18 +958,14 @@ grep -qi '^X-IptvTunerr-Shared-Upstream: hls_ffmpeg' "$ffmpeg_shared_headers" ||
 [[ -s "$TMP_DIR/ffmpeg-shared-second.out" ]] || fail "ffmpeg shared second consumer got no bytes"
 assert_file_prefix "$TMP_DIR/ffmpeg-shared-second.out" "shared-"
 
-port_ffmpeg_fmp4="$(pick_port)"
-IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
-IPTV_TUNERR_XMLTV_URL= \
-IPTV_TUNERR_WEBUI_DISABLED=1 \
-IPTV_TUNERR_FFMPEG_DISABLED=0 \
-IPTV_TUNERR_FFMPEG_PATH="$fake_shared_ffmpeg" \
-IPTV_TUNERR_STREAM_PROFILES_FILE="$TMP_DIR/stream-profiles.json" \
-IPTV_TUNERR_TUNER_COUNT=1 \
-"$BIN" serve -catalog "$TMP_DIR/catalog-remux.json" -addr ":$port_ffmpeg_fmp4" -base-url "http://127.0.0.1:$port_ffmpeg_fmp4" \
-  >"$TMP_DIR/serve-ffmpeg-fmp4-$port_ffmpeg_fmp4.log" 2>&1 &
-PIDS+=("$!")
-wait_http_code "http://127.0.0.1:$port_ffmpeg_fmp4/discover.json" "200" || fail "ffmpeg fmp4 shared discover.json not ready"
+run_serve_env_ready "$TMP_DIR/catalog-remux.json" port_ffmpeg_fmp4 "ffmpeg fmp4 shared" "serve-ffmpeg-fmp4" \
+  IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
+  IPTV_TUNERR_XMLTV_URL= \
+  IPTV_TUNERR_WEBUI_DISABLED=1 \
+  IPTV_TUNERR_FFMPEG_DISABLED=0 \
+  IPTV_TUNERR_FFMPEG_PATH="$fake_shared_ffmpeg" \
+  IPTV_TUNERR_STREAM_PROFILES_FILE="$TMP_DIR/stream-profiles.json" \
+  IPTV_TUNERR_TUNER_COUNT=1
 curl -sS "http://127.0.0.1:$port_ffmpeg_fmp4/stream/remux1?profile=shared-fmp4" -o "$TMP_DIR/ffmpeg-fmp4-first.out" &
 ffmpeg_fmp4_first_pid=$!
 sleep 0.25
@@ -973,17 +982,13 @@ grep -qi '^Content-Type: video/mp4' "$ffmpeg_fmp4_headers" || fail "ffmpeg fmp4 
 [[ -s "$TMP_DIR/ffmpeg-fmp4-second.out" ]] || fail "ffmpeg fmp4 second consumer got no bytes"
 assert_file_prefix "$TMP_DIR/ffmpeg-fmp4-second.out" "shared-"
 
-port_accounts="$(pick_port)"
-IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
-IPTV_TUNERR_XMLTV_URL= \
-IPTV_TUNERR_WEBUI_DISABLED=1 \
-IPTV_TUNERR_FFMPEG_DISABLED=1 \
-IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT=1 \
-IPTV_TUNERR_TUNER_COUNT=4 \
-"$BIN" serve -catalog "$TMP_DIR/catalog-accounts.json" -addr ":$port_accounts" -base-url "http://127.0.0.1:$port_accounts" \
-  >"$TMP_DIR/serve-accounts-$port_accounts.log" 2>&1 &
-PIDS+=("$!")
-wait_http_code "http://127.0.0.1:$port_accounts/discover.json" "200" || fail "account pool discover.json not ready"
+run_serve_env_ready "$TMP_DIR/catalog-accounts.json" port_accounts "account pool" "serve-accounts" \
+  IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
+  IPTV_TUNERR_XMLTV_URL= \
+  IPTV_TUNERR_WEBUI_DISABLED=1 \
+  IPTV_TUNERR_FFMPEG_DISABLED=1 \
+  IPTV_TUNERR_PROVIDER_ACCOUNT_MAX_CONCURRENT=1 \
+  IPTV_TUNERR_TUNER_COUNT=4
 curl -sS "http://127.0.0.1:$port_accounts/stream/acct1" -o "$TMP_DIR/account-first.out" &
 account_stream_1=$!
 sleep 0.15
@@ -1025,17 +1030,13 @@ exec sleep 5
 SH
 chmod +x "$fake_ffmpeg"
 
-port_remux="$(pick_port)"
-IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
-IPTV_TUNERR_XMLTV_URL= \
-IPTV_TUNERR_WEBUI_DISABLED=1 \
-IPTV_TUNERR_FFMPEG_DISABLED=0 \
-IPTV_TUNERR_FFMPEG_PATH="$fake_ffmpeg" \
-IPTV_TUNERR_FFMPEG_HLS_FIRST_BYTES_TIMEOUT_MS=100 \
-"$BIN" serve -catalog "$TMP_DIR/catalog-remux.json" -addr ":$port_remux" -base-url "http://127.0.0.1:$port_remux" \
-  >"$TMP_DIR/serve-remux-$port_remux.log" 2>&1 &
-PIDS+=("$!")
-wait_http_code "http://127.0.0.1:$port_remux/discover.json" "200" || fail "remux fallback discover.json not ready"
+run_serve_env_ready "$TMP_DIR/catalog-remux.json" port_remux "remux fallback" "serve-remux" \
+  IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
+  IPTV_TUNERR_XMLTV_URL= \
+  IPTV_TUNERR_WEBUI_DISABLED=1 \
+  IPTV_TUNERR_FFMPEG_DISABLED=0 \
+  IPTV_TUNERR_FFMPEG_PATH="$fake_ffmpeg" \
+  IPTV_TUNERR_FFMPEG_HLS_FIRST_BYTES_TIMEOUT_MS=100
 curl -sS "http://127.0.0.1:$port_remux/stream/remux1" -o "$TMP_DIR/remux-fallback.out"
 [[ -s "$TMP_DIR/remux-fallback.out" ]] || fail "remux fallback produced no bytes"
 python3 - "$port_remux" <<'PY'

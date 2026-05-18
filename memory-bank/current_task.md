@@ -15,8 +15,9 @@
 - Done: committed and pushed the smoke retry fix as `8e76c52`, then moved tag `v0.1.77` to that commit.
 - Done: third release workflow passed verify and smoke, then failed in `Build binaries` because the runner did not have `zip` installed for Windows release archives.
 - Done: fourth release workflow published `v0.1.77`; release asset build/verification, Discord announcement, Matrix announcement, and package-channel dispatch all passed.
-- In progress: `main` CI release-assets lane failed on a second runner missing Debian package tools, so patching the shared asset tool install to request both archive and package tooling.
-- Next: commit/push, move tag `v0.1.77` to include the final workflow fix, and monitor the replacement release/CI workflows.
+- Done: committed and pushed Debian package tool installation as `0625c70`, then moved tag `v0.1.77` to include it.
+- In progress: fifth release workflow hit another smoke port collision in a custom `serve` launch block; extending the retry wrapper to all custom smoke `serve` launch paths.
+- Next: verify smoke locally, commit/push, move tag `v0.1.77`, and monitor the replacement release/CI workflows.
 
 **Previous (2026-05-17):** Improve Plex DVR event-only sports recording windows.
 
