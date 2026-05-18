@@ -558,6 +558,31 @@ run_with_webui() {
   PIDS+=("$!")
 }
 
+run_with_webui_ready() {
+  local catalog="$1" tuner_port_var="$2" webui_port_var="$3" label="$4"
+  local port webui_port pid log_path
+  for _ in $(seq 1 10); do
+    port="$(pick_port)"
+    webui_port="$(pick_port)"
+    run_with_webui "$catalog" "$port" "$webui_port"
+    pid="${PIDS[${#PIDS[@]}-1]}"
+    log_path="$TMP_DIR/run-webui-$port.log"
+    if wait_http_code "http://127.0.0.1:$port/discover.json" "200" &&
+      wait_http_code "http://127.0.0.1:$webui_port/login" "200"; then
+      printf -v "$tuner_port_var" '%s' "$port"
+      printf -v "$webui_port_var" '%s' "$webui_port"
+      return 0
+    fi
+    if ! kill -0 "$pid" 2>/dev/null && grep -Eq 'listen tcp :[0-9]+: bind: address already in use' "$log_path" 2>/dev/null; then
+      log "$label port collision; retrying"
+      wait "$pid" 2>/dev/null || true
+      continue
+    fi
+    fail "$label webui or discover endpoint not ready"
+  done
+  fail "$label could not find free tuner/webui ports"
+}
+
 run_vod_webdav() {
   local catalog="$1" port="$2"
   "$BIN" vod-webdav -catalog "$catalog" -addr "127.0.0.1:$port" -cache "$TMP_DIR/vod-cache" \
@@ -740,11 +765,7 @@ assert_status "http://127.0.0.1:$port_empty/lineup.json" "200"
 assert_header "http://127.0.0.1:$port_empty/discover.json" "X-IptvTunerr-Startup-State" "loading"
 assert_header "http://127.0.0.1:$port_empty/lineup.json" "X-IptvTunerr-Startup-State" "loading"
 
-port_webui_tuner="$(pick_port)"
-port_webui="$(pick_port)"
-run_with_webui "$TMP_DIR/catalog-full.json" "$port_webui_tuner" "$port_webui"
-wait_http_code "http://127.0.0.1:$port_webui_tuner/discover.json" "200" || fail "webui run discover.json not ready"
-wait_http_code "http://127.0.0.1:$port_webui/login" "200" || fail "webui login not ready"
+run_with_webui_ready "$TMP_DIR/catalog-full.json" port_webui_tuner port_webui "webui run"
 login_headers="$TMP_DIR/webui-login.headers"
 login_code="$(curl -sS -D "$login_headers" -o /dev/null -w '%{http_code}' -X POST \
   -H 'Content-Type: application/x-www-form-urlencoded' \
