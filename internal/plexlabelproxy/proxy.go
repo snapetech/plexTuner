@@ -401,9 +401,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	lw := &loggingResponseWriter{ResponseWriter: w, status: http.StatusOK}
 	if logAccess {
 		p.logger.Printf(
-			"plexlabelproxy_access: phase=start method=%s path=%s live_tv=%v stream=%v remote=%s source=%s forwarded_for_count=%d cf_connecting_ip=%t ua=%q",
+			"plexlabelproxy_access: phase=start method=%s path=%s query_keys=%q live_tv=%v stream=%v remote=%s source=%s forwarded_for_count=%d cf_connecting_ip=%t ua=%q",
 			r.Method,
 			r.URL.EscapedPath(),
+			redactedQueryKeys(r.URL.Query()),
 			IsLiveTVRequest(r),
 			IsLiveTVStreamRequest(r),
 			clientAddress(r.RemoteAddr),
@@ -416,9 +417,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.reverseProxy.ServeHTTP(lw, r)
 	if logAccess {
 		p.logger.Printf(
-			"plexlabelproxy_access: phase=done method=%s path=%s status=%d bytes=%d dur=%s source=%s token_fp=%s",
+			"plexlabelproxy_access: phase=done method=%s path=%s query_keys=%q status=%d bytes=%d dur=%s source=%s token_fp=%s",
 			r.Method,
 			r.URL.EscapedPath(),
+			redactedQueryKeys(r.URL.Query()),
 			lw.status,
 			lw.bytes,
 			time.Since(start).Round(time.Millisecond),
@@ -426,6 +428,21 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			tokenFingerprint(inboundPlexToken(r)),
 		)
 	}
+}
+
+func redactedQueryKeys(q url.Values) string {
+	if len(q) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(q))
+	for key := range q {
+		if strings.EqualFold(key, "X-Plex-Token") {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ",")
 }
 
 type loggingResponseWriter struct {
@@ -465,6 +482,7 @@ func shouldLogProxyAccess(req *http.Request) bool {
 	}
 	path := req.URL.EscapedPath()
 	return IsLiveTVRequest(req) ||
+		isMediaSubscriptionPath(path) ||
 		strings.HasPrefix(path, "/video/:/transcode/") ||
 		strings.HasPrefix(path, "/playQueues") ||
 		strings.HasPrefix(path, "/:/timeline") ||

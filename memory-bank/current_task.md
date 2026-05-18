@@ -1,3 +1,29 @@
+**Current (2026-05-18):** Cut `v0.1.79` for Plex DVR token-audit hardening.
+
+- Goal: commit current proxy/token-audit hardening, push `main`, tag `v0.1.79`, and monitor the release workflow.
+- Scope: include the Plex Live TV classifier/logging hardening, smoke port-collision retry fix, generated council updates, changelog, and memory-bank updates.
+- Assumption: next patch tag after `v0.1.78` is `v0.1.79`.
+- Done: promoted Unreleased Plex DVR/CI notes into the `v0.1.79` changelog section.
+- Done: confirmed `v0.1.78` Release workflow completed successfully, including Discord, Matrix, and package-channel dispatch.
+- Next: run release-readiness, commit/push, tag/push `v0.1.79`, then monitor release automation.
+
+**Current (2026-05-18):** Audit Plex Live TV token elevation gaps after `v0.1.78`.
+
+- Goal: find remaining Plex request shapes where shared-user Live TV/DVR flows may need owner-token substitution, clearer denial logging, or explicit non-elevation coverage.
+- Scope: `internal/plexlabelproxy` classifier/proxy behavior, recent tests, and live proxy logs where available.
+- Assumption: keep relaxation narrow to Live TV/XMLTV/tuner evidence; do not broadly elevate library subscription or non-Live-TV Plex paths.
+- Done: found a remaining classifier edge where a DVR save could carry only a double-encoded XMLTV `ratingKey` value.
+- Done: patched Live TV text detection to decode repeated URL-encoding layers and still keep matching scoped to Live TV/XMLTV identifiers.
+- Done: added access logging for all `/media/subscriptions*` requests, including redacted query-key names and status, so future non-elevated Plex save shapes are visible without raw token/value leakage.
+- Done: recent live proxy logs showed no fresh subscription-denial traffic after `v0.1.78`; only zero-count audit summaries appeared in the sampled window.
+- Verification: `go test -count=1 ./internal/plexlabelproxy` passed.
+- Done: first full `./scripts/verify` run exposed a smoke retry bug where a Web UI sidecar bind failure left the tuner process alive and skipped the port-collision retry branch; patched the smoke script to kill/retry on the log evidence.
+- Done: direct `bash scripts/ci-smoke.sh` passed after the smoke retry fix.
+- Done: full `./scripts/verify` passed after rerun.
+- Done: deployed the patched proxy binary to the internal Live TV proxy service and restarted only that service.
+- Done: live no-token validation showed the double-encoded XMLTV `hints[ratingKey]` shape is now `live_tv=true` and denied before elevation due to missing token, while a library subscription shape stays `live_tv=false` and logs redacted query keys/status.
+- Next: commit/push if requested, or monitor the next shared-user retry for `/media/subscriptions*` access/audit logs.
+
 **Current (2026-05-18):** Cut `v0.1.78` for Plex DVR save fix.
 
 - Goal: commit any remaining dirty work, push `main`, tag `v0.1.78`, and monitor the release workflow.

@@ -277,13 +277,37 @@ func refererIsLiveTV(ref string) bool {
 }
 
 func liveTVText(s string) bool {
+	for i := 0; i < 4; i++ {
+		if rawLiveTVText(s) {
+			return true
+		}
+		unescaped, err := url.QueryUnescape(s)
+		if err != nil || unescaped == s {
+			unescaped, err = url.PathUnescape(s)
+			if err != nil || unescaped == s {
+				break
+			}
+		}
+		s = unescaped
+	}
+	return rawLiveTVText(s)
+}
+
+func rawLiveTVText(s string) bool {
 	s = strings.ToLower(s)
 	return strings.Contains(s, "/livetv/") ||
 		strings.Contains(s, "tv.plex.xmltv:") ||
 		strings.Contains(s, "tv.plex.providers.epg.xmltv:") ||
 		strings.Contains(s, "livetv%2f") ||
+		strings.Contains(s, "livetv%252f") ||
 		strings.Contains(s, "tv.plex.xmltv%3a") ||
-		strings.Contains(s, "tv.plex.providers.epg.xmltv%3a")
+		strings.Contains(s, "tv%2eplex%2exmltv%3a") ||
+		strings.Contains(s, "tv.plex.xmltv%253a") ||
+		strings.Contains(s, "tv%252eplex%252exmltv%253a") ||
+		strings.Contains(s, "tv.plex.providers.epg.xmltv%3a") ||
+		strings.Contains(s, "tv%2eplex%2eproviders%2eepg%2exmltv%3a") ||
+		strings.Contains(s, "tv.plex.providers.epg.xmltv%253a") ||
+		strings.Contains(s, "tv%252eplex%252eproviders%252eepg%252exmltv%253a")
 }
 
 // RewriteTunerEntitlementFlags rewrites the small XML/JSON hints Plex Web uses to

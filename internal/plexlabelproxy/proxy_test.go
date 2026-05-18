@@ -1182,6 +1182,18 @@ func TestIsLiveTVRequest_PostMediaSubscriptionWithPlexHintQueryElevated(t *testi
 	}
 }
 
+func TestIsLiveTVRequest_PostMediaSubscriptionWithDoubleEncodedRatingKeyElevated(t *testing.T) {
+	target := "/media/subscriptions?" +
+		"prefs%5BoneShot%5D=true&" +
+		"hints%5BratingKey%5D=tv%252Eplex%252Exmltv%253A%252F%252Fmovie%252FLive%25253A%252520NBA%252520Basketball&" +
+		"params%5BmediaProviderID%5D=12337&type=1"
+	req := httptest.NewRequest(http.MethodPost, target, nil)
+
+	if !IsLiveTVRequest(req) {
+		t.Fatal("POST /media/subscriptions with double-encoded XMLTV ratingKey should be elevated")
+	}
+}
+
 func TestIsLiveTVRequest_MediaSubscriptionListsElevated(t *testing.T) {
 	for _, path := range []string{"/media/subscriptions", "/media/subscriptions/scheduled"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -1250,6 +1262,40 @@ func TestIsLiveTVRequest_MediaSubscriptionRuleEditsElevatedOnlyWithLiveTVEvidenc
 				t.Fatalf("body not restored after classification: got %q want %q", restored, tc.body)
 			}
 		})
+	}
+}
+
+func TestProxy_LogsNonElevatedMediaSubscriptionAccess(t *testing.T) {
+	var logBuf bytes.Buffer
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+	}))
+	defer up.Close()
+
+	proxy, err := New(Config{
+		Upstream:      up.URL,
+		Token:         "label-token",
+		OwnerToken:    "owner-token",
+		ElevateLiveTV: true,
+		Logger:        log.New(&logBuf, "", 0),
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/media/subscriptions?X-Plex-Token=user-token", strings.NewReader("guid=com.plexapp.agents.imdb%3A%2F%2Ftt1234567"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	proxy.ServeHTTP(httptest.NewRecorder(), req)
+
+	logged := logBuf.String()
+	if !strings.Contains(logged, "plexlabelproxy_access: phase=start method=POST path=/media/subscriptions query_keys=\"\" live_tv=false") {
+		t.Fatalf("expected non-elevated subscription start log, got %s", logged)
+	}
+	if !strings.Contains(logged, "plexlabelproxy_access: phase=done method=POST path=/media/subscriptions query_keys=\"\" status=403") {
+		t.Fatalf("expected non-elevated subscription status log, got %s", logged)
+	}
+	if strings.Contains(logged, "user-token") {
+		t.Fatalf("access log leaked raw token: %s", logged)
 	}
 }
 

@@ -573,8 +573,9 @@ run_with_webui_ready() {
       printf -v "$webui_port_var" '%s' "$webui_port"
       return 0
     fi
-    if ! kill -0 "$pid" 2>/dev/null && grep -Eq 'listen tcp :[0-9]+: bind: address already in use' "$log_path" 2>/dev/null; then
+    if grep -Eq 'listen tcp :[0-9]+: bind: address already in use' "$log_path" 2>/dev/null; then
       log "$label port collision; retrying"
+      kill "$pid" 2>/dev/null || true
       wait "$pid" 2>/dev/null || true
       continue
     fi

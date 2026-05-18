@@ -202,6 +202,23 @@
 - Code fix: source blocks now apply only after checking for an authorized inbound Plex token. Owner tokens and tokens already authorized for the Plex server bypass the source block; missing/unauthorized tokens remain blocked or cooled down.
 - Verification: public `/identity` returned `200`, public no-token `/livetv/dvrs` returned `403`, all media services remained active, and `go test -count=1 ./cmd/iptv-tunerr ./internal/plexlabelproxy` passed.
 
+## 2026-05-18 - Prepare v0.1.79 Plex DVR token-audit release
+
+- Promoted the repeated URL-decoding DVR classifier hardening, safe subscription-save diagnostics, and Web UI smoke retry fix into the `v0.1.79` changelog section.
+- Confirmed the prior `v0.1.78` release workflow eventually completed successfully, including Discord, Matrix, and package-channel dispatch.
+- Verification before release prep: focused proxy tests, direct binary smoke, and full `./scripts/verify` passed.
+
+## 2026-05-18 - Audit Plex Live TV token elevation gaps
+
+- Relaxed Live TV/XMLTV text detection for repeated URL-encoding so Plex DVR save hints that arrive only as double-encoded `ratingKey` values still borrow owner tuner entitlement.
+- Added safe access logging for `/media/subscriptions*` requests even when they are intentionally not elevated; logs include redacted query-key names, status, token fingerprint, and no raw values.
+- Checked recent live proxy logs for fresh post-release subscription denials; the sampled window showed no new failing DVR traffic.
+- Verification: `go test -count=1 ./internal/plexlabelproxy` passed.
+- Follow-up: fixed a binary-smoke Web UI sidecar port-collision retry bug discovered during full verification; the tuner process can stay alive after only the sidecar listener fails, so the smoke script now kills/retries based on bind-failure log evidence.
+- Verification: direct `bash scripts/ci-smoke.sh` passed; full `./scripts/verify` passed after the smoke retry fix.
+- Live deploy: installed the patched proxy binary and restarted only the Live TV proxy service.
+- Live validation: a no-token double-encoded XMLTV `hints[ratingKey]` subscription save probe logged `live_tv=true` with redacted query keys and was denied before elevation; a no-token library subscription probe stayed `live_tv=false` and logged redacted query keys/status.
+
 ## 2026-05-18 - Prepare v0.1.78 Plex DVR release
 
 - Promoted the shared-user Plex DVR subscription-save classifier fix into the `v0.1.78` changelog section.

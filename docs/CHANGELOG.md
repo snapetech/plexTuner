@@ -13,6 +13,15 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+## [v0.1.79] - 2026-05-18
+
+### Plex DVR
+- **Shared-user recording saves tolerate nested Plex URL encoding:** the Live TV proxy now decodes Live TV/XMLTV identifiers through repeated URL-encoding layers, covering DVR save hints that arrive only as double-encoded `ratingKey` values.
+- **Subscription-save diagnostics include safe query shape:** Live TV proxy access logs now include redacted query-key names and status for `/media/subscriptions*` requests even when they are intentionally not elevated, making the next Plex DVR save mismatch diagnosable without exposing tokens or parameter values.
+
+### CI
+- **Web UI smoke retries sidecar port collisions:** binary smoke now retries when the Web UI sidecar listener fails to bind while the tuner process remains alive, avoiding false failures on busy self-hosted runners.
+
 ## [v0.1.78] - 2026-05-18
 
 ### Plex DVR

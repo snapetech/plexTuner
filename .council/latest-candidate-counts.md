@@ -1,5 +1,5 @@
 # IPTVtunerr Council Candidate Scan
-# Generated: 2026-05-18T15:37:54Z
+# Generated: 2026-05-18T16:08:20Z
 
 ## Proxy token elevation and header trust
 docs/runbooks/plex-live-tv-entitlement-proxy.md:41:curl -X PUT "http://127.0.0.1:32400/:/prefs?X-Plex-Token=$OWNER_TOKEN&RelayEnabled=0"
@@ -41,52 +41,63 @@ internal/plexlabelproxy/proxy.go:348:	if token == strings.TrimSpace(p.cfg.OwnerT
 internal/plexlabelproxy/proxy.go:373:	source := apparentSource(req)
 internal/plexlabelproxy/proxy.go:386:		trustedHeaderPresent(req, "CF-Connecting-IP"),
 internal/plexlabelproxy/proxy.go:395:		p.auditElevation(r, "blocked_bad_actor", inboundPlexToken(r), "temporary block after repeated bad elevation attempts")
-internal/plexlabelproxy/proxy.go:410:			sourceFingerprint(apparentSource(r)),
-internal/plexlabelproxy/proxy.go:412:			trustedHeaderPresent(r, "CF-Connecting-IP"),
-internal/plexlabelproxy/proxy.go:425:			sourceFingerprint(apparentSource(r)),
-internal/plexlabelproxy/proxy.go:426:			tokenFingerprint(inboundPlexToken(r)),
-internal/plexlabelproxy/proxy.go:578:				sourceFingerprint(apparentSource(req)),
-internal/plexlabelproxy/proxy.go:589:		elevated = ApplyLiveTVDiscoveryElevation(req, p.cfg.OwnerToken)
-internal/plexlabelproxy/proxy.go:591:		elevated = ApplyLiveTVTokenElevation(req, p.cfg.OwnerToken)
-internal/plexlabelproxy/proxy.go:602:	if p.cfg.UserHeader && elevationToken != "" && elevationToken != strings.TrimSpace(p.cfg.OwnerToken) {
-internal/plexlabelproxy/proxy.go:607:	// was genuinely elevated (original token ≠ owner token). ElevateLiveTV only
-internal/plexlabelproxy/proxy.go:612:		elevationToken != strings.TrimSpace(p.cfg.OwnerToken) {
-internal/plexlabelproxy/proxy.go:620:// on Live TV stream-start requests in ElevateLiveTV mode.
-internal/plexlabelproxy/proxy.go:630:			sourceFingerprint(apparentSource(req)),
-internal/plexlabelproxy/proxy.go:640:	source := apparentSource(req)
-internal/plexlabelproxy/proxy.go:751:	return source == apparentSource(req)
-internal/plexlabelproxy/proxy.go:788:func inboundPlexToken(req *http.Request) string {
-internal/plexlabelproxy/proxy.go:792:	if token := req.URL.Query().Get("X-Plex-Token"); token != "" {
-internal/plexlabelproxy/proxy.go:798:	return req.Header.Get("X-Plex-Token")
-internal/plexlabelproxy/proxy.go:803:	for _, raw := range h.Values("Connection") {
-internal/plexlabelproxy/proxy.go:821:	for _, raw := range req.Header.Values("Connection") {
-internal/plexlabelproxy/proxy.go:924:	if p.blockBypassAllowed(req, inboundPlexToken(req)) {
-internal/plexlabelproxy/proxy.go:935:	if token == strings.TrimSpace(p.cfg.OwnerToken) {
-internal/plexlabelproxy/proxy.go:953:	return apparentSource(req)
-internal/plexlabelproxy/proxy.go:956:func apparentSource(req *http.Request) string {
-internal/plexlabelproxy/proxy.go:970:	raw := trustedHeader(req, "X-Forwarded-For")
-internal/plexlabelproxy/proxy.go:984:	ip := trustedHeader(req, "CF-Connecting-IP")
-internal/plexlabelproxy/proxy.go:995:func trustedHeader(req *http.Request, name string) string {
-internal/plexlabelproxy/proxy.go:1002:func trustedHeaderPresent(req *http.Request, name string) bool {
-internal/plexlabelproxy/proxy.go:1003:	return strings.TrimSpace(trustedHeader(req, name)) != ""
-internal/plexlabelproxy/proxy.go:1007:	raw := trustedHeader(req, "X-Forwarded-For")
-internal/plexlabelproxy/proxy.go:1346:	if strings.TrimSpace(p.cfg.OwnerToken) == "" || !isPlaybackProgressPath(req) {
-internal/plexlabelproxy/proxy.go:1351:		q.Set("X-Plex-Token", p.cfg.OwnerToken)
-internal/plexlabelproxy/proxy.go:1353:		req.Header.Set("X-Plex-Token", p.cfg.OwnerToken)
-internal/plexlabelproxy/proxy.go:1354:		p.auditElevation(req, "elevated_live_tv", p.cfg.OwnerToken, "owner token borrowed for tracked Live TV playback progress")
-internal/plexlabelproxy/proxy.go:1401:		sourceFingerprint(apparentSource(req)),
-internal/plexlabelproxy/proxy.go:1409:		tokenFingerprint(inboundPlexToken(req)),
-internal/plexlabelproxy/proxy.go:1431:	nq.Set("X-Plex-Token", userToken)
-internal/plexlabelproxy/proxy.go:1452:	ownerToken := strings.TrimSpace(p.cfg.OwnerToken)
-internal/plexlabelproxy/proxy.go:1462:	q.Set("X-Plex-Token", ownerToken)
-internal/plexlabelproxy/proxy.go:1481:	if !p.cfg.ElevateLiveTV {
+internal/plexlabelproxy/proxy.go:411:			sourceFingerprint(apparentSource(r)),
+internal/plexlabelproxy/proxy.go:413:			trustedHeaderPresent(r, "CF-Connecting-IP"),
+internal/plexlabelproxy/proxy.go:427:			sourceFingerprint(apparentSource(r)),
+internal/plexlabelproxy/proxy.go:428:			tokenFingerprint(inboundPlexToken(r)),
+internal/plexlabelproxy/proxy.go:439:		if strings.EqualFold(key, "X-Plex-Token") {
+internal/plexlabelproxy/proxy.go:596:				sourceFingerprint(apparentSource(req)),
+internal/plexlabelproxy/proxy.go:607:		elevated = ApplyLiveTVDiscoveryElevation(req, p.cfg.OwnerToken)
+internal/plexlabelproxy/proxy.go:609:		elevated = ApplyLiveTVTokenElevation(req, p.cfg.OwnerToken)
+internal/plexlabelproxy/proxy.go:620:	if p.cfg.UserHeader && elevationToken != "" && elevationToken != strings.TrimSpace(p.cfg.OwnerToken) {
+internal/plexlabelproxy/proxy.go:625:	// was genuinely elevated (original token ≠ owner token). ElevateLiveTV only
+internal/plexlabelproxy/proxy.go:630:		elevationToken != strings.TrimSpace(p.cfg.OwnerToken) {
+internal/plexlabelproxy/proxy.go:638:// on Live TV stream-start requests in ElevateLiveTV mode.
+internal/plexlabelproxy/proxy.go:648:			sourceFingerprint(apparentSource(req)),
+internal/plexlabelproxy/proxy.go:658:	source := apparentSource(req)
+internal/plexlabelproxy/proxy.go:769:	return source == apparentSource(req)
+internal/plexlabelproxy/proxy.go:806:func inboundPlexToken(req *http.Request) string {
+internal/plexlabelproxy/proxy.go:810:	if token := req.URL.Query().Get("X-Plex-Token"); token != "" {
+internal/plexlabelproxy/proxy.go:816:	return req.Header.Get("X-Plex-Token")
+internal/plexlabelproxy/proxy.go:821:	for _, raw := range h.Values("Connection") {
+internal/plexlabelproxy/proxy.go:839:	for _, raw := range req.Header.Values("Connection") {
+internal/plexlabelproxy/proxy.go:942:	if p.blockBypassAllowed(req, inboundPlexToken(req)) {
+internal/plexlabelproxy/proxy.go:953:	if token == strings.TrimSpace(p.cfg.OwnerToken) {
+internal/plexlabelproxy/proxy.go:971:	return apparentSource(req)
+internal/plexlabelproxy/proxy.go:974:func apparentSource(req *http.Request) string {
+internal/plexlabelproxy/proxy.go:988:	raw := trustedHeader(req, "X-Forwarded-For")
+internal/plexlabelproxy/proxy.go:1002:	ip := trustedHeader(req, "CF-Connecting-IP")
+internal/plexlabelproxy/proxy.go:1013:func trustedHeader(req *http.Request, name string) string {
+internal/plexlabelproxy/proxy.go:1020:func trustedHeaderPresent(req *http.Request, name string) bool {
+internal/plexlabelproxy/proxy.go:1021:	return strings.TrimSpace(trustedHeader(req, name)) != ""
+internal/plexlabelproxy/proxy.go:1025:	raw := trustedHeader(req, "X-Forwarded-For")
+internal/plexlabelproxy/proxy.go:1364:	if strings.TrimSpace(p.cfg.OwnerToken) == "" || !isPlaybackProgressPath(req) {
+internal/plexlabelproxy/proxy.go:1369:		q.Set("X-Plex-Token", p.cfg.OwnerToken)
+internal/plexlabelproxy/proxy.go:1371:		req.Header.Set("X-Plex-Token", p.cfg.OwnerToken)
+internal/plexlabelproxy/proxy.go:1372:		p.auditElevation(req, "elevated_live_tv", p.cfg.OwnerToken, "owner token borrowed for tracked Live TV playback progress")
+internal/plexlabelproxy/proxy.go:1419:		sourceFingerprint(apparentSource(req)),
+internal/plexlabelproxy/proxy.go:1427:		tokenFingerprint(inboundPlexToken(req)),
+internal/plexlabelproxy/proxy.go:1449:	nq.Set("X-Plex-Token", userToken)
+internal/plexlabelproxy/proxy.go:1470:	ownerToken := strings.TrimSpace(p.cfg.OwnerToken)
+internal/plexlabelproxy/proxy.go:1480:	q.Set("X-Plex-Token", ownerToken)
+internal/plexlabelproxy/proxy.go:1499:	if !p.cfg.ElevateLiveTV {
 cmd/iptv-tunerr/cmd_plex_label_proxy.go:86:	ownerToken = resolvePlexOwnerToken(ownerToken, token)
 cmd/iptv-tunerr/cmd_plex_label_proxy.go:112:		OwnerToken:             ownerToken,
 cmd/iptv-tunerr/cmd_plex_label_proxy.go:114:		ElevateLiveTV:          elevateLiveTV,
 cmd/iptv-tunerr/cmd_plex_label_proxy.go:175:func resolvePlexOwnerToken(flagOwnerToken, fallbackToken string) string {
 cmd/iptv-tunerr/cmd_plex_label_proxy.go:176:	if t := strings.TrimSpace(flagOwnerToken); t != "" {
-internal/plexlabelproxy/labelmap_test.go:84:		if r.URL.Query().Get("X-Plex-Token") != "tok" {
 internal/plexlabelproxy/labelmap.go:122:		q.Set("X-Plex-Token", t)
+internal/plexlabelproxy/entitlement.go:24:	q.Set("X-Plex-Token", token)
+internal/plexlabelproxy/entitlement.go:26:	req.Header.Set("X-Plex-Token", token)
+internal/plexlabelproxy/entitlement.go:41:	q.Set("X-Plex-Token", token)
+internal/plexlabelproxy/entitlement.go:43:	req.Header.Set("X-Plex-Token", token)
+internal/plexlabelproxy/labelmap_test.go:84:		if r.URL.Query().Get("X-Plex-Token") != "tok" {
+cmd/iptv-tunerr/cmd_plex_label_proxy_test.go:5:func TestResolvePlexOwnerToken(t *testing.T) {
+cmd/iptv-tunerr/cmd_plex_label_proxy_test.go:8:	if got := resolvePlexOwnerToken(" flag-owner ", "fallback"); got != "flag-owner" {
+cmd/iptv-tunerr/cmd_plex_label_proxy_test.go:13:	if got := resolvePlexOwnerToken("", "fallback"); got != "env-owner" {
+cmd/iptv-tunerr/cmd_plex_label_proxy_test.go:19:	if got := resolvePlexOwnerToken("", "fallback"); got != "plex-owner" {
+cmd/iptv-tunerr/cmd_plex_label_proxy_test.go:24:	if got := resolvePlexOwnerToken("", " fallback "); got != "fallback" {
+cmd/iptv-tunerr/cmd_plex_ops.go:51:	apiRequestToken := apiRequestCmd.String("token", "", "Optional token; added as X-Plex-Token query param")
 internal/plexlabelproxy/proxy_test.go:224:			queryToken:  r.URL.Query().Get("X-Plex-Token"),
 internal/plexlabelproxy/proxy_test.go:225:			headerToken: r.Header.Get("X-Plex-Token"),
 internal/plexlabelproxy/proxy_test.go:232:	proxy, err := New(Config{Upstream: up.URL, Token: "label-token", OwnerToken: "owner-token", ElevateLiveTV: true})
@@ -193,77 +204,70 @@ internal/plexlabelproxy/proxy_test.go:1026:	req := httptest.NewRequest(http.Meth
 internal/plexlabelproxy/proxy_test.go:1040:	proxy, err := New(Config{Upstream: up.URL, Token: "label-token", OwnerToken: "owner-token", ElevateLiveTV: true})
 internal/plexlabelproxy/proxy_test.go:1046:	req := httptest.NewRequest(http.MethodGet, "/library/sections?X-Plex-Token=user-token", nil)
 internal/plexlabelproxy/proxy_test.go:1094:		req := httptest.NewRequest(method, "/livetv/dvrs?X-Plex-Token=user-token", nil)
-internal/plexlabelproxy/proxy_test.go:1278:	req := httptest.NewRequest(http.MethodGet, "/livetv/dvrs?X-Plex-Token=user-token", nil)
-internal/plexlabelproxy/proxy_test.go:1282:	if got := req.URL.Query().Get("X-Plex-Token"); got != "owner-token" {
-internal/plexlabelproxy/proxy_test.go:1285:	if got := req.Header.Get("X-Plex-Token"); got != "owner-token" {
-internal/plexlabelproxy/proxy_test.go:1289:	library := httptest.NewRequest(http.MethodGet, "/library/sections?X-Plex-Token=user-token", nil)
-internal/plexlabelproxy/proxy_test.go:1293:	if got := library.URL.Query().Get("X-Plex-Token"); got != "user-token" {
-internal/plexlabelproxy/proxy_test.go:1298:	bait := httptest.NewRequest(http.MethodGet, "/library/sections?X-Plex-Token=user-token&bait=%2Flivetv%2Fdvr", nil)
-internal/plexlabelproxy/proxy_test.go:1302:	if got := bait.URL.Query().Get("X-Plex-Token"); got != "user-token" {
-internal/plexlabelproxy/proxy_test.go:1310:		gotToken = r.URL.Query().Get("X-Plex-Token")
-internal/plexlabelproxy/proxy_test.go:1317:	proxy, err := New(Config{Upstream: up.URL, Token: "label-token", OwnerToken: "owner-token", ElevateLiveTV: true, UserHeader: true})
-internal/plexlabelproxy/proxy_test.go:1323:	req := httptest.NewRequest(http.MethodGet, "/livetv/dvrs?X-Plex-Token=user-token", nil)
-internal/plexlabelproxy/proxy_test.go:1343:	proxy, err := New(Config{Upstream: up.URL, Token: "label-token", OwnerToken: "owner-token", ElevateLiveTV: true, UserHeader: true})
-internal/plexlabelproxy/proxy_test.go:1349:	req := httptest.NewRequest(http.MethodGet, "/library/sections?X-Plex-Token=user-token", nil)
-internal/plexlabelproxy/proxy_test.go:1364:		requests = append(requests, seen{r.URL.Path, r.URL.Query().Get("X-Plex-Token")})
-internal/plexlabelproxy/proxy_test.go:1370:	proxy, err := New(Config{Upstream: up.URL, Token: "label-token", OwnerToken: "owner-token", ElevateLiveTV: true, ElevateDiscoveryOnly: true})
-internal/plexlabelproxy/proxy_test.go:1376:		"/livetv/dvrs?X-Plex-Token=user-token",
-internal/plexlabelproxy/proxy_test.go:1377:		"/media/providers?X-Plex-Token=user-token",
-internal/plexlabelproxy/proxy_test.go:1378:		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
-internal/plexlabelproxy/proxy_test.go:1379:		"/playQueues?X-Plex-Token=user-token&uri=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
-internal/plexlabelproxy/proxy_test.go:1459:		OwnerToken:             "owner-token",
-internal/plexlabelproxy/proxy_test.go:1460:		ElevateLiveTV:          true,
-internal/plexlabelproxy/proxy_test.go:1471:		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
-internal/plexlabelproxy/proxy_test.go:1479:		"/:/scrobble?X-Plex-Token=user-token&ratingKey=9876&identifier=com.plexapp.plugins.library",
-internal/plexlabelproxy/proxy_test.go:1505:		tokens = append(tokens, r.URL.Query().Get("X-Plex-Token"))
-internal/plexlabelproxy/proxy_test.go:1515:		OwnerToken:             "owner-token",
-internal/plexlabelproxy/proxy_test.go:1516:		ElevateLiveTV:          true,
-internal/plexlabelproxy/proxy_test.go:1525:		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
-internal/plexlabelproxy/proxy_test.go:1536:		"/:/scrobble?X-Plex-Token=user-token&ratingKey=2468&identifier=com.plexapp.plugins.library",
-internal/plexlabelproxy/proxy_test.go:1570:		tokens = append(tokens, r.URL.Query().Get("X-Plex-Token"))
-internal/plexlabelproxy/proxy_test.go:1572:		if r.URL.Path == "/:/timeline" && r.URL.Query().Get("X-Plex-Token") != "owner-token" {
-internal/plexlabelproxy/proxy_test.go:1584:		OwnerToken:             "owner-token",
-internal/plexlabelproxy/proxy_test.go:1585:		ElevateLiveTV:          true,
-internal/plexlabelproxy/proxy_test.go:1594:		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
-internal/plexlabelproxy/proxy_test.go:1600:		"/:/timeline?X-Plex-Token=user-token&state=playing&ratingKey=2468",
-internal/plexlabelproxy/proxy_test.go:1638:		tokens = append(tokens, r.URL.Query().Get("X-Plex-Token"))
-internal/plexlabelproxy/proxy_test.go:1649:		OwnerToken:             "owner-token",
-internal/plexlabelproxy/proxy_test.go:1650:		ElevateLiveTV:          true,
-internal/plexlabelproxy/proxy_test.go:1660:		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
-internal/plexlabelproxy/proxy_test.go:1663:	streamReq.Header.Set("CF-Connecting-IP", "203.0.113.20")
-internal/plexlabelproxy/proxy_test.go:1673:		"/:/scrobble?X-Plex-Token=user-token&ratingKey=2468&identifier=com.plexapp.plugins.library",
-internal/plexlabelproxy/proxy_test.go:1676:	scrobbleReq.Header.Set("CF-Connecting-IP", "203.0.113.21")
-internal/plexlabelproxy/proxy_test.go:1722:		OwnerToken:             "owner-token",
-internal/plexlabelproxy/proxy_test.go:1723:		ElevateLiveTV:          true,
-internal/plexlabelproxy/proxy_test.go:1732:		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8&playQueueID=777",
-internal/plexlabelproxy/proxy_test.go:1737:		"/:/scrobble?X-Plex-Token=user-token&ratingKey=1357&identifier=com.plexapp.plugins.library&playQueueID=777",
-internal/plexlabelproxy/proxy_test.go:1781:func TestProxy_ElevateAll_InjectsOwnerTokenOnEveryRequest(t *testing.T) {
-internal/plexlabelproxy/proxy_test.go:1784:		gotToken = r.URL.Query().Get("X-Plex-Token")
-internal/plexlabelproxy/proxy_test.go:1793:		OwnerToken:      "owner-token",
-internal/plexlabelproxy/proxy_test.go:1809:		req := httptest.NewRequest(http.MethodGet, path+"?X-Plex-Token=user-token", nil)
-internal/plexlabelproxy/proxy_test.go:1820:		gotToken = r.URL.Query().Get("X-Plex-Token")
-internal/plexlabelproxy/proxy_test.go:1829:		OwnerToken:      "owner-token",
-internal/plexlabelproxy/proxy_test.go:1860:		OwnerToken:             "owner-token",
-internal/plexlabelproxy/proxy_test.go:1872:		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=owner-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
-internal/plexlabelproxy/proxy_test.go:1878:		"/:/scrobble?X-Plex-Token=owner-token&ratingKey=42&identifier=com.plexapp.plugins.library",
-internal/plexlabelproxy/proxy_test.go:1900:		tokens = append(tokens, r.URL.Query().Get("X-Plex-Token"))
-internal/plexlabelproxy/proxy_test.go:1910:		OwnerToken:             "owner-token",
-internal/plexlabelproxy/proxy_test.go:1921:		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
-internal/plexlabelproxy/proxy_test.go:1932:		"/:/scrobble?X-Plex-Token=user-token&ratingKey=99&identifier=com.plexapp.plugins.library",
-internal/plexlabelproxy/proxy_test.go:1972:		tokens = append(tokens, r.URL.Query().Get("X-Plex-Token"))
-internal/plexlabelproxy/proxy_test.go:1982:		OwnerToken:             "owner-token",
-internal/plexlabelproxy/proxy_test.go:1994:		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flibrary%2Fmetadata%2F123",
-internal/plexlabelproxy/proxy_test.go:2005:		"/:/scrobble?X-Plex-Token=user-token&ratingKey=42&identifier=com.plexapp.plugins.library",
-cmd/iptv-tunerr/cmd_plex_label_proxy_test.go:5:func TestResolvePlexOwnerToken(t *testing.T) {
-cmd/iptv-tunerr/cmd_plex_label_proxy_test.go:8:	if got := resolvePlexOwnerToken(" flag-owner ", "fallback"); got != "flag-owner" {
-cmd/iptv-tunerr/cmd_plex_label_proxy_test.go:13:	if got := resolvePlexOwnerToken("", "fallback"); got != "env-owner" {
-cmd/iptv-tunerr/cmd_plex_label_proxy_test.go:19:	if got := resolvePlexOwnerToken("", "fallback"); got != "plex-owner" {
-cmd/iptv-tunerr/cmd_plex_label_proxy_test.go:24:	if got := resolvePlexOwnerToken("", " fallback "); got != "fallback" {
-internal/plexlabelproxy/entitlement.go:24:	q.Set("X-Plex-Token", token)
-internal/plexlabelproxy/entitlement.go:26:	req.Header.Set("X-Plex-Token", token)
-internal/plexlabelproxy/entitlement.go:41:	q.Set("X-Plex-Token", token)
-internal/plexlabelproxy/entitlement.go:43:	req.Header.Set("X-Plex-Token", token)
-cmd/iptv-tunerr/cmd_plex_ops.go:51:	apiRequestToken := apiRequestCmd.String("token", "", "Optional token; added as X-Plex-Token query param")
+internal/plexlabelproxy/proxy_test.go:1278:		OwnerToken:    "owner-token",
+internal/plexlabelproxy/proxy_test.go:1279:		ElevateLiveTV: true,
+internal/plexlabelproxy/proxy_test.go:1286:	req := httptest.NewRequest(http.MethodPost, "/media/subscriptions?X-Plex-Token=user-token", strings.NewReader("guid=com.plexapp.agents.imdb%3A%2F%2Ftt1234567"))
+internal/plexlabelproxy/proxy_test.go:1324:	req := httptest.NewRequest(http.MethodGet, "/livetv/dvrs?X-Plex-Token=user-token", nil)
+internal/plexlabelproxy/proxy_test.go:1328:	if got := req.URL.Query().Get("X-Plex-Token"); got != "owner-token" {
+internal/plexlabelproxy/proxy_test.go:1331:	if got := req.Header.Get("X-Plex-Token"); got != "owner-token" {
+internal/plexlabelproxy/proxy_test.go:1335:	library := httptest.NewRequest(http.MethodGet, "/library/sections?X-Plex-Token=user-token", nil)
+internal/plexlabelproxy/proxy_test.go:1339:	if got := library.URL.Query().Get("X-Plex-Token"); got != "user-token" {
+internal/plexlabelproxy/proxy_test.go:1344:	bait := httptest.NewRequest(http.MethodGet, "/library/sections?X-Plex-Token=user-token&bait=%2Flivetv%2Fdvr", nil)
+internal/plexlabelproxy/proxy_test.go:1348:	if got := bait.URL.Query().Get("X-Plex-Token"); got != "user-token" {
+internal/plexlabelproxy/proxy_test.go:1356:		gotToken = r.URL.Query().Get("X-Plex-Token")
+internal/plexlabelproxy/proxy_test.go:1363:	proxy, err := New(Config{Upstream: up.URL, Token: "label-token", OwnerToken: "owner-token", ElevateLiveTV: true, UserHeader: true})
+internal/plexlabelproxy/proxy_test.go:1369:	req := httptest.NewRequest(http.MethodGet, "/livetv/dvrs?X-Plex-Token=user-token", nil)
+internal/plexlabelproxy/proxy_test.go:1389:	proxy, err := New(Config{Upstream: up.URL, Token: "label-token", OwnerToken: "owner-token", ElevateLiveTV: true, UserHeader: true})
+internal/plexlabelproxy/proxy_test.go:1395:	req := httptest.NewRequest(http.MethodGet, "/library/sections?X-Plex-Token=user-token", nil)
+internal/plexlabelproxy/proxy_test.go:1410:		requests = append(requests, seen{r.URL.Path, r.URL.Query().Get("X-Plex-Token")})
+internal/plexlabelproxy/proxy_test.go:1416:	proxy, err := New(Config{Upstream: up.URL, Token: "label-token", OwnerToken: "owner-token", ElevateLiveTV: true, ElevateDiscoveryOnly: true})
+internal/plexlabelproxy/proxy_test.go:1422:		"/livetv/dvrs?X-Plex-Token=user-token",
+internal/plexlabelproxy/proxy_test.go:1423:		"/media/providers?X-Plex-Token=user-token",
+internal/plexlabelproxy/proxy_test.go:1424:		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
+internal/plexlabelproxy/proxy_test.go:1425:		"/playQueues?X-Plex-Token=user-token&uri=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
+internal/plexlabelproxy/proxy_test.go:1505:		OwnerToken:             "owner-token",
+internal/plexlabelproxy/proxy_test.go:1506:		ElevateLiveTV:          true,
+internal/plexlabelproxy/proxy_test.go:1517:		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
+internal/plexlabelproxy/proxy_test.go:1525:		"/:/scrobble?X-Plex-Token=user-token&ratingKey=9876&identifier=com.plexapp.plugins.library",
+internal/plexlabelproxy/proxy_test.go:1551:		tokens = append(tokens, r.URL.Query().Get("X-Plex-Token"))
+internal/plexlabelproxy/proxy_test.go:1561:		OwnerToken:             "owner-token",
+internal/plexlabelproxy/proxy_test.go:1562:		ElevateLiveTV:          true,
+internal/plexlabelproxy/proxy_test.go:1571:		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
+internal/plexlabelproxy/proxy_test.go:1582:		"/:/scrobble?X-Plex-Token=user-token&ratingKey=2468&identifier=com.plexapp.plugins.library",
+internal/plexlabelproxy/proxy_test.go:1616:		tokens = append(tokens, r.URL.Query().Get("X-Plex-Token"))
+internal/plexlabelproxy/proxy_test.go:1618:		if r.URL.Path == "/:/timeline" && r.URL.Query().Get("X-Plex-Token") != "owner-token" {
+internal/plexlabelproxy/proxy_test.go:1630:		OwnerToken:             "owner-token",
+internal/plexlabelproxy/proxy_test.go:1631:		ElevateLiveTV:          true,
+internal/plexlabelproxy/proxy_test.go:1640:		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
+internal/plexlabelproxy/proxy_test.go:1646:		"/:/timeline?X-Plex-Token=user-token&state=playing&ratingKey=2468",
+internal/plexlabelproxy/proxy_test.go:1684:		tokens = append(tokens, r.URL.Query().Get("X-Plex-Token"))
+internal/plexlabelproxy/proxy_test.go:1695:		OwnerToken:             "owner-token",
+internal/plexlabelproxy/proxy_test.go:1696:		ElevateLiveTV:          true,
+internal/plexlabelproxy/proxy_test.go:1706:		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
+internal/plexlabelproxy/proxy_test.go:1709:	streamReq.Header.Set("CF-Connecting-IP", "203.0.113.20")
+internal/plexlabelproxy/proxy_test.go:1719:		"/:/scrobble?X-Plex-Token=user-token&ratingKey=2468&identifier=com.plexapp.plugins.library",
+internal/plexlabelproxy/proxy_test.go:1722:	scrobbleReq.Header.Set("CF-Connecting-IP", "203.0.113.21")
+internal/plexlabelproxy/proxy_test.go:1768:		OwnerToken:             "owner-token",
+internal/plexlabelproxy/proxy_test.go:1769:		ElevateLiveTV:          true,
+internal/plexlabelproxy/proxy_test.go:1778:		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8&playQueueID=777",
+internal/plexlabelproxy/proxy_test.go:1783:		"/:/scrobble?X-Plex-Token=user-token&ratingKey=1357&identifier=com.plexapp.plugins.library&playQueueID=777",
+internal/plexlabelproxy/proxy_test.go:1827:func TestProxy_ElevateAll_InjectsOwnerTokenOnEveryRequest(t *testing.T) {
+internal/plexlabelproxy/proxy_test.go:1830:		gotToken = r.URL.Query().Get("X-Plex-Token")
+internal/plexlabelproxy/proxy_test.go:1839:		OwnerToken:      "owner-token",
+internal/plexlabelproxy/proxy_test.go:1855:		req := httptest.NewRequest(http.MethodGet, path+"?X-Plex-Token=user-token", nil)
+internal/plexlabelproxy/proxy_test.go:1866:		gotToken = r.URL.Query().Get("X-Plex-Token")
+internal/plexlabelproxy/proxy_test.go:1875:		OwnerToken:      "owner-token",
+internal/plexlabelproxy/proxy_test.go:1906:		OwnerToken:             "owner-token",
+internal/plexlabelproxy/proxy_test.go:1918:		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=owner-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
+internal/plexlabelproxy/proxy_test.go:1924:		"/:/scrobble?X-Plex-Token=owner-token&ratingKey=42&identifier=com.plexapp.plugins.library",
+internal/plexlabelproxy/proxy_test.go:1946:		tokens = append(tokens, r.URL.Query().Get("X-Plex-Token"))
+internal/plexlabelproxy/proxy_test.go:1956:		OwnerToken:             "owner-token",
+internal/plexlabelproxy/proxy_test.go:1967:		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flivetv%2Fsessions%2Fabc%2Findex.m3u8",
+internal/plexlabelproxy/proxy_test.go:1978:		"/:/scrobble?X-Plex-Token=user-token&ratingKey=99&identifier=com.plexapp.plugins.library",
+internal/plexlabelproxy/proxy_test.go:2018:		tokens = append(tokens, r.URL.Query().Get("X-Plex-Token"))
+internal/plexlabelproxy/proxy_test.go:2028:		OwnerToken:             "owner-token",
+internal/plexlabelproxy/proxy_test.go:2040:		"/video/:/transcode/universal/start.m3u8?X-Plex-Token=user-token&path=%2Flibrary%2Fmetadata%2F123",
+internal/plexlabelproxy/proxy_test.go:2051:		"/:/scrobble?X-Plex-Token=user-token&ratingKey=42&identifier=com.plexapp.plugins.library",
 
 ## Live TV classifier and entitlement rewrite surfaces
 internal/plexlabelproxy/proxy.go:52:	// When enabled, only requests classified by IsLiveTVRequest are rewritten
@@ -273,22 +277,22 @@ internal/plexlabelproxy/proxy.go:58:	// (IsLiveTVDiscoveryRequest). Stream-start
 internal/plexlabelproxy/proxy.go:380:		IsLiveTVRequest(req),
 internal/plexlabelproxy/proxy.go:381:		IsLiveTVDiscoveryRequest(req),
 internal/plexlabelproxy/proxy.go:382:		IsLiveTVStreamRequest(req),
-internal/plexlabelproxy/proxy.go:407:			IsLiveTVRequest(r),
-internal/plexlabelproxy/proxy.go:408:			IsLiveTVStreamRequest(r),
-internal/plexlabelproxy/proxy.go:467:	return IsLiveTVRequest(req) ||
-internal/plexlabelproxy/proxy.go:481:	scope := classifyResponse(resp.Request.URL.Path, resp.Header.Get("Content-Type"))
-internal/plexlabelproxy/proxy.go:501:			return restoreBody(resp, RewriteTunerEntitlementFlags(body), encoding)
-internal/plexlabelproxy/proxy.go:513:		rewritten = RewriteTunerEntitlementFlags(rewritten)
-internal/plexlabelproxy/proxy.go:565:		if !IsLiveTVDiscoveryRequest(req) {
-internal/plexlabelproxy/proxy.go:568:	} else if !IsLiveTVRequest(req) {
-internal/plexlabelproxy/proxy.go:589:		elevated = ApplyLiveTVDiscoveryElevation(req, p.cfg.OwnerToken)
-internal/plexlabelproxy/proxy.go:591:		elevated = ApplyLiveTVTokenElevation(req, p.cfg.OwnerToken)
-internal/plexlabelproxy/proxy.go:611:		IsLiveTVStreamRequest(req) &&
-internal/plexlabelproxy/proxy.go:903:	if !IsLiveTVRequest(req) {
-internal/plexlabelproxy/proxy.go:1487:	if !pathCanCarryTunerEntitlement(resp.Request.URL.EscapedPath()) {
-internal/plexlabelproxy/proxy.go:1494:func pathCanCarryTunerEntitlement(path string) bool {
-internal/plexlabelproxy/proxy.go:1639:// classifyResponse maps a request path + Content-Type to a rewrite scope.
-internal/plexlabelproxy/proxy.go:1640:func classifyResponse(path, contentType string) scope {
+internal/plexlabelproxy/proxy.go:408:			IsLiveTVRequest(r),
+internal/plexlabelproxy/proxy.go:409:			IsLiveTVStreamRequest(r),
+internal/plexlabelproxy/proxy.go:484:	return IsLiveTVRequest(req) ||
+internal/plexlabelproxy/proxy.go:499:	scope := classifyResponse(resp.Request.URL.Path, resp.Header.Get("Content-Type"))
+internal/plexlabelproxy/proxy.go:519:			return restoreBody(resp, RewriteTunerEntitlementFlags(body), encoding)
+internal/plexlabelproxy/proxy.go:531:		rewritten = RewriteTunerEntitlementFlags(rewritten)
+internal/plexlabelproxy/proxy.go:583:		if !IsLiveTVDiscoveryRequest(req) {
+internal/plexlabelproxy/proxy.go:586:	} else if !IsLiveTVRequest(req) {
+internal/plexlabelproxy/proxy.go:607:		elevated = ApplyLiveTVDiscoveryElevation(req, p.cfg.OwnerToken)
+internal/plexlabelproxy/proxy.go:609:		elevated = ApplyLiveTVTokenElevation(req, p.cfg.OwnerToken)
+internal/plexlabelproxy/proxy.go:629:		IsLiveTVStreamRequest(req) &&
+internal/plexlabelproxy/proxy.go:921:	if !IsLiveTVRequest(req) {
+internal/plexlabelproxy/proxy.go:1505:	if !pathCanCarryTunerEntitlement(resp.Request.URL.EscapedPath()) {
+internal/plexlabelproxy/proxy.go:1512:func pathCanCarryTunerEntitlement(path string) bool {
+internal/plexlabelproxy/proxy.go:1657:// classifyResponse maps a request path + Content-Type to a rewrite scope.
+internal/plexlabelproxy/proxy.go:1658:func classifyResponse(path, contentType string) scope {
 internal/plexlabelproxy/entitlement.go:11:// ApplyLiveTVTokenElevation rewrites a Plex request to use ownerToken only
 internal/plexlabelproxy/entitlement.go:18:func ApplyLiveTVTokenElevation(req *http.Request, ownerToken string) bool {
 internal/plexlabelproxy/entitlement.go:20:	if token == "" || !IsLiveTVRequest(req) {
@@ -305,16 +309,16 @@ internal/plexlabelproxy/entitlement.go:101:// IsLiveTVRequest classifies PMS req
 internal/plexlabelproxy/entitlement.go:108:func IsLiveTVRequest(req *http.Request) bool {
 internal/plexlabelproxy/entitlement.go:116:		if strings.EqualFold(req.Method, http.MethodPost) && IsLiveTVStreamRequest(req) {
 internal/plexlabelproxy/entitlement.go:136:	if IsLiveTVStreamRequest(req) {
-internal/plexlabelproxy/entitlement.go:289:// RewriteTunerEntitlementFlags rewrites the small XML/JSON hints Plex Web uses to
-internal/plexlabelproxy/entitlement.go:291:// narrow: it only changes allowTuners fields and never rewrites account,
-internal/plexlabelproxy/entitlement.go:293:func RewriteTunerEntitlementFlags(body []byte) []byte {
-internal/plexlabelproxy/entitlement.go:294:	if len(body) == 0 || !bytes.Contains(body, []byte("allowTuners")) {
-internal/plexlabelproxy/entitlement.go:297:	out := bytes.ReplaceAll(body, []byte(`allowTuners="0"`), []byte(`allowTuners="1"`))
-internal/plexlabelproxy/entitlement.go:298:	out = bytes.ReplaceAll(out, []byte(`<Setting id="allowTuners" value="0"`), []byte(`<Setting id="allowTuners" value="1"`))
-internal/plexlabelproxy/entitlement.go:299:	out = bytes.ReplaceAll(out, []byte(`"allowTuners":false`), []byte(`"allowTuners":true`))
-internal/plexlabelproxy/entitlement.go:300:	out = bytes.ReplaceAll(out, []byte(`"allowTuners": false`), []byte(`"allowTuners": true`))
-internal/plexlabelproxy/entitlement.go:301:	out = bytes.ReplaceAll(out, []byte(`"allowTuners":0`), []byte(`"allowTuners":1`))
-internal/plexlabelproxy/entitlement.go:302:	out = bytes.ReplaceAll(out, []byte(`"allowTuners": 0`), []byte(`"allowTuners": 1`))
+internal/plexlabelproxy/entitlement.go:313:// RewriteTunerEntitlementFlags rewrites the small XML/JSON hints Plex Web uses to
+internal/plexlabelproxy/entitlement.go:315:// narrow: it only changes allowTuners fields and never rewrites account,
+internal/plexlabelproxy/entitlement.go:317:func RewriteTunerEntitlementFlags(body []byte) []byte {
+internal/plexlabelproxy/entitlement.go:318:	if len(body) == 0 || !bytes.Contains(body, []byte("allowTuners")) {
+internal/plexlabelproxy/entitlement.go:321:	out := bytes.ReplaceAll(body, []byte(`allowTuners="0"`), []byte(`allowTuners="1"`))
+internal/plexlabelproxy/entitlement.go:322:	out = bytes.ReplaceAll(out, []byte(`<Setting id="allowTuners" value="0"`), []byte(`<Setting id="allowTuners" value="1"`))
+internal/plexlabelproxy/entitlement.go:323:	out = bytes.ReplaceAll(out, []byte(`"allowTuners":false`), []byte(`"allowTuners":true`))
+internal/plexlabelproxy/entitlement.go:324:	out = bytes.ReplaceAll(out, []byte(`"allowTuners": false`), []byte(`"allowTuners": true`))
+internal/plexlabelproxy/entitlement.go:325:	out = bytes.ReplaceAll(out, []byte(`"allowTuners":0`), []byte(`"allowTuners":1`))
+internal/plexlabelproxy/entitlement.go:326:	out = bytes.ReplaceAll(out, []byte(`"allowTuners": 0`), []byte(`"allowTuners": 1`))
 internal/plexlabelproxy/proxy_test.go:200:		if got := classifyResponse(c.path, c.ct); got != c.want {
 internal/plexlabelproxy/proxy_test.go:228:		_, _ = w.Write([]byte(`<MediaContainer allowTuners="0"/>`))
 internal/plexlabelproxy/proxy_test.go:266:		_, _ = w.Write([]byte(`<MediaContainer allowTuners="0"/>`))
@@ -359,30 +363,31 @@ internal/plexlabelproxy/proxy_test.go:1155:func TestIsLiveTVRequest_PostMediaSub
 internal/plexlabelproxy/proxy_test.go:1160:	if !IsLiveTVRequest(req) {
 internal/plexlabelproxy/proxy_test.go:1172:func TestIsLiveTVRequest_PostMediaSubscriptionWithPlexHintQueryElevated(t *testing.T) {
 internal/plexlabelproxy/proxy_test.go:1180:	if !IsLiveTVRequest(req) {
-internal/plexlabelproxy/proxy_test.go:1185:func TestIsLiveTVRequest_MediaSubscriptionListsElevated(t *testing.T) {
-internal/plexlabelproxy/proxy_test.go:1188:		if !IsLiveTVRequest(req) {
-internal/plexlabelproxy/proxy_test.go:1191:		if !IsLiveTVDiscoveryRequest(req) {
-internal/plexlabelproxy/proxy_test.go:1197:func TestIsLiveTVRequest_MediaSubscriptionRuleEditsElevatedOnlyWithLiveTVEvidence(t *testing.T) {
-internal/plexlabelproxy/proxy_test.go:1242:			if got := IsLiveTVRequest(req); got != tc.want {
-internal/plexlabelproxy/proxy_test.go:1243:				t.Fatalf("IsLiveTVRequest() = %v, want %v", got, tc.want)
-internal/plexlabelproxy/proxy_test.go:1256:func TestIsLiveTVRequest_MediaSubscriptionLibraryItemNotElevated(t *testing.T) {
-internal/plexlabelproxy/proxy_test.go:1258:	if IsLiveTVRequest(req) {
-internal/plexlabelproxy/proxy_test.go:1265:	if IsLiveTVRequest(post) {
-internal/plexlabelproxy/proxy_test.go:1270:func TestIsLiveTVRequest_OptionsPreflightNotElevated(t *testing.T) {
-internal/plexlabelproxy/proxy_test.go:1272:	if IsLiveTVRequest(req) {
-internal/plexlabelproxy/proxy_test.go:1277:func TestApplyLiveTVTokenElevation(t *testing.T) {
-internal/plexlabelproxy/proxy_test.go:1279:	if !ApplyLiveTVTokenElevation(req, "owner-token") {
-internal/plexlabelproxy/proxy_test.go:1290:	if ApplyLiveTVTokenElevation(library, "owner-token") {
-internal/plexlabelproxy/proxy_test.go:1299:	if ApplyLiveTVTokenElevation(bait, "owner-token") {
-internal/plexlabelproxy/proxy_test.go:1404:func TestIsLiveTVDiscoveryRequest(t *testing.T) {
-internal/plexlabelproxy/proxy_test.go:1418:		if got := IsLiveTVDiscoveryRequest(req); got != want {
-internal/plexlabelproxy/proxy_test.go:1419:			t.Errorf("IsLiveTVDiscoveryRequest(%q) = %v, want %v", target, got, want)
-internal/plexlabelproxy/proxy_test.go:1424:func TestIsLiveTVStreamRequest(t *testing.T) {
-internal/plexlabelproxy/proxy_test.go:1435:		if got := IsLiveTVStreamRequest(req); got != want {
-internal/plexlabelproxy/proxy_test.go:1436:			t.Errorf("IsLiveTVStreamRequest(%q) = %v, want %v", target, got, want)
+internal/plexlabelproxy/proxy_test.go:1185:func TestIsLiveTVRequest_PostMediaSubscriptionWithDoubleEncodedRatingKeyElevated(t *testing.T) {
+internal/plexlabelproxy/proxy_test.go:1192:	if !IsLiveTVRequest(req) {
+internal/plexlabelproxy/proxy_test.go:1197:func TestIsLiveTVRequest_MediaSubscriptionListsElevated(t *testing.T) {
+internal/plexlabelproxy/proxy_test.go:1200:		if !IsLiveTVRequest(req) {
+internal/plexlabelproxy/proxy_test.go:1203:		if !IsLiveTVDiscoveryRequest(req) {
+internal/plexlabelproxy/proxy_test.go:1209:func TestIsLiveTVRequest_MediaSubscriptionRuleEditsElevatedOnlyWithLiveTVEvidence(t *testing.T) {
+internal/plexlabelproxy/proxy_test.go:1254:			if got := IsLiveTVRequest(req); got != tc.want {
+internal/plexlabelproxy/proxy_test.go:1255:				t.Fatalf("IsLiveTVRequest() = %v, want %v", got, tc.want)
+internal/plexlabelproxy/proxy_test.go:1302:func TestIsLiveTVRequest_MediaSubscriptionLibraryItemNotElevated(t *testing.T) {
+internal/plexlabelproxy/proxy_test.go:1304:	if IsLiveTVRequest(req) {
+internal/plexlabelproxy/proxy_test.go:1311:	if IsLiveTVRequest(post) {
+internal/plexlabelproxy/proxy_test.go:1316:func TestIsLiveTVRequest_OptionsPreflightNotElevated(t *testing.T) {
+internal/plexlabelproxy/proxy_test.go:1318:	if IsLiveTVRequest(req) {
+internal/plexlabelproxy/proxy_test.go:1323:func TestApplyLiveTVTokenElevation(t *testing.T) {
+internal/plexlabelproxy/proxy_test.go:1325:	if !ApplyLiveTVTokenElevation(req, "owner-token") {
+internal/plexlabelproxy/proxy_test.go:1336:	if ApplyLiveTVTokenElevation(library, "owner-token") {
+internal/plexlabelproxy/proxy_test.go:1345:	if ApplyLiveTVTokenElevation(bait, "owner-token") {
+internal/plexlabelproxy/proxy_test.go:1450:func TestIsLiveTVDiscoveryRequest(t *testing.T) {
+internal/plexlabelproxy/proxy_test.go:1464:		if got := IsLiveTVDiscoveryRequest(req); got != want {
+internal/plexlabelproxy/proxy_test.go:1465:			t.Errorf("IsLiveTVDiscoveryRequest(%q) = %v, want %v", target, got, want)
+internal/plexlabelproxy/proxy_test.go:1470:func TestIsLiveTVStreamRequest(t *testing.T) {
+internal/plexlabelproxy/proxy_test.go:1481:		if got := IsLiveTVStreamRequest(req); got != want {
+internal/plexlabelproxy/proxy_test.go:1482:			t.Errorf("IsLiveTVStreamRequest(%q) = %v, want %v", target, got, want)
 
 ## Session correlation and history replay
-internal/tuner/gateway_stream_helpers.go:438:	go func() {
 internal/plexlabelproxy/proxy.go:73:	// NeutralizeOwnerHistory, when true, intercepts /:/timeline, /:/scrobble,
 internal/plexlabelproxy/proxy.go:79:	NeutralizeOwnerHistory bool
 internal/plexlabelproxy/proxy.go:320:			if p.cfg.NeutralizeOwnerHistory &&
@@ -390,58 +395,59 @@ internal/plexlabelproxy/proxy.go:322:				p.trackSession(req, originalToken)
 internal/plexlabelproxy/proxy.go:327:		if p.cfg.NeutralizeOwnerHistory && p.cfg.ElevateLiveTV {
 internal/plexlabelproxy/proxy.go:330:		// NeutralizeOwnerHistory side-effect: for timeline/scrobble calls that
 internal/plexlabelproxy/proxy.go:333:		if p.cfg.NeutralizeOwnerHistory {
-internal/plexlabelproxy/proxy.go:573:		if token, matched := p.sessionTokenForRequest(req); token != "" {
-internal/plexlabelproxy/proxy.go:606:	// Session tracking for NeutralizeOwnerHistory: only track when the token
-internal/plexlabelproxy/proxy.go:610:	if p.cfg.NeutralizeOwnerHistory && !p.cfg.ElevateDiscoveryOnly &&
-internal/plexlabelproxy/proxy.go:613:		p.trackSession(req, elevationToken)
-internal/plexlabelproxy/proxy.go:617:// trackSession stores request correlation keys → original user token mappings
-internal/plexlabelproxy/proxy.go:621:func (p *Proxy) trackSession(req *http.Request, originalToken string) {
-internal/plexlabelproxy/proxy.go:622:	keys := sessionCorrelationKeys(req)
-internal/plexlabelproxy/proxy.go:656:func sessionCorrelationKeys(req *http.Request) []string {
-internal/plexlabelproxy/proxy.go:715:func (p *Proxy) sessionTokenForRequest(req *http.Request) (string, string) {
-internal/plexlabelproxy/proxy.go:716:	keys := sessionCorrelationKeys(req)
-internal/plexlabelproxy/proxy.go:1284:	keys := sessionCorrelationKeys(req)
-internal/plexlabelproxy/proxy.go:1336:	go p.replayAsUser(path, req.URL.Query(), userToken)
-internal/plexlabelproxy/proxy.go:1341:		go p.ownerUnscrobble(ratingKey)
-internal/plexlabelproxy/proxy.go:1355:		p.logPlaybackCorrelation(req, "elevate_progress", matched, sessionCorrelationKeys(req))
-internal/plexlabelproxy/proxy.go:1368:	keys := sessionCorrelationKeys(req)
-internal/plexlabelproxy/proxy.go:1422:// replayAsUser re-fires a timeline/scrobble/progress event under the original
-internal/plexlabelproxy/proxy.go:1424:func (p *Proxy) replayAsUser(path string, q url.Values, userToken string) {
-internal/plexlabelproxy/proxy.go:1449:// ownerUnscrobble calls /:/unscrobble on the upstream PMS under the owner
-internal/plexlabelproxy/proxy.go:1451:func (p *Proxy) ownerUnscrobble(ratingKey string) {
-internal/plexlabelproxy/proxy.go:1681:	go func() { errCh <- srv.Serve(ln) }()
-internal/plexlabelproxy/proxy.go:1686:		go func() {
+internal/plexlabelproxy/proxy.go:591:		if token, matched := p.sessionTokenForRequest(req); token != "" {
+internal/plexlabelproxy/proxy.go:624:	// Session tracking for NeutralizeOwnerHistory: only track when the token
+internal/plexlabelproxy/proxy.go:628:	if p.cfg.NeutralizeOwnerHistory && !p.cfg.ElevateDiscoveryOnly &&
+internal/plexlabelproxy/proxy.go:631:		p.trackSession(req, elevationToken)
+internal/plexlabelproxy/proxy.go:635:// trackSession stores request correlation keys → original user token mappings
+internal/plexlabelproxy/proxy.go:639:func (p *Proxy) trackSession(req *http.Request, originalToken string) {
+internal/plexlabelproxy/proxy.go:640:	keys := sessionCorrelationKeys(req)
+internal/plexlabelproxy/proxy.go:674:func sessionCorrelationKeys(req *http.Request) []string {
+internal/plexlabelproxy/proxy.go:733:func (p *Proxy) sessionTokenForRequest(req *http.Request) (string, string) {
+internal/plexlabelproxy/proxy.go:734:	keys := sessionCorrelationKeys(req)
+internal/plexlabelproxy/proxy.go:1302:	keys := sessionCorrelationKeys(req)
+internal/plexlabelproxy/proxy.go:1354:	go p.replayAsUser(path, req.URL.Query(), userToken)
+internal/plexlabelproxy/proxy.go:1359:		go p.ownerUnscrobble(ratingKey)
+internal/plexlabelproxy/proxy.go:1373:		p.logPlaybackCorrelation(req, "elevate_progress", matched, sessionCorrelationKeys(req))
+internal/plexlabelproxy/proxy.go:1386:	keys := sessionCorrelationKeys(req)
+internal/plexlabelproxy/proxy.go:1440:// replayAsUser re-fires a timeline/scrobble/progress event under the original
+internal/plexlabelproxy/proxy.go:1442:func (p *Proxy) replayAsUser(path string, q url.Values, userToken string) {
+internal/plexlabelproxy/proxy.go:1467:// ownerUnscrobble calls /:/unscrobble on the upstream PMS under the owner
+internal/plexlabelproxy/proxy.go:1469:func (p *Proxy) ownerUnscrobble(ratingKey string) {
+internal/plexlabelproxy/proxy.go:1699:	go func() { errCh <- srv.Serve(ln) }()
+internal/plexlabelproxy/proxy.go:1704:		go func() {
+internal/tuner/gateway_stream_helpers.go:438:	go func() {
+internal/tuner/cf_bootstrap.go:158:	go func() {
+internal/tuner/cf_bootstrap.go:189:							go func(h, u string) {
+internal/tuner/catchup_daemon.go:348:		go func(c CatchupCapsule) {
 internal/tuner/gateway_ffmpeg_relay.go:240:	go func() {
 internal/plexlabelproxy/proxy_test.go:625:		NeutralizeOwnerHistory: true,
 internal/plexlabelproxy/proxy_test.go:666:		NeutralizeOwnerHistory: true,
-internal/plexlabelproxy/proxy_test.go:1441:func TestProxy_NeutralizeOwnerHistory_UnscrobblesFiredForTrackedSessions(t *testing.T) {
-internal/plexlabelproxy/proxy_test.go:1461:		NeutralizeOwnerHistory: true,
-internal/plexlabelproxy/proxy_test.go:1497:func TestProxy_NeutralizeOwnerHistory_CorrelatesByClientIdentifier(t *testing.T) {
-internal/plexlabelproxy/proxy_test.go:1517:		NeutralizeOwnerHistory: true,
-internal/plexlabelproxy/proxy_test.go:1562:func TestProxy_NeutralizeOwnerHistory_ElevatesTrackedTimelineResponse(t *testing.T) {
-internal/plexlabelproxy/proxy_test.go:1586:		NeutralizeOwnerHistory: true,
-internal/plexlabelproxy/proxy_test.go:1630:func TestProxy_NeutralizeOwnerHistory_DoesNotCorrelateDifferentSource(t *testing.T) {
-internal/plexlabelproxy/proxy_test.go:1651:		NeutralizeOwnerHistory: true,
-internal/plexlabelproxy/proxy_test.go:1704:func TestProxy_NeutralizeOwnerHistory_CorrelatesByPlayQueue(t *testing.T) {
-internal/plexlabelproxy/proxy_test.go:1724:		NeutralizeOwnerHistory: true,
-internal/plexlabelproxy/proxy_test.go:1862:		NeutralizeOwnerHistory: true,
-internal/plexlabelproxy/proxy_test.go:1912:		NeutralizeOwnerHistory: true,
-internal/plexlabelproxy/proxy_test.go:1984:		NeutralizeOwnerHistory: true,
-internal/tuner/cf_bootstrap.go:158:	go func() {
-internal/tuner/cf_bootstrap.go:189:							go func(h, u string) {
-internal/tuner/psi_keepalive.go:180:	go func() {
-internal/tuner/catchup_daemon.go:348:		go func(c CatchupCapsule) {
+internal/plexlabelproxy/proxy_test.go:1487:func TestProxy_NeutralizeOwnerHistory_UnscrobblesFiredForTrackedSessions(t *testing.T) {
+internal/plexlabelproxy/proxy_test.go:1507:		NeutralizeOwnerHistory: true,
+internal/plexlabelproxy/proxy_test.go:1543:func TestProxy_NeutralizeOwnerHistory_CorrelatesByClientIdentifier(t *testing.T) {
+internal/plexlabelproxy/proxy_test.go:1563:		NeutralizeOwnerHistory: true,
+internal/plexlabelproxy/proxy_test.go:1608:func TestProxy_NeutralizeOwnerHistory_ElevatesTrackedTimelineResponse(t *testing.T) {
+internal/plexlabelproxy/proxy_test.go:1632:		NeutralizeOwnerHistory: true,
+internal/plexlabelproxy/proxy_test.go:1676:func TestProxy_NeutralizeOwnerHistory_DoesNotCorrelateDifferentSource(t *testing.T) {
+internal/plexlabelproxy/proxy_test.go:1697:		NeutralizeOwnerHistory: true,
+internal/plexlabelproxy/proxy_test.go:1750:func TestProxy_NeutralizeOwnerHistory_CorrelatesByPlayQueue(t *testing.T) {
+internal/plexlabelproxy/proxy_test.go:1770:		NeutralizeOwnerHistory: true,
+internal/plexlabelproxy/proxy_test.go:1908:		NeutralizeOwnerHistory: true,
+internal/plexlabelproxy/proxy_test.go:1958:		NeutralizeOwnerHistory: true,
+internal/plexlabelproxy/proxy_test.go:2030:		NeutralizeOwnerHistory: true,
+internal/tuner/gateway_hls.go:496:				go func() {
 internal/tuner/gateway_hls_packager.go:203:		go func() {
 internal/tuner/gateway_hls_packager.go:478:	go func() {
-internal/tuner/lineup_probe.go:161:		go func() {
-internal/tuner/gateway_shared_leases.go:223:	go func(path string, stopCh <-chan struct{}) {
-internal/tuner/gateway_hls.go:496:				go func() {
+internal/tuner/psi_keepalive.go:180:	go func() {
 internal/tuner/ssdp.go:100:	go func() {
+internal/tuner/lineup_probe.go:161:		go func() {
 internal/tuner/epg_pipeline.go:1417:	go func() {
-internal/tuner/gateway_relay.go:333:		go func() {
-internal/tuner/gateway_relay.go:479:			go func() {
+internal/tuner/gateway_shared_leases.go:223:	go func(path string, stopCh <-chan struct{}) {
 internal/tuner/server_virtual_channel_streams.go:366:		go func(reader io.ReadCloser) {
 internal/tuner/server_virtual_channel_streams.go:502:	go func() {
+internal/tuner/gateway_relay.go:333:		go func() {
+internal/tuner/gateway_relay.go:479:			go func() {
 internal/tuner/server.go:2015:		go func() {
 internal/tuner/server.go:2201:	go func() {
 internal/tuner/gateway_test.go:661:	go func() {
@@ -458,8 +464,6 @@ internal/tuner/gateway_test.go:4924:	go func() {
 internal/tuner/gateway_test.go:5005:	go func() {
 
 ## Tuner HTTP operator and debug boundaries
-cmd/iptv-tunerr/cmd_debug_bundle.go:50:  stream-attempts.json    Recent stream attempt records from /debug/stream-attempts.json
-cmd/iptv-tunerr/cmd_debug_bundle.go:82:			{"stream-attempts.json", "/debug/stream-attempts.json?limit=500"},
 cmd/iptv-tunerr/cmd_runtime_server.go:342:			"active_streams":         "/debug/active-streams.json",
 cmd/iptv-tunerr/cmd_runtime_server.go:343:			"shared_relays":          "/debug/shared-relays.json",
 cmd/iptv-tunerr/cmd_runtime_server.go:344:			"stream_stop":            "/ops/actions/stream-stop",
@@ -471,6 +475,7 @@ cmd/iptv-tunerr/cmd_runtime_server.go:350:			"mux_seg_decode":         "/ops/act
 cmd/iptv-tunerr/cmd_runtime_server.go:352:			"operator_actions":       "/ops/actions/status.json",
 cmd/iptv-tunerr/cmd_runtime_server.go:356:			"legacy_ui":              "/ui/",
 cmd/iptv-tunerr/cmd_runtime_server.go:357:			"legacy_guide_ui":        "/ui/guide/",
+cmd/iptv-tunerr/cmd_debug_bundle_test.go:77:	err := fetchURLToFile("http://example.invalid/debug/runtime.json", dest, true)
 cmd/iptv-tunerr/main_integration_test.go:58:	addr := reserveLocalAddr(t)
 cmd/iptv-tunerr/main_integration_test.go:81:	addr := reserveLocalAddr(t)
 cmd/iptv-tunerr/cmd_runtime_integration_test.go:68:func reserveLocalAddr(t *testing.T) string {
@@ -478,13 +483,10 @@ cmd/iptv-tunerr/cmd_runtime_integration_test.go:81:	addr := reserveLocalAddr(t)
 cmd/iptv-tunerr/cmd_runtime_integration_test.go:131:	addr := reserveLocalAddr(t)
 cmd/iptv-tunerr/cmd_runtime_integration_test.go:161:	addr := reserveLocalAddr(t)
 cmd/iptv-tunerr/cmd_runtime_integration_test.go:187:	addr := reserveLocalAddr(t)
-cmd/iptv-tunerr/cmd_debug_bundle_test.go:77:	err := fetchURLToFile("http://example.invalid/debug/runtime.json", dest, true)
-internal/tuner/ts_inspector.go:225:		t.observePacket(pkt)
-internal/tuner/ts_inspector.go:258:func (t *tsInspector) observePacket(pkt []byte) {
-internal/tuner/ghost_hunter.go:96:	return reaper.observeAndOptionallyStop(ctx, cfg.ObserveWindow, stop)
-internal/tuner/ghost_hunter.go:99:func (r *plexSessionReaper) observeAndOptionallyStop(ctx context.Context, observe time.Duration, stop bool) (GhostHunterReport, error) {
 internal/tuner/psi_keepalive.go:116:	// PCR_PID = video PID: reserved(3)=111 + pid(13)
 internal/tuner/psi_keepalive.go:119:	// program_info_length = 0: reserved(4)=1111 + length(12)=0
+cmd/iptv-tunerr/cmd_debug_bundle.go:50:  stream-attempts.json    Recent stream attempt records from /debug/stream-attempts.json
+cmd/iptv-tunerr/cmd_debug_bundle.go:82:			{"stream-attempts.json", "/debug/stream-attempts.json?limit=500"},
 cmd/iptv-tunerr/main_test.go:231:			http.Error(w, "broken live index", http.StatusInternalServerError)
 cmd/iptv-tunerr/main_test.go:286:			http.Error(w, "player api broken", http.StatusInternalServerError)
 cmd/iptv-tunerr/main_test.go:301:			http.Error(w, "player api broken", http.StatusInternalServerError)
@@ -510,6 +512,16 @@ cmd/iptv-tunerr/main_test.go:880:			http.Error(w, "884 busy", 884)
 cmd/iptv-tunerr/main_test.go:941:			http.Error(w, "forbidden", http.StatusForbidden)
 cmd/iptv-tunerr/main_test.go:946:			http.Error(w, "884 busy", 884)
 cmd/iptv-tunerr/main_test.go:972:			http.Error(w, "884 busy", 884)
+internal/tuner/ts_inspector.go:225:		t.observePacket(pkt)
+internal/tuner/ts_inspector.go:258:func (t *tsInspector) observePacket(pkt []byte) {
+internal/tuner/gateway_mux_target.go:93:		http.Error(w, "All tuners in use", http.StatusServiceUnavailable)
+internal/tuner/gateway_mux_target.go:107:	err := g.serveNativeMuxTarget(w, r, client, channelID, target, requestMux)
+internal/tuner/gateway_mux_target.go:142:		http.Error(w, "Native mux target failed", http.StatusBadGateway)
+internal/tuner/ghost_hunter.go:96:	return reaper.observeAndOptionallyStop(ctx, cfg.ObserveWindow, stop)
+internal/tuner/ghost_hunter.go:99:func (r *plexSessionReaper) observeAndOptionallyStop(ctx context.Context, observe time.Duration, stop bool) (GhostHunterReport, error) {
+internal/tuner/static/ui/guide.html:18:<p><a href="/ui/">← Operator home</a></p>
+internal/tuner/static/ui/guide.html:23:<p><small>JSON: <a href="/ui/guide-preview.json">/ui/guide-preview.json</a> (same access rules; optional <code>?limit=</code> up to 500).</small></p>
+internal/tuner/static/ui/index.html:19:<li><a href="guide/">/ui/guide/</a> — merged EPG preview (from cache; read-only)</li>
 internal/tuner/hdhr.go:33:		h.serveDiscover(w)
 internal/tuner/hdhr.go:39:		h.serveLineupStatus(w)
 internal/tuner/hdhr.go:45:		h.serveLineup(w)
@@ -517,9 +529,6 @@ internal/tuner/hdhr.go:51:func (h *HDHR) serveDiscover(w http.ResponseWriter) {
 internal/tuner/hdhr.go:112:func (h *HDHR) serveLineupStatus(w http.ResponseWriter) {
 internal/tuner/hdhr.go:136:func (h *HDHR) serveLineup(w http.ResponseWriter) {
 internal/tuner/ghost_hunter_test.go:97:	s.serveGhostHunterReport().ServeHTTP(w, req)
-internal/tuner/gateway_mux_target.go:93:		http.Error(w, "All tuners in use", http.StatusServiceUnavailable)
-internal/tuner/gateway_mux_target.go:107:	err := g.serveNativeMuxTarget(w, r, client, channelID, target, requestMux)
-internal/tuner/gateway_mux_target.go:142:		http.Error(w, "Native mux target failed", http.StatusBadGateway)
 internal/tuner/server_diagnostics_recordings.go:487:func (s *Server) serveCatchupRecorderReport() http.Handler {
 internal/tuner/server_diagnostics_recordings.go:493:		if !operatorUIAllowed(w, r) {
 internal/tuner/server_diagnostics_recordings.go:502:			writeServerJSONError(w, http.StatusServiceUnavailable, "recorder state unavailable")
@@ -551,7 +560,6 @@ internal/tuner/server_diagnostics_recordings.go:686:		if !operatorUIAllowed(w, r
 internal/tuner/server_diagnostics_recordings.go:694:			writeServerJSONError(w, http.StatusBadRequest, "invalid json")
 internal/tuner/server_diagnostics_recordings.go:699:			writeServerJSONError(w, http.StatusBadRequest, "invalid base64")
 internal/tuner/server_diagnostics_recordings.go:712:func (s *Server) serveDeviceXML() http.Handler {
-internal/tuner/gateway_stream_response.go:266:		if err := g.serveFFmpegPackagedHLSInitial(w, r, channel.GuideName, channelID, effectiveURL, profileSelection); err == nil {
 internal/tuner/gateway_servehttp.go:85:		http.Error(w, "no stream URL", http.StatusBadGateway)
 internal/tuner/gateway_servehttp.go:101:			serveErr := g.serveFFmpegPackagedHLSPlaylist(w, channelID, sess, true)
 internal/tuner/gateway_servehttp.go:157:		http.Error(w, "All provider accounts in use", http.StatusServiceUnavailable)
@@ -559,6 +567,7 @@ internal/tuner/gateway_servehttp.go:195:		http.Error(w, "All tuners in use", htt
 internal/tuner/gateway_servehttp.go:250:		http.Error(w, "All provider accounts in use", http.StatusServiceUnavailable)
 internal/tuner/gateway_servehttp.go:269:		http.Error(w, "All tuners in use", http.StatusServiceUnavailable)
 internal/tuner/gateway_servehttp.go:285:	http.Error(w, "All upstreams failed", http.StatusBadGateway)
+internal/tuner/gateway_stream_response.go:266:		if err := g.serveFFmpegPackagedHLSInitial(w, r, channel.GuideName, channelID, effectiveURL, profileSelection); err == nil {
 internal/tuner/gateway_hls_packager.go:497:func (g *Gateway) serveFFmpegPackagedHLSPlaylist(w http.ResponseWriter, channelID string, sess *ffmpegHLSPackagerSession, shared bool) error {
 internal/tuner/gateway_hls_packager.go:559:func (g *Gateway) serveFFmpegPackagedHLSInitial(
 internal/tuner/gateway_hls_packager.go:576:	if err := g.serveFFmpegPackagedHLSPlaylist(w, channelID, sess, false); err != nil {
@@ -567,230 +576,18 @@ internal/tuner/gateway_hls_packager.go:604:		http.Error(w, "invalid packaged hls
 internal/tuner/gateway_hls_packager.go:609:			http.Error(w, "packaged playlist unavailable", http.StatusBadGateway)
 internal/tuner/gateway_hls_packager.go:614:			http.Error(w, "packaged playlist unavailable", http.StatusBadGateway)
 internal/tuner/gateway_hls_packager.go:624:		http.Error(w, "packaged segment unavailable", http.StatusBadGateway)
-internal/tuner/static/ui/guide.html:18:<p><a href="/ui/">← Operator home</a></p>
-internal/tuner/static/ui/guide.html:23:<p><small>JSON: <a href="/ui/guide-preview.json">/ui/guide-preview.json</a> (same access rules; optional <code>?limit=</code> up to 500).</small></p>
-internal/tuner/server_virtual_channels.go:17:func (s *Server) serveVirtualChannelRules() http.Handler {
-internal/tuner/server_virtual_channels.go:22:			if !operatorUIAllowed(w, r) {
-internal/tuner/server_virtual_channels.go:34:				writeServerJSONError(w, http.StatusInternalServerError, "encode virtual channel rules")
-internal/tuner/server_virtual_channels.go:39:			if !operatorUIAllowed(w, r) {
-internal/tuner/server_virtual_channels.go:43:				writeServerJSONError(w, http.StatusServiceUnavailable, "virtual channels file not configured")
-internal/tuner/server_virtual_channels.go:50:				writeServerJSONError(w, http.StatusBadRequest, "invalid virtual channels json")
-internal/tuner/server_virtual_channels.go:55:				writeServerJSONError(w, http.StatusBadGateway, "save virtual channels failed")
-internal/tuner/server_virtual_channels.go:64:				writeServerJSONError(w, http.StatusInternalServerError, "encode virtual channel rules")
-internal/tuner/server_virtual_channels.go:74:func (s *Server) serveVirtualChannelPreview() http.Handler {
-internal/tuner/server_virtual_channels.go:80:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_virtual_channels.go:97:			writeServerJSONError(w, http.StatusInternalServerError, "encode virtual channel preview")
-internal/tuner/server_virtual_channels.go:104:func (s *Server) serveVirtualChannelSchedule() http.Handler {
-internal/tuner/server_virtual_channels.go:109:			if !operatorUIAllowed(w, r) {
-internal/tuner/server_virtual_channels.go:126:				writeServerJSONError(w, http.StatusInternalServerError, "encode virtual channel schedule")
-internal/tuner/server_virtual_channels.go:131:			if !operatorUIAllowed(w, r) {
-internal/tuner/server_virtual_channels.go:135:				writeServerJSONError(w, http.StatusServiceUnavailable, "virtual channels file not configured")
-internal/tuner/server_virtual_channels.go:142:				writeServerJSONError(w, http.StatusBadRequest, "invalid virtual channel schedule json")
-internal/tuner/server_virtual_channels.go:147:				writeServerJSONError(w, http.StatusBadRequest, err.Error())
-internal/tuner/server_virtual_channels.go:159:				writeServerJSONError(w, http.StatusInternalServerError, "encode virtual channel schedule")
-internal/tuner/server_virtual_channels.go:169:func (s *Server) serveVirtualChannelDetail() http.Handler {
-internal/tuner/server_virtual_channels.go:174:			if !operatorUIAllowed(w, r) {
-internal/tuner/server_virtual_channels.go:177:			s.serveVirtualChannelDetailRead(w, r, s.reloadVirtualChannels())
-internal/tuner/server_virtual_channels.go:179:			if !operatorUIAllowed(w, r) {
-internal/tuner/server_virtual_channels.go:183:				writeServerJSONError(w, http.StatusServiceUnavailable, "virtual channels file not configured")
-internal/tuner/server_virtual_channels.go:190:				writeServerJSONError(w, http.StatusBadRequest, "invalid virtual channel detail json")
-internal/tuner/server_virtual_channels.go:195:				writeServerJSONError(w, http.StatusBadRequest, err.Error())
-internal/tuner/server_virtual_channels.go:202:			s.serveVirtualChannelDetailRead(w, r2, saved)
-internal/tuner/server_virtual_channels.go:209:func (s *Server) serveVirtualChannelRecoveryReport() http.Handler {
-internal/tuner/server_virtual_channels.go:216:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_virtual_channels.go:232:			writeServerJSONError(w, http.StatusInternalServerError, "encode virtual channel recovery report")
-internal/tuner/server_virtual_channels.go:239:func (s *Server) serveVirtualChannelReport() http.Handler {
-internal/tuner/server_virtual_channels.go:246:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_virtual_channels.go:289:			writeServerJSONError(w, http.StatusInternalServerError, "encode virtual channel report")
-internal/tuner/server_virtual_channels.go:311:func (s *Server) serveVirtualChannelGuide() http.Handler {
-internal/tuner/server_virtual_channels.go:360:func (s *Server) serveVirtualChannelDetailRead(w http.ResponseWriter, r *http.Request, set virtualchannels.Ruleset) {
-internal/tuner/server_virtual_channels.go:363:		writeServerJSONError(w, http.StatusBadRequest, "channel_id required")
-internal/tuner/server_virtual_channels.go:413:		writeServerJSONError(w, http.StatusInternalServerError, "encode virtual channel detail")
-internal/tuner/server_virtual_channels.go:676:func (s *Server) serveVirtualChannelM3U() http.Handler {
-internal/tuner/static/ui/index.html:19:<li><a href="guide/">/ui/guide/</a> — merged EPG preview (from cache; read-only)</li>
-internal/tuner/server_xtream.go:98:func (s *Server) serveXtreamPlayerAPI() http.Handler {
-internal/tuner/server_xtream.go:151:func (s *Server) serveXtreamM3U() http.Handler {
-internal/tuner/server_xtream.go:159:			http.Error(w, "# authentication failed\n", http.StatusUnauthorized)
-internal/tuner/server_xtream.go:168:func (s *Server) serveXtreamXMLTV() http.Handler {
-internal/tuner/server_xtream.go:176:			http.Error(w, "authentication failed", http.StatusUnauthorized)
-internal/tuner/server_xtream.go:181:			http.Error(w, "xmltv export failed", http.StatusInternalServerError)
-internal/tuner/server_xtream.go:190:func (s *Server) serveXtreamLiveProxy() http.Handler {
-internal/tuner/server_xtream.go:208:				http.Error(w, "gateway unavailable", http.StatusServiceUnavailable)
-internal/tuner/server_xtream.go:225:		s.serveVirtualChannelStream().ServeHTTP(w, cloned)
-internal/tuner/server_xtream.go:229:func (s *Server) serveXtreamMovieProxy() http.Handler {
-internal/tuner/server_xtream.go:230:	return s.serveXtreamVODProxy("movie")
-internal/tuner/server_xtream.go:233:func (s *Server) serveXtreamSeriesProxy() http.Handler {
-internal/tuner/server_xtream.go:234:	return s.serveXtreamVODProxy("series")
-internal/tuner/server_xtream.go:684:func (s *Server) serveXtreamVODProxy(prefix string) http.Handler {
-internal/tuner/server_xtream.go:701:			http.Error(w, "blocked private upstream", http.StatusForbidden)
-internal/tuner/server_xtream.go:706:			http.Error(w, "proxy request failed", http.StatusBadGateway)
-internal/tuner/server_xtream.go:714:			http.Error(w, "proxy request failed", http.StatusBadGateway)
-internal/tuner/server_programming.go:376:func (s *Server) serveProgrammingCategories() http.Handler {
-internal/tuner/server_programming.go:381:			if !operatorUIAllowed(w, r) {
-internal/tuner/server_programming.go:385:			if !operatorUIAllowed(w, r) {
-internal/tuner/server_programming.go:389:				writeServerJSONError(w, http.StatusServiceUnavailable, "programming recipe file not configured")
-internal/tuner/server_programming.go:400:				writeServerJSONError(w, http.StatusBadRequest, "invalid programming category json")
-internal/tuner/server_programming.go:410:				writeServerJSONError(w, http.StatusBadGateway, "save programming recipe failed")
-internal/tuner/server_programming.go:434:			writeServerJSONError(w, http.StatusInternalServerError, "encode programming categories")
-internal/tuner/server_programming.go:441:func (s *Server) serveProgrammingBrowse() http.Handler {
-internal/tuner/server_programming.go:447:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_programming.go:453:			writeServerJSONError(w, http.StatusBadRequest, "category required")
-internal/tuner/server_programming.go:477:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming browse")
-internal/tuner/server_programming.go:602:			writeServerJSONError(w, http.StatusInternalServerError, "encode programming browse")
-internal/tuner/server_programming.go:609:func (s *Server) serveProgrammingChannels() http.Handler {
-internal/tuner/server_programming.go:614:			if !operatorUIAllowed(w, r) {
-internal/tuner/server_programming.go:629:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming channels")
-internal/tuner/server_programming.go:634:			if !operatorUIAllowed(w, r) {
-internal/tuner/server_programming.go:638:				writeServerJSONError(w, http.StatusServiceUnavailable, "programming recipe file not configured")
-internal/tuner/server_programming.go:649:				writeServerJSONError(w, http.StatusBadRequest, "invalid programming channel json")
-internal/tuner/server_programming.go:659:				writeServerJSONError(w, http.StatusBadGateway, "save programming recipe failed")
-internal/tuner/server_programming.go:670:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming channels")
-internal/tuner/server_programming.go:680:func (s *Server) serveProgrammingOrder() http.Handler {
-internal/tuner/server_programming.go:685:			if !operatorUIAllowed(w, r) {
-internal/tuner/server_programming.go:698:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming order")
-internal/tuner/server_programming.go:703:			if !operatorUIAllowed(w, r) {
-internal/tuner/server_programming.go:707:				writeServerJSONError(w, http.StatusServiceUnavailable, "programming recipe file not configured")
-internal/tuner/server_programming.go:720:				writeServerJSONError(w, http.StatusBadRequest, "invalid programming order json")
-internal/tuner/server_programming.go:730:				writeServerJSONError(w, http.StatusBadGateway, "save programming recipe failed")
-internal/tuner/server_programming.go:741:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming order")
-internal/tuner/server_programming.go:751:func (s *Server) serveProgrammingBackups() http.Handler {
-internal/tuner/server_programming.go:756:			if !operatorUIAllowed(w, r) {
-internal/tuner/server_programming.go:760:			if !operatorUIAllowed(w, r) {
-internal/tuner/server_programming.go:764:				writeServerJSONError(w, http.StatusServiceUnavailable, "programming recipe file not configured")
-internal/tuner/server_programming.go:775:				writeServerJSONError(w, http.StatusBadRequest, "invalid programming backups json")
-internal/tuner/server_programming.go:785:				writeServerJSONError(w, http.StatusBadGateway, "save programming recipe failed")
-internal/tuner/server_programming.go:808:			writeServerJSONError(w, http.StatusInternalServerError, "encode programming backups")
-internal/tuner/server_programming.go:815:func (s *Server) serveProgrammingHarvest() http.Handler {
-internal/tuner/server_programming.go:820:			if !operatorUIAllowed(w, r) {
-internal/tuner/server_programming.go:833:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming harvest")
-internal/tuner/server_programming.go:838:			if !operatorUIAllowed(w, r) {
-internal/tuner/server_programming.go:842:				writeServerJSONError(w, http.StatusServiceUnavailable, "plex lineup harvest file not configured")
-internal/tuner/server_programming.go:849:				writeServerJSONError(w, http.StatusBadRequest, "invalid programming harvest json")
-internal/tuner/server_programming.go:854:				writeServerJSONError(w, http.StatusBadGateway, "save programming harvest failed")
-internal/tuner/server_programming.go:864:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming harvest")
-internal/tuner/server_programming.go:874:func (s *Server) serveProgrammingHarvestImport() http.Handler {
-internal/tuner/server_programming.go:880:			if !operatorUIAllowed(w, r) {
-internal/tuner/server_programming.go:895:				writeServerJSONError(w, http.StatusNotFound, "harvest result not found")
-internal/tuner/server_programming.go:902:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming harvest import")
-internal/tuner/server_programming.go:907:			if !operatorUIAllowed(w, r) {
-internal/tuner/server_programming.go:911:				writeServerJSONError(w, http.StatusServiceUnavailable, "programming recipe file not configured")
-internal/tuner/server_programming.go:923:				writeServerJSONError(w, http.StatusBadRequest, "invalid programming harvest import json")
-internal/tuner/server_programming.go:932:				writeServerJSONError(w, http.StatusNotFound, "harvest result not found")
-internal/tuner/server_programming.go:938:				writeServerJSONError(w, http.StatusBadGateway, "save programming recipe failed")
-internal/tuner/server_programming.go:951:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming harvest import")
-internal/tuner/server_programming.go:961:func (s *Server) serveProgrammingHarvestAssist() http.Handler {
-internal/tuner/server_programming.go:967:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_programming.go:999:			writeServerJSONError(w, http.StatusInternalServerError, "encode programming harvest assist")
-internal/tuner/server_programming.go:1006:func (s *Server) serveProgrammingChannelDetail() http.Handler {
-internal/tuner/server_programming.go:1012:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_programming.go:1018:			writeServerJSONError(w, http.StatusBadRequest, "channel_id required")
-internal/tuner/server_programming.go:1035:			writeServerJSONError(w, http.StatusNotFound, "channel not found")
-internal/tuner/server_programming.go:1092:			writeServerJSONError(w, http.StatusInternalServerError, "encode programming channel detail")
-internal/tuner/server_programming.go:1099:func (s *Server) serveProgrammingRecipe() http.Handler {
-internal/tuner/server_programming.go:1104:			if !operatorUIAllowed(w, r) {
-internal/tuner/server_programming.go:1115:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming recipe")
-internal/tuner/server_programming.go:1120:			if !operatorUIAllowed(w, r) {
-internal/tuner/server_programming.go:1124:				writeServerJSONError(w, http.StatusServiceUnavailable, "programming recipe file not configured")
-internal/tuner/server_programming.go:1131:				writeServerJSONError(w, http.StatusBadRequest, "invalid programming recipe json")
-internal/tuner/server_programming.go:1136:				writeServerJSONError(w, http.StatusBadGateway, "save programming recipe failed")
-internal/tuner/server_programming.go:1148:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming recipe")
-internal/tuner/server_programming.go:1171:func (s *Server) serveProgrammingPreview() http.Handler {
-internal/tuner/server_programming.go:1177:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_programming.go:1210:			writeServerJSONError(w, http.StatusInternalServerError, "encode programming preview")
-internal/tuner/server_virtual_channel_streams.go:27:func (s *Server) serveVirtualChannelSlate() http.Handler {
-internal/tuner/server_virtual_channel_streams.go:52:func (s *Server) serveVirtualChannelBrandedStream() http.Handler {
-internal/tuner/server_virtual_channel_streams.go:78:				writeServerJSONError(w, http.StatusBadGateway, "virtual channel slot has no source")
-internal/tuner/server_virtual_channel_streams.go:157:			writeServerJSONError(w, http.StatusServiceUnavailable, "ffmpeg not available for branded stream")
-internal/tuner/server_virtual_channel_streams.go:166:			writeServerJSONError(w, http.StatusBadGateway, "virtual branded stream failed")
-internal/tuner/server_virtual_channel_streams.go:172:func (s *Server) serveVirtualChannelStream() http.Handler {
-internal/tuner/server_virtual_channel_streams.go:176:			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-internal/tuner/server_virtual_channel_streams.go:195:				writeServerJSONError(w, http.StatusBadGateway, "virtual channel slot has no source")
-internal/tuner/server_virtual_channel_streams.go:309:		http.Error(w, "blocked private upstream", http.StatusForbidden)
-internal/tuner/server_virtual_channel_streams.go:312:	http.Error(w, "proxy request failed", http.StatusBadGateway)
-internal/tuner/server_virtual_channel_streams.go:351:			b.observeContentSample(p[:max(n, 0)])
-internal/tuner/server_virtual_channel_streams.go:372:			b.observeContentSample(p[:max(res.n, 0)])
-internal/tuner/server_virtual_channel_streams.go:446:func (b *virtualChannelRecoveryRelayBody) observeContentSample(chunk []byte) {
-internal/tuner/recording_rules_test.go:52:	s.serveRecordingRules().ServeHTTP(w, req)
-internal/tuner/recording_rules_test.go:102:	s.serveRecordingRulePreview().ServeHTTP(w, req)
-internal/tuner/recording_rules_test.go:154:	s.serveRecordingHistory().ServeHTTP(w, req)
-internal/tuner/guide_health.go:193:func (s *Server) serveGuideHealth() http.Handler {
-internal/tuner/guide_health.go:217:func (s *Server) serveEPGDoctor() http.Handler {
-internal/tuner/guide_health.go:241:func (s *Server) serveSuggestedAliasOverrides() http.Handler {
 internal/tuner/gateway_hls.go:248:	http.Error(w, plaintext, code)
 internal/tuner/gateway_hls.go:691:func (g *Gateway) serveHLSMuxTarget(w http.ResponseWriter, r *http.Request, client *http.Client, channelID, targetURL string) error {
 internal/tuner/gateway_hls.go:692:	return g.serveNativeMuxTarget(w, r, client, channelID, targetURL, "hls")
 internal/tuner/gateway_hls.go:722:func (g *Gateway) serveNativeMuxTarget(w http.ResponseWriter, r *http.Request, client *http.Client, channelID, targetURL, muxKind string) error {
-internal/tuner/server_operator_workflows.go:46:func (s *Server) serveGuideRepairWorkflow() http.Handler {
-internal/tuner/server_operator_workflows.go:52:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_operator_workflows.go:73:				"/ops/actions/guide-refresh",
-internal/tuner/server_operator_workflows.go:77:				"/debug/runtime.json",
-internal/tuner/server_operator_workflows.go:82:			writeServerJSONError(w, http.StatusInternalServerError, "encode guide workflow")
-internal/tuner/server_operator_workflows.go:89:func (s *Server) serveStreamInvestigateWorkflow() http.Handler {
-internal/tuner/server_operator_workflows.go:95:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_operator_workflows.go:119:				"/ops/actions/stream-attempts-clear",
-internal/tuner/server_operator_workflows.go:120:				"/ops/actions/provider-profile-reset",
-internal/tuner/server_operator_workflows.go:121:				"/ops/actions/autopilot-reset",
-internal/tuner/server_operator_workflows.go:122:				"/debug/stream-attempts.json",
-internal/tuner/server_operator_workflows.go:125:				"/debug/runtime.json",
-internal/tuner/server_operator_workflows.go:130:			writeServerJSONError(w, http.StatusInternalServerError, "encode stream workflow")
-internal/tuner/server_operator_workflows.go:137:func (s *Server) serveDiagnosticsWorkflow() http.Handler {
-internal/tuner/server_operator_workflows.go:143:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_operator_workflows.go:170:				"/debug/stream-attempts.json",
-internal/tuner/server_operator_workflows.go:171:				"/ops/actions/channel-diff-run",
-internal/tuner/server_operator_workflows.go:172:				"/ops/actions/stream-compare-run",
-internal/tuner/server_operator_workflows.go:173:				"/ops/actions/evidence-intake-start",
-internal/tuner/server_operator_workflows.go:178:			writeServerJSONError(w, http.StatusInternalServerError, "encode diagnostics workflow")
-internal/tuner/server_operator_workflows.go:378:func (s *Server) serveProgrammingHarvestWorkflow() http.Handler {
-internal/tuner/server_operator_workflows.go:384:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_operator_workflows.go:456:			writeServerJSONError(w, http.StatusInternalServerError, "encode programming harvest workflow")
-internal/tuner/server_operator_workflows.go:463:func (s *Server) serveOpsRecoveryWorkflow() http.Handler {
-internal/tuner/server_operator_workflows.go:469:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_operator_workflows.go:527:				"/ops/actions/ghost-visible-stop",
-internal/tuner/server_operator_workflows.go:528:				"/ops/actions/ghost-hidden-recover?mode=dry-run",
-internal/tuner/server_operator_workflows.go:529:				"/ops/actions/ghost-hidden-recover?mode=restart",
-internal/tuner/server_operator_workflows.go:530:				"/ops/actions/autopilot-reset",
-internal/tuner/server_operator_workflows.go:534:				"/debug/runtime.json",
-internal/tuner/server_operator_workflows.go:539:			writeServerJSONError(w, http.StatusInternalServerError, "encode ops workflow")
-internal/tuner/server_operator_workflows.go:546:func (s *Server) serveProgrammingHarvestRequest() http.Handler {
-internal/tuner/server_operator_workflows.go:570:			if !operatorUIAllowed(w, r) {
-internal/tuner/server_operator_workflows.go:604:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming harvest request")
-internal/tuner/server_operator_workflows.go:609:			if !operatorUIAllowed(w, r) {
-internal/tuner/server_operator_workflows.go:719:	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-internal/tuner/server_operator_workflows.go:731:func (s *Server) serveGuideRefreshAction() http.Handler {
-internal/tuner/server_operator_workflows.go:737:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_operator_workflows.go:752:func (s *Server) serveStreamAttemptsClearAction() http.Handler {
-internal/tuner/server_operator_workflows.go:758:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_operator_workflows.go:770:func (s *Server) serveStreamStopAction() http.Handler {
-internal/tuner/server_operator_workflows.go:776:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_operator_workflows.go:813:func (s *Server) serveProviderProfileResetAction() http.Handler {
-internal/tuner/server_operator_workflows.go:819:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_operator_workflows.go:854:func (s *Server) serveSharedRelayReplayUpdateAction() http.Handler {
-internal/tuner/server_operator_workflows.go:860:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_operator_workflows.go:898:func (s *Server) serveVirtualChannelLiveStallUpdateAction() http.Handler {
-internal/tuner/server_operator_workflows.go:904:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_operator_workflows.go:942:func (s *Server) serveAutopilotResetAction() http.Handler {
-internal/tuner/server_operator_workflows.go:948:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_operator_workflows.go:963:func (s *Server) serveGhostVisibleStopAction() http.Handler {
-internal/tuner/server_operator_workflows.go:969:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_operator_workflows.go:990:func (s *Server) serveGhostHiddenRecoverAction() http.Handler {
-internal/tuner/server_operator_workflows.go:996:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_operator_workflows.go:1026:func (s *Server) serveEvidenceIntakeStartAction() http.Handler {
-internal/tuner/server_operator_workflows.go:1032:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_operator_workflows.go:1041:			writeServerJSONError(w, http.StatusBadRequest, "invalid json")
-internal/tuner/server_operator_workflows.go:1050:			writeServerJSONError(w, http.StatusBadGateway, "create evidence bundle failed")
-internal/tuner/server_operator_workflows.go:1068:func (s *Server) serveChannelDiffRunAction() http.Handler {
-internal/tuner/server_operator_workflows.go:1074:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_operator_workflows.go:1103:func (s *Server) serveStreamCompareRunAction() http.Handler {
-internal/tuner/server_operator_workflows.go:1109:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_operator_workflows.go:1137:func (s *Server) serveRuntimeSnapshot() http.Handler {
-internal/tuner/server_operator_workflows.go:1143:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_operator_workflows.go:1172:			writeServerJSONError(w, http.StatusInternalServerError, "encode runtime snapshot")
-internal/tuner/server_operator_workflows.go:1179:func (s *Server) serveEventHooksReport() http.Handler {
-internal/tuner/server_operator_workflows.go:1185:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_operator_workflows.go:1199:			writeServerJSONError(w, http.StatusInternalServerError, "encode event hooks")
-internal/tuner/server_operator_workflows.go:1206:func (s *Server) serveActiveStreamsReport() http.Handler {
-internal/tuner/server_operator_workflows.go:1212:		if !operatorUIAllowed(w, r) {
-internal/tuner/server_operator_workflows.go:1224:			writeServerJSONError(w, http.StatusInternalServerError, "encode active streams")
+internal/tuner/recording_rules_test.go:52:	s.serveRecordingRules().ServeHTTP(w, req)
+internal/tuner/recording_rules_test.go:102:	s.serveRecordingRulePreview().ServeHTTP(w, req)
+internal/tuner/recording_rules_test.go:154:	s.serveRecordingHistory().ServeHTTP(w, req)
+internal/tuner/ssdp_test.go:60:	s.serveDeviceXML().ServeHTTP(w, req)
+internal/tuner/ssdp_test.go:82:	s.serveDeviceXML().ServeHTTP(w, req)
+internal/tuner/ssdp_test.go:100:	s.serveDeviceXML().ServeHTTP(w, req)
+internal/tuner/ssdp_test.go:122:	s.serveDeviceXML().ServeHTTP(w, req)
+internal/tuner/ssdp_test.go:141:	s.serveDeviceXML().ServeHTTP(w, req)
 internal/tuner/operator_ui.go:15://go:embed static/ui/index.html static/ui/guide.html static/hls_mux_demo.html
 internal/tuner/operator_ui.go:18:// operatorUIAllowed enforces IPTV_TUNERR_UI_DISABLED and localhost-only access (unless IPTV_TUNERR_UI_ALLOW_LAN=1).
 internal/tuner/operator_ui.go:19:func operatorUIAllowed(w http.ResponseWriter, r *http.Request) bool {
@@ -812,11 +609,6 @@ internal/tuner/operator_ui.go:235:			http.Error(w, "method not allowed", http.St
 internal/tuner/operator_ui.go:238:		if !operatorUIAllowed(w, r) {
 internal/tuner/operator_ui.go:241:		b, err := operatorUIEmbedded.ReadFile("static/ui/index.html")
 internal/tuner/operator_ui.go:243:			http.Error(w, "ui unavailable", http.StatusInternalServerError)
-internal/tuner/ssdp_test.go:60:	s.serveDeviceXML().ServeHTTP(w, req)
-internal/tuner/ssdp_test.go:82:	s.serveDeviceXML().ServeHTTP(w, req)
-internal/tuner/ssdp_test.go:100:	s.serveDeviceXML().ServeHTTP(w, req)
-internal/tuner/ssdp_test.go:122:	s.serveDeviceXML().ServeHTTP(w, req)
-internal/tuner/ssdp_test.go:141:	s.serveDeviceXML().ServeHTTP(w, req)
 internal/tuner/server_test.go:33:	handler := s.serveHealth()
 internal/tuner/server_test.go:84:	handler := (&Server{}).serveHlsMuxWebDemo()
 internal/tuner/server_test.go:86:	remote := httptest.NewRequest(http.MethodGet, "/debug/hls-mux-demo.html", nil)
@@ -1160,8 +952,9 @@ internal/tuner/server_test.go:7470:			srv.serveVirtualChannelSchedule().ServeHTT
 internal/tuner/server_test.go:7472:			srv.serveVirtualChannelDetail().ServeHTTP(rr, req)
 internal/tuner/server_test.go:7492:	srv.serveRecordingRules().ServeHTTP(rr, req)
 internal/tuner/server_test.go:7500:	srv.serveRecordingRules().ServeHTTP(rr, req)
-internal/tuner/xmltv_test.go:64:func TestXMLTV_serveCachedGuideReady(t *testing.T) {
-internal/tuner/xmltv_test.go:314:func TestXMLTV_runRefresh_noChannelsPreservesEmptyCache(t *testing.T) {
+internal/tuner/guide_health.go:193:func (s *Server) serveGuideHealth() http.Handler {
+internal/tuner/guide_health.go:217:func (s *Server) serveEPGDoctor() http.Handler {
+internal/tuner/guide_health.go:241:func (s *Server) serveSuggestedAliasOverrides() http.Handler {
 internal/tuner/server_status_reports.go:18:func (s *Server) serveHealth() http.Handler {
 internal/tuner/server_status_reports.go:35:func (s *Server) serveReady() http.Handler {
 internal/tuner/server_status_reports.go:78:		writeServerJSONError(w, http.StatusInternalServerError, "encode status")
@@ -1220,8 +1013,240 @@ internal/tuner/server_status_reports.go:578:				"endpoint":     "/ops/actions/ev
 internal/tuner/server_status_reports.go:585:				"endpoint":     "/ops/actions/channel-diff-run",
 internal/tuner/server_status_reports.go:592:				"endpoint":     "/ops/actions/stream-compare-run",
 internal/tuner/server_status_reports.go:600:			writeServerJSONError(w, http.StatusInternalServerError, "encode operator actions")
+internal/tuner/server_virtual_channel_streams.go:27:func (s *Server) serveVirtualChannelSlate() http.Handler {
+internal/tuner/server_virtual_channel_streams.go:52:func (s *Server) serveVirtualChannelBrandedStream() http.Handler {
+internal/tuner/server_virtual_channel_streams.go:78:				writeServerJSONError(w, http.StatusBadGateway, "virtual channel slot has no source")
+internal/tuner/server_virtual_channel_streams.go:157:			writeServerJSONError(w, http.StatusServiceUnavailable, "ffmpeg not available for branded stream")
+internal/tuner/server_virtual_channel_streams.go:166:			writeServerJSONError(w, http.StatusBadGateway, "virtual branded stream failed")
+internal/tuner/server_virtual_channel_streams.go:172:func (s *Server) serveVirtualChannelStream() http.Handler {
+internal/tuner/server_virtual_channel_streams.go:176:			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+internal/tuner/server_virtual_channel_streams.go:195:				writeServerJSONError(w, http.StatusBadGateway, "virtual channel slot has no source")
+internal/tuner/server_virtual_channel_streams.go:309:		http.Error(w, "blocked private upstream", http.StatusForbidden)
+internal/tuner/server_virtual_channel_streams.go:312:	http.Error(w, "proxy request failed", http.StatusBadGateway)
+internal/tuner/server_virtual_channel_streams.go:351:			b.observeContentSample(p[:max(n, 0)])
+internal/tuner/server_virtual_channel_streams.go:372:			b.observeContentSample(p[:max(res.n, 0)])
+internal/tuner/server_virtual_channel_streams.go:446:func (b *virtualChannelRecoveryRelayBody) observeContentSample(chunk []byte) {
+internal/tuner/server_xtream.go:98:func (s *Server) serveXtreamPlayerAPI() http.Handler {
+internal/tuner/server_xtream.go:151:func (s *Server) serveXtreamM3U() http.Handler {
+internal/tuner/server_xtream.go:159:			http.Error(w, "# authentication failed\n", http.StatusUnauthorized)
+internal/tuner/server_xtream.go:168:func (s *Server) serveXtreamXMLTV() http.Handler {
+internal/tuner/server_xtream.go:176:			http.Error(w, "authentication failed", http.StatusUnauthorized)
+internal/tuner/server_xtream.go:181:			http.Error(w, "xmltv export failed", http.StatusInternalServerError)
+internal/tuner/server_xtream.go:190:func (s *Server) serveXtreamLiveProxy() http.Handler {
+internal/tuner/server_xtream.go:208:				http.Error(w, "gateway unavailable", http.StatusServiceUnavailable)
+internal/tuner/server_xtream.go:225:		s.serveVirtualChannelStream().ServeHTTP(w, cloned)
+internal/tuner/server_xtream.go:229:func (s *Server) serveXtreamMovieProxy() http.Handler {
+internal/tuner/server_xtream.go:230:	return s.serveXtreamVODProxy("movie")
+internal/tuner/server_xtream.go:233:func (s *Server) serveXtreamSeriesProxy() http.Handler {
+internal/tuner/server_xtream.go:234:	return s.serveXtreamVODProxy("series")
+internal/tuner/server_xtream.go:684:func (s *Server) serveXtreamVODProxy(prefix string) http.Handler {
+internal/tuner/server_xtream.go:701:			http.Error(w, "blocked private upstream", http.StatusForbidden)
+internal/tuner/server_xtream.go:706:			http.Error(w, "proxy request failed", http.StatusBadGateway)
+internal/tuner/server_xtream.go:714:			http.Error(w, "proxy request failed", http.StatusBadGateway)
+internal/tuner/server_operator_workflows.go:46:func (s *Server) serveGuideRepairWorkflow() http.Handler {
+internal/tuner/server_operator_workflows.go:52:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_operator_workflows.go:73:				"/ops/actions/guide-refresh",
+internal/tuner/server_operator_workflows.go:77:				"/debug/runtime.json",
+internal/tuner/server_operator_workflows.go:82:			writeServerJSONError(w, http.StatusInternalServerError, "encode guide workflow")
+internal/tuner/server_operator_workflows.go:89:func (s *Server) serveStreamInvestigateWorkflow() http.Handler {
+internal/tuner/server_operator_workflows.go:95:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_operator_workflows.go:119:				"/ops/actions/stream-attempts-clear",
+internal/tuner/server_operator_workflows.go:120:				"/ops/actions/provider-profile-reset",
+internal/tuner/server_operator_workflows.go:121:				"/ops/actions/autopilot-reset",
+internal/tuner/server_operator_workflows.go:122:				"/debug/stream-attempts.json",
+internal/tuner/server_operator_workflows.go:125:				"/debug/runtime.json",
+internal/tuner/server_operator_workflows.go:130:			writeServerJSONError(w, http.StatusInternalServerError, "encode stream workflow")
+internal/tuner/server_operator_workflows.go:137:func (s *Server) serveDiagnosticsWorkflow() http.Handler {
+internal/tuner/server_operator_workflows.go:143:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_operator_workflows.go:170:				"/debug/stream-attempts.json",
+internal/tuner/server_operator_workflows.go:171:				"/ops/actions/channel-diff-run",
+internal/tuner/server_operator_workflows.go:172:				"/ops/actions/stream-compare-run",
+internal/tuner/server_operator_workflows.go:173:				"/ops/actions/evidence-intake-start",
+internal/tuner/server_operator_workflows.go:178:			writeServerJSONError(w, http.StatusInternalServerError, "encode diagnostics workflow")
+internal/tuner/server_operator_workflows.go:378:func (s *Server) serveProgrammingHarvestWorkflow() http.Handler {
+internal/tuner/server_operator_workflows.go:384:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_operator_workflows.go:456:			writeServerJSONError(w, http.StatusInternalServerError, "encode programming harvest workflow")
+internal/tuner/server_operator_workflows.go:463:func (s *Server) serveOpsRecoveryWorkflow() http.Handler {
+internal/tuner/server_operator_workflows.go:469:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_operator_workflows.go:527:				"/ops/actions/ghost-visible-stop",
+internal/tuner/server_operator_workflows.go:528:				"/ops/actions/ghost-hidden-recover?mode=dry-run",
+internal/tuner/server_operator_workflows.go:529:				"/ops/actions/ghost-hidden-recover?mode=restart",
+internal/tuner/server_operator_workflows.go:530:				"/ops/actions/autopilot-reset",
+internal/tuner/server_operator_workflows.go:534:				"/debug/runtime.json",
+internal/tuner/server_operator_workflows.go:539:			writeServerJSONError(w, http.StatusInternalServerError, "encode ops workflow")
+internal/tuner/server_operator_workflows.go:546:func (s *Server) serveProgrammingHarvestRequest() http.Handler {
+internal/tuner/server_operator_workflows.go:570:			if !operatorUIAllowed(w, r) {
+internal/tuner/server_operator_workflows.go:604:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming harvest request")
+internal/tuner/server_operator_workflows.go:609:			if !operatorUIAllowed(w, r) {
+internal/tuner/server_operator_workflows.go:719:	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+internal/tuner/server_operator_workflows.go:731:func (s *Server) serveGuideRefreshAction() http.Handler {
+internal/tuner/server_operator_workflows.go:737:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_operator_workflows.go:752:func (s *Server) serveStreamAttemptsClearAction() http.Handler {
+internal/tuner/server_operator_workflows.go:758:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_operator_workflows.go:770:func (s *Server) serveStreamStopAction() http.Handler {
+internal/tuner/server_operator_workflows.go:776:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_operator_workflows.go:813:func (s *Server) serveProviderProfileResetAction() http.Handler {
+internal/tuner/server_operator_workflows.go:819:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_operator_workflows.go:854:func (s *Server) serveSharedRelayReplayUpdateAction() http.Handler {
+internal/tuner/server_operator_workflows.go:860:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_operator_workflows.go:898:func (s *Server) serveVirtualChannelLiveStallUpdateAction() http.Handler {
+internal/tuner/server_operator_workflows.go:904:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_operator_workflows.go:942:func (s *Server) serveAutopilotResetAction() http.Handler {
+internal/tuner/server_operator_workflows.go:948:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_operator_workflows.go:963:func (s *Server) serveGhostVisibleStopAction() http.Handler {
+internal/tuner/server_operator_workflows.go:969:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_operator_workflows.go:990:func (s *Server) serveGhostHiddenRecoverAction() http.Handler {
+internal/tuner/server_operator_workflows.go:996:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_operator_workflows.go:1026:func (s *Server) serveEvidenceIntakeStartAction() http.Handler {
+internal/tuner/server_operator_workflows.go:1032:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_operator_workflows.go:1041:			writeServerJSONError(w, http.StatusBadRequest, "invalid json")
+internal/tuner/server_operator_workflows.go:1050:			writeServerJSONError(w, http.StatusBadGateway, "create evidence bundle failed")
+internal/tuner/server_operator_workflows.go:1068:func (s *Server) serveChannelDiffRunAction() http.Handler {
+internal/tuner/server_operator_workflows.go:1074:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_operator_workflows.go:1103:func (s *Server) serveStreamCompareRunAction() http.Handler {
+internal/tuner/server_operator_workflows.go:1109:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_operator_workflows.go:1137:func (s *Server) serveRuntimeSnapshot() http.Handler {
+internal/tuner/server_operator_workflows.go:1143:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_operator_workflows.go:1172:			writeServerJSONError(w, http.StatusInternalServerError, "encode runtime snapshot")
+internal/tuner/server_operator_workflows.go:1179:func (s *Server) serveEventHooksReport() http.Handler {
+internal/tuner/server_operator_workflows.go:1185:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_operator_workflows.go:1199:			writeServerJSONError(w, http.StatusInternalServerError, "encode event hooks")
+internal/tuner/server_operator_workflows.go:1206:func (s *Server) serveActiveStreamsReport() http.Handler {
+internal/tuner/server_operator_workflows.go:1212:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_operator_workflows.go:1224:			writeServerJSONError(w, http.StatusInternalServerError, "encode active streams")
+internal/tuner/server_virtual_channels.go:17:func (s *Server) serveVirtualChannelRules() http.Handler {
+internal/tuner/server_virtual_channels.go:22:			if !operatorUIAllowed(w, r) {
+internal/tuner/server_virtual_channels.go:34:				writeServerJSONError(w, http.StatusInternalServerError, "encode virtual channel rules")
+internal/tuner/server_virtual_channels.go:39:			if !operatorUIAllowed(w, r) {
+internal/tuner/server_virtual_channels.go:43:				writeServerJSONError(w, http.StatusServiceUnavailable, "virtual channels file not configured")
+internal/tuner/server_virtual_channels.go:50:				writeServerJSONError(w, http.StatusBadRequest, "invalid virtual channels json")
+internal/tuner/server_virtual_channels.go:55:				writeServerJSONError(w, http.StatusBadGateway, "save virtual channels failed")
+internal/tuner/server_virtual_channels.go:64:				writeServerJSONError(w, http.StatusInternalServerError, "encode virtual channel rules")
+internal/tuner/server_virtual_channels.go:74:func (s *Server) serveVirtualChannelPreview() http.Handler {
+internal/tuner/server_virtual_channels.go:80:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_virtual_channels.go:97:			writeServerJSONError(w, http.StatusInternalServerError, "encode virtual channel preview")
+internal/tuner/server_virtual_channels.go:104:func (s *Server) serveVirtualChannelSchedule() http.Handler {
+internal/tuner/server_virtual_channels.go:109:			if !operatorUIAllowed(w, r) {
+internal/tuner/server_virtual_channels.go:126:				writeServerJSONError(w, http.StatusInternalServerError, "encode virtual channel schedule")
+internal/tuner/server_virtual_channels.go:131:			if !operatorUIAllowed(w, r) {
+internal/tuner/server_virtual_channels.go:135:				writeServerJSONError(w, http.StatusServiceUnavailable, "virtual channels file not configured")
+internal/tuner/server_virtual_channels.go:142:				writeServerJSONError(w, http.StatusBadRequest, "invalid virtual channel schedule json")
+internal/tuner/server_virtual_channels.go:147:				writeServerJSONError(w, http.StatusBadRequest, err.Error())
+internal/tuner/server_virtual_channels.go:159:				writeServerJSONError(w, http.StatusInternalServerError, "encode virtual channel schedule")
+internal/tuner/server_virtual_channels.go:169:func (s *Server) serveVirtualChannelDetail() http.Handler {
+internal/tuner/server_virtual_channels.go:174:			if !operatorUIAllowed(w, r) {
+internal/tuner/server_virtual_channels.go:177:			s.serveVirtualChannelDetailRead(w, r, s.reloadVirtualChannels())
+internal/tuner/server_virtual_channels.go:179:			if !operatorUIAllowed(w, r) {
+internal/tuner/server_virtual_channels.go:183:				writeServerJSONError(w, http.StatusServiceUnavailable, "virtual channels file not configured")
+internal/tuner/server_virtual_channels.go:190:				writeServerJSONError(w, http.StatusBadRequest, "invalid virtual channel detail json")
+internal/tuner/server_virtual_channels.go:195:				writeServerJSONError(w, http.StatusBadRequest, err.Error())
+internal/tuner/server_virtual_channels.go:202:			s.serveVirtualChannelDetailRead(w, r2, saved)
+internal/tuner/server_virtual_channels.go:209:func (s *Server) serveVirtualChannelRecoveryReport() http.Handler {
+internal/tuner/server_virtual_channels.go:216:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_virtual_channels.go:232:			writeServerJSONError(w, http.StatusInternalServerError, "encode virtual channel recovery report")
+internal/tuner/server_virtual_channels.go:239:func (s *Server) serveVirtualChannelReport() http.Handler {
+internal/tuner/server_virtual_channels.go:246:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_virtual_channels.go:289:			writeServerJSONError(w, http.StatusInternalServerError, "encode virtual channel report")
+internal/tuner/server_virtual_channels.go:311:func (s *Server) serveVirtualChannelGuide() http.Handler {
+internal/tuner/server_virtual_channels.go:360:func (s *Server) serveVirtualChannelDetailRead(w http.ResponseWriter, r *http.Request, set virtualchannels.Ruleset) {
+internal/tuner/server_virtual_channels.go:363:		writeServerJSONError(w, http.StatusBadRequest, "channel_id required")
+internal/tuner/server_virtual_channels.go:413:		writeServerJSONError(w, http.StatusInternalServerError, "encode virtual channel detail")
+internal/tuner/server_virtual_channels.go:676:func (s *Server) serveVirtualChannelM3U() http.Handler {
+internal/tuner/xmltv_test.go:64:func TestXMLTV_serveCachedGuideReady(t *testing.T) {
+internal/tuner/xmltv_test.go:314:func TestXMLTV_runRefresh_noChannelsPreservesEmptyCache(t *testing.T) {
 internal/tuner/xmltv.go:275:	x.servePlaceholderXMLTV(w, x.filteredChannels())
 internal/tuner/xmltv.go:399:func (x *XMLTV) servePlaceholderXMLTV(w http.ResponseWriter, channels []catalog.LiveChannel) {
+internal/tuner/server_programming.go:376:func (s *Server) serveProgrammingCategories() http.Handler {
+internal/tuner/server_programming.go:381:			if !operatorUIAllowed(w, r) {
+internal/tuner/server_programming.go:385:			if !operatorUIAllowed(w, r) {
+internal/tuner/server_programming.go:389:				writeServerJSONError(w, http.StatusServiceUnavailable, "programming recipe file not configured")
+internal/tuner/server_programming.go:400:				writeServerJSONError(w, http.StatusBadRequest, "invalid programming category json")
+internal/tuner/server_programming.go:410:				writeServerJSONError(w, http.StatusBadGateway, "save programming recipe failed")
+internal/tuner/server_programming.go:434:			writeServerJSONError(w, http.StatusInternalServerError, "encode programming categories")
+internal/tuner/server_programming.go:441:func (s *Server) serveProgrammingBrowse() http.Handler {
+internal/tuner/server_programming.go:447:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_programming.go:453:			writeServerJSONError(w, http.StatusBadRequest, "category required")
+internal/tuner/server_programming.go:477:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming browse")
+internal/tuner/server_programming.go:602:			writeServerJSONError(w, http.StatusInternalServerError, "encode programming browse")
+internal/tuner/server_programming.go:609:func (s *Server) serveProgrammingChannels() http.Handler {
+internal/tuner/server_programming.go:614:			if !operatorUIAllowed(w, r) {
+internal/tuner/server_programming.go:629:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming channels")
+internal/tuner/server_programming.go:634:			if !operatorUIAllowed(w, r) {
+internal/tuner/server_programming.go:638:				writeServerJSONError(w, http.StatusServiceUnavailable, "programming recipe file not configured")
+internal/tuner/server_programming.go:649:				writeServerJSONError(w, http.StatusBadRequest, "invalid programming channel json")
+internal/tuner/server_programming.go:659:				writeServerJSONError(w, http.StatusBadGateway, "save programming recipe failed")
+internal/tuner/server_programming.go:670:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming channels")
+internal/tuner/server_programming.go:680:func (s *Server) serveProgrammingOrder() http.Handler {
+internal/tuner/server_programming.go:685:			if !operatorUIAllowed(w, r) {
+internal/tuner/server_programming.go:698:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming order")
+internal/tuner/server_programming.go:703:			if !operatorUIAllowed(w, r) {
+internal/tuner/server_programming.go:707:				writeServerJSONError(w, http.StatusServiceUnavailable, "programming recipe file not configured")
+internal/tuner/server_programming.go:720:				writeServerJSONError(w, http.StatusBadRequest, "invalid programming order json")
+internal/tuner/server_programming.go:730:				writeServerJSONError(w, http.StatusBadGateway, "save programming recipe failed")
+internal/tuner/server_programming.go:741:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming order")
+internal/tuner/server_programming.go:751:func (s *Server) serveProgrammingBackups() http.Handler {
+internal/tuner/server_programming.go:756:			if !operatorUIAllowed(w, r) {
+internal/tuner/server_programming.go:760:			if !operatorUIAllowed(w, r) {
+internal/tuner/server_programming.go:764:				writeServerJSONError(w, http.StatusServiceUnavailable, "programming recipe file not configured")
+internal/tuner/server_programming.go:775:				writeServerJSONError(w, http.StatusBadRequest, "invalid programming backups json")
+internal/tuner/server_programming.go:785:				writeServerJSONError(w, http.StatusBadGateway, "save programming recipe failed")
+internal/tuner/server_programming.go:808:			writeServerJSONError(w, http.StatusInternalServerError, "encode programming backups")
+internal/tuner/server_programming.go:815:func (s *Server) serveProgrammingHarvest() http.Handler {
+internal/tuner/server_programming.go:820:			if !operatorUIAllowed(w, r) {
+internal/tuner/server_programming.go:833:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming harvest")
+internal/tuner/server_programming.go:838:			if !operatorUIAllowed(w, r) {
+internal/tuner/server_programming.go:842:				writeServerJSONError(w, http.StatusServiceUnavailable, "plex lineup harvest file not configured")
+internal/tuner/server_programming.go:849:				writeServerJSONError(w, http.StatusBadRequest, "invalid programming harvest json")
+internal/tuner/server_programming.go:854:				writeServerJSONError(w, http.StatusBadGateway, "save programming harvest failed")
+internal/tuner/server_programming.go:864:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming harvest")
+internal/tuner/server_programming.go:874:func (s *Server) serveProgrammingHarvestImport() http.Handler {
+internal/tuner/server_programming.go:880:			if !operatorUIAllowed(w, r) {
+internal/tuner/server_programming.go:895:				writeServerJSONError(w, http.StatusNotFound, "harvest result not found")
+internal/tuner/server_programming.go:902:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming harvest import")
+internal/tuner/server_programming.go:907:			if !operatorUIAllowed(w, r) {
+internal/tuner/server_programming.go:911:				writeServerJSONError(w, http.StatusServiceUnavailable, "programming recipe file not configured")
+internal/tuner/server_programming.go:923:				writeServerJSONError(w, http.StatusBadRequest, "invalid programming harvest import json")
+internal/tuner/server_programming.go:932:				writeServerJSONError(w, http.StatusNotFound, "harvest result not found")
+internal/tuner/server_programming.go:938:				writeServerJSONError(w, http.StatusBadGateway, "save programming recipe failed")
+internal/tuner/server_programming.go:951:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming harvest import")
+internal/tuner/server_programming.go:961:func (s *Server) serveProgrammingHarvestAssist() http.Handler {
+internal/tuner/server_programming.go:967:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_programming.go:999:			writeServerJSONError(w, http.StatusInternalServerError, "encode programming harvest assist")
+internal/tuner/server_programming.go:1006:func (s *Server) serveProgrammingChannelDetail() http.Handler {
+internal/tuner/server_programming.go:1012:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_programming.go:1018:			writeServerJSONError(w, http.StatusBadRequest, "channel_id required")
+internal/tuner/server_programming.go:1035:			writeServerJSONError(w, http.StatusNotFound, "channel not found")
+internal/tuner/server_programming.go:1092:			writeServerJSONError(w, http.StatusInternalServerError, "encode programming channel detail")
+internal/tuner/server_programming.go:1099:func (s *Server) serveProgrammingRecipe() http.Handler {
+internal/tuner/server_programming.go:1104:			if !operatorUIAllowed(w, r) {
+internal/tuner/server_programming.go:1115:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming recipe")
+internal/tuner/server_programming.go:1120:			if !operatorUIAllowed(w, r) {
+internal/tuner/server_programming.go:1124:				writeServerJSONError(w, http.StatusServiceUnavailable, "programming recipe file not configured")
+internal/tuner/server_programming.go:1131:				writeServerJSONError(w, http.StatusBadRequest, "invalid programming recipe json")
+internal/tuner/server_programming.go:1136:				writeServerJSONError(w, http.StatusBadGateway, "save programming recipe failed")
+internal/tuner/server_programming.go:1148:				writeServerJSONError(w, http.StatusInternalServerError, "encode programming recipe")
+internal/tuner/server_programming.go:1171:func (s *Server) serveProgrammingPreview() http.Handler {
+internal/tuner/server_programming.go:1177:		if !operatorUIAllowed(w, r) {
+internal/tuner/server_programming.go:1210:			writeServerJSONError(w, http.StatusInternalServerError, "encode programming preview")
+internal/tuner/gateway_test.go:554:func TestRewriteHLSPlaylistToGatewayProxy_preservesEmptyKeyURI(t *testing.T) {
+internal/tuner/gateway_test.go:593:	if err := g.serveHLSMuxTarget(w, req, up.Client(), "ch1", up.URL+"/seg.ts"); err != nil {
+internal/tuner/gateway_test.go:624:	if err := g.serveHLSMuxTarget(w, req, up.Client(), "ch1", up.URL+"/seg.ts"); err != nil {
+internal/tuner/gateway_test.go:754:	if err := g.serveHLSMuxTarget(w, req, up.Client(), "ch1", up.URL+"/seg.ts"); err != nil {
+internal/tuner/gateway_test.go:934:	err := g.serveHLSMuxTarget(w, req, httpclient.Default(), "ch", "skd://example/key")
+internal/tuner/gateway_test.go:949:	err := g.serveHLSMuxTarget(w, req, up.Client(), "ch", up.URL+"/seg.ts")
+internal/tuner/gateway_test.go:1121:	if err := g.serveHLSMuxTarget(w, req, up.Client(), "ch1", up.URL+"/seg.ts"); err != nil {
+internal/tuner/gateway_test.go:1630:		http.Error(w, "max connections reached", 458)
+internal/tuner/gateway_test.go:2471:		http.Error(w, "maximum 1 connections allowed", 423)
+internal/tuner/gateway_test.go:2695:		http.Error(w, "maximum 1 connections allowed", 423)
+internal/tuner/gateway_test.go:2767:		http.Error(w, "max connections reached", 423)
+internal/tuner/gateway_test.go:2807:		http.Error(w, "server error", 500)
+internal/tuner/gateway_test.go:4246:				http.Error(w, "wrong host override", http.StatusForbidden)
+internal/tuner/gateway_test.go:4251:				http.Error(w, "missing playlist referer", http.StatusForbidden)
+internal/tuner/gateway_test.go:4256:				http.Error(w, "missing playlist origin", http.StatusForbidden)
+internal/tuner/gateway_test.go:4784:			http.Error(w, "maximum 1 connections allowed", 509)
+internal/tuner/gateway_test.go:4819:			http.Error(w, "maximum 1 connections allowed", 509)
+internal/tuner/gateway_test.go:4893:				http.Error(w, "maximum 1 connections allowed", 509)
+internal/tuner/gateway_test.go:4972:				http.Error(w, "expired", http.StatusProxyAuthRequired)
 internal/tuner/server.go:72:	// AppVersion is shown on /ui/ (optional; set from main.Version in cmd).
 internal/tuner/server.go:155:// RuntimeSnapshot is returned by /debug/runtime.json for the dedicated web UI and operator tooling.
 internal/tuner/server.go:2087:	mux.Handle("/discover.json", hdhr)
@@ -1330,85 +1355,37 @@ internal/tuner/server.go:2440:				writeServerJSONError(w, http.StatusServiceUnav
 internal/tuner/server.go:2447:				writeServerJSONError(w, http.StatusBadRequest, "invalid xtream entitlements json")
 internal/tuner/server.go:2452:				writeServerJSONError(w, http.StatusBadGateway, "save xtream entitlements failed")
 internal/tuner/server.go:2457:				writeServerJSONError(w, http.StatusInternalServerError, "encode xtream entitlements")
-internal/tuner/gateway_test.go:554:func TestRewriteHLSPlaylistToGatewayProxy_preservesEmptyKeyURI(t *testing.T) {
-internal/tuner/gateway_test.go:593:	if err := g.serveHLSMuxTarget(w, req, up.Client(), "ch1", up.URL+"/seg.ts"); err != nil {
-internal/tuner/gateway_test.go:624:	if err := g.serveHLSMuxTarget(w, req, up.Client(), "ch1", up.URL+"/seg.ts"); err != nil {
-internal/tuner/gateway_test.go:754:	if err := g.serveHLSMuxTarget(w, req, up.Client(), "ch1", up.URL+"/seg.ts"); err != nil {
-internal/tuner/gateway_test.go:934:	err := g.serveHLSMuxTarget(w, req, httpclient.Default(), "ch", "skd://example/key")
-internal/tuner/gateway_test.go:949:	err := g.serveHLSMuxTarget(w, req, up.Client(), "ch", up.URL+"/seg.ts")
-internal/tuner/gateway_test.go:1121:	if err := g.serveHLSMuxTarget(w, req, up.Client(), "ch1", up.URL+"/seg.ts"); err != nil {
-internal/tuner/gateway_test.go:1630:		http.Error(w, "max connections reached", 458)
-internal/tuner/gateway_test.go:2471:		http.Error(w, "maximum 1 connections allowed", 423)
-internal/tuner/gateway_test.go:2695:		http.Error(w, "maximum 1 connections allowed", 423)
-internal/tuner/gateway_test.go:2767:		http.Error(w, "max connections reached", 423)
-internal/tuner/gateway_test.go:2807:		http.Error(w, "server error", 500)
-internal/tuner/gateway_test.go:4246:				http.Error(w, "wrong host override", http.StatusForbidden)
-internal/tuner/gateway_test.go:4251:				http.Error(w, "missing playlist referer", http.StatusForbidden)
-internal/tuner/gateway_test.go:4256:				http.Error(w, "missing playlist origin", http.StatusForbidden)
-internal/tuner/gateway_test.go:4784:			http.Error(w, "maximum 1 connections allowed", 509)
-internal/tuner/gateway_test.go:4819:			http.Error(w, "maximum 1 connections allowed", 509)
-internal/tuner/gateway_test.go:4893:				http.Error(w, "maximum 1 connections allowed", 509)
-internal/tuner/gateway_test.go:4972:				http.Error(w, "expired", http.StatusProxyAuthRequired)
 
 ## Provider URL, process, and filesystem boundaries
+scripts/live-race-harness-report.py:72:    ffmpeg_modes: Counter = field(default_factory=Counter)
+scripts/live-race-harness-report.py:81:    ffmpeg_mode_re = re.compile(r'(ffmpeg-(?:transcode|remux))')
+scripts/live-race-harness-report.py:174:                if m := self.ffmpeg_mode_re.search(msg):
+scripts/live-race-harness-report.py:176:                        self.req(req_id).ffmpeg_modes[m.group(1)] += 1
+scripts/live-race-harness-report.py:377:                    "ffmpeg_modes": dict(r.ffmpeg_modes),
+scripts/live-race-harness-report.py:425:            hypotheses.append("Startup gate timeouts observed: upstream/ffmpeg readiness latency remains a primary suspect.")
+scripts/live-race-harness-report.py:462:            f"- First ffmpeg bytes startup (ms): count={int(fb['count'])} min={fb['min']:.1f} avg={fb['avg']:.1f} max={fb['max']:.1f}"
 cmd/iptv-tunerr/cmd_migrate_db.go:64:			`INSERT INTO stream_profiles (name, type, config_json, is_default) VALUES (?, 'ffmpeg', ?, 1)`,
-scripts/channel-diff-report.py:123:    if "ffmpeg_hls_failed" in bad_outcomes or "ffmpeg" in bad_outcomes:
-scripts/channel-diff-report.py:124:        findings.append("Bad channel still traversed an ffmpeg failure path before relay; remux avoidance may still need a tighter classifier for this channel class.")
 internal/store/migrations.go:161:-- Stream profiles (ffmpeg, proxy, redirect, streamlink, vlc, yt-dlp, custom).
 internal/store/migrations.go:165:    type        TEXT NOT NULL DEFAULT 'ffmpeg',
-scripts/build-linux-package-assets.sh:55:Recommends: ffmpeg
 internal/store/store.go:26:	path = filepath.Clean(strings.TrimSpace(path))
 internal/store/store.go:31:		if err := os.MkdirAll(dir, 0o755); err != nil {
-scripts/scan-bug-council-candidates.sh:39:  'exec\.Command|ffmpeg|url\.Parse|http\.NewRequest|os\.(ReadFile|WriteFile|Create|Open|MkdirAll)|filepath\.(Join|Clean)|sanitizeFileToken|SetBasicAuth' \
-scripts/ci-smoke.sh:457:    "description": "binary smoke ffmpeg fMP4 shared-session profile"
-scripts/ci-smoke.sh:875:fake_packager_ffmpeg="$TMP_DIR/fake-packager-ffmpeg.sh"
-scripts/ci-smoke.sh:876:cat >"$fake_packager_ffmpeg" <<'SH'
-scripts/ci-smoke.sh:900:chmod +x "$fake_packager_ffmpeg"
-scripts/ci-smoke.sh:907:  IPTV_TUNERR_FFMPEG_PATH="$fake_packager_ffmpeg" \
-scripts/ci-smoke.sh:915:grep -qi '^X-IptvTunerr-Shared-Upstream: ffmpeg_hls_packager' "$packager_second_headers" || fail "packaged hls second consumer missing shared upstream header"
-scripts/ci-smoke.sh:949:fake_shared_ffmpeg="$TMP_DIR/fake-shared-ffmpeg.sh"
-scripts/ci-smoke.sh:950:cat >"$fake_shared_ffmpeg" <<'SH'
-scripts/ci-smoke.sh:955:printf 'ffmpeg'
-scripts/ci-smoke.sh:957:chmod +x "$fake_shared_ffmpeg"
-scripts/ci-smoke.sh:959:run_serve_env_ready "$TMP_DIR/catalog-remux.json" port_ffmpeg_shared "ffmpeg shared" "serve-ffmpeg-shared" \
-scripts/ci-smoke.sh:964:  IPTV_TUNERR_FFMPEG_PATH="$fake_shared_ffmpeg" \
-scripts/ci-smoke.sh:966:curl -sS "http://127.0.0.1:$port_ffmpeg_shared/stream/remux1" -o "$TMP_DIR/ffmpeg-shared-first.out" &
-scripts/ci-smoke.sh:967:ffmpeg_shared_first_pid=$!
-scripts/ci-smoke.sh:969:ffmpeg_shared_headers="$TMP_DIR/ffmpeg-shared-second.headers"
-scripts/ci-smoke.sh:970:curl -sS -D "$ffmpeg_shared_headers" "http://127.0.0.1:$port_ffmpeg_shared/stream/remux1" -o "$TMP_DIR/ffmpeg-shared-second.out" &
-scripts/ci-smoke.sh:971:ffmpeg_shared_second_pid=$!
-scripts/ci-smoke.sh:973:grep -q '"count": 1' <(curl -sS "http://127.0.0.1:$port_ffmpeg_shared/debug/shared-relays.json") || fail "ffmpeg shared relay report missing active relay"
-scripts/ci-smoke.sh:974:grep -q '"shared_upstream": "hls_ffmpeg"' <(curl -sS "http://127.0.0.1:$port_ffmpeg_shared/debug/shared-relays.json") || fail "ffmpeg shared relay report missing upstream label"
-scripts/ci-smoke.sh:975:wait "$ffmpeg_shared_first_pid"
-scripts/ci-smoke.sh:976:wait "$ffmpeg_shared_second_pid"
-scripts/ci-smoke.sh:977:grep -qi '^X-IptvTunerr-Shared-Upstream: hls_ffmpeg' "$ffmpeg_shared_headers" || fail "ffmpeg shared second consumer missing shared upstream header"
-scripts/ci-smoke.sh:978:[[ -s "$TMP_DIR/ffmpeg-shared-first.out" ]] || fail "ffmpeg shared first consumer got no bytes"
-scripts/ci-smoke.sh:979:[[ -s "$TMP_DIR/ffmpeg-shared-second.out" ]] || fail "ffmpeg shared second consumer got no bytes"
-scripts/ci-smoke.sh:980:assert_file_prefix "$TMP_DIR/ffmpeg-shared-second.out" "shared-"
-scripts/ci-smoke.sh:982:run_serve_env_ready "$TMP_DIR/catalog-remux.json" port_ffmpeg_fmp4 "ffmpeg fmp4 shared" "serve-ffmpeg-fmp4" \
-scripts/ci-smoke.sh:987:  IPTV_TUNERR_FFMPEG_PATH="$fake_shared_ffmpeg" \
-scripts/ci-smoke.sh:990:curl -sS "http://127.0.0.1:$port_ffmpeg_fmp4/stream/remux1?profile=shared-fmp4" -o "$TMP_DIR/ffmpeg-fmp4-first.out" &
-scripts/ci-smoke.sh:991:ffmpeg_fmp4_first_pid=$!
-scripts/ci-smoke.sh:993:ffmpeg_fmp4_headers="$TMP_DIR/ffmpeg-fmp4-second.headers"
-scripts/ci-smoke.sh:994:curl -sS -D "$ffmpeg_fmp4_headers" "http://127.0.0.1:$port_ffmpeg_fmp4/stream/remux1?profile=shared-fmp4" -o "$TMP_DIR/ffmpeg-fmp4-second.out" &
-scripts/ci-smoke.sh:995:ffmpeg_fmp4_second_pid=$!
-scripts/ci-smoke.sh:997:grep -q '"content_type": "video/mp4"' <(curl -sS "http://127.0.0.1:$port_ffmpeg_fmp4/debug/shared-relays.json") || fail "ffmpeg fmp4 shared relay report missing mp4 content type"
-scripts/ci-smoke.sh:998:wait "$ffmpeg_fmp4_first_pid"
-scripts/ci-smoke.sh:999:wait "$ffmpeg_fmp4_second_pid"
-scripts/ci-smoke.sh:1000:grep -qi '^X-IptvTunerr-Shared-Upstream: hls_ffmpeg' "$ffmpeg_fmp4_headers" || fail "ffmpeg fmp4 second consumer missing shared upstream header"
-scripts/ci-smoke.sh:1001:grep -qi '^Content-Type: video/mp4' "$ffmpeg_fmp4_headers" || fail "ffmpeg fmp4 second consumer missing video/mp4 content type"
-scripts/ci-smoke.sh:1002:[[ -s "$TMP_DIR/ffmpeg-fmp4-first.out" ]] || fail "ffmpeg fmp4 first consumer got no bytes"
-scripts/ci-smoke.sh:1003:[[ -s "$TMP_DIR/ffmpeg-fmp4-second.out" ]] || fail "ffmpeg fmp4 second consumer got no bytes"
-scripts/ci-smoke.sh:1004:assert_file_prefix "$TMP_DIR/ffmpeg-fmp4-second.out" "shared-"
-scripts/ci-smoke.sh:1046:fake_ffmpeg="$TMP_DIR/fake-ffmpeg.sh"
-scripts/ci-smoke.sh:1047:cat >"$fake_ffmpeg" <<'SH'
-scripts/ci-smoke.sh:1052:chmod +x "$fake_ffmpeg"
-scripts/ci-smoke.sh:1059:  IPTV_TUNERR_FFMPEG_PATH="$fake_ffmpeg" \
-cmd/iptv-tunerr/cmd_lineup_harvest.go:142:		if err := os.WriteFile(p, data, 0o600); err != nil {
+scripts/check-remediation-baseline.sh:100:require_pattern "sanitizeFileToken" "internal/tuner/gateway_debug.go" "debug evidence file tokens are sanitized"
+scripts/check-remediation-baseline.sh:135:require_pattern "TestGateway_ffmpegInputHeaderBlock_stillIncludesCredentialHeaders" "internal/tuner/gateway_test.go" "ffmpeg credential header forwarding behavior test exists"
+scripts/live-race-harness.sh:25:SYN_LOG="$OUT_DIR/synth-ffmpeg.log"
+scripts/live-race-harness.sh:26:REPLAY_LOG="$OUT_DIR/replay-ffmpeg.log"
+scripts/live-race-harness.sh:59:HARNESS_FFMPEG_BIN="${HARNESS_FFMPEG_BIN:-${IPTV_TUNERR_FFMPEG_PATH:-ffmpeg}}"
+scripts/live-race-harness.sh:94:resolve_ffmpeg_bin() {
+scripts/live-race-harness.sh:514:    echo "  synth ffmpeg log: $SYN_LOG"
+scripts/live-race-harness.sh:515:    echo "  replay ffmpeg log: $REPLAY_LOG"
+scripts/live-race-harness.sh:545:  FFMPEG_BIN="$(resolve_ffmpeg_bin)"
+scripts/live-race-harness.sh:546:  [[ -n "$FFMPEG_BIN" ]] || die "ffmpeg binary not found: $HARNESS_FFMPEG_BIN"
+scripts/live-race-harness.sh:547:  log "Using ffmpeg binary: $FFMPEG_BIN"
 scripts/check-council-negative-space.sh:51:assert_validator_present "evidence-file-token" "internal/tuner/gateway_debug.go" "sanitizeFileToken"
 scripts/check-council-negative-space.sh:52:assert_baseline_anchor "evidence-file-token" "sanitizeFileToken"
-scripts/run-council-active-bughunt.sh:57:  'exec\.Command|ffmpeg|sanitizeFileToken|filepath\.(Join|Clean)|os\.(ReadFile|WriteFile|Create|MkdirAll)' \
-cmd/iptv-tunerr/cmd_util.go:34:	u, err := url.Parse(strings.TrimSpace(base))
+cmd/iptv-tunerr/cmd_lineup_harvest.go:142:		if err := os.WriteFile(p, data, 0o600); err != nil {
+scripts/channel-diff-report.py:123:    if "ffmpeg_hls_failed" in bad_outcomes or "ffmpeg" in bad_outcomes:
+scripts/channel-diff-report.py:124:        findings.append("Bad channel still traversed an ffmpeg failure path before relay; remux avoidance may still need a tighter classifier for this channel class.")
+scripts/scan-bug-council-candidates.sh:39:  'exec\.Command|ffmpeg|url\.Parse|http\.NewRequest|os\.(ReadFile|WriteFile|Create|Open|MkdirAll)|filepath\.(Join|Clean)|sanitizeFileToken|SetBasicAuth' \
 cmd/iptv-tunerr/main_integration_test.go:61:	cmd := exec.Command(os.Args[0], "-test.run=TestMainHelperProcess")
 cmd/iptv-tunerr/main_integration_test.go:80:	catalogPath := filepath.Join(t.TempDir(), "catalog.json")
 cmd/iptv-tunerr/main_integration_test.go:84:	cmd := exec.Command(os.Args[0], "-test.run=TestMainHelperProcess")
@@ -1418,8 +1395,8 @@ cmd/iptv-tunerr/main_integration_test.go:134:	cmd := exec.Command(os.Args[0], "-
 cmd/iptv-tunerr/main_integration_test.go:149:	cmd := exec.Command(os.Args[0], "-test.run=TestMainHelperProcess")
 cmd/iptv-tunerr/main_integration_test.go:164:	cmd := exec.Command(os.Args[0], "-test.run=TestMainHelperProcess")
 cmd/iptv-tunerr/main_integration_test.go:179:	cmd := exec.Command(os.Args[0], "-test.run=TestMainHelperProcess")
-scripts/check-remediation-baseline.sh:100:require_pattern "sanitizeFileToken" "internal/tuner/gateway_debug.go" "debug evidence file tokens are sanitized"
-scripts/check-remediation-baseline.sh:135:require_pattern "TestGateway_ffmpegInputHeaderBlock_stillIncludesCredentialHeaders" "internal/tuner/gateway_test.go" "ffmpeg credential header forwarding behavior test exists"
+scripts/build-linux-package-assets.sh:55:Recommends: ffmpeg
+scripts/run-council-active-bughunt.sh:57:  'exec\.Command|ffmpeg|sanitizeFileToken|filepath\.(Join|Clean)|os\.(ReadFile|WriteFile|Create|MkdirAll)' \
 cmd/iptv-tunerr/cmd_runtime_integration_test.go:55:	path := filepath.Join(t.TempDir(), "catalog.json")
 cmd/iptv-tunerr/cmd_runtime_integration_test.go:84:	cmd := exec.Command(os.Args[0], "-test.run=TestRuntimeCommandHelperProcess")
 cmd/iptv-tunerr/cmd_runtime_integration_test.go:134:	cmd := exec.Command(os.Args[0], "-test.run=TestRuntimeCommandHelperProcess")
@@ -1427,8 +1404,53 @@ cmd/iptv-tunerr/cmd_runtime_integration_test.go:160:	catalogPath := filepath.Joi
 cmd/iptv-tunerr/cmd_runtime_integration_test.go:164:	cmd := exec.Command(os.Args[0], "-test.run=TestRuntimeCommandHelperProcess")
 cmd/iptv-tunerr/cmd_runtime_integration_test.go:189:	cmd := exec.Command(os.Args[0], "-test.run=TestRuntimeCommandHelperProcess")
 cmd/iptv-tunerr/cmd_runtime_integration_test.go:193:		"IPTV_TUNERR_HELPER_CATALOG="+filepath.Join(t.TempDir(), "missing-catalog.json"),
-cmd/iptv-tunerr/cmd_live_tv_bundle.go:685:	data, err := os.ReadFile(strings.TrimSpace(path))
-cmd/iptv-tunerr/cmd_live_tv_bundle.go:701:	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+cmd/iptv-tunerr/cmd_util.go:34:	u, err := url.Parse(strings.TrimSpace(base))
+cmd/iptv-tunerr/cmd_guide_reports.go:78:		if err := os.WriteFile(p, data, 0o600); err != nil {
+cmd/iptv-tunerr/cmd_guide_reports.go:88:		if err := os.WriteFile(p, data, 0o600); err != nil {
+cmd/iptv-tunerr/cmd_guide_reports.go:105:		if err := os.WriteFile(p, out, 0o600); err != nil {
+cmd/iptv-tunerr/cmd_guide_reports.go:126:		if err := os.WriteFile(p, aliasOut, 0o600); err != nil {
+cmd/iptv-tunerr/cmd_guide_reports.go:134:		if err := os.WriteFile(p, out, 0o600); err != nil {
+cmd/iptv-tunerr/cmd_plex_ops.go:212:		parsed, err := url.ParseQuery(q)
+cmd/iptv-tunerr/cmd_plex_ops.go:359:		if err := os.WriteFile(p, data, 0o600); err != nil {
+cmd/iptv-tunerr/cmd_vod_integration_test.go:35:	catalogPath := filepath.Join(t.TempDir(), "catalog.json")
+cmd/iptv-tunerr/cmd_vod_integration_test.go:53:	cmd := exec.Command(os.Args[0], "-test.run=TestVODCommandHelperProcess")
+cmd/iptv-tunerr/cmd_vod_integration_test.go:71:		req, err := http.NewRequest(http.MethodOptions, "http://"+addr+"/", nil)
+cmd/iptv-tunerr/cmd_vod_integration_test.go:97:	cmd := exec.Command(os.Args[0], "-test.run=TestVODCommandHelperProcess")
+cmd/iptv-tunerr/cmd_vod_integration_test.go:101:		"IPTV_TUNERR_HELPER_CATALOG="+filepath.Join(t.TempDir(), "missing-catalog.json"),
+cmd/iptv-tunerr/cmd_vod_integration_test.go:114:	cmd := exec.Command(os.Args[0], "-test.run=TestVODCommandHelperProcess")
+cmd/iptv-tunerr/cmd_vod_integration_test.go:118:		"IPTV_TUNERR_HELPER_CATALOG="+filepath.Join(t.TempDir(), "missing-catalog.json"),
+cmd/iptv-tunerr/cmd_vod_integration_test.go:119:		"IPTV_TUNERR_HELPER_MOUNT="+filepath.Join(t.TempDir(), "mnt"),
+cmd/iptv-tunerr/cmd_catalog_test.go:115:	cacheFile := filepath.Join(dir, "provider-epg.xml")
+cmd/iptv-tunerr/cmd_catalog_test.go:117:	if err := os.WriteFile(cacheFile, []byte(body), 0644); err != nil {
+cmd/iptv-tunerr/cmd_debug_bundle_test.go:42:	dest := filepath.Join(t.TempDir(), "env.json")
+cmd/iptv-tunerr/cmd_debug_bundle_test.go:46:	data, err := os.ReadFile(dest)
+cmd/iptv-tunerr/cmd_debug_bundle_test.go:76:	dest := filepath.Join(t.TempDir(), "out.json")
+cmd/iptv-tunerr/cmd_catchup_publish.go:117:		if err := os.WriteFile(p, out, 0o600); err != nil {
+cmd/iptv-tunerr/free_sources.go:105:		return filepath.Join(d, "free-sources")
+cmd/iptv-tunerr/free_sources.go:118:		cacheFile := filepath.Join(cacheDir, urlCacheKey(rawURL))
+cmd/iptv-tunerr/free_sources.go:120:			if data, err := os.ReadFile(cacheFile); err == nil {
+cmd/iptv-tunerr/free_sources.go:128:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+cmd/iptv-tunerr/free_sources.go:147:		if mkErr := os.MkdirAll(cacheDir, 0o750); mkErr == nil {
+cmd/iptv-tunerr/free_sources.go:148:			cacheFile := filepath.Join(cacheDir, urlCacheKey(rawURL))
+cmd/iptv-tunerr/free_sources.go:149:			_ = os.WriteFile(cacheFile, data, 0o600)
+cmd/iptv-tunerr/cmd_ops.go:73:	manifestPath := filepath.Join(outDir, "manifest.json")
+cmd/iptv-tunerr/cmd_ops.go:75:		"source_catalog": filepath.Clean(path),
+cmd/iptv-tunerr/cmd_ops.go:79:	if err := os.WriteFile(manifestPath, data, 0o600); err != nil {
+cmd/iptv-tunerr/cmd_ops.go:99:	moviesPath := filepath.Clean(filepath.Join(mp, "Movies"))
+cmd/iptv-tunerr/cmd_ops.go:100:	tvPath := filepath.Clean(filepath.Join(mp, "TV"))
+cmd/iptv-tunerr/cmd_runtime_test.go:212:	path := filepath.Join(t.TempDir(), "guide.db")
+cmd/iptv-tunerr/cmd_runtime_test.go:232:	path := filepath.Join(t.TempDir(), "catalog.json")
+cmd/iptv-tunerr/cmd_runtime_test.go:257:	path := filepath.Join(t.TempDir(), "catalog.json")
+cmd/iptv-tunerr/free_sources_test.go:28:	want := filepath.Join("/var/cache/iptvtunerr", "free-sources")
+cmd/iptv-tunerr/free_sources_test.go:148:	blocklistPath := filepath.Join(cacheDir, urlCacheKey(iptvOrgBlocklistURL))
+cmd/iptv-tunerr/free_sources_test.go:149:	channelsPath := filepath.Join(cacheDir, urlCacheKey(iptvOrgChannelsURL))
+cmd/iptv-tunerr/free_sources_test.go:150:	if err := os.WriteFile(blocklistPath, []byte(`[{"channel":"blocked.us","reason":"legal"}]`), 0o600); err != nil {
+cmd/iptv-tunerr/free_sources_test.go:153:	if err := os.WriteFile(channelsPath, []byte(`[{"id":"adult.us","name":"Adult","categories":["xxx"],"is_nsfw":true},{"id":"closed.us","name":"Closed","closed":"2025-01-01"}]`), 0o600); err != nil {
+cmd/iptv-tunerr/free_sources_test.go:223:	blocklistPath := filepath.Join(cacheDir, urlCacheKey(iptvOrgBlocklistURL))
+cmd/iptv-tunerr/free_sources_test.go:224:	channelsPath := filepath.Join(cacheDir, urlCacheKey(iptvOrgChannelsURL))
+cmd/iptv-tunerr/free_sources_test.go:225:	if err := os.WriteFile(blocklistPath, []byte(`[{"channel":"blocked.us","reason":"legal"}]`), 0o600); err != nil {
+cmd/iptv-tunerr/free_sources_test.go:228:	if err := os.WriteFile(channelsPath, []byte(`[{"id":"closed.us","name":"Closed","closed":"2025-01-01"}]`), 0o600); err != nil {
+cmd/iptv-tunerr/cmd_oracle_ops.go:147:		if err := os.WriteFile(p, data, 0o600); err != nil {
 cmd/iptv-tunerr/cmd_debug_bundle.go:67:	if err := os.MkdirAll(dir, 0o750); err != nil {
 cmd/iptv-tunerr/cmd_debug_bundle.go:85:			dest := filepath.Join(dir, ep.name)
 cmd/iptv-tunerr/cmd_debug_bundle.go:103:			cfLearnedPath = filepath.Join(filepath.Dir(jar), "cf-learned.json")
@@ -1445,139 +1467,92 @@ cmd/iptv-tunerr/cmd_debug_bundle.go:257:	return os.WriteFile(destPath, out, 0o60
 cmd/iptv-tunerr/cmd_debug_bundle.go:289:	return os.WriteFile(destPath, data, 0o600)
 cmd/iptv-tunerr/cmd_debug_bundle.go:330:	f, err := os.Create(destPath)
 cmd/iptv-tunerr/cmd_debug_bundle.go:362:		data, err := os.ReadFile(path)
-cmd/iptv-tunerr/free_sources.go:105:		return filepath.Join(d, "free-sources")
-cmd/iptv-tunerr/free_sources.go:118:		cacheFile := filepath.Join(cacheDir, urlCacheKey(rawURL))
-cmd/iptv-tunerr/free_sources.go:120:			if data, err := os.ReadFile(cacheFile); err == nil {
-cmd/iptv-tunerr/free_sources.go:128:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-cmd/iptv-tunerr/free_sources.go:147:		if mkErr := os.MkdirAll(cacheDir, 0o750); mkErr == nil {
-cmd/iptv-tunerr/free_sources.go:148:			cacheFile := filepath.Join(cacheDir, urlCacheKey(rawURL))
-cmd/iptv-tunerr/free_sources.go:149:			_ = os.WriteFile(cacheFile, data, 0o600)
-scripts/live-race-harness.sh:25:SYN_LOG="$OUT_DIR/synth-ffmpeg.log"
-scripts/live-race-harness.sh:26:REPLAY_LOG="$OUT_DIR/replay-ffmpeg.log"
-scripts/live-race-harness.sh:59:HARNESS_FFMPEG_BIN="${HARNESS_FFMPEG_BIN:-${IPTV_TUNERR_FFMPEG_PATH:-ffmpeg}}"
-scripts/live-race-harness.sh:94:resolve_ffmpeg_bin() {
-scripts/live-race-harness.sh:514:    echo "  synth ffmpeg log: $SYN_LOG"
-scripts/live-race-harness.sh:515:    echo "  replay ffmpeg log: $REPLAY_LOG"
-scripts/live-race-harness.sh:545:  FFMPEG_BIN="$(resolve_ffmpeg_bin)"
-scripts/live-race-harness.sh:546:  [[ -n "$FFMPEG_BIN" ]] || die "ffmpeg binary not found: $HARNESS_FFMPEG_BIN"
-scripts/live-race-harness.sh:547:  log "Using ffmpeg binary: $FFMPEG_BIN"
-cmd/iptv-tunerr/cmd_catalog_test.go:115:	cacheFile := filepath.Join(dir, "provider-epg.xml")
-cmd/iptv-tunerr/cmd_catalog_test.go:117:	if err := os.WriteFile(cacheFile, []byte(body), 0644); err != nil {
+scripts/ci-smoke.sh:457:    "description": "binary smoke ffmpeg fMP4 shared-session profile"
+scripts/ci-smoke.sh:876:fake_packager_ffmpeg="$TMP_DIR/fake-packager-ffmpeg.sh"
+scripts/ci-smoke.sh:877:cat >"$fake_packager_ffmpeg" <<'SH'
+scripts/ci-smoke.sh:901:chmod +x "$fake_packager_ffmpeg"
+scripts/ci-smoke.sh:908:  IPTV_TUNERR_FFMPEG_PATH="$fake_packager_ffmpeg" \
+scripts/ci-smoke.sh:916:grep -qi '^X-IptvTunerr-Shared-Upstream: ffmpeg_hls_packager' "$packager_second_headers" || fail "packaged hls second consumer missing shared upstream header"
+scripts/ci-smoke.sh:950:fake_shared_ffmpeg="$TMP_DIR/fake-shared-ffmpeg.sh"
+scripts/ci-smoke.sh:951:cat >"$fake_shared_ffmpeg" <<'SH'
+scripts/ci-smoke.sh:956:printf 'ffmpeg'
+scripts/ci-smoke.sh:958:chmod +x "$fake_shared_ffmpeg"
+scripts/ci-smoke.sh:960:run_serve_env_ready "$TMP_DIR/catalog-remux.json" port_ffmpeg_shared "ffmpeg shared" "serve-ffmpeg-shared" \
+scripts/ci-smoke.sh:965:  IPTV_TUNERR_FFMPEG_PATH="$fake_shared_ffmpeg" \
+scripts/ci-smoke.sh:967:curl -sS "http://127.0.0.1:$port_ffmpeg_shared/stream/remux1" -o "$TMP_DIR/ffmpeg-shared-first.out" &
+scripts/ci-smoke.sh:968:ffmpeg_shared_first_pid=$!
+scripts/ci-smoke.sh:970:ffmpeg_shared_headers="$TMP_DIR/ffmpeg-shared-second.headers"
+scripts/ci-smoke.sh:971:curl -sS -D "$ffmpeg_shared_headers" "http://127.0.0.1:$port_ffmpeg_shared/stream/remux1" -o "$TMP_DIR/ffmpeg-shared-second.out" &
+scripts/ci-smoke.sh:972:ffmpeg_shared_second_pid=$!
+scripts/ci-smoke.sh:974:grep -q '"count": 1' <(curl -sS "http://127.0.0.1:$port_ffmpeg_shared/debug/shared-relays.json") || fail "ffmpeg shared relay report missing active relay"
+scripts/ci-smoke.sh:975:grep -q '"shared_upstream": "hls_ffmpeg"' <(curl -sS "http://127.0.0.1:$port_ffmpeg_shared/debug/shared-relays.json") || fail "ffmpeg shared relay report missing upstream label"
+scripts/ci-smoke.sh:976:wait "$ffmpeg_shared_first_pid"
+scripts/ci-smoke.sh:977:wait "$ffmpeg_shared_second_pid"
+scripts/ci-smoke.sh:978:grep -qi '^X-IptvTunerr-Shared-Upstream: hls_ffmpeg' "$ffmpeg_shared_headers" || fail "ffmpeg shared second consumer missing shared upstream header"
+scripts/ci-smoke.sh:979:[[ -s "$TMP_DIR/ffmpeg-shared-first.out" ]] || fail "ffmpeg shared first consumer got no bytes"
+scripts/ci-smoke.sh:980:[[ -s "$TMP_DIR/ffmpeg-shared-second.out" ]] || fail "ffmpeg shared second consumer got no bytes"
+scripts/ci-smoke.sh:981:assert_file_prefix "$TMP_DIR/ffmpeg-shared-second.out" "shared-"
+scripts/ci-smoke.sh:983:run_serve_env_ready "$TMP_DIR/catalog-remux.json" port_ffmpeg_fmp4 "ffmpeg fmp4 shared" "serve-ffmpeg-fmp4" \
+scripts/ci-smoke.sh:988:  IPTV_TUNERR_FFMPEG_PATH="$fake_shared_ffmpeg" \
+scripts/ci-smoke.sh:991:curl -sS "http://127.0.0.1:$port_ffmpeg_fmp4/stream/remux1?profile=shared-fmp4" -o "$TMP_DIR/ffmpeg-fmp4-first.out" &
+scripts/ci-smoke.sh:992:ffmpeg_fmp4_first_pid=$!
+scripts/ci-smoke.sh:994:ffmpeg_fmp4_headers="$TMP_DIR/ffmpeg-fmp4-second.headers"
+scripts/ci-smoke.sh:995:curl -sS -D "$ffmpeg_fmp4_headers" "http://127.0.0.1:$port_ffmpeg_fmp4/stream/remux1?profile=shared-fmp4" -o "$TMP_DIR/ffmpeg-fmp4-second.out" &
+scripts/ci-smoke.sh:996:ffmpeg_fmp4_second_pid=$!
+scripts/ci-smoke.sh:998:grep -q '"content_type": "video/mp4"' <(curl -sS "http://127.0.0.1:$port_ffmpeg_fmp4/debug/shared-relays.json") || fail "ffmpeg fmp4 shared relay report missing mp4 content type"
+scripts/ci-smoke.sh:999:wait "$ffmpeg_fmp4_first_pid"
+scripts/ci-smoke.sh:1000:wait "$ffmpeg_fmp4_second_pid"
+scripts/ci-smoke.sh:1001:grep -qi '^X-IptvTunerr-Shared-Upstream: hls_ffmpeg' "$ffmpeg_fmp4_headers" || fail "ffmpeg fmp4 second consumer missing shared upstream header"
+scripts/ci-smoke.sh:1002:grep -qi '^Content-Type: video/mp4' "$ffmpeg_fmp4_headers" || fail "ffmpeg fmp4 second consumer missing video/mp4 content type"
+scripts/ci-smoke.sh:1003:[[ -s "$TMP_DIR/ffmpeg-fmp4-first.out" ]] || fail "ffmpeg fmp4 first consumer got no bytes"
+scripts/ci-smoke.sh:1004:[[ -s "$TMP_DIR/ffmpeg-fmp4-second.out" ]] || fail "ffmpeg fmp4 second consumer got no bytes"
+scripts/ci-smoke.sh:1005:assert_file_prefix "$TMP_DIR/ffmpeg-fmp4-second.out" "shared-"
+scripts/ci-smoke.sh:1047:fake_ffmpeg="$TMP_DIR/fake-ffmpeg.sh"
+scripts/ci-smoke.sh:1048:cat >"$fake_ffmpeg" <<'SH'
+scripts/ci-smoke.sh:1053:chmod +x "$fake_ffmpeg"
+scripts/ci-smoke.sh:1060:  IPTV_TUNERR_FFMPEG_PATH="$fake_ffmpeg" \
 internal/plexlabelproxy/authorizer.go:48:	u, err := url.Parse(strings.TrimSpace(upstream))
 internal/plexlabelproxy/authorizer.go:102:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-cmd/iptv-tunerr/cmd_runtime_test.go:212:	path := filepath.Join(t.TempDir(), "guide.db")
-cmd/iptv-tunerr/cmd_runtime_test.go:232:	path := filepath.Join(t.TempDir(), "catalog.json")
-cmd/iptv-tunerr/cmd_runtime_test.go:257:	path := filepath.Join(t.TempDir(), "catalog.json")
-cmd/iptv-tunerr/cmd_plex_ops.go:212:		parsed, err := url.ParseQuery(q)
-cmd/iptv-tunerr/cmd_plex_ops.go:359:		if err := os.WriteFile(p, data, 0o600); err != nil {
 cmd/iptv-tunerr/main.go:5://     /stream/{id}) backed by M3U/Xtream provider with optional ffmpeg transcode.
-cmd/iptv-tunerr/free_sources_test.go:28:	want := filepath.Join("/var/cache/iptvtunerr", "free-sources")
-cmd/iptv-tunerr/free_sources_test.go:148:	blocklistPath := filepath.Join(cacheDir, urlCacheKey(iptvOrgBlocklistURL))
-cmd/iptv-tunerr/free_sources_test.go:149:	channelsPath := filepath.Join(cacheDir, urlCacheKey(iptvOrgChannelsURL))
-cmd/iptv-tunerr/free_sources_test.go:150:	if err := os.WriteFile(blocklistPath, []byte(`[{"channel":"blocked.us","reason":"legal"}]`), 0o600); err != nil {
-cmd/iptv-tunerr/free_sources_test.go:153:	if err := os.WriteFile(channelsPath, []byte(`[{"id":"adult.us","name":"Adult","categories":["xxx"],"is_nsfw":true},{"id":"closed.us","name":"Closed","closed":"2025-01-01"}]`), 0o600); err != nil {
-cmd/iptv-tunerr/free_sources_test.go:223:	blocklistPath := filepath.Join(cacheDir, urlCacheKey(iptvOrgBlocklistURL))
-cmd/iptv-tunerr/free_sources_test.go:224:	channelsPath := filepath.Join(cacheDir, urlCacheKey(iptvOrgChannelsURL))
-cmd/iptv-tunerr/free_sources_test.go:225:	if err := os.WriteFile(blocklistPath, []byte(`[{"channel":"blocked.us","reason":"legal"}]`), 0o600); err != nil {
-cmd/iptv-tunerr/free_sources_test.go:228:	if err := os.WriteFile(channelsPath, []byte(`[{"id":"closed.us","name":"Closed","closed":"2025-01-01"}]`), 0o600); err != nil {
+cmd/iptv-tunerr/cmd_reports.go:175:		if err := os.WriteFile(p, data, 0o600); err != nil {
+cmd/iptv-tunerr/cmd_reports.go:195:		if err := os.WriteFile(p, data, 0o600); err != nil {
+cmd/iptv-tunerr/cmd_reports.go:209:		if err := os.WriteFile(p, data, 0o600); err != nil {
+cmd/iptv-tunerr/cmd_reports.go:290:		if err := os.WriteFile(p, out, 0o600); err != nil {
+cmd/iptv-tunerr/cmd_reports.go:453:		if err := os.WriteFile(p, data, 0o600); err != nil {
+cmd/iptv-tunerr/cmd_live_tv_bundle.go:685:	data, err := os.ReadFile(strings.TrimSpace(path))
+cmd/iptv-tunerr/cmd_live_tv_bundle.go:701:	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
 internal/refio/refio.go:42:	u, err := url.Parse(raw)
 internal/refio/refio.go:70:	u, err := url.Parse(strings.TrimSpace(r.raw))
 internal/refio/refio.go:78:	absPath, err := filepath.Abs(filepath.Clean(raw))
-cmd/iptv-tunerr/cmd_debug_bundle_test.go:42:	dest := filepath.Join(t.TempDir(), "env.json")
-cmd/iptv-tunerr/cmd_debug_bundle_test.go:46:	data, err := os.ReadFile(dest)
-cmd/iptv-tunerr/cmd_debug_bundle_test.go:76:	dest := filepath.Join(t.TempDir(), "out.json")
 internal/refio/refio_test.go:14:	path := filepath.Join(dir, "sample.txt")
 internal/refio/refio_test.go:15:	if err := os.WriteFile(path, []byte("hello"), 0o600); err != nil {
 internal/refio/refio_test.go:53:	path := filepath.Join(dir, "guide.xml")
 internal/refio/refio_test.go:54:	if err := os.WriteFile(path, []byte("<tv/>"), 0o600); err != nil {
-internal/httpclient/cookiejar.go:32:	data, err := os.ReadFile(path)
-internal/catalog/catalog.go:168:	dir := filepath.Dir(filepath.Clean(path))
-internal/catalog/catalog.go:169:	tmp, err := os.CreateTemp(dir, ".catalog-*.json.tmp")
-internal/catalog/catalog.go:196:	data, err := os.ReadFile(path)
-internal/health/health.go:20:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m3uURL, nil)
-internal/health/health.go:43:		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-cmd/iptv-tunerr/cmd_vod_integration_test.go:35:	catalogPath := filepath.Join(t.TempDir(), "catalog.json")
-cmd/iptv-tunerr/cmd_vod_integration_test.go:53:	cmd := exec.Command(os.Args[0], "-test.run=TestVODCommandHelperProcess")
-cmd/iptv-tunerr/cmd_vod_integration_test.go:71:		req, err := http.NewRequest(http.MethodOptions, "http://"+addr+"/", nil)
-cmd/iptv-tunerr/cmd_vod_integration_test.go:97:	cmd := exec.Command(os.Args[0], "-test.run=TestVODCommandHelperProcess")
-cmd/iptv-tunerr/cmd_vod_integration_test.go:101:		"IPTV_TUNERR_HELPER_CATALOG="+filepath.Join(t.TempDir(), "missing-catalog.json"),
-cmd/iptv-tunerr/cmd_vod_integration_test.go:114:	cmd := exec.Command(os.Args[0], "-test.run=TestVODCommandHelperProcess")
-cmd/iptv-tunerr/cmd_vod_integration_test.go:118:		"IPTV_TUNERR_HELPER_CATALOG="+filepath.Join(t.TempDir(), "missing-catalog.json"),
-cmd/iptv-tunerr/cmd_vod_integration_test.go:119:		"IPTV_TUNERR_HELPER_MOUNT="+filepath.Join(t.TempDir(), "mnt"),
-internal/config/env.go:12:// Path is cleaned with filepath.Clean to avoid traversal if path is user-influenced.
-internal/config/env.go:14:	path = filepath.Clean(path)
-internal/config/env.go:15:	f, err := os.Open(path)
-internal/httpclient/retry_test.go:51:	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
-internal/httpclient/retry_test.go:75:	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
-internal/probe/probe.go:39:	u, err := url.Parse(streamURL)
-internal/probe/probe.go:51:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, streamURL, nil)
-internal/tuner/cf_learned_store.go:45:	data, err := os.ReadFile(s.path)
-internal/tuner/cf_learned_store.go:159:	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
-internal/tuner/cf_learned_store.go:163:	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-internal/catalog/vod_split.go:209:	if err := os.MkdirAll(outDir, 0o755); err != nil {
-internal/catalog/vod_split.go:217:		p := filepath.Join(outDir, lane.Name+".json")
-internal/httpclient/retry.go:59:		req2, err := http.NewRequestWithContext(ctx, req.Method, req.URL.String(), nil)
-internal/httpclient/retry.go:81:		req2, err := http.NewRequestWithContext(ctx, req.Method, req.URL.String(), nil)
-internal/plex/lineup_test.go:14:	plugSupport := filepath.Join(dir, "Plug-in Support", "Databases")
-internal/plex/lineup_test.go:15:	if err := os.MkdirAll(plugSupport, 0755); err != nil {
-internal/plex/lineup_test.go:18:	dbPath := filepath.Join(plugSupport, "com.plexapp.plugins.library.db")
-internal/plex/lineup_test.go:20:	if err := os.WriteFile(dbPath, []byte{}, 0644); err != nil {
-internal/plex/lineup_test.go:53:	plugSupport := filepath.Join(dir, "Plug-in Support", "Databases")
-internal/plex/lineup_test.go:54:	if err := os.MkdirAll(plugSupport, 0755); err != nil {
-internal/plex/lineup_test.go:57:	dbPath := filepath.Join(plugSupport, "com.plexapp.plugins.library.db")
-internal/materializer/materializer_test.go:36:	dest := filepath.Join(dir, "out.mp4")
-internal/materializer/materializer_test.go:60:	dest := filepath.Join(dir, "dl.bin")
-internal/materializer/materializer_test.go:64:	got, err := os.ReadFile(dest)
-internal/materializer/materializer_test.go:104:	dest := filepath.Join(dir, "r.mp4")
-internal/materializer/materializer_test.go:109:	got, _ := os.ReadFile(dest)
-internal/materializer/materializer_test.go:130:	target := filepath.Join(dir, "target.txt")
-internal/materializer/materializer_test.go:131:	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
-internal/materializer/materializer_test.go:134:	dest := filepath.Join(dir, "dl.partial")
-internal/materializer/materializer_test.go:142:	got, err := os.ReadFile(target)
-internal/materializer/materializer_test.go:161:	err := DownloadToFile(context.Background(), ts.URL+"/x.mp4", filepath.Join(dir, "x.mp4"), ts.Client())
-internal/materializer/materializer_test.go:206:	got, err := os.ReadFile(path)
-internal/materializer/materializer_test.go:283:	final := filepath.Join(cacheDir, "vod", "same.mp4")
-internal/materializer/materializer_test.go:301:	final := filepath.Join(cacheDir, "vod", asset+".mp4")
-internal/materializer/materializer_test.go:302:	if err := os.MkdirAll(filepath.Dir(final), 0755); err != nil {
-internal/materializer/materializer_test.go:305:	if err := os.WriteFile(final, []byte("x"), 0644); err != nil {
-internal/materializer/materializer_test.go:354:	got, err := os.ReadFile(p)
-internal/config/config_test.go:290:	path := filepath.Join(dir, "sub.txt")
-internal/config/config_test.go:291:	if err := os.WriteFile(path, []byte("Username: myuser\nPassword: mypass\n"), 0644); err != nil {
-internal/config/config_test.go:304:	path := filepath.Join(dir, "sub.txt")
-internal/config/config_test.go:305:	if err := os.WriteFile(path, []byte("Username: u\n"), 0644); err != nil {
-internal/config/config_test.go:318:	path := filepath.Join(dir, "sub.txt")
-internal/config/config_test.go:319:	if err := os.WriteFile(path, []byte("Username: fileuser\nPassword: filepass\n"), 0644); err != nil {
+cmd/iptv-tunerr/cmd_cookie_import.go:142:		f, err := os.Open(*netscapeFile)
+cmd/iptv-tunerr/cmd_cookie_import.go:164:		data, err := os.ReadFile(*harFileFlag)
+cmd/iptv-tunerr/cmd_cookie_import.go:215:	data, err := os.ReadFile(path)
+cmd/iptv-tunerr/cmd_cookie_import.go:224:	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+cmd/iptv-tunerr/cmd_cookie_import.go:232:	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 cmd/iptv-tunerr/cmd_catalog.go:35:	u, err := url.Parse(rawURL)
 cmd/iptv-tunerr/cmd_catalog.go:260:	u, err := url.Parse(streamURL)
 cmd/iptv-tunerr/cmd_catalog.go:312:	u, err := url.Parse(streamURL)
 cmd/iptv-tunerr/cmd_catalog.go:379:	u, err := url.Parse(strings.TrimSpace(rawURL))
 cmd/iptv-tunerr/cmd_catalog.go:1067:	data, cacheErr := os.ReadFile(cachePath)
-internal/config/config.go:329:		pattern := filepath.Join(home, "Documents", "iptv.subscription.*.txt")
-internal/config/config.go:337:	path = filepath.Clean(path)
-internal/config/config.go:338:	f, err := os.Open(path)
-internal/tuner/cookie_browser.go:56:			filepath.Join(home, ".config", "google-chrome", "Default", "Cookies"),
-internal/tuner/cookie_browser.go:57:			filepath.Join(home, ".config", "google-chrome-beta", "Default", "Cookies"),
-internal/tuner/cookie_browser.go:58:			filepath.Join(home, ".config", "chromium", "Default", "Cookies"),
-internal/tuner/cookie_browser.go:59:			filepath.Join(home, ".config", "chromium-browser", "Default", "Cookies"),
-internal/tuner/cookie_browser.go:60:			filepath.Join(home, ".config", "BraveSoftware", "Brave-Browser", "Default", "Cookies"),
-internal/tuner/cookie_browser.go:64:			filepath.Join(home, "Library", "Application Support", "Google", "Chrome", "Default", "Cookies"),
-internal/tuner/cookie_browser.go:65:			filepath.Join(home, "Library", "Application Support", "Chromium", "Default", "Cookies"),
-internal/tuner/cookie_browser.go:66:			filepath.Join(home, "Library", "Application Support", "BraveSoftware", "Brave-Browser", "Default", "Cookies"),
-internal/tuner/cookie_browser.go:84:		profileBase = filepath.Join(home, ".mozilla", "firefox")
-internal/tuner/cookie_browser.go:86:		profileBase = filepath.Join(home, "Library", "Application Support", "Firefox", "Profiles")
-internal/tuner/cookie_browser.go:99:		p := filepath.Join(profileBase, e.Name(), "cookies.sqlite")
-internal/config/env_test.go:10:	err := LoadEnvFile(filepath.Join(t.TempDir(), "nonexistent"))
-internal/config/env_test.go:18:	path := filepath.Join(dir, ".env")
-internal/config/env_test.go:19:	if err := os.WriteFile(path, []byte("FOO=bar\n# comment\nBAZ=quux\n"), 0644); err != nil {
-internal/config/env_test.go:35:	path := filepath.Join(dir, ".env")
-internal/config/env_test.go:36:	if err := os.WriteFile(path, []byte(`X="hello world"`), 0644); err != nil {
-internal/config/env_test.go:49:	path := filepath.Join(dir, ".env")
-internal/config/env_test.go:50:	if err := os.WriteFile(path, []byte("export FOO=bar\n"), 0644); err != nil {
-internal/materializer/download.go:30:	if err := os.MkdirAll(filepath.Dir(destPath), 0o700); err != nil {
-internal/materializer/download.go:35:	req, _ := http.NewRequestWithContext(ctx, http.MethodHead, streamURL, nil)
-internal/materializer/download.go:63:		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, streamURL, nil)
-internal/materializer/download.go:91:	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, streamURL, nil)
-internal/materializer/download.go:117:	return os.OpenFile(destPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+cmd/iptv-tunerr/cmd_cf_status.go:80:		learned = filepath.Join(filepath.Dir(jar), "cf-learned.json")
+cmd/iptv-tunerr/cmd_cf_status.go:86:		data, err := os.ReadFile(jar)
+cmd/iptv-tunerr/cmd_cf_status.go:108:		data, err := os.ReadFile(learned)
+internal/supervisor/supervisor_test.go:11:	p := filepath.Join(dir, "multi.json")
+internal/supervisor/supervisor_test.go:12:	if err := os.WriteFile(p, []byte(`{
+internal/supervisor/supervisor_test.go:50:	p := filepath.Join(dir, "dup.json")
+internal/supervisor/supervisor_test.go:51:	if err := os.WriteFile(p, []byte(`{"instances":[{"name":"x","args":["run"]},{"name":"x","args":["run"]}]}`), 0o644); err != nil {
+internal/supervisor/supervisor_test.go:121:	p := filepath.Join(dir, "cfg.json")
+internal/supervisor/supervisor_test.go:122:	if err := os.WriteFile(p, []byte(`{
+internal/supervisor/supervisor_test.go:143:	path := filepath.Join(dir, "envfile.env")
+internal/supervisor/supervisor_test.go:144:	if err := os.WriteFile(path, []byte("export IPTV_TUNERR_PROVIDER_USER=\"demo user\"\nIPTV_TUNERR_PROVIDER_PASS='demo-pass'\n"), 0o600); err != nil {
+internal/catalog/catalog.go:168:	dir := filepath.Dir(filepath.Clean(path))
+internal/catalog/catalog.go:169:	tmp, err := os.CreateTemp(dir, ".catalog-*.json.tmp")
+internal/catalog/catalog.go:196:	data, err := os.ReadFile(path)
+internal/httpclient/cookiejar.go:32:	data, err := os.ReadFile(path)
 internal/catalog/catalog_test.go:11:	path := filepath.Join(dir, "catalog.json")
 internal/catalog/catalog_test.go:46:	path := filepath.Join(dir, "catalog.json")
 internal/catalog/catalog_test.go:68:	path := filepath.Join(dir, "catalog.json")
@@ -1585,74 +1560,35 @@ internal/catalog/catalog_test.go:105:	path := filepath.Join(dir, "catalog.json")
 internal/catalog/catalog_test.go:130:	err := c.Load(filepath.Join(t.TempDir(), "nonexistent.json"))
 internal/catalog/catalog_test.go:138:	path := filepath.Join(dir, "bad.json")
 internal/catalog/catalog_test.go:139:	if err := os.WriteFile(path, []byte("{not valid json"), 0600); err != nil {
-internal/tuner/catchup_recorder_report_test.go:12:	stateFile := filepath.Join(dir, "recorder-state.json")
-internal/tuner/catchup_recorder_report_test.go:27:			{CapsuleID: "done-1", Lane: "sports", Title: "Sports Done", PublishedPath: filepath.Join(dir, "sports", "done.ts")},
-internal/tuner/catchup_recorder_report_test.go:39:	if err := os.WriteFile(stateFile, data, 0o600); err != nil {
-internal/plex/lineup.go:28:	dbPath := filepath.Join(plexDataDir, "Plug-in Support", "Databases", "com.plexapp.plugins.library.db")
-internal/plex/logs.go:40:	logDir := filepath.Join(root, "Logs")
-internal/plex/logs.go:55:		path := filepath.Join(logDir, name)
-internal/plex/logs.go:79:	f, err := os.Open(path)
-internal/plex/cutover_test.go:11:	path := filepath.Join(dir, "cutover.tsv")
-internal/plex/cutover_test.go:15:	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
-internal/plexlabelproxy/proxy.go:238:	u, err := url.Parse(cfg.Upstream)
-internal/plexlabelproxy/proxy.go:1064:	data, err := os.ReadFile(path)
-internal/plexlabelproxy/proxy.go:1110:	tmp, err := os.CreateTemp(dir, ".abuse-state-*.json.tmp")
-internal/plexlabelproxy/proxy.go:1174:	if err := os.MkdirAll(dir, 0o700); err != nil {
-internal/plexlabelproxy/proxy.go:1436:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-internal/plexlabelproxy/proxy.go:1467:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-internal/plexlabelproxy/proxy.go:1509:	u, err := url.Parse(ref)
-internal/plex/users.go:30:	req, err := http.NewRequest(http.MethodGet, u, nil)
-scripts/live-race-harness-report.py:72:    ffmpeg_modes: Counter = field(default_factory=Counter)
-scripts/live-race-harness-report.py:81:    ffmpeg_mode_re = re.compile(r'(ffmpeg-(?:transcode|remux))')
-scripts/live-race-harness-report.py:174:                if m := self.ffmpeg_mode_re.search(msg):
-scripts/live-race-harness-report.py:176:                        self.req(req_id).ffmpeg_modes[m.group(1)] += 1
-scripts/live-race-harness-report.py:377:                    "ffmpeg_modes": dict(r.ffmpeg_modes),
-scripts/live-race-harness-report.py:425:            hypotheses.append("Startup gate timeouts observed: upstream/ffmpeg readiness latency remains a primary suspect.")
-scripts/live-race-harness-report.py:462:            f"- First ffmpeg bytes startup (ms): count={int(fb['count'])} min={fb['min']:.1f} avg={fb['avg']:.1f} max={fb['max']:.1f}"
-internal/materializer/cache.go:16:// Cache materializes both direct-MP4 and HLS URLs to the cache (DirectFile + HLS via ffmpeg).
-internal/materializer/cache.go:83:	if err := os.MkdirAll(filepath.Dir(partialPath), 0o700); err != nil {
-internal/plex/inspect_test.go:16:	dbDir := filepath.Join(dir, "Plug-in Support", "Databases")
-internal/plex/inspect_test.go:17:	if err := os.MkdirAll(dbDir, 0o755); err != nil {
-internal/plex/inspect_test.go:20:	libDB := filepath.Join(dbDir, "com.plexapp.plugins.library.db")
-internal/plex/inspect_test.go:31:	epgDB := filepath.Join(dbDir, "tv.plex.providers.epg.xmltv-demo.db")
-internal/tuner/catchup_recorder_report.go:40:	data, err := os.ReadFile(path)
-internal/plex/cutover.go:48:	f, err := os.Open(path)
-internal/tuner/gateway_upstream_ua_test.go:9:	for _, name := range []string{"lavf", "ffmpeg", "FFMPEG", "Lavf", "libavformat"} {
-internal/tuner/gateway_upstream_ua_test.go:58:		t.Skip("ffprobe/ffmpeg not installed; skipping UA detection test")
+internal/httpclient/retry_test.go:51:	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+internal/httpclient/retry_test.go:75:	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+internal/catalog/vod_split.go:209:	if err := os.MkdirAll(outDir, 0o755); err != nil {
+internal/catalog/vod_split.go:217:		p := filepath.Join(outDir, lane.Name+".json")
+internal/supervisor/supervisor.go:102:	f, err := os.Open(path)
+internal/supervisor/supervisor.go:249:	cmd := exec.CommandContext(ctx, exe, inst.Args...)
+internal/supervisor/supervisor.go:322:		if err := os.MkdirAll(dir, 0o755); err != nil {
+internal/supervisor/supervisor.go:465:	f, err := os.Open(path)
 internal/cache/path.go:12:	return filepath.Join(cacheDir, "vod", safe+".mp4")
 internal/cache/path.go:18:	return filepath.Join(cacheDir, "vod", safe+".partial")
-internal/materializer/hls.go:9:// materializeHLS writes an HLS (m3u8) stream to destPath as MP4 using ffmpeg remux (no transcode).
-internal/materializer/hls.go:10:// Requires ffmpeg in PATH.
-internal/materializer/hls.go:20:	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
-internal/materializer/hls.go:24:		return fmt.Errorf("ffmpeg: %w", err)
-internal/plex/dvr_test.go:27:	dbDir := filepath.Join(dir, "Plug-in Support", "Databases")
-internal/plex/dvr_test.go:28:	if err := os.MkdirAll(dbDir, 0755); err != nil {
-internal/plex/dvr_test.go:31:	dbPath := filepath.Join(dbDir, "com.plexapp.plugins.library.db")
-internal/plex/dvr_test.go:62:	dbDir := filepath.Join(dir, "Plug-in Support", "Databases")
-internal/plex/dvr_test.go:63:	if err := os.MkdirAll(dbDir, 0755); err != nil {
-internal/plex/dvr_test.go:66:	dbPath := filepath.Join(dbDir, "com.plexapp.plugins.library.db")
-internal/plex/library.go:77:	u, err := url.Parse(baseURL)
-internal/plex/library.go:100:	req, err := http.NewRequest("GET", u, nil)
-internal/plex/library.go:121:			sec.Locations = append(sec.Locations, filepath.Clean(loc.Path))
-internal/plex/library.go:140:	req, err := http.NewRequest("GET", u, nil)
-internal/plex/library.go:178:	req, err := http.NewRequest("GET", u, nil)
-internal/plex/library.go:229:	spec.Path = filepath.Clean(strings.TrimSpace(spec.Path))
-internal/plex/library.go:255:	req, err := http.NewRequest("POST", u, nil)
-internal/plex/library.go:278:		sec.Locations = append(sec.Locations, filepath.Clean(loc.Path))
-internal/plex/library.go:292:	req, err := http.NewRequest("GET", u, nil)
-internal/plex/library.go:313:	wantPath := filepath.Clean(spec.Path)
-internal/plex/library.go:322:			if filepath.Clean(p) == wantPath {
-internal/plex/library.go:344:	req, err := http.NewRequest("GET", u, nil)
-internal/plex/library.go:395:		req, err := http.NewRequest(method, u, nil)
-internal/plex/epg.go:26:	dbPath := filepath.Join(plexDataDir, "Plug-in Support", "Databases", fmt.Sprintf("tv.plex.providers.epg.xmltv-%s.db", dvrUUID))
-internal/plex/home.go:66:	httpReq, err := http.NewRequest(http.MethodPost, u, bytes.NewReader(payload))
-internal/plex/home.go:95:	req, err := http.NewRequest(http.MethodGet, u, nil)
-internal/plex/home.go:118:	req, err := http.NewRequest(http.MethodDelete, u, nil)
-internal/plex/inspect.go:114:		LibraryDBPath: filepath.Join(root, "Plug-in Support", "Databases", "com.plexapp.plugins.library.db"),
-internal/plex/inspect.go:215:	paths, err := filepath.Glob(filepath.Join(dbDir, "tv.plex.providers.epg.xmltv-*.db"))
-internal/plex/inspect.go:291:		u, err := url.Parse(strings.TrimSpace(dev.URI))
-internal/plex/inspect.go:350:	req, err := http.NewRequest(method, fullURL, body)
-internal/plex/inspect.go:464:	u, err := url.Parse(strings.TrimSpace(baseURL))
+internal/httpclient/retry.go:59:		req2, err := http.NewRequestWithContext(ctx, req.Method, req.URL.String(), nil)
+internal/httpclient/retry.go:81:		req2, err := http.NewRequestWithContext(ctx, req.Method, req.URL.String(), nil)
+internal/tuner/catchup_recorder_report.go:40:	data, err := os.ReadFile(path)
+internal/tuner/gateway_upstream_ua_test.go:9:	for _, name := range []string{"lavf", "ffmpeg", "FFMPEG", "Lavf", "libavformat"} {
+internal/tuner/gateway_upstream_ua_test.go:58:		t.Skip("ffprobe/ffmpeg not installed; skipping UA detection test")
+internal/health/health.go:20:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m3uURL, nil)
+internal/health/health.go:43:		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+internal/tuner/catchup_capsules_export.go:26:	if err := os.MkdirAll(outDir, 0o700); err != nil {
+internal/tuner/catchup_capsules_export.go:54:		path := filepath.Join(outDir, lane+".json")
+internal/tuner/catchup_capsules_export.go:70:	manifestPath := filepath.Join(outDir, "manifest.json")
+internal/tuner/catchup_capsules_export.go:83:	if err := os.MkdirAll(dir, 0o700); err != nil {
+internal/tuner/catchup_capsules_export.go:97:	tmp, err := os.CreateTemp(dir, ".catchup-artifact-*.tmp")
+internal/plexlabelproxy/proxy.go:238:	u, err := url.Parse(cfg.Upstream)
+internal/plexlabelproxy/proxy.go:1082:	data, err := os.ReadFile(path)
+internal/plexlabelproxy/proxy.go:1128:	tmp, err := os.CreateTemp(dir, ".abuse-state-*.json.tmp")
+internal/plexlabelproxy/proxy.go:1192:	if err := os.MkdirAll(dir, 0o700); err != nil {
+internal/plexlabelproxy/proxy.go:1454:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+internal/plexlabelproxy/proxy.go:1485:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+internal/plexlabelproxy/proxy.go:1527:	u, err := url.Parse(ref)
 internal/tuner/catchup_record_publish.go:41:	itemDir := filepath.Join(rootDir, lane, dirName)
 internal/tuner/catchup_record_publish.go:42:	if err := os.MkdirAll(itemDir, 0o700); err != nil {
 internal/tuner/catchup_record_publish.go:47:	mediaPath := filepath.Join(itemDir, baseName+".ts")
@@ -1664,53 +1600,31 @@ internal/tuner/catchup_record_publish.go:119:				Path:           filepath.Join(r
 internal/tuner/catchup_record_publish.go:159:	in, err := os.Open(src)
 internal/tuner/catchup_record_publish.go:171:	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 internal/tuner/catchup_record_publish.go:193:	tmp, err := os.CreateTemp(dir, ".publish-*.tmp")
-internal/tuner/catchup_capsules_export_test.go:27:	manifestPath := filepath.Join(dir, "manifest.json")
-internal/tuner/catchup_capsules_export_test.go:28:	data, err := os.ReadFile(manifestPath)
-internal/tuner/catchup_capsules_export_test.go:53:	target := filepath.Join(dir, "target.json")
-internal/tuner/catchup_capsules_export_test.go:54:	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
-internal/tuner/catchup_capsules_export_test.go:57:	if err := os.Symlink(target, filepath.Join(dir, "sports.json")); err != nil {
-internal/tuner/catchup_capsules_export_test.go:70:	if got, err := os.ReadFile(target); err != nil {
-cmd/iptv-tunerr/cmd_reports.go:175:		if err := os.WriteFile(p, data, 0o600); err != nil {
-cmd/iptv-tunerr/cmd_reports.go:195:		if err := os.WriteFile(p, data, 0o600); err != nil {
-cmd/iptv-tunerr/cmd_reports.go:209:		if err := os.WriteFile(p, data, 0o600); err != nil {
-cmd/iptv-tunerr/cmd_reports.go:290:		if err := os.WriteFile(p, out, 0o600); err != nil {
-cmd/iptv-tunerr/cmd_reports.go:453:		if err := os.WriteFile(p, data, 0o600); err != nil {
-internal/tuner/gateway_provider_profile_test.go:123:	store := loadAccountLimitStore(filepath.Join(t.TempDir(), "provider-account-limits.json"), 12*time.Hour)
-internal/tuner/psi_keepalive.go:14:// PID values match ffmpeg mpegts muxer defaults (mpegts_pmt_start_pid=0x1000,
-internal/tuner/psi_keepalive.go:18:	patPMTKeepPMTPID   = 0x1000 // ffmpeg default first PMT PID
-internal/tuner/psi_keepalive.go:19:	patPMTKeepVideoPID = 0x0100 // ffmpeg default video elementary stream PID
-internal/tuner/psi_keepalive.go:20:	patPMTKeepAudioPID = 0x0101 // ffmpeg default audio elementary stream PID
-internal/tuner/psi_keepalive.go:147:// waits for ffmpeg to produce a valid IDR frame. By sending MPEG-TS program-structure
-internal/tuner/psi_keepalive.go:154:// These PIDs match ffmpeg's mpegts muxer defaults so the keepalive packets are
-internal/plex/dvr.go:50:	if u, err := url.Parse(plexHost); err == nil && u.Host != "" {
-internal/plex/dvr.go:102:		req, err := http.NewRequest("POST", deviceURL, nil)
-internal/plex/dvr.go:233:		req, err := http.NewRequest("POST", dvrURL, nil)
-internal/plex/dvr.go:443:	req, err := http.NewRequest("PUT", activateURL, nil)
-internal/plex/dvr.go:548:	req, err := http.NewRequest(http.MethodGet, u, nil)
-internal/plex/dvr.go:583:	req, err := http.NewRequest(http.MethodGet, u, nil)
-internal/plex/dvr.go:648:		req, err := http.NewRequest(http.MethodGet, u, nil)
-internal/plex/dvr.go:687:	req, err := http.NewRequest(http.MethodDelete, u, nil)
-internal/plex/dvr.go:715:		req, err := http.NewRequest(http.MethodDelete, u, nil)
-internal/plex/dvr.go:1050:	parsed, parseErr := url.Parse(baseURL)
-internal/plex/dvr.go:1054:	dbPath := filepath.Join(plexDataDir, "Plug-in Support", "Databases", "com.plexapp.plugins.library.db")
-internal/tuner/catchup_capsules_export.go:26:	if err := os.MkdirAll(outDir, 0o700); err != nil {
-internal/tuner/catchup_capsules_export.go:54:		path := filepath.Join(outDir, lane+".json")
-internal/tuner/catchup_capsules_export.go:70:	manifestPath := filepath.Join(outDir, "manifest.json")
-internal/tuner/catchup_capsules_export.go:83:	if err := os.MkdirAll(dir, 0o700); err != nil {
-internal/tuner/catchup_capsules_export.go:97:	tmp, err := os.CreateTemp(dir, ".catchup-artifact-*.tmp")
-cmd/iptv-tunerr/cmd_cookie_import.go:142:		f, err := os.Open(*netscapeFile)
-cmd/iptv-tunerr/cmd_cookie_import.go:164:		data, err := os.ReadFile(*harFileFlag)
-cmd/iptv-tunerr/cmd_cookie_import.go:215:	data, err := os.ReadFile(path)
-cmd/iptv-tunerr/cmd_cookie_import.go:224:	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-cmd/iptv-tunerr/cmd_cookie_import.go:232:	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-internal/tuner/gateway_debug.go:51:func sanitizeFileToken(s string) string {
-internal/tuner/gateway_debug.go:148:	if err := os.MkdirAll(dir, 0o700); err != nil {
-internal/tuner/gateway_debug.go:155:		sanitizeFileToken(reqID),
-internal/tuner/gateway_debug.go:156:		sanitizeFileToken(channelID),
-internal/tuner/gateway_debug.go:157:		sanitizeFileToken(channelName),
-internal/tuner/gateway_debug.go:159:	path := filepath.Join(dir, name)
-internal/tuner/gateway_debug.go:160:	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-cmd/iptv-tunerr/cmd_catchup_publish.go:117:		if err := os.WriteFile(p, out, 0o600); err != nil {
+internal/indexer/player_api.go:196:			req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+internal/indexer/player_api.go:327:	req, err := http.NewRequestWithContext(ctx, http.MethodHead, u, nil)
+internal/hdhomerun/client.go:338:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+internal/hdhomerun/client.go:379:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+internal/hdhomerun/client.go:400:	u, err := url.Parse(strings.TrimSpace(raw))
+internal/tuner/autopilot_test.go:22:	path := filepath.Join(t.TempDir(), "autopilot.json")
+internal/tuner/autopilot_test.go:77:	target := filepath.Join(dir, "target.json")
+internal/tuner/autopilot_test.go:78:	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+internal/tuner/autopilot_test.go:81:	link := filepath.Join(dir, "autopilot.json")
+internal/tuner/autopilot_test.go:94:	if got, err := os.ReadFile(target); err != nil {
+internal/tuner/autopilot_test.go:166:	path := filepath.Join(t.TempDir(), "host-policy.json")
+internal/tuner/autopilot_test.go:167:	if err := os.WriteFile(path, []byte(`{"global_preferred_hosts":["cdn.file.example"],"global_blocked_hosts":["bad.file.example"]}`), 0o600); err != nil {
+internal/eventhooks/eventhooks_test.go:27:	cfgPath := filepath.Join(t.TempDir(), "hooks.json")
+internal/eventhooks/eventhooks_test.go:28:	if err := os.WriteFile(cfgPath, []byte(`{"webhooks":[{"name":"test","url":"`+srv.URL+`","events":["lineup.updated"]}]}`), 0o644); err != nil {
+internal/config/config.go:329:		pattern := filepath.Join(home, "Documents", "iptv.subscription.*.txt")
+internal/config/config.go:337:	path = filepath.Clean(path)
+internal/config/config.go:338:	f, err := os.Open(path)
+internal/hdhomerun/guide.go:45:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+internal/config/env_test.go:10:	err := LoadEnvFile(filepath.Join(t.TempDir(), "nonexistent"))
+internal/config/env_test.go:18:	path := filepath.Join(dir, ".env")
+internal/config/env_test.go:19:	if err := os.WriteFile(path, []byte("FOO=bar\n# comment\nBAZ=quux\n"), 0644); err != nil {
+internal/config/env_test.go:35:	path := filepath.Join(dir, ".env")
+internal/config/env_test.go:36:	if err := os.WriteFile(path, []byte(`X="hello world"`), 0644); err != nil {
+internal/config/env_test.go:49:	path := filepath.Join(dir, ".env")
+internal/config/env_test.go:50:	if err := os.WriteFile(path, []byte("export FOO=bar\n"), 0644); err != nil {
 internal/tuner/catchup_daemon_test.go:57:	data, err := os.ReadFile(state.Completed[0].OutputPath)
 internal/tuner/catchup_daemon_test.go:64:	stateData, err := os.ReadFile(filepath.Join(dir, "recorder-state.json"))
 internal/tuner/catchup_daemon_test.go:85:	publishDir := filepath.Join(dir, "published")
@@ -1742,88 +1656,86 @@ internal/tuner/catchup_daemon_test.go:540:	if err := os.WriteFile(partialPath, [
 internal/tuner/catchup_daemon_test.go:559:	if err := os.WriteFile(stateFile, data, 0o600); err != nil {
 internal/tuner/catchup_daemon_test.go:597:	stateFile := filepath.Join(dir, "recorder-state.json")
 internal/tuner/catchup_daemon_test.go:613:	if err := os.WriteFile(stateFile, data, 0o600); err != nil {
-internal/safeurl/privateresolve.go:22:	u, perr := url.Parse(raw)
+internal/config/env.go:12:// Path is cleaned with filepath.Clean to avoid traversal if path is user-influenced.
+internal/config/env.go:14:	path = filepath.Clean(path)
+internal/config/env.go:15:	f, err := os.Open(path)
+internal/indexer/smoketest.go:257:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, streamURL, nil)
+internal/tuner/autopilot.go:72:	data, err := os.ReadFile(s.path)
+internal/tuner/autopilot.go:156:	if err := os.MkdirAll(dir, 0o700); err != nil {
+internal/tuner/autopilot.go:172:	tmp, err := os.CreateTemp(dir, ".autopilot-*.json.tmp")
 internal/tuner/gateway_cookiejar.go:136:	data, err := os.ReadFile(p.file)
 internal/tuner/gateway_cookiejar.go:200:	if err := os.MkdirAll(filepath.Dir(p.file), 0o700); err != nil {
 internal/tuner/gateway_cookiejar.go:208:	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-cmd/iptv-tunerr/cmd_cf_status.go:80:		learned = filepath.Join(filepath.Dir(jar), "cf-learned.json")
-cmd/iptv-tunerr/cmd_cf_status.go:86:		data, err := os.ReadFile(jar)
-cmd/iptv-tunerr/cmd_cf_status.go:108:		data, err := os.ReadFile(learned)
-internal/tuner/autopilot_test.go:22:	path := filepath.Join(t.TempDir(), "autopilot.json")
-internal/tuner/autopilot_test.go:77:	target := filepath.Join(dir, "target.json")
-internal/tuner/autopilot_test.go:78:	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
-internal/tuner/autopilot_test.go:81:	link := filepath.Join(dir, "autopilot.json")
-internal/tuner/autopilot_test.go:94:	if got, err := os.ReadFile(target); err != nil {
-internal/tuner/autopilot_test.go:166:	path := filepath.Join(t.TempDir(), "host-policy.json")
-internal/tuner/autopilot_test.go:167:	if err := os.WriteFile(path, []byte(`{"global_preferred_hosts":["cdn.file.example"],"global_blocked_hosts":["bad.file.example"]}`), 0o600); err != nil {
-internal/tuner/plex_session_reaper.go:192:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-internal/tuner/plex_session_reaper.go:327:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-internal/tuner/plex_session_reaper.go:347:	req, err := http.NewRequestWithContext(ctx, http.MethodPut, u, strings.NewReader(""))
-cmd/iptv-tunerr/cmd_oracle_ops.go:147:		if err := os.WriteFile(p, data, 0o600); err != nil {
+internal/eventhooks/eventhooks.go:76:	raw, err := os.ReadFile(path)
+internal/eventhooks/eventhooks.go:177:	req, err := http.NewRequest(http.MethodPost, hook.URL, bytes.NewReader(body))
+internal/emby/library.go:36:			loc = filepath.Clean(strings.TrimSpace(loc))
+internal/emby/library.go:184:	spec.Path = filepath.Clean(strings.TrimSpace(spec.Path))
+internal/emby/library.go:240:	wantPath := filepath.Clean(strings.TrimSpace(spec.Path))
+internal/emby/library.go:250:			if filepath.Clean(loc) == wantPath {
+internal/emby/library.go:276:	u, err := url.Parse(base)
+internal/livetvbundle/bundle_test.go:221:	stateFile := filepath.Join(t.TempDir(), "emby-state.json")
 internal/tuner/catchup_record_test.go:38:	data, err := os.ReadFile(item.OutputPath)
 internal/tuner/catchup_record_test.go:45:	manifestData, err := os.ReadFile(filepath.Join(dir, "record-manifest.json"))
 internal/tuner/catchup_record_test.go:60:	if want := filepath.Join("/out", "sports", "dna-test-1.partial.ts"); spool != want {
 internal/tuner/catchup_record_test.go:63:	if want := filepath.Join("/out", "sports", "dna-test-1.ts"); final != want {
 internal/tuner/catchup_record_test.go:84:	data, err := os.ReadFile(item.OutputPath)
-internal/safeurl/safeurl.go:14:	u, err := url.Parse(raw)
-internal/safeurl/safeurl.go:31:	u, err := url.Parse(s)
-internal/safeurl/safeurl.go:45:	u, err := url.Parse(s)
-internal/safeurl/safeurl.go:57:	u, err := url.Parse(s)
-internal/safeurl/safeurl.go:73:	u, err := url.Parse(s)
-cmd/iptv-tunerr/cmd_guide_reports.go:78:		if err := os.WriteFile(p, data, 0o600); err != nil {
-cmd/iptv-tunerr/cmd_guide_reports.go:88:		if err := os.WriteFile(p, data, 0o600); err != nil {
-cmd/iptv-tunerr/cmd_guide_reports.go:105:		if err := os.WriteFile(p, out, 0o600); err != nil {
-cmd/iptv-tunerr/cmd_guide_reports.go:126:		if err := os.WriteFile(p, aliasOut, 0o600); err != nil {
-cmd/iptv-tunerr/cmd_guide_reports.go:134:		if err := os.WriteFile(p, out, 0o600); err != nil {
-internal/plexlabelproxy/proxy_test.go:963:	target := filepath.Join(dir, "target.json")
-internal/plexlabelproxy/proxy_test.go:964:	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
-internal/plexlabelproxy/proxy_test.go:967:	link := filepath.Join(dir, "blocks.json")
-internal/plexlabelproxy/proxy_test.go:987:	if got, err := os.ReadFile(target); err != nil {
-internal/tuner/autopilot.go:72:	data, err := os.ReadFile(s.path)
-internal/tuner/autopilot.go:156:	if err := os.MkdirAll(dir, 0o700); err != nil {
-internal/tuner/autopilot.go:172:	tmp, err := os.CreateTemp(dir, ".autopilot-*.json.tmp")
+internal/indexer/smoketest_cache_test.go:17:	path := filepath.Join(dir, "smoketest.json")
+internal/indexer/smoketest_cache_test.go:42:	c := LoadSmoketestCache(filepath.Join(t.TempDir(), "nonexistent.json"))
+internal/indexer/smoketest_cache_test.go:89:	path := filepath.Join(dir, "smoketest.json")
+internal/indexer/smoketest_cache_test.go:97:	entries, err := filepath.Glob(filepath.Join(dir, "*.tmp"))
+internal/emby/state.go:22:	data, err := os.ReadFile(file)
+internal/emby/state.go:39:	if err := os.MkdirAll(dir, 0o700); err != nil {
+internal/emby/state.go:52:	tmp, err := os.CreateTemp(dir, ".emby-state-*.tmp")
+internal/tuner/plex_session_reaper.go:192:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+internal/tuner/plex_session_reaper.go:327:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+internal/tuner/plex_session_reaper.go:347:	req, err := http.NewRequestWithContext(ctx, http.MethodPut, u, strings.NewReader(""))
+internal/emby/state_test.go:12:	file := filepath.Join(dir, "state.json")
+internal/emby/state_test.go:48:	file := filepath.Join(dir, "subdir", "nested", "state.json")
+internal/emby/state_test.go:71:	file := filepath.Join(dir, "state.json")
+internal/emby/state_test.go:84:	target := filepath.Join(dir, "target.json")
+internal/emby/state_test.go:85:	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+internal/emby/state_test.go:88:	link := filepath.Join(dir, "state.json")
+internal/emby/state_test.go:95:	if got, err := os.ReadFile(target); err != nil {
+internal/emby/state_test.go:113:	file := filepath.Join(dir, "state.json")
+internal/emby/state_test.go:114:	if err := os.WriteFile(file, []byte("not-json"), 0o644); err != nil {
+internal/indexer/smoketest_cache.go:32:	data, err := os.ReadFile(path)
+internal/indexer/smoketest_cache.go:50:	dir := filepath.Dir(filepath.Clean(path))
+internal/indexer/smoketest_cache.go:51:	tmp, err := os.CreateTemp(dir, ".smoketest-*.json.tmp")
 internal/tuner/dna_policy.go:129:		u, err := url.Parse(raw)
-internal/tuner/gateway_ffmpeg_relay.go:32:			f.modeLabel = "ffmpeg-remux"
-internal/tuner/gateway_ffmpeg_relay.go:138:	ffmpegPath string,
-internal/tuner/gateway_ffmpeg_relay.go:151:	modeLabel := "hls-relay-ffmpeg-stdin-remux"
-internal/tuner/gateway_ffmpeg_relay.go:153:		modeLabel = "hls-relay-ffmpeg-stdin-transcode"
-internal/tuner/gateway_ffmpeg_relay.go:181:	cmd := exec.CommandContext(r.Context(), ffmpegPath, args...)
-internal/tuner/gateway_ffmpeg_relay.go:253:			norm.done <- ffmpegRelayErr("hls-relay-stdin-copy", copyErr, stderr.String())
-internal/tuner/gateway_ffmpeg_relay.go:257:			norm.done <- ffmpegRelayErr("hls-relay-stdin-wait", waitErr, stderr.String())
-internal/tuner/gateway_ffmpeg_relay.go:267:func writeBootstrapTS(ctx context.Context, ffmpegPath string, dst io.Writer, channelName, channelID string, seconds float64, profile string) error {
-internal/tuner/gateway_ffmpeg_relay.go:310:	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
-internal/tuner/catchup_record_resilient_test.go:15:	spool := filepath.Join(dir, "x.partial.ts")
-internal/tuner/catchup_record_resilient_test.go:16:	if err := os.WriteFile(spool, []byte("abc"), 0o600); err != nil {
-internal/tuner/catchup_record_resilient_test.go:35:	data, err := os.ReadFile(spool)
-internal/tuner/catchup_record_resilient_test.go:51:	target := filepath.Join(dir, "target.ts")
-internal/tuner/catchup_record_resilient_test.go:52:	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
-internal/tuner/catchup_record_resilient_test.go:55:	spool := filepath.Join(dir, "x.partial.ts")
-internal/tuner/catchup_record_resilient_test.go:69:	if got, err := os.ReadFile(target); err != nil {
-internal/tuner/catchup_record_resilient_test.go:103:	laneDir := filepath.Join(dir, "sports")
+internal/config/config_test.go:290:	path := filepath.Join(dir, "sub.txt")
+internal/config/config_test.go:291:	if err := os.WriteFile(path, []byte("Username: myuser\nPassword: mypass\n"), 0644); err != nil {
+internal/config/config_test.go:304:	path := filepath.Join(dir, "sub.txt")
+internal/config/config_test.go:305:	if err := os.WriteFile(path, []byte("Username: u\n"), 0644); err != nil {
+internal/config/config_test.go:318:	path := filepath.Join(dir, "sub.txt")
+internal/config/config_test.go:319:	if err := os.WriteFile(path, []byte("Username: fileuser\nPassword: filepass\n"), 0644); err != nil {
+internal/programming/programming_test.go:107:	path := filepath.Join(t.TempDir(), "programming.json")
 internal/tuner/ts_inspector.go:185:		return "ffmpeg-remux"
-internal/tuner/ua_cycle.go:42:// detectedLavfUA is the auto-detected "Lavf/X.Y.Z" from the installed ffmpeg binary.
-internal/tuner/catchup_replay_test.go:76:	data, err := os.ReadFile(manifest.Items[0].StreamPath)
-cmd/iptv-tunerr/cmd_ops.go:73:	manifestPath := filepath.Join(outDir, "manifest.json")
-cmd/iptv-tunerr/cmd_ops.go:75:		"source_catalog": filepath.Clean(path),
-cmd/iptv-tunerr/cmd_ops.go:79:	if err := os.WriteFile(manifestPath, data, 0o600); err != nil {
-cmd/iptv-tunerr/cmd_ops.go:99:	moviesPath := filepath.Clean(filepath.Join(mp, "Movies"))
-cmd/iptv-tunerr/cmd_ops.go:100:	tvPath := filepath.Clean(filepath.Join(mp, "TV"))
-internal/plexlabelproxy/entitlement.go:268:		if values, err := url.ParseQuery(string(body)); err == nil && queryParamIsLiveTVPath(values, name) {
-internal/tuner/gateway_ua_cycle.go:50:		req, err := http.NewRequestWithContext(ctx, http.MethodGet, streamURL, nil)
-internal/tuner/catchup_record_urls.go:90:	u, err := url.Parse(strings.TrimSpace(rawURL))
-internal/tuner/catchup_record.go:47:	laneDir := filepath.Join(outDir, firstNonEmptyString(capsule.Lane, "general"))
-internal/tuner/catchup_record.go:49:	return filepath.Join(laneDir, base+".partial.ts"), filepath.Join(laneDir, base+".ts")
-internal/tuner/catchup_record.go:69:	if err := os.MkdirAll(outDir, 0o700); err != nil {
-internal/tuner/catchup_record.go:97:	if err := os.WriteFile(filepath.Join(outDir, "record-manifest.json"), data, 0o600); err != nil {
-internal/tuner/gateway_dash.go:54:	baseU, err := url.Parse(baseStr)
-internal/tuner/gateway_dash.go:58:	refU, err := url.Parse(refStr)
-internal/plexlabelproxy/labelmap.go:128:	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
-internal/tuner/catchup_record_resilient.go:47:	laneDir := filepath.Join(outDir, firstNonEmptyString(capsule.Lane, "general"))
-internal/tuner/catchup_record_resilient.go:48:	if err := os.MkdirAll(laneDir, 0o700); err != nil {
-internal/tuner/catchup_record_resilient.go:156:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-internal/tuner/catchup_record_resilient.go:247:	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-internal/tuner/catchup_record_resilient.go:257:	f, err := os.OpenFile(path, flags, 0o600)
 internal/emby/register.go:81:	req, err := http.NewRequest(method, url, bodyReader)
+internal/tuner/catchup_replay_test.go:76:	data, err := os.ReadFile(manifest.Items[0].StreamPath)
+internal/tuner/psi_keepalive.go:14:// PID values match ffmpeg mpegts muxer defaults (mpegts_pmt_start_pid=0x1000,
+internal/tuner/psi_keepalive.go:18:	patPMTKeepPMTPID   = 0x1000 // ffmpeg default first PMT PID
+internal/tuner/psi_keepalive.go:19:	patPMTKeepVideoPID = 0x0100 // ffmpeg default video elementary stream PID
+internal/tuner/psi_keepalive.go:20:	patPMTKeepAudioPID = 0x0101 // ffmpeg default audio elementary stream PID
+internal/tuner/psi_keepalive.go:147:// waits for ffmpeg to produce a valid IDR frame. By sending MPEG-TS program-structure
+internal/tuner/psi_keepalive.go:154:// These PIDs match ffmpeg's mpegts muxer defaults so the keepalive packets are
+internal/guideinput/guideinput_test.go:43:	path := filepath.Join(dir, "guide.xml")
+internal/guideinput/guideinput_test.go:45:	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+internal/guideinput/guideinput.go:97:	return os.ReadFile(local.Path())
+internal/guideinput/guideinput.go:166:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ref.URL(), nil)
+internal/tuner/gateway_debug.go:51:func sanitizeFileToken(s string) string {
+internal/tuner/gateway_debug.go:148:	if err := os.MkdirAll(dir, 0o700); err != nil {
+internal/tuner/gateway_debug.go:155:		sanitizeFileToken(reqID),
+internal/tuner/gateway_debug.go:156:		sanitizeFileToken(channelID),
+internal/tuner/gateway_debug.go:157:		sanitizeFileToken(channelName),
+internal/tuner/gateway_debug.go:159:	path := filepath.Join(dir, name)
+internal/tuner/gateway_debug.go:160:	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+internal/safeurl/privateresolve.go:22:	u, perr := url.Parse(raw)
+internal/vodwebdav/webdav_test.go:33:	local := filepath.Join(tmp, "movie.mp4")
+internal/vodwebdav/webdav_test.go:34:	if err := os.WriteFile(local, []byte("movie-bytes"), 0o600); err != nil {
+internal/vodwebdav/webdav_test.go:83:	localMovie := filepath.Join(tmp, "movie.mp4")
+internal/vodwebdav/webdav_test.go:84:	if err := os.WriteFile(localMovie, []byte("movie-bytes"), 0o600); err != nil {
+internal/vodwebdav/webdav_test.go:87:	localEpisode := filepath.Join(tmp, "episode.mp4")
+internal/vodwebdav/webdav_test.go:88:	if err := os.WriteFile(localEpisode, []byte("episode-bytes"), 0o600); err != nil {
 internal/tuner/catchup_publish_test.go:41:	streamData, err := os.ReadFile(item.StreamPath)
 internal/tuner/catchup_publish_test.go:48:	nfoData, err := os.ReadFile(item.NFOPath)
 internal/tuner/catchup_publish_test.go:58:	manifestPath := filepath.Join(dir, "publish-manifest.json")
@@ -1845,6 +1757,106 @@ internal/tuner/catchup_publish_test.go:218:	target := filepath.Join(dir, "target
 internal/tuner/catchup_publish_test.go:219:	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
 internal/tuner/catchup_publish_test.go:222:	dst := filepath.Join(dir, "dst.ts")
 internal/tuner/catchup_publish_test.go:229:	if got, err := os.ReadFile(target); err != nil {
+internal/plexlabelproxy/proxy_test.go:963:	target := filepath.Join(dir, "target.json")
+internal/plexlabelproxy/proxy_test.go:964:	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+internal/plexlabelproxy/proxy_test.go:967:	link := filepath.Join(dir, "blocks.json")
+internal/plexlabelproxy/proxy_test.go:987:	if got, err := os.ReadFile(target); err != nil {
+internal/safeurl/safeurl.go:14:	u, err := url.Parse(raw)
+internal/safeurl/safeurl.go:31:	u, err := url.Parse(s)
+internal/safeurl/safeurl.go:45:	u, err := url.Parse(s)
+internal/safeurl/safeurl.go:57:	u, err := url.Parse(s)
+internal/safeurl/safeurl.go:73:	u, err := url.Parse(s)
+internal/vodwebdav/webdav.go:282:	handle, err := os.Open(localPath)
+internal/tuner/gateway_dash.go:54:	baseU, err := url.Parse(baseStr)
+internal/tuner/gateway_dash.go:58:	refU, err := url.Parse(refStr)
+internal/livetvbundle/bundle.go:1135:	u, err := url.Parse(baseURL)
+internal/livetvbundle/bundle.go:1166:	return os.ReadFile(path)
+internal/livetvbundle/bundle.go:1170:	return os.WriteFile(path, data, 0o600)
+internal/livetvbundle/bundle.go:1280:	return filepath.Clean(strings.ReplaceAll(value, `\`, `/`))
+internal/programming/programming.go:132:	data, err := os.ReadFile(path)
+internal/programming/programming.go:156:	dir := filepath.Dir(filepath.Clean(path))
+internal/programming/programming.go:157:	tmp, err := os.CreateTemp(dir, ".programming-recipe-*.json.tmp")
+internal/tuner/catchup_publish.go:69:	if err := os.MkdirAll(outDir, 0o700); err != nil {
+internal/tuner/catchup_publish.go:82:		laneDir := filepath.Join(outDir, lane)
+internal/tuner/catchup_publish.go:83:		if err := os.MkdirAll(laneDir, 0o700); err != nil {
+internal/tuner/catchup_publish.go:104:		itemDir := filepath.Join(outDir, lane, dirName)
+internal/tuner/catchup_publish.go:105:		if err := os.MkdirAll(itemDir, 0o700); err != nil {
+internal/tuner/catchup_publish.go:110:		streamPath := filepath.Join(itemDir, baseName+".strm")
+internal/tuner/catchup_publish.go:118:		nfoPath := filepath.Join(itemDir, baseName+".nfo")
+internal/tuner/catchup_publish.go:147:	manifestPath := filepath.Join(outDir, "publish-manifest.json")
+internal/virtualchannels/virtualchannels_test.go:12:	path := filepath.Join(t.TempDir(), "virtual-channels.json")
+internal/tuner/gateway_ffmpeg_relay.go:32:			f.modeLabel = "ffmpeg-remux"
+internal/tuner/gateway_ffmpeg_relay.go:138:	ffmpegPath string,
+internal/tuner/gateway_ffmpeg_relay.go:151:	modeLabel := "hls-relay-ffmpeg-stdin-remux"
+internal/tuner/gateway_ffmpeg_relay.go:153:		modeLabel = "hls-relay-ffmpeg-stdin-transcode"
+internal/tuner/gateway_ffmpeg_relay.go:181:	cmd := exec.CommandContext(r.Context(), ffmpegPath, args...)
+internal/tuner/gateway_ffmpeg_relay.go:253:			norm.done <- ffmpegRelayErr("hls-relay-stdin-copy", copyErr, stderr.String())
+internal/tuner/gateway_ffmpeg_relay.go:257:			norm.done <- ffmpegRelayErr("hls-relay-stdin-wait", waitErr, stderr.String())
+internal/tuner/gateway_ffmpeg_relay.go:267:func writeBootstrapTS(ctx context.Context, ffmpegPath string, dst io.Writer, channelName, channelID string, seconds float64, profile string) error {
+internal/tuner/gateway_ffmpeg_relay.go:310:	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
+internal/tuner/catchup_capsules_export_test.go:27:	manifestPath := filepath.Join(dir, "manifest.json")
+internal/tuner/catchup_capsules_export_test.go:28:	data, err := os.ReadFile(manifestPath)
+internal/tuner/catchup_capsules_export_test.go:53:	target := filepath.Join(dir, "target.json")
+internal/tuner/catchup_capsules_export_test.go:54:	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+internal/tuner/catchup_capsules_export_test.go:57:	if err := os.Symlink(target, filepath.Join(dir, "sports.json")); err != nil {
+internal/tuner/catchup_capsules_export_test.go:70:	if got, err := os.ReadFile(target); err != nil {
+internal/plexlabelproxy/entitlement.go:268:		if values, err := url.ParseQuery(string(body)); err == nil && queryParamIsLiveTVPath(values, name) {
+internal/vodfs/file.go:102:	f, err := os.Open(path)
+internal/webui/apiv2_settings.go:243:	data, err := os.ReadFile(path)
+internal/webui/apiv2_settings.go:252:	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+internal/webui/apiv2_settings.go:260:	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+internal/tuner/catchup_record.go:47:	laneDir := filepath.Join(outDir, firstNonEmptyString(capsule.Lane, "general"))
+internal/tuner/catchup_record.go:49:	return filepath.Join(laneDir, base+".partial.ts"), filepath.Join(laneDir, base+".ts")
+internal/tuner/catchup_record.go:69:	if err := os.MkdirAll(outDir, 0o700); err != nil {
+internal/tuner/catchup_record.go:97:	if err := os.WriteFile(filepath.Join(outDir, "record-manifest.json"), data, 0o600); err != nil {
+internal/plexlabelproxy/labelmap.go:128:	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+internal/vodfs/plexname.go:75:	u, err := url.Parse(streamURL)
+internal/plexharvest/plexharvest_test.go:133:	path := filepath.Join(t.TempDir(), "harvest.json")
+internal/virtualchannels/virtualchannels.go:105:	data, err := os.ReadFile(path)
+internal/virtualchannels/virtualchannels.go:129:	dir := filepath.Dir(filepath.Clean(path))
+internal/virtualchannels/virtualchannels.go:130:	tmp, err := os.CreateTemp(dir, ".virtual-channels-*.json.tmp")
+internal/tuner/catchup_record_resilient_test.go:15:	spool := filepath.Join(dir, "x.partial.ts")
+internal/tuner/catchup_record_resilient_test.go:16:	if err := os.WriteFile(spool, []byte("abc"), 0o600); err != nil {
+internal/tuner/catchup_record_resilient_test.go:35:	data, err := os.ReadFile(spool)
+internal/tuner/catchup_record_resilient_test.go:51:	target := filepath.Join(dir, "target.ts")
+internal/tuner/catchup_record_resilient_test.go:52:	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+internal/tuner/catchup_record_resilient_test.go:55:	spool := filepath.Join(dir, "x.partial.ts")
+internal/tuner/catchup_record_resilient_test.go:69:	if got, err := os.ReadFile(target); err != nil {
+internal/tuner/catchup_record_resilient_test.go:103:	laneDir := filepath.Join(dir, "sports")
+internal/tuner/ua_cycle.go:42:// detectedLavfUA is the auto-detected "Lavf/X.Y.Z" from the installed ffmpeg binary.
+internal/tuner/catchup_record_urls.go:90:	u, err := url.Parse(strings.TrimSpace(rawURL))
+internal/setupdoctor/setupdoctor.go:107:		u, err := url.Parse(report.BaseURL)
+internal/setupdoctor/setupdoctor.go:300:		if u, err := url.Parse(strings.TrimSpace(baseURL)); err == nil && u.Hostname() != "" {
+internal/tuner/gateway_ua_cycle.go:50:		req, err := http.NewRequestWithContext(ctx, http.MethodGet, streamURL, nil)
+internal/plexharvest/plexharvest.go:388:	data, err := os.ReadFile(path)
+internal/plexharvest/plexharvest.go:420:	dir := filepath.Dir(filepath.Clean(path))
+internal/plexharvest/plexharvest.go:421:	tmp, err := os.CreateTemp(dir, ".plex-lineup-harvest-*.json.tmp")
+internal/plexharvest/plexharvest.go:598:	base, err := url.Parse(baseURL)
+internal/plexharvest/plexharvest.go:612:		child, err := url.Parse(path)
+internal/plexharvest/plexharvest.go:650:	u, err := url.Parse(lineupsURL)
+internal/plexharvest/plexharvest.go:658:	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+internal/plexharvest/plexharvest.go:684:	req, err := http.NewRequest(http.MethodGet, channelsURL, nil)
+internal/webui/webui.go:429:	data, err := os.ReadFile(s.StateFile)
+internal/webui/webui.go:482:	if err := os.MkdirAll(dir, 0o700); err != nil {
+internal/webui/webui.go:498:	tmp, err := os.CreateTemp(dir, ".deck-state-*.tmp")
+internal/webui/webui.go:566:	req, err := http.NewRequest(http.MethodPost, base+path, strings.NewReader(string(raw)))
+internal/webui/webui.go:594:	base, err := url.Parse(s.tunerBase)
+internal/tuner/catchup_daemon.go:137:	if err := os.MkdirAll(cfg.OutDir, 0o755); err != nil {
+internal/tuner/catchup_daemon.go:141:		if err := os.MkdirAll(strings.TrimSpace(cfg.PublishDir), 0o755); err != nil {
+internal/tuner/catchup_daemon.go:147:		stateFile = filepath.Join(cfg.OutDir, "recorder-state.json")
+internal/tuner/catchup_daemon.go:276:	data, err := os.ReadFile(m.stateFile)
+internal/tuner/catchup_daemon.go:562:	if err := os.WriteFile(m.stateFile, data, 0o600); err != nil {
+internal/tuner/catchup_daemon.go:715:	return os.WriteFile(m.stateFile, data, 0o600)
+internal/tuner/gateway_attempts.go:50:	FFmpegHeaders     []string `json:"ffmpeg_headers,omitempty"`
+internal/tuner/gateway_attempts.go:207:func ffmpegHeaderSummary(block string) []string {
+internal/tuner/gateway_attempts.go:280:	f, err := os.OpenFile(g.StreamAttemptLogFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+internal/keycloak/keycloak.go:101:	req, err := http.NewRequest(http.MethodPost, host+"/realms/"+url.PathEscape(realm)+"/protocol/openid-connect/token", strings.NewReader(form.Encode()))
+internal/keycloak/keycloak.go:373:	req, err := http.NewRequest(method, target, reader)
+internal/tuner/catchup_record_resilient.go:47:	laneDir := filepath.Join(outDir, firstNonEmptyString(capsule.Lane, "general"))
+internal/tuner/catchup_record_resilient.go:48:	if err := os.MkdirAll(laneDir, 0o700); err != nil {
+internal/tuner/catchup_record_resilient.go:156:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+internal/tuner/catchup_record_resilient.go:247:	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+internal/tuner/catchup_record_resilient.go:257:	f, err := os.OpenFile(path, flags, 0o600)
 internal/provider/probe.go:48:// This matches what ffplay/ffmpeg sends by default and is often whitelisted by Cloudflare Bot Management.
 internal/provider/probe.go:87:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m3uURL, nil)
 internal/provider/probe.go:137:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
@@ -1854,101 +1866,6 @@ internal/provider/probe.go:456:	req, err := http.NewRequestWithContext(ctx, http
 internal/provider/probe.go:541:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, probeURL, nil)
 internal/provider/probe.go:603:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 internal/provider/probe.go:844:	u, err := url.Parse(s)
-internal/tuner/gateway_attempts.go:50:	FFmpegHeaders     []string `json:"ffmpeg_headers,omitempty"`
-internal/tuner/gateway_attempts.go:207:func ffmpegHeaderSummary(block string) []string {
-internal/tuner/gateway_attempts.go:280:	f, err := os.OpenFile(g.StreamAttemptLogFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-internal/tuner/catchup_publish.go:69:	if err := os.MkdirAll(outDir, 0o700); err != nil {
-internal/tuner/catchup_publish.go:82:		laneDir := filepath.Join(outDir, lane)
-internal/tuner/catchup_publish.go:83:		if err := os.MkdirAll(laneDir, 0o700); err != nil {
-internal/tuner/catchup_publish.go:104:		itemDir := filepath.Join(outDir, lane, dirName)
-internal/tuner/catchup_publish.go:105:		if err := os.MkdirAll(itemDir, 0o700); err != nil {
-internal/tuner/catchup_publish.go:110:		streamPath := filepath.Join(itemDir, baseName+".strm")
-internal/tuner/catchup_publish.go:118:		nfoPath := filepath.Join(itemDir, baseName+".nfo")
-internal/tuner/catchup_publish.go:147:	manifestPath := filepath.Join(outDir, "publish-manifest.json")
-internal/tuner/gateway_upstream.go:21:// defaultLavfUA is the fallback Lavf User-Agent when ffmpeg is not installed or detection fails.
-internal/tuner/gateway_upstream.go:22:// Matches the libavformat version shipped with ffmpeg 7.1 (2024).
-internal/tuner/gateway_upstream.go:25:// detectFFmpegLavfUA runs ffprobe (or ffmpeg) to read the libavformat version and returns
-internal/tuner/gateway_upstream.go:28:	for _, bin := range []string{"ffprobe", "ffmpeg"} {
-internal/tuner/gateway_upstream.go:29:		out, err := exec.Command(bin, "-version").Output()
-internal/tuner/gateway_upstream.go:65:// detectedLavfUA is the auto-detected value from the installed ffmpeg, used for the
-internal/tuner/gateway_upstream.go:66:// "lavf"/"ffmpeg" preset so the Go HTTP client sends the same UA as the ffmpeg subprocess.
-internal/tuner/gateway_upstream.go:70:	case "lavf", "ffmpeg", "libavformat":
-internal/tuner/gateway_upstream.go:192:	u, err := url.Parse(rawURL)
-internal/tuner/gateway_upstream.go:210:func (g *Gateway) ffmpegCookiesOptionForURL(rawURL string) string {
-internal/tuner/gateway_upstream.go:214:	u, err := url.Parse(rawURL)
-internal/tuner/gateway_upstream.go:301:		req.SetBasicAuth(authUser, authPass)
-internal/tuner/gateway_upstream.go:351:	req, err := http.NewRequestWithContext(ctx, method, rawURL, nil)
-internal/tuner/gateway_upstream.go:359:func (g *Gateway) ffmpegInputHeaderBlock(incoming *http.Request, rawURL, hostOverride string) string {
-internal/tuner/cf_client_test.go:15:	t.Setenv("IPTV_TUNERR_COOKIE_JAR_FILE", filepath.Join(t.TempDir(), "cookies.json"))
-internal/tuner/cf_client_test.go:21:	target, err := url.Parse("http://example.com/get.php")
-internal/tuner/cf_client_test.go:23:		t.Fatalf("url.Parse: %v", err)
-internal/tuner/autopilot_policy.go:29:	data, err := os.ReadFile(path)
-internal/tuner/cf_client.go:69:	target, err := url.Parse(strings.TrimSpace(rawURL))
-internal/tuner/ghost_hunter_recovery.go:44:	cmd := exec.CommandContext(ctx, path, args...)
-internal/tuner/cf_bootstrap.go:125:		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-internal/tuner/cf_bootstrap.go:178:					u, err := url.Parse("https://" + host + "/")
-internal/tuner/cf_bootstrap.go:220:		u, err := url.Parse(rawURL)
-internal/tuner/cf_bootstrap.go:232:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-internal/tuner/cf_bootstrap.go:237:		if u, err := url.Parse(rawURL); err == nil {
-internal/tuner/cf_bootstrap.go:286:	cmd := exec.CommandContext(timeoutCtx, bin, args...)
-internal/tuner/cf_bootstrap.go:292:	cookieDB := filepath.Join(dir, "Default", "Cookies")
-internal/tuner/cf_bootstrap.go:311:		u, err := url.Parse(rawURL)
-internal/tuner/cf_bootstrap.go:336:	_ = exec.CommandContext(ctx, openCmd, rawURL).Start()
-internal/tuner/cf_bootstrap.go:349:					u, _ := url.Parse(rawURL)
-internal/tuner/cf_bootstrap.go:383:	u, err := url.Parse(rawURL)
-internal/tuner/cf_bootstrap.go:395:	u, err := url.Parse(rawURL)
-internal/emby/library.go:36:			loc = filepath.Clean(strings.TrimSpace(loc))
-internal/emby/library.go:184:	spec.Path = filepath.Clean(strings.TrimSpace(spec.Path))
-internal/emby/library.go:240:	wantPath := filepath.Clean(strings.TrimSpace(spec.Path))
-internal/emby/library.go:250:			if filepath.Clean(loc) == wantPath {
-internal/emby/library.go:276:	u, err := url.Parse(base)
-internal/tuner/gateway_hls_packager_test.go:16:func TestGateway_ffmpegPackagedHLS_namedProfileServesPlaylistAndSegment(t *testing.T) {
-internal/tuner/gateway_hls_packager_test.go:18:	ffmpegPath := filepath.Join(dir, "fake-ffmpeg.sh")
-internal/tuner/gateway_hls_packager_test.go:42:	if err := os.WriteFile(ffmpegPath, []byte(script), 0755); err != nil {
-internal/tuner/gateway_hls_packager_test.go:45:	t.Setenv("IPTV_TUNERR_FFMPEG_PATH", ffmpegPath)
-internal/tuner/gateway_hls_packager_test.go:91:	u, err := url.Parse(strings.TrimSpace(lastNonEmptyLine(body)))
-internal/tuner/gateway_hls_packager_test.go:118:func TestGateway_ffmpegPackagedHLS_targetRequiresGetOrHead(t *testing.T) {
-internal/tuner/gateway_hls_packager_test.go:134:func TestGateway_ffmpegPackagedHLS_sameProfileReusesExistingSession(t *testing.T) {
-internal/tuner/gateway_hls_packager_test.go:136:	ffmpegPath := filepath.Join(dir, "fake-ffmpeg.sh")
-internal/tuner/gateway_hls_packager_test.go:160:	if err := os.WriteFile(ffmpegPath, []byte(script), 0755); err != nil {
-internal/tuner/gateway_hls_packager_test.go:163:	t.Setenv("IPTV_TUNERR_FFMPEG_PATH", ffmpegPath)
-internal/tuner/gateway_hls_packager_test.go:207:	u1, err := url.Parse(strings.TrimSpace(lastNonEmptyLine(rec1.Body.String())))
-internal/tuner/gateway_hls_packager_test.go:223:	if got := rec2.Header().Get("X-IptvTunerr-Shared-Upstream"); got != "ffmpeg_hls_packager" {
-internal/tuner/gateway_hls_packager_test.go:226:	u2, err := url.Parse(strings.TrimSpace(lastNonEmptyLine(rec2.Body.String())))
-internal/tuner/gateway_hls_packager_test.go:257:		hlsPackagerSessions:      map[string]*ffmpegHLSPackagerSession{},
-internal/tuner/gateway_hls_packager_test.go:258:		hlsPackagerSessionsByKey: map[string]*ffmpegHLSPackagerSession{},
-internal/tuner/gateway_hls_packager_test.go:267:	sess := &ffmpegHLSPackagerSession{
-internal/tuner/account_limit_store_test.go:10:	path := filepath.Join(t.TempDir(), "provider-account-limits.json")
-internal/emby/state_test.go:12:	file := filepath.Join(dir, "state.json")
-internal/emby/state_test.go:48:	file := filepath.Join(dir, "subdir", "nested", "state.json")
-internal/emby/state_test.go:71:	file := filepath.Join(dir, "state.json")
-internal/emby/state_test.go:84:	target := filepath.Join(dir, "target.json")
-internal/emby/state_test.go:85:	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
-internal/emby/state_test.go:88:	link := filepath.Join(dir, "state.json")
-internal/emby/state_test.go:95:	if got, err := os.ReadFile(target); err != nil {
-internal/emby/state_test.go:113:	file := filepath.Join(dir, "state.json")
-internal/emby/state_test.go:114:	if err := os.WriteFile(file, []byte("not-json"), 0o644); err != nil {
-internal/tuner/catchup_daemon.go:137:	if err := os.MkdirAll(cfg.OutDir, 0o755); err != nil {
-internal/tuner/catchup_daemon.go:141:		if err := os.MkdirAll(strings.TrimSpace(cfg.PublishDir), 0o755); err != nil {
-internal/tuner/catchup_daemon.go:147:		stateFile = filepath.Join(cfg.OutDir, "recorder-state.json")
-internal/tuner/catchup_daemon.go:276:	data, err := os.ReadFile(m.stateFile)
-internal/tuner/catchup_daemon.go:562:	if err := os.WriteFile(m.stateFile, data, 0o600); err != nil {
-internal/tuner/catchup_daemon.go:715:	return os.WriteFile(m.stateFile, data, 0o600)
-internal/tuner/account_limit_store.go:43:	data, err := os.ReadFile(s.path)
-internal/tuner/account_limit_store.go:122:	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
-internal/tuner/account_limit_store.go:130:	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-internal/tuner/gateway_accounts.go:70:		if parsed, err := url.Parse(rawURL); err == nil && parsed != nil {
-internal/tuner/gateway_accounts.go:87:	u, err := url.Parse(strings.TrimSpace(rawURL))
-internal/emby/state.go:22:	data, err := os.ReadFile(file)
-internal/emby/state.go:39:	if err := os.MkdirAll(dir, 0o700); err != nil {
-internal/emby/state.go:52:	tmp, err := os.CreateTemp(dir, ".emby-state-*.tmp")
-internal/tuner/gateway.go:36:	CustomUserAgent            string            // override User-Agent sent to upstream; supports preset names: lavf, ffmpeg, vlc, kodi, firefox
-internal/tuner/gateway.go:37:	DetectedFFmpegUA           string            // auto-detected Lavf/X.Y.Z from installed ffmpeg, used when CustomUserAgent is "lavf"/"ffmpeg"
-internal/tuner/gateway.go:59:	hlsPackagerSessions        map[string]*ffmpegHLSPackagerSession
-internal/tuner/gateway.go:60:	hlsPackagerSessionsByKey   map[string]*ffmpegHLSPackagerSession
-internal/tuner/recording_rules.go:121:	data, err := os.ReadFile(path)
-internal/tuner/recording_rules.go:145:	dir := filepath.Dir(filepath.Clean(path))
-internal/tuner/recording_rules.go:146:	tmp, err := os.CreateTemp(dir, ".recording-rules-*.json.tmp")
 internal/tuner/gateway_stream_response.go:268:			return "ok", "hls_ffmpeg_packaged", effectiveURL, true
 internal/tuner/gateway_stream_response.go:270:		log.Printf("gateway: channel=%q id=%s ffmpeg-hls-packager failed (falling back to normal relay): profile=%q",
 internal/tuner/gateway_stream_response.go:278:		log.Printf("gateway: channel=%q id=%s cross-host-hls prefers go relay over ffmpeg-remux playlist_host=%q refs=%q",
@@ -1975,226 +1892,187 @@ internal/tuner/gateway_stream_response.go:444:		if ffmpegPath, ffmpegErr := reso
 internal/tuner/gateway_stream_response.go:449:				"raw_ts_ffmpeg",
 internal/tuner/gateway_stream_response.go:452:			if g.relayRawTSWithFFmpeg(w, r, ffmpegPath, resp.Body, channel.GuideName, channelID, resp.StatusCode, start, bufferSize, sharedSession) {
 internal/tuner/gateway_stream_response.go:455:			log.Printf("gateway: channel=%q id=%s ffmpeg-ts-norm failed to launch; falling back to raw proxy", channel.GuideName, channelID)
-internal/tuner/gateway_hls_packager.go:25:type ffmpegHLSPackagerSession struct {
-internal/tuner/gateway_hls_packager.go:44:func (s *ffmpegHLSPackagerSession) touch(now time.Time) {
-internal/tuner/gateway_hls_packager.go:50:func (s *ffmpegHLSPackagerSession) markExit(err error) {
-internal/tuner/gateway_hls_packager.go:57:func (s *ffmpegHLSPackagerSession) snapshot() (createdAt, lastAccess time.Time, exited bool, waitErr error) {
-internal/tuner/gateway_hls_packager.go:220:	var expired []*ffmpegHLSPackagerSession
-internal/tuner/gateway_hls_packager.go:240:func (g *Gateway) stopHLSPackagerSession(sess *ffmpegHLSPackagerSession, reason string) {
-internal/tuner/gateway_hls_packager.go:258:func (g *Gateway) removeHLSPackagerSessionLocked(sessionID string, sess *ffmpegHLSPackagerSession) {
-internal/tuner/gateway_hls_packager.go:273:func (g *Gateway) registerHLSPackagerSession(sess *ffmpegHLSPackagerSession) {
-internal/tuner/gateway_hls_packager.go:280:		g.hlsPackagerSessions = make(map[string]*ffmpegHLSPackagerSession)
-internal/tuner/gateway_hls_packager.go:283:		g.hlsPackagerSessionsByKey = make(map[string]*ffmpegHLSPackagerSession)
-internal/tuner/gateway_hls_packager.go:298:	var sess *ffmpegHLSPackagerSession
-internal/tuner/gateway_hls_packager.go:310:func (g *Gateway) lookupHLSPackagerSession(sessionID string) *ffmpegHLSPackagerSession {
-internal/tuner/gateway_hls_packager.go:323:func (g *Gateway) lookupReusableHLSPackagerSession(reuseKey string) *ffmpegHLSPackagerSession {
-internal/tuner/gateway_hls_packager.go:328:	var stale *ffmpegHLSPackagerSession
-internal/tuner/gateway_hls_packager.go:361:		if err := os.MkdirAll(base, 0755); err != nil {
-internal/tuner/gateway_hls_packager.go:372:	segPattern := filepath.Join(filepath.Dir(playlistPath), "seg-%06d.ts")
-internal/tuner/gateway_hls_packager.go:391:	ffmpegPath string,
-internal/tuner/gateway_hls_packager.go:396:) (*ffmpegHLSPackagerSession, error) {
-internal/tuner/gateway_hls_packager.go:401:	playlistPath := filepath.Join(dir, "index.m3u8")
-internal/tuner/gateway_hls_packager.go:403:	ffmpegPlaylistURL, ffmpegInputHost, ffmpegInputIP := canonicalizeFFmpegInputURL(r.Context(), playlistURL, g.DisableFFmpegDNS)
-internal/tuner/gateway_hls_packager.go:407:	hlsLiveStartIndex := ffmpegHLSLiveStartIndex()
-internal/tuner/gateway_hls_packager.go:409:	hlsHTTPPersistent := ffmpegHLSHTTPPersistentEnabled()
-internal/tuner/gateway_hls_packager.go:437:	if cookies := g.ffmpegCookiesOptionForURL(playlistURL); cookies != "" {
-internal/tuner/gateway_hls_packager.go:452:	if headers := g.ffmpegInputHeaderBlock(r, playlistURL, ffmpegInputHost); headers != "" {
-internal/tuner/gateway_hls_packager.go:455:	args = append(args, "-i", ffmpegPlaylistURL)
-internal/tuner/gateway_hls_packager.go:457:	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
-internal/tuner/gateway_hls_packager.go:465:	sess := &ffmpegHLSPackagerSession{
-internal/tuner/gateway_hls_packager.go:476:		segmentGlobs: []string{filepath.Join(dir, "seg-*.ts"), filepath.Join(dir, "seg-*.tmp")},
-internal/tuner/gateway_hls_packager.go:491:	if ffmpegInputHost != "" && ffmpegInputIP != "" {
-internal/tuner/gateway_hls_packager.go:492:		log.Printf("gateway: channel=%q id=%s hls-packager input-host-resolved %q=>%q", channelName, channelID, ffmpegInputHost, ffmpegInputIP)
-internal/tuner/gateway_hls_packager.go:497:func (g *Gateway) serveFFmpegPackagedHLSPlaylist(w http.ResponseWriter, channelID string, sess *ffmpegHLSPackagerSession, shared bool) error {
-internal/tuner/gateway_hls_packager.go:505:	body, err := os.ReadFile(sess.playlistPath)
-internal/tuner/gateway_hls_packager.go:512:		w.Header().Set("X-IptvTunerr-Shared-Upstream", "ffmpeg_hls_packager")
-internal/tuner/gateway_hls_packager.go:539:func packagedHLSFilePath(sess *ffmpegHLSPackagerSession, file string) (string, error) {
-internal/tuner/gateway_hls_packager.go:547:	clean := strings.TrimPrefix(filepath.Clean("/"+name), "/")
-internal/tuner/gateway_hls_packager.go:551:	full := filepath.Join(sess.dir, filepath.FromSlash(clean))
-internal/tuner/gateway_hls_packager.go:567:	ffmpegPath, err := resolveFFmpegPath()
-internal/tuner/gateway_hls_packager.go:571:	sess, err := g.startFFmpegPackagedHLS(r, ffmpegPath, playlistURL, channelName, channelID, profile)
-internal/tuner/gateway_hls_packager.go:612:		body, err := os.ReadFile(filePath)
+internal/entitlements/entitlements_test.go:9:	path := filepath.Join(t.TempDir(), "xtream-users.json")
+internal/tuner/cf_learned_store.go:45:	data, err := os.ReadFile(s.path)
+internal/tuner/cf_learned_store.go:159:	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
+internal/tuner/cf_learned_store.go:163:	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+internal/tuner/cf_bootstrap.go:125:		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+internal/tuner/cf_bootstrap.go:178:					u, err := url.Parse("https://" + host + "/")
+internal/tuner/cf_bootstrap.go:220:		u, err := url.Parse(rawURL)
+internal/tuner/cf_bootstrap.go:232:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+internal/tuner/cf_bootstrap.go:237:		if u, err := url.Parse(rawURL); err == nil {
+internal/tuner/cf_bootstrap.go:286:	cmd := exec.CommandContext(timeoutCtx, bin, args...)
+internal/tuner/cf_bootstrap.go:292:	cookieDB := filepath.Join(dir, "Default", "Cookies")
+internal/tuner/cf_bootstrap.go:311:		u, err := url.Parse(rawURL)
+internal/tuner/cf_bootstrap.go:336:	_ = exec.CommandContext(ctx, openCmd, rawURL).Start()
+internal/tuner/cf_bootstrap.go:349:					u, _ := url.Parse(rawURL)
+internal/tuner/cf_bootstrap.go:383:	u, err := url.Parse(rawURL)
+internal/tuner/cf_bootstrap.go:395:	u, err := url.Parse(rawURL)
+internal/authentik/authentik.go:257:	req, err := http.NewRequest(method, target, reader)
+internal/entitlements/entitlements.go:65:	data, err := os.ReadFile(path)
+internal/entitlements/entitlements.go:89:	dir := filepath.Dir(filepath.Clean(path))
+internal/entitlements/entitlements.go:90:	tmp, err := os.CreateTemp(dir, ".xtream-entitlements-*.json.tmp")
+internal/tuner/cf_client.go:69:	target, err := url.Parse(strings.TrimSpace(rawURL))
+internal/tuner/cookie_browser.go:56:			filepath.Join(home, ".config", "google-chrome", "Default", "Cookies"),
+internal/tuner/cookie_browser.go:57:			filepath.Join(home, ".config", "google-chrome-beta", "Default", "Cookies"),
+internal/tuner/cookie_browser.go:58:			filepath.Join(home, ".config", "chromium", "Default", "Cookies"),
+internal/tuner/cookie_browser.go:59:			filepath.Join(home, ".config", "chromium-browser", "Default", "Cookies"),
+internal/tuner/cookie_browser.go:60:			filepath.Join(home, ".config", "BraveSoftware", "Brave-Browser", "Default", "Cookies"),
+internal/tuner/cookie_browser.go:64:			filepath.Join(home, "Library", "Application Support", "Google", "Chrome", "Default", "Cookies"),
+internal/tuner/cookie_browser.go:65:			filepath.Join(home, "Library", "Application Support", "Chromium", "Default", "Cookies"),
+internal/tuner/cookie_browser.go:66:			filepath.Join(home, "Library", "Application Support", "BraveSoftware", "Brave-Browser", "Default", "Cookies"),
+internal/tuner/cookie_browser.go:84:		profileBase = filepath.Join(home, ".mozilla", "firefox")
+internal/tuner/cookie_browser.go:86:		profileBase = filepath.Join(home, "Library", "Application Support", "Firefox", "Profiles")
+internal/tuner/cookie_browser.go:99:		p := filepath.Join(profileBase, e.Name(), "cookies.sqlite")
+internal/webui/apiv2_logos.go:57:	dir := filepath.Clean(s.logosDir())
+internal/webui/apiv2_logos.go:58:	dest := filepath.Join(dir, safe)
+internal/webui/apiv2_logos.go:107:		if err := os.MkdirAll(dir, 0o700); err != nil {
+internal/webui/apiv2_logos.go:120:		tmp, err := os.CreateTemp(dir, ".upload-*.tmp")
+internal/tuner/catchup_recorder_report_test.go:12:	stateFile := filepath.Join(dir, "recorder-state.json")
+internal/tuner/catchup_recorder_report_test.go:27:			{CapsuleID: "done-1", Lane: "sports", Title: "Sports Done", PublishedPath: filepath.Join(dir, "sports", "done.ts")},
+internal/tuner/catchup_recorder_report_test.go:39:	if err := os.WriteFile(stateFile, data, 0o600); err != nil {
+internal/tuner/gateway_shared_relay.go:79:		"hls_ffmpeg",
+internal/tuner/gateway_shared_relay.go:89:	return "raw_ts_ffmpeg\x1f" + strings.TrimSpace(channelID)
+internal/materializer/materializer_test.go:36:	dest := filepath.Join(dir, "out.mp4")
+internal/materializer/materializer_test.go:60:	dest := filepath.Join(dir, "dl.bin")
+internal/materializer/materializer_test.go:64:	got, err := os.ReadFile(dest)
+internal/materializer/materializer_test.go:104:	dest := filepath.Join(dir, "r.mp4")
+internal/materializer/materializer_test.go:109:	got, _ := os.ReadFile(dest)
+internal/materializer/materializer_test.go:130:	target := filepath.Join(dir, "target.txt")
+internal/materializer/materializer_test.go:131:	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+internal/materializer/materializer_test.go:134:	dest := filepath.Join(dir, "dl.partial")
+internal/materializer/materializer_test.go:142:	got, err := os.ReadFile(target)
+internal/materializer/materializer_test.go:161:	err := DownloadToFile(context.Background(), ts.URL+"/x.mp4", filepath.Join(dir, "x.mp4"), ts.Client())
+internal/materializer/materializer_test.go:206:	got, err := os.ReadFile(path)
+internal/materializer/materializer_test.go:283:	final := filepath.Join(cacheDir, "vod", "same.mp4")
+internal/materializer/materializer_test.go:301:	final := filepath.Join(cacheDir, "vod", asset+".mp4")
+internal/materializer/materializer_test.go:302:	if err := os.MkdirAll(filepath.Dir(final), 0755); err != nil {
+internal/materializer/materializer_test.go:305:	if err := os.WriteFile(final, []byte("x"), 0644); err != nil {
+internal/materializer/materializer_test.go:354:	got, err := os.ReadFile(p)
+internal/plex/inspect.go:114:		LibraryDBPath: filepath.Join(root, "Plug-in Support", "Databases", "com.plexapp.plugins.library.db"),
+internal/plex/inspect.go:215:	paths, err := filepath.Glob(filepath.Join(dbDir, "tv.plex.providers.epg.xmltv-*.db"))
+internal/plex/inspect.go:291:		u, err := url.Parse(strings.TrimSpace(dev.URI))
+internal/plex/inspect.go:350:	req, err := http.NewRequest(method, fullURL, body)
+internal/plex/inspect.go:464:	u, err := url.Parse(strings.TrimSpace(baseURL))
+internal/webui/apiv2_stats.go:56:	req, err := http.NewRequest(http.MethodPost, base+"/api/ops/actions/stream-stop", strings.NewReader(string(body)))
+internal/webui/webui_test.go:26:	st, err := store.Open(filepath.Join(root, "tunerr.db"))
+internal/webui/webui_test.go:76:	logosDir := filepath.Join(root, "logos")
+internal/webui/webui_test.go:77:	target := filepath.Join(root, "target.txt")
+internal/webui/webui_test.go:78:	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+internal/webui/webui_test.go:81:	if err := os.MkdirAll(logosDir, 0o777); err != nil {
+internal/webui/webui_test.go:84:	link := filepath.Join(logosDir, "logo.png")
+internal/webui/webui_test.go:112:	if got, err := os.ReadFile(target); err != nil || string(got) != "original" {
+internal/webui/webui_test.go:136:	secret := filepath.Join(root, "secret.png")
+internal/webui/webui_test.go:137:	if err := os.WriteFile(secret, []byte("secret"), 0o600); err != nil {
+internal/webui/webui_test.go:140:	logosDir := filepath.Join(root, "logos")
+internal/webui/webui_test.go:141:	if err := os.MkdirAll(logosDir, 0o700); err != nil {
+internal/webui/webui_test.go:511:	bundlePath := filepath.Join(dir, "migration-bundle.json")
+internal/webui/webui_test.go:516:	if err := os.WriteFile(bundlePath, data, 0o600); err != nil {
+internal/webui/webui_test.go:566:	bundlePath := filepath.Join(dir, "identity-bundle.json")
+internal/webui/webui_test.go:571:	if err := os.WriteFile(bundlePath, data, 0o644); err != nil {
+internal/webui/webui_test.go:631:	planPath := filepath.Join(dir, "oidc-plan.json")
+internal/webui/webui_test.go:636:	if err := os.WriteFile(planPath, data, 0o644); err != nil {
+internal/webui/webui_test.go:749:	planPath := filepath.Join(dir, "oidc-plan.json")
+internal/webui/webui_test.go:754:	if err := os.WriteFile(planPath, data, 0o644); err != nil {
+internal/webui/webui_test.go:820:	planPath := filepath.Join(dir, "oidc-plan.json")
+internal/webui/webui_test.go:825:	if err := os.WriteFile(planPath, data, 0o644); err != nil {
+internal/webui/webui_test.go:884:	planPath := filepath.Join(dir, "oidc-plan.json")
+internal/webui/webui_test.go:889:	if err := os.WriteFile(planPath, data, 0o644); err != nil {
+internal/webui/webui_test.go:1101:	stateFile := filepath.Join(dir, "deck-state.json")
+internal/webui/webui_test.go:1116:	data, err := os.ReadFile(stateFile)
+internal/webui/webui_test.go:1149:	target := filepath.Join(dir, "target.json")
+internal/webui/webui_test.go:1150:	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+internal/webui/webui_test.go:1153:	stateFile := filepath.Join(dir, "deck-state.json")
+internal/webui/webui_test.go:1168:	if got, err := os.ReadFile(target); err != nil {
+internal/webui/webui_test.go:1177:	stateFile := filepath.Join(dir, "deck-state.json")
+internal/webui/webui_test.go:1178:	if err := os.WriteFile(stateFile, []byte(`{
+internal/webui/webui_test.go:1402:	req.SetBasicAuth("admin", "admin")
+internal/webui/webui_test.go:1423:	req.SetBasicAuth("admin", "admin")
+internal/tuner/recording_rules.go:121:	data, err := os.ReadFile(path)
+internal/tuner/recording_rules.go:145:	dir := filepath.Dir(filepath.Clean(path))
+internal/tuner/recording_rules.go:146:	tmp, err := os.CreateTemp(dir, ".recording-rules-*.json.tmp")
+internal/probe/probe.go:39:	u, err := url.Parse(streamURL)
+internal/probe/probe.go:51:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, streamURL, nil)
+internal/materializer/download.go:30:	if err := os.MkdirAll(filepath.Dir(destPath), 0o700); err != nil {
+internal/materializer/download.go:35:	req, _ := http.NewRequestWithContext(ctx, http.MethodHead, streamURL, nil)
+internal/materializer/download.go:63:		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, streamURL, nil)
+internal/materializer/download.go:91:	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, streamURL, nil)
+internal/materializer/download.go:117:	return os.OpenFile(destPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 internal/tuner/gateway_servehttp.go:104:				finalMode = "hls_ffmpeg_packaged_shared"
 internal/tuner/gateway_servehttp.go:114:			finalMode = "hls_ffmpeg_shared"
 internal/tuner/gateway_servehttp.go:119:			finalMode = "raw_ts_ffmpeg_shared"
 internal/tuner/gateway_servehttp.go:171:		finalMode = "hls_ffmpeg_packaged_target"
-internal/tuner/gateway_profiles_test.go:154:	path := filepath.Join(dir, "profiles.json")
-internal/tuner/gateway_profiles_test.go:160:	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
-internal/tuner/gateway_profiles_test.go:223:	path := filepath.Join(dir, "bad.json")
-internal/tuner/gateway_profiles_test.go:224:	if err := os.WriteFile(path, []byte(`{`), 0600); err != nil {
-internal/tuner/gateway_profiles_test.go:235:	path := filepath.Join(dir, "profiles.json")
-internal/tuner/gateway_profiles_test.go:237:	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
-internal/setupdoctor/setupdoctor.go:107:		u, err := url.Parse(report.BaseURL)
-internal/setupdoctor/setupdoctor.go:300:		if u, err := url.Parse(strings.TrimSpace(baseURL)); err == nil && u.Hostname() != "" {
-internal/tuner/gateway_policy.go:236:// shouldPreferGoRelayForHLS decides whether to skip direct ffmpeg HLS input and use the Go HLS
-internal/tuner/gateway_policy.go:345:		out, err := exec.CommandContext(ctx, ffprobePath, args...).Output()
-internal/tuner/epg_pipeline_test.go:43:	cacheFile := filepath.Join(t.TempDir(), "provider.xml")
-internal/tuner/epg_pipeline_test.go:101:	cacheFile := filepath.Join(t.TempDir(), "provider.xml")
-internal/tuner/epg_pipeline_test.go:103:	if err := os.WriteFile(cacheFile, []byte(cacheBody), 0644); err != nil {
-internal/tuner/epg_pipeline_test.go:159:	cacheFile := filepath.Join(t.TempDir(), "provider.xml")
-internal/tuner/epg_pipeline_test.go:185:	cached, err := os.ReadFile(cacheFile)
-internal/tuner/epg_pipeline_test.go:196:	target := filepath.Join(dir, "target.xml")
-internal/tuner/epg_pipeline_test.go:197:	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
-internal/tuner/epg_pipeline_test.go:200:	cacheFile := filepath.Join(dir, "provider.xml")
-internal/tuner/epg_pipeline_test.go:207:	got, err := os.ReadFile(target)
-internal/tuner/epg_pipeline_test.go:712:	cacheFile := filepath.Join(t.TempDir(), "provider.xml")
-internal/tuner/epg_pipeline_test.go:717:	if err := os.WriteFile(cacheFile, []byte(cacheBody), 0o600); err != nil {
+internal/materializer/hls.go:9:// materializeHLS writes an HLS (m3u8) stream to destPath as MP4 using ffmpeg remux (no transcode).
+internal/materializer/hls.go:10:// Requires ffmpeg in PATH.
+internal/materializer/hls.go:20:	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+internal/materializer/hls.go:24:		return fmt.Errorf("ffmpeg: %w", err)
+internal/tuner/account_limit_store_test.go:10:	path := filepath.Join(t.TempDir(), "provider-account-limits.json")
+internal/tuner/gateway_provider_profile_test.go:123:	store := loadAccountLimitStore(filepath.Join(t.TempDir(), "provider-account-limits.json"), 12*time.Hour)
+internal/tuner/autopilot_policy.go:29:	data, err := os.ReadFile(path)
+internal/plex/home.go:66:	httpReq, err := http.NewRequest(http.MethodPost, u, bytes.NewReader(payload))
+internal/plex/home.go:95:	req, err := http.NewRequest(http.MethodGet, u, nil)
+internal/plex/home.go:118:	req, err := http.NewRequest(http.MethodDelete, u, nil)
+internal/materializer/cache.go:16:// Cache materializes both direct-MP4 and HLS URLs to the cache (DirectFile + HLS via ffmpeg).
+internal/materializer/cache.go:83:	if err := os.MkdirAll(filepath.Dir(partialPath), 0o700); err != nil {
+internal/tuner/ghost_hunter_recovery.go:44:	cmd := exec.CommandContext(ctx, path, args...)
+internal/plex/cutover_test.go:11:	path := filepath.Join(dir, "cutover.tsv")
+internal/plex/cutover_test.go:15:	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+internal/tuner/account_limit_store.go:43:	data, err := os.ReadFile(s.path)
+internal/tuner/account_limit_store.go:122:	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
+internal/tuner/account_limit_store.go:130:	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+internal/plex/epg.go:26:	dbPath := filepath.Join(plexDataDir, "Plug-in Support", "Databases", fmt.Sprintf("tv.plex.providers.epg.xmltv-%s.db", dvrUUID))
+internal/plex/dvr.go:50:	if u, err := url.Parse(plexHost); err == nil && u.Host != "" {
+internal/plex/dvr.go:102:		req, err := http.NewRequest("POST", deviceURL, nil)
+internal/plex/dvr.go:233:		req, err := http.NewRequest("POST", dvrURL, nil)
+internal/plex/dvr.go:443:	req, err := http.NewRequest("PUT", activateURL, nil)
+internal/plex/dvr.go:548:	req, err := http.NewRequest(http.MethodGet, u, nil)
+internal/plex/dvr.go:583:	req, err := http.NewRequest(http.MethodGet, u, nil)
+internal/plex/dvr.go:648:		req, err := http.NewRequest(http.MethodGet, u, nil)
+internal/plex/dvr.go:687:	req, err := http.NewRequest(http.MethodDelete, u, nil)
+internal/plex/dvr.go:715:		req, err := http.NewRequest(http.MethodDelete, u, nil)
+internal/plex/dvr.go:1050:	parsed, parseErr := url.Parse(baseURL)
+internal/plex/dvr.go:1054:	dbPath := filepath.Join(plexDataDir, "Plug-in Support", "Databases", "com.plexapp.plugins.library.db")
+internal/plex/lineup.go:28:	dbPath := filepath.Join(plexDataDir, "Plug-in Support", "Databases", "com.plexapp.plugins.library.db")
+internal/plex/lineup_test.go:14:	plugSupport := filepath.Join(dir, "Plug-in Support", "Databases")
+internal/plex/lineup_test.go:15:	if err := os.MkdirAll(plugSupport, 0755); err != nil {
+internal/plex/lineup_test.go:18:	dbPath := filepath.Join(plugSupport, "com.plexapp.plugins.library.db")
+internal/plex/lineup_test.go:20:	if err := os.WriteFile(dbPath, []byte{}, 0644); err != nil {
+internal/plex/lineup_test.go:53:	plugSupport := filepath.Join(dir, "Plug-in Support", "Databases")
+internal/plex/lineup_test.go:54:	if err := os.MkdirAll(plugSupport, 0755); err != nil {
+internal/plex/lineup_test.go:57:	dbPath := filepath.Join(plugSupport, "com.plexapp.plugins.library.db")
+internal/plex/cutover.go:48:	f, err := os.Open(path)
+internal/plex/dvr_test.go:27:	dbDir := filepath.Join(dir, "Plug-in Support", "Databases")
+internal/plex/dvr_test.go:28:	if err := os.MkdirAll(dbDir, 0755); err != nil {
+internal/plex/dvr_test.go:31:	dbPath := filepath.Join(dbDir, "com.plexapp.plugins.library.db")
+internal/plex/dvr_test.go:62:	dbDir := filepath.Join(dir, "Plug-in Support", "Databases")
+internal/plex/dvr_test.go:63:	if err := os.MkdirAll(dbDir, 0755); err != nil {
+internal/plex/dvr_test.go:66:	dbPath := filepath.Join(dbDir, "com.plexapp.plugins.library.db")
+internal/plex/users.go:30:	req, err := http.NewRequest(http.MethodGet, u, nil)
+internal/tuner/gateway_hls_packager_test.go:16:func TestGateway_ffmpegPackagedHLS_namedProfileServesPlaylistAndSegment(t *testing.T) {
+internal/tuner/gateway_hls_packager_test.go:18:	ffmpegPath := filepath.Join(dir, "fake-ffmpeg.sh")
+internal/tuner/gateway_hls_packager_test.go:42:	if err := os.WriteFile(ffmpegPath, []byte(script), 0755); err != nil {
+internal/tuner/gateway_hls_packager_test.go:45:	t.Setenv("IPTV_TUNERR_FFMPEG_PATH", ffmpegPath)
+internal/tuner/gateway_hls_packager_test.go:91:	u, err := url.Parse(strings.TrimSpace(lastNonEmptyLine(body)))
+internal/tuner/gateway_hls_packager_test.go:118:func TestGateway_ffmpegPackagedHLS_targetRequiresGetOrHead(t *testing.T) {
+internal/tuner/gateway_hls_packager_test.go:134:func TestGateway_ffmpegPackagedHLS_sameProfileReusesExistingSession(t *testing.T) {
+internal/tuner/gateway_hls_packager_test.go:136:	ffmpegPath := filepath.Join(dir, "fake-ffmpeg.sh")
+internal/tuner/gateway_hls_packager_test.go:160:	if err := os.WriteFile(ffmpegPath, []byte(script), 0755); err != nil {
+internal/tuner/gateway_hls_packager_test.go:163:	t.Setenv("IPTV_TUNERR_FFMPEG_PATH", ffmpegPath)
+internal/tuner/gateway_hls_packager_test.go:207:	u1, err := url.Parse(strings.TrimSpace(lastNonEmptyLine(rec1.Body.String())))
+internal/tuner/gateway_hls_packager_test.go:223:	if got := rec2.Header().Get("X-IptvTunerr-Shared-Upstream"); got != "ffmpeg_hls_packager" {
+internal/tuner/gateway_hls_packager_test.go:226:	u2, err := url.Parse(strings.TrimSpace(lastNonEmptyLine(rec2.Body.String())))
+internal/tuner/gateway_hls_packager_test.go:257:		hlsPackagerSessions:      map[string]*ffmpegHLSPackagerSession{},
+internal/tuner/gateway_hls_packager_test.go:258:		hlsPackagerSessionsByKey: map[string]*ffmpegHLSPackagerSession{},
+internal/tuner/gateway_hls_packager_test.go:267:	sess := &ffmpegHLSPackagerSession{
+internal/tuner/cf_client_test.go:15:	t.Setenv("IPTV_TUNERR_COOKIE_JAR_FILE", filepath.Join(t.TempDir(), "cookies.json"))
+internal/tuner/cf_client_test.go:21:	target, err := url.Parse("http://example.com/get.php")
+internal/tuner/cf_client_test.go:23:		t.Fatalf("url.Parse: %v", err)
 internal/tuner/gateway_adapt.go:139:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 internal/tuner/gateway_adapt.go:267:	if strings.Contains(p, "segmenter") || strings.Contains(p, "ffmpeg") {
 internal/tuner/gateway_adapt.go:433:	u, err := url.Parse(strings.TrimSpace(raw))
 internal/tuner/gateway_adapt.go:455:	ua, err1 := url.Parse(a)
 internal/tuner/gateway_adapt.go:456:	ub, err2 := url.Parse(b)
 internal/tuner/gateway_adapt.go:499:	u, err := url.Parse(strings.TrimSpace(raw))
-internal/tuner/gateway_shared_relay.go:79:		"hls_ffmpeg",
-internal/tuner/gateway_shared_relay.go:89:	return "raw_ts_ffmpeg\x1f" + strings.TrimSpace(channelID)
-internal/tuner/gateway_provider_profile.go:51:	FFMPEGHLSReconnect     bool                        `json:"ffmpeg_hls_reconnect"`
-internal/tuner/gateway_provider_profile.go:298:	row.LastKind = "ffmpeg_hls_failed"
-internal/tuner/gateway_hls.go:386:		u, err := url.Parse(playlistURL)
-internal/tuner/gateway_hls.go:523:	base, err := url.Parse(upstreamURL)
-internal/tuner/gateway_hls.go:542:		ref, perr := url.Parse(trim)
-internal/tuner/gateway_hls.go:590:	ref, err := url.Parse(raw)
-internal/tuner/gateway_hls.go:627:	base, err := url.Parse(upstreamURL)
-internal/tuner/gateway_hls.go:672:		ref, perr := url.Parse(trim)
-internal/tuner/gateway_hls.go:714:	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
-internal/tuner/gateway_hls.go:916:	base, err := url.Parse(strings.TrimSpace(playlistURL))
-internal/tuner/recording_rules_test.go:17:	path := filepath.Join(t.TempDir(), "rules.json")
-internal/tuner/recording_rules_test.go:46:	path := filepath.Join(t.TempDir(), "rules.json")
-internal/tuner/recording_rules_test.go:63:	data, err := os.ReadFile(path)
-internal/tuner/recording_rules_test.go:117:	stateFile := filepath.Join(dir, "recorder-state.json")
-internal/tuner/recording_rules_test.go:124:			PublishedPath: filepath.Join(dir, "news.ts"),
-internal/tuner/recording_rules_test.go:135:	if err := os.WriteFile(stateFile, data, 0o600); err != nil {
-internal/tuner/lineup_probe.go:89:	ffmpegPath, err := resolveFFmpegPath()
-internal/tuner/lineup_probe.go:91:		log.Printf("Lineup visual probe skipped: ffmpeg unavailable: %v", err)
-internal/tuner/lineup_probe.go:169:			pass := probeStreamVisual(ctx, ffmpegPath, cand.url, sample, timeout)
-internal/tuner/lineup_probe.go:268:func probeStreamVisual(parent context.Context, ffmpegPath, streamURL string, sample, timeout time.Duration) bool {
-internal/tuner/lineup_probe.go:286:	out, err := exec.CommandContext(ctx, ffmpegPath, args...).CombinedOutput()
-internal/tuner/server_diagnostics_recordings.go:21:	return filepath.Clean(".diag")
-internal/tuner/server_diagnostics_recordings.go:28:		dir := filepath.Join(root, family)
-internal/tuner/server_diagnostics_recordings.go:49:					Path:    filepath.Join(dir, entry.Name()),
-internal/tuner/server_diagnostics_recordings.go:69:	reportPath := filepath.Join(ref.Path, "report.json")
-internal/tuner/server_diagnostics_recordings.go:70:	body, err := os.ReadFile(reportPath)
-internal/tuner/server_diagnostics_recordings.go:84:	textPath := filepath.Join(ref.Path, "report.txt")
-internal/tuner/server_diagnostics_recordings.go:85:	body, err = os.ReadFile(textPath)
-internal/tuner/server_diagnostics_recordings.go:224:	if err := os.MkdirAll(outDir, 0o700); err != nil {
-internal/tuner/server_diagnostics_recordings.go:228:		if err := os.MkdirAll(filepath.Join(outDir, sub), 0o700); err != nil {
-internal/tuner/server_diagnostics_recordings.go:274:	if err := os.WriteFile(filepath.Join(outDir, "notes.md"), []byte(notes), 0o600); err != nil {
-internal/tuner/server_diagnostics_recordings.go:277:	if err := os.WriteFile(filepath.Join(outDir, "README.txt"), []byte(readme), 0o600); err != nil {
-internal/tuner/server_diagnostics_recordings.go:288:	return sanitizeFileToken(value)
-internal/tuner/server_diagnostics_recordings.go:310:	scriptsDir := filepath.Clean("scripts")
-internal/tuner/server_diagnostics_recordings.go:311:	path := filepath.Join(scriptsDir, name)
-internal/tuner/server_diagnostics_recordings.go:328:	cmd := exec.CommandContext(ctx, "bash", scriptPath)
-internal/tuner/server_diagnostics_recordings.go:342:		outDir = filepath.Join(outRoot, runID)
-internal/tuner/server_diagnostics_recordings.go:349:	if reportPath := filepath.Join(outDir, "report.json"); outDir != "" {
-internal/tuner/server_diagnostics_recordings.go:353:		if _, statErr := os.Stat(filepath.Join(outDir, "report.txt")); statErr == nil {
-internal/tuner/server_diagnostics_recordings.go:354:			detail["report_text_path"] = filepath.Join(outDir, "report.txt")
-internal/tuner/server_diagnostics_recordings.go:437:		"OUT_ROOT":        filepath.Join(repoDiagRoot(), "channel-diff"),
-internal/tuner/server_diagnostics_recordings.go:473:		"OUT_ROOT":          filepath.Join(repoDiagRoot(), "stream-compare"),
-internal/tuner/gateway_profiles.go:158:	b, err := os.ReadFile(path)
-internal/tuner/gateway_profiles.go:182:	b, err := os.ReadFile(path)
-internal/tuner/gateway_profiles.go:215:	b, err := os.ReadFile(path)
-internal/tuner/gateway_profiles.go:351:// buildFFmpegStreamOutputArgs builds ffmpeg output args for MPEG-TS or fragmented MP4 (LP-010/011).
-internal/tuner/gateway_profiles.go:675:// to a numeric host for ffmpeg. This avoids resolver differences where Go can
-internal/tuner/gateway_profiles.go:677:// ffmpeg binary cannot.
-internal/tuner/gateway_profiles.go:683:	u, err := url.Parse(raw)
-internal/supervisor/supervisor_test.go:11:	p := filepath.Join(dir, "multi.json")
-internal/supervisor/supervisor_test.go:12:	if err := os.WriteFile(p, []byte(`{
-internal/supervisor/supervisor_test.go:50:	p := filepath.Join(dir, "dup.json")
-internal/supervisor/supervisor_test.go:51:	if err := os.WriteFile(p, []byte(`{"instances":[{"name":"x","args":["run"]},{"name":"x","args":["run"]}]}`), 0o644); err != nil {
-internal/supervisor/supervisor_test.go:121:	p := filepath.Join(dir, "cfg.json")
-internal/supervisor/supervisor_test.go:122:	if err := os.WriteFile(p, []byte(`{
-internal/supervisor/supervisor_test.go:143:	path := filepath.Join(dir, "envfile.env")
-internal/supervisor/supervisor_test.go:144:	if err := os.WriteFile(path, []byte("export IPTV_TUNERR_PROVIDER_USER=\"demo user\"\nIPTV_TUNERR_PROVIDER_PASS='demo-pass'\n"), 0o600); err != nil {
-internal/tuner/gateway_ffmpeg_options_test.go:7:	if ffmpegHLSHTTPPersistentEnabled() {
-internal/tuner/gateway_ffmpeg_options_test.go:14:	if !ffmpegHLSHTTPPersistentEnabled() {
-internal/tuner/gateway_ffmpeg_options_test.go:21:	if got := ffmpegHLSLiveStartIndex(); got != 0 {
-internal/tuner/gateway_ffmpeg_options_test.go:28:	if got := ffmpegHLSLiveStartIndex(); got != -3 {
-internal/tuner/ssdp.go:127:	u, err := url.Parse(baseURL)
-internal/tuner/gateway_ffmpeg_options.go:3:// Some ffmpeg/libavformat builds do not support the `-http_persistent` input
-internal/tuner/gateway_ffmpeg_options.go:6:func ffmpegHLSHTTPPersistentEnabled() bool {
-internal/tuner/gateway_ffmpeg_options.go:10:// Keep live-start seeking opt-in too: some ffmpeg builds reject the option,
-internal/tuner/gateway_ffmpeg_options.go:12:func ffmpegHLSLiveStartIndex() int {
-internal/tuner/server_xtream.go:704:		req, err := http.NewRequestWithContext(r.Context(), r.Method, sourceURL, nil)
-internal/authentik/authentik.go:257:	req, err := http.NewRequest(method, target, reader)
-internal/tuner/gateway_shared_leases.go:101:	leasePath := filepath.Join(m.dir, m.leaseFilename(identity.Key, token))
-internal/tuner/gateway_shared_leases.go:181:		path := filepath.Join(m.dir, entry.Name())
-internal/tuner/gateway_shared_leases.go:190:		data, err := os.ReadFile(path)
-internal/tuner/gateway_shared_leases.go:242:	path := filepath.Join(m.dir, m.lockFilename(key))
-internal/tuner/gateway_shared_leases.go:246:	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
-internal/tuner/gateway_shared_leases.go:291:		out = append(out, filepath.Join(m.dir, name))
-internal/tuner/gateway_shared_leases.go:297:	if err := os.MkdirAll(m.dir, 0o700); err != nil {
-internal/tuner/gateway_shared_leases.go:308:	tmp, err := os.CreateTemp(dir, ".lease-*.tmp")
-internal/supervisor/supervisor.go:102:	f, err := os.Open(path)
-internal/supervisor/supervisor.go:249:	cmd := exec.CommandContext(ctx, exe, inst.Args...)
-internal/supervisor/supervisor.go:322:		if err := os.MkdirAll(dir, 0o755); err != nil {
-internal/supervisor/supervisor.go:465:	f, err := os.Open(path)
-internal/tuner/server_virtual_channel_streams.go:155:		ffmpegPath, err := resolveFFmpegPath()
-internal/tuner/server_virtual_channel_streams.go:157:			writeServerJSONError(w, http.StatusServiceUnavailable, "ffmpeg not available for branded stream")
-internal/tuner/server_virtual_channel_streams.go:165:		if !relayVirtualChannelBrandedStream(w, r, ffmpegPath, resp.Body, channel) {
-internal/tuner/server_virtual_channel_streams.go:295:	req, err := http.NewRequestWithContext(r.Context(), r.Method, sourceURL, nil)
-internal/tuner/server_virtual_channel_streams.go:765:	ffmpegPath, err := resolveFFmpegPath()
-internal/tuner/server_virtual_channel_streams.go:782:	out, err := exec.CommandContext(ctx, ffmpegPath, args...).CombinedOutput()
-internal/tuner/server_virtual_channel_streams.go:800:	ffmpegPath, err := resolveFFmpegPath()
-internal/tuner/server_virtual_channel_streams.go:816:	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
-internal/tuner/server_virtual_channel_streams.go:970:	data, err := os.ReadFile(path)
-internal/tuner/server_virtual_channel_streams.go:1016:	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-internal/tuner/server_virtual_channel_streams.go:1020:	if err := os.WriteFile(path, data, 0o600); err != nil {
-internal/tuner/server_virtual_channel_streams.go:1045:func relayVirtualChannelBrandedStream(w http.ResponseWriter, r *http.Request, ffmpegPath string, src io.ReadCloser, ch virtualchannels.Channel) bool {
-internal/tuner/server_virtual_channel_streams.go:1080:	cmd := exec.CommandContext(r.Context(), ffmpegPath, args...)
-internal/tuner/server_virtual_channel_streams.go:1106:				ffmpegEscapeText(text), x, y,
-internal/tuner/server_virtual_channel_streams.go:1112:				fmt.Sprintf("drawtext=text='%s':fontcolor=white:fontsize=28:x=60:y=h-70", ffmpegEscapeText(banner)),
-internal/tuner/server_virtual_channel_streams.go:1131:			ffmpegEscapeText(text), tx, ty, next,
-internal/tuner/server_virtual_channel_streams.go:1143:			fmt.Sprintf("%sdrawtext=text='%s':fontcolor=white:fontsize=28:x=60:y=h-70%s", boxStage, ffmpegEscapeText(banner), next),
-internal/tuner/server_virtual_channel_streams.go:1176:func ffmpegEscapeText(raw string) string {
-internal/tuner/gateway_relay.go:24:func ffmpegHLSFirstBytesTimeout() time.Duration {
-internal/tuner/gateway_relay.go:50:	return exec.LookPath("ffmpeg")
-internal/tuner/gateway_relay.go:61:	ffmpegPath string,
-internal/tuner/gateway_relay.go:83:	cmd := exec.CommandContext(r.Context(), ffmpegPath, args...)
-internal/tuner/gateway_relay.go:105:	log.Printf("gateway: channel=%q id=%s ffmpeg-ts-norm bytes=%d dur=%s",
-internal/tuner/gateway_relay.go:110:func ffmpegRelayErr(phase string, err error, stderr string) error {
-internal/tuner/gateway_relay.go:124:	ffmpegPath string,
-internal/tuner/gateway_relay.go:145:	ffmpegPlaylistURL, ffmpegInputHost, ffmpegInputIP := canonicalizeFFmpegInputURL(r.Context(), playlistURL, g.DisableFFmpegDNS)
-internal/tuner/gateway_relay.go:150:	hlsLiveStartIndex := ffmpegHLSLiveStartIndex()
-internal/tuner/gateway_relay.go:153:	hlsHTTPPersistent := ffmpegHLSHTTPPersistentEnabled()
-internal/tuner/gateway_relay.go:186:	if cookies := g.ffmpegCookiesOptionForURL(playlistURL); cookies != "" {
-internal/tuner/gateway_relay.go:204:	if headers := g.ffmpegInputHeaderBlock(r, playlistURL, ffmpegInputHost); headers != "" {
-internal/tuner/gateway_relay.go:207:	args = append(args, "-i", ffmpegPlaylistURL)
-internal/tuner/gateway_relay.go:211:	cmd := exec.CommandContext(r.Context(), ffmpegPath, args...)
-internal/tuner/gateway_relay.go:221:	modeLabel := "ffmpeg-remux"
-internal/tuner/gateway_relay.go:223:		modeLabel = "ffmpeg-transcode"
-internal/tuner/gateway_relay.go:225:	if ffmpegInputHost != "" && ffmpegInputIP != "" {
-internal/tuner/gateway_relay.go:227:			reqField, channelName, channelID, modeLabel, ffmpegInputHost, ffmpegInputIP)
-internal/tuner/gateway_relay.go:433:					return ffmpegRelayErr("startup-gate-prefetch", errOut, stderr.String())
-internal/tuner/gateway_relay.go:441:				if err := writeBootstrapTS(r.Context(), ffmpegPath, bodyOut, channelName, channelID, bootstrapSec, profileSelection.BaseProfile); err != nil {
-internal/tuner/gateway_relay.go:453:				log.Printf("gateway:%s channel=%q id=%s %s startup-gate timeout continue-ffmpeg=true", reqField, channelName, channelID, modeLabel)
-internal/tuner/gateway_relay.go:462:			return ffmpegRelayErr("startup-gate-timeout", errors.New(msg), stderr.String())
-internal/tuner/gateway_relay.go:473:		if timeout := ffmpegHLSFirstBytesTimeout(); timeout > 0 {
-internal/tuner/gateway_relay.go:499:						errOut = errors.New("ffmpeg exited before first bytes")
-internal/tuner/gateway_relay.go:501:					return ffmpegRelayErr("startup-first-bytes", errOut, stderr.String())
-internal/tuner/gateway_relay.go:508:				return ffmpegRelayErr("first-bytes-timeout", errors.New("ffmpeg produced no bytes before timeout"), stderr.String())
-internal/tuner/gateway_relay.go:520:		if err := writeBootstrapTS(r.Context(), ffmpegPath, bodyOut, channelName, channelID, bootstrapSec, profileSelection.BaseProfile); err != nil {
-internal/tuner/gateway_relay.go:585:		return ffmpegRelayErr("copy", copyErr, stderr.String())
-internal/tuner/gateway_relay.go:590:			return ffmpegRelayErr("wait", waitErr, stderr.String())
-internal/tuner/gateway_relay.go:592:		return ffmpegRelayErr("wait", errors.New(msg), stderr.String())
-internal/tuner/gateway_relay.go:647:		if ffmpegPath, ffmpegErr := resolveFFmpegPath(); ffmpegErr == nil {
-internal/tuner/gateway_relay.go:651:				ffmpegPath,
-internal/tuner/gateway_relay.go:664:				log.Printf("gateway:%s channel=%q id=%s hls-relay-ffmpeg-stdin start failed (falling back to raw relay): %v",
-internal/tuner/gateway_relay.go:668:				relayLogLabel = "hls-relay-ffmpeg-stdin-feed"
-internal/tuner/gateway_relay.go:669:				log.Printf("gateway:%s channel=%q id=%s hls-relay-ffmpeg-stdin enabled transcode=%t profile=%s",
-internal/tuner/gateway_relay.go:673:			log.Printf("gateway:%s channel=%q id=%s hls-relay-ffmpeg-stdin ffmpeg unavailable path=%q err=%v",
-internal/tuner/gateway_relay.go:674:				reqField, channelName, channelID, os.Getenv("IPTV_TUNERR_FFMPEG_PATH"), ffmpegErr)
-internal/tuner/gateway_relay.go:676:			log.Printf("gateway:%s channel=%q id=%s hls-relay-ffmpeg-stdin ffmpeg unavailable transcode-requested=true err=%v", reqField, channelName, channelID, ffmpegErr)
-internal/tuner/gateway_relay.go:809:							log.Printf("gateway:%s channel=%q id=%s hls-relay-ffmpeg-stdin first-feed-bytes=%d seg=%q startup=%s",
-internal/tuner/server_operator_workflows.go:280:	parsed, err := url.Parse(strings.TrimSpace(baseURL))
-internal/tuner/server_operator_workflows.go:1048:		outDir := filepath.Join(repoDiagRoot(), "evidence", caseID)
-internal/keycloak/keycloak.go:101:	req, err := http.NewRequest(http.MethodPost, host+"/realms/"+url.PathEscape(realm)+"/protocol/openid-connect/token", strings.NewReader(form.Encode()))
-internal/keycloak/keycloak.go:373:	req, err := http.NewRequest(method, target, reader)
-internal/hdhomerun/guide.go:45:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-internal/hdhomerun/client.go:338:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-internal/hdhomerun/client.go:379:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-internal/hdhomerun/client.go:400:	u, err := url.Parse(strings.TrimSpace(raw))
-internal/epgstore/quota_test.go:10:	s, err := Open(filepath.Join(dir, "q.db"))
-internal/epgstore/quota_test.go:23:	s, err := Open(filepath.Join(dir, "q2.db"))
-internal/programming/programming_test.go:107:	path := filepath.Join(t.TempDir(), "programming.json")
 internal/tuner/server_test.go:359:	path := filepath.Join(t.TempDir(), "programming.json")
 internal/tuner/server_test.go:360:	if err := os.WriteFile(path, []byte(`{
 internal/tuner/server_test.go:380:	path := filepath.Join(t.TempDir(), "programming.json")
@@ -2289,6 +2167,171 @@ internal/tuner/server_test.go:7401:	if err := os.WriteFile(stateFile, data, 0o60
 internal/tuner/server_test.go:7424:	path := filepath.Join(t.TempDir(), "virtual.json")
 internal/tuner/server_test.go:7450:	path := filepath.Join(t.TempDir(), "virtual.json")
 internal/tuner/server_test.go:7481:	path := filepath.Join(t.TempDir(), "recording-rules.json")
+internal/plex/library.go:77:	u, err := url.Parse(baseURL)
+internal/plex/library.go:100:	req, err := http.NewRequest("GET", u, nil)
+internal/plex/library.go:121:			sec.Locations = append(sec.Locations, filepath.Clean(loc.Path))
+internal/plex/library.go:140:	req, err := http.NewRequest("GET", u, nil)
+internal/plex/library.go:178:	req, err := http.NewRequest("GET", u, nil)
+internal/plex/library.go:229:	spec.Path = filepath.Clean(strings.TrimSpace(spec.Path))
+internal/plex/library.go:255:	req, err := http.NewRequest("POST", u, nil)
+internal/plex/library.go:278:		sec.Locations = append(sec.Locations, filepath.Clean(loc.Path))
+internal/plex/library.go:292:	req, err := http.NewRequest("GET", u, nil)
+internal/plex/library.go:313:	wantPath := filepath.Clean(spec.Path)
+internal/plex/library.go:322:			if filepath.Clean(p) == wantPath {
+internal/plex/library.go:344:	req, err := http.NewRequest("GET", u, nil)
+internal/plex/library.go:395:		req, err := http.NewRequest(method, u, nil)
+internal/tuner/gateway_provider_profile.go:51:	FFMPEGHLSReconnect     bool                        `json:"ffmpeg_hls_reconnect"`
+internal/tuner/gateway_provider_profile.go:298:	row.LastKind = "ffmpeg_hls_failed"
+internal/tuner/gateway.go:36:	CustomUserAgent            string            // override User-Agent sent to upstream; supports preset names: lavf, ffmpeg, vlc, kodi, firefox
+internal/tuner/gateway.go:37:	DetectedFFmpegUA           string            // auto-detected Lavf/X.Y.Z from installed ffmpeg, used when CustomUserAgent is "lavf"/"ffmpeg"
+internal/tuner/gateway.go:59:	hlsPackagerSessions        map[string]*ffmpegHLSPackagerSession
+internal/tuner/gateway.go:60:	hlsPackagerSessionsByKey   map[string]*ffmpegHLSPackagerSession
+internal/tuner/epg_pipeline_test.go:43:	cacheFile := filepath.Join(t.TempDir(), "provider.xml")
+internal/tuner/epg_pipeline_test.go:101:	cacheFile := filepath.Join(t.TempDir(), "provider.xml")
+internal/tuner/epg_pipeline_test.go:103:	if err := os.WriteFile(cacheFile, []byte(cacheBody), 0644); err != nil {
+internal/tuner/epg_pipeline_test.go:159:	cacheFile := filepath.Join(t.TempDir(), "provider.xml")
+internal/tuner/epg_pipeline_test.go:185:	cached, err := os.ReadFile(cacheFile)
+internal/tuner/epg_pipeline_test.go:196:	target := filepath.Join(dir, "target.xml")
+internal/tuner/epg_pipeline_test.go:197:	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+internal/tuner/epg_pipeline_test.go:200:	cacheFile := filepath.Join(dir, "provider.xml")
+internal/tuner/epg_pipeline_test.go:207:	got, err := os.ReadFile(target)
+internal/tuner/epg_pipeline_test.go:712:	cacheFile := filepath.Join(t.TempDir(), "provider.xml")
+internal/tuner/epg_pipeline_test.go:717:	if err := os.WriteFile(cacheFile, []byte(cacheBody), 0o600); err != nil {
+internal/plex/logs.go:40:	logDir := filepath.Join(root, "Logs")
+internal/plex/logs.go:55:		path := filepath.Join(logDir, name)
+internal/plex/logs.go:79:	f, err := os.Open(path)
+internal/migrationident/bundle.go:1296:	data, err := os.ReadFile(strings.TrimSpace(path))
+internal/plex/inspect_test.go:16:	dbDir := filepath.Join(dir, "Plug-in Support", "Databases")
+internal/plex/inspect_test.go:17:	if err := os.MkdirAll(dbDir, 0o755); err != nil {
+internal/plex/inspect_test.go:20:	libDB := filepath.Join(dbDir, "com.plexapp.plugins.library.db")
+internal/plex/inspect_test.go:31:	epgDB := filepath.Join(dbDir, "tv.plex.providers.epg.xmltv-demo.db")
+internal/tuner/gateway_accounts.go:70:		if parsed, err := url.Parse(rawURL); err == nil && parsed != nil {
+internal/tuner/gateway_accounts.go:87:	u, err := url.Parse(strings.TrimSpace(rawURL))
+internal/tuner/gateway_profiles.go:158:	b, err := os.ReadFile(path)
+internal/tuner/gateway_profiles.go:182:	b, err := os.ReadFile(path)
+internal/tuner/gateway_profiles.go:215:	b, err := os.ReadFile(path)
+internal/tuner/gateway_profiles.go:351:// buildFFmpegStreamOutputArgs builds ffmpeg output args for MPEG-TS or fragmented MP4 (LP-010/011).
+internal/tuner/gateway_profiles.go:675:// to a numeric host for ffmpeg. This avoids resolver differences where Go can
+internal/tuner/gateway_profiles.go:677:// ffmpeg binary cannot.
+internal/tuner/gateway_profiles.go:683:	u, err := url.Parse(raw)
+internal/tuner/gateway_policy.go:236:// shouldPreferGoRelayForHLS decides whether to skip direct ffmpeg HLS input and use the Go HLS
+internal/tuner/gateway_policy.go:345:		out, err := exec.CommandContext(ctx, ffprobePath, args...).Output()
+internal/tuner/gateway_ffmpeg_options.go:3:// Some ffmpeg/libavformat builds do not support the `-http_persistent` input
+internal/tuner/gateway_ffmpeg_options.go:6:func ffmpegHLSHTTPPersistentEnabled() bool {
+internal/tuner/gateway_ffmpeg_options.go:10:// Keep live-start seeking opt-in too: some ffmpeg builds reject the option,
+internal/tuner/gateway_ffmpeg_options.go:12:func ffmpegHLSLiveStartIndex() int {
+internal/tuner/gateway_profiles_test.go:154:	path := filepath.Join(dir, "profiles.json")
+internal/tuner/gateway_profiles_test.go:160:	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+internal/tuner/gateway_profiles_test.go:223:	path := filepath.Join(dir, "bad.json")
+internal/tuner/gateway_profiles_test.go:224:	if err := os.WriteFile(path, []byte(`{`), 0600); err != nil {
+internal/tuner/gateway_profiles_test.go:235:	path := filepath.Join(dir, "profiles.json")
+internal/tuner/gateway_profiles_test.go:237:	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+internal/tuner/gateway_hls_packager.go:25:type ffmpegHLSPackagerSession struct {
+internal/tuner/gateway_hls_packager.go:44:func (s *ffmpegHLSPackagerSession) touch(now time.Time) {
+internal/tuner/gateway_hls_packager.go:50:func (s *ffmpegHLSPackagerSession) markExit(err error) {
+internal/tuner/gateway_hls_packager.go:57:func (s *ffmpegHLSPackagerSession) snapshot() (createdAt, lastAccess time.Time, exited bool, waitErr error) {
+internal/tuner/gateway_hls_packager.go:220:	var expired []*ffmpegHLSPackagerSession
+internal/tuner/gateway_hls_packager.go:240:func (g *Gateway) stopHLSPackagerSession(sess *ffmpegHLSPackagerSession, reason string) {
+internal/tuner/gateway_hls_packager.go:258:func (g *Gateway) removeHLSPackagerSessionLocked(sessionID string, sess *ffmpegHLSPackagerSession) {
+internal/tuner/gateway_hls_packager.go:273:func (g *Gateway) registerHLSPackagerSession(sess *ffmpegHLSPackagerSession) {
+internal/tuner/gateway_hls_packager.go:280:		g.hlsPackagerSessions = make(map[string]*ffmpegHLSPackagerSession)
+internal/tuner/gateway_hls_packager.go:283:		g.hlsPackagerSessionsByKey = make(map[string]*ffmpegHLSPackagerSession)
+internal/tuner/gateway_hls_packager.go:298:	var sess *ffmpegHLSPackagerSession
+internal/tuner/gateway_hls_packager.go:310:func (g *Gateway) lookupHLSPackagerSession(sessionID string) *ffmpegHLSPackagerSession {
+internal/tuner/gateway_hls_packager.go:323:func (g *Gateway) lookupReusableHLSPackagerSession(reuseKey string) *ffmpegHLSPackagerSession {
+internal/tuner/gateway_hls_packager.go:328:	var stale *ffmpegHLSPackagerSession
+internal/tuner/gateway_hls_packager.go:361:		if err := os.MkdirAll(base, 0755); err != nil {
+internal/tuner/gateway_hls_packager.go:372:	segPattern := filepath.Join(filepath.Dir(playlistPath), "seg-%06d.ts")
+internal/tuner/gateway_hls_packager.go:391:	ffmpegPath string,
+internal/tuner/gateway_hls_packager.go:396:) (*ffmpegHLSPackagerSession, error) {
+internal/tuner/gateway_hls_packager.go:401:	playlistPath := filepath.Join(dir, "index.m3u8")
+internal/tuner/gateway_hls_packager.go:403:	ffmpegPlaylistURL, ffmpegInputHost, ffmpegInputIP := canonicalizeFFmpegInputURL(r.Context(), playlistURL, g.DisableFFmpegDNS)
+internal/tuner/gateway_hls_packager.go:407:	hlsLiveStartIndex := ffmpegHLSLiveStartIndex()
+internal/tuner/gateway_hls_packager.go:409:	hlsHTTPPersistent := ffmpegHLSHTTPPersistentEnabled()
+internal/tuner/gateway_hls_packager.go:437:	if cookies := g.ffmpegCookiesOptionForURL(playlistURL); cookies != "" {
+internal/tuner/gateway_hls_packager.go:452:	if headers := g.ffmpegInputHeaderBlock(r, playlistURL, ffmpegInputHost); headers != "" {
+internal/tuner/gateway_hls_packager.go:455:	args = append(args, "-i", ffmpegPlaylistURL)
+internal/tuner/gateway_hls_packager.go:457:	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
+internal/tuner/gateway_hls_packager.go:465:	sess := &ffmpegHLSPackagerSession{
+internal/tuner/gateway_hls_packager.go:476:		segmentGlobs: []string{filepath.Join(dir, "seg-*.ts"), filepath.Join(dir, "seg-*.tmp")},
+internal/tuner/gateway_hls_packager.go:491:	if ffmpegInputHost != "" && ffmpegInputIP != "" {
+internal/tuner/gateway_hls_packager.go:492:		log.Printf("gateway: channel=%q id=%s hls-packager input-host-resolved %q=>%q", channelName, channelID, ffmpegInputHost, ffmpegInputIP)
+internal/tuner/gateway_hls_packager.go:497:func (g *Gateway) serveFFmpegPackagedHLSPlaylist(w http.ResponseWriter, channelID string, sess *ffmpegHLSPackagerSession, shared bool) error {
+internal/tuner/gateway_hls_packager.go:505:	body, err := os.ReadFile(sess.playlistPath)
+internal/tuner/gateway_hls_packager.go:512:		w.Header().Set("X-IptvTunerr-Shared-Upstream", "ffmpeg_hls_packager")
+internal/tuner/gateway_hls_packager.go:539:func packagedHLSFilePath(sess *ffmpegHLSPackagerSession, file string) (string, error) {
+internal/tuner/gateway_hls_packager.go:547:	clean := strings.TrimPrefix(filepath.Clean("/"+name), "/")
+internal/tuner/gateway_hls_packager.go:551:	full := filepath.Join(sess.dir, filepath.FromSlash(clean))
+internal/tuner/gateway_hls_packager.go:567:	ffmpegPath, err := resolveFFmpegPath()
+internal/tuner/gateway_hls_packager.go:571:	sess, err := g.startFFmpegPackagedHLS(r, ffmpegPath, playlistURL, channelName, channelID, profile)
+internal/tuner/gateway_hls_packager.go:612:		body, err := os.ReadFile(filePath)
+internal/tuner/gateway_shared_leases.go:101:	leasePath := filepath.Join(m.dir, m.leaseFilename(identity.Key, token))
+internal/tuner/gateway_shared_leases.go:181:		path := filepath.Join(m.dir, entry.Name())
+internal/tuner/gateway_shared_leases.go:190:		data, err := os.ReadFile(path)
+internal/tuner/gateway_shared_leases.go:242:	path := filepath.Join(m.dir, m.lockFilename(key))
+internal/tuner/gateway_shared_leases.go:246:	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+internal/tuner/gateway_shared_leases.go:291:		out = append(out, filepath.Join(m.dir, name))
+internal/tuner/gateway_shared_leases.go:297:	if err := os.MkdirAll(m.dir, 0o700); err != nil {
+internal/tuner/gateway_shared_leases.go:308:	tmp, err := os.CreateTemp(dir, ".lease-*.tmp")
+internal/tuner/lineup_probe.go:89:	ffmpegPath, err := resolveFFmpegPath()
+internal/tuner/lineup_probe.go:91:		log.Printf("Lineup visual probe skipped: ffmpeg unavailable: %v", err)
+internal/tuner/lineup_probe.go:169:			pass := probeStreamVisual(ctx, ffmpegPath, cand.url, sample, timeout)
+internal/tuner/lineup_probe.go:268:func probeStreamVisual(parent context.Context, ffmpegPath, streamURL string, sample, timeout time.Duration) bool {
+internal/tuner/lineup_probe.go:286:	out, err := exec.CommandContext(ctx, ffmpegPath, args...).CombinedOutput()
+internal/tuner/gateway_hls.go:386:		u, err := url.Parse(playlistURL)
+internal/tuner/gateway_hls.go:523:	base, err := url.Parse(upstreamURL)
+internal/tuner/gateway_hls.go:542:		ref, perr := url.Parse(trim)
+internal/tuner/gateway_hls.go:590:	ref, err := url.Parse(raw)
+internal/tuner/gateway_hls.go:627:	base, err := url.Parse(upstreamURL)
+internal/tuner/gateway_hls.go:672:		ref, perr := url.Parse(trim)
+internal/tuner/gateway_hls.go:714:	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+internal/tuner/gateway_hls.go:916:	base, err := url.Parse(strings.TrimSpace(playlistURL))
+internal/tuner/ssdp.go:127:	u, err := url.Parse(baseURL)
+internal/tuner/gateway_upstream.go:21:// defaultLavfUA is the fallback Lavf User-Agent when ffmpeg is not installed or detection fails.
+internal/tuner/gateway_upstream.go:22:// Matches the libavformat version shipped with ffmpeg 7.1 (2024).
+internal/tuner/gateway_upstream.go:25:// detectFFmpegLavfUA runs ffprobe (or ffmpeg) to read the libavformat version and returns
+internal/tuner/gateway_upstream.go:28:	for _, bin := range []string{"ffprobe", "ffmpeg"} {
+internal/tuner/gateway_upstream.go:29:		out, err := exec.Command(bin, "-version").Output()
+internal/tuner/gateway_upstream.go:65:// detectedLavfUA is the auto-detected value from the installed ffmpeg, used for the
+internal/tuner/gateway_upstream.go:66:// "lavf"/"ffmpeg" preset so the Go HTTP client sends the same UA as the ffmpeg subprocess.
+internal/tuner/gateway_upstream.go:70:	case "lavf", "ffmpeg", "libavformat":
+internal/tuner/gateway_upstream.go:192:	u, err := url.Parse(rawURL)
+internal/tuner/gateway_upstream.go:210:func (g *Gateway) ffmpegCookiesOptionForURL(rawURL string) string {
+internal/tuner/gateway_upstream.go:214:	u, err := url.Parse(rawURL)
+internal/tuner/gateway_upstream.go:301:		req.SetBasicAuth(authUser, authPass)
+internal/tuner/gateway_upstream.go:351:	req, err := http.NewRequestWithContext(ctx, method, rawURL, nil)
+internal/tuner/gateway_upstream.go:359:func (g *Gateway) ffmpegInputHeaderBlock(incoming *http.Request, rawURL, hostOverride string) string {
+internal/tuner/gateway_ffmpeg_options_test.go:7:	if ffmpegHLSHTTPPersistentEnabled() {
+internal/tuner/gateway_ffmpeg_options_test.go:14:	if !ffmpegHLSHTTPPersistentEnabled() {
+internal/tuner/gateway_ffmpeg_options_test.go:21:	if got := ffmpegHLSLiveStartIndex(); got != 0 {
+internal/tuner/gateway_ffmpeg_options_test.go:28:	if got := ffmpegHLSLiveStartIndex(); got != -3 {
+internal/tuner/recording_rules_test.go:17:	path := filepath.Join(t.TempDir(), "rules.json")
+internal/tuner/recording_rules_test.go:46:	path := filepath.Join(t.TempDir(), "rules.json")
+internal/tuner/recording_rules_test.go:63:	data, err := os.ReadFile(path)
+internal/tuner/recording_rules_test.go:117:	stateFile := filepath.Join(dir, "recorder-state.json")
+internal/tuner/recording_rules_test.go:124:			PublishedPath: filepath.Join(dir, "news.ts"),
+internal/tuner/recording_rules_test.go:135:	if err := os.WriteFile(stateFile, data, 0o600); err != nil {
+internal/tuner/server_diagnostics_recordings.go:21:	return filepath.Clean(".diag")
+internal/tuner/server_diagnostics_recordings.go:28:		dir := filepath.Join(root, family)
+internal/tuner/server_diagnostics_recordings.go:49:					Path:    filepath.Join(dir, entry.Name()),
+internal/tuner/server_diagnostics_recordings.go:69:	reportPath := filepath.Join(ref.Path, "report.json")
+internal/tuner/server_diagnostics_recordings.go:70:	body, err := os.ReadFile(reportPath)
+internal/tuner/server_diagnostics_recordings.go:84:	textPath := filepath.Join(ref.Path, "report.txt")
+internal/tuner/server_diagnostics_recordings.go:85:	body, err = os.ReadFile(textPath)
+internal/tuner/server_diagnostics_recordings.go:224:	if err := os.MkdirAll(outDir, 0o700); err != nil {
+internal/tuner/server_diagnostics_recordings.go:228:		if err := os.MkdirAll(filepath.Join(outDir, sub), 0o700); err != nil {
+internal/tuner/server_diagnostics_recordings.go:274:	if err := os.WriteFile(filepath.Join(outDir, "notes.md"), []byte(notes), 0o600); err != nil {
+internal/tuner/server_diagnostics_recordings.go:277:	if err := os.WriteFile(filepath.Join(outDir, "README.txt"), []byte(readme), 0o600); err != nil {
+internal/tuner/server_diagnostics_recordings.go:288:	return sanitizeFileToken(value)
+internal/tuner/server_diagnostics_recordings.go:310:	scriptsDir := filepath.Clean("scripts")
+internal/tuner/server_diagnostics_recordings.go:311:	path := filepath.Join(scriptsDir, name)
+internal/tuner/server_diagnostics_recordings.go:328:	cmd := exec.CommandContext(ctx, "bash", scriptPath)
+internal/tuner/server_diagnostics_recordings.go:342:		outDir = filepath.Join(outRoot, runID)
+internal/tuner/server_diagnostics_recordings.go:349:	if reportPath := filepath.Join(outDir, "report.json"); outDir != "" {
+internal/tuner/server_diagnostics_recordings.go:353:		if _, statErr := os.Stat(filepath.Join(outDir, "report.txt")); statErr == nil {
+internal/tuner/server_diagnostics_recordings.go:354:			detail["report_text_path"] = filepath.Join(outDir, "report.txt")
+internal/tuner/server_diagnostics_recordings.go:437:		"OUT_ROOT":        filepath.Join(repoDiagRoot(), "channel-diff"),
+internal/tuner/server_diagnostics_recordings.go:473:		"OUT_ROOT":          filepath.Join(repoDiagRoot(), "stream-compare"),
 internal/tuner/epg_pipeline.go:155:		u, err := url.Parse(strings.TrimSpace(raw))
 internal/tuner/epg_pipeline.go:218:	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, rawURL, nil)
 internal/tuner/epg_pipeline.go:387:	if u, err := url.Parse(strings.TrimSpace(rawURL)); err == nil && u != nil {
@@ -2298,78 +2341,76 @@ internal/tuner/epg_pipeline.go:571:	if err := os.MkdirAll(dir, 0o700); err != ni
 internal/tuner/epg_pipeline.go:581:	tmp, err := os.CreateTemp(dir, ".provider-epg-*.tmp")
 internal/tuner/epg_pipeline.go:607:	f, err := os.Open(cacheFile)
 internal/tuner/epg_pipeline.go:635:	req, err := http.NewRequestWithContext(fetchCtx, http.MethodGet, rawURL, nil)
-internal/vodwebdav/webdav_test.go:33:	local := filepath.Join(tmp, "movie.mp4")
-internal/vodwebdav/webdav_test.go:34:	if err := os.WriteFile(local, []byte("movie-bytes"), 0o600); err != nil {
-internal/vodwebdav/webdav_test.go:83:	localMovie := filepath.Join(tmp, "movie.mp4")
-internal/vodwebdav/webdav_test.go:84:	if err := os.WriteFile(localMovie, []byte("movie-bytes"), 0o600); err != nil {
-internal/vodwebdav/webdav_test.go:87:	localEpisode := filepath.Join(tmp, "episode.mp4")
-internal/vodwebdav/webdav_test.go:88:	if err := os.WriteFile(localEpisode, []byte("episode-bytes"), 0o600); err != nil {
-internal/virtualchannels/virtualchannels_test.go:12:	path := filepath.Join(t.TempDir(), "virtual-channels.json")
-internal/webui/apiv2_settings.go:243:	data, err := os.ReadFile(path)
-internal/webui/apiv2_settings.go:252:	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-internal/webui/apiv2_settings.go:260:	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+internal/tuner/server_virtual_channel_streams.go:155:		ffmpegPath, err := resolveFFmpegPath()
+internal/tuner/server_virtual_channel_streams.go:157:			writeServerJSONError(w, http.StatusServiceUnavailable, "ffmpeg not available for branded stream")
+internal/tuner/server_virtual_channel_streams.go:165:		if !relayVirtualChannelBrandedStream(w, r, ffmpegPath, resp.Body, channel) {
+internal/tuner/server_virtual_channel_streams.go:295:	req, err := http.NewRequestWithContext(r.Context(), r.Method, sourceURL, nil)
+internal/tuner/server_virtual_channel_streams.go:765:	ffmpegPath, err := resolveFFmpegPath()
+internal/tuner/server_virtual_channel_streams.go:782:	out, err := exec.CommandContext(ctx, ffmpegPath, args...).CombinedOutput()
+internal/tuner/server_virtual_channel_streams.go:800:	ffmpegPath, err := resolveFFmpegPath()
+internal/tuner/server_virtual_channel_streams.go:816:	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
+internal/tuner/server_virtual_channel_streams.go:970:	data, err := os.ReadFile(path)
+internal/tuner/server_virtual_channel_streams.go:1016:	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+internal/tuner/server_virtual_channel_streams.go:1020:	if err := os.WriteFile(path, data, 0o600); err != nil {
+internal/tuner/server_virtual_channel_streams.go:1045:func relayVirtualChannelBrandedStream(w http.ResponseWriter, r *http.Request, ffmpegPath string, src io.ReadCloser, ch virtualchannels.Channel) bool {
+internal/tuner/server_virtual_channel_streams.go:1080:	cmd := exec.CommandContext(r.Context(), ffmpegPath, args...)
+internal/tuner/server_virtual_channel_streams.go:1106:				ffmpegEscapeText(text), x, y,
+internal/tuner/server_virtual_channel_streams.go:1112:				fmt.Sprintf("drawtext=text='%s':fontcolor=white:fontsize=28:x=60:y=h-70", ffmpegEscapeText(banner)),
+internal/tuner/server_virtual_channel_streams.go:1131:			ffmpegEscapeText(text), tx, ty, next,
+internal/tuner/server_virtual_channel_streams.go:1143:			fmt.Sprintf("%sdrawtext=text='%s':fontcolor=white:fontsize=28:x=60:y=h-70%s", boxStage, ffmpegEscapeText(banner), next),
+internal/tuner/server_virtual_channel_streams.go:1176:func ffmpegEscapeText(raw string) string {
+internal/tuner/server_xtream.go:704:		req, err := http.NewRequestWithContext(r.Context(), r.Method, sourceURL, nil)
+internal/tuner/gateway_relay.go:24:func ffmpegHLSFirstBytesTimeout() time.Duration {
+internal/tuner/gateway_relay.go:50:	return exec.LookPath("ffmpeg")
+internal/tuner/gateway_relay.go:61:	ffmpegPath string,
+internal/tuner/gateway_relay.go:83:	cmd := exec.CommandContext(r.Context(), ffmpegPath, args...)
+internal/tuner/gateway_relay.go:105:	log.Printf("gateway: channel=%q id=%s ffmpeg-ts-norm bytes=%d dur=%s",
+internal/tuner/gateway_relay.go:110:func ffmpegRelayErr(phase string, err error, stderr string) error {
+internal/tuner/gateway_relay.go:124:	ffmpegPath string,
+internal/tuner/gateway_relay.go:145:	ffmpegPlaylistURL, ffmpegInputHost, ffmpegInputIP := canonicalizeFFmpegInputURL(r.Context(), playlistURL, g.DisableFFmpegDNS)
+internal/tuner/gateway_relay.go:150:	hlsLiveStartIndex := ffmpegHLSLiveStartIndex()
+internal/tuner/gateway_relay.go:153:	hlsHTTPPersistent := ffmpegHLSHTTPPersistentEnabled()
+internal/tuner/gateway_relay.go:186:	if cookies := g.ffmpegCookiesOptionForURL(playlistURL); cookies != "" {
+internal/tuner/gateway_relay.go:204:	if headers := g.ffmpegInputHeaderBlock(r, playlistURL, ffmpegInputHost); headers != "" {
+internal/tuner/gateway_relay.go:207:	args = append(args, "-i", ffmpegPlaylistURL)
+internal/tuner/gateway_relay.go:211:	cmd := exec.CommandContext(r.Context(), ffmpegPath, args...)
+internal/tuner/gateway_relay.go:221:	modeLabel := "ffmpeg-remux"
+internal/tuner/gateway_relay.go:223:		modeLabel = "ffmpeg-transcode"
+internal/tuner/gateway_relay.go:225:	if ffmpegInputHost != "" && ffmpegInputIP != "" {
+internal/tuner/gateway_relay.go:227:			reqField, channelName, channelID, modeLabel, ffmpegInputHost, ffmpegInputIP)
+internal/tuner/gateway_relay.go:433:					return ffmpegRelayErr("startup-gate-prefetch", errOut, stderr.String())
+internal/tuner/gateway_relay.go:441:				if err := writeBootstrapTS(r.Context(), ffmpegPath, bodyOut, channelName, channelID, bootstrapSec, profileSelection.BaseProfile); err != nil {
+internal/tuner/gateway_relay.go:453:				log.Printf("gateway:%s channel=%q id=%s %s startup-gate timeout continue-ffmpeg=true", reqField, channelName, channelID, modeLabel)
+internal/tuner/gateway_relay.go:462:			return ffmpegRelayErr("startup-gate-timeout", errors.New(msg), stderr.String())
+internal/tuner/gateway_relay.go:473:		if timeout := ffmpegHLSFirstBytesTimeout(); timeout > 0 {
+internal/tuner/gateway_relay.go:499:						errOut = errors.New("ffmpeg exited before first bytes")
+internal/tuner/gateway_relay.go:501:					return ffmpegRelayErr("startup-first-bytes", errOut, stderr.String())
+internal/tuner/gateway_relay.go:508:				return ffmpegRelayErr("first-bytes-timeout", errors.New("ffmpeg produced no bytes before timeout"), stderr.String())
+internal/tuner/gateway_relay.go:520:		if err := writeBootstrapTS(r.Context(), ffmpegPath, bodyOut, channelName, channelID, bootstrapSec, profileSelection.BaseProfile); err != nil {
+internal/tuner/gateway_relay.go:585:		return ffmpegRelayErr("copy", copyErr, stderr.String())
+internal/tuner/gateway_relay.go:590:			return ffmpegRelayErr("wait", waitErr, stderr.String())
+internal/tuner/gateway_relay.go:592:		return ffmpegRelayErr("wait", errors.New(msg), stderr.String())
+internal/tuner/gateway_relay.go:647:		if ffmpegPath, ffmpegErr := resolveFFmpegPath(); ffmpegErr == nil {
+internal/tuner/gateway_relay.go:651:				ffmpegPath,
+internal/tuner/gateway_relay.go:664:				log.Printf("gateway:%s channel=%q id=%s hls-relay-ffmpeg-stdin start failed (falling back to raw relay): %v",
+internal/tuner/gateway_relay.go:668:				relayLogLabel = "hls-relay-ffmpeg-stdin-feed"
+internal/tuner/gateway_relay.go:669:				log.Printf("gateway:%s channel=%q id=%s hls-relay-ffmpeg-stdin enabled transcode=%t profile=%s",
+internal/tuner/gateway_relay.go:673:			log.Printf("gateway:%s channel=%q id=%s hls-relay-ffmpeg-stdin ffmpeg unavailable path=%q err=%v",
+internal/tuner/gateway_relay.go:674:				reqField, channelName, channelID, os.Getenv("IPTV_TUNERR_FFMPEG_PATH"), ffmpegErr)
+internal/tuner/gateway_relay.go:676:			log.Printf("gateway:%s channel=%q id=%s hls-relay-ffmpeg-stdin ffmpeg unavailable transcode-requested=true err=%v", reqField, channelName, channelID, ffmpegErr)
+internal/tuner/gateway_relay.go:809:							log.Printf("gateway:%s channel=%q id=%s hls-relay-ffmpeg-stdin first-feed-bytes=%d seg=%q startup=%s",
+internal/epgstore/quota_test.go:10:	s, err := Open(filepath.Join(dir, "q.db"))
+internal/epgstore/quota_test.go:23:	s, err := Open(filepath.Join(dir, "q2.db"))
+internal/webui/webui_migration.go:234:	planData, err := os.ReadFile(planPath)
+internal/webui/webui_migration.go:362:	planData, err := os.ReadFile(planPath)
+internal/epgstore/store.go:24:	path = filepath.Clean(strings.TrimSpace(path))
+internal/epgstore/store.go:30:		if err := os.MkdirAll(dir, 0o755); err != nil {
 internal/epgstore/store_test.go:11:	path := filepath.Join(dir, "epg", "test.db")
 internal/epgstore/store_test.go:42:	path := filepath.Join(dir, "p.db")
 internal/epgstore/store_test.go:80:	path := filepath.Join(dir, "g.db")
 internal/epgstore/store_test.go:128:	path := filepath.Join(dir, "u.db")
-internal/entitlements/entitlements_test.go:9:	path := filepath.Join(t.TempDir(), "xtream-users.json")
-internal/indexer/player_api.go:196:			req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-internal/indexer/player_api.go:327:	req, err := http.NewRequestWithContext(ctx, http.MethodHead, u, nil)
-internal/epgstore/store.go:24:	path = filepath.Clean(strings.TrimSpace(path))
-internal/epgstore/store.go:30:		if err := os.MkdirAll(dir, 0o755); err != nil {
-internal/vodwebdav/webdav.go:282:	handle, err := os.Open(localPath)
-internal/programming/programming.go:132:	data, err := os.ReadFile(path)
-internal/programming/programming.go:156:	dir := filepath.Dir(filepath.Clean(path))
-internal/programming/programming.go:157:	tmp, err := os.CreateTemp(dir, ".programming-recipe-*.json.tmp")
-internal/entitlements/entitlements.go:65:	data, err := os.ReadFile(path)
-internal/entitlements/entitlements.go:89:	dir := filepath.Dir(filepath.Clean(path))
-internal/entitlements/entitlements.go:90:	tmp, err := os.CreateTemp(dir, ".xtream-entitlements-*.json.tmp")
-internal/eventhooks/eventhooks_test.go:27:	cfgPath := filepath.Join(t.TempDir(), "hooks.json")
-internal/eventhooks/eventhooks_test.go:28:	if err := os.WriteFile(cfgPath, []byte(`{"webhooks":[{"name":"test","url":"`+srv.URL+`","events":["lineup.updated"]}]}`), 0o644); err != nil {
-internal/virtualchannels/virtualchannels.go:105:	data, err := os.ReadFile(path)
-internal/virtualchannels/virtualchannels.go:129:	dir := filepath.Dir(filepath.Clean(path))
-internal/virtualchannels/virtualchannels.go:130:	tmp, err := os.CreateTemp(dir, ".virtual-channels-*.json.tmp")
-internal/tuner/server.go:1792:	req, err := http.NewRequestWithContext(ctx, "GET", streamURL, nil)
-internal/tuner/server.go:1895:			cfLearnedPath = filepath.Join(dir, "cf-learned.json")
-internal/tuner/server.go:1923:			accountLimitPath = filepath.Join(dir, "provider-account-limits.json")
-internal/tuner/server.go:1979:		log.Printf("Gateway ffmpeg relay disabled by config")
-internal/tuner/server.go:1982:		log.Printf("Gateway ffmpeg input DNS rewrite disabled")
-internal/tuner/server.go:2001:			log.Printf("Gateway detected ffmpeg Lavf UA: %s", gateway.DetectedFFmpegUA)
-internal/webui/apiv2_stats.go:56:	req, err := http.NewRequest(http.MethodPost, base+"/api/ops/actions/stream-stop", strings.NewReader(string(body)))
-internal/guideinput/guideinput_test.go:43:	path := filepath.Join(dir, "guide.xml")
-internal/guideinput/guideinput_test.go:45:	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-internal/eventhooks/eventhooks.go:76:	raw, err := os.ReadFile(path)
-internal/eventhooks/eventhooks.go:177:	req, err := http.NewRequest(http.MethodPost, hook.URL, bytes.NewReader(body))
-internal/indexer/smoketest.go:257:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, streamURL, nil)
-internal/indexer/smoketest_cache.go:32:	data, err := os.ReadFile(path)
-internal/indexer/smoketest_cache.go:50:	dir := filepath.Dir(filepath.Clean(path))
-internal/indexer/smoketest_cache.go:51:	tmp, err := os.CreateTemp(dir, ".smoketest-*.json.tmp")
-internal/guideinput/guideinput.go:97:	return os.ReadFile(local.Path())
-internal/guideinput/guideinput.go:166:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ref.URL(), nil)
-internal/webui/webui.go:429:	data, err := os.ReadFile(s.StateFile)
-internal/webui/webui.go:482:	if err := os.MkdirAll(dir, 0o700); err != nil {
-internal/webui/webui.go:498:	tmp, err := os.CreateTemp(dir, ".deck-state-*.tmp")
-internal/webui/webui.go:566:	req, err := http.NewRequest(http.MethodPost, base+path, strings.NewReader(string(raw)))
-internal/webui/webui.go:594:	base, err := url.Parse(s.tunerBase)
-internal/indexer/smoketest_cache_test.go:17:	path := filepath.Join(dir, "smoketest.json")
-internal/indexer/smoketest_cache_test.go:42:	c := LoadSmoketestCache(filepath.Join(t.TempDir(), "nonexistent.json"))
-internal/indexer/smoketest_cache_test.go:89:	path := filepath.Join(dir, "smoketest.json")
-internal/indexer/smoketest_cache_test.go:97:	entries, err := filepath.Glob(filepath.Join(dir, "*.tmp"))
-internal/vodfs/plexname.go:75:	u, err := url.Parse(streamURL)
-internal/webui/apiv2_logos.go:57:	dir := filepath.Clean(s.logosDir())
-internal/webui/apiv2_logos.go:58:	dest := filepath.Join(dir, safe)
-internal/webui/apiv2_logos.go:107:		if err := os.MkdirAll(dir, 0o700); err != nil {
-internal/webui/apiv2_logos.go:120:		tmp, err := os.CreateTemp(dir, ".upload-*.tmp")
-internal/plexharvest/plexharvest_test.go:133:	path := filepath.Join(t.TempDir(), "harvest.json")
-internal/vodfs/file.go:102:	f, err := os.Open(path)
-internal/webui/webui_migration.go:234:	planData, err := os.ReadFile(planPath)
-internal/webui/webui_migration.go:362:	planData, err := os.ReadFile(planPath)
-internal/livetvbundle/bundle_test.go:221:	stateFile := filepath.Join(t.TempDir(), "emby-state.json")
-internal/migrationident/bundle.go:1296:	data, err := os.ReadFile(strings.TrimSpace(path))
-internal/livetvbundle/bundle.go:1135:	u, err := url.Parse(baseURL)
-internal/livetvbundle/bundle.go:1166:	return os.ReadFile(path)
-internal/livetvbundle/bundle.go:1170:	return os.WriteFile(path, data, 0o600)
-internal/livetvbundle/bundle.go:1280:	return filepath.Clean(strings.ReplaceAll(value, `\`, `/`))
+internal/tuner/server_operator_workflows.go:280:	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+internal/tuner/server_operator_workflows.go:1048:		outDir := filepath.Join(repoDiagRoot(), "evidence", caseID)
 internal/tuner/gateway_test.go:276:	want, err := os.ReadFile("testdata/hls_mux_small_playlist.golden")
 internal/tuner/gateway_test.go:291:	upstream, err := os.ReadFile("testdata/stream_compare_hls_mux_capture_upstream.m3u8")
 internal/tuner/gateway_test.go:295:	want, err := os.ReadFile("testdata/stream_compare_hls_mux_capture_tunerr_expected.m3u8")
@@ -2444,47 +2485,12 @@ internal/tuner/gateway_test.go:5154:		t.Fatalf("url.Parse: %v", err)
 internal/tuner/gateway_test.go:5158:	got := g.ffmpegCookiesOptionForURL(playlistURL)
 internal/tuner/gateway_test.go:5180:	cfgPath := filepath.Join(t.TempDir(), "hooks.json")
 internal/tuner/gateway_test.go:5181:	if err := os.WriteFile(cfgPath, []byte(`{"webhooks":[{"name":"test","url":"`+webhook.URL+`","events":["stream.requested","stream.rejected","stream.finished"]}]}`), 0o644); err != nil {
-internal/plexharvest/plexharvest.go:388:	data, err := os.ReadFile(path)
-internal/plexharvest/plexharvest.go:420:	dir := filepath.Dir(filepath.Clean(path))
-internal/plexharvest/plexharvest.go:421:	tmp, err := os.CreateTemp(dir, ".plex-lineup-harvest-*.json.tmp")
-internal/plexharvest/plexharvest.go:598:	base, err := url.Parse(baseURL)
-internal/plexharvest/plexharvest.go:612:		child, err := url.Parse(path)
-internal/plexharvest/plexharvest.go:650:	u, err := url.Parse(lineupsURL)
-internal/plexharvest/plexharvest.go:658:	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
-internal/plexharvest/plexharvest.go:684:	req, err := http.NewRequest(http.MethodGet, channelsURL, nil)
-internal/webui/webui_test.go:26:	st, err := store.Open(filepath.Join(root, "tunerr.db"))
-internal/webui/webui_test.go:76:	logosDir := filepath.Join(root, "logos")
-internal/webui/webui_test.go:77:	target := filepath.Join(root, "target.txt")
-internal/webui/webui_test.go:78:	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
-internal/webui/webui_test.go:81:	if err := os.MkdirAll(logosDir, 0o777); err != nil {
-internal/webui/webui_test.go:84:	link := filepath.Join(logosDir, "logo.png")
-internal/webui/webui_test.go:112:	if got, err := os.ReadFile(target); err != nil || string(got) != "original" {
-internal/webui/webui_test.go:136:	secret := filepath.Join(root, "secret.png")
-internal/webui/webui_test.go:137:	if err := os.WriteFile(secret, []byte("secret"), 0o600); err != nil {
-internal/webui/webui_test.go:140:	logosDir := filepath.Join(root, "logos")
-internal/webui/webui_test.go:141:	if err := os.MkdirAll(logosDir, 0o700); err != nil {
-internal/webui/webui_test.go:511:	bundlePath := filepath.Join(dir, "migration-bundle.json")
-internal/webui/webui_test.go:516:	if err := os.WriteFile(bundlePath, data, 0o600); err != nil {
-internal/webui/webui_test.go:566:	bundlePath := filepath.Join(dir, "identity-bundle.json")
-internal/webui/webui_test.go:571:	if err := os.WriteFile(bundlePath, data, 0o644); err != nil {
-internal/webui/webui_test.go:631:	planPath := filepath.Join(dir, "oidc-plan.json")
-internal/webui/webui_test.go:636:	if err := os.WriteFile(planPath, data, 0o644); err != nil {
-internal/webui/webui_test.go:749:	planPath := filepath.Join(dir, "oidc-plan.json")
-internal/webui/webui_test.go:754:	if err := os.WriteFile(planPath, data, 0o644); err != nil {
-internal/webui/webui_test.go:820:	planPath := filepath.Join(dir, "oidc-plan.json")
-internal/webui/webui_test.go:825:	if err := os.WriteFile(planPath, data, 0o644); err != nil {
-internal/webui/webui_test.go:884:	planPath := filepath.Join(dir, "oidc-plan.json")
-internal/webui/webui_test.go:889:	if err := os.WriteFile(planPath, data, 0o644); err != nil {
-internal/webui/webui_test.go:1101:	stateFile := filepath.Join(dir, "deck-state.json")
-internal/webui/webui_test.go:1116:	data, err := os.ReadFile(stateFile)
-internal/webui/webui_test.go:1149:	target := filepath.Join(dir, "target.json")
-internal/webui/webui_test.go:1150:	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
-internal/webui/webui_test.go:1153:	stateFile := filepath.Join(dir, "deck-state.json")
-internal/webui/webui_test.go:1168:	if got, err := os.ReadFile(target); err != nil {
-internal/webui/webui_test.go:1177:	stateFile := filepath.Join(dir, "deck-state.json")
-internal/webui/webui_test.go:1178:	if err := os.WriteFile(stateFile, []byte(`{
-internal/webui/webui_test.go:1402:	req.SetBasicAuth("admin", "admin")
-internal/webui/webui_test.go:1423:	req.SetBasicAuth("admin", "admin")
+internal/tuner/server.go:1792:	req, err := http.NewRequestWithContext(ctx, "GET", streamURL, nil)
+internal/tuner/server.go:1895:			cfLearnedPath = filepath.Join(dir, "cf-learned.json")
+internal/tuner/server.go:1923:			accountLimitPath = filepath.Join(dir, "provider-account-limits.json")
+internal/tuner/server.go:1979:		log.Printf("Gateway ffmpeg relay disabled by config")
+internal/tuner/server.go:1982:		log.Printf("Gateway ffmpeg input DNS rewrite disabled")
+internal/tuner/server.go:2001:			log.Printf("Gateway detected ffmpeg Lavf UA: %s", gateway.DetectedFFmpegUA)
 internal/webui/static/dist/assets/index-C5KHYVYH.js:452:`;function oX({opened:n,onClose:e,initial:t}){const s=cn(),r=!!t,[i,o]=A.useState((t==null?void 0:t.name)??""),[c,u]=A.useState((t==null?void 0:t.kind)??"webhook"),[d,m]=A.useState((t==null?void 0:t.target)??""),[g,p]=A.useState((t==null?void 0:t.event_types)??[]),[y,x]=A.useState((t==null?void 0:t.enabled)??!0),[b,T]=A.useState(!1);function R(){o(""),u("webhook"),m(""),p([]),x(!0),T(!1)}const w=dt({mutationFn:()=>{const C={name:i,kind:c,target:d,event_types:g,enabled:y};return r?Sg.update(t.id,C):Sg.create(C)},onSuccess:()=>{s.invalidateQueries({queryKey:["connections"]}),Oe.show({message:r?"Connection updated":"Connection created",color:"teal"}),R(),e()},onError:C=>Oe.show({message:C.message,color:"red"})});return f.jsx(Sn,{opened:n,onClose:()=>{R(),e()},title:r?`Edit — ${t==null?void 0:t.name}`:"New Connection",size:"md",children:f.jsxs(Je,{gap:"sm",children:[f.jsx(Lt,{label:"Name",value:i,onChange:C=>o(C.currentTarget.value),required:!0}),f.jsx(wn,{label:"Kind",data:[{value:"webhook",label:"Webhook (HTTP POST)"},{value:"script",label:"Script (shell)"}],value:c,onChange:C=>u(C??"webhook")}),f.jsx(Lt,{label:c==="script"?"Script path":"URL",value:d,onChange:C=>m(C.currentTarget.value),placeholder:c==="script"?"/state/scripts/notify.sh":"https://hooks.example.com/…",required:!0}),f.jsx(If,{label:"Event types (empty = all)",data:iX,value:g,onChange:p,placeholder:"All events",clearable:!0}),f.jsx(Is,{label:"Enabled",checked:y,onChange:C=>x(C.currentTarget.checked)}),c==="script"&&f.jsxs(f.Fragment,{children:[f.jsx(Ve,{size:"xs",variant:"subtle",onClick:()=>T(C=>!C),children:b?"Hide template":"Show starter script"}),f.jsx(Ig,{in:b,children:f.jsx(ji,{block:!0,fz:"xs",style:{whiteSpace:"pre"},children:aX})})]}),f.jsxs(_e,{justify:"flex-end",mt:"sm",children:[f.jsx(Ve,{variant:"default",onClick:()=>{R(),e()},children:"Cancel"}),f.jsx(Ve,{color:"teal",loading:w.isPending,onClick:()=>w.mutate(),children:r?"Save":"Create"})]})]})})}function lX(){const n=cn(),[e,t]=A.useState(!1),[s,r]=A.useState(null),{data:i=[],isLoading:o}=ht({queryKey:["connections"],queryFn:()=>Sg.list()}),c=dt({mutationFn:u=>Sg.delete(u),onSuccess:()=>n.invalidateQueries({queryKey:["connections"]}),onError:u=>Oe.show({message:u.message,color:"red"})});return f.jsxs(f.Fragment,{children:[f.jsxs(_e,{justify:"space-between",mb:"md",children:[f.jsx(Q,{fw:500,children:"Event Connections"}),f.jsx(Ve,{size:"xs",leftSection:f.jsx(Ma,{size:14}),color:"teal",onClick:()=>{r(null),t(!0)},children:"New Connection"})]}),o?f.jsx(Q,{size:"sm",c:"dimmed",children:"Loading…"}):i.length===0?f.jsx(jt,{icon:f.jsx(lM,{size:16}),color:"gray",children:"No connections yet. Wire up webhooks or scripts to react to stream and guide events."}):f.jsx(gn,{children:f.jsxs(O,{striped:!0,highlightOnHover:!0,withRowBorders:!1,fz:"sm",children:[f.jsx(O.Thead,{children:f.jsxs(O.Tr,{children:[f.jsx(O.Th,{children:"Name"}),f.jsx(O.Th,{children:"Kind"}),f.jsx(O.Th,{children:"Target"}),f.jsx(O.Th,{children:"Events"}),f.jsx(O.Th,{children:"Status"}),f.jsx(O.Th,{style:{width:80}})]})}),f.jsx(O.Tbody,{children:i.map(u=>f.jsxs(O.Tr,{children:[f.jsx(O.Td,{children:f.jsx(Q,{size:"sm",children:u.name})}),f.jsx(O.Td,{children:f.jsx(Vt,{size:"xs",color:u.kind==="script"?"grape":"blue",variant:"outline",children:u.kind})}),f.jsx(O.Td,{children:f.jsx(Q,{size:"xs",c:"dimmed",lineClamp:1,maw:220,children:u.target})}),f.jsx(O.Td,{children:f.jsx(Q,{size:"xs",c:"dimmed",children:u.event_types.length===0?"All":u.event_types.join(", ")})}),f.jsx(O.Td,{children:f.jsx(Vt,{size:"xs",color:u.enabled?"teal":"gray",children:u.enabled?"Active":"Disabled"})}),f.jsx(O.Td,{children:f.jsxs(_e,{gap:4,wrap:"nowrap",children:[f.jsx(St,{label:"Edit",children:f.jsx(bt,{size:"xs",variant:"subtle",color:"yellow",onClick:()=>{r(u),t(!0)},children:f.jsx(Gi,{size:14})})}),f.jsx(St,{label:"Delete",children:f.jsx(bt,{size:"xs",variant:"subtle",color:"red",onClick:()=>{confirm(`Delete "${u.name}"?`)&&c.mutate(u.id)},children:f.jsx(Vi,{size:14})})})]})})]},u.id))})]})}),f.jsx(oX,{opened:e,onClose:()=>{t(!1),r(null)},initial:s})]})}function cX(){const n=cn(),e=ht({queryKey:["provider-profile"],queryFn:()=>we.get("/api/provider/profile.json"),staleTime:3e4}),t=ht({queryKey:["shared-relays"],queryFn:()=>we.get("/api/debug/shared-relays.json"),staleTime:3e4}),s=ht({queryKey:["stream-attempts"],queryFn:()=>we.get("/api/debug/stream-attempts.json?limit=20"),staleTime:3e4}),r=dt({mutationFn:()=>we.post("/api/ops/actions/stream-attempts-clear"),onSuccess:()=>{n.invalidateQueries({queryKey:["stream-attempts"]}),Oe.show({message:"Attempt history cleared",color:"teal"})},onError:d=>Oe.show({message:d.message,color:"red"})}),i=dt({mutationFn:()=>we.post("/api/ops/actions/provider-profile-reset"),onSuccess:()=>{n.invalidateQueries({queryKey:["provider-profile"]}),Oe.show({message:"Provider penalties reset",color:"teal"})},onError:d=>Oe.show({message:d.message,color:"red"})}),o=e.data,c=t.data,u=s.data;return f.jsx(gn,{children:f.jsxs(Je,{gap:"md",children:[f.jsxs(ft,{withBorder:!0,p:"md",children:[f.jsxs(_e,{justify:"space-between",mb:"xs",children:[f.jsx(Q,{fw:600,children:"Provider Profile"}),f.jsx(Ve,{size:"xs",color:"orange",variant:"outline",onClick:()=>{confirm("Reset provider penalties?")&&i.mutate()},loading:i.isPending,children:"Reset Penalties"})]}),e.isLoading?f.jsx(Q,{size:"sm",c:"dimmed",children:"Loading…"}):e.isError?f.jsx(jt,{icon:f.jsx(Zt,{size:16}),color:"gray",children:"Provider profile unavailable."}):f.jsx(O,{withRowBorders:!1,fz:"sm",children:f.jsxs(O.Tbody,{children:[f.jsxs(O.Tr,{children:[f.jsx(O.Td,{c:"dimmed",w:220,children:"Effective tuner limit"}),f.jsx(O.Td,{children:f.jsx(Vt,{size:"sm",color:"teal",children:String((o==null?void 0:o.effective_tuner_limit)??"—")})})]}),f.jsxs(O.Tr,{children:[f.jsx(O.Td,{c:"dimmed",children:"Learned tuner limit"}),f.jsx(O.Td,{children:String((o==null?void 0:o.learned_tuner_limit)??"—")})]}),f.jsxs(O.Tr,{children:[f.jsx(O.Td,{c:"dimmed",children:"Penalized hosts"}),f.jsx(O.Td,{children:Array.isArray(o==null?void 0:o.penalized_hosts)?o.penalized_hosts.length:"0"})]}),f.jsxs(O.Tr,{children:[f.jsx(O.Td,{c:"dimmed",children:"CF block hits"}),f.jsx(O.Td,{children:String((o==null?void 0:o.cf_block_hits)??"0")})]}),f.jsxs(O.Tr,{children:[f.jsx(O.Td,{c:"dimmed",children:"Concurrency signals"}),f.jsx(O.Td,{children:String((o==null?void 0:o.concurrency_signals_seen)??"0")})]})]})}),o&&Array.isArray(o.remediation_hints)&&o.remediation_hints.length>0&&f.jsxs(he,{mt:"xs",children:[f.jsx(Q,{size:"xs",c:"dimmed",mb:4,children:"Remediation hints:"}),o.remediation_hints.map((d,m)=>f.jsx(jt,{color:"yellow",p:"xs",mb:4,children:f.jsx(Q,{size:"xs",children:d})},m))]})]}),f.jsxs(ft,{withBorder:!0,p:"md",children:[f.jsx(Q,{fw:600,mb:"xs",children:"Shared Relays"}),t.isLoading?f.jsx(Q,{size:"sm",c:"dimmed",children:"Loading…"}):t.isError?f.jsx(jt,{icon:f.jsx(Zt,{size:16}),color:"gray",children:"Relay info unavailable."}):f.jsxs(_e,{gap:"xl",children:[f.jsxs(he,{children:[f.jsx(Q,{size:"xs",c:"dimmed",children:"Active relays"}),f.jsx(Q,{fw:500,children:String((c==null?void 0:c.relay_count)??(c==null?void 0:c.count)??"—")})]}),f.jsxs(he,{children:[f.jsx(Q,{size:"xs",c:"dimmed",children:"Total subscribers"}),f.jsx(Q,{fw:500,children:String((c==null?void 0:c.subscriber_total)??(c==null?void 0:c.subscribers)??"—")})]})]})]}),f.jsxs(ft,{withBorder:!0,p:"md",children:[f.jsxs(_e,{justify:"space-between",mb:"xs",children:[f.jsx(Q,{fw:600,children:"Recent Stream Attempts"}),f.jsx(Ve,{size:"xs",color:"red",variant:"outline",onClick:()=>{confirm("Clear attempt history?")&&r.mutate()},loading:r.isPending,children:"Clear History"})]}),s.isLoading?f.jsx(Q,{size:"sm",c:"dimmed",children:"Loading…"}):s.isError?f.jsx(jt,{icon:f.jsx(Zt,{size:16}),color:"gray",children:"Attempt log unavailable."}):(()=>{const d=Array.isArray(u)?u:Array.isArray(u==null?void 0:u.attempts)?u.attempts:[];return d.length===0?f.jsx(Q,{size:"sm",c:"dimmed",children:"No recent attempts."}):f.jsxs(O,{withRowBorders:!1,fz:"xs",striped:!0,children:[f.jsx(O.Thead,{children:f.jsxs(O.Tr,{children:[f.jsx(O.Th,{children:"Channel"}),f.jsx(O.Th,{children:"Outcome"}),f.jsx(O.Th,{children:"When"})]})}),f.jsx(O.Tbody,{children:d.slice(0,20).map((m,g)=>f.jsxs(O.Tr,{children:[f.jsx(O.Td,{children:String(m.channel_name??m.channel_id??"—")}),f.jsx(O.Td,{children:f.jsx(Vt,{size:"xs",color:String(m.outcome??m.result??"ok")==="ok"?"teal":"red",children:String(m.outcome??m.result??"—")})}),f.jsx(O.Td,{c:"dimmed",children:m.at?new Date(String(m.at)).toLocaleTimeString():"—"})]},g))})]})})()]})]})})}function uX(){const n=cn(),e=ht({queryKey:["autopilot-report"],queryFn:()=>we.get("/api/autopilot/report.json?limit=8"),staleTime:3e4}),t=dt({mutationFn:()=>we.post("/api/ops/actions/autopilot-reset"),onSuccess:()=>{n.invalidateQueries({queryKey:["autopilot-report"]}),Oe.show({message:"Autopilot memory reset",color:"teal"})},onError:i=>Oe.show({message:i.message,color:"red"})}),s=e.data,r=Array.isArray(s==null?void 0:s.hot_channels)?s.hot_channels:[];return f.jsx(Je,{gap:"md",children:f.jsxs(ft,{withBorder:!0,p:"md",children:[f.jsxs(_e,{justify:"space-between",mb:"xs",children:[f.jsx(Q,{fw:600,children:"Autopilot Report"}),f.jsx(Ve,{size:"xs",color:"orange",variant:"outline",onClick:()=>{confirm("Reset autopilot memory? This will clear learned channel routing.")&&t.mutate()},loading:t.isPending,children:"Reset Autopilot Memory"})]}),e.isLoading?f.jsx(Q,{size:"sm",c:"dimmed",children:"Loading…"}):e.isError?f.jsx(jt,{icon:f.jsx(Zt,{size:16}),color:"gray",children:"Autopilot report unavailable."}):f.jsxs(Je,{gap:"sm",children:[f.jsxs(_e,{gap:"xl",children:[f.jsxs(he,{children:[f.jsx(Q,{size:"xs",c:"dimmed",children:"Decisions made"}),f.jsx(Q,{fw:500,children:String((s==null?void 0:s.decision_count)??"—")})]}),!!(s!=null&&s.consensus_host)&&f.jsxs(he,{children:[f.jsx(Q,{size:"xs",c:"dimmed",children:"Consensus host"}),f.jsx(ji,{children:String(s.consensus_host)})]}),(s==null?void 0:s.consensus_dna_count)!==void 0&&f.jsxs(he,{children:[f.jsx(Q,{size:"xs",c:"dimmed",children:"DNA samples"}),f.jsx(Q,{fw:500,children:String(s.consensus_dna_count)})]})]}),r.length>0&&f.jsxs(f.Fragment,{children:[f.jsx(Jn,{label:"Hot Channels"}),f.jsxs(O,{withRowBorders:!1,fz:"sm",striped:!0,children:[f.jsx(O.Thead,{children:f.jsxs(O.Tr,{children:[f.jsx(O.Th,{children:"Channel"}),f.jsx(O.Th,{children:"Score"})]})}),f.jsx(O.Tbody,{children:r.map((i,o)=>f.jsxs(O.Tr,{children:[f.jsx(O.Td,{children:String(i.name??i.channel_name??"—")}),f.jsx(O.Td,{children:f.jsx(Vt,{size:"sm",color:"blue",variant:"outline",children:String(i.score??"—")})})]},o))})]})]}),r.length===0&&f.jsx(Q,{size:"sm",c:"dimmed",children:"No hot channel data yet."})]})]})})}function dX(){const n=ht({queryKey:["plex-ghost-report"],queryFn:()=>we.get("/api/plex/ghost-report.json?observe=0s"),staleTime:3e4}),e=dt({mutationFn:()=>we.post("/api/ops/actions/ghost-visible-stop"),onSuccess:()=>Oe.show({message:"Stop visible ghosts requested",color:"teal"}),onError:o=>Oe.show({message:o.message,color:"red"})}),t=dt({mutationFn:()=>we.post("/api/ops/actions/ghost-hidden-recover?mode=dry-run"),onSuccess:()=>Oe.show({message:"Dry-run recovery triggered",color:"teal"}),onError:o=>Oe.show({message:o.message,color:"red"})}),s=dt({mutationFn:()=>we.post("/api/ops/actions/ghost-hidden-recover?mode=restart"),onSuccess:()=>Oe.show({message:"Hidden grab restart requested",color:"teal"}),onError:o=>Oe.show({message:o.message,color:"red"})}),r=n.data,i=Array.isArray(r==null?void 0:r.visible_ghosts)?r.visible_ghosts:[];return f.jsx(Je,{gap:"md",children:f.jsxs(ft,{withBorder:!0,p:"md",children:[f.jsxs(_e,{justify:"space-between",mb:"xs",children:[f.jsx(Q,{fw:600,children:"Plex Ghost Hunter"}),f.jsxs(_e,{gap:"xs",children:[f.jsx(Ve,{size:"xs",color:"red",variant:"outline",onClick:()=>{confirm("Stop all visible ghost sessions?")&&e.mutate()},loading:e.isPending,children:"Stop Visible Ghosts"}),f.jsx(Ve,{size:"xs",variant:"outline",onClick:()=>{confirm("Run dry-run hidden recovery?")&&t.mutate()},loading:t.isPending,children:"Dry-Run Hidden Recovery"}),f.jsx(Ve,{size:"xs",color:"orange",variant:"outline",onClick:()=>{confirm("Restart all hidden grabs? This will interrupt them.")&&s.mutate()},loading:s.isPending,children:"Restart Hidden Grabs"})]})]}),n.isLoading?f.jsx(Q,{size:"sm",c:"dimmed",children:"Loading…"}):n.isError?f.jsx(jt,{icon:f.jsx(Zt,{size:16}),color:"gray",children:"Ghost report unavailable. Plex integration may not be configured."}):f.jsxs(Je,{gap:"sm",children:[f.jsxs(_e,{gap:"xl",children:[f.jsxs(he,{children:[f.jsx(Q,{size:"xs",c:"dimmed",children:"Visible ghosts"}),f.jsx(Q,{fw:500,c:i.length>0?"red":"teal",children:i.length})]}),f.jsxs(he,{children:[f.jsx(Q,{size:"xs",c:"dimmed",children:"Hidden grabs"}),f.jsx(Q,{fw:500,children:String((r==null?void 0:r.hidden_grabs)??"0")})]})]}),i.length>0&&f.jsxs(f.Fragment,{children:[f.jsx(Jn,{label:"Visible Ghost Sessions"}),f.jsxs(O,{withRowBorders:!1,fz:"sm",striped:!0,children:[f.jsx(O.Thead,{children:f.jsxs(O.Tr,{children:[f.jsx(O.Th,{children:"Session"}),f.jsx(O.Th,{children:"When"})]})}),f.jsx(O.Tbody,{children:i.map((o,c)=>f.jsxs(O.Tr,{children:[f.jsx(O.Td,{children:String(o.session_name??o.session_id??o.name??"—")}),f.jsx(O.Td,{c:"dimmed",children:o.at?new Date(String(o.at)).toLocaleTimeString():"—"})]},c))})]})]}),i.length===0&&f.jsx(Q,{size:"sm",c:"dimmed",children:"No visible ghost sessions."})]})]})})}function fX(){return f.jsxs(Je,{gap:"md",h:"100%",style:{overflow:"hidden"},children:[f.jsx(_e,{justify:"space-between",children:f.jsx(Q,{size:"lg",fw:600,children:"Stats"})}),f.jsx(ft,{withBorder:!0,p:"md",style:{flex:1,overflow:"hidden"},children:f.jsxs(Ge,{defaultValue:"streams",keepMounted:!1,children:[f.jsxs(Ge.List,{children:[f.jsx(Ge.Tab,{value:"streams",leftSection:f.jsx(Kz,{size:14}),children:"Active Streams"}),f.jsx(Ge.Tab,{value:"events",leftSection:f.jsx(Zt,{size:14}),children:"System Events"}),f.jsx(Ge.Tab,{value:"connections",leftSection:f.jsx(lM,{size:14}),children:"Connections"}),f.jsx(Ge.Tab,{value:"routing",leftSection:f.jsx(ZG,{size:14}),children:"Routing"}),f.jsx(Ge.Tab,{value:"autopilot",leftSection:f.jsx(XG,{size:14}),children:"Autopilot"}),f.jsx(Ge.Tab,{value:"plex",leftSection:f.jsx(AG,{size:14}),children:"Plex"})]}),f.jsx(Jn,{}),f.jsxs(he,{pt:"md",children:[f.jsx(Ge.Panel,{value:"streams",children:f.jsx(nX,{})}),f.jsx(Ge.Panel,{value:"events",children:f.jsx(rX,{})}),f.jsx(Ge.Panel,{value:"connections",children:f.jsx(lX,{})}),f.jsx(Ge.Panel,{value:"routing",children:f.jsx(cX,{})}),f.jsx(Ge.Panel,{value:"autopilot",children:f.jsx(uX,{})}),f.jsx(Ge.Panel,{value:"plex",children:f.jsx(dX,{})})]})]})})]})}const $c={list:()=>we.get("/api/v2/plugins"),create:n=>we.post("/api/v2/plugins",n),update:(n,e)=>we.patch(`/api/v2/plugins/${n}`,e),enable:n=>we.post(`/api/v2/plugins/${n}/enable`,{}),disable:n=>we.post(`/api/v2/plugins/${n}/disable`,{}),delete:n=>we.del(`/api/v2/plugins/${n}`)};function hX({opened:n,onClose:e,initial:t}){const s=cn(),r=!!t,[i,o]=A.useState((t==null?void 0:t.name)??""),[c,u]=A.useState((t==null?void 0:t.version)??""),[d,m]=A.useState((t==null?void 0:t.description)??""),[g,p]=A.useState((t==null?void 0:t.path)??""),[y,x]=A.useState((t==null?void 0:t.manifest)??""),[b,T]=A.useState((t==null?void 0:t.enabled)??!0);function R(){o(""),u(""),m(""),p(""),x(""),T(!0)}const w=dt({mutationFn:()=>{const C={name:i,version:c||void 0,description:d||void 0,path:g,manifest:y||void 0,enabled:b};return r?$c.update(t.id,C):$c.create(C)},onSuccess:()=>{s.invalidateQueries({queryKey:["plugins"]}),Oe.show({message:r?"Plugin updated":"Plugin registered",color:"teal"}),R(),e()},onError:C=>Oe.show({message:C.message,color:"red"})});return f.jsxs(Sn,{opened:n,onClose:()=>{R(),e()},title:r?`Edit — ${t==null?void 0:t.name}`:"Register Plugin",size:"md",children:[f.jsxs(Je,{gap:"sm",children:[f.jsx(Lt,{label:"Name",value:i,onChange:C=>o(C.currentTarget.value),required:!0}),f.jsx(Lt,{label:"Version",value:c,onChange:C=>u(C.currentTarget.value),placeholder:"1.0.0"}),f.jsx(Lt,{label:"Description",value:d,onChange:C=>m(C.currentTarget.value)}),f.jsx(Lt,{label:"Path / entry point",value:g,onChange:C=>p(C.currentTarget.value),required:!0,placeholder:"/opt/plugins/my-plugin.so"}),f.jsx(wu,{label:"Manifest JSON",value:y,onChange:C=>x(C.currentTarget.value),placeholder:'{"capabilities": []}',autosize:!0,minRows:3,maxRows:8,styles:{input:{fontFamily:"monospace",fontSize:12}}}),f.jsx(Is,{label:"Enabled",checked:b,onChange:C=>T(C.currentTarget.checked)})]}),f.jsx(Jn,{my:"sm"}),f.jsxs(_e,{justify:"flex-end",children:[f.jsx(Ve,{variant:"default",onClick:()=>{R(),e()},children:"Cancel"}),f.jsx(Ve,{color:"teal",loading:w.isPending,onClick:()=>w.mutate(),children:r?"Save":"Register"})]})]})}function mX(){const n=cn(),[e,t]=A.useState(!1),[s,r]=A.useState(null),{data:i=[],isLoading:o}=ht({queryKey:["plugins"],queryFn:()=>$c.list()}),c=dt({mutationFn:({id:d,enabled:m})=>m?$c.enable(d):$c.disable(d),onSuccess:()=>n.invalidateQueries({queryKey:["plugins"]}),onError:d=>Oe.show({message:d.message,color:"red"})}),u=dt({mutationFn:d=>$c.delete(d),onSuccess:()=>n.invalidateQueries({queryKey:["plugins"]}),onError:d=>Oe.show({message:d.message,color:"red"})});return f.jsxs(Je,{gap:"md",h:"100%",style:{overflow:"hidden"},children:[f.jsxs(_e,{justify:"space-between",children:[f.jsx(Q,{size:"lg",fw:600,children:"Plugins"}),f.jsx(Ve,{size:"xs",leftSection:f.jsx(Ma,{size:14}),color:"teal",onClick:()=>{r(null),t(!0)},children:"Register Plugin"})]}),f.jsx(ft,{withBorder:!0,p:"md",style:{flex:1,overflow:"hidden"},children:o?f.jsx(Q,{size:"sm",c:"dimmed",children:"Loading…"}):i.length===0?f.jsxs(jt,{icon:f.jsx(Zt,{size:16}),color:"gray",children:["No plugins registered."," ",f.jsx(Q,{span:!0,size:"sm",children:"Register a plugin by providing its path and manifest."})]}):f.jsx(gn,{children:f.jsxs(O,{striped:!0,highlightOnHover:!0,withRowBorders:!1,fz:"sm",children:[f.jsx(O.Thead,{children:f.jsxs(O.Tr,{children:[f.jsx(O.Th,{children:"Name"}),f.jsx(O.Th,{children:"Version"}),f.jsx(O.Th,{children:"Path"}),f.jsx(O.Th,{children:"Status"}),f.jsx(O.Th,{children:"Registered"}),f.jsx(O.Th,{style:{width:90}})]})}),f.jsx(O.Tbody,{children:i.map(d=>f.jsxs(O.Tr,{children:[f.jsxs(O.Td,{children:[f.jsxs(_e,{gap:"xs",children:[f.jsx(mM,{size:14,style:{opacity:.6}}),f.jsx(Q,{size:"sm",fw:500,children:d.name})]}),d.description&&f.jsx(Q,{size:"xs",c:"dimmed",children:d.description})]}),f.jsx(O.Td,{children:f.jsx(Q,{size:"xs",c:"dimmed",children:d.version??"—"})}),f.jsx(O.Td,{children:f.jsx(Q,{size:"xs",c:"dimmed",style:{fontFamily:"monospace",maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"},children:d.path})}),f.jsx(O.Td,{children:f.jsx(Vt,{size:"xs",color:d.enabled?"teal":"gray",style:{cursor:"pointer"},onClick:()=>c.mutate({id:d.id,enabled:!d.enabled}),children:d.enabled?"enabled":"disabled"})}),f.jsx(O.Td,{children:f.jsx(Q,{size:"xs",c:"dimmed",children:new Date(d.created_at).toLocaleDateString()})}),f.jsx(O.Td,{children:f.jsxs(_e,{gap:4,wrap:"nowrap",children:[f.jsx(St,{label:"Edit",children:f.jsx(bt,{size:"xs",variant:"subtle",color:"yellow",onClick:()=>{r(d),t(!0)},children:f.jsx(Gi,{size:14})})}),f.jsx(St,{label:"Delete",children:f.jsx(bt,{size:"xs",variant:"subtle",color:"red",onClick:()=>{confirm(`Delete plugin "${d.name}"?`)&&u.mutate(d.id)},children:f.jsx(Vi,{size:14})})})]})})]},d.id))})]})})}),f.jsx(hX,{opened:e,onClose:()=>{t(!1),r(null)},initial:s})]})}const Tg={list:()=>we.get("/api/v2/users"),create:n=>we.post("/api/v2/users",n),update:(n,e)=>we.patch(`/api/v2/users/${n}`,e),delete:n=>we.del(`/api/v2/users/${n}`)},gX={admin:"red",standard:"blue",streamer:"teal"};function pX({opened:n,onClose:e,initial:t}){const s=cn(),r=!!t,{data:i}=ht({queryKey:["profiles"],queryFn:()=>jc.list()}),o=i??[],[c,u]=A.useState((t==null?void 0:t.username)??""),[d,m]=A.useState(""),[g,p]=A.useState((t==null?void 0:t.role)??"standard"),[y,x]=A.useState((t==null?void 0:t.xc_password)??""),[b,T]=A.useState((t==null?void 0:t.hide_mature)??!1),[R,w]=A.useState((t==null?void 0:t.stream_limit)??0),[C,_]=A.useState((t==null?void 0:t.epg_days_back)??0),[D,P]=A.useState((t==null?void 0:t.epg_days_fwd)??7),[L,k]=A.useState(((t==null?void 0:t.profile_ids)??[]).map(String));function F(){u(""),m(""),p("standard"),x(""),T(!1),w(0),_(0),P(7),k([])}const B=dt({mutationFn:()=>{const U={username:c,password:d||void 0,role:g,xc_password:y,hide_mature:b,stream_limit:R,epg_days_back:C,epg_days_fwd:D,profile_ids:L.map(Number)};return r?Tg.update(t.id,U):Tg.create(U)},onSuccess:()=>{s.invalidateQueries({queryKey:["users"]}),Oe.show({message:r?"User updated":"User created",color:"teal"}),F(),e()},onError:U=>Oe.show({message:U.message,color:"red"})});return f.jsxs(Sn,{opened:n,onClose:()=>{F(),e()},title:r?`Edit — ${t==null?void 0:t.username}`:"New User",size:"md",children:[f.jsxs(Ge,{defaultValue:"account",children:[f.jsxs(Ge.List,{children:[f.jsx(Ge.Tab,{value:"account",children:"Account"}),f.jsx(Ge.Tab,{value:"access",children:"Access"}),f.jsx(Ge.Tab,{value:"epg",children:"EPG & Prefs"})]}),f.jsx(Ge.Panel,{value:"account",pt:"sm",children:f.jsxs(Je,{gap:"sm",children:[f.jsx(Lt,{label:"Username",value:c,onChange:U=>u(U.currentTarget.value),required:!0}),f.jsx(wS,{label:r?"New password (leave blank to keep)":"Password",value:d,onChange:U=>m(U.currentTarget.value),required:!r}),f.jsx(wn,{label:"Role",data:[{value:"admin",label:"Admin"},{value:"standard",label:"Standard"},{value:"streamer",label:"Streamer"}],value:g,onChange:U=>p(U??"standard")}),f.jsx(Lt,{label:"Xtream Codes password",value:y,onChange:U=>x(U.currentTarget.value),placeholder:"For XC API compatibility"})]})}),f.jsx(Ge.Panel,{value:"access",pt:"sm",children:f.jsxs(Je,{gap:"sm",children:[f.jsx(If,{label:"Allowed channel profiles (empty = all)",data:o.map(U=>({value:String(U.id),label:U.name})),value:L,onChange:k,placeholder:"All profiles",clearable:!0}),f.jsx(Hs,{label:"Max concurrent streams (0 = unlimited)",value:R,onChange:U=>w(Number(U)),min:0}),f.jsx(Is,{label:"Hide mature content",checked:b,onChange:U=>T(U.currentTarget.checked)})]})}),f.jsx(Ge.Panel,{value:"epg",pt:"sm",children:f.jsxs(Je,{gap:"sm",children:[f.jsx(Hs,{label:"EPG days back (catch-up)",value:C,onChange:U=>_(Number(U)),min:0}),f.jsx(Hs,{label:"EPG days forward",value:D,onChange:U=>P(Number(U)),min:1})]})})]}),f.jsx(Jn,{my:"sm"}),f.jsxs(_e,{justify:"flex-end",children:[f.jsx(Ve,{variant:"default",onClick:()=>{F(),e()},children:"Cancel"}),f.jsx(Ve,{color:"teal",loading:B.isPending,onClick:()=>B.mutate(),children:r?"Save":"Create"})]})]})}function vX(){const n=cn(),[e,t]=A.useState(!1),[s,r]=A.useState(null),{data:i=[],isLoading:o}=ht({queryKey:["users"],queryFn:()=>Tg.list()}),c=dt({mutationFn:d=>Tg.delete(d),onSuccess:()=>n.invalidateQueries({queryKey:["users"]}),onError:d=>Oe.show({message:d.message,color:"red"})}),u=d=>d==="admin"?f.jsx(yM,{size:14}):d==="streamer"?f.jsx(pp,{size:14}):f.jsx(f9,{size:14});return f.jsxs(Je,{gap:"md",h:"100%",style:{overflow:"hidden"},children:[f.jsxs(_e,{justify:"space-between",children:[f.jsx(Q,{size:"lg",fw:600,children:"Users"}),f.jsx(Ve,{size:"xs",leftSection:f.jsx(Ma,{size:14}),color:"teal",onClick:()=>{r(null),t(!0)},children:"New User"})]}),f.jsx(ft,{withBorder:!0,p:"md",style:{flex:1,overflow:"hidden"},children:o?f.jsx(Q,{size:"sm",c:"dimmed",children:"Loading…"}):i.length===0?f.jsx(jt,{icon:f.jsx(Zt,{size:16}),color:"gray",children:"No users yet. Create an admin account to enable authentication."}):f.jsx(gn,{children:f.jsxs(O,{striped:!0,highlightOnHover:!0,withRowBorders:!1,fz:"sm",children:[f.jsx(O.Thead,{children:f.jsxs(O.Tr,{children:[f.jsx(O.Th,{children:"Username"}),f.jsx(O.Th,{children:"Role"}),f.jsx(O.Th,{children:"Stream limit"}),f.jsx(O.Th,{children:"Profiles"}),f.jsx(O.Th,{children:"Created"}),f.jsx(O.Th,{style:{width:80}})]})}),f.jsx(O.Tbody,{children:i.map(d=>f.jsxs(O.Tr,{children:[f.jsx(O.Td,{children:f.jsxs(_e,{gap:"xs",children:[u(d.role),f.jsx(Q,{size:"sm",children:d.username})]})}),f.jsx(O.Td,{children:f.jsx(Vt,{size:"xs",color:gX[d.role]??"gray",children:d.role})}),f.jsx(O.Td,{children:f.jsx(Q,{size:"xs",c:"dimmed",children:d.stream_limit===0?"Unlimited":d.stream_limit})}),f.jsx(O.Td,{children:f.jsx(Q,{size:"xs",c:"dimmed",children:d.profile_ids.length===0?"All":d.profile_ids.length})}),f.jsx(O.Td,{children:f.jsx(Q,{size:"xs",c:"dimmed",children:new Date(d.created_at).toLocaleDateString()})}),f.jsx(O.Td,{children:f.jsxs(_e,{gap:4,wrap:"nowrap",children:[f.jsx(St,{label:"Edit",children:f.jsx(bt,{size:"xs",variant:"subtle",color:"yellow",onClick:()=>{r(d),t(!0)},children:f.jsx(Gi,{size:14})})}),f.jsx(St,{label:"Delete",children:f.jsx(bt,{size:"xs",variant:"subtle",color:"red",onClick:()=>{confirm(`Delete user "${d.username}"?`)&&c.mutate(d.id)},children:f.jsx(Vi,{size:14})})})]})})]},d.id))})]})})}),f.jsx(pX,{opened:e,onClose:()=>{t(!1),r(null)},initial:s})]})}const Uy={list:()=>we.get("/api/v2/logos"),delete:n=>we.del(`/api/v2/logos/${n}`),upload:async n=>{const e=new FormData;e.append("file",n);const t={},s=Lo().csrf;s&&(t["X-IPTVTunerr-CSRF"]=s);const r=await fetch("/api/v2/logos",{method:"POST",headers:t,body:e});if(!r.ok)throw new Error(`Upload failed: ${r.status}`);return r.json()}};function yX(n){return n<1024?`${n} B`:n<1024*1024?`${(n/1024).toFixed(1)} KB`:`${(n/(1024*1024)).toFixed(1)} MB`}function xX(){const n=cn(),[e,t]=A.useState(!1),s=A.useRef(0),{data:r=[],isLoading:i}=ht({queryKey:["logos"],queryFn:()=>Uy.list()}),o=dt({mutationFn:p=>Uy.upload(p),onSuccess:p=>{n.invalidateQueries({queryKey:["logos"]}),Oe.show({message:`Uploaded ${p.filename}`,color:"teal"})},onError:p=>Oe.show({message:p.message,color:"red"})}),c=dt({mutationFn:p=>Uy.delete(p),onSuccess:()=>n.invalidateQueries({queryKey:["logos"]}),onError:p=>Oe.show({message:p.message,color:"red"})}),u=A.useCallback(p=>{if(!p)return;const y=Array.from(p),x=y.filter(b=>b.type.startsWith("image/"));x.length!==y.length&&Oe.show({message:"Only image files are accepted",color:"orange"}),x.forEach(b=>o.mutate(b))},[o]),d=A.useCallback(p=>{p.preventDefault(),s.current=0,t(!1),u(p.dataTransfer.files)},[u]),m=A.useCallback(p=>{p.preventDefault(),s.current++,t(!0)},[]),g=A.useCallback(p=>{p.preventDefault(),s.current--,s.current===0&&t(!1)},[]);return f.jsxs(Je,{gap:"md",h:"100%",style:{overflow:"hidden"},children:[f.jsxs(_e,{justify:"space-between",children:[f.jsx(Q,{size:"lg",fw:600,children:"Logo Manager"}),f.jsxs(_e,{gap:"xs",children:[o.isPending&&f.jsx(zi,{size:"xs",color:"teal"}),f.jsx(vI,{onChange:p=>p&&u([p]),accept:"image/*",children:p=>f.jsx(Ve,{size:"xs",leftSection:f.jsx(u9,{size:14}),color:"teal",...p,children:"Upload"})})]})]}),f.jsx(he,{onDrop:d,onDragEnter:m,onDragLeave:g,onDragOver:p=>p.preventDefault(),style:{flex:1,overflow:"auto",border:`2px dashed ${e?"var(--mantine-color-teal-6)":"transparent"}`,borderRadius:"var(--mantine-radius-md)",transition:"border-color 0.15s"},children:i?f.jsx(Q,{size:"sm",c:"dimmed",children:"Loading…"}):r.length===0?f.jsxs(ft,{withBorder:!0,p:"xl",ta:"center",children:[f.jsx(GS,{size:48,style:{opacity:.3}}),f.jsx(Q,{mt:"sm",c:"dimmed",size:"sm",children:"No logos yet. Upload images or drag & drop files here."})]}):f.jsxs(Je,{gap:"sm",children:[f.jsx(jt,{icon:f.jsx(Zt,{size:16}),color:"gray",variant:"light",children:"Drag & drop image files anywhere on this page to upload. Max 2 MB per file."}),f.jsx(kf,{cols:{base:3,sm:4,md:6,lg:8},spacing:"sm",children:r.map(p=>f.jsx(bX,{logo:p,onDelete:()=>{confirm(`Delete logo "${p.filename}"?`)&&c.mutate(p.id)}},p.id))})]})})]})}function bX({logo:n,onDelete:e}){const t=n.url??`/api/v2/logos/${n.id}/image`;return f.jsxs(ft,{withBorder:!0,p:"xs",style:{position:"relative"},children:[f.jsx(he,{style:{aspectRatio:"1",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center"},children:f.jsx(Lf,{src:t,alt:n.filename,fit:"contain",style:{maxHeight:80,maxWidth:"100%"},fallbackSrc:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3C/svg%3E"})}),f.jsx(Q,{size:"xs",c:"dimmed",truncate:!0,mt:4,title:n.filename,children:n.filename}),f.jsx(Q,{size:"xs",c:"dimmed",children:yX(n.size_bytes)}),f.jsx(Vt,{size:"xs",variant:"dot",color:"gray",style:{position:"absolute",top:4,right:24},children:n.content_type.replace("image/","")}),f.jsx(St,{label:"Delete",children:f.jsx(bt,{size:"xs",variant:"subtle",color:"red",style:{position:"absolute",top:4,right:4},onClick:e,children:f.jsx(Vi,{size:12})})})]})}const SX=[{value:"ffmpeg",label:"FFmpeg (transcode)"},{value:"proxy",label:"Proxy (passthrough)"},{value:"redirect",label:"Redirect (HTTP 302)"},{value:"streamlink",label:"Streamlink"},{value:"vlc",label:"VLC"},{value:"yt-dlp",label:"yt-dlp"},{value:"custom",label:"Custom"}],TX=JSON.stringify({video_codec:"copy",audio_codec:"copy",extra_args:[]},null,2),EX=["","Lavf/58.76.100","VLC/3.0.18 LibVLC/3.0.18","Mozilla/5.0 (Windows NT 10.0; Win64; x64)"];function AX({opened:n,onClose:e,initial:t}){const s=cn(),r=!!t,[i,o]=A.useState((t==null?void 0:t.name)??""),[c,u]=A.useState((t==null?void 0:t.type)??"proxy"),[d,m]=A.useState((t==null?void 0:t.config_json)??""),[g,p]=A.useState((t==null?void 0:t.is_default)??!1);A.useEffect(()=>{n&&(o((t==null?void 0:t.name)??""),u((t==null?void 0:t.type)??"proxy"),m((t==null?void 0:t.config_json)??""),p((t==null?void 0:t.is_default)??!1))},[n,t]);const y=dt({mutationFn:()=>{const x={name:i,type:c,config_json:d||void 0,is_default:g};return r?mu.update(t.id,x):mu.create(x)},onSuccess:()=>{s.invalidateQueries({queryKey:["stream-profiles"]}),Oe.show({message:r?"Profile updated":"Profile created",color:"teal"}),e()},onError:x=>Oe.show({message:x.message,color:"red"})});return f.jsxs(Sn,{opened:n,onClose:e,title:r?`Edit — ${t==null?void 0:t.name}`:"New Stream Profile",size:"md",children:[f.jsxs(Je,{gap:"sm",children:[f.jsx(Lt,{label:"Name",value:i,onChange:x=>o(x.currentTarget.value),required:!0}),f.jsx(wn,{label:"Type",data:SX,value:c,onChange:x=>{const b=x??"proxy";u(b),b==="ffmpeg"&&!d&&m(TX)}}),f.jsx(wu,{label:"Config JSON",value:d,onChange:x=>m(x.currentTarget.value),placeholder:'{"key": "value"}',autosize:!0,minRows:4,maxRows:12,styles:{input:{fontFamily:"monospace",fontSize:12}}}),f.jsx(Is,{label:"Set as default profile",checked:g,onChange:x=>p(x.currentTarget.checked)})]}),f.jsx(Jn,{my:"sm"}),f.jsxs(_e,{justify:"flex-end",children:[f.jsx(Ve,{variant:"default",onClick:e,children:"Cancel"}),f.jsx(Ve,{color:"teal",loading:y.isPending,onClick:()=>y.mutate(),children:r?"Save":"Create"})]})]})}function RX(){const n=cn(),{data:e}=ht({queryKey:["settings"],queryFn:()=>lg.get()}),[t,s]=A.useState("iptvTunerr"),[r,i]=A.useState(1),[o,c]=A.useState("{state_dir}/recordings/{title}/{title} - {date}.ts"),[u,d]=A.useState(0),[m,g]=A.useState(30);A.useEffect(()=>{e&&(s(e["tuner.device_name"]??"iptvTunerr"),i(Number(e["tuner.device_count"]??1)),c(e["dvr.path_template"]??"{state_dir}/recordings/{title}/{title} - {date}.ts"),d(Number(e["dvr.pad_before_sec"]??0)),g(Number(e["dvr.pad_after_sec"]??30)))},[e]);const p=dt({mutationFn:()=>lg.patch({"tuner.device_name":t,"tuner.device_count":String(r),"dvr.path_template":o,"dvr.pad_before_sec":String(u),"dvr.pad_after_sec":String(m)}),onSuccess:()=>{n.invalidateQueries({queryKey:["settings"]}),Oe.show({message:"Settings saved",color:"teal"})},onError:b=>Oe.show({message:b.message,color:"red"})}),{version:y,port:x}=Lo();return f.jsxs(Je,{gap:"md",children:[f.jsxs(ft,{withBorder:!0,p:"md",children:[f.jsx(Q,{fw:600,mb:"sm",children:"Tuner Device"}),f.jsxs(Je,{gap:"sm",children:[f.jsx(Lt,{label:"Device name (shown to Plex/Emby)",value:t,onChange:b=>s(b.currentTarget.value)}),f.jsx(Hs,{label:"Tuner count (max concurrent streams)",value:r,onChange:b=>i(Number(b)),min:1,max:100})]})]}),f.jsxs(ft,{withBorder:!0,p:"md",children:[f.jsx(Q,{fw:600,mb:"sm",children:"DVR"}),f.jsxs(Je,{gap:"sm",children:[f.jsx(Lt,{label:"Recording path template",value:o,onChange:b=>c(b.currentTarget.value),description:"Tokens: {state_dir} {title} {channel} {date} {time} {year} {month} {day}"}),f.jsxs(_e,{grow:!0,children:[f.jsx(Hs,{label:"Pad before (seconds)",value:u,onChange:b=>d(Number(b)),min:0}),f.jsx(Hs,{label:"Pad after (seconds)",value:m,onChange:b=>g(Number(b)),min:0})]})]})]}),f.jsxs(ft,{withBorder:!0,p:"md",children:[f.jsx(Q,{fw:600,mb:"sm",children:"System"}),f.jsxs(Je,{gap:"xs",children:[f.jsxs(_e,{gap:"xs",children:[f.jsx(Q,{size:"sm",c:"dimmed",w:120,children:"Version"}),f.jsx(ji,{children:y})]}),f.jsxs(_e,{gap:"xs",children:[f.jsx(Q,{size:"sm",c:"dimmed",w:120,children:"Port"}),f.jsx(ji,{children:x})]}),f.jsxs(_e,{gap:"xs",children:[f.jsx(Q,{size:"sm",c:"dimmed",w:120,children:"API"}),f.jsx(Tu,{size:"sm",href:"/api/",target:"_blank",children:"/api/"})]})]})]}),f.jsx(_e,{justify:"flex-end",children:f.jsx(Ve,{color:"teal",leftSection:f.jsx(fM,{size:14}),loading:p.isPending,onClick:()=>p.mutate(),children:"Save Settings"})})]})}function wX(){const n=cn(),[e,t]=A.useState(!1),[s,r]=A.useState(null),{data:i=[],isLoading:o}=ht({queryKey:["stream-profiles"],queryFn:()=>mu.list()}),c=dt({mutationFn:u=>mu.delete(u),onSuccess:()=>n.invalidateQueries({queryKey:["stream-profiles"]}),onError:u=>Oe.show({message:u.message,color:"red"})});return f.jsxs(Je,{gap:"md",children:[f.jsxs(_e,{justify:"space-between",children:[f.jsx(Q,{size:"sm",c:"dimmed",children:"Stream profiles control how channels are delivered (transcode, proxy, redirect, or via external tools)."}),f.jsx(Ve,{size:"xs",leftSection:f.jsx(Ma,{size:14}),color:"teal",onClick:()=>{r(null),t(!0)},children:"New Profile"})]}),o?f.jsx(Q,{size:"sm",c:"dimmed",children:"Loading…"}):i.length===0?f.jsx(jt,{icon:f.jsx(Zt,{size:16}),color:"gray",children:"No stream profiles. The built-in proxy mode is used by default."}):f.jsx(ft,{withBorder:!0,style:{overflow:"hidden"},children:f.jsx(gn,{children:f.jsxs(O,{striped:!0,highlightOnHover:!0,withRowBorders:!1,fz:"sm",children:[f.jsx(O.Thead,{children:f.jsxs(O.Tr,{children:[f.jsx(O.Th,{children:"Name"}),f.jsx(O.Th,{children:"Type"}),f.jsx(O.Th,{children:"Default"}),f.jsx(O.Th,{children:"Created"}),f.jsx(O.Th,{style:{width:80}})]})}),f.jsx(O.Tbody,{children:i.map(u=>f.jsxs(O.Tr,{children:[f.jsx(O.Td,{children:f.jsxs(_e,{gap:"xs",children:[f.jsx(mM,{size:14,style:{opacity:.6}}),f.jsx(Q,{size:"sm",children:u.name})]})}),f.jsx(O.Td,{children:f.jsx(Vt,{size:"xs",color:"blue",variant:"light",children:u.type})}),f.jsx(O.Td,{children:u.is_default&&f.jsx(Vt,{size:"xs",color:"teal",children:"default"})}),f.jsx(O.Td,{children:f.jsx(Q,{size:"xs",c:"dimmed",children:new Date(u.created_at).toLocaleDateString()})}),f.jsx(O.Td,{children:f.jsxs(_e,{gap:4,wrap:"nowrap",children:[f.jsx(St,{label:"Edit",children:f.jsx(bt,{size:"xs",variant:"subtle",color:"yellow",onClick:()=>{r(u),t(!0)},children:f.jsx(Gi,{size:14})})}),f.jsx(St,{label:"Delete",children:f.jsx(bt,{size:"xs",variant:"subtle",color:"red",onClick:()=>{confirm(`Delete profile "${u.name}"?`)&&c.mutate(u.id)},children:f.jsx(Vi,{size:14})})})]})})]},u.id))})]})})}),f.jsx(AX,{opened:e,onClose:()=>{t(!1),r(null)},initial:s})]})}function CX(){const n=cn(),{data:e}=ht({queryKey:["settings"],queryFn:()=>lg.get()}),[t,s]=A.useState(""),[r,i]=A.useState(""),[o,c]=A.useState(""),[u,d]=A.useState(""),[m,g]=A.useState("idle");A.useEffect(()=>{e&&(s(e["provider.user_agent"]??""),i(e["xtream.user"]??""),c(e["xtream.pass"]??""))},[e]);const p=dt({mutationFn:()=>lg.patch({"provider.user_agent":t,"xtream.user":r,"xtream.pass":o}),onSuccess:()=>{n.invalidateQueries({queryKey:["settings"]}),Oe.show({message:"Provider settings saved",color:"teal"})},onError:b=>Oe.show({message:b.message,color:"red"})});async function y(){if(u.trim()){g("saving");try{const b=Lo().csrf,T={"Content-Type":"text/plain"};b&&(T["X-IPTVTunerr-CSRF"]=b);const R=await fetch("/api/v2/settings/cookie-jar",{method:"POST",headers:T,body:u});if(!R.ok)throw new Error(`${R.status}`);g("ok"),d(""),Oe.show({message:"Cookie jar imported",color:"teal"})}catch(b){g("error"),Oe.show({message:`Import failed: ${b}`,color:"red"})}}}const x=EX.includes(t)?t:"custom";return f.jsxs(Je,{gap:"md",children:[f.jsxs(ft,{withBorder:!0,p:"md",children:[f.jsx(Q,{fw:600,mb:"sm",children:"User-Agent"}),f.jsxs(Je,{gap:"sm",children:[f.jsx(wn,{label:"Preset",data:[{value:"",label:"Default (iptvTunerr)"},{value:"Lavf/58.76.100",label:"Lavf (FFmpeg)"},{value:"VLC/3.0.18 LibVLC/3.0.18",label:"VLC"},{value:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)",label:"Browser (generic)"},{value:"custom",label:"Custom…"}],value:x,onChange:b=>{b&&b!=="custom"&&s(b)},clearable:!1}),f.jsx(Lt,{label:"User-Agent string",value:t,onChange:b=>s(b.currentTarget.value),placeholder:"Leave blank to use iptvTunerr default"})]}),f.jsx(_e,{justify:"flex-end",mt:"sm",children:f.jsx(Ve,{size:"xs",color:"teal",leftSection:f.jsx(fM,{size:14}),loading:p.isPending,onClick:()=>p.mutate(),children:"Save"})})]}),f.jsxs(ft,{withBorder:!0,p:"md",children:[f.jsx(Q,{fw:600,mb:"sm",children:"Xtream Credentials"}),f.jsx(Q,{size:"sm",c:"dimmed",mb:"sm",children:"Used by the VODs page to query movie and series data from the tuner's Xtream API."}),f.jsxs(Je,{gap:"sm",children:[f.jsx(Lt,{label:"Xtream username",value:r,onChange:b=>i(b.currentTarget.value)}),f.jsx(Lt,{label:"Xtream password",value:o,onChange:b=>c(b.currentTarget.value)})]})]}),f.jsxs(ft,{withBorder:!0,p:"md",children:[f.jsx(Q,{fw:600,mb:"sm",children:"Cookie Jar"}),f.jsx(Q,{size:"sm",c:"dimmed",mb:"sm",children:'Import a Netscape-format cookie file to bypass Cloudflare and similar systems. Export using a browser extension such as "Get cookies.txt LOCALLY".'}),f.jsx(wu,{placeholder:`# Netscape HTTP Cookie File
 
 # End of candidate scan. Candidate lines are a queue, not proof of bugs.
