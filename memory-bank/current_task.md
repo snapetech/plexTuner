@@ -8,7 +8,9 @@
 - Done: promoted current changelog entries into `v0.1.77`.
 - Done: `./scripts/release-readiness.sh` passed; optional macOS and Windows package host lanes were skipped by default.
 - Done: checked the tracked tree does not contain the Discord webhook literal.
-- Next: commit all tracked dirty changes, push `main`, tag `v0.1.77`, push the tag, and monitor release/announcement workflows.
+- Done: committed all dirty changes as `8ff0872`, pushed `main`, and pushed tag `v0.1.77`.
+- In progress: first release workflow run failed at the changelog gate because the real release note used a word reserved by the placeholder detector; rewording that note and moving the tag to the corrected commit.
+- Next: push the changelog-gate fix, retag `v0.1.77`, and monitor release/announcement workflows.
 
 **Previous (2026-05-17):** Improve Plex DVR event-only sports recording windows.
 

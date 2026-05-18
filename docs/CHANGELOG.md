@@ -16,7 +16,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 ## [v0.1.77] - 2026-05-18
 
 ### Plex DVR
-- **Event-only sports channels now expose bounded DVR guide windows:** live/next sports feeds that carry an event time in the channel name but lack upstream EPG data now publish sport-aware XMLTV programme windows instead of week-long placeholders, preventing vague Plex recording errors on event rows.
+- **Event-only sports channels now expose bounded DVR guide windows:** live/next sports feeds that carry an event time in the channel name but lack upstream EPG data now publish sport-aware XMLTV programme windows instead of week-long filler programmes, preventing vague Plex recording errors on event rows.
 - **Shared-user Plex recording templates borrow tuner entitlement:** the Live TV proxy now treats XMLTV-backed `/media/subscriptions/template` and create-subscription requests as Live TV DVR calls, fixing shared users who could browse the guide but hit a Plex `403` behind a vague Record-button error.
 
 ### Release process
