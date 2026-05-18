@@ -11,6 +11,9 @@
 - Done: audited recent proxy/PMS failure evidence after the deploy; no new real shared-user `403` paths appeared, but existing recording-rule edits can use `/media/subscriptions/{id}` with XMLTV body/query evidence.
 - Done: hardened the classifier for XMLTV-backed subscription rule edits across PUT/PATCH/DELETE-style paths while leaving id-only deletes and library subscription edits on the user's token.
 - Done: redeployed the hardened proxy binary, verified the service is active, and validated that an XMLTV-style no-token rule edit is caught as Live TV while a library-style edit is not classified for elevation.
+- Done: committed and pushed the full requested dirty tree as `e9bc7e2`, including package-smoke evidence/scaffolding, council output, workflow changes, and the Plex proxy fix.
+- Done: built commit-stamped internal binary `e9bc7e2`, installed it to the primary/sports Tunerr binary and Live TV proxy binary paths, restarted all three services, and verified service health.
+- Done: internal validation after deploy returned `200` for primary ready/guide, sports ready/guide, and proxy identity; Plex DVR registration reactivated 426 primary channels and 125 sports channels.
 - Next: have the tester retry Plex Record from the same client; if it still fails, capture the next PMS/proxy log window around the retry.
 
 **Previous (2026-05-18):** Fix package-channel publication gaps found by smoke validation.
