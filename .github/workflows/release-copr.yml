@@ -106,12 +106,27 @@ jobs:
       - name: Ensure COPR project exists
         run: |
           set -euo pipefail
+          chroots=(
+            fedora-43-x86_64
+            fedora-rawhide-x86_64
+          )
           if copr-cli get iptvtunerr >/dev/null 2>&1; then
+            copr_args=()
+            for chroot in "${chroots[@]}"; do
+              copr_args+=(--chroot "$chroot")
+            done
+            copr-cli modify iptvtunerr \
+              "${copr_args[@]}" \
+              --description "IPTV Tunerr RPM builds" \
+              --instructions "dnf copr enable slskdn/iptvtunerr && dnf install iptvtunerr"
             exit 0
           fi
+          copr_args=()
+          for chroot in "${chroots[@]}"; do
+            copr_args+=(--chroot "$chroot")
+          done
           copr-cli create iptvtunerr \
-            --chroot fedora-43-x86_64 \
-            --chroot fedora-rawhide-x86_64 \
+            "${copr_args[@]}" \
             --description "IPTV Tunerr RPM builds" \
             --instructions "dnf copr enable slskdn/iptvtunerr && dnf install iptvtunerr"
 
@@ -119,4 +134,8 @@ jobs:
         run: |
           set -euo pipefail
           srpm="$(find ~/rpmbuild/SRPMS -name '*.src.rpm' -print -quit)"
-          copr-cli build iptvtunerr "$srpm" --nowait
+          copr-cli build \
+            --chroot fedora-43-x86_64 \
+            --chroot fedora-rawhide-x86_64 \
+            --nowait \
+            iptvtunerr "$srpm"

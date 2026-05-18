@@ -40,14 +40,19 @@ install -dm750 %{buildroot}%{_localstatedir}/log/iptvtunerr
 getent passwd iptvtunerr >/dev/null || useradd -r -s /sbin/nologin -d %{_sharedstatedir}/iptvtunerr -c "IPTV Tunerr service account" iptvtunerr
 
 %post
-%tmpfiles_create %{_tmpfilesdir}/iptvtunerr.conf
-%systemd_post iptvtunerr.service
+systemd-tmpfiles --create %{_tmpfilesdir}/iptvtunerr.conf >/dev/null 2>&1 || :
+systemctl daemon-reload >/dev/null 2>&1 || :
 
 %preun
-%systemd_preun iptvtunerr.service
+if [ "$1" -eq 0 ]; then
+  systemctl --no-reload disable --now iptvtunerr.service >/dev/null 2>&1 || :
+fi
 
 %postun
-%systemd_postun_with_restart iptvtunerr.service
+systemctl daemon-reload >/dev/null 2>&1 || :
+if [ "$1" -ge 1 ]; then
+  systemctl try-restart iptvtunerr.service >/dev/null 2>&1 || :
+fi
 
 %files
 %{_bindir}/iptv-tunerr

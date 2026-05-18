@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="package-smoke.iptvtunerr" tests="1" failures="1">
+  <testcase classname="package-smoke.iptvtunerr" name="container-dockerhub.amd64"><failure message="command failed with exit 1: \"$@\"" /></testcase>
+</testsuite>

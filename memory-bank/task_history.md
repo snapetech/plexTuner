@@ -1,3 +1,21 @@
+## 2026-05-18 - Fix shared-user Plex DVR subscription list failure
+
+- Investigated the external tester's Plex Record Options save error and found PMS was returning shared-user `403` responses for read-only DVR subscription list endpoints.
+- Patched the Live TV proxy so `GET /media/subscriptions` and `GET /media/subscriptions/scheduled` are classified as Live TV discovery and can borrow owner tuner entitlement.
+- Kept subscription mutation scoping intact: XMLTV template/create paths and XMLTV-backed `/media/subscriptions/{id}` rule edits are elevated, while ordinary library subscription requests and id-only deletes are not widened.
+- Deployed the patched proxy binary to the live instance and restarted only the Live TV proxy service.
+- Verification: focused proxy tests passed; live validation showed missing-token requests are still denied, authorized subscription list requests return `200`, and an XMLTV-style rule edit is classified as Live TV without elevating a library-style edit.
+
+## 2026-05-18 - Fix package-channel publication gaps
+
+- Package-smoke found real drift after `v0.1.77`: Docker Hub did not have `snapetech/iptvtunerr:v0.1.77`, Jammy PPA had `v0.1.75`, COPR Fedora 43 had `v0.1.76`, Noble PPA was missing, and the direct RPM had unresolved `%systemd_*` macro scriptlet output when built outside Fedora macros.
+- Changed Docker Hub publishing to target `snapetech/iptvtunerr` when Docker Hub credentials are present, and added GitLab Docker Hub promotion from the internal registry image.
+- Changed GitLab release promotion to dispatch the GitHub AUR, Snap, PPA, and COPR package publisher workflows after creating the GitHub release.
+- Changed PPA publishing to build both Jammy and Noble source packages and explicitly include the staged binary in `debian/source/include-binaries`.
+- Changed COPR publishing to modify existing projects with Fedora 43 and Rawhide chroots before building for those chroots.
+- Replaced direct RPM `%systemd_*` macro scriptlets with portable shell commands; a local package rebuild showed plain shell scriptlets.
+- Verification: YAML parse, shell syntax, `git diff --check`, and targeted RPM rebuild/scriptlet inspection passed.
+
 ## 2026-05-18 - Cut v0.1.77 release
 
 - Committed and pushed the full dirty tree requested by the operator, including Plex DVR event-window fixes, shared-user Record-button entitlement fixes, generated council metadata, and release workflow hardening.
@@ -201,6 +219,8 @@
 - Entitlement checks: local and public Live TV owner-token paths return `200`; public no-token and fake-token Live TV paths return `403`; local non-Live-TV no-token path returns Plex `401` without entitlement audit noise.
 - Added automated proxy coverage for an external shared user coming through forwarded frontend headers: shared token is authorized, Live TV request is elevated to owner token, source headers are retained for audit context, and raw tokens are not logged.
 - Verification: `go test -count=1 ./internal/plexlabelproxy` passed; `./scripts/verify` passed.
+
+- 2026-05-18: Added reusable public package-channel smoke validation. New `packaging/smoke/package-smoke` installs from release/package channels, records JSON/JUnit/log evidence, checks requested-version reporting, and supports cleanup hooks. GitLab now has a tag-only `post_release_validate` stage for container, Ubuntu, Fedora, AUR, and Snap channels; GitHub has equivalent disabled `workflow_dispatch` scaffolding. Verification: shell syntax, YAML parsing, evidence success/failure checks, and `git diff --check` passed.
 
 ## 2026-05-12 - Block repeated bad Plex Live TV elevation attempts
 

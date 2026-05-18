@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="package-smoke.iptvtunerr" tests="1" failures="0">
+  <testcase classname="package-smoke.iptvtunerr" name="deb.amd64"></testcase>
+</testsuite>

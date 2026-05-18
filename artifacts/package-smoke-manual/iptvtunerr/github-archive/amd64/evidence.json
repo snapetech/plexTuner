@@ -1,0 +1,17 @@
+{
+  "project": "iptvtunerr",
+  "channel": "github-archive",
+  "requested_version": "v0.1.77",
+  "normalized_version": "0.1.77",
+  "arch": "amd64",
+  "registry_tag": "v0.1.77",
+  "status": "passed",
+  "failure": "",
+  "resolved_version": "v0.1.77",
+  "binary_path": "/tmp/tmp.ewUHYRqZnN/archive/iptv-tunerr-v0.1.77-linux-amd64/iptv-tunerr",
+  "endpoint_status": "",
+  "uninstall_status": "removed extracted archive",
+  "started_at": "2026-05-18T02:10:08Z",
+  "finished_at": "2026-05-18T02:10:09Z",
+  "log_file": "logs/package-smoke.log"
+}

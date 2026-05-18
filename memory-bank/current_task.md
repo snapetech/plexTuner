@@ -1,4 +1,31 @@
-**Current (2026-05-18):** Commit current tree and cut `v0.1.77`.
+**Current (2026-05-18):** Fix shared-user Plex DVR Record Options failure.
+
+- Goal: stop Plex shared users from seeing "There was a problem saving your changes" when recording Live TV from Plex.
+- Scope: Live TV entitlement proxy classification for Plex DVR subscription list/read endpoints and XMLTV-backed rule edit paths; deploy to the live proxy without interrupting tuner/capture services.
+- Assumption: read-only `/media/subscriptions` and `/media/subscriptions/scheduled` calls made by Plex's Record Options UI are part of Live TV discovery for this proxy, while create/update paths still need XMLTV scoping.
+- Done: PMS logs showed the external tester's Record Options flow was failing on shared-user `403` responses from `GET /media/subscriptions` and `GET /media/subscriptions/scheduled`.
+- Done: patched the Live TV proxy classifier so those read-only subscription list endpoints borrow owner tuner entitlement as Live TV discovery.
+- Done: added focused proxy coverage for both subscription list paths.
+- Done: focused tests passed, deployed the patched proxy binary, restarted `plex-live-tv-proxy.service`, and verified the live service is active.
+- Done: live validation showed missing-token probes are still denied, while authorized requests to both subscription list endpoints are elevated and return `200`.
+- Done: audited recent proxy/PMS failure evidence after the deploy; no new real shared-user `403` paths appeared, but existing recording-rule edits can use `/media/subscriptions/{id}` with XMLTV body/query evidence.
+- Done: hardened the classifier for XMLTV-backed subscription rule edits across PUT/PATCH/DELETE-style paths while leaving id-only deletes and library subscription edits on the user's token.
+- Done: redeployed the hardened proxy binary, verified the service is active, and validated that an XMLTV-style no-token rule edit is caught as Live TV while a library-style edit is not classified for elevation.
+- Next: have the tester retry Plex Record from the same client; if it still fails, capture the next PMS/proxy log window around the retry.
+
+**Previous (2026-05-18):** Fix package-channel publication gaps found by smoke validation.
+
+- Goal: make failed public channels publish the requested release version and install cleanly without needing a new-release-only validation path.
+- Scope: Docker Hub image naming/publication, Launchpad Jammy/Noble PPA publishing, COPR chroot/version publication, RPM installer scriptlets, GitLab dispatch/promotion, and package-smoke validation scaffolding.
+- Done: changed Docker Hub publishing to the expected `snapetech/iptvtunerr` image when Docker Hub credentials are present, instead of deriving the namespace from a repo variable.
+- Done: GitLab release promotion now dispatches AUR, Snap, PPA, and COPR GitHub publisher workflows, and promotes the internal registry image to Docker Hub tags.
+- Done: PPA publishing now runs for both `jammy` and `noble` and explicitly includes the staged binary in `debian/source/include-binaries`.
+- Done: COPR publishing now modifies existing projects with the required Fedora 43 and Rawhide chroots before building for those chroots.
+- Done: direct RPM scriptlets no longer rely on unresolved `%systemd_*` macros when built outside a Fedora macro environment; a local package rebuild showed plain shell scriptlets.
+- Validation: YAML parse, shell syntax, `git diff --check`, and targeted RPM package rebuild/scriptlet inspection passed.
+- Next: after these changes are pushed, rerun the package publisher workflows for `v0.1.77`, then rerun package-smoke against Docker Hub, PPA Jammy/Noble, and COPR.
+
+**Previous (2026-05-18):** Commit current tree and cut `v0.1.77`.
 
 - Goal: commit and push the entire dirty working tree, configure Discord release announcements, and publish a new release.
 - Scope: include dirty and unrelated repo changes as explicitly requested; do not commit secrets. Use the existing release workflow with a repository secret for Discord.
@@ -65,6 +92,16 @@
 - Done: COPR and Snap reruns completed successfully.
 - Done: latest `main` checks on `d502b64` completed successfully: CI, CodeQL, Gitleaks, and Local Identity Leak Check.
 - Next: no release-monitoring action pending.
+
+**Current (2026-05-18):** Add reusable post-release package-channel validation.
+
+- Goal: validate public install channels after release publication from internal GitLab, with equivalent GitHub scaffolding committed but disabled.
+- Scope: package-smoke harness, project channel manifest, GitLab tag-only post-release validation jobs, and disabled GitHub workflow entrypoint.
+- Assumption: Windows package channels remain manually gated; Linux public channels and container channels can run from GitLab runners as they become available.
+- Done: added `packaging/smoke/package-smoke` with evidence JSON, JUnit, logs, public-channel install adapters, version checks, container multi-arch smoke, and uninstall cleanup hooks.
+- Done: added GitLab `post_release_validate` stage with tag-only matrix jobs for containers, Ubuntu channels, Fedora channels, AUR, and Snap.
+- Done: added disabled `workflow_dispatch` GitHub package-smoke workflow for future activation.
+- Next: run the new GitLab validation stage against the next release tag and tighten `allow_failure` once runner/channel delays are characterized.
 
 **Previous (2026-05-16):** Triage and action all open GitHub PRs and security issues for `snapetech/iptvtunerr`.
 

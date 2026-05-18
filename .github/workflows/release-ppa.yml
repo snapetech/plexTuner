@@ -15,6 +15,10 @@ permissions:
 jobs:
   publish-ppa:
     runs-on: [self-hosted, Linux, X64, iptvtunerr]
+    strategy:
+      fail-fast: false
+      matrix:
+        ubuntu_series: [jammy, noble]
     steps:
       - name: Resolve version
         id: version
@@ -69,6 +73,7 @@ jobs:
         run: |
           set -euo pipefail
           version="${{ steps.version.outputs.version }}"
+          series="${{ matrix.ubuntu_series }}"
           src="iptvtunerr-${version}"
           rm -rf "$src"
           mkdir -p "$src/usr/bin" "$src/lib/systemd/system" "$src/etc/iptvtunerr" "$src/usr/lib/sysusers.d" "$src/usr/lib/tmpfiles.d"
@@ -78,9 +83,10 @@ jobs:
           cp packaging/aur/iptvtunerr.sysusers "$src/usr/lib/sysusers.d/iptvtunerr.conf"
           cp packaging/aur/iptvtunerr.tmpfiles "$src/usr/lib/tmpfiles.d/iptvtunerr.conf"
           cp -r packaging/debian "$src/debian"
+          printf 'usr/bin/iptv-tunerr\n' > "$src/debian/source/include-binaries"
           ppa_rev="$(date -u +%Y%m%d%H%M)"
           cat > "$src/debian/changelog" <<EOF
-          iptvtunerr (${version}+ppa${ppa_rev}~jammy) jammy; urgency=medium
+          iptvtunerr (${version}+ppa${ppa_rev}~${series}) ${series}; urgency=medium
 
             * Release ${{ steps.version.outputs.tag }}
 
@@ -93,7 +99,7 @@ jobs:
           set -euo pipefail
           cd "iptvtunerr-${{ steps.version.outputs.version }}"
           dpkg-source -b .
-          dpkg-genchanges -S -sa -O../iptvtunerr_${{ steps.version.outputs.version }}_source.changes
+          dpkg-genchanges -S -sa -O../iptvtunerr_${{ steps.version.outputs.version }}_${{ matrix.ubuntu_series }}_source.changes
           cd ..
           for signed in *.dsc *.changes; do
             gpg --batch --yes --local-user 07E2531E1F470F8008ACCFC996A07606FE65392F \

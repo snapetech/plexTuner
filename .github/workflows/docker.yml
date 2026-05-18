@@ -10,6 +10,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      HAS_DOCKERHUB: ${{ secrets.DOCKERHUB_TOKEN != '' && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -23,7 +25,7 @@ jobs:
         with:
           images: |
             ghcr.io/${{ github.repository }}
-            ${{ vars.DOCKERHUB_USERNAME != '' && format('{0}/iptvtunerr', vars.DOCKERHUB_USERNAME) || '' }}
+            ${{ env.HAS_DOCKERHUB == 'true' && 'snapetech/iptvtunerr' || '' }}
           tags: |
             type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
             type=ref,event=tag
@@ -35,10 +37,10 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
       - name: Login to Docker Hub
-        if: ${{ vars.DOCKERHUB_USERNAME != '' }}
+        if: env.HAS_DOCKERHUB == 'true'
         uses: docker/login-action@v4
         with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
+          username: ${{ secrets.DOCKERHUB_USERNAME || 'snapetech' }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Resolve version
         id: version

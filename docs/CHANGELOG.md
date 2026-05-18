@@ -13,6 +13,9 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 
 ## [Unreleased]
 
+### Plex DVR
+- **Shared-user recording rule edits stay Live TV-scoped:** the Live TV proxy now recognizes XMLTV-backed `/media/subscriptions/{id}` edit/delete-style requests as DVR calls while still refusing to elevate ordinary library subscription edits.
+
 ## [v0.1.77] - 2026-05-18
 
 ### Plex DVR

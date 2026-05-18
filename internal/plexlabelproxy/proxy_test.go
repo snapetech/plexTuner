@@ -1169,6 +1169,77 @@ func TestIsLiveTVRequest_PostMediaSubscriptionForXMLTVElevated(t *testing.T) {
 	}
 }
 
+func TestIsLiveTVRequest_MediaSubscriptionListsElevated(t *testing.T) {
+	for _, path := range []string{"/media/subscriptions", "/media/subscriptions/scheduled"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if !IsLiveTVRequest(req) {
+			t.Fatalf("GET %s should be elevated for shared-user Live TV recording UI", path)
+		}
+		if !IsLiveTVDiscoveryRequest(req) {
+			t.Fatalf("GET %s should be treated as Live TV discovery", path)
+		}
+	}
+}
+
+func TestIsLiveTVRequest_MediaSubscriptionRuleEditsElevatedOnlyWithLiveTVEvidence(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		method string
+		target string
+		body   string
+		want   bool
+	}{
+		{
+			name:   "put xmltv body",
+			method: http.MethodPut,
+			target: "/media/subscriptions/42",
+			body:   "guid=tv.plex.xmltv%3A%2F%2Fmovie%2FLive%253A%2520NBA%2520Basketball",
+			want:   true,
+		},
+		{
+			name:   "patch xmltv query",
+			method: http.MethodPatch,
+			target: "/media/subscriptions/42?uri=tv.plex.providers.epg.xmltv%3A123%2Fgrid",
+			want:   true,
+		},
+		{
+			name:   "delete xmltv body",
+			method: http.MethodDelete,
+			target: "/media/subscriptions/42",
+			body:   "key=%2Ftv.plex.providers.epg.xmltv%3A123%2Fgrid%2Fmetadata%2Fabc",
+			want:   true,
+		},
+		{
+			name:   "delete id only",
+			method: http.MethodDelete,
+			target: "/media/subscriptions/42",
+			want:   false,
+		},
+		{
+			name:   "put library body",
+			method: http.MethodPut,
+			target: "/media/subscriptions/42",
+			body:   "guid=com.plexapp.agents.imdb%3A%2F%2Ftt1234567",
+			want:   false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(tc.method, tc.target, strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			if got := IsLiveTVRequest(req); got != tc.want {
+				t.Fatalf("IsLiveTVRequest() = %v, want %v", got, tc.want)
+			}
+			restored, err := io.ReadAll(req.Body)
+			if err != nil {
+				t.Fatalf("read restored body: %v", err)
+			}
+			if string(restored) != tc.body {
+				t.Fatalf("body not restored after classification: got %q want %q", restored, tc.body)
+			}
+		})
+	}
+}
+
 func TestIsLiveTVRequest_MediaSubscriptionLibraryItemNotElevated(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/media/subscriptions/template?guid=com.plexapp.agents.imdb%3A%2F%2Ftt1234567", nil)
 	if IsLiveTVRequest(req) {

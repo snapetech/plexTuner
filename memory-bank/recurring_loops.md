@@ -75,6 +75,24 @@
 - `internal/tuner/epg_pipeline.go`
 - `internal/tuner/xmltv_test.go`
 
+### Loop: Plex Record Options uses subscription reads before save
+
+**Symptom**
+- Shared Plex users can open the guide and Live TV rows, but the Record Options dialog fails with "There was a problem saving your changes. Please try again."
+- PMS logs show shared-user `403` responses for `/media/subscriptions` or `/media/subscriptions/scheduled`, sometimes before any tuner stream request reaches Tunerr.
+
+**Why it's tricky**
+- These read endpoints do not carry the XMLTV `guid`, `key`, or `uri` parameters that identify a specific Live TV programme, so a classifier that only recognizes XMLTV template/create requests misses them.
+- The failure appears in the Plex client as a generic save error even though it is an entitlement failure during Record Options discovery.
+
+**What works**
+- Treat read-only `GET /media/subscriptions` and `GET /media/subscriptions/scheduled` as Live TV discovery inside the Live TV proxy.
+- Keep mutating subscription requests, including `/media/subscriptions/{id}` rule edits, scoped to XMLTV-backed bodies or query parameters so ordinary library subscription creation or id-only deletes are not elevated.
+
+**Where it's documented**
+- `internal/plexlabelproxy/entitlement.go`
+- `internal/plexlabelproxy/proxy_test.go`
+
 ### Loop: Plex Web asks for JSON provider metadata, bypassing XML-only entitlement rewrites
 
 **Symptom**

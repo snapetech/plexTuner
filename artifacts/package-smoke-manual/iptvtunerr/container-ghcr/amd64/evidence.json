@@ -1,0 +1,17 @@
+{
+  "project": "iptvtunerr",
+  "channel": "container-ghcr",
+  "requested_version": "v0.1.77",
+  "normalized_version": "0.1.77",
+  "arch": "amd64",
+  "registry_tag": "v0.1.77",
+  "status": "passed",
+  "failure": "",
+  "resolved_version": "ghcr.io/snapetech/iptvtunerr:v0.1.77 sha256:65a9e3e96904d2c29345dc37b3f03ff6d9f0d750f9f6d7204bd19ee26890e1f2",
+  "binary_path": "",
+  "endpoint_status": "container started",
+  "uninstall_status": "container removed by cleanup",
+  "started_at": "2026-05-18T02:10:28Z",
+  "finished_at": "2026-05-18T02:10:51Z",
+  "log_file": "logs/package-smoke.log"
+}

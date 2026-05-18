@@ -1,0 +1,17 @@
+{
+  "project": "iptvtunerr",
+  "channel": "copr",
+  "requested_version": "v0.1.77",
+  "normalized_version": "0.1.77",
+  "arch": "amd64",
+  "registry_tag": "v0.1.77",
+  "status": "failed",
+  "failure": "version output did not include requested version 'v0.1.77' or normalized '0.1.77'",
+  "resolved_version": "v0.1.76",
+  "binary_path": "iptv-tunerr",
+  "endpoint_status": "",
+  "uninstall_status": "not-run",
+  "started_at": "2026-05-18T02:15:58Z",
+  "finished_at": "2026-05-18T02:16:16Z",
+  "log_file": "logs/package-smoke.log"
+}

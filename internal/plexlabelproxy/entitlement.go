@@ -110,8 +110,10 @@ func IsLiveTVRequest(req *http.Request) bool {
 		return false
 	}
 	if !liveTVElevationMethod(req.Method) {
-		if strings.EqualFold(req.Method, http.MethodPost) &&
-			(IsLiveTVStreamRequest(req) || isLiveTVSubscriptionRequest(req)) {
+		if isLiveTVSubscriptionRequest(req) {
+			return true
+		}
+		if strings.EqualFold(req.Method, http.MethodPost) && IsLiveTVStreamRequest(req) {
 			return true
 		}
 		return false
@@ -145,20 +147,57 @@ func isLiveTVSubscriptionRequest(req *http.Request) bool {
 		return false
 	}
 	path := req.URL.EscapedPath()
-	if path != "/media/subscriptions" && path != "/media/subscriptions/template" {
+	if !isMediaSubscriptionPath(path) {
 		return false
 	}
-	if !strings.EqualFold(req.Method, http.MethodGet) && !strings.EqualFold(req.Method, http.MethodPost) {
+	if !mediaSubscriptionMethod(req.Method) {
 		return false
+	}
+	if isReadMethod(req.Method) && (path == "/media/subscriptions" || path == "/media/subscriptions/scheduled") {
+		return true
 	}
 	q := req.URL.Query()
 	if queryParamIsLiveTVPath(q, "guid") || queryParamIsLiveTVPath(q, "key") || queryParamIsLiveTVPath(q, "uri") {
 		return true
 	}
-	if strings.EqualFold(req.Method, http.MethodPost) {
+	if methodMayHaveBody(req.Method) {
 		return bodyParamIsLiveTVPath(req, "guid") || bodyParamIsLiveTVPath(req, "key") || bodyParamIsLiveTVPath(req, "uri")
 	}
 	return false
+}
+
+func isMediaSubscriptionPath(path string) bool {
+	return path == "/media/subscriptions" ||
+		path == "/media/subscriptions/template" ||
+		path == "/media/subscriptions/scheduled" ||
+		strings.HasPrefix(path, "/media/subscriptions/")
+}
+
+func mediaSubscriptionMethod(method string) bool {
+	switch strings.ToUpper(strings.TrimSpace(method)) {
+	case "", http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	default:
+		return false
+	}
+}
+
+func isReadMethod(method string) bool {
+	switch strings.ToUpper(strings.TrimSpace(method)) {
+	case "", http.MethodGet, http.MethodHead:
+		return true
+	default:
+		return false
+	}
+}
+
+func methodMayHaveBody(method string) bool {
+	switch strings.ToUpper(strings.TrimSpace(method)) {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	default:
+		return false
+	}
 }
 
 func liveTVElevationMethod(method string) bool {
