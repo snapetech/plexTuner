@@ -196,7 +196,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          for workflow in release-aur.yml release-snap.yml release-ppa.yml release-copr.yml; do
+          for workflow in release-aur.yml release-ppa.yml release-copr.yml; do
             gh workflow run "$workflow" --repo "$REPO" -f "tag=$TAG"
           done
 

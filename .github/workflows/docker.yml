@@ -3,6 +3,11 @@ name: Docker
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to (re)publish, for example v0.1.79"
+        required: true
 
 jobs:
   build:
@@ -12,23 +17,14 @@ jobs:
       packages: write
     env:
       HAS_DOCKERHUB: ${{ secrets.DOCKERHUB_TOKEN != '' && 'true' || 'false' }}
+      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
           fetch-depth: 0
       - name: Require release tag on main
-        if: ${{ github.ref_type == 'tag' }}
-        run: ./scripts/ensure-release-tag-on-main.sh "${GITHUB_REF_NAME}"
-      - name: Docker metadata (tags/labels)
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: |
-            ghcr.io/${{ github.repository }}
-            ${{ env.HAS_DOCKERHUB == 'true' && 'snapetech/iptvtunerr' || '' }}
-          tags: |
-            type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
-            type=ref,event=tag
+        run: ./scripts/ensure-release-tag-on-main.sh "${RELEASE_TAG}"
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
@@ -37,24 +33,28 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
       - name: Login to Docker Hub
+        id: dockerhub
         if: env.HAS_DOCKERHUB == 'true'
+        continue-on-error: true
         uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME || 'snapetech' }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Resolve version
-        id: version
-        run: |
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          else
-            echo "value=dev-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
-          fi
+      - name: Docker metadata (tags/labels)
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: |
+            ghcr.io/${{ github.repository }}
+            ${{ steps.dockerhub.outcome == 'success' && 'snapetech/iptvtunerr' || '' }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ env.RELEASE_TAG }}
       - uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64,linux/arm/v7
-          push: ${{ github.ref_type == 'tag' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: VERSION=${{ steps.version.outputs.value }}
+          build-args: VERSION=${{ env.RELEASE_TAG }}

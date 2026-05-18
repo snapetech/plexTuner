@@ -91,13 +91,11 @@ Credential status:
 
 ## Linux Package Channels
 
-Snap, Launchpad/PPA, and COPR now have channel-specific metadata and workflows
+Launchpad/PPA and COPR have channel-specific metadata and workflows
 for the Go binary:
 
-- `.github/workflows/release-snap.yml`
 - `.github/workflows/release-ppa.yml`
 - `.github/workflows/release-copr.yml`
-- `packaging/snap/snapcraft.yaml`
 - `packaging/debian/`
 - `packaging/rpm/iptvtunerr.spec`
 
@@ -108,8 +106,6 @@ Credential status:
   `ppa:keefshape/iptvtunerr`; Launchpad account `keefshape` has display name
   `slskdn`.
 - COPR: `COPR_LOGIN` and `COPR_TOKEN` are configured for
-  `snapetech/iptvtunerr`.
-- Snapcraft: `SNAPCRAFT_STORE_CREDENTIALS` is configured for
   `snapetech/iptvtunerr`.
 
 GitHub Actions secrets from another repository cannot be read back out, so
