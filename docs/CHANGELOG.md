@@ -14,6 +14,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 ## [Unreleased]
 
 ### CI
+- **COPR release auth can use durable Fedora credentials:** COPR publishing now supports secret-backed Kerberos/Fedora login credentials with the existing token path retained as fallback during migration.
 - **Snap dropped as a release channel:** removed `release-snap.yml`, `packaging/snap/`, and the Snap dispatch entry; release publishing now covers AUR, PPA, COPR, and the Docker image only.
 - **Docker Hub failures no longer block GHCR:** the Docker workflow's Docker Hub login is non-fatal and the `snapetech/iptvtunerr` tag is only published when that login succeeds, so a bad or expired Docker Hub token can no longer abort the GHCR push.
 - **Docker image can be republished on demand:** the Docker workflow accepts a `workflow_dispatch` tag input to (re)publish a release image without re-pushing the git tag, and uses `ancestor` tag-gate mode so a past release can be rebuilt after `main` advances.
