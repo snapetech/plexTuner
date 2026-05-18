@@ -1,4 +1,13 @@
-**Current (2026-05-18):** Fix shared-user Plex DVR Record Options failure.
+**Current (2026-05-18):** Cut `v0.1.78` for Plex DVR save fix.
+
+- Goal: commit any remaining dirty work, push `main`, tag `v0.1.78`, and monitor the release workflow.
+- Scope: release prep for the shared-user Plex DVR subscription-save classifier fixes already deployed to the internal proxy.
+- Assumption: next patch tag after `v0.1.77` is `v0.1.78`.
+- Done: promoted Unreleased Plex DVR notes into the `v0.1.78` changelog section.
+- Done: `./scripts/release-readiness.sh` passed; optional macOS and Windows package lanes were skipped by default.
+- Next: commit/push release prep, tag and push `v0.1.78`, then monitor GitHub release automation.
+
+**Previous (2026-05-18):** Fix shared-user Plex DVR Record Options failure.
 
 - Goal: stop Plex shared users from seeing "There was a problem saving your changes" when recording Live TV from Plex.
 - Scope: Live TV entitlement proxy classification for Plex DVR subscription list/read endpoints and XMLTV-backed rule edit paths; deploy to the live proxy without interrupting tuner/capture services.

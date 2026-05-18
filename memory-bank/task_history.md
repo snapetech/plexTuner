@@ -202,6 +202,12 @@
 - Code fix: source blocks now apply only after checking for an authorized inbound Plex token. Owner tokens and tokens already authorized for the Plex server bypass the source block; missing/unauthorized tokens remain blocked or cooled down.
 - Verification: public `/identity` returned `200`, public no-token `/livetv/dvrs` returned `403`, all media services remained active, and `go test -count=1 ./cmd/iptv-tunerr ./internal/plexlabelproxy` passed.
 
+## 2026-05-18 - Prepare v0.1.78 Plex DVR release
+
+- Promoted the shared-user Plex DVR subscription-save classifier fix into the `v0.1.78` changelog section.
+- Included release-readiness generated council metadata in the release-prep dirty tree as requested.
+- Verification: `./scripts/release-readiness.sh` passed; optional macOS and Windows package lanes were skipped by default.
+
 ## 2026-05-12 - Harden Plex Live TV proxy abuse controls
 
 - Added env/CLI knobs for Live TV bad-source blocking threshold/window/duration, denied source+token authorization cooldown, optional persisted block state, and audit summary interval.
