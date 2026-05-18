@@ -62,7 +62,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install Linux package tools
-        run: bash scripts/install-ci-tools.sh rpm zip
+        run: bash scripts/install-ci-tools.sh rpm zip debian-packaging
 
       - name: Build release asset set
         run: ./scripts/build-release-assets.sh v0.0.0 dist
