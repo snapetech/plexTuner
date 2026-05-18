@@ -34,7 +34,7 @@ jobs:
         run: go test -count=1 ./internal/tuner -run 'Test(XMLTV_serve|XMLTV_serveCachedGuideReady|HDHR_discover|HDHR_lineup|HDHR_lineup_status|Server_UpdateChannelsTriggersXMLTVRefresh)'
 
       - name: Install Linux package tools
-        run: bash scripts/install-ci-tools.sh rpm
+        run: bash scripts/install-ci-tools.sh rpm zip
 
       - name: Build binaries
         run: ./scripts/build-release-assets.sh "${GITHUB_REF_NAME}" dist

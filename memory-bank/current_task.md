@@ -12,8 +12,10 @@
 - Done: first release workflow run failed at the changelog gate because the real release note used a word reserved by the placeholder detector; reworded that note and moved the tag to the corrected commit.
 - Done: second release workflow run reached binary smoke and failed because a smoke server selected a port already in use on the runner; patched the smoke startup path to retry cleanly.
 - Done: local `bash ./scripts/ci-smoke.sh` and `./scripts/release-readiness.sh` passed with the smoke retry fix.
-- In progress: committing and pushing the smoke retry fix, then moving tag `v0.1.77` to the corrected release commit.
-- Next: monitor release/announcement workflows.
+- Done: committed and pushed the smoke retry fix as `8e76c52`, then moved tag `v0.1.77` to that commit.
+- Done: third release workflow passed verify and smoke, then failed in `Build binaries` because the runner did not have `zip` installed for Windows release archives.
+- In progress: patching release/CI asset workflows to install `zip` alongside package tooling.
+- Next: commit/push, move tag `v0.1.77`, and monitor release/announcement workflows.
 
 **Previous (2026-05-17):** Improve Plex DVR event-only sports recording windows.
 
