@@ -60,6 +60,8 @@ func IsLiveTVDiscoveryRequest(req *http.Request) bool {
 	switch {
 	case path == "/media/providers":
 		return true
+	case isLiveTVSubscriptionRequest(req):
+		return true
 	case path == "/media/grabbers/devices":
 		return true
 	case strings.HasPrefix(path, "/livetv/"):
@@ -108,7 +110,8 @@ func IsLiveTVRequest(req *http.Request) bool {
 		return false
 	}
 	if !liveTVElevationMethod(req.Method) {
-		if strings.EqualFold(req.Method, http.MethodPost) && IsLiveTVStreamRequest(req) {
+		if strings.EqualFold(req.Method, http.MethodPost) &&
+			(IsLiveTVStreamRequest(req) || isLiveTVSubscriptionRequest(req)) {
 			return true
 		}
 		return false
@@ -116,6 +119,8 @@ func IsLiveTVRequest(req *http.Request) bool {
 	path := req.URL.EscapedPath()
 	switch {
 	case path == "/media/providers":
+		return true
+	case isLiveTVSubscriptionRequest(req):
 		return true
 	case path == "/media/grabbers/devices":
 		return true
@@ -131,6 +136,27 @@ func IsLiveTVRequest(req *http.Request) bool {
 	}
 	if path == "/" || path == "/identity" {
 		return refererIsLiveTV(req.Header.Get("Referer"))
+	}
+	return false
+}
+
+func isLiveTVSubscriptionRequest(req *http.Request) bool {
+	if req == nil || req.URL == nil {
+		return false
+	}
+	path := req.URL.EscapedPath()
+	if path != "/media/subscriptions" && path != "/media/subscriptions/template" {
+		return false
+	}
+	if !strings.EqualFold(req.Method, http.MethodGet) && !strings.EqualFold(req.Method, http.MethodPost) {
+		return false
+	}
+	q := req.URL.Query()
+	if queryParamIsLiveTVPath(q, "guid") || queryParamIsLiveTVPath(q, "key") || queryParamIsLiveTVPath(q, "uri") {
+		return true
+	}
+	if strings.EqualFold(req.Method, http.MethodPost) {
+		return bodyParamIsLiveTVPath(req, "guid") || bodyParamIsLiveTVPath(req, "key") || bodyParamIsLiveTVPath(req, "uri")
 	}
 	return false
 }
@@ -185,8 +211,10 @@ func refererIsLiveTV(ref string) bool {
 func liveTVText(s string) bool {
 	s = strings.ToLower(s)
 	return strings.Contains(s, "/livetv/") ||
+		strings.Contains(s, "tv.plex.xmltv:") ||
 		strings.Contains(s, "tv.plex.providers.epg.xmltv:") ||
 		strings.Contains(s, "livetv%2f") ||
+		strings.Contains(s, "tv.plex.xmltv%3a") ||
 		strings.Contains(s, "tv.plex.providers.epg.xmltv%3a")
 }
 

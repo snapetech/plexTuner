@@ -1142,6 +1142,47 @@ func TestIsLiveTVRequest_PostDVRChannelTuneElevated(t *testing.T) {
 	}
 }
 
+func TestIsLiveTVRequest_MediaSubscriptionTemplateForXMLTVElevated(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/media/subscriptions/template?guid=tv.plex.xmltv%3A%2F%2Fmovie%2FLive%253A%2520NBA%2520Basketball", nil)
+	if !IsLiveTVRequest(req) {
+		t.Fatal("GET /media/subscriptions/template for XMLTV guide item should be elevated")
+	}
+	if !IsLiveTVDiscoveryRequest(req) {
+		t.Fatal("XMLTV subscription template should be treated as Live TV discovery")
+	}
+}
+
+func TestIsLiveTVRequest_PostMediaSubscriptionForXMLTVElevated(t *testing.T) {
+	body := "guid=tv.plex.xmltv%3A%2F%2Fmovie%2FLive%253A%2520NBA%2520Basketball"
+	req := httptest.NewRequest(http.MethodPost, "/media/subscriptions", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	if !IsLiveTVRequest(req) {
+		t.Fatal("POST /media/subscriptions for XMLTV guide item should be elevated")
+	}
+	restored, err := io.ReadAll(req.Body)
+	if err != nil {
+		t.Fatalf("read restored body: %v", err)
+	}
+	if string(restored) != body {
+		t.Fatalf("body not restored after classification: got %q want %q", restored, body)
+	}
+}
+
+func TestIsLiveTVRequest_MediaSubscriptionLibraryItemNotElevated(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/media/subscriptions/template?guid=com.plexapp.agents.imdb%3A%2F%2Ftt1234567", nil)
+	if IsLiveTVRequest(req) {
+		t.Fatal("library subscription template must not be elevated")
+	}
+
+	body := "guid=com.plexapp.agents.imdb%3A%2F%2Ftt1234567"
+	post := httptest.NewRequest(http.MethodPost, "/media/subscriptions", strings.NewReader(body))
+	post.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if IsLiveTVRequest(post) {
+		t.Fatal("library media subscription creation must not be elevated")
+	}
+}
+
 func TestIsLiveTVRequest_OptionsPreflightNotElevated(t *testing.T) {
 	req := httptest.NewRequest(http.MethodOptions, "/tv.plex.providers.epg.xmltv:12317/grid", nil)
 	if IsLiveTVRequest(req) {

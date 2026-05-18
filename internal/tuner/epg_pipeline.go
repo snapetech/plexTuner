@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -896,6 +897,9 @@ func programmeNodesToWindows(nodes []xmlRawNode) []timeWindow {
 }
 
 func placeholderProgrammeNodes(tvgID, channelName string) []xmlRawNode {
+	if nodes, ok := eventFallbackProgrammeNodes(tvgID, channelName, time.Now()); ok {
+		return nodes
+	}
 	now := time.Now()
 	startStr := now.Add(-24 * time.Hour).UTC().Format("20060102150405 +0000")
 	stopStr := now.Add(7 * 24 * time.Hour).UTC().Format("20060102150405 +0000")
@@ -909,6 +913,112 @@ func placeholderProgrammeNodes(tvgID, channelName string) []xmlRawNode {
 		InnerXML: "<title>" + xmlEscapeText(channelName) + "</title>",
 	}
 	return []xmlRawNode{placeholder}
+}
+
+var (
+	eventFallbackExplicitTimeRE = regexp.MustCompile(`\((\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\)`)
+	eventFallbackNamedTimeRE    = regexp.MustCompile(`\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(\d{1,2})\s+([A-Za-z]{3})\s+(\d{1,2}):(\d{2})\s+([A-Z]{2,4})\b`)
+)
+
+func eventFallbackProgrammeNodes(tvgID, channelName string, now time.Time) ([]xmlRawNode, bool) {
+	title := strings.TrimSpace(channelName)
+	if title == "" {
+		return nil, false
+	}
+	lower := strings.ToLower(title)
+	if !strings.Contains(lower, " | ") || (!strings.Contains(lower, "live |") && !strings.Contains(lower, "next |") && !strings.Contains(lower, " vs ") && !strings.Contains(lower, " vs. ") && !strings.Contains(lower, " at ") && !strings.Contains(lower, " @ ")) {
+		return nil, false
+	}
+	start, ok := parseEventFallbackStart(title, now)
+	if !ok {
+		return nil, false
+	}
+	stop := start.Add(eventFallbackDuration(title))
+	return []xmlRawNode{{
+		XMLName: xml.Name{Local: "programme"},
+		Attrs: []xml.Attr{
+			{Name: xml.Name{Local: "start"}, Value: start.UTC().Format("20060102150405 +0000")},
+			{Name: xml.Name{Local: "stop"}, Value: stop.UTC().Format("20060102150405 +0000")},
+			{Name: xml.Name{Local: "channel"}, Value: tvgID},
+		},
+		InnerXML: "<title>" + xmlEscapeText(title) + "</title>",
+	}}, true
+}
+
+func eventFallbackDuration(title string) time.Duration {
+	lower := strings.ToLower(title)
+	duration := 3 * time.Hour
+	switch {
+	case strings.Contains(lower, "baseball") || strings.Contains(lower, " mlb ") || strings.Contains(lower, " dodgers ") || strings.Contains(lower, " angels "):
+		duration = 4*time.Hour + 30*time.Minute
+	case strings.Contains(lower, "soccer") || strings.Contains(lower, "football") || strings.Contains(lower, "rugby") ||
+		strings.Contains(lower, " fc ") || strings.HasPrefix(lower, "fc ") || strings.Contains(lower, " vs fc ") ||
+		strings.Contains(lower, " sporting club "):
+		duration = 2*time.Hour + 30*time.Minute
+	case strings.Contains(lower, "basketball") || strings.Contains(lower, " nba") || strings.Contains(lower, "wnba") ||
+		strings.Contains(lower, "cavaliers") || strings.Contains(lower, "pistons") || strings.Contains(lower, "raptors") ||
+		strings.Contains(lower, "nuggets") || strings.Contains(lower, "timberwolves") || strings.Contains(lower, "knicks") ||
+		strings.Contains(lower, "pacers") || strings.Contains(lower, "thunder") || strings.Contains(lower, "warriors"):
+		duration = 3*time.Hour + 30*time.Minute
+	case strings.Contains(lower, "hockey") || strings.Contains(lower, " nhl "):
+		duration = 3*time.Hour + 30*time.Minute
+	}
+	if strings.Contains(lower, "game 7") || strings.Contains(lower, "final") || strings.Contains(lower, "playoff") || strings.Contains(lower, "if necessary") || strings.Contains(lower, "if nec") {
+		duration += 30 * time.Minute
+	}
+	return duration
+}
+
+func parseEventFallbackStart(title string, now time.Time) (time.Time, bool) {
+	if m := eventFallbackExplicitTimeRE.FindStringSubmatch(title); len(m) == 2 {
+		if t, err := time.ParseInLocation("2006-01-02 15:04:05", m[1], time.UTC); err == nil {
+			return t, true
+		}
+	}
+	m := eventFallbackNamedTimeRE.FindStringSubmatch(title)
+	if len(m) != 6 {
+		return time.Time{}, false
+	}
+	zoneOffset, ok := eventFallbackZoneOffsetSeconds(m[5])
+	if !ok {
+		return time.Time{}, false
+	}
+	value := fmt.Sprintf("%04d %s %s %s:%s", now.Year(), m[1], m[2], m[3], m[4])
+	for _, layout := range []string{"2006 2 Jan 15:04", "2006 02 Jan 15:04"} {
+		if t, err := time.ParseInLocation(layout, value, time.FixedZone(strings.ToUpper(m[5]), zoneOffset)); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
+func eventFallbackZoneOffsetSeconds(zone string) (int, bool) {
+	switch strings.ToUpper(strings.TrimSpace(zone)) {
+	case "UTC", "GMT":
+		return 0, true
+	case "EST":
+		return -5 * 3600, true
+	case "EDT":
+		return -4 * 3600, true
+	case "CST":
+		return -6 * 3600, true
+	case "CDT":
+		return -5 * 3600, true
+	case "MST":
+		return -7 * 3600, true
+	case "MDT":
+		return -6 * 3600, true
+	case "PST":
+		return -8 * 3600, true
+	case "PDT":
+		return -7 * 3600, true
+	case "NDT":
+		return int((-2*time.Hour - 30*time.Minute).Seconds()), true
+	case "NST":
+		return int((-3*time.Hour - 30*time.Minute).Seconds()), true
+	default:
+		return 0, false
+	}
 }
 
 // mergeChannelProgrammes returns the merged programme nodes for a single channel.
@@ -1250,19 +1360,9 @@ func (x *XMLTV) buildMergedEPG(ctx context.Context, channels []catalog.LiveChann
 		tvgID := ref.TVGID
 		var nodes []xmlRawNode
 		if tvgID == "" {
-			// No TVGID: always placeholder.
-			now := time.Now()
-			startStr := now.Add(-24 * time.Hour).UTC().Format("20060102150405 +0000")
-			stopStr := now.Add(7 * 24 * time.Hour).UTC().Format("20060102150405 +0000")
-			nodes = []xmlRawNode{{
-				XMLName: xml.Name{Local: "programme"},
-				Attrs: []xml.Attr{
-					{Name: xml.Name{Local: "start"}, Value: startStr},
-					{Name: xml.Name{Local: "stop"}, Value: stopStr},
-					{Name: xml.Name{Local: "channel"}, Value: ref.XMLID},
-				},
-				InnerXML: "<title>" + xmlEscapeText(ref.GuideName) + "</title>",
-			}}
+			// No TVGID: publish a bounded event window when the channel name carries one;
+			// otherwise use the long-lived placeholder that keeps the channel visible.
+			nodes = placeholderProgrammeNodes(ref.XMLID, ref.GuideName)
 			stats.placeholderChannels++
 		} else {
 			nodes = mergeChannelProgrammes(tvgID, provEPG, extEPG, hdhrEPG, shortEPG, ref.GuideName)

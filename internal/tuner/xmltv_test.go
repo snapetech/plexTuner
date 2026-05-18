@@ -604,6 +604,80 @@ func TestXMLTV_buildMergedEPG_UsesRealProgrammeBlocksNotPlaceholder(t *testing.T
 	}
 }
 
+func TestPlaceholderProgrammeNodes_usesBoundedLiveEventWindow(t *testing.T) {
+	nodes := placeholderProgrammeNodes("10136", "NEXT | DET - PISTONS VS CLE - CAVALIERS | Sun 17 May 19:00 EDT (US) | 8K EXCLUSIVE | US: NBA PASS PPV 1")
+	if len(nodes) != 1 {
+		t.Fatalf("nodes len=%d want 1", len(nodes))
+	}
+	start, ok := parseXMLTVTime(xmlAttr(nodes[0].Attrs, "start"))
+	if !ok {
+		t.Fatalf("bad start attrs: %+v", nodes[0].Attrs)
+	}
+	stop, ok := parseXMLTVTime(xmlAttr(nodes[0].Attrs, "stop"))
+	if !ok {
+		t.Fatalf("bad stop attrs: %+v", nodes[0].Attrs)
+	}
+	if got := stop.Sub(start); got != 3*time.Hour+30*time.Minute {
+		t.Fatalf("duration=%s want 3h30m", got)
+	}
+	wantStart := time.Date(time.Now().Year(), time.May, 17, 23, 0, 0, 0, time.UTC)
+	if !start.Equal(wantStart) {
+		t.Fatalf("start=%s want %s", start, wantStart)
+	}
+	if strings.Contains(xmlAttr(nodes[0].Attrs, "stop"), "24202216") {
+		t.Fatalf("event fallback should not use week-long placeholder attrs: %+v", nodes[0].Attrs)
+	}
+	if !strings.Contains(nodes[0].InnerXML, "PISTONS") {
+		t.Fatalf("title was not preserved: %s", nodes[0].InnerXML)
+	}
+}
+
+func TestPlaceholderProgrammeNodes_usesExplicitEventTimestamp(t *testing.T) {
+	nodes := placeholderProgrammeNodes("10104", "US (WNBA 01) | Las Vegas Aces at Atlanta Dream (2026-05-17 17:30:00)")
+	if len(nodes) != 1 {
+		t.Fatalf("nodes len=%d want 1", len(nodes))
+	}
+	if got := xmlAttr(nodes[0].Attrs, "start"); got != "20260517173000 +0000" {
+		t.Fatalf("start=%q want explicit timestamp in UTC", got)
+	}
+}
+
+func TestEventFallbackDuration_usesSportDefaultsAndOverrunPadding(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want time.Duration
+	}{
+		{
+			name: "baseball",
+			text: "LIVE | LOS ANGELES DODGERS @ LOS ANGELES ANGELS | Sun 17 May 17:30 NDT (CA)",
+			want: 4*time.Hour + 30*time.Minute,
+		},
+		{
+			name: "soccer",
+			text: "NEXT | FC NAPLES VS. SPORTING CLUB JACKSONVILLE | Sun 17 May 17:00 EDT (US)",
+			want: 2*time.Hour + 30*time.Minute,
+		},
+		{
+			name: "playoff basketball",
+			text: "NEXT | DET - PISTONS VS CLE - CAVALIERS | Sun 17 May 19:00 EDT (US) | US: NBA PASS PPV 1",
+			want: 3*time.Hour + 30*time.Minute,
+		},
+		{
+			name: "game seven basketball",
+			text: "Live: NBA Basketball Western Conference Semifinal, Game 7. (if necessary)",
+			want: 4 * time.Hour,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := eventFallbackDuration(tt.text); got != tt.want {
+				t.Fatalf("duration=%s want %s", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestXMLTV_buildMergedEPG_HDHRGuideURL(t *testing.T) {
 	t.Setenv("IPTV_TUNERR_REFIO_ALLOW_PRIVATE_HTTP", "1")
 	hdhrXML := `<?xml version="1.0" encoding="utf-8"?>

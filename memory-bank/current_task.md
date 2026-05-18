@@ -1,3 +1,37 @@
+**Current (2026-05-18):** Commit current tree and cut `v0.1.77`.
+
+- Goal: commit and push the entire dirty working tree, configure Discord release announcements, and publish a new release.
+- Scope: include dirty and unrelated repo changes as explicitly requested; do not commit secrets. Use the existing release workflow with a repository secret for Discord.
+- Assumption: next patch tag after `v0.1.76` is `v0.1.77`.
+- Done: confirmed the release workflow already posts Discord announcements when `DISCORD_RELEASE_WEBHOOK` is configured.
+- Done: set the repository `DISCORD_RELEASE_WEBHOOK` secret from the operator-provided webhook URL without adding the URL to tracked files.
+- Done: promoted current changelog entries into `v0.1.77`.
+- Done: `./scripts/release-readiness.sh` passed; optional macOS and Windows package host lanes were skipped by default.
+- Done: checked the tracked tree does not contain the Discord webhook literal.
+- Next: commit all tracked dirty changes, push `main`, tag `v0.1.77`, push the tag, and monitor release/announcement workflows.
+
+**Previous (2026-05-17):** Improve Plex DVR event-only sports recording windows.
+
+- Goal: make Plex's own Record button work for event-only sports rows without requiring shared users to visit the Tunerr operator UI.
+- Scope: XMLTV fallback programme durations for parseable event rows; deploy to the live tuner host after verification.
+- Assumptions: Plex cannot present Tunerr-owned prompts, so duration handling must be encoded in guide metadata.
+- Done: local standby Live TV proxy saw no traffic during the reported attempt; sports tuner lineup and guide endpoints were healthy, and the suspected NBA Pass stream delivered MPEG-TS bytes.
+- Done: root cause was event-only sports rows falling back to a week-long XMLTV placeholder, which gave Plex a bad DVR scheduling window and produced a vague client-side recording error.
+- Done: patched event fallback programmes to use bounded 3-hour windows from explicit `(YYYY-MM-DD HH:MM:SS)` or named `Sun 17 May 19:00 EDT` channel times, including fixed North American timezone offsets.
+- Done: installed the patched binary on the live tuner host, restarted `iptvtunerr-sports.service` and `iptvtunerr-primary.service`, and verified Plex activated all 160 sports channel mappings.
+- Done: validated the DET/CLE event row now publishes `20260517230000 +0000` to `20260518020000 +0000`; direct stream pull returned MPEG-TS data.
+- Done: `./scripts/verify` passed.
+- Done: added sport-aware duration defaults for Plex users who only see the Plex guide: basketball/hockey 3.5h, soccer/rugby 2.5h, baseball 4.5h, plus extra padding for Game 7/finals/playoff text.
+- Done: deployed the refined duration build and verified the DET/CLE NBA row now publishes `20260517230000 +0000` to `20260518023000 +0000`; Plex reactivated 158 sports mappings.
+- Done: `./scripts/verify` passed after rerun; first full run hit an existing guide-policy timing flake, while focused tests and rerun passed.
+- Done: checked recent live Tunerr logs after the user retried; no new Plex DVR tune request reached Tunerr, but the matching guide row is stream `1634335`, guide channel `10129`, titled `NEXT | DET - PISTONS VS CLE - CAVALIERS | Sun 17 May 19:00 EDT (US) | 8K EXCLUSIVE | US: NBA PASS PPV 1`.
+- Done: started an emergency manual capture for stream `1634335` on the live tuner host at `/var/lib/iptvtunerr/emergency-recordings/det-cle-game7-20260518T001150Z.ts`; verified the ffmpeg process is running and the file is growing.
+- Done: added a Plex-library visible capture under `/mnt/datapool_lvm_media/plex/movies/NBA Game 7 Pistons vs Cavaliers (2026)/`, adjusted per operator request from 6h to 3.5h. Active visible file: `NBA Game 7 Pistons vs Cavaliers (2026) - 3h30-20260518T001519Z.ts`.
+- Done: found the shared user's Record button failure in PMS logs: `GET /media/subscriptions/template?guid=tv.plex.xmltv...` returned `403` as the shared user because the Live TV proxy did not classify Plex XMLTV recording subscription template/create paths as Live TV entitlement requests.
+- Done: patched the Live TV proxy classifier so XMLTV-backed `/media/subscriptions/template` and `POST /media/subscriptions` requests borrow owner tuner entitlement while ordinary library subscriptions remain on the user token.
+- Done: focused proxy tests passed; deployed the patched proxy binary and restarted only `plex-live-tv-proxy.service`. Active captures were not interrupted. Validation: no-token request to the formerly failing template path is denied by the proxy as Live TV, and an authorized-token request is elevated and returns `200`.
+- Next: wait for user retry; if the Record button still fails, capture the next PMS/proxy log window.
+
 **Latest (2026-05-12):** **Plex Live TV playback works again on kspls0; remaining issue is startup latency.** Sports DVR is expanded to 480 channels with `IPTV_TUNERR_LINEUP_RECIPE=sports_now`, `IPTV_TUNERR_LINEUP_MAX_CHANNELS=480`, `IPTV_TUNERR_GUIDE_POLICY=off`, and `IPTV_TUNERR_LINEUP_PROBE_ENABLED=false`; Plex activated all 480. Deployed a proxy fix so JSON `/media/providers` responses rewrite `allowTuners` entitlement hints, matching the existing XML rewrite. Direct Tunerr stream test returned ~24 MB in 20s, and user confirmed playback works but starts slowly.
 
 **Current (2026-05-16):** Cut `v0.1.76` from current `main`.

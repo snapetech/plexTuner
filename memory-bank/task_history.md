@@ -1,3 +1,17 @@
+## 2026-05-17 - Fix Plex recording failure on event-only sports guide rows
+
+- Investigated a Plex "undefined" recording error on a basketball Game 7 attempt; local standby Live TV proxy had no traffic, sports lineup/guide endpoints were healthy, and the suspected NBA Pass stream returned MPEG-TS data.
+- Root cause: no-EPG event sports channels were exposed with a week-long placeholder programme, which kept the row visible but gave Plex a bad DVR scheduling target.
+- Patched XMLTV fallback generation so parseable live/next sports event names get bounded 3-hour programme windows from explicit timestamps or named North American timezone strings.
+- Live deploy: installed the patched binary on the active tuner host, restarted the primary and sports Tunerr services, and verified the sports DVR reactivated all 160 mappings.
+- Validation: DET/CLE event row now publishes `20260517230000 +0000` to `20260518020000 +0000`; direct stream pull returned MPEG-TS data; `./scripts/verify` passed.
+- Follow-up: added sport-aware fallback durations so Plex users can record from Plex without Tunerr prompts: basketball/hockey 3.5h, soccer/rugby 2.5h, baseball 4.5h, plus extra padding for Game 7/finals/playoff wording.
+- Live redeploy: installed the refined duration build, restarted the primary and sports services, and verified the DET/CLE row now publishes `20260517230000 +0000` to `20260518023000 +0000`; Plex activated all 158 sports mappings.
+- Incident follow-up: after the user's retry still showed a Plex undefined error, Tunerr had no new Plex tune request. The matching event row was stream `1634335`, guide channel `10129`, `NEXT | DET - PISTONS VS CLE - CAVALIERS | Sun 17 May 19:00 EDT (US) | 8K EXCLUSIVE | US: NBA PASS PPV 1`.
+- Emergency capture: started an operator-side ffmpeg recording of stream `1634335` to `/var/lib/iptvtunerr/emergency-recordings/det-cle-game7-20260518T001150Z.ts` and confirmed the file was growing.
+- Record-button fix: PMS logs showed the shared user's `GET /media/subscriptions/template?guid=tv.plex.xmltv...` returned `403`; patched and deployed the Live TV proxy so XMLTV-backed media subscription template/create requests are classified as Live TV and borrow owner tuner entitlement. Authorized validation returned `200` for the formerly failing path.
+- Verification: focused XMLTV tests passed; `./scripts/verify` passed on rerun. The first full run hit the existing `TestServer_reapplyDeferredGuidePolicyDoesNotCumulativelyShrink` timing flake, then rerun passed without code changes.
+
 ## 2026-05-16 - Cut v0.1.76 release
 
 - Promoted the Unreleased security/dependency/CI notes into `v0.1.76`.

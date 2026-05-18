@@ -56,6 +56,25 @@
 **Where it's documented**
 - `/etc/iptvtunerr/sports.env` on `kspls0`
 
+### Loop: Event-only sports rows need real DVR-sized guide windows
+
+**Symptom**
+- Plex can tune an event sports channel, but recording from the guide fails with a vague client-side error such as "undefined".
+- The tuner stream URL works, `/lineup.json` includes the event, and `/guide.xml` is `ready`, so the failure looks like Plex rather than Tunerr.
+
+**Why it's tricky**
+- Event rows from provider names like `NEXT | ... Sun 17 May 19:00 EDT ...` may not have upstream EPG programme data or a TVGID.
+- The generic no-EPG fallback used to publish a week-long placeholder programme named after the channel. That keeps channels visible, but it is a poor DVR scheduling target for one-off sports events.
+
+**What works**
+- For live/next sports rows with parseable event times, publish a bounded programme window at the event time instead of the week-long placeholder.
+- Use sport-aware default durations for Plex-facing guide metadata: basketball/hockey about 3.5h, soccer/rugby about 2.5h, baseball about 4.5h, and add extra padding for Game 7/finals/playoff wording.
+- Treat timezone abbreviations explicitly; do not rely on Go's generic `MST` parser for `EDT`/`NDT` because unknown abbreviations can collapse to UTC.
+
+**Where it's documented**
+- `internal/tuner/epg_pipeline.go`
+- `internal/tuner/xmltv_test.go`
+
 ### Loop: Plex Web asks for JSON provider metadata, bypassing XML-only entitlement rewrites
 
 **Symptom**
