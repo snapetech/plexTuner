@@ -9,8 +9,11 @@
 - Done: `./scripts/release-readiness.sh` passed; optional macOS and Windows package host lanes were skipped by default.
 - Done: checked the tracked tree does not contain the Discord webhook literal.
 - Done: committed all dirty changes as `8ff0872`, pushed `main`, and pushed tag `v0.1.77`.
-- In progress: first release workflow run failed at the changelog gate because the real release note used a word reserved by the placeholder detector; rewording that note and moving the tag to the corrected commit.
-- Next: push the changelog-gate fix, retag `v0.1.77`, and monitor release/announcement workflows.
+- Done: first release workflow run failed at the changelog gate because the real release note used a word reserved by the placeholder detector; reworded that note and moved the tag to the corrected commit.
+- Done: second release workflow run reached binary smoke and failed because a smoke server selected a port already in use on the runner; patched the smoke startup path to retry cleanly.
+- Done: local `bash ./scripts/ci-smoke.sh` and `./scripts/release-readiness.sh` passed with the smoke retry fix.
+- In progress: committing and pushing the smoke retry fix, then moving tag `v0.1.77` to the corrected release commit.
+- Next: monitor release/announcement workflows.
 
 **Previous (2026-05-17):** Improve Plex DVR event-only sports recording windows.
 

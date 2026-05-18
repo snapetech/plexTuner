@@ -32,11 +32,21 @@ fail() {
 
 pick_port() {
   python3 - <<'PY'
+import random
 import socket
-s = socket.socket()
-s.bind(("127.0.0.1", 0))
-print(s.getsockname()[1])
-s.close()
+for _ in range(200):
+    port = random.randint(30000, 60999)
+    s = socket.socket()
+    try:
+        s.bind(("127.0.0.1", port))
+    except OSError:
+        s.close()
+        continue
+    print(port)
+    s.close()
+    break
+else:
+    raise SystemExit("no free TCP port found")
 PY
 }
 
@@ -480,6 +490,28 @@ run_serve() {
   PIDS+=("$!")
 }
 
+run_serve_ready() {
+  local catalog="$1" port_var="$2" label="$3"
+  local port pid log_path
+  for _ in $(seq 1 10); do
+    port="$(pick_port)"
+    run_serve "$catalog" "$port"
+    pid="${PIDS[${#PIDS[@]}-1]}"
+    log_path="$TMP_DIR/serve-$port.log"
+    if wait_http_code "http://127.0.0.1:$port/discover.json" "200"; then
+      printf -v "$port_var" '%s' "$port"
+      return 0
+    fi
+    if ! kill -0 "$pid" 2>/dev/null && grep -q 'bind: address already in use' "$log_path" 2>/dev/null; then
+      log "$label port $port already in use; retrying"
+      wait "$pid" 2>/dev/null || true
+      continue
+    fi
+    fail "$label discover.json not ready"
+  done
+  fail "$label could not find a free port"
+}
+
 run_with_webui() {
   local catalog="$1" port="$2" webui_port="$3"
   IPTV_TUNERR_PROVIDER_EPG_ENABLED=false \
@@ -599,10 +631,8 @@ sed -i "s|REPLACE_ACCOUNT_U2_CH3|http://127.0.0.1:$port_hls/live/bravo02/pass2/c
 sed -i "s|REPLACE_ACCOUNT_U3_CH3|http://127.0.0.1:$port_hls/live/charly3/pass3/ch3.m3u8|g" "$TMP_DIR/catalog-accounts.json"
 sed -i "s|REPLACE_REMUX_HLS_URL|http://127.0.0.1:$port_hls/remux/channel1.m3u8|g" "$TMP_DIR/catalog-remux.json"
 
-port_full="$(pick_port)"
-run_serve "$TMP_DIR/catalog-full.json" "$port_full"
+run_serve_ready "$TMP_DIR/catalog-full.json" port_full "full catalog"
 full_pid="${PIDS[${#PIDS[@]}-1]}"
-wait_http_code "http://127.0.0.1:$port_full/discover.json" "200" || fail "full catalog discover.json not ready"
 assert_status "http://127.0.0.1:$port_full/readyz" "200"
 assert_status "http://127.0.0.1:$port_full/guide.xml" "200"
 assert_header "http://127.0.0.1:$port_full/guide.xml" "X-IptvTunerr-Guide-State" "ready"
@@ -669,18 +699,14 @@ grep -q '"channel_id": "ch3"' <(curl -sS "http://127.0.0.1:$port_full/programmin
 
 kill "$full_pid" 2>/dev/null || true
 wait "$full_pid" 2>/dev/null || true
-port_restart="$(pick_port)"
-run_serve "$TMP_DIR/catalog-full-shuffled.json" "$port_restart"
-wait_http_code "http://127.0.0.1:$port_restart/discover.json" "200" || fail "restart catalog discover.json not ready"
+run_serve_ready "$TMP_DIR/catalog-full-shuffled.json" port_restart "restart catalog"
 grep -q '"curated_channels": 2' <(curl -sS "http://127.0.0.1:$port_restart/programming/preview.json") || fail "restart preview missing curated count"
 grep -q '"order_mode": "custom"' <(curl -sS "http://127.0.0.1:$port_restart/programming/order.json") || fail "restart order mode did not persist"
 grep -q '"collapse_backups": true' <(curl -sS "http://127.0.0.1:$port_restart/programming/order.json") || fail "restart collapse flag missing"
 grep -q '"GuideNumber":"102"' <(curl -sS "http://127.0.0.1:$port_restart/lineup.json") || fail "restart lineup missing pinned sports row"
 grep -q '"GuideNumber":"1001"' <(curl -sS "http://127.0.0.1:$port_restart/lineup.json") || fail "restart lineup missing directv backup row"
 
-port_empty="$(pick_port)"
-run_serve "$TMP_DIR/catalog-empty.json" "$port_empty"
-wait_http_code "http://127.0.0.1:$port_empty/discover.json" "200" || fail "empty catalog discover.json not ready"
+run_serve_ready "$TMP_DIR/catalog-empty.json" port_empty "empty catalog"
 assert_status "http://127.0.0.1:$port_empty/readyz" "503"
 assert_status "http://127.0.0.1:$port_empty/guide.xml" "503"
 assert_header "http://127.0.0.1:$port_empty/guide.xml" "X-IptvTunerr-Guide-State" "loading"
@@ -764,9 +790,7 @@ grep -q '^episode$' "$episode_range" || fail "vod-webdav episode range body unex
 readonly_code="$(curl -sS -X PUT -H 'Content-Type: application/octet-stream' --data 'bad' -o "$body_file" -w '%{http_code}' "http://127.0.0.1:$port_vod/Movies/Live:%20Smoke%20Movie%20%282024%29/Live:%20Smoke%20Movie%20%282024%29.mp4" || true)"
 [[ "$readonly_code" == "405" ]] || fail "vod-webdav readonly PUT status=$readonly_code body=$(cat "$body_file" 2>/dev/null)"
 
-port_xtream="$(pick_port)"
-run_serve "$TMP_DIR/catalog-vod.json" "$port_xtream"
-wait_http_code "http://127.0.0.1:$port_xtream/discover.json" "200" || fail "xtream catalog discover.json not ready"
+run_serve_ready "$TMP_DIR/catalog-vod.json" port_xtream "xtream catalog"
 grep -q '"stream_type":"movie"' <(curl -sS "http://127.0.0.1:$port_xtream/player_api.php?username=demo&password=secret&action=get_vod_streams") || fail "xtream vod streams endpoint missing movie row"
 grep -q '"stream_type":"series"' <(curl -sS "http://127.0.0.1:$port_xtream/player_api.php?username=demo&password=secret&action=get_series") || fail "xtream series endpoint missing series row"
 grep -q '"episodes":{"1":\[' <(curl -sS "http://127.0.0.1:$port_xtream/player_api.php?username=demo&password=secret&action=get_series_info&series_id=s1") || fail "xtream series info missing episode list"
