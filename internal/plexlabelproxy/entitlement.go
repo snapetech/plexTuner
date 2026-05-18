@@ -160,6 +160,9 @@ func isLiveTVSubscriptionRequest(req *http.Request) bool {
 	if queryParamIsLiveTVPath(q, "guid") || queryParamIsLiveTVPath(q, "key") || queryParamIsLiveTVPath(q, "uri") {
 		return true
 	}
+	if queryValuesContainLiveTVPath(q) {
+		return true
+	}
 	if methodMayHaveBody(req.Method) {
 		return bodyParamIsLiveTVPath(req, "guid") || bodyParamIsLiveTVPath(req, "key") || bodyParamIsLiveTVPath(req, "uri")
 	}
@@ -216,6 +219,32 @@ func queryParamIsLiveTVPath(q url.Values, name string) bool {
 		}
 	}
 	return false
+}
+
+func queryValuesContainLiveTVPath(q url.Values) bool {
+	for key, values := range q {
+		if !subscriptionHintKey(key) {
+			continue
+		}
+		for _, v := range values {
+			if liveTVText(v) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func subscriptionHintKey(key string) bool {
+	key = strings.ToLower(strings.TrimSpace(key))
+	switch key {
+	case "guid", "key", "uri", "ratingkey":
+		return true
+	}
+	return strings.HasSuffix(key, "[guid]") ||
+		strings.HasSuffix(key, "[key]") ||
+		strings.HasSuffix(key, "[uri]") ||
+		strings.HasSuffix(key, "[ratingkey]")
 }
 
 func bodyParamIsLiveTVPath(req *http.Request, name string) bool {

@@ -14,6 +14,7 @@
 - Done: committed and pushed the full requested dirty tree as `e9bc7e2`, including package-smoke evidence/scaffolding, council output, workflow changes, and the Plex proxy fix.
 - Done: built commit-stamped internal binary `e9bc7e2`, installed it to the primary/sports Tunerr binary and Live TV proxy binary paths, restarted all three services, and verified service health.
 - Done: internal validation after deploy returned `200` for primary ready/guide, sports ready/guide, and proxy identity; Plex DVR registration reactivated 426 primary channels and 125 sports channels.
+- Done: found the remaining shared-user save failure was `POST /media/subscriptions` carrying XMLTV identity in bracketed query hints such as `hints[guid]`, patched the classifier, deployed the proxy hotfix, and verified the path is now classified as Live TV.
 - Next: have the tester retry Plex Record from the same client; if it still fails, capture the next PMS/proxy log window around the retry.
 
 **Previous (2026-05-18):** Fix package-channel publication gaps found by smoke validation.

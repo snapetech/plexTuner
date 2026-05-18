@@ -1169,6 +1169,19 @@ func TestIsLiveTVRequest_PostMediaSubscriptionForXMLTVElevated(t *testing.T) {
 	}
 }
 
+func TestIsLiveTVRequest_PostMediaSubscriptionWithPlexHintQueryElevated(t *testing.T) {
+	target := "/media/subscriptions?" +
+		"prefs%5BoneShot%5D=true&" +
+		"hints%5Bguid%5D=tv%2Eplex%2Exmltv%3A%2F%2Fmovie%2FLive%253A%2520NBA%2520Basketball&" +
+		"hints%5BratingKey%5D=tv%252Eplex%252Exmltv%253A%252F%252Fmovie%252FLive%25253A%252520NBA%252520Basketball&" +
+		"params%5BmediaProviderID%5D=12337&type=1"
+	req := httptest.NewRequest(http.MethodPost, target, nil)
+
+	if !IsLiveTVRequest(req) {
+		t.Fatal("POST /media/subscriptions with Plex XMLTV hint query should be elevated")
+	}
+}
+
 func TestIsLiveTVRequest_MediaSubscriptionListsElevated(t *testing.T) {
 	for _, path := range []string{"/media/subscriptions", "/media/subscriptions/scheduled"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)

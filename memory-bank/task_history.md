@@ -6,6 +6,7 @@
 - Deployed the patched proxy binary to the live instance and restarted only the Live TV proxy service.
 - Verification: focused proxy tests passed; live validation showed missing-token requests are still denied, authorized subscription list requests return `200`, and an XMLTV-style rule edit is classified as Live TV without elevating a library-style edit.
 - Repo/deploy follow-up: committed and pushed the full requested dirty tree as `e9bc7e2`, then installed a commit-stamped internal build to the primary/sports Tunerr binary and Live TV proxy binary paths. All three services restarted active; primary and sports ready/guide endpoints returned `200`, proxy identity returned `200`, and Plex DVR activation completed for 426 primary channels and 125 sports channels.
+- Follow-up hotfix: the actual save request used `POST /media/subscriptions` with XMLTV identity in `hints[guid]` and `hints[ratingKey]` query parameters; patched and deployed the Live TV proxy classifier so bracketed subscription hint keys are elevated only when their values are Live TV/XMLTV.
 
 ## 2026-05-18 - Fix package-channel publication gaps
 

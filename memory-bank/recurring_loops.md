@@ -87,7 +87,7 @@
 
 **What works**
 - Treat read-only `GET /media/subscriptions` and `GET /media/subscriptions/scheduled` as Live TV discovery inside the Live TV proxy.
-- Keep mutating subscription requests, including `/media/subscriptions/{id}` rule edits, scoped to XMLTV-backed bodies or query parameters so ordinary library subscription creation or id-only deletes are not elevated.
+- Keep mutating subscription requests, including `/media/subscriptions/{id}` rule edits and `POST /media/subscriptions` saves with Plex `hints[guid]`/`hints[ratingKey]` query parameters, scoped to XMLTV-backed bodies or query parameters so ordinary library subscription creation or id-only deletes are not elevated.
 
 **Where it's documented**
 - `internal/plexlabelproxy/entitlement.go`

@@ -14,6 +14,7 @@ All notable changes to IPTV Tunerr are documented here. Repo: [github.com/snapet
 ## [Unreleased]
 
 ### Plex DVR
+- **Shared-user recording saves recognize Plex hint query fields:** the Live TV proxy now treats XMLTV-backed `hints[guid]` and `hints[ratingKey]` subscription-save query parameters as DVR requests, fixing shared-user Record saves that reached Plex as `POST /media/subscriptions` and returned `403`.
 - **Shared-user recording rule edits stay Live TV-scoped:** the Live TV proxy now recognizes XMLTV-backed `/media/subscriptions/{id}` edit/delete-style requests as DVR calls while still refusing to elevate ordinary library subscription edits.
 
 ## [v0.1.77] - 2026-05-18
