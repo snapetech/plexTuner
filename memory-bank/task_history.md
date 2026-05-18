@@ -1,3 +1,12 @@
+## 2026-05-18 - Cut v0.1.77 release
+
+- Committed and pushed the full dirty tree requested by the operator, including Plex DVR event-window fixes, shared-user Record-button entitlement fixes, generated council metadata, and release workflow hardening.
+- Configured the Discord release webhook as the `DISCORD_RELEASE_WEBHOOK` repository secret without committing the webhook URL; the tracked tree was checked for the literal webhook value.
+- Published GitHub Release `v0.1.77` with 18 assets, including raw binaries, archives, `.deb`, `.rpm`, checksums, and release manifest.
+- Release workflow run `26008882309` passed verification, release smoke, asset build/verification, GitHub Release publish, Discord announcement, Matrix announcement, and package-channel dispatch.
+- Latest `main` checks for the final release commit passed: CI, CodeQL, Gitleaks, Docker, and Local Identity Leak Check.
+- Verification: `bash ./scripts/ci-smoke.sh`, `./scripts/release-readiness.sh`, and final GitHub Release workflow passed. Downstream AUR/Snap/PPA/COPR workflows were dispatched and were still running or queued at closeout.
+
 ## 2026-05-17 - Fix Plex recording failure on event-only sports guide rows
 
 - Investigated a Plex "undefined" recording error on a basketball Game 7 attempt; local standby Live TV proxy had no traffic, sports lineup/guide endpoints were healthy, and the suspected NBA Pass stream returned MPEG-TS data.

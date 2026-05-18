@@ -18,8 +18,12 @@
 - Done: committed and pushed Debian package tool installation as `0625c70`, then moved tag `v0.1.77` to include it.
 - Done: fifth release workflow hit another smoke port collision in a custom `serve` launch block; extended the retry wrapper to all custom smoke `serve` launch paths and verified `bash ./scripts/ci-smoke.sh` locally.
 - In progress: fifth release workflow also exposed council generated-count drift after the smoke hardening; regenerated council state and updated the active backlog count.
-- In progress: sixth release workflow exposed the same port-collision class on the Web UI sidecar port; adding retry handling around the combined tuner/Web UI startup.
-- Next: verify smoke locally, commit/push, move tag `v0.1.77`, and monitor the replacement release/CI workflows.
+- Done: sixth release workflow exposed the same port-collision class on the Web UI sidecar port; added retry handling around the combined tuner/Web UI startup and verified `bash ./scripts/ci-smoke.sh` locally.
+- Done: committed and pushed the final smoke fix as `75d800f`, then moved tag `v0.1.77` to include it.
+- Done: final Release run `26008882309` passed: verify, release smoke, asset build, package asset build, asset verification, GitHub Release publish, Discord announcement, Matrix announcement, and package-channel dispatch.
+- Done: latest `main` checks on `75d800f` passed: CI, CodeQL, Gitleaks, Docker, and Local Identity Leak Check.
+- In progress: downstream package channel workflows from the successful release are running/queued.
+- Next: monitor package-channel completion if needed; no release blocker remains.
 
 **Previous (2026-05-17):** Improve Plex DVR event-only sports recording windows.
 
